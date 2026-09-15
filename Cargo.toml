@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
+
+[lints]
+workspace = true
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
