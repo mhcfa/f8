@@ -108,7 +108,7 @@ Modifying presentation labels, formatting rules, or table placement never invali
 | Component                | Technology                          | Purpose                                                               |
 | :----------------------- | :---------------------------------- | :-------------------------------------------------------------------- |
 | **Data deserialization** | `serde`, `serde_json`               | Type-safe schema validation and project ingestion                     |
-| **Formula parser**       | `winnow`                            | Pratt-parsing formula expressions into AST representations            |
+| **Formula parser**       | Native Lexer & Pratt parser         | Parsing formula expressions into AST representations                  |
 | **Graph engine**         | `petgraph`                          | Directed dependency graph, topological sort, cycle isolation          |
 | **In-memory evaluator**  | Native Rust engine                  | Topological DAG execution with 100% Excel calculation parity          |
 | **Function catalog**     | Extensible registry pattern         | Single source of truth for Excel built-in functions                   |

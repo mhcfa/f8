@@ -27,11 +27,6 @@ impl Expr {
         Self::Literal(Literal::Number(val))
     }
 
-    /// Helper to construct a string literal expression.
-    pub fn string(val: impl Into<String>) -> Self {
-        Self::Literal(Literal::String(val.into()))
-    }
-
     /// Helper to construct a null literal expression.
     pub fn null() -> Self {
         Self::Literal(Literal::Null)

@@ -4,13 +4,10 @@ use crate::expr::ast::{
 use crate::expr::error::ParseError;
 use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId};
 use std::fmt;
-use winnow::ascii::multispace0;
-use winnow::error::ContextError;
-use winnow::prelude::*;
 
 /// Lexical token recognized by the formula tokenizer.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
+pub(crate) enum Token<'a> {
     /// Floating-point or integer numeric literal.
     Number(f64),
     /// Quoted text string constant.
@@ -18,7 +15,7 @@ pub enum Token {
     /// Explicit null literal (`null`).
     Null,
     /// General identifier (table name, row/col identifier, function name, or coordinate word).
-    Ident(String),
+    Ident(&'a str),
 
     // Delimiters & punctuation
     /// Left parenthesis `(`.
@@ -63,7 +60,7 @@ pub enum Token {
     Gte,
 }
 
-impl Token {
+impl<'a> Token<'a> {
     /// Maps the token to a binary operator if applicable.
     pub fn as_binary_op(&self) -> Option<BinaryOp> {
         match self {
@@ -83,7 +80,7 @@ impl Token {
     }
 }
 
-impl fmt::Display for Token {
+impl<'a> fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Number(n) => write!(f, "{n}"),
@@ -115,9 +112,9 @@ impl fmt::Display for Token {
 
 /// A token tagged with its source byte range.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SpannedToken {
+pub(crate) struct SpannedToken<'a> {
     /// The token kind and payload.
-    pub token: Token,
+    pub token: Token<'a>,
     /// Byte offset where the token begins in the original input string.
     pub offset: usize,
     /// Length of the token in bytes.
@@ -126,69 +123,71 @@ pub struct SpannedToken {
 
 /// Cursor over a slice of spanned tokens providing lookahead and consumption utilities.
 #[derive(Debug, Clone)]
-pub struct TokenStream<'a> {
-    tokens: Vec<SpannedToken>,
+pub(crate) struct TokenStream<'a> {
+    tokens: Vec<SpannedToken<'a>>,
     pos: usize,
-    orig: &'a str,
+    source_len: usize,
 }
 
 impl<'a> TokenStream<'a> {
-    /// Creates a new token stream cursor over the given tokens and original source string.
-    pub fn new(tokens: Vec<SpannedToken>, orig: &'a str) -> Self {
+    /// Creates a new token stream cursor over the given tokens and input source byte length.
+    pub fn new(tokens: Vec<SpannedToken<'a>>, source_len: usize) -> Self {
         Self {
             tokens,
             pos: 0,
-            orig,
+            source_len,
         }
     }
 
     /// Peeks at the next spanned token without advancing the cursor.
-    pub fn peek(&self) -> Option<&SpannedToken> {
+    pub fn peek(&self) -> Option<&SpannedToken<'a>> {
         self.tokens.get(self.pos)
     }
 
     /// Peeks at the next token kind without advancing the cursor.
-    pub fn peek_token(&self) -> Option<&Token> {
+    pub fn peek_token(&self) -> Option<&Token<'a>> {
         self.tokens.get(self.pos).map(|st| &st.token)
+    }
+
+    /// Advances the cursor by one token position without allocation or cloning.
+    pub fn advance(&mut self) {
+        if self.pos < self.tokens.len() {
+            self.pos += 1;
+        }
+    }
+
+    /// Consumes and returns a reference to the next spanned token.
+    pub fn consume(&mut self) -> Option<&SpannedToken<'a>> {
+        if self.pos < self.tokens.len() {
+            let idx = self.pos;
+            self.pos += 1;
+            Some(&self.tokens[idx])
+        } else {
+            None
+        }
     }
 
     /// Returns the byte offset of the current cursor position.
     pub fn current_offset(&self) -> usize {
-        self.peek().map_or(self.orig.len(), |st| st.offset)
+        self.peek().map_or(self.source_len, |st| st.offset)
     }
 
     /// Returns `true` if all tokens have been consumed.
     pub fn is_empty(&self) -> bool {
         self.pos >= self.tokens.len()
     }
-}
 
-impl<'a> Iterator for TokenStream<'a> {
-    type Item = SpannedToken;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos < self.tokens.len() {
-            let tok = self.tokens[self.pos].clone();
-            self.pos += 1;
-            Some(tok)
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a> TokenStream<'a> {
     /// Asserts that the next token matches `expected_tok`, consuming it if so.
     pub fn expect(
         &mut self,
-        expected_tok: &Token,
+        expected_tok: &Token<'_>,
         expected_str: &'static str,
-    ) -> Result<SpannedToken, ParseError> {
+    ) -> Result<&SpannedToken<'a>, ParseError> {
         match self.peek() {
             Some(st) if &st.token == expected_tok => {
-                let tok = st.clone();
+                let idx = self.pos;
                 self.pos += 1;
-                Ok(tok)
+                Ok(&self.tokens[idx])
             }
             Some(st) => Err(ParseError::UnexpectedToken {
                 expected: expected_str,
@@ -203,16 +202,17 @@ impl<'a> TokenStream<'a> {
 }
 
 /// Tokenizes a raw formula expression string into a sequence of [`SpannedToken`]s.
-pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>, ParseError> {
+pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError> {
     let mut tokens = Vec::new();
     let mut cursor = input;
 
     while !cursor.is_empty() {
         // Strip leading whitespace
-        let _ = multispace0::<_, ContextError>.parse_next(&mut cursor);
-        if cursor.is_empty() {
+        let trimmed = cursor.trim_start();
+        if trimmed.is_empty() {
             break;
         }
+        cursor = trimmed;
 
         let offset = input.len() - cursor.len();
 
@@ -439,17 +439,17 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>, ParseError> {
         // Digits (numeric literals or alphanumeric coordinate tokens like 2024E)
         if first_char.is_ascii_digit() {
             let word_len = cursor
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .bytes()
+                .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
                 .count();
             let word = &cursor[..word_len];
 
             // Check if token contains letters or underscores (e.g. 2024E)
-            let has_letters = word.chars().any(|c| c.is_ascii_alphabetic() || c == '_');
+            let has_letters = word.bytes().any(|b| b.is_ascii_alphabetic() || b == b'_');
             if has_letters {
                 cursor = &cursor[word_len..];
                 tokens.push(SpannedToken {
-                    token: Token::Ident(word.to_string()),
+                    token: Token::Ident(word),
                     offset,
                     len: word_len,
                 });
@@ -461,7 +461,7 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>, ParseError> {
             let after_digits = &cursor[word_len..];
             if after_digits.starts_with('.') && !after_digits.starts_with("..") {
                 let frac = &after_digits[1..];
-                let frac_digits = frac.chars().take_while(|c| c.is_ascii_digit()).count();
+                let frac_digits = frac.bytes().take_while(|b| b.is_ascii_digit()).count();
                 if frac_digits > 0 {
                     num_len += 1 + frac_digits;
                 }
@@ -490,8 +490,8 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>, ParseError> {
         // Identifier or keyword
         if first_char.is_ascii_alphabetic() || first_char == '_' {
             let ident_len = cursor
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .bytes()
+                .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
                 .count();
             let ident = &cursor[..ident_len];
             cursor = &cursor[ident_len..];
@@ -504,7 +504,7 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>, ParseError> {
                 });
             } else {
                 tokens.push(SpannedToken {
-                    token: Token::Ident(ident.to_string()),
+                    token: Token::Ident(ident),
                     offset,
                     len: ident_len,
                 });
@@ -524,14 +524,7 @@ pub fn tokenize(input: &str) -> Result<Vec<SpannedToken>, ParseError> {
 }
 
 /// Parses a raw formula expression string into an [`Expr`] AST.
-pub fn parse_expr_str(input: &str) -> Result<Expr, ParseError> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err(ParseError::UnexpectedEof {
-            expected: "expression",
-        });
-    }
-
+pub(crate) fn parse_expr_str(input: &str) -> Result<Expr, ParseError> {
     let tokens = tokenize(input)?;
     if tokens.is_empty() {
         return Err(ParseError::UnexpectedEof {
@@ -539,7 +532,7 @@ pub fn parse_expr_str(input: &str) -> Result<Expr, ParseError> {
         });
     }
 
-    let mut stream = TokenStream::new(tokens, input);
+    let mut stream = TokenStream::new(tokens, input.len());
     let expr = parse_expression(&mut stream, 0)?;
 
     if !stream.is_empty() {
@@ -565,7 +558,7 @@ fn parse_expression(stream: &mut TokenStream<'_>, min_bp: u8) -> Result<Expr, Pa
         }
 
         // Consume binary operator
-        stream.next();
+        stream.advance();
 
         let next_bp = if op.is_right_associative() {
             op_prec
@@ -594,7 +587,7 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
     let offset = st.offset;
     match &st.token {
         Token::Plus => {
-            stream.next();
+            stream.advance();
             let expr = parse_expression(stream, UnaryOp::Pos.precedence())?;
             Ok(Expr::Unary {
                 op: UnaryOp::Pos,
@@ -602,7 +595,7 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
             })
         }
         Token::Minus => {
-            stream.next();
+            stream.advance();
             let expr = parse_expression(stream, UnaryOp::Neg.precedence())?;
             Ok(Expr::Unary {
                 op: UnaryOp::Neg,
@@ -610,28 +603,28 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
             })
         }
         Token::LParen => {
-            stream.next();
+            stream.advance();
             let expr = parse_expression(stream, 0)?;
             let _ = stream.expect(&Token::RParen, "')'")?;
             Ok(expr)
         }
         Token::Number(n) => {
             let val = *n;
-            stream.next();
+            stream.advance();
             Ok(Expr::Literal(Literal::Number(val)))
         }
         Token::String(s) => {
             let val = s.clone();
-            stream.next();
+            stream.advance();
             Ok(Expr::Literal(Literal::String(val)))
         }
         Token::Null => {
-            stream.next();
+            stream.advance();
             Ok(Expr::Literal(Literal::Null))
         }
         Token::Ident(ident) => {
-            let name = ident.clone();
-            stream.next();
+            let name = *ident;
+            stream.advance();
 
             match stream.peek_token() {
                 Some(Token::LParen) => parse_function_call(name, offset, stream),
@@ -639,7 +632,7 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
                 Some(Token::LBracket) => parse_bracket_access(name, stream),
                 _ => Err(ParseError::UnexpectedToken {
                     expected: "function call '(', dot access '.', or bracket access '['",
-                    found: name,
+                    found: name.to_string(),
                     offset,
                 }),
             }
@@ -672,7 +665,7 @@ fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<Expr>, ParseE
         args.push(arg);
 
         if stream.peek_token() == Some(&Token::Comma) {
-            stream.next();
+            stream.advance();
             if stream.peek_token() == Some(&Token::RParen) {
                 let err_offset = stream.current_offset();
                 return Err(ParseError::UnexpectedToken {
@@ -709,7 +702,7 @@ fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<Expr>, ParseE
 }
 
 fn parse_function_call(
-    name: String,
+    name: &str,
     offset: usize,
     stream: &mut TokenStream<'_>,
 ) -> Result<Expr, ParseError> {
@@ -721,7 +714,10 @@ fn parse_function_call(
             .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
 
     if !is_valid {
-        return Err(ParseError::InvalidFunctionName { name, offset });
+        return Err(ParseError::InvalidFunctionName {
+            name: name.to_string(),
+            offset,
+        });
     }
 
     // Consume '('
@@ -730,17 +726,20 @@ fn parse_function_call(
     // Consume ')'
     let _ = stream.expect(&Token::RParen, "')'")?;
 
-    Ok(Expr::FunctionCall { name, args })
+    Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args,
+    })
 }
 
-fn parse_dot_access(table: String, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
+fn parse_dot_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
     // Consume '.'
     let _ = stream.expect(&Token::Dot, "'.'")?;
 
-    let row_name = match stream.next() {
+    let row_name = match stream.consume() {
         Some(st) => match st.token {
             Token::Ident(id) => id,
-            other => {
+            ref other => {
                 return Err(ParseError::UnexpectedToken {
                     expected: "row identifier",
                     found: other.to_string(),
@@ -762,7 +761,7 @@ fn parse_dot_access(table: String, stream: &mut TokenStream<'_>) -> Result<Expr,
     Ok(Expr::Reference(TableRef::dot(table, row_name, col)))
 }
 
-fn parse_bracket_access(table: String, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
+fn parse_bracket_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
     // Consume '['
     let _ = stream.expect(&Token::LBracket, "'['")?;
 
@@ -783,31 +782,16 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
 
     let offset = st.offset;
     match &st.token {
-        Token::Ident(name) if name == "rows" => {
-            stream.next();
+        Token::Ident("rows") => {
+            stream.advance();
             // Expect '.'
-            match stream.peek_token() {
-                Some(Token::Dot) => {
-                    stream.next();
-                }
-                _ => {
-                    let err_offset = stream.current_offset();
-                    let found = stream
-                        .peek()
-                        .map_or_else(String::new, |t| t.token.to_string());
-                    return Err(ParseError::UnexpectedToken {
-                        expected: "row group identifier after 'rows.'",
-                        found,
-                        offset: err_offset,
-                    });
-                }
-            }
+            let _ = stream.expect(&Token::Dot, "'.' after 'rows'")?;
 
             // Expect group identifier
-            let group_id = match stream.next() {
+            let group_id = match stream.consume() {
                 Some(next_st) => match next_st.token {
                     Token::Ident(id) => id,
-                    other => {
+                    ref other => {
                         return Err(ParseError::UnexpectedToken {
                             expected: "row group identifier after 'rows.'",
                             found: other.to_string(),
@@ -824,16 +808,16 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
 
             // Check for optional .first or .last
             if stream.peek_token() == Some(&Token::Dot) {
-                stream.next();
-                match stream.next() {
-                    Some(milestone_st) => match &milestone_st.token {
-                        Token::Ident(m) if m == "first" => Ok(RowSelector::Special(
-                            SpecialRow::GroupFirst(RowGroupId::new(group_id)),
-                        )),
-                        Token::Ident(m) if m == "last" => Ok(RowSelector::Special(
-                            SpecialRow::GroupLast(RowGroupId::new(group_id)),
-                        )),
-                        other => Err(ParseError::UnexpectedToken {
+                stream.advance();
+                match stream.consume() {
+                    Some(milestone_st) => match milestone_st.token {
+                        Token::Ident("first") => Ok(RowSelector::Special(SpecialRow::GroupFirst(
+                            RowGroupId::new(group_id),
+                        ))),
+                        Token::Ident("last") => Ok(RowSelector::Special(SpecialRow::GroupLast(
+                            RowGroupId::new(group_id),
+                        ))),
+                        ref other => Err(ParseError::UnexpectedToken {
                             expected: "'first' or 'last'",
                             found: other.to_string(),
                             offset: milestone_st.offset,
@@ -851,11 +835,11 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
         }
         Token::String(key1) => {
             let key1 = key1.clone();
-            stream.next();
+            stream.advance();
             if stream.peek_token() == Some(&Token::DotDot) {
-                stream.next();
-                match stream.next() {
-                    Some(key2_st) => match key2_st.token {
+                stream.advance();
+                match stream.consume() {
+                    Some(key2_st) => match &key2_st.token {
                         Token::String(key2) => {
                             Ok(RowSelector::Range(RowId::new(key1), RowId::new(key2)))
                         }
@@ -874,13 +858,13 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
             }
         }
         Token::Ident(bare) => {
-            let found = bare.clone();
-            stream.next();
+            let found = (*bare).to_string();
+            stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
         Token::Number(num) => {
             let found = num.to_string();
-            stream.next();
+            stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
         other => {
@@ -904,18 +888,18 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
     let offset = st.offset;
     match &st.token {
         Token::At => {
-            stream.next();
+            stream.advance();
             Ok(ColSelector::Active)
         }
-        Token::Ident(name) if name == "col" => {
-            stream.next();
+        Token::Ident("col") => {
+            stream.advance();
             // Expect '.'
             let _ = stream.expect(&Token::Dot, "'.' after 'col'")?;
 
             // Expect 'prev' or 'next'
             let is_prev = match stream.peek_token() {
-                Some(Token::Ident(dir)) if dir == "prev" => true,
-                Some(Token::Ident(dir)) if dir == "next" => false,
+                Some(Token::Ident("prev")) => true,
+                Some(Token::Ident("next")) => false,
                 Some(other) => {
                     let err_offset = stream.current_offset();
                     let found = other.to_string();
@@ -931,15 +915,15 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
                     });
                 }
             };
-            stream.next();
+            stream.advance();
 
             // Check for optional (k)
             if stream.peek_token() == Some(&Token::LParen) {
-                stream.next();
-                let k = match stream.next() {
+                stream.advance();
+                let k = match stream.consume() {
                     Some(num_st) => match num_st.token {
                         Token::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as u32,
-                        other => {
+                        ref other => {
                             return Err(ParseError::UnexpectedToken {
                                 expected: "integer offset",
                                 found: other.to_string(),
@@ -975,31 +959,16 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
                 Ok(ColSelector::Special(SpecialCol::Next(1)))
             }
         }
-        Token::Ident(name) if name == "cols" => {
-            stream.next();
+        Token::Ident("cols") => {
+            stream.advance();
             // Expect '.'
-            match stream.peek_token() {
-                Some(Token::Dot) => {
-                    stream.next();
-                }
-                _ => {
-                    let err_offset = stream.current_offset();
-                    let found = stream
-                        .peek()
-                        .map_or_else(String::new, |t| t.token.to_string());
-                    return Err(ParseError::UnexpectedToken {
-                        expected: "column group identifier after 'cols.'",
-                        found,
-                        offset: err_offset,
-                    });
-                }
-            }
+            let _ = stream.expect(&Token::Dot, "'.' after 'cols'")?;
 
             // Expect group identifier
-            let group_id = match stream.next() {
+            let group_id = match stream.consume() {
                 Some(next_st) => match next_st.token {
                     Token::Ident(id) => id,
-                    other => {
+                    ref other => {
                         return Err(ParseError::UnexpectedToken {
                             expected: "column group identifier after 'cols.'",
                             found: other.to_string(),
@@ -1016,16 +985,16 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
 
             // Check for optional .first or .last
             if stream.peek_token() == Some(&Token::Dot) {
-                stream.next();
-                match stream.next() {
-                    Some(milestone_st) => match &milestone_st.token {
-                        Token::Ident(m) if m == "first" => Ok(ColSelector::Special(
-                            SpecialCol::GroupFirst(ColGroupId::new(group_id)),
-                        )),
-                        Token::Ident(m) if m == "last" => Ok(ColSelector::Special(
-                            SpecialCol::GroupLast(ColGroupId::new(group_id)),
-                        )),
-                        other => Err(ParseError::UnexpectedToken {
+                stream.advance();
+                match stream.consume() {
+                    Some(milestone_st) => match milestone_st.token {
+                        Token::Ident("first") => Ok(ColSelector::Special(SpecialCol::GroupFirst(
+                            ColGroupId::new(group_id),
+                        ))),
+                        Token::Ident("last") => Ok(ColSelector::Special(SpecialCol::GroupLast(
+                            ColGroupId::new(group_id),
+                        ))),
+                        ref other => Err(ParseError::UnexpectedToken {
                             expected: "'first' or 'last'",
                             found: other.to_string(),
                             offset: milestone_st.offset,
@@ -1043,11 +1012,11 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
         }
         Token::String(key1) => {
             let key1 = key1.clone();
-            stream.next();
+            stream.advance();
             if stream.peek_token() == Some(&Token::DotDot) {
-                stream.next();
-                match stream.next() {
-                    Some(key2_st) => match key2_st.token {
+                stream.advance();
+                match stream.consume() {
+                    Some(key2_st) => match &key2_st.token {
                         Token::String(key2) => {
                             Ok(ColSelector::Range(ColId::new(key1), ColId::new(key2)))
                         }
@@ -1066,13 +1035,13 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
             }
         }
         Token::Ident(bare) => {
-            let found = bare.clone();
-            stream.next();
+            let found = (*bare).to_string();
+            stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
         Token::Number(num) => {
             let found = num.to_string();
-            stream.next();
+            stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
         other => {
@@ -1384,7 +1353,7 @@ mod tests {
             ))
         );
 
-        // Row group specific column: BalanceSheet[rows.current_assets, "2024E"]
+        // Row group specific column: BalanceSheet[rows.current_assets, \"2024E\"]
         let rg_specific = parse_expr_str("BalanceSheet[rows.current_assets, \"2024E\"]").unwrap();
         assert_eq!(
             rg_specific,
@@ -1395,7 +1364,7 @@ mod tests {
             ))
         );
 
-        // Single row key specific column: BalanceSheet["cash", "2024E"]
+        // Single row key specific column: BalanceSheet[\"cash\", \"2024E\"]
         let single_row = parse_expr_str("BalanceSheet[\"cash\", \"2024E\"]").unwrap();
         assert_eq!(
             single_row,
@@ -1474,9 +1443,8 @@ mod tests {
         // col.prevent should not parse as col.prev
         let err = parse_expr_str("Table.row[col.prevent]").unwrap_err();
         match err {
-            ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "col.prevent"),
             ParseError::UnexpectedToken { .. } => {}
-            other => panic!("Expected unquoted coordinate key error, got {other:?}"),
+            other => panic!("Expected unexpected token error, got {other:?}"),
         }
 
         // rows.group.firstly should not parse as rows.group.first
@@ -1505,6 +1473,24 @@ mod tests {
             parse_expr_str("SUM(1, 2").unwrap_err(),
             ParseError::UnexpectedEof {
                 expected: "',' or ')'"
+            }
+        );
+        assert_eq!(
+            parse_expr_str("Table[rows").unwrap_err(),
+            ParseError::UnexpectedEof {
+                expected: "'.' after 'rows'"
+            }
+        );
+        assert_eq!(
+            parse_expr_str("Table.row[cols").unwrap_err(),
+            ParseError::UnexpectedEof {
+                expected: "'.' after 'cols'"
+            }
+        );
+        assert_eq!(
+            parse_expr_str("Table.row[col").unwrap_err(),
+            ParseError::UnexpectedEof {
+                expected: "'.' after 'col'"
             }
         );
     }
@@ -1544,9 +1530,9 @@ mod tests {
     fn test_tokenizer_direct() {
         let tokens = tokenize("IncomeStatement.revenue[@] + 42").unwrap();
         assert_eq!(tokens.len(), 8);
-        assert_eq!(tokens[0].token, Token::Ident("IncomeStatement".to_string()));
+        assert_eq!(tokens[0].token, Token::Ident("IncomeStatement"));
         assert_eq!(tokens[1].token, Token::Dot);
-        assert_eq!(tokens[2].token, Token::Ident("revenue".to_string()));
+        assert_eq!(tokens[2].token, Token::Ident("revenue"));
         assert_eq!(tokens[3].token, Token::LBracket);
         assert_eq!(tokens[4].token, Token::At);
         assert_eq!(tokens[5].token, Token::RBracket);

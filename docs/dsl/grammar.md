@@ -53,7 +53,7 @@ NullLiteral        = "null" ;
 
 ## 2. Operator Precedence & Associativity
 
-Formulas are parsed using a Pratt parser (`winnow`) with standard algebraic precedence from highest to lowest:
+Formulas are parsed using a Pratt parser with standard algebraic precedence from highest to lowest:
 
 | Precedence | Operator | Description | Associativity |
 | :--- | :--- | :--- | :--- |

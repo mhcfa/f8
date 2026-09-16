@@ -15,7 +15,7 @@ The `expr` subsystem provides the Abstract Syntax Tree (AST), structured diagnos
   - `finx::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RefAccess`, `RowSelector`, `ColSelector`, `SpecialRow`, `SpecialCol`) and `Display` implementations.
   - `finx::expr::error`: Diagnostic domain errors (`ParseError`).
   - `finx::expr::parser`: Two-stage parsing pipeline:
-    - Lexer: `tokenize` parses `&str` into `Vec<SpannedToken>` using the `Token` enum.
+    - Lexer: `tokenize` parses `&str` into `Vec<SpannedToken>` using the borrowed `Token` enum with zero external dependencies.
     - Pratt parser: `TokenStream` cursor and operator precedence parsing loop over strongly typed tokens.
   - `finx::expr::Expr::parse`: Public parsing facade.
 - **Data flow & interfaces**:
@@ -23,7 +23,6 @@ The `expr` subsystem provides the Abstract Syntax Tree (AST), structured diagnos
   2. `Expr::to_string()` / `Display` $\rightarrow$ Canonical formula string adhering to operator precedence and associativity.
   3. Parsed `Expr` is consumed by `compiler::graph` for dependency extraction and `compiler::lowering` for cell coordinate resolution.
 - **Dependencies**:
-  - `winnow`: Parser combinators and zero-copy string tokenization.
   - `thiserror`: Structured domain and diagnostic error hierarchy.
   - `serde`: Serialization and deserialization of AST representations.
 
