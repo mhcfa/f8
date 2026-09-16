@@ -71,3 +71,7 @@ define_id!(
     ColGroupId,
     "Programmatic column group identifier within a table."
 );
+define_id!(
+    SheetId,
+    "Programmatic worksheet identifier within a workbook."
+);
