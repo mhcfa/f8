@@ -19,11 +19,17 @@ TableRef           = Identifier ( DotAccess | BracketAccess ) ;
 DotAccess          = "." Identifier "[" ColSpec "]" ;
 BracketAccess      = "[" RowSpec "," ColSpec "]" ;
 
-RowSpec            = Key [ ".." Key ] ;
+RowSpec            = Key [ ".." Key ]
+                   | SpecialRow ;
+
 ColSpec            = "@"
                    | Key ".." Key
                    | Key
                    | SpecialCol ;
+
+SpecialRow         = "rows." Identifier
+                   | "rows." Identifier ".last"
+                   | "rows." Identifier ".first" ;
 
 SpecialCol         = "col.prev" [ "(" Integer ")" ]
                    | "col.next" [ "(" Integer ")" ]
@@ -67,4 +73,4 @@ Parentheses `( ... )` override default operator precedence.
 - **String literals**: Double-quoted strings with standard escaping (`"value"`, `"2024E"`).
 - **Whitespace**: Whitespace between tokens is ignored during parsing.
 
-See [Addressing Syntax](addressing.md) for how reference expressions map to cell coordinates, and [Specification Format](spec-format.md) for embedding expressions within YAML models.
+See [Addressing Syntax](addressing.md) for how reference expressions map to cell coordinates, and [Specification Format](spec-format.md) for embedding expressions within JSON table specifications.

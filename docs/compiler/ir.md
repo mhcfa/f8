@@ -41,7 +41,7 @@ The grid expansion pass transforms the high-level specification AST into discret
 flowchart TD
     A["Spec AST (Tables, Rows, Match Arms)"] --> B["Grid Expansion Engine"]
     B --> C["Symbol Table (TableId -> SheetId)"]
-    B --> D["Resolve Timeline Aliases\n(e.g. cols.historical.last -> \"2023A\")"]
+    B --> D["Resolve Group & Dynamic Aliases\n(e.g. cols.forecast, rows.current_assets)"]
     B --> E["Unroll Columns & Match Arms"]
     E --> F["Cell IR Matrix\n(Vec of Cell Nodes with CellId)"]
 ```
@@ -49,7 +49,7 @@ flowchart TD
 ### 2.1. Expansion Responsibilities
 
 1. **Column enumeration**: Iterates over all declared table columns in order.
-2. **Timeline alias resolution**: Replaces dynamic tokens (`col.prev`, `col.next`, `cols.<group>.first`, `cols.<group>.last`) with concrete `ColId` references.
+2. **Group & dynamic alias resolution**: Resolves dynamic tokens (`col.prev`, `col.next`, `cols.<group>`, `rows.<group>`) into concrete coordinates or bounded range boundaries.
 3. **Partition evaluation**: Matches each column against row definitions, selecting the appropriate literal input or parsed formula expression.
 4. **Dimension verification**: Verifies that literal array lengths match targeted column counts (`len(value) == len(target_columns)`).
 

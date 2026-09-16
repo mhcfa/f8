@@ -18,8 +18,10 @@ flowchart TD
 
 - **Vertical stacking**: Within each worksheet, tables stack vertically by default.
 - **Header & stub layout**:
-  - Column A/B: Row stub labels and indentation.
-  - Header rows: Table title and column key headers.
+  - Column A/B: Row stub labels with indentation derived from `row_groups` tree depth.
+  - Section headers: Visual non-calculation rows emitted for parent and leaf `row_groups` with distinct category typography.
+  - Header rows: Table title, optional super-headers (from `column_groups`), and column key headers.
+  - Group styling: Automated vertical dividing borders at boundaries between adjacent column groups, and native Excel row/column outline folding levels.
 - **Standard gutters**: A configurable blank row gutter (default: 2 blank rows) separates stacked tables to avoid coordinate collisions.
 
 ### 1.2. Sheet-Level Properties
@@ -50,9 +52,9 @@ flowchart LR
 | **Active Column (`[@]`)** | `Revenue[@]` | Same sheet | Relative column: `=C10` |
 | **Specific Column** | `Assumptions.tax_rate["value"]` | Different sheet (`Summary`) | Absolute coordinate: `='Summary'!$B$4` |
 | **Specific Column** | `Balance["2023A"]` | Same sheet | Absolute coordinate: `=$C$10` |
-| **Horizontal Range** | `Revenue["2024E".."2028E"]` | Same sheet | Horizontal slice: `=SUM(C10:G10)` |
-| **Vertical Range** | `Opex["r_and_d".."g_and_a", @]` | Same sheet | Vertical slice: `=SUM(C14:C18)` |
-| **2D Block Range** | `Opex["r_and_d".."g_and_a", "2024E".."2028E"]` | Same sheet | 2D matrix: `=SUM(C14:G18)` |
+| **Horizontal Range** | `Revenue[cols.forecast]` | Same sheet | Horizontal slice: `=SUM(C10:G10)` |
+| **Vertical Range** | `BalanceSheet[rows.current_assets, @]` | Same sheet | Vertical slice: `=SUM(C14:C18)` |
+| **2D Block Range** | `BalanceSheet[rows.current_assets, cols.forecast]` | Same sheet | 2D matrix: `=SUM(C14:G18)` |
 
 ### 2.2. AST Serialization
 

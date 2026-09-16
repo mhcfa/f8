@@ -6,7 +6,7 @@ Finx is a deterministic compiler for financial models that treats spreadsheets a
 
 Traditional financial modeling conflates business logic, multi-dimensional time series, and 2D spatial presentation inside Excel. Finx establishes a **"TypeScript for Spreadsheets"** paradigm:
 
-- **Code is single source of truth**: Models are defined in structured, declarative specifications (YAML or JSON DSL).
+- **Code is single source of truth**: Models are defined in structured, declarative JSON project specifications (`finx.json` + `tables/*.json`).
 - **Excel is an uneditable compile artifact**: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - **Deterministic compilation**: A Rust engine validates schemas, constructs cell-level dependency graphs, proves acyclicity, plans 2D layouts, and lowers semantic formulas to concrete Excel grid coordinates.
 
@@ -17,7 +17,7 @@ Traditional financial modeling conflates business logic, multi-dimensional time 
 ```mermaid
 flowchart TD
     A["Spec Request / Prompt"] --> B["Authoring Agent or Human"]
-    B -->|"YAML / JSON Spec"| C["Finx Compiler Entrypoint"]
+    B -->|"JSON Project Spec"| C["Finx Compiler Entrypoint"]
 
     subgraph Compiler ["Finx Core Engine"]
         C --> D["Deserializer & Spec AST"]
@@ -93,7 +93,7 @@ Modifying presentation labels, formatting rules, or table placement never invali
 
 | Component                | Technology                          | Purpose                                                               |
 | :----------------------- | :---------------------------------- | :-------------------------------------------------------------------- |
-| **Data deserialization** | `serde`, `serde_yaml`, `serde_json` | Type-safe schema validation and ingestion                             |
+| **Data deserialization** | `serde`, `serde_json`               | Type-safe schema validation and project ingestion                     |
 | **Formula parser**       | `winnow`                            | Pratt-parsing formula expressions into AST representations            |
 | **Graph engine**         | `petgraph`                          | Directed dependency graph, topological sort, cycle isolation          |
 | **Workbook emitter**     | `rust_xlsxwriter`                   | Fast generation of native `.xlsx` files with live formulas and styles |
@@ -109,7 +109,7 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **DSL & Authoring**:
   - [Addressing Syntax](dsl/addressing.md): Reference syntax, active period (`[@]`), temporal offsets, and slicing.
   - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.
-  - [Specification Format](dsl/spec-format.md): YAML schema, match partitioning, and full model examples.
+  - [Specification Format](dsl/spec-format.md): Multi-file JSON schema, table modularity, match partitioning, and project examples.
 - **Compiler Internals**:
   - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, `CellId` structure, and grid expansion.
   - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.

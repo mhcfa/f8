@@ -67,11 +67,12 @@ BalanceSheet.cash[col.prev] + CashFlow.net_change[@]
 
 ### 3.4. Semantic Column Anchor
 
-References a named milestone or boundary within a column timeline group.
+References a named milestone or boundary within a column group.
 
 ```text
 DebtSchedule.balance[cols.historical.last]
 DebtSchedule.balance[cols.forecast.first]
+Comps.market_cap[cols.market_data.first]
 ```
 
 - **Lowering**: Resolves at compile time to the matching column key (e.g. `"2023A"`), lowering to an absolute coordinate.
@@ -89,14 +90,15 @@ SUM(IncomeStatement.revenue[cols.forecast])
 
 ### 3.6. Vertical Range (Column Slice)
 
-Aggregates multiple rows within a single column.
+Aggregates multiple rows within a single column using explicit row key bounds or semantic row groups.
 
 ```text
 SUM(Opex["r_and_d".."g_and_a", @])
-SUM(Opex["r_and_d".."g_and_a", "2023A"])
+SUM(BalanceSheet[rows.current_assets, @])
+SUM(BalanceSheet[rows.current_assets, "2024E"])
 ```
 
-- **Lowering**: Emits vertical ranges for active column (`=SUM(C14:C18)`) or absolute column (`=SUM($B$14:$B$18)`).
+- **Lowering**: Resolves `rows.<group>` to the contiguous vertical row slice of all flattened descendant rows of the targeted group, emitting vertical ranges for active column (`=SUM(C14:C18)`) or absolute column (`=SUM($B$14:$B$18)`).
 
 ### 3.7. 2D Block Range
 
@@ -104,7 +106,7 @@ Aggregates a two-dimensional matrix across multiple rows and columns.
 
 ```text
 SUM(Opex["r_and_d".."g_and_a", "2024E".."2028E"])
-SUM(Opex["r_and_d".."g_and_a", cols.forecast])
+SUM(BalanceSheet[rows.current_assets, cols.forecast])
 ```
 
 - **Lowering**: Emits 2D rectangular ranges (e.g. `=SUM(C14:G18)`).
