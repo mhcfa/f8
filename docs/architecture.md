@@ -38,9 +38,12 @@ flowchart TD
             J2 --> K2["Formula Lowering Engine"]
             K2 --> L2["Excel Binary Emitter\n(rust_xlsxwriter)"]
         end
+
+        L1 -.->|"Precalculated Cache (<v>)"| L2
     end
 
-    L2 --> M[".xlsx Workbook (Live Formulas)"]
+    L1 --> N["Headless Exports\n(JSON / CSV / Parquet)"]
+    L2 --> M[".xlsx Workbook\n(Live Formulas + Precalculated Cache)"]
 ```
 
 The pipeline operates across six primary passes:
@@ -48,9 +51,9 @@ The pipeline operates across six primary passes:
 1. **Ingest & Parse**: Deserializes specifications, verifies function signatures against the function registry, and parses formula expressions into AST nodes.
 2. **Grid Expansion**: Expands table rows across defined columns into discrete cell-level intermediate representation (`CellId`).
 3. **Dependency Graph & SCC**: Constructs a directed dependency graph and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
-4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity for agent inspection and compile-time validation.
+4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity for agent inspection, compile-time validation (`#DIV/0!`, `#VALUE!`), and workbook caching.
 5. **Spatial Layout Planning**: Arranges tables onto sheets with automated spacing, gutter planning, and freeze panes.
-6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`) and writes standard `.xlsx` files.
+6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`) and writes standard `.xlsx` files via `rust_xlsxwriter`. Formulas are emitted alongside precalculated in-memory results in the cell cache, enabling instant viewing in third-party tools (Apple Numbers, Quick Look, Google Drive, pandas) without waiting for Excel recalculation, with optional values-only freezing.
 
 ---
 
@@ -126,9 +129,13 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **Compiler Internals**:
   - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, `CellId` structure, and grid expansion.
   - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
-  - [Function Registry](compiler/function-registry.md): Extensible function catalog, signatures, and built-ins.
-  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and Excel parity.
-  - [Layout & Lowering](compiler/layout-and-lowering.md): Spatial table stacking, coordinate translation, and formula lowering.
+  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
+  - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
+  - [Spatial Layout Planning](compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
+  - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
+- **Function Subsystem**:
+  - [Function Registry Architecture](functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
+  - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces**:
   - [CLI](interfaces/cli.md): Command-line interface (in design).
   - [Model Context Protocol (MCP)](interfaces/mcp.md): Agent interface via Model Context Protocol (in design).

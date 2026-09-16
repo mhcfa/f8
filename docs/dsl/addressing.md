@@ -120,4 +120,4 @@ All table references are resolved through the workbook symbol table:
 - **Intra-sheet**: When referencing a table located on the same worksheet, coordinates omit sheet prefixes (`=C10`).
 - **Inter-sheet**: When referencing a table on a different worksheet, the compiler automatically adds quoted sheet qualification (`='Summary'!$B$4`).
 
-See [Formula Grammar](grammar.md) for the complete EBNF specification and [Layout & Lowering](../compiler/layout-and-lowering.md) for coordinate resolution details.
+See [Formula Grammar](grammar.md) for the complete EBNF specification and [Formula Lowering & Emission](../compiler/lowering-and-emission.md) for coordinate resolution details.

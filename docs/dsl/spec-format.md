@@ -50,10 +50,11 @@ The root manifest defines workbook-level metadata and physical sheet presentatio
 ```
 
 ### Vertical Table Stacking & Modularity
-When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/layout-and-lowering.md) stacks them vertically in the exact order listed, inserting standard blank-row gutters between tables:
+When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/spatial-layout.md) stacks them vertically in the exact order listed, inserting standard blank-row gutters between tables:
 - **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans (e.g. stacking a 1-column assumptions table above a 5-column forecast table is completely valid).
 - **Physical anchoring**: Each table anchors its row stub labels and data columns at standard sheet offsets (Columns A/B for stubs, Column C onward for data columns).
 - **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table.row[col]`), remaining fully isolated from the physical row and column placement on the sheet.
+- **Column width resolution**: Physical column widths resolve to the maximum required width across all stacked tables sharing that column.
 
 ---
 
