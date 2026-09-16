@@ -12,6 +12,7 @@ pub use ast::{
     UnaryOp,
 };
 pub use error::ParseError;
+pub use parser::{SpannedToken, Token, tokenize};
 
 impl Expr {
     /// Parses a formula expression string into an [`Expr`] AST.
