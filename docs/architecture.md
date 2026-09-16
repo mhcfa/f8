@@ -122,6 +122,8 @@ Modifying presentation labels, formatting rules, or table placement never invali
 
 Detailed specifications and engine designs are organized into dedicated topics:
 
+- **System & Codebase**:
+  - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
   - [Addressing Syntax](dsl/addressing.md): Reference syntax, active period (`[@]`), temporal offsets, and slicing.
   - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.
