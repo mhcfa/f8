@@ -12,7 +12,7 @@ Traditional financial modeling conflates business logic, multi-dimensional time 
 
 ---
 
-## 2. Compilation Pipeline
+## 2. Compilation & Evaluation Pipeline
 
 ```mermaid
 flowchart TD
@@ -25,21 +25,32 @@ flowchart TD
         E --> F["Dependency Graph & Cycle Detector"]
         F --> G{"Cycles Detected?"}
         G -->|"Yes"| H["Emit Semantic Cycle Trace & Halt"]
-        G -->|"No"| I["Spatial Layout Planner"]
-        I --> J["Formula Lowering Engine"]
+        G -->|"No"| I["Topological Sorter"]
+
+        subgraph In-Memory Evaluation ["Headless Runtime"]
+            I --> J1["In-Memory Evaluator"]
+            J1 --> K1["Function Registry\n(Excel Built-ins)"]
+            J1 --> L1["Evaluated Cell Matrix\n(Queryable by Agent & CLI)"]
+        end
+
+        subgraph Excel Emission ["Workbook Compiler"]
+            I --> J2["Spatial Layout Planner"]
+            J2 --> K2["Formula Lowering Engine"]
+            K2 --> L2["Excel Binary Emitter\n(rust_xlsxwriter)"]
+        end
     end
 
-    J --> K["Excel Binary Emitter (rust_xlsxwriter)"]
-    K --> L[".xlsx Workbook (Live Formulas)"]
+    L2 --> M[".xlsx Workbook (Live Formulas)"]
 ```
 
-The pipeline operates across five primary passes:
+The pipeline operates across six primary passes:
 
-1. **Ingest & Parse**: Deserializes specifications and parses formula expressions into AST nodes.
+1. **Ingest & Parse**: Deserializes specifications, verifies function signatures against the function registry, and parses formula expressions into AST nodes.
 2. **Grid Expansion**: Expands table rows across defined columns into discrete cell-level intermediate representation (`CellId`).
 3. **Dependency Graph & SCC**: Constructs a directed dependency graph and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
-4. **Spatial Layout Planning**: Arranges tables onto sheets with automated spacing, gutter planning, and freeze panes.
-5. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`) and writes standard `.xlsx` files.
+4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity for agent inspection and compile-time validation.
+5. **Spatial Layout Planning**: Arranges tables onto sheets with automated spacing, gutter planning, and freeze panes.
+6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`) and writes standard `.xlsx` files.
 
 ---
 
@@ -96,6 +107,8 @@ Modifying presentation labels, formatting rules, or table placement never invali
 | **Data deserialization** | `serde`, `serde_json`               | Type-safe schema validation and project ingestion                     |
 | **Formula parser**       | `winnow`                            | Pratt-parsing formula expressions into AST representations            |
 | **Graph engine**         | `petgraph`                          | Directed dependency graph, topological sort, cycle isolation          |
+| **In-memory evaluator**  | Native Rust engine                  | Topological DAG execution with 100% Excel calculation parity          |
+| **Function catalog**     | Extensible registry pattern         | Single source of truth for Excel built-in functions                   |
 | **Workbook emitter**     | `rust_xlsxwriter`                   | Fast generation of native `.xlsx` files with live formulas and styles |
 | **CLI framework**        | `clap`                              | Command-line interface for human developers                           |
 | **Agent protocol**       | Stdio JSON-RPC (`rmcp`)             | Model Context Protocol server for AI agents                           |
@@ -113,6 +126,8 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **Compiler Internals**:
   - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, `CellId` structure, and grid expansion.
   - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
+  - [Function Registry](compiler/function-registry.md): Extensible function catalog, signatures, and built-ins.
+  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and Excel parity.
   - [Layout & Lowering](compiler/layout-and-lowering.md): Spatial table stacking, coordinate translation, and formula lowering.
 - **Interfaces**:
   - [CLI](interfaces/cli.md): Command-line interface (in design).

@@ -73,4 +73,4 @@ pub trait CycleHandler {
 
 In V1, the default implementation is `StrictDagHandler`, which errors on any cycle. Future versions can introduce optional iterative solver plugins without modifying the core compiler pipeline.
 
-See [Intermediate Representation (IR)](ir.md) for node definitions and [Layout & Lowering](layout-and-lowering.md) for the subsequent compilation stage.
+See [Intermediate Representation (IR)](ir.md) for node definitions, [In-Memory Evaluator](evaluator.md) for DAG execution, and [Layout & Lowering](layout-and-lowering.md) for Excel coordinate emission.
