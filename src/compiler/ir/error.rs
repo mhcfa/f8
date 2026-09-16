@@ -40,4 +40,21 @@ pub enum IrError {
 
     #[error("table '{table}' contains no columns")]
     EmptyTable { table: TableId },
+
+    #[error("formula parse error in table '{table}', row '{row}'{}: {source}", column.as_ref().map(|c| format!(", col '{c}'")).unwrap_or_default())]
+    FormulaParse {
+        table: TableId,
+        row: RowId,
+        column: Option<ColId>,
+        source: crate::expr::error::ParseError,
+    },
+
+    #[error("model validation error: {0}")]
+    Model(String),
+}
+
+impl From<crate::model::error::ModelError> for IrError {
+    fn from(err: crate::model::error::ModelError) -> Self {
+        Self::Model(err.to_string())
+    }
 }

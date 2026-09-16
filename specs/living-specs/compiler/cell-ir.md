@@ -15,12 +15,15 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
   - `finx::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
   - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
   - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, and group catalogs.
+  - `finx::compiler::ir::expand`: Grid expansion algorithms (`expand_table`, `expand_grid`, `expand_workbook`) unrolling table specifications into discrete cell nodes.
   - `finx::compiler::ir::error`: Structured domain errors (`IrError`).
   - `finx::model::id`: Strongly typed identifier wrappers including `SheetId`.
 - **Data flow & interfaces**:
   1. `TableSpec` $\rightarrow$ `SymbolTable::register_table(sheet_id, &table)` $\rightarrow$ Validates global table uniqueness and indexes column/row positions.
-  2. Expanded cell nodes $\rightarrow$ `CellGrid::insert(cell)` $\rightarrow$ Stores nodes in insertion order with duplicate rejection.
-  3. `CellGrid` and `SymbolTable` are consumed by downstream compiler passes (`compiler::graph` for dependency DAG construction and `compiler::eval` for runtime evaluation).
+  2. `TableSpec` + `SymbolTable` $\rightarrow$ `expand_table(&symbol_table, &table)` $\rightarrow$ Unrolls literal, formula, or match arm rows into `Vec<CellNode>`.
+  3. `expand_grid(&symbol_table, &tables)` $\rightarrow$ Populates `CellGrid` preserving declaration order (`table -> row -> col`).
+  4. `ProjectManifest` + `&[TableSpec]` $\rightarrow$ `expand_workbook(&manifest, tables)` $\rightarrow$ Synchronizes symbol registration and grid expansion.
+  5. `CellGrid` and `SymbolTable` are consumed by downstream compiler passes (`compiler::graph` for dependency DAG construction and `compiler::eval` for runtime evaluation).
 - **Dependencies**:
   - `indexmap`: Guarantees deterministic iteration ordering for reproducible compilation.
   - `thiserror`: Structured diagnostic domain error hierarchy.
@@ -81,3 +84,28 @@ Each table in a workbook must belong to exactly one sheet. The `SymbolTable` enf
 - **Sheet catalog iteration**:
   - **When** invoking `sheet_ids`
   - **Then** yields all registered sheet identifiers in registration order.
+
+### 4. Grid Expansion & Row Unrolling
+
+`expand_table`, `expand_grid`, and `expand_workbook` expand high-level row definitions across declared table columns into discrete `CellNode` calculation nodes within a deterministic `CellGrid`.
+
+#### Scenarios
+
+- **Literal row unrolling**:
+  - **When** expanding a row with literal values across $N$ columns
+  - **Then** emits $N$ cells with `CellPayload::Literal` containing corresponding values.
+- **Uniform formula row expansion**:
+  - **When** expanding a row with a formula string across $N$ columns
+  - **Then** parses the formula expression once and assigns identical `CellPayload::Formula(Expr)` across all $N$ cells.
+- **Partitioned match arm unrolling**:
+  - **When** expanding a row partitioned by match arms (`single`, `range`, or `group`)
+  - **Then** resolves target columns and emits cells in strict `table.columns` order with appropriate literal or formula payloads.
+- **Metadata and format preset propagation**:
+  - **When** expanding rows with formatting presets, notes, and provenance
+  - **Then** all cells inherit row-level format presets, while arm notes and sources override row-level metadata if present.
+- **Actionable formula parse errors**:
+  - **When** expanding a row containing invalid formula syntax
+  - **Then** returns `IrError::FormulaParse` identifying the table, row, and exact parser failure.
+- **End-to-end workbook orchestration**:
+  - **When** invoking `expand_workbook(manifest, tables)`
+  - **Then** registers all tables on their declared sheets and expands all tables into a synchronized `CellGrid`.
