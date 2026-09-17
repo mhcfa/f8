@@ -141,11 +141,15 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **System & Codebase**:
   - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
+  - [Specification Format](dsl/spec-format.md): Multi-file JSON schemas, table structure, axis roles, and invariants.
+  - [Column & Row Groups](dsl/groups.md): Structured super-headers, timeline groupings, and hierarchical row outlines.
+  - [Semantic Formatting & Themes](dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.
   - [Addressing Syntax](dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets, and slicing.
   - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.
-  - [Specification Format](dsl/spec-format.md): Multi-file JSON schema, table modularity, vector rules, and 2D modeling patterns.
+  - [Modeling Patterns & Archetypes](dsl/patterns.md): Canonical 2D patterns (horizontal statements, cap tables, comps, debt schedules).
+  - [End-to-End Project Example](dsl/project-example.md): Complete 3-file working reference model.
 - **Compiler Internals**:
-  - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, `CellId` structure, and grid expansion.
+  - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, 2D Specificity Resolution Lattice, and grid expansion.
   - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
   - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
   - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.

@@ -9,7 +9,7 @@ target-living-spec: none
 
 ### What
 
-Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D Matrix Model** specified in [`docs/unified-matrix-model.md`](../../docs/unified-matrix-model.md). Completely purge all obsolete conceptual baggage, legacy schemas (`match` blocks, `value` arrays, `RowSpec.label`), hardcoded presentation assumptions ("Columns A & B" stubs), and outdated reference tokens (`@` to `@col`, adding `@row`).
+Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D Matrix Model** specified in [`docs/dsl/spec-format.md`](../../docs/dsl/spec-format.md). Completely purge all obsolete conceptual baggage, legacy schemas (`match` blocks, `value` arrays, `RowSpec.label`), hardcoded presentation assumptions ("Columns A & B" stubs), and outdated reference tokens (`@` to `@col`, adding `@row`).
 
 ### Why
 
@@ -60,7 +60,7 @@ Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D
 ### Goals
 
 1. **Zero legacy residue**: Ensure zero occurrences of purged constructs (`match` arms, `RowSpec.label`, Column A/B stubs) remain in `docs/`.
-2. **Universal consistency**: Every documentation file aligns 100% with [`docs/unified-matrix-model.md`](../../docs/unified-matrix-model.md).
+2. **Universal consistency**: Every documentation file aligns 100% with the unified 2D matrix model.
 3. **Clean relative links**: Maintain valid cross-references across all markdown files.
 
 ### Invariants

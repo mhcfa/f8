@@ -42,4 +42,4 @@ flowchart TD
 
 ---
 
-See [Architecture Overview](../architecture.md) for core compiler pipeline details and [Specification Format](../dsl/spec-format.md) for JSON schema definitions.
+See [Architecture Overview](../architecture.md) for core compiler pipeline details, [Specification Format](../dsl/spec-format.md) for JSON schema definitions, and [Modeling Patterns](../dsl/patterns.md) for schedule archetypes.
