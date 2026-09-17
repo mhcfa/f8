@@ -1,6 +1,6 @@
 # Specification Format
 
-This document details Finx's multi-file JSON specification schema, table modularity, row partitioning rules, and authoring patterns.
+This document details Finx's multi-file JSON specification schema, orthogonal 2D matrix data model, axis roles, vector rules, and authoring patterns.
 
 ## 1. Project Architecture Overview
 
@@ -51,8 +51,8 @@ The root manifest defines workbook-level metadata and physical sheet presentatio
 
 ### Vertical Table Stacking & Modularity
 When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/spatial-layout.md) stacks them vertically in the exact order listed, inserting standard blank-row gutters between tables:
-- **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans (e.g. stacking a 1-column assumptions table above a 5-column forecast table is completely valid).
-- **Physical anchoring**: Each table anchors its row stub labels and data columns at standard sheet offsets (Columns A/B for stubs, Column C onward for data columns).
+- **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans (e.g. stacking a 2-column assumptions table above a 7-column forecast table is completely valid).
+- **Physical anchoring**: Each table maps its declared columns $0 \dots C-1$ directly to worksheet column offsets, anchored by explicit descriptor columns without implicit Column A/B stubs.
 - **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table[row, col]`), remaining fully isolated from the physical row and column placement on the sheet.
 - **Column width resolution**: Physical column widths resolve to the maximum required width across all stacked tables sharing that column.
 
@@ -60,13 +60,23 @@ When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler
 
 ## 3. Table Specification Schema (`tables/<id>.json`)
 
-Each table file defines the calculation dimensions, optional column groups, and row definitions for a single table:
+Each table file defines an orthogonal 2D matrix with symmetrical row and column axes:
 
 ```json
 {
   "id": "string",
   "title": "string",
-  "columns": ["string"],
+  "columns": [
+    {
+      "id": "string",
+      "role": "measure | descriptor (optional, default: measure)",
+      "label": "string (optional, defaults to id)",
+      "format": "FormatPreset (optional)",
+      "expr": "string (optional, column-wide vector formula)",
+      "note": "string (optional)",
+      "source": "string or object (optional)"
+    }
+  ],
   "column_groups": [
     {
       "id": "string",
@@ -84,183 +94,297 @@ Each table file defines the calculation dimensions, optional column groups, and 
   "rows": [
     {
       "id": "string",
-      "label": "string",
+      "role": "measure | descriptor (optional, default: measure)",
       "format": "FormatPreset (optional)",
+      "expr": "string (optional, row-wide vector formula)",
       "note": "string (optional)",
       "source": "string or object (optional)",
-      "value": ["number | string | null (exactly one of value/expr/match)"],
-      "expr": "string (exactly one of value/expr/match)",
-      "match": {
-        "<column_id | col_a..col_b | cols.group_id>": {
-          "value": ["number | string | null (exactly one of value/expr)"],
-          "expr": "string (exactly one of value/expr)",
-          "note": "string (optional)",
-          "source": "string or object (optional)"
-        }
+      "cells": {
+        "<col_id>": "ValueLiteral | { \"expr\": \"string\" } | DetailedCellInput"
       }
     }
   ]
 }
 ```
+
+### 3.1. Cell Input Syntax (`cells`)
+Every key in the `cells` map represents strictly one discrete column identifier (`ColId`). Each value represents strictly one cell (0D point override) and must be one of:
+- **Number literal**: `100000.0` or `42`
+- **String literal**: `"Total Revenue"` or `"USD"`
+- **Boolean literal**: `true` or `false`
+- **Explicit empty**: `null`
+- **Formula object**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`
+- **Detailed override object**: `{ "value": 85000, "note": "Audited actuals", "format": "currency" }`
+
+Positional arrays and string prefix hacks (e.g. `=`) are completely eliminated in favor of typed objects.
 
 ---
 
 ## 4. Core Invariants
 
-- **Canonical core & agent-first IR**: Specifications strictly enforce unambiguous forms with zero implicit type coercion, broadcasting, or hidden defaults. The schema is designed as an intermediate representation (IR) optimized for deterministic synthesis by AI agents and rigorous compiler verification.
-- **Universal column semantics**: Column identifiers (`ColId`) in `columns` are user-defined strings. Columns are not restricted to chronological timelines; they can represent units (`"unit"`), categorical metadata (`"segment"`, `"class"`), scenarios (`"Bull"`, `"Base"`), or multi-directional metrics (`"shares"`, `"ownership_pct"`). Every column declared in `columns` is an addressable coordinate in the table grid (`Table[row, col]`).
-- **Mutually exclusive row payload**: A row definition must specify exactly one calculation payload: `value`, `expr`, or `match`. Specifying multiple payloads or omitting all three produces a compile-time schema error. Similarly, within each `match` arm, exactly one of `value` or `expr` must be specified.
-- **Explicit input arrays**: All literal inputs are provided as explicit arrays: `"value": [...]`.
-- **Strict 1-to-1 dimension match**: The length of `value` must equal the number of targeted columns (`len(value) == len(target_columns)`). Single-cell inputs require single-element arrays: `"value": [0.25]`.
-- **Explicit empty cells**: Empty cells must be explicitly represented with `null`, e.g. `[null, 92000, 100000]`.
-- **Disjoint & exhaustive partitioning (`match`)**: The `match` block is the sole mechanism for varying behavior across columns. Every column in the table's `columns` array must be covered by **exactly one** match arm. Overlapping selectors and uncovered columns produce compile-time errors. Catch-all wildcards or `default` arms are strictly prohibited in favor of explicit coordinates or groups.
-- **Match selector grammar**: Each key in a `match` object must be one of:
-  - Single column ID: e.g. `"2024E"`.
-  - Bounded contiguous range: e.g. `"2021A..2023A"` (start column must precede end column in `columns`).
-  - Column group alias: e.g. `"cols.forecast"`.
-- **Payload cardinality**: In an arm targeting $k$ columns:
-  - `value`: Array of literals of exact length $k$ (`len(value) == k`).
-  - `expr`: Scalar formula string evaluated dynamically across each column in the matched partition.
+- **Orthogonal 2D matrix**: A table is an $R \times C$ grid of addressable cells $(row, col)$. Both row and column dimensions are symmetrical first-class calculation axes in the compiler intermediate representation (`Matrix2D`).
+- **Explicit axis roles**: Both columns and rows declare their functional semantic role:
+  - `role: "descriptor"`: Categorical labels, line item descriptions, units, tickers, or metadata. Serves as the anchor for hierarchy indentation and presentation stubs.
+  - `role: "measure"`: Numerical data, financial time series, and calculation outputs (default).
+- **Vector rule isolation**: Vector formulas (`row.expr`, `col.expr`) and vector formats broadcast strictly across opposing `measure` axes. They never bleed into or evaluate across `descriptor` axes.
+- **Every column is explicit**: Every physical column rendered on a worksheet maps 1:1 to an explicit column declaration in `columns`. The compiler never injects implicit, unaddressed stub columns (e.g. magic Columns A and B).
+- **Three-tier specificity lattice**: Cell properties resolve through a deterministic 3-tier hierarchy:
+  $$\text{Cell Override (0D Point)} > \text{Vector Rule (1D Row or Column)} > \text{Explicit Null}$$
+- **Zero silent precedence**: If both a row rule and a column rule target the same measure cell without an explicit cell override, the compiler halts with a hard `AmbiguousExpressionConflict` error.
+- **Zero silent blanks**: Every measure cell must resolve to a value, formula, or an explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`. Silent fallback to Excel zeros is strictly prohibited.
+- **Strictly typed 1-to-1 cell inputs**: The `cells` map pairs a single column identifier (`ColId`) directly to a single cell payload (`CellInput`). Every entry represents strictly one cell.
+- **Symmetrical coordinate referencing**: Formula references use symmetrical active tokens: `@row` for the active row and `@col` for the active column (`Table[@row, "shares"]`, `Table["revenue", @col]`), along with symmetrical temporal offsets (`col.prev` / `col.next` along columns and `row.prev` / `row.next` along rows).
 - **Semantic format tokens**: The `format` field accepts strictly enumerated semantic format tokens (`currency`, `currency_total`, `percentage`, `multiple`, `integer`, `decimal`, `basis_points`, `date`, `text`). Raw Excel format masks or arbitrary pattern strings are prohibited. Presentation typography, number format strings, and accounting borders are resolved through the workbook's pluggable `theme`.
-- **First-class notes & provenance**: Use the `note` or `source` fields to record model notes and data provider provenance. These survive serialization and compile into native Excel cell comments.
+- **First-class notes & provenance**: Use the `note` or `source` fields on cells, rows, or columns. These resolve via `Cell > Row > Col` precedence and compile into native Excel cell comments.
 
 ---
 
-## 5. Row Authoring Patterns
+## 5. Modeling Patterns & Archetypes
 
-### 5.1. Uniform Calculation Across All Columns
+### 5.1. Horizontal Financial Statement (Income Statement)
 
-When a formula applies identically to all columns in a table:
-
-```json
-{
-  "id": "gross_profit",
-  "label": "Gross Profit",
-  "format": "currency_total",
-  "expr": "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]"
-}
-```
-
-### 5.2. Single Assumption (1-Column Table)
-
-Assumptions and global parameters are modeled as single-column tables:
+Formulas and formatting are primarily row-driven. Descriptor columns (`line_item`, `unit`) isolate labels and metadata from calculations:
 
 ```json
 {
-  "id": "tax_rate",
-  "label": "Corporate Tax Rate",
-  "format": "percentage",
-  "value": [0.25],
-  "note": "Statutory corporate federal + blended state tax rate"
-}
-```
-
-### 5.3. Partitioned Row (Historical Actuals vs Forecast)
-
-Separates hardcoded historical values from formula-driven forecast projections:
-
-```json
-{
-  "id": "revenue",
-  "label": "Total Revenue",
-  "format": "currency",
-  "match": {
-    "2021A..2023A": { "value": [85000, 92000, 100000] },
-    "2024E..2028E": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
-  }
-}
-```
-
-### 5.4. Corkscrew Roll-Forward with Base Anchor
-
-Models balance sheet or debt roll-forwards with an explicit initial period and explicit roll-forward range:
-
-```json
-{
-  "id": "beginning_cash",
-  "label": "Beginning Cash Balance",
-  "format": "currency",
-  "match": {
-    "2024E": { "expr": "Assumptions[\"initial_cash\", \"value\"]" },
-    "2025E..2028E": { "expr": "BalanceSheet[\"ending_cash\", col.prev]" }
-  }
-}
-```
-
-### 5.5. Mixing Units & Metadata with Timeseries Columns
-
-When declaring metadata columns (such as `"unit"`) alongside a financial timeline:
-
-```json
-{
-  "id": "revenue",
-  "label": "Total Revenue",
-  "format": "currency",
-  "match": {
-    "unit": { "expr": "Assumptions[\"reporting_currency\", \"value\"]" },
-    "2023A": { "value": [100000.0] },
-    "2024E..2028E": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
-  }
-}
-```
-
-- **Partition isolation**: The `match` block isolates the text/metadata column from numeric operations, avoiding `#VALUE!` errors in Excel.
-- **Dynamic references**: The unit cell is a full calculation citizen (`IncomeStatement["revenue", "unit"]`) that can evaluate formulas referencing global parameters or be referenced by other tables.
-
-### 5.6. Capitalization Table (Cap Table / General Tabular Matrix)
-
-For non-temporal matrices where calculations vary by column rather than across time:
-
-```json
-{
-  "id": "CapTable",
-  "title": "Capitalization Table",
-  "columns": ["investor", "share_class", "shares", "share_price", "invested_capital", "ownership_pct"],
+  "id": "IncomeStatement",
+  "title": "Income Statement",
+  "columns": [
+    { "id": "line_item", "role": "descriptor", "label": "Line Item" },
+    { "id": "unit", "role": "descriptor", "label": "Unit" },
+    { "id": "2021A", "label": "2021A" },
+    { "id": "2022A", "label": "2022A" },
+    { "id": "2023A", "label": "2023A" },
+    { "id": "2024E", "label": "2024E" },
+    { "id": "2025E", "label": "2025E" }
+  ],
+  "column_groups": [
+    { "id": "historical", "label": "Historical Actuals", "columns": ["2021A", "2022A", "2023A"] },
+    { "id": "forecast", "label": "Forecast Projections", "columns": ["2024E", "2025E"] }
+  ],
   "rows": [
     {
-      "id": "series_a",
-      "label": "Series A Lead Investor",
-      "match": {
-        "investor": { "value": ["Acme Capital"] },
-        "share_class": { "value": ["Preferred"] },
-        "shares": { "value": [2500000] },
-        "share_price": { "value": [2.00] },
-        "invested_capital": { "expr": "CapTable[\"series_a\", \"shares\"] * CapTable[\"series_a\", \"share_price\"]" },
-        "ownership_pct": { "expr": "CapTable[\"series_a\", \"shares\"] / CapTable[\"total\", \"shares\"]" }
+      "id": "revenue",
+      "format": "currency",
+      "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08",
+      "cells": {
+        "line_item": "Total Revenue",
+        "unit": "USD",
+        "2021A": 85000,
+        "2022A": 92000,
+        "2023A": 100000
+      }
+    },
+    {
+      "id": "cogs",
+      "format": "currency",
+      "expr": "IncomeStatement[\"revenue\", @col] * 0.45",
+      "cells": {
+        "line_item": "Cost of Goods Sold",
+        "unit": "USD"
+      }
+    },
+    {
+      "id": "gross_profit",
+      "format": "currency_total",
+      "expr": "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
+      "cells": {
+        "line_item": "Gross Profit",
+        "unit": "USD"
+      }
+    },
+    {
+      "id": "gross_margin",
+      "format": "percentage",
+      "expr": "IncomeStatement[\"gross_profit\", @col] / IncomeStatement[\"revenue\", @col]",
+      "cells": {
+        "line_item": "Gross Margin",
+        "unit": "%"
       }
     }
   ]
 }
 ```
 
-### 5.7. Vertical Schedule (Time on Rows, Metrics on Columns)
+### 5.2. Vertical Schedule (Capitalization Table)
 
-For vertical amortization waterfalls or schedules where rows represent time periods and columns represent metrics:
+Formulas and formatting are column-driven. Rows supply data inputs, with point overrides taking precedence when needed:
+
+```json
+{
+  "id": "CapTable",
+  "title": "Capitalization Table",
+  "columns": [
+    { "id": "investor", "role": "descriptor", "label": "Investor Name" },
+    { "id": "share_class", "role": "descriptor", "label": "Share Class" },
+    { "id": "shares", "label": "Shares Held", "format": "integer" },
+    { "id": "share_price", "label": "Issue Price", "format": "currency" },
+    {
+      "id": "invested_capital",
+      "label": "Invested Capital",
+      "format": "currency",
+      "expr": "CapTable[@row, \"shares\"] * CapTable[@row, \"share_price\"]"
+    },
+    {
+      "id": "ownership_pct",
+      "label": "Ownership %",
+      "format": "percentage",
+      "expr": "CapTable[@row, \"shares\"] / CapTable[\"total\", \"shares\"]"
+    }
+  ],
+  "rows": [
+    {
+      "id": "founders",
+      "cells": {
+        "investor": "Founding Team",
+        "share_class": "Common",
+        "shares": 5000000,
+        "share_price": 0.001,
+        "invested_capital": 5000.0
+      }
+    },
+    {
+      "id": "series_seed",
+      "cells": {
+        "investor": "First Step Capital",
+        "share_class": "Seed Preferred",
+        "shares": 1200000,
+        "share_price": 1.25
+      }
+    },
+    {
+      "id": "series_a",
+      "cells": {
+        "investor": "Acme Ventures",
+        "share_class": "Series A Preferred",
+        "shares": 2500000,
+        "share_price": 2.00
+      }
+    },
+    {
+      "id": "total",
+      "format": "currency_total",
+      "cells": {
+        "investor": "Total",
+        "shares": { "expr": "SUM(CapTable[\"founders\"..\"series_a\", \"shares\"])" },
+        "share_price": null,
+        "invested_capital": { "expr": "SUM(CapTable[\"founders\"..\"series_a\", \"invested_capital\"])" },
+        "ownership_pct": 1.0
+      }
+    }
+  ]
+}
+```
+
+### 5.3. Cross-Footing Conflict & Resolution
+
+When a summary row intersects a summary column, both vector rules collide. An explicit cell override resolves the collision:
+
+```json
+{
+  "id": "Matrix",
+  "columns": [
+    { "id": "q1" },
+    { "id": "q2" },
+    { "id": "total", "expr": "SUM(Matrix[@row, \"q1\"..\"q2\"])" }
+  ],
+  "rows": [
+    { "id": "a", "cells": { "q1": 10, "q2": 20 } },
+    { "id": "b", "cells": { "q1": 30, "q2": 40 } },
+    {
+      "id": "sum_ab",
+      "expr": "Matrix[\"a\", @col] + Matrix[\"b\", @col]",
+      "cells": {
+        "total": { "expr": "Matrix[\"a\", \"total\"] + Matrix[\"b\", \"total\"]" }
+      }
+    }
+  ]
+}
+```
+
+### 5.4. Transposed Entity Schedule (Public Comps)
+
+In a transposed peer comparison table, entities are columns and metrics are rows:
+
+```json
+{
+  "id": "PeerComps",
+  "title": "Public Comps",
+  "columns": [
+    { "id": "metric", "role": "descriptor", "label": "Metric" },
+    { "id": "AAPL", "label": "Apple Inc." },
+    { "id": "MSFT", "label": "Microsoft Corp." },
+    { "id": "GOOG", "label": "Alphabet Inc." }
+  ],
+  "rows": [
+    {
+      "id": "ticker",
+      "role": "descriptor",
+      "cells": {
+        "metric": "Ticker Symbol",
+        "AAPL": "AAPL",
+        "MSFT": "MSFT",
+        "GOOG": "GOOG"
+      }
+    },
+    {
+      "id": "share_price",
+      "format": "currency",
+      "cells": {
+        "metric": "Share Price",
+        "AAPL": 180.50,
+        "MSFT": 420.00,
+        "GOOG": 175.25
+      }
+    }
+  ]
+}
+```
+
+### 5.5. Vertical Schedule (Debt Amortization with `row.prev`)
+
+For vertical amortization schedules where rows represent time periods and columns represent metrics:
 
 ```json
 {
   "id": "DebtSchedule",
   "title": "Senior Debt Amortization",
-  "columns": ["beg_balance", "interest", "repayment", "end_balance"],
+  "columns": [
+    { "id": "period", "role": "descriptor", "label": "Period" },
+    {
+      "id": "beg_balance",
+      "label": "Beginning Balance",
+      "format": "currency",
+      "expr": "DebtSchedule[row.prev, \"end_balance\"]"
+    },
+    {
+      "id": "interest",
+      "label": "Interest Expense",
+      "format": "currency",
+      "expr": "DebtSchedule[@row, \"beg_balance\"] * (Assumptions[\"interest_rate\", \"value\"] / 12)"
+    },
+    { "id": "repayment", "label": "Principal Repayment", "format": "currency" },
+    {
+      "id": "end_balance",
+      "label": "Ending Balance",
+      "format": "currency",
+      "expr": "DebtSchedule[@row, \"beg_balance\"] - DebtSchedule[@row, \"repayment\"]"
+    }
+  ],
   "rows": [
     {
       "id": "period_1",
-      "label": "Month 1",
-      "match": {
+      "cells": {
+        "period": "Month 1",
         "beg_balance": { "expr": "Assumptions[\"initial_debt\", \"value\"]" },
-        "interest": { "expr": "DebtSchedule[\"period_1\", \"beg_balance\"] * (Assumptions[\"interest_rate\", \"value\"] / 12)" },
-        "repayment": { "value": [50000.0] },
-        "end_balance": { "expr": "DebtSchedule[\"period_1\", \"beg_balance\"] - DebtSchedule[\"period_1\", \"repayment\"]" }
+        "repayment": 50000.0
       }
     },
     {
       "id": "period_2",
-      "label": "Month 2",
-      "match": {
-        "beg_balance": { "expr": "DebtSchedule[\"period_1\", \"end_balance\"]" },
-        "interest": { "expr": "DebtSchedule[\"period_2\", \"beg_balance\"] * (Assumptions[\"interest_rate\", \"value\"] / 12)" },
-        "repayment": { "value": [50000.0] },
-        "end_balance": { "expr": "DebtSchedule[\"period_2\", \"beg_balance\"] - DebtSchedule[\"period_2\", \"repayment\"]" }
+      "cells": {
+        "period": "Month 2",
+        "repayment": 50000.0
       }
     }
   ]
@@ -271,7 +395,7 @@ For vertical amortization waterfalls or schedules where rows represent time peri
 
 ## 6. Column Groups & Structured Super-Headers
 
-Columns can be grouped into semantic phases or analytical categories using the `column_groups` block. This supports both chronological timelines (e.g. historical actuals vs forecast projections) and general tabular groupings (e.g. trading comps or scenario analysis).
+Columns can be grouped into semantic phases or analytical categories using the `column_groups` block:
 
 ### 6.1. Financial Statement Timeline Example
 
@@ -319,17 +443,14 @@ Columns can be grouped into semantic phases or analytical categories using the `
   - Boundaries: `cols.historical.last`, `cols.forecast.first`.
   - Full range slicing: `SUM(IncomeStatement["revenue", cols.forecast])` or `SUM(Comps["market_cap", cols.market_data])`.
 - **Automated styling**: The layout engine detects boundaries between adjacent column groups and applies standard vertical dividing borders.
-- **Timeline calculations**: Dynamic timing metrics (such as period fractions, discount periods, and day counts) must be defined as dedicated calculation rows within `rows`, keeping headers strictly declarative and coordinates static.
 
 ---
 
 ## 7. Row Groups & Hierarchical Sections
 
-Rows can be organized into structural sections and calculation aggregates using the recursive `row_groups` block. This models the nested hierarchies common in financial statements (such as Balance Sheets and OpEx schedules) while keeping the underlying `rows` array as the single source of truth for calculations.
+Rows can be organized into structural sections and calculation aggregates using the recursive `row_groups` block.
 
 ### 7.1. Single-Level Row Group Example (OpEx)
-
-For tables with flat sections, groups list targeted row IDs in `children`:
 
 ```json
 {
@@ -341,22 +462,22 @@ For tables with flat sections, groups list targeted row IDs in `children`:
     }
   ],
   "rows": [
-    { "id": "r_and_d", "label": "Research & Development", "expr": "..." },
-    { "id": "sales_marketing", "label": "Sales & Marketing", "expr": "..." },
-    { "id": "g_and_a", "label": "General & Administrative", "expr": "..." },
+    { "id": "r_and_d", "expr": "..." },
+    { "id": "sales_marketing", "expr": "..." },
+    { "id": "g_and_a", "expr": "..." },
     {
       "id": "total_opex",
-      "label": "Total Operating Expenses",
       "format": "currency_total",
-      "expr": "SUM(IncomeStatement[rows.opex, @])"
+      "expr": "SUM(IncomeStatement[rows.opex, @col])",
+      "cells": {
+        "line_item": "Total Operating Expenses"
+      }
     }
   ]
 }
 ```
 
 ### 7.2. Multi-Level Nested Hierarchy Example (Balance Sheet)
-
-For multi-tier statements, parent groups nest sub-groups recursively using `children`:
 
 ```json
 {
@@ -379,74 +500,50 @@ For multi-tier statements, parent groups nest sub-groups recursively using `chil
     }
   ],
   "rows": [
-    { "id": "cash", "label": "Cash & Cash Equivalents", "match": { ... } },
-    { "id": "accounts_receivable", "label": "Accounts Receivable", "expr": "..." },
-    { "id": "inventory", "label": "Inventories", "expr": "..." },
+    { "id": "cash", "cells": { "line_item": "Cash & Cash Equivalents" } },
+    { "id": "accounts_receivable", "expr": "..." },
+    { "id": "inventory", "expr": "..." },
     {
       "id": "total_current_assets",
-      "label": "Total Current Assets",
       "format": "currency_total",
-      "expr": "SUM(BalanceSheet[rows.current_assets, @])"
+      "expr": "SUM(BalanceSheet[rows.current_assets, @col])",
+      "cells": { "line_item": "Total Current Assets" }
     },
-    { "id": "ppe", "label": "Property, Plant & Equipment", "expr": "..." },
-    { "id": "goodwill", "label": "Goodwill", "expr": "..." },
-    { "id": "intangibles", "label": "Intangibles", "expr": "..." },
+    { "id": "ppe", "expr": "..." },
+    { "id": "goodwill", "expr": "..." },
+    { "id": "intangibles", "expr": "..." },
     {
       "id": "total_non_current_assets",
-      "label": "Total Non-Current Assets",
       "format": "currency_total",
-      "expr": "SUM(BalanceSheet[rows.non_current_assets, @])"
+      "expr": "SUM(BalanceSheet[rows.non_current_assets, @col])",
+      "cells": { "line_item": "Total Non-Current Assets" }
     },
     {
       "id": "total_assets",
-      "label": "Total Assets",
       "format": "currency_total",
-      "expr": "BalanceSheet[\"total_current_assets\", @] + BalanceSheet[\"total_non_current_assets\", @]"
+      "expr": "BalanceSheet[\"total_current_assets\", @col] + BalanceSheet[\"total_non_current_assets\", @col]",
+      "cells": { "line_item": "Total Assets" }
     }
   ]
 }
 ```
 
-### 7.3. Mixed Hierarchy Example
-
-Groups can also combine direct row IDs and nested sub-groups within the same `children` array:
-
-```json
-{
-  "row_groups": [
-    {
-      "id": "opex",
-      "label": "Operating Expenses",
-      "children": [
-        "depreciation",
-        {
-          "id": "marketing",
-          "label": "Marketing Expenses",
-          "children": ["digital_ads", "events"]
-        },
-        "general_admin"
-      ]
-    }
-  ]
-}
-```
-
-### 7.4. Invariants & Compiler Behaviors
+### 7.3. Invariants & Compiler Behaviors
 - **Unified member hierarchy**: Every group node contains `children`, which can hold row ID strings (referencing calculation line items in `rows`) and/or nested `RowGroup` objects.
 - **Contiguity invariant**: The flattened descendant row IDs of any group must form an exact contiguous sub-slice of the table's `rows` array.
 - **Disjoint row membership**: Every row ID can appear at most once across the entire `row_groups` tree.
 - **Subtotal exclusion**: Subtotal rows (e.g. `total_current_assets`) must **not** be members of the group they aggregate. They sit immediately after the group in `rows`, avoiding circular self-references and ensuring summary lines remain visible during outline collapse.
-- **Formula range lowering**: Group tokens (`rows.<group>`) resolve to the contiguous vertical slice of all flattened descendant row IDs of that group (e.g. `SUM(Table[rows.opex, @])` or `SUM(BalanceSheet[rows.assets, @])`). Both leaf and parent groups can be referenced in formulas as long as their descendant rows are contiguous.
-- **Layout generation**:
+- **Formula range lowering**: Group tokens (`rows.<group>`) resolve to the contiguous vertical slice of all flattened descendant row IDs of that group (e.g. `SUM(Table[rows.opex, @col])` or `SUM(BalanceSheet[rows.assets, @col])`).
+- **Layout generation & descriptor anchoring**:
   - Emits section header rows in the physical Excel grid without calculation `CellId` allocations.
-  - Automatically calculates row stub indentation based on nesting depth (depth 0: major header, depth 1: sub-header, depth 2: indented line items).
+  - Automatically applies row stub indentation to the primary descriptor column based on nesting depth (depth 0: major header, depth 1: sub-header, depth 2: indented line items).
   - Emits native Excel collapsible outline levels (`[+]` / `[-]`) corresponding to tree depth.
 
 ---
 
 ## 8. Semantic Formatting & Pluggable Themes
 
-Finx enforces complete decoupling between calculation logic and visual styling. Row definitions declare semantic format intent rather than physical formatting instructions or raw Excel formatting masks.
+Finx enforces complete decoupling between calculation logic and visual styling. Coordinate definitions declare semantic format intent rather than physical formatting instructions or raw Excel formatting masks.
 
 ### 8.1. Standard Format Preset Catalog
 
@@ -464,15 +561,15 @@ The `format` property accepts strictly enumerated semantic presets:
 | `date` | Calendar dates and period markers | `2024-12-31` or `Dec-24` |
 | `text` | Unformatted textual strings | Left-aligned string |
 
-### 8.2. Pluggable Themes
+### 8.2. Format Resolution & Conflict Invariants
+1. **Point override**: An explicit format declared on `CellInput` always wins.
+2. **Descriptor boundary**: Descriptor coordinates isolate text formatting. Measure formats never broadcast to descriptor columns or rows.
+3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify conflicting formats, compilation halts with `FormatConflictError` unless resolved by a point override.
+4. **Single vector format**: If only the row or column specifies a format, that format applies.
 
-The root workbook manifest (`finx.json`) declares the active `theme` (e.g. `"theme": "corporate_navy"`). The theme acts as a pluggable styling provider responsible for:
-- **Number format masks**: Mapping semantic tokens to locale-aware Excel masks (e.g. accounting parentheses vs negative minus signs, zero dashes, currency symbols).
-- **Typography**: Font family, base point size, and weight hierarchy (e.g. bolding on section headers and `currency_total`).
-- **Accounting borders**: Automated insertion of standard financial underlines (top thin, bottom double) on subtotal and total rows.
-- **Palette and accents**: Tab colors, header fills, and column group dividing borders.
+### 8.3. Pluggable Themes
 
-External or organization-specific styling plugins can provide custom themes without modifying any underlying calculation files under `tables/`.
+The root workbook manifest (`finx.json`) declares the active `theme` (e.g. `"theme": "corporate_navy"`). The theme acts as a pluggable styling provider responsible for number format masks, typography, accounting borders, and color palettes.
 
 ---
 
@@ -510,20 +607,27 @@ External or organization-specific styling plugins can provide custom themes with
 {
   "id": "Assumptions",
   "title": "Model Assumptions",
-  "columns": ["value"],
+  "columns": [
+    { "id": "parameter", "role": "descriptor", "label": "Parameter" },
+    { "id": "value", "role": "measure", "label": "Value" }
+  ],
   "rows": [
     {
       "id": "tax_rate",
-      "label": "Corporate Tax Rate",
       "format": "percentage",
-      "value": [0.25],
-      "note": "Federal + blended state rate"
+      "note": "Federal + blended state rate",
+      "cells": {
+        "parameter": "Corporate Tax Rate",
+        "value": 0.25
+      }
     },
     {
       "id": "exit_multiple",
-      "label": "Exit EV / EBITDA Multiple",
       "format": "multiple",
-      "value": [10.0]
+      "cells": {
+        "parameter": "Exit EV / EBITDA Multiple",
+        "value": 10.0
+      }
     }
   ]
 }
@@ -535,7 +639,14 @@ External or organization-specific styling plugins can provide custom themes with
 {
   "id": "IncomeStatement",
   "title": "Income Statement",
-  "columns": ["2023A", "2024E", "2025E", "2026E", "2027E"],
+  "columns": [
+    { "id": "line_item", "role": "descriptor", "label": "Line Item" },
+    { "id": "2023A", "label": "2023A" },
+    { "id": "2024E", "label": "2024E" },
+    { "id": "2025E", "label": "2025E" },
+    { "id": "2026E", "label": "2026E" },
+    { "id": "2027E", "label": "2027E" }
+  ],
   "column_groups": [
     {
       "id": "historical",
@@ -551,31 +662,37 @@ External or organization-specific styling plugins can provide custom themes with
   "rows": [
     {
       "id": "revenue",
-      "label": "Total Revenue",
       "format": "currency",
       "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth",
-      "match": {
-        "2023A": { "value": [100000.0] },
-        "cols.forecast": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
+      "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08",
+      "cells": {
+        "line_item": "Total Revenue",
+        "2023A": 100000.0
       }
     },
     {
       "id": "cogs",
-      "label": "Cost of Goods Sold",
       "format": "currency",
-      "expr": "IncomeStatement[\"revenue\", @] * 0.45"
+      "expr": "IncomeStatement[\"revenue\", @col] * 0.45",
+      "cells": {
+        "line_item": "Cost of Goods Sold"
+      }
     },
     {
       "id": "gross_profit",
-      "label": "Gross Profit",
       "format": "currency_total",
-      "expr": "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]"
+      "expr": "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
+      "cells": {
+        "line_item": "Gross Profit"
+      }
     },
     {
       "id": "tax_expense",
-      "label": "Income Tax Provision",
       "format": "currency",
-      "expr": "IncomeStatement[\"gross_profit\", @] * Assumptions[\"tax_rate\", \"value\"]"
+      "expr": "IncomeStatement[\"gross_profit\", @col] * Assumptions[\"tax_rate\", \"value\"]",
+      "cells": {
+        "line_item": "Income Tax Provision"
+      }
     }
   ]
 }

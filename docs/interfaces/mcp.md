@@ -18,7 +18,7 @@ flowchart TD
 ## 2. Core Architectural Principles
 
 - **Ergonomics in the adapter, purity in the core**: The underlying JSON specification format is an explicit, orthogonal 2D intermediate representation (IR). High-level domain conveniences (such as template scaffolding, timeline generation, and unit column partitioning) live entirely in the MCP tool layer.
-- **Boilerplate absorption**: The MCP server translates concise agent requests into the rigorous, unambiguous JSON required by the compiler (e.g. automatically generating exhaustive `match` arms for metadata columns).
+- **Domain scaffolding**: The MCP server translates concise agent requests into the rigorous, unambiguous JSON required by the compiler (e.g. automatically scaffolding financial statement schemas, axis roles, descriptor columns, and vector rules).
 - **Two-way feedback loop**: The MCP interface provides both write tools (authoring and modifying models) and read tools (inspecting evaluated cell values, dependency graphs, and compile-time cycle traces).
 
 ---
@@ -33,7 +33,7 @@ flowchart TD
 ### 3.2. Table & Model Authoring
 - `finx_create_statement`: Scaffolds standard financial statements (Income Statement, Balance Sheet, Cash Flow) given timeline bounds, unit configurations, and line items.
 - `finx_create_table`: Creates a generalized orthogonal 2D table (Cap Table, Comps, Sensitivity matrix, or Vertical waterfall).
-- `finx_add_row`: Inserts or modifies a calculation row, automatically handling `match` partitioning for metadata or timeline boundaries.
+- `finx_add_row`: Inserts or modifies a calculation row, configuring row vector rules and point cell overrides.
 
 ### 3.3. Compilation, Diagnostics & Inspection
 - `finx_compile`: Executes full compilation, topological DAG sorting, and `.xlsx` emission. Returns structured compilation status.

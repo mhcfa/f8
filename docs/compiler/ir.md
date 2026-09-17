@@ -1,6 +1,6 @@
 # Intermediate Representation (IR)
 
-This document specifies Finx's intermediate representations, focusing on cell-level granularity and the grid expansion pass.
+This document specifies Finx's intermediate representations, focusing on cell-level granularity and the 2D grid expansion pass.
 
 ## 1. Cell-Level IR Granularity
 
@@ -33,25 +33,28 @@ Cell-level IR prevents false-positive cyclic dependency errors.
 
 ---
 
-## 2. Grid Expansion Pass
+## 2. 2D Grid Expansion Pass
 
-The grid expansion pass transforms the high-level specification AST into discrete cell IR nodes:
+The grid expansion pass transforms the high-level specification AST into discrete cell IR nodes using the 3-tier specificity lattice:
 
 ```mermaid
 flowchart TD
-    A["Spec AST (Tables, Rows, Match Arms)"] --> B["Grid Expansion Engine"]
+    A["Spec AST (TableSpec, AxisRoles, Vector Rules, Cells)"] --> B["Grid Expansion Engine (Matrix2D)"]
     B --> C["Symbol Table (TableId -> SheetId)"]
-    B --> D["Resolve Group & Dynamic Aliases\n(e.g. cols.forecast, rows.current_assets)"]
-    B --> E["Unroll Columns & Match Arms"]
+    B --> D["Resolve Group & Dynamic Aliases\n(e.g. @col, @row, cols.forecast)"]
+    B --> E["Evaluate 3-Tier Specificity Lattice\n(Point Override > Vector Rule > Explicit Null)"]
     E --> F["Cell IR Matrix\n(Vec of Cell Nodes with CellId)"]
 ```
 
 ### 2.1. Expansion Responsibilities
 
-1. **Column enumeration**: Iterates over all declared table columns in order.
-2. **Group & dynamic alias resolution**: Resolves dynamic tokens (`col.prev`, `col.next`, `cols.<group>`, `rows.<group>`) into concrete coordinates or bounded range boundaries.
-3. **Partition evaluation**: Matches each column against row definitions, selecting the appropriate literal input or parsed formula expression.
-4. **Dimension verification**: Verifies that literal array lengths match targeted column counts (`len(value) == len(target_columns)`).
+1. **Axis enumeration**: Iterates over all declared table rows and columns $(r, c)$ in declared order.
+2. **First-class cell registration**: Both descriptor coordinates (labels, units, metadata) and measure coordinates are registered as full calculation or literal nodes in the cell grid.
+3. **3-tier specificity resolution**:
+   - **Tier 1 (Point Override)**: Uses explicit 0D point payload from `row.cells[c]` if present.
+   - **Tier 2 (Vector Rules)**: If unassigned and both intersecting axes are `AxisRole::Measure`, evaluates `row.expr` and `col.expr`. If both define an expression without an override, halts with `AmbiguousExpressionConflict`. If only one defines an expression, assigns it.
+   - **Tier 3 (Exhaustive Verification)**: If no payload or rule applies and the cell is not an explicit `null`, halts compilation with `UnassignedCellError`.
+4. **Group & dynamic alias lowering**: Lowers dynamic coordinate tokens (`@col`, `@row`, `col.prev`, `col.next`, `row.prev`, `row.next`, `cols.<group>`, `rows.<group>`) into concrete coordinates or bounded range boundaries.
 
 ---
 
@@ -60,11 +63,13 @@ flowchart TD
 Each expanded cell node contains:
 
 - **Identity**: `CellId` (`TableId`, `RowId`, `ColId`).
+- **Role**: `AxisRole` (`Measure` or `Descriptor`).
 - **Sheet**: Target `SheetId` resolved from the parent table.
 - **Payload**: Either:
-  - `Literal(Value)`: Number, string, or null.
+  - `Literal(ValueLiteral)`: Number, string, boolean, or null.
   - `Formula(AstNode)`: Parsed expression AST containing reference targets.
-- **Formatting**: Optional number format token (e.g. `currency`, `percentage`).
+- **Formatting**: Resolved format preset token (e.g. `currency`, `percentage`, `text`).
+- **Notes & Provenance**: Inherited or overridden note string and provenance metadata.
 - **Spatial Position**: Populated later by the layout engine (`sheet_name`, `col_idx`, `row_idx`).
 
 See [Dependency Graph](dependency-graph.md) for how cell nodes are assembled into a DAG, and [Spatial Layout Planning](spatial-layout.md) for coordinate assignment.

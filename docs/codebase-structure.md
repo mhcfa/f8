@@ -21,7 +21,7 @@ src/
 │   └── error.rs               # Ingestion diagnostics (ModelError)
 │
 ├── expr/                      # Formula expression AST & parser
-│   └── mod.rs                 # Winnow Pratt parser implementing formula grammar
+│   └── mod.rs                 # Pratt parser implementing formula grammar
 │
 ├── value/                     # Runtime value system & parity semantics
 │   └── mod.rs                 # CellValue, ExcelError, and coercion rules

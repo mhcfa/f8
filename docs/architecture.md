@@ -87,11 +87,11 @@ flowchart TD
 
 The architecture strictly decouples semantic identity, visual presentation, and physical grid location:
 
-| Tier                          | Table Axis                  | Row Axis                          | Column Axis                | Responsibility                               | Mutability                                 |
-| :---------------------------- | :-------------------------- | :-------------------------------- | :------------------------- | :------------------------------------------- | :----------------------------------------- |
-| **1. Identity (`id`)**        | `id: "IncomeStatement"`     | `id: "revenue"`                   | `id: "2024E"`              | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
-| **2. Presentation (`label`)** | `title: "Income Statement"` | `label: "Total Net Revenue ($M)"` | `label: "2024 (Forecast)"` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
-| **3. Physical Grid**          | Sheet assignment            | Row offset                        | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
+| Tier                          | Table Axis                  | Row Axis                                            | Column Axis                | Responsibility                               | Mutability                                 |
+| :---------------------------- | :-------------------------- | :-------------------------------------------------- | :------------------------- | :------------------------------------------- | :----------------------------------------- |
+| **1. Identity (`id`)**        | `id: "IncomeStatement"`     | `id: "revenue"`                                     | `id: "2024E"`              | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
+| **2. Presentation**           | `title: "Income Statement"` | Descriptor cell (`line_item: "Total Net Revenue"`) | `label: "2024 (Forecast)"` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
+| **3. Physical Grid**          | Sheet assignment            | Row offset                                          | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
 
 Modifying presentation labels, formatting rules, or table placement never invalidates logic or dependencies.
 
@@ -106,7 +106,7 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
 - **Adapter / Tooling Layer (MCP Server & Scaffolding)**:
   - Acts as the ergonomic bridge between AI agents and the core compiler.
   - Exposes high-level tools (e.g. statement scaffolding, unit assignment, timeline generation) that translate intent into explicit, canonical table specifications.
-  - Absorbs repetitive boilerplate (such as `match` partitioning for metadata columns) without complicating compiler invariants.
+  - Absorbs repetitive scaffolding (such as statement line-item structures and timeline columns) without complicating compiler invariants.
 
 ---
 
@@ -141,9 +141,9 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **System & Codebase**:
   - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
-  - [Addressing Syntax](dsl/addressing.md): Reference syntax, active period (`[@]`), temporal offsets, and slicing.
+  - [Addressing Syntax](dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets, and slicing.
   - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.
-  - [Specification Format](dsl/spec-format.md): Multi-file JSON schema, table modularity, match partitioning, and project examples.
+  - [Specification Format](dsl/spec-format.md): Multi-file JSON schema, table modularity, vector rules, and 2D modeling patterns.
 - **Compiler Internals**:
   - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, `CellId` structure, and grid expansion.
   - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.

@@ -18,13 +18,16 @@ flowchart LR
 
 | Reference Type | Spec Syntax | Sheet Context | Lowered Excel Formula | Referencing Semantics |
 | :--- | :--- | :--- | :--- | :--- |
-| **Active Column (`[@]`)** | `IncomeStatement["revenue", @]` | Same sheet | `=C10` | Relative column (tracks evaluation column) |
-| **Temporal Offset** | `BalanceSheet["cash", col.prev]` | Same sheet | `=C10` (at D10) | Relative column offset ($t \pm k$) |
+| **Active Column (`@col`)** | `IncomeStatement["revenue", @col]` | Same sheet | `=C10` | Relative column (tracks evaluation column) |
+| **Active Row (`@row`)** | `CapTable[@row, "shares"]` | Same sheet | `=C5` | Relative row (tracks evaluation row) |
+| **Temporal Column Offset** | `BalanceSheet["cash", col.prev]` | Same sheet | `=C10` (at D10) | Relative column offset ($t \pm k$) |
+| **Temporal Row Offset** | `DebtSchedule[row.prev, "end_balance"]` | Same sheet | `=E9` (at row 10) | Relative row offset ($r \pm k$) |
 | **Specific Column** | `Assumptions["tax_rate", "value"]` | Different sheet (`Summary`) | `='Summary'!$B$4` | Absolute coordinate (fixed key) |
 | **Specific Column** | `DebtSchedule["balance", "2023A"]` | Same sheet | `=$C$10` | Absolute coordinate (fixed key) |
 | **Group Milestone Anchor** | `DebtSchedule["balance", cols.historical.last]` | Same sheet | `=$C$10` | Absolute coordinate (statically resolved key) |
 | **Horizontal Range** | `IncomeStatement["revenue", cols.forecast]` | Same sheet | `=SUM($C$10:$G$10)` | Absolute column bounds (fixed group range) |
-| **Vertical Range (Active)** | `BalanceSheet[rows.current_assets, @]` | Same sheet | `=SUM(C$14:C$18)` | Relative column, absolute row bounds |
+| **Horizontal Range (Active)** | `CapTable[@row, "shares".."invested_capital"]` | Same sheet | `=SUM(C5:E5)` | Relative row, absolute column bounds |
+| **Vertical Range (Active)** | `BalanceSheet[rows.current_assets, @col]` | Same sheet | `=SUM(C$14:C$18)` | Relative column, absolute row bounds |
 | **Vertical Range (Specific)** | `BalanceSheet[rows.current_assets, "2024E"]` | Same sheet | `=SUM($C$14:$C$18)` | Absolute column, absolute row bounds |
 | **2D Block Range** | `BalanceSheet[rows.current_assets, cols.forecast]` | Same sheet | `=SUM($C$14:$G$18)` | Absolute 2D matrix bounds |
 

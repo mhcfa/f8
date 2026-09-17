@@ -51,7 +51,7 @@ When cell coordinates are passed via range references to numeric aggregators (e.
 To guarantee strict compliance with the FAST Standard and maintain full determinism:
 - Every cell formula evaluates to exactly one scalar [`CellValue`](evaluator.md#3-cell-value--error-representation).
 - Formulas never return dynamic arrays and never spill across neighboring cells.
-- Multi-column logic is handled explicitly during grid expansion (e.g. `"expr": "Sales[\"price\", @] * Sales[\"volume\", @]"` unrolled per column), eliminating implicit matrix broadcasting.
+- Vector logic is handled explicitly during grid expansion (e.g. row-wide `"expr": "Sales[\"price\", @col] * Sales[\"volume\", @col]"` or column-wide `"expr": "CapTable[@row, \"shares\"] * CapTable[@row, \"share_price\"]"`), eliminating implicit matrix broadcasting.
 - Ranges and 2D arrays are strictly inputs to aggregating functions (`SUM`, `AVERAGE`, `XNPV`, `XLOOKUP`).
 
 ### 3.2. Short-Circuiting vs. Eager Evaluation
@@ -102,7 +102,7 @@ $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 
 ## 5. Range Slicing & Error Propagation
 
-- **Slices**: Range references (e.g. `Table["row", "2024E".."2028E"]` or `Table[rows.opex, @]`) resolve to ordered vectors of `CellValue`.
+- **Slices**: Range references (e.g. `Table["row", "2024E".."2028E"]` or `Table[rows.opex, @col]`) resolve to ordered vectors of `CellValue`.
 - **Multi-dimensional flattening**: Aggregators (`SUM`, `MAX`, `MIN`) flatten multi-dimensional slices before calculation.
 - **Error bubbling**: Domain errors (`#REF!`, `#VALUE!`, `#DIV/0!`, `#NUM!`, `#N/A`) propagate through strict scalar arithmetic operations to dependent cells.
 

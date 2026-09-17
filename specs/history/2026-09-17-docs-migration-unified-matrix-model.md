@@ -1,7 +1,7 @@
 ---
 title: Unified 2D Matrix Model Documentation Migration & Legacy Purge
 date: 2026-09-17
-status: draft
+status: completed
 target-living-spec: none
 ---
 
@@ -74,42 +74,42 @@ Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Spec format documentation reflects unified 2D matrix**
+- [x] **Scenario 1: Spec format documentation reflects unified 2D matrix**
   - **Given** [`docs/dsl/spec-format.md`](../../docs/dsl/spec-format.md)
   - **When** inspected for table schema and authoring patterns
   - **Then** contains `ColumnSpec`, `RowSpec`, `AxisRole`, `CellInput`, vector rules, and zero references to `match` or `RowSpec.label`.
 
-- [ ] **Scenario 2: Addressing documentation reflects symmetrical `@col` and `@row`**
+- [x] **Scenario 2: Addressing documentation reflects symmetrical `@col` and `@row`**
   - **Given** [`docs/dsl/addressing.md`](../../docs/dsl/addressing.md)
   - **When** inspected for coordinate syntax
   - **Then** uses `@col` for active columns, `@row` for active rows, and includes `row.prev`/`row.next` without bare `@`.
 
-- [ ] **Scenario 3: Formula grammar reflects updated tokens**
+- [x] **Scenario 3: Formula grammar reflects updated tokens**
   - **Given** [`docs/dsl/grammar.md`](../../docs/dsl/grammar.md)
   - **When** inspected for EBNF definitions
   - **Then** `RowSpec` includes `"@row"` and `SpecialRow` includes `row.prev`/`row.next`, while `ColSpec` uses `"@col"`.
 
-- [ ] **Scenario 4: Spatial layout reflects dynamic column mapping**
+- [x] **Scenario 4: Spatial layout reflects dynamic column mapping**
   - **Given** [`docs/compiler/spatial-layout.md`](../../docs/compiler/spatial-layout.md)
   - **When** inspected for column layout rules
   - **Then** physical columns map 1:1 to table columns without hardcoded Columns A/B stubs, using `role: "descriptor"` as the outline anchor.
 
-- [ ] **Scenario 5: Architecture and IR documentation reflect first-class descriptor nodes**
+- [x] **Scenario 5: Architecture and IR documentation reflect first-class descriptor nodes**
   - **Given** [`docs/architecture.md`](../../docs/architecture.md) and [`docs/compiler/ir.md`](../../docs/compiler/ir.md)
   - **When** inspected for IR nodes and expansion passes
   - **Then** all cells (both descriptor labels and measure values) are documented as first-class `CellId` nodes in `CellGrid`.
 
-- [ ] **Scenario 6: MCP documentation purges match boilerplate references**
+- [x] **Scenario 6: MCP documentation purges match boilerplate references**
   - **Given** [`docs/interfaces/mcp.md`](../../docs/interfaces/mcp.md)
   - **When** inspected for tool roles
   - **Then** all references to expanding or absorbing `match` blocks are removed.
 
-- [ ] **Scenario 7: Lowering and parity documentation reflects unified 2D addressing**
+- [x] **Scenario 7: Lowering and parity documentation reflects unified 2D addressing**
   - **Given** [`docs/compiler/lowering-and-emission.md`](../../docs/compiler/lowering-and-emission.md) and [`docs/compiler/parity.md`](../../docs/compiler/parity.md)
   - **When** inspected for formula syntax and lowering rules
   - **Then** coordinate lowering table specifies `@col`, `@row`, `row.prev`, and `row.next` without bare `@`, and parity examples use canonical `@col`.
 
-- [ ] **Scenario 8: Repository audit verifies zero stale keywords in `docs/`**
+- [x] **Scenario 8: Repository audit verifies zero stale keywords in `docs/`**
   - **Given** the entire `docs/` directory (excluding `unified-matrix-model.md`)
   - **When** running ripgrep for `"match_arms"`, `"RowSpec.label"`, `"match partition"`, `"Columns A & B"`, bare active column references (`", @]"`, `"[@]"`), legacy `"match":` blocks, and positional `"value": [` arrays
   - **Then** returns zero matches.
@@ -119,42 +119,42 @@ Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D
 ## Tasks
 
 ### Phase 1: DSL Documentation Migration
-- [ ] Update [`docs/dsl/spec-format.md`](../../docs/dsl/spec-format.md):
-  - [ ] Replace root JSON schema with `TableSpec`, `ColumnSpec`, `RowSpec`, `AxisRole`, `CellInput`.
-  - [ ] Document vector rules (`column.expr`, `row.expr`) and 1-to-1 typed cell overrides.
-  - [ ] Replace all authoring patterns (Income Statement, Cap Table, Debt Schedule, Comps) with clean 2D syntax.
-  - [ ] Purge all sections, tables, and invariants referencing `match` blocks or `RowSpec.label`.
-- [ ] Update [`docs/dsl/addressing.md`](../../docs/dsl/addressing.md):
-  - [ ] Replace bare `@` with `@col`.
-  - [ ] Add `@row` active row coordinate specification and examples.
-  - [ ] Add `row.prev` and `row.next` temporal row offsets.
-  - [ ] Update addressing flowchart and all example expressions.
-- [ ] Update [`docs/dsl/grammar.md`](../../docs/dsl/grammar.md):
-  - [ ] Update EBNF grammar rules for `RowSpec`, `ColSpec`, `SpecialRow`, and `SpecialCol`.
-  - [ ] Update lexical rules and references.
+- [x] Update [`docs/dsl/spec-format.md`](../../docs/dsl/spec-format.md):
+  - [x] Replace root JSON schema with `TableSpec`, `ColumnSpec`, `RowSpec`, `AxisRole`, `CellInput`.
+  - [x] Document vector rules (`column.expr`, `row.expr`) and 1-to-1 typed cell overrides.
+  - [x] Replace all authoring patterns (Income Statement, Cap Table, Debt Schedule, Comps) with clean 2D syntax.
+  - [x] Purge all sections, tables, and invariants referencing `match` blocks or `RowSpec.label`.
+- [x] Update [`docs/dsl/addressing.md`](../../docs/dsl/addressing.md):
+  - [x] Replace bare `@` with `@col`.
+  - [x] Add `@row` active row coordinate specification and examples.
+  - [x] Add `row.prev` and `row.next` temporal row offsets.
+  - [x] Update addressing flowchart and all example expressions.
+- [x] Update [`docs/dsl/grammar.md`](../../docs/dsl/grammar.md):
+  - [x] Update EBNF grammar rules for `RowSpec`, `ColSpec`, `SpecialRow`, and `SpecialCol`.
+  - [x] Update lexical rules and references.
 
 ### Phase 2: Compiler & Architecture Documentation Migration
-- [ ] Update [`docs/compiler/spatial-layout.md`](../../docs/compiler/spatial-layout.md):
-  - [ ] Purge "Columns A & B (Row Stubs)" section.
-  - [ ] Document 1:1 physical sheet mapping from declared `columns`.
-  - [ ] Document descriptor column role as the anchor for row group outlines and indentation.
-- [ ] Update [`docs/compiler/ir.md`](../../docs/compiler/ir.md):
-  - [ ] Document grid expansion using the 3-tier specificity lattice.
-  - [ ] Confirm descriptor cells are full `CellNode` entries in `CellGrid`.
-- [ ] Update [`docs/compiler/lowering-and-emission.md`](../../docs/compiler/lowering-and-emission.md):
-  - [ ] Update coordinate lowering rules table from bare `@` to `@col`.
-  - [ ] Add coordinate lowering rules for `@row`, `row.prev`, and `row.next`.
-- [ ] Update [`docs/compiler/parity.md`](../../docs/compiler/parity.md):
-  - [ ] Replace bare `@` in unrolled formula examples with `@col`.
-- [ ] Update [`docs/architecture.md`](../../docs/architecture.md):
-  - [ ] Update structural hierarchy and 3-tier separation of concerns table.
-  - [ ] Reconcile pipeline pass descriptions with the 2D matrix model.
+- [x] Update [`docs/compiler/spatial-layout.md`](../../docs/compiler/spatial-layout.md):
+  - [x] Purge "Columns A & B (Row Stubs)" section.
+  - [x] Document 1:1 physical sheet mapping from declared `columns`.
+  - [x] Document descriptor column role as the anchor for row group outlines and indentation.
+- [x] Update [`docs/compiler/ir.md`](../../docs/compiler/ir.md):
+  - [x] Document grid expansion using the 3-tier specificity lattice.
+  - [x] Confirm descriptor cells are full `CellNode` entries in `CellGrid`.
+- [x] Update [`docs/compiler/lowering-and-emission.md`](../../docs/compiler/lowering-and-emission.md):
+  - [x] Update coordinate lowering rules table from bare `@` to `@col`.
+  - [x] Add coordinate lowering rules for `@row`, `row.prev`, and `row.next`.
+- [x] Update [`docs/compiler/parity.md`](../../docs/compiler/parity.md):
+  - [x] Replace bare `@` in unrolled formula examples with `@col`.
+- [x] Update [`docs/architecture.md`](../../docs/architecture.md):
+  - [x] Update structural hierarchy and 3-tier separation of concerns table.
+  - [x] Reconcile pipeline pass descriptions with the 2D matrix model.
 
 ### Phase 3: Interface Documentation Migration
-- [ ] Update [`docs/interfaces/mcp.md`](../../docs/interfaces/mcp.md):
-  - [ ] Purge references to `match` boilerplate absorption.
-  - [ ] Reconcile tool descriptions for `finx_create_statement`, `finx_create_table`, and `finx_add_row`.
+- [x] Update [`docs/interfaces/mcp.md`](../../docs/interfaces/mcp.md):
+  - [x] Purge references to `match` boilerplate absorption.
+  - [x] Reconcile tool descriptions for `finx_create_statement`, `finx_create_table`, and `finx_add_row`.
 
 ### Phase 4: Verification & Audit
-- [ ] Run ripgrep audit across `docs/` to guarantee zero stale terms (`"match_arms"`, `"RowSpec.label"`, `"match":`, `"value": [`, `", @]"`, `"[@]"`, `"Columns A & B"`).
-- [ ] Verify all internal relative markdown links resolve correctly.
+- [x] Run ripgrep audit across `docs/` to guarantee zero stale terms (`"match_arms"`, `"RowSpec.label"`, `"match":`, `"value": [`, `", @]"`, `"[@]"`, `"Columns A & B"`).
+- [x] Verify all internal relative markdown links resolve correctly.

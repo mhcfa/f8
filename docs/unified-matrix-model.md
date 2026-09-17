@@ -253,6 +253,17 @@ Formulas and formatting are column-driven. Rows supply data inputs:
         "shares": 2500000,
         "share_price": 2.00
       }
+    },
+    {
+      "id": "total",
+      "format": "currency_total",
+      "cells": {
+        "investor": "Total",
+        "shares": { "expr": "SUM(CapTable[\"founders\"..\"series_a\", \"shares\"])" },
+        "share_price": null,
+        "invested_capital": { "expr": "SUM(CapTable[\"founders\"..\"series_a\", \"invested_capital\"])" },
+        "ownership_pct": 1.0
+      }
     }
   ]
 }

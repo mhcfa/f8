@@ -17,16 +17,19 @@ Primary            = Number | String | Reference | NullLiteral | "(" Expression 
 Reference          = TableRef ;
 TableRef           = Identifier "[" RowSpec "," ColSpec "]" ;
 
-RowSpec            = Key ".." Key
+RowSpec            = "@row"
+                   | Key ".." Key
                    | Key
                    | SpecialRow ;
 
-ColSpec            = "@"
+ColSpec            = "@col"
                    | Key ".." Key
                    | Key
                    | SpecialCol ;
 
-SpecialRow         = "rows." Identifier
+SpecialRow         = "row.prev" [ "(" Integer ")" ]
+                   | "row.next" [ "(" Integer ")" ]
+                   | "rows." Identifier
                    | "rows." Identifier ".last"
                    | "rows." Identifier ".first" ;
 

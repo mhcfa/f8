@@ -21,10 +21,10 @@ flowchart TD
 Within each worksheet, tables stack vertically in the order declared in `finx.json`.
 
 ### 2.1. Column Structure
-- **Columns A & B (Row Stubs)**: Reserved for row labels and group outlines.
-  - Category section rows: Emitted for parent `row_groups` with distinct typography.
-  - Leaf row labels: Placed with indentation derived from `row_groups` tree depth.
-- **Column C Onward (Data Columns)**: Assigned to table data columns in declared order.
+- **Explicit 1:1 Column Mapping**: Table columns $0 \dots C-1$ map directly to physical worksheet column offsets starting at column index 0 (or configured sheet margin). The compiler never injects implicit, unaddressed stub columns (e.g. magic Columns A and B).
+- **Descriptor Anchoring**: Designated descriptor columns (`role: "descriptor"`) anchor line item descriptions, units, and categories.
+  - **Hierarchy Indentation**: The primary (first declared) descriptor column receives indentation typography and collapsible outline levels (`[+]` / `[-]`) derived from `row_groups` tree depth.
+  - **Category Section Rows**: Parent `row_groups` emit styled section headers across descriptor columns with distinct typography, without allocating calculation `CellId` nodes.
 
 ### 2.2. Row Structure & Headers
 1. **Table Title Row**: Optional styled title banner.
@@ -47,7 +47,7 @@ Stacked tables on the same sheet remain structurally independent:
 ## 3. Worksheet-Level Properties
 
 The layout engine applies worksheet attributes defined in the project manifest:
-- **`freeze_panes`**: Freezes header rows and stub columns (`{"row": 4, "col": 2}`).
+- **`freeze_panes`**: Freezes header rows and descriptor columns (`{"row": 4, "col": 2}`).
 - **`tab_color`**: Applies visual hex color to worksheet tabs in Excel.
 - **`show_gridlines`**: Configures workbook gridline visibility (default: `true`).
 
