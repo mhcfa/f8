@@ -201,3 +201,31 @@ impl ResolveError {
         }
     }
 }
+
+/// Errors encountered during dependency graph construction, cycle validation, and topological sorting.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum GraphError {
+    #[error(transparent)]
+    Resolve(#[from] ResolveError),
+
+    #[error("Circular dependency detected in model.\nCycle trace:\n{trace}")]
+    CircularDependency { cycle: Vec<CellId>, trace: String },
+}
+
+impl GraphError {
+    /// Creates a `CircularDependency` error from an ordered cycle path.
+    pub fn circular_dependency(cycle: Vec<CellId>) -> Self {
+        let trace = format_cycle_trace(&cycle);
+        Self::CircularDependency { cycle, trace }
+    }
+}
+
+/// Formats an ordered list of cell coordinates into a numbered semantic cycle trace.
+pub fn format_cycle_trace(cycle: &[CellId]) -> String {
+    cycle
+        .iter()
+        .enumerate()
+        .map(|(idx, cell)| format!("  {}. {cell}", idx + 1))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
