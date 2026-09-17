@@ -1,13 +1,13 @@
 ---
 title: Specification AST & Schema Ingestion
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 domain: model
 status: active
 ---
 
 ## Purpose
 
-The `model` subsystem provides the foundational in-memory data structures, Serde models, and semantic validation rules for Finx financial models. It ingests multi-file declarative project specifications (`finx.json` manifests and `tables/*.json` calculation specifications), enforces dimensional and partitioning invariants, and produces structured error diagnostics.
+The `model` subsystem provides the foundational in-memory data structures, Serde models, and semantic validation rules for Finx financial models. It ingests multi-file declarative project specifications (`finx.json` manifests and `tables/*.json` calculation specifications), enforces orthogonal 2D matrix invariants and axis role definitions, and produces structured error diagnostics.
 
 ## Architecture & Boundaries
 
@@ -15,65 +15,55 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
   - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `ColGroupId`, `RowGroupId`).
   - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`).
   - `finx::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
-  - `finx::model::table`: Table definitions (`TableSpec`), row specifications (`RowSpec`), match selectors (`MatchSelector`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`).
+  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`).
   - `finx::model::error`: Diagnostic error types (`ModelError`).
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
   2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification $\rightarrow$ `Ok(())` or `Err(ModelError)`.
-  3. Validated models are ready for grid expansion and dependency analysis.
+  3. Validated models are ready for 2D grid expansion and dependency analysis.
 - **Dependencies**:
-  - `serde`, `serde_json`: JSON serialization and deserialization.
-  - `indexmap`: Preserves deterministic insertion and file ordering for keys and columns.
+  - `serde`, `serde_json`: JSON serialization and deserialization with untagged cell inputs.
+  - `indexmap`: Preserves deterministic insertion and file ordering for keys, rows, and columns.
   - `thiserror`: Structured domain and compiler diagnostic errors.
 
 ## Requirements & Invariants
 
-### 1. Payload Mutual Exclusivity
+### 1. Orthogonal 2D Matrix Schema
 
-Every row must specify exactly one calculation payload: `value`, `expr`, or `match`. Similarly, every arm in a `match` block must specify exactly one of `value` or `expr`.
-
-#### Scenarios
-
-- **Valid Single Payload**:
-  - **When** a row defines only `"expr": "Table[\"x\", @]"` or only `"value": [1.0, 2.0]`
-  - **Then** validation succeeds.
-- **Multiple Payloads Rejected**:
-  - **When** a row specifies both `"value": [1.0]` and `"expr": "Table[\"x\", @]"`
-  - **Then** validation returns `ModelError::MutuallyExclusivePayload`.
-- **Zero Payloads Rejected**:
-  - **When** a row specifies neither `value`, `expr`, nor `match`
-  - **Then** validation returns `ModelError::MutuallyExclusivePayload`.
-
-### 2. Dimension Consistency
-
-Literal arrays in `value` fields must have exact length matching the targeted column slice.
+Every table defines an orthogonal 2D matrix with explicit `columns` (`ColumnSpec`) and `rows` (`RowSpec`). Each axis explicitly declares an `AxisRole`: `measure` (default) or `descriptor`.
 
 #### Scenarios
 
-- **Matching Dimensions**:
-  - **When** a table with 3 columns defines a row with `"value": [10.0, 20.0, 30.0]`
+- **Valid 2D Table**:
+  - **When** a table defines columns with IDs and roles, rows with vector formulas, and 0D cell overrides in `row.cells`
   - **Then** validation succeeds.
-- **Mismatched Dimensions**:
-  - **When** a table with 3 columns defines a row with `"value": [10.0, 20.0]`
-  - **Then** validation returns `ModelError::DimensionMismatch`.
+- **Non-Empty Axes**:
+  - **When** a table specifies empty `columns` or empty `rows`
+  - **Then** validation returns `ModelError::EmptyColumns` or `ModelError::EmptyRows`.
+- **Unique Identifiers**:
+  - **When** duplicate column IDs or row IDs are declared
+  - **Then** validation returns `ModelError::DuplicateColumnId` or `ModelError::DuplicateRowId`.
 
-### 3. Exhaustive & Disjoint Match Partitioning
+### 2. Cell Input Invariants
 
-When a row uses a `match` block, every column in `table.columns` must be covered by exactly one arm.
+Every key in `row.cells` must refer to a declared column ID in `table.columns`. A detailed cell override cannot specify both `value` and `expr`, nor can it specify neither.
 
 #### Scenarios
 
-- **Exhaustive Partitioning**:
-  - **When** arms cover all declared table columns without overlap
+- **Valid Cell Override**:
+  - **When** `row.cells` specifies literal values, formula objects (`{ "expr": "..." }`), or detailed inputs for declared columns
   - **Then** validation succeeds.
-- **Uncovered Columns**:
-  - **When** one or more table columns are not matched by any arm
-  - **Then** validation returns `ModelError::UncoveredColumns` listing missing columns.
-- **Overlapping Arms**:
-  - **When** two match arms select the same column
-  - **Then** validation returns `ModelError::OverlappingMatchArm`.
+- **Unknown Cell Column**:
+  - **When** a row defines a cell override for a column not declared in `table.columns`
+  - **Then** validation returns `ModelError::UnknownCellColumn`.
+- **Mutually Exclusive Cell Payload**:
+  - **When** a detailed cell override defines both `value` and `expr`
+  - **Then** validation returns `ModelError::MutuallyExclusiveCellPayload`.
+- **Empty Cell Payload**:
+  - **When** a detailed cell override defines neither `value` nor `expr`
+  - **Then** validation returns `ModelError::EmptyCellPayload`.
 
-### 4. Contiguous & Disjoint Hierarchies
+### 3. Contiguous & Disjoint Hierarchies
 
 Column groups and row groups must form contiguous sub-slices of their respective dimension arrays, with no overlapping memberships.
 

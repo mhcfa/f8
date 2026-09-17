@@ -6,17 +6,76 @@ use super::error::ModelError;
 use super::format::FormatPreset;
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
-/// Table specification schema for standalone calculation tables.
+/// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AxisRole {
+    #[default]
+    Measure,
+    Descriptor,
+}
+
+impl AxisRole {
+    /// Returns true if this axis is a measure.
+    pub fn is_measure(&self) -> bool {
+        matches!(self, Self::Measure)
+    }
+
+    /// Returns true if this axis is a descriptor.
+    pub fn is_descriptor(&self) -> bool {
+        matches!(self, Self::Descriptor)
+    }
+}
+
+/// Column definition within a table specification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TableSpec {
-    pub id: TableId,
-    pub title: String,
-    pub columns: Vec<ColId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub column_groups: Vec<ColumnGroup>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub row_groups: Vec<RowGroup>,
-    pub rows: Vec<RowSpec>,
+pub struct ColumnSpec {
+    pub id: ColId,
+    #[serde(default)]
+    pub role: AxisRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<FormatPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<serde_json::Value>,
+}
+
+impl ColumnSpec {
+    /// Creates a measure column specification with default attributes.
+    pub fn new(id: impl Into<ColId>) -> Self {
+        Self {
+            id: id.into(),
+            role: AxisRole::Measure,
+            label: None,
+            format: None,
+            expr: None,
+            note: None,
+            source: None,
+        }
+    }
+
+    /// Creates a descriptor column specification with an explicit display label.
+    pub fn descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            role: AxisRole::Descriptor,
+            label: Some(label.into()),
+            format: None,
+            expr: None,
+            note: None,
+            source: None,
+        }
+    }
+
+    /// Returns the effective display label, falling back to the column ID string.
+    pub fn display_label(&self) -> &str {
+        self.label.as_deref().unwrap_or(self.id.as_str())
+    }
 }
 
 /// Contiguous column group definition.
@@ -43,12 +102,24 @@ pub struct RowGroup {
     pub children: Vec<RowGroupChild>,
 }
 
-/// Explicit literal cell value: number, string, or null.
+/// Explicit literal cell value: number, string, boolean, or null.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueLiteral {
     Number(f64),
     String(String),
+    Boolean(bool),
     Null,
+}
+
+impl fmt::Display for ValueLiteral {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Number(n) => write!(f, "{n}"),
+            Self::String(s) => write!(f, "{s}"),
+            Self::Boolean(b) => write!(f, "{b}"),
+            Self::Null => write!(f, "null"),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for ValueLiteral {
@@ -62,7 +133,11 @@ impl<'de> Deserialize<'de> for ValueLiteral {
             type Value = ValueLiteral;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a number, string, or null")
+                formatter.write_str("a number, string, boolean, or null")
+            }
+
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                Ok(ValueLiteral::Boolean(v))
             }
 
             fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
@@ -106,153 +181,239 @@ impl Serialize for ValueLiteral {
         match self {
             Self::Number(n) => serializer.serialize_f64(*n),
             Self::String(s) => serializer.serialize_str(s),
+            Self::Boolean(b) => serializer.serialize_bool(*b),
             Self::Null => serializer.serialize_unit(),
         }
     }
 }
 
-/// Calculation specification for a single match arm partition.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MatchArmSpec {
+/// Detailed cell override containing optional value, formula expression, formatting, note, or provenance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct DetailedCellInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<Vec<ValueLiteral>>,
+    pub value: Option<ValueLiteral>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<serde_json::Value>,
-}
-
-/// Row definition within a table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RowSpec {
-    pub id: RowId,
-    pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<serde_json::Value>,
+}
+
+/// Cell input definition: raw literal, formula expression, or detailed override.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CellInput {
+    Literal(ValueLiteral),
+    Detailed(DetailedCellInput),
+}
+
+impl CellInput {
+    /// Constructs a literal number cell input.
+    pub fn number(n: impl Into<f64>) -> Self {
+        Self::Literal(ValueLiteral::Number(n.into()))
+    }
+
+    /// Constructs a literal string cell input.
+    pub fn string(s: impl Into<String>) -> Self {
+        Self::Literal(ValueLiteral::String(s.into()))
+    }
+
+    /// Constructs a literal boolean cell input.
+    pub fn boolean(b: bool) -> Self {
+        Self::Literal(ValueLiteral::Boolean(b))
+    }
+
+    /// Constructs an explicit null cell input.
+    pub fn null() -> Self {
+        Self::Literal(ValueLiteral::Null)
+    }
+
+    /// Constructs a formula expression cell override.
+    pub fn formula(expr: impl Into<String>) -> Self {
+        Self::Detailed(DetailedCellInput {
+            expr: Some(expr.into()),
+            ..Default::default()
+        })
+    }
+
+    /// Returns the literal value reference if present.
+    pub fn as_value(&self) -> Option<&ValueLiteral> {
+        match self {
+            Self::Literal(lit) => Some(lit),
+            Self::Detailed(d) => d.value.as_ref(),
+        }
+    }
+
+    /// Returns the formula expression string if present.
+    pub fn as_expr(&self) -> Option<&str> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.expr.as_deref(),
+        }
+    }
+
+    /// Returns the format preset override if present.
+    pub fn format(&self) -> Option<FormatPreset> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.format,
+        }
+    }
+
+    /// Returns the audit note if present.
+    pub fn note(&self) -> Option<&str> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.note.as_deref(),
+        }
+    }
+
+    /// Returns the origin provenance metadata if present.
+    pub fn source(&self) -> Option<&serde_json::Value> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.source.as_ref(),
+        }
+    }
+}
+
+impl From<f64> for CellInput {
+    fn from(n: f64) -> Self {
+        Self::number(n)
+    }
+}
+
+impl From<i64> for CellInput {
+    fn from(n: i64) -> Self {
+        Self::number(n as f64)
+    }
+}
+
+impl From<i32> for CellInput {
+    fn from(n: i32) -> Self {
+        Self::number(n as f64)
+    }
+}
+
+impl From<&str> for CellInput {
+    fn from(s: &str) -> Self {
+        Self::string(s)
+    }
+}
+
+impl From<String> for CellInput {
+    fn from(s: String) -> Self {
+        Self::string(s)
+    }
+}
+
+impl From<bool> for CellInput {
+    fn from(b: bool) -> Self {
+        Self::boolean(b)
+    }
+}
+
+/// Row definition within a table specification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RowSpec {
+    pub id: RowId,
+    #[serde(default)]
+    pub role: AxisRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<Vec<ValueLiteral>>,
+    pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    #[serde(rename = "match", default, skip_serializing_if = "Option::is_none")]
-    pub match_arms: Option<IndexMap<String, MatchArmSpec>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub cells: IndexMap<ColId, CellInput>,
 }
 
-/// Parsed match partition selector key.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MatchSelector {
-    /// Single column ID, e.g. `"2024E"`
-    Single(ColId),
-    /// Contiguous column range, e.g. `"2021A..2023A"`
-    Range { start: ColId, end: ColId },
-    /// Named column group, e.g. `"cols.forecast"`
-    Group(ColGroupId),
+impl RowSpec {
+    /// Creates a measure row specification with default attributes.
+    pub fn new(id: impl Into<RowId>) -> Self {
+        Self {
+            id: id.into(),
+            role: AxisRole::Measure,
+            format: None,
+            expr: None,
+            note: None,
+            source: None,
+            cells: IndexMap::new(),
+        }
+    }
+
+    /// Creates a descriptor row specification.
+    pub fn descriptor(id: impl Into<RowId>) -> Self {
+        Self {
+            id: id.into(),
+            role: AxisRole::Descriptor,
+            format: None,
+            expr: None,
+            note: None,
+            source: None,
+            cells: IndexMap::new(),
+        }
+    }
 }
 
-impl MatchSelector {
-    /// Parses a match selector string into a typed selector.
-    pub fn parse(selector: &str) -> Result<Self, String> {
-        let trimmed = selector.trim();
-        if trimmed.is_empty() {
-            return Err("selector cannot be empty".to_string());
-        }
-
-        if let Some(group_name) = trimmed.strip_prefix("cols.") {
-            if group_name.is_empty() {
-                return Err("column group identifier cannot be empty".to_string());
-            }
-            return Ok(Self::Group(ColGroupId::from(group_name)));
-        }
-
-        if let Some((start, end)) = trimmed.split_once("..") {
-            let start = start.trim();
-            let end = end.trim();
-            if start.is_empty() || end.is_empty() {
-                return Err(format!("invalid range selector: '{trimmed}'"));
-            }
-            return Ok(Self::Range {
-                start: ColId::from(start),
-                end: ColId::from(end),
-            });
-        }
-
-        Ok(Self::Single(ColId::from(trimmed)))
-    }
-
-    /// Resolves selector against table columns and declared column groups into a contiguous slice of ColIds.
-    pub fn resolve_columns(&self, table: &TableSpec) -> Result<Vec<ColId>, ModelError> {
-        match self {
-            Self::Single(col) => {
-                if !table.columns.contains(col) {
-                    return Err(ModelError::UnknownColumn {
-                        table: table.id.clone(),
-                        column: col.clone(),
-                        context: format!("match selector '{col}'"),
-                    });
-                }
-                Ok(vec![col.clone()])
-            }
-            Self::Range { start, end } => {
-                let start_idx = table
-                    .columns
-                    .iter()
-                    .position(|c| c == start)
-                    .ok_or_else(|| ModelError::UnknownColumn {
-                        table: table.id.clone(),
-                        column: start.clone(),
-                        context: format!("match range start '{start}'"),
-                    })?;
-
-                let end_idx = table.columns.iter().position(|c| c == end).ok_or_else(|| {
-                    ModelError::UnknownColumn {
-                        table: table.id.clone(),
-                        column: end.clone(),
-                        context: format!("match range end '{end}'"),
-                    }
-                })?;
-
-                if start_idx > end_idx {
-                    return Err(ModelError::InvalidMatchSelector {
-                        table: table.id.clone(),
-                        row: RowId::from(""),
-                        selector: format!("{start}..{end}"),
-                        reason: format!(
-                            "start column '{start}' (index {start_idx}) must precede or equal end column '{end}' (index {end_idx})"
-                        ),
-                    });
-                }
-
-                Ok(table.columns[start_idx..=end_idx].to_vec())
-            }
-            Self::Group(group_id) => {
-                let group = table
-                    .column_groups
-                    .iter()
-                    .find(|g| &g.id == group_id)
-                    .ok_or_else(|| ModelError::UnknownColumnGroup {
-                        table: table.id.clone(),
-                        group: group_id.clone(),
-                    })?;
-
-                Ok(group.columns.clone())
-            }
-        }
-    }
+/// Table specification schema for standalone 2D calculation tables.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TableSpec {
+    pub id: TableId,
+    pub title: String,
+    pub columns: Vec<ColumnSpec>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub column_groups: Vec<ColumnGroup>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub row_groups: Vec<RowGroup>,
+    pub rows: Vec<RowSpec>,
 }
 
 impl TableSpec {
+    /// Returns an iterator over all declared column IDs.
+    pub fn col_ids(&self) -> impl Iterator<Item = &ColId> {
+        self.columns.iter().map(|c| &c.id)
+    }
+
+    /// Returns an iterator over all declared row IDs.
+    pub fn row_ids(&self) -> impl Iterator<Item = &RowId> {
+        self.rows.iter().map(|r| &r.id)
+    }
+
+    /// Returns true if the table contains a column with the given identifier.
+    pub fn contains_col(&self, id: &ColId) -> bool {
+        self.columns.iter().any(|c| &c.id == id)
+    }
+
+    /// Returns true if the table contains a row with the given identifier.
+    pub fn contains_row(&self, id: &RowId) -> bool {
+        self.rows.iter().any(|r| &r.id == id)
+    }
+
+    /// Returns the column specification for a column ID if found.
+    pub fn get_column(&self, id: &ColId) -> Option<&ColumnSpec> {
+        self.columns.iter().find(|c| &c.id == id)
+    }
+
+    /// Returns the row specification for a row ID if found.
+    pub fn get_row(&self, id: &RowId) -> Option<&RowSpec> {
+        self.rows.iter().find(|r| &r.id == id)
+    }
+
     /// Validates all table-level domain invariants.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.validate_columns()?;
         self.validate_column_groups()?;
         self.validate_rows()?;
         self.validate_row_groups()?;
-        self.validate_row_payloads()?;
+        self.validate_cells()?;
         Ok(())
     }
 
@@ -265,10 +426,10 @@ impl TableSpec {
 
         let mut seen_cols = IndexSet::new();
         for col in &self.columns {
-            if !seen_cols.insert(col) {
+            if !seen_cols.insert(&col.id) {
                 return Err(ModelError::DuplicateColumnId {
                     table: self.id.clone(),
-                    column: col.clone(),
+                    column: col.id.clone(),
                 });
             }
         }
@@ -297,13 +458,15 @@ impl TableSpec {
             // Verify contiguity within table.columns
             let mut prev_table_idx: Option<usize> = None;
             for col in &group.columns {
-                let table_idx = self.columns.iter().position(|c| c == col).ok_or_else(|| {
-                    ModelError::UnknownColumn {
-                        table: self.id.clone(),
-                        column: col.clone(),
-                        context: format!("column group '{}'", group.id),
-                    }
-                })?;
+                let table_idx =
+                    self.columns
+                        .iter()
+                        .position(|c| &c.id == col)
+                        .ok_or_else(|| ModelError::UnknownColumn {
+                            table: self.id.clone(),
+                            column: col.clone(),
+                            context: format!("column group '{}'", group.id),
+                        })?;
 
                 if let Some(prev) = prev_table_idx
                     && table_idx != prev + 1
@@ -482,122 +645,37 @@ impl TableSpec {
         Ok(())
     }
 
-    fn validate_row_payloads(&self) -> Result<(), ModelError> {
+    fn validate_cells(&self) -> Result<(), ModelError> {
         for row in &self.rows {
-            let payload_count = (row.value.is_some() as usize)
-                + (row.expr.is_some() as usize)
-                + (row.match_arms.is_some() as usize);
-
-            if payload_count != 1 {
-                return Err(ModelError::MutuallyExclusivePayload {
-                    table: self.id.clone(),
-                    row: row.id.clone(),
-                });
-            }
-
-            if let Some(values) = &row.value
-                && values.len() != self.columns.len()
-            {
-                return Err(ModelError::DimensionMismatch {
-                    table: self.id.clone(),
-                    row: row.id.clone(),
-                    expected: self.columns.len(),
-                    actual: values.len(),
-                });
-            }
-
-            if let Some(arms) = &row.match_arms {
-                if arms.is_empty() {
-                    return Err(ModelError::UncoveredColumns {
+            for (col_id, cell_input) in &row.cells {
+                if !self.contains_col(col_id) {
+                    return Err(ModelError::UnknownCellColumn {
                         table: self.id.clone(),
                         row: row.id.clone(),
-                        missing: self.columns.clone(),
+                        column: col_id.clone(),
                     });
                 }
 
-                let mut matched_columns = IndexMap::new();
-
-                for (selector_str, arm) in arms {
-                    let arm_payload_count =
-                        (arm.value.is_some() as usize) + (arm.expr.is_some() as usize);
-                    if arm_payload_count != 1 {
-                        return Err(ModelError::MutuallyExclusiveArmPayload {
+                if let CellInput::Detailed(d) = cell_input {
+                    let has_value = d.value.is_some();
+                    let has_expr = d.expr.is_some();
+                    if has_value && has_expr {
+                        return Err(ModelError::MutuallyExclusiveCellPayload {
                             table: self.id.clone(),
                             row: row.id.clone(),
-                            arm: selector_str.clone(),
+                            column: col_id.clone(),
                         });
                     }
-
-                    let selector = MatchSelector::parse(selector_str).map_err(|reason| {
-                        ModelError::InvalidMatchSelector {
+                    if !has_value && !has_expr {
+                        return Err(ModelError::EmptyCellPayload {
                             table: self.id.clone(),
                             row: row.id.clone(),
-                            selector: selector_str.clone(),
-                            reason,
-                        }
-                    })?;
-
-                    let target_columns = selector.resolve_columns(self).map_err(|err| {
-                        if let ModelError::InvalidMatchSelector {
-                            table,
-                            selector,
-                            reason,
-                            ..
-                        } = err
-                        {
-                            ModelError::InvalidMatchSelector {
-                                table,
-                                row: row.id.clone(),
-                                selector,
-                                reason,
-                            }
-                        } else {
-                            err
-                        }
-                    })?;
-
-                    if let Some(values) = &arm.value
-                        && values.len() != target_columns.len()
-                    {
-                        return Err(ModelError::DimensionMismatch {
-                            table: self.id.clone(),
-                            row: row.id.clone(),
-                            expected: target_columns.len(),
-                            actual: values.len(),
+                            column: col_id.clone(),
                         });
                     }
-
-                    for col in target_columns {
-                        if matched_columns
-                            .insert(col.clone(), selector_str.clone())
-                            .is_some()
-                        {
-                            return Err(ModelError::OverlappingMatchArm {
-                                table: self.id.clone(),
-                                row: row.id.clone(),
-                                column: col,
-                            });
-                        }
-                    }
-                }
-
-                if matched_columns.len() != self.columns.len() {
-                    let missing: Vec<ColId> = self
-                        .columns
-                        .iter()
-                        .filter(|c| !matched_columns.contains_key(*c))
-                        .cloned()
-                        .collect();
-
-                    return Err(ModelError::UncoveredColumns {
-                        table: self.id.clone(),
-                        row: row.id.clone(),
-                        missing,
-                    });
                 }
             }
         }
-
         Ok(())
     }
 }

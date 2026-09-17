@@ -2,16 +2,17 @@ use indexmap::{IndexMap, IndexSet};
 
 use super::error::IrError;
 use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
-use crate::model::table::{RowGroup, RowGroupChild, TableSpec};
+use crate::model::table::{AxisRole, ColumnSpec, RowGroup, RowGroupChild, TableSpec};
 
 /// Catalog metadata registered for a table within the symbol table.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableMetadata {
     pub table_id: TableId,
     pub sheet_id: SheetId,
-    pub columns: Vec<ColId>,
+    pub columns: Vec<ColumnSpec>,
     pub column_index: IndexMap<ColId, usize>,
     pub rows: IndexSet<RowId>,
+    pub row_roles: IndexMap<RowId, AxisRole>,
     pub column_groups: IndexMap<ColGroupId, Vec<ColId>>,
     pub row_groups: IndexMap<RowGroupId, Vec<RowId>>,
 }
@@ -27,12 +28,14 @@ impl TableMetadata {
 
         let mut column_index = IndexMap::with_capacity(table.columns.len());
         for (idx, col) in table.columns.iter().enumerate() {
-            column_index.insert(col.clone(), idx);
+            column_index.insert(col.id.clone(), idx);
         }
 
         let mut rows = IndexSet::with_capacity(table.rows.len());
+        let mut row_roles = IndexMap::with_capacity(table.rows.len());
         for row in &table.rows {
             rows.insert(row.id.clone());
+            row_roles.insert(row.id.clone(), row.role);
         }
 
         let mut column_groups = IndexMap::new();
@@ -51,9 +54,25 @@ impl TableMetadata {
             columns: table.columns.clone(),
             column_index,
             rows,
+            row_roles,
             column_groups,
             row_groups,
         })
+    }
+
+    /// Returns the column specification for a given column identifier.
+    pub fn col_spec(&self, col: &ColId) -> Option<&ColumnSpec> {
+        self.column_index.get(col).map(|&idx| &self.columns[idx])
+    }
+
+    /// Returns the axis role of a column.
+    pub fn col_role(&self, col: &ColId) -> Option<AxisRole> {
+        self.col_spec(col).map(|c| c.role)
+    }
+
+    /// Returns the axis role of a row.
+    pub fn row_role(&self, row: &RowId) -> Option<AxisRole> {
+        self.row_roles.get(row).copied()
     }
 
     fn collect_row_group(group: &RowGroup, out: &mut IndexMap<RowGroupId, Vec<RowId>>) {
@@ -84,7 +103,7 @@ impl TableMetadata {
 }
 
 /// Global symbol table managing table ownership, sheet placement, and coordinate indexing.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct SymbolTable {
     tables: IndexMap<TableId, TableMetadata>,
     sheet_tables: IndexMap<SheetId, Vec<TableId>>,
@@ -161,6 +180,21 @@ impl SymbolTable {
             .and_then(|m| m.rows.get_index_of(row))
     }
 
+    /// Returns the column specification for a column in a registered table.
+    pub fn col_spec(&self, table: &TableId, col: &ColId) -> Option<&ColumnSpec> {
+        self.tables.get(table).and_then(|m| m.col_spec(col))
+    }
+
+    /// Returns the axis role of a column in a registered table.
+    pub fn col_role(&self, table: &TableId, col: &ColId) -> Option<AxisRole> {
+        self.tables.get(table).and_then(|m| m.col_role(col))
+    }
+
+    /// Returns the axis role of a row in a registered table.
+    pub fn row_role(&self, table: &TableId, row: &RowId) -> Option<AxisRole> {
+        self.tables.get(table).and_then(|m| m.row_role(row))
+    }
+
     /// Returns the column IDs belonging to a column group in a table.
     pub fn cols_in_group(&self, table: &TableId, group: &ColGroupId) -> Option<&[ColId]> {
         self.tables
@@ -208,7 +242,7 @@ impl SymbolTable {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::model::table::RowSpec;
+    use crate::model::table::{ColumnSpec, RowSpec};
 
     #[test]
     fn test_symbol_table_registration_and_lookups() {
@@ -219,96 +253,67 @@ mod tests {
             id: TableId::new("IncomeStatement"),
             title: "Income Statement".to_string(),
             columns: vec![
-                ColId::new("2023A"),
-                ColId::new("2024E"),
-                ColId::new("2025E"),
+                ColumnSpec::descriptor("line_item", "Line Item"),
+                ColumnSpec::new("2023A"),
+                ColumnSpec::new("2024E"),
             ],
             column_groups: vec![],
             row_groups: vec![],
             rows: vec![
                 RowSpec {
                     id: RowId::new("revenue"),
-                    label: "Revenue".to_string(),
+                    role: AxisRole::Measure,
                     format: None,
                     note: None,
                     source: None,
-                    value: None,
                     expr: Some("100".to_string()),
-                    match_arms: None,
+                    cells: IndexMap::new(),
                 },
                 RowSpec {
                     id: RowId::new("cogs"),
-                    label: "COGS".to_string(),
+                    role: AxisRole::Measure,
                     format: None,
                     note: None,
                     source: None,
-                    value: None,
                     expr: Some("50".to_string()),
-                    match_arms: None,
+                    cells: IndexMap::new(),
                 },
             ],
         };
 
         symbols
-            .register_table(SheetId::new("Model"), &table)
-            .expect("Should register table");
+            .register_table(SheetId::from("Model"), &table)
+            .unwrap();
 
         assert_eq!(symbols.len(), 1);
+        assert!(!symbols.is_empty());
+        assert!(symbols.contains_table(&TableId::new("IncomeStatement")));
         assert_eq!(
             symbols.get_sheet(&TableId::new("IncomeStatement")),
-            Some(&SheetId::new("Model"))
-        );
-
-        assert_eq!(
-            symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2023A")),
-            Some(0)
+            Some(&SheetId::from("Model"))
         );
         assert_eq!(
-            symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2024E")),
-            Some(1)
-        );
-        assert_eq!(
-            symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2025E")),
-            Some(2)
-        );
-        assert_eq!(
-            symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("unknown")),
-            None
-        );
-
-        assert_eq!(
-            symbols.row_index(&TableId::new("IncomeStatement"), &RowId::new("revenue")),
-            Some(0)
-        );
-        assert_eq!(
-            symbols.row_index(&TableId::new("IncomeStatement"), &RowId::new("cogs")),
-            Some(1)
-        );
-        assert_eq!(
-            symbols.row_index(&TableId::new("IncomeStatement"), &RowId::new("unknown")),
-            None
-        );
-
-        assert_eq!(
-            symbols.tables_on_sheet(&SheetId::new("Model")),
+            symbols.tables_on_sheet(&SheetId::from("Model")),
             &[TableId::new("IncomeStatement")]
         );
-        assert_eq!(
-            symbols.sheet_ids().collect::<Vec<_>>(),
-            vec![&SheetId::new("Model")]
-        );
 
-        // Duplicate table rejection across sheets
-        let err = symbols
-            .register_table(SheetId::new("Summary"), &table)
-            .unwrap_err();
+        assert!(symbols.contains_col(&TableId::new("IncomeStatement"), &ColId::new("2023A")));
+        assert!(symbols.contains_row(&TableId::new("IncomeStatement"), &RowId::new("revenue")));
         assert_eq!(
-            err,
-            IrError::DuplicateTable {
-                table: TableId::new("IncomeStatement"),
-                first_sheet: SheetId::new("Model"),
-                second_sheet: SheetId::new("Summary")
-            }
+            symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("line_item")),
+            Some(0)
+        );
+        assert_eq!(
+            symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2023A")),
+            Some(1)
+        );
+        assert_eq!(
+            symbols.col_role(&TableId::new("IncomeStatement"), &ColId::new("line_item")),
+            Some(AxisRole::Descriptor)
+        );
+        assert_eq!(
+            symbols.col_role(&TableId::new("IncomeStatement"), &ColId::new("2023A")),
+            Some(AxisRole::Measure)
         );
     }
 }

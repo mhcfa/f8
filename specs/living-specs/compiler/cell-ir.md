@@ -1,26 +1,26 @@
 ---
 title: Cell Intermediate Representation & Symbol Table
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 domain: compiler
 status: active
 ---
 
 ## Purpose
 
-The `compiler::ir` subsystem provides discrete cell-level Intermediate Representation (IR) data structures, the canonical cell identity model, deterministic cell collection containers, and the workbook symbol table. It translates high-level table declarations into fine-grained calculation nodes, preventing false-positive circular dependencies in inter-period roll-forwards and providing the node matrix for dependency analysis, topological evaluation, and coordinate lowering.
+The `compiler::ir` subsystem provides discrete cell-level Intermediate Representation (IR) data structures, the canonical cell identity model, deterministic cell collection containers, and the workbook symbol table. It unrolls high-level 2D table specifications through the 3-Tier Specificity Lattice into fine-grained calculation nodes, preventing false-positive circular dependencies in inter-period roll-forwards and providing the node matrix for dependency analysis, topological evaluation, and coordinate lowering.
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
   - `finx::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
   - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
-  - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, and group catalogs.
-  - `finx::compiler::ir::expand`: Grid expansion algorithms (`expand_table`, `expand_grid`, `expand_workbook`) unrolling table specifications into discrete cell nodes.
+  - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
+  - `finx::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
   - `finx::compiler::ir::error`: Structured domain errors (`IrError`).
   - `finx::model::id`: Strongly typed identifier wrappers including `SheetId`.
 - **Data flow & interfaces**:
-  1. `TableSpec` $\rightarrow$ `SymbolTable::register_table(sheet_id, &table)` $\rightarrow$ Validates global table uniqueness and indexes column/row positions.
-  2. `TableSpec` + `SymbolTable` $\rightarrow$ `expand_table(&symbol_table, &table)` $\rightarrow$ Unrolls literal, formula, or match arm rows into `Vec<CellNode>`.
+  1. `TableSpec` $\rightarrow$ `SymbolTable::register_table(sheet_id, &table)` $\rightarrow$ Validates global table uniqueness, indexes column/row positions, and stores axis roles.
+  2. `TableSpec` + `SymbolTable` $\rightarrow$ `expand_table(&symbol_table, &table)` $\rightarrow$ Evaluates the 3-Tier Specificity Lattice for each $(r, c)$ coordinate pair into `Vec<CellNode>`.
   3. `expand_grid(&symbol_table, &tables)` $\rightarrow$ Populates `CellGrid` preserving declaration order (`table -> row -> col`).
   4. `ProjectManifest` + `&[TableSpec]` $\rightarrow$ `expand_workbook(&manifest, tables)` $\rightarrow$ Synchronizes symbol registration and grid expansion.
   5. `CellGrid` and `SymbolTable` are consumed by downstream compiler passes (`compiler::graph` for dependency DAG construction and `compiler::eval` for runtime evaluation).
@@ -62,13 +62,13 @@ Every discrete cell in the model is identified by `CellId(TableId, RowId, ColId)
 
 ### 3. Workbook Table Ownership & Coordinate Indexing
 
-Each table in a workbook must belong to exactly one sheet. The `SymbolTable` enforces global table uniqueness and maintains 0-based column and row indices.
+Each table in a workbook must belong to exactly one sheet. The `SymbolTable` enforces global table uniqueness, maintains 0-based column and row indices, and exposes axis roles.
 
 #### Scenarios
 
 - **Valid registration**:
   - **When** registering a valid `TableSpec` under a `SheetId`
-  - **Then** `get_sheet(&table_id)` resolves the sheet, and `col_index` / `row_index` return 0-based coordinates.
+  - **Then** `get_sheet(&table_id)` resolves the sheet, and `col_index` / `row_index` / `col_role` / `row_role` return metadata.
 - **Duplicate table rejection**:
   - **When** registering a table whose `TableId` already exists on any sheet
   - **Then** returns `IrError::DuplicateTable` detailing both sheet assignments.
@@ -81,31 +81,26 @@ Each table in a workbook must belong to exactly one sheet. The `SymbolTable` enf
 - **Empty table rejection**:
   - **When** registering a table with no columns
   - **Then** returns `IrError::EmptyTable`.
-- **Sheet catalog iteration**:
-  - **When** invoking `sheet_ids`
-  - **Then** yields all registered sheet identifiers in registration order.
 
-### 4. Grid Expansion & Row Unrolling
+### 4. 3-Tier Specificity Lattice Grid Expansion
 
-`expand_table`, `expand_grid`, and `expand_workbook` expand high-level row definitions across declared table columns into discrete `CellNode` calculation nodes within a deterministic `CellGrid`.
+`expand_table` iterates over all declared rows and columns applying the 3-Tier Specificity Lattice:
+$$\text{Cell Override (0D Point)} > (\text{Row Rule } \mathbf{XOR} \text{ Column Rule}) > \text{Explicit Null}$$
 
 #### Scenarios
 
-- **Literal row unrolling**:
-  - **When** expanding a row with literal values across $N$ columns
-  - **Then** emits $N$ cells with `CellPayload::Literal` containing corresponding values.
-- **Uniform formula row expansion**:
-  - **When** expanding a row with a formula string across $N$ columns
-  - **Then** parses the formula expression once and assigns identical `CellPayload::Formula(Expr)` across all $N$ cells.
-- **Partitioned match arm unrolling**:
-  - **When** expanding a row partitioned by match arms (`single`, `range`, or `group`)
-  - **Then** resolves target columns and emits cells in strict `table.columns` order with appropriate literal or formula payloads.
-- **Metadata and format preset propagation**:
-  - **When** expanding rows with formatting presets, notes, and provenance
-  - **Then** all cells inherit row-level format presets, while arm notes and sources override row-level metadata if present.
-- **Actionable formula parse errors**:
-  - **When** expanding a row containing invalid formula syntax
-  - **Then** returns `IrError::FormulaParse` identifying the table, row, and exact parser failure.
-- **End-to-end workbook orchestration**:
-  - **When** invoking `expand_workbook(manifest, tables)`
-  - **Then** registers all tables on their declared sheets and expands all tables into a synchronized `CellGrid`.
+- **0D Point Cell Override**:
+  - **When** a cell coordinate $(r, c)$ has an entry in `row.cells`
+  - **Then** that payload (literal or point formula) and optional format/note override takes precedence.
+- **Descriptor Axis Isolation**:
+  - **When** row $r$ or column $c$ has `role: "descriptor"`
+  - **Then** vector rules never broadcast across it; unassigned descriptor cells halt with `IrError::UnassignedCell`.
+- **Ambiguous Expression Conflict**:
+  - **When** row $r$ defines `row.expr` and column $c$ defines `col.expr` without a cell override at their intersection
+  - **Then** compilation halts with `IrError::AmbiguousExpressionConflict`.
+- **Unassigned Measure Cell**:
+  - **When** a measure-on-measure coordinate has no cell override, no row expression, and no column expression
+  - **Then** compilation halts with `IrError::UnassignedCell`.
+- **Format Conflict**:
+  - **When** measure row $r$ and measure column $c$ specify conflicting format presets without a cell format override
+  - **Then** compilation halts with `IrError::FormatConflict`.

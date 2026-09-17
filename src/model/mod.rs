@@ -9,6 +9,6 @@ pub use format::FormatPreset;
 pub use id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
 pub use manifest::{FreezePanes, ProjectManifest, SheetSpec};
 pub use table::{
-    ColumnGroup, MatchArmSpec, MatchSelector, RowGroup, RowGroupChild, RowSpec, TableSpec,
-    ValueLiteral,
+    AxisRole, CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowGroup, RowGroupChild,
+    RowSpec, TableSpec, ValueLiteral,
 };

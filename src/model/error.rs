@@ -3,50 +3,31 @@ use thiserror::Error;
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 /// Structured diagnostic errors for Finx specifications and model validation.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ModelError {
-    #[error("Table '{table}': row '{row}' must specify exactly one of 'value', 'expr', or 'match'")]
-    MutuallyExclusivePayload { table: TableId, row: RowId },
-
-    #[error(
-        "Table '{table}': row '{row}' match arm '{arm}' must specify exactly one of 'value' or 'expr'"
-    )]
-    MutuallyExclusiveArmPayload {
-        table: TableId,
-        row: RowId,
-        arm: String,
-    },
-
-    #[error("Table '{table}': row '{row}' expected {expected} values, found {actual}")]
-    DimensionMismatch {
-        table: TableId,
-        row: RowId,
-        expected: usize,
-        actual: usize,
-    },
-
-    #[error(
-        "Table '{table}': row '{row}' match partitioning is not exhaustive, missing columns: {missing:?}"
-    )]
-    UncoveredColumns {
-        table: TableId,
-        row: RowId,
-        missing: Vec<ColId>,
-    },
-
-    #[error("Table '{table}': row '{row}' column '{column}' is matched by multiple arms")]
-    OverlappingMatchArm {
+    #[error("Table '{table}': row '{row}' specifies unknown column '{column}' in cells")]
+    UnknownCellColumn {
         table: TableId,
         row: RowId,
         column: ColId,
     },
 
-    #[error("Table '{table}': row '{row}' invalid match selector '{selector}': {reason}")]
-    InvalidMatchSelector {
+    #[error(
+        "Table '{table}': row '{row}', column '{column}' cell override cannot specify both 'value' and 'expr'"
+    )]
+    MutuallyExclusiveCellPayload {
         table: TableId,
         row: RowId,
-        selector: String,
-        reason: String,
+        column: ColId,
+    },
+
+    #[error(
+        "Table '{table}': row '{row}', column '{column}' detailed cell override specifies neither 'value' nor 'expr'"
+    )]
+    EmptyCellPayload {
+        table: TableId,
+        row: RowId,
+        column: ColId,
     },
 
     #[error("Table '{table}': unknown column '{column}' in {context}")]
@@ -55,9 +36,6 @@ pub enum ModelError {
         column: ColId,
         context: String,
     },
-
-    #[error("Table '{table}': unknown column group '{group}'")]
-    UnknownColumnGroup { table: TableId, group: ColGroupId },
 
     #[error("Table '{table}': unknown row '{row}' in {context}")]
     UnknownRow {
@@ -124,5 +102,11 @@ pub enum ModelError {
     DuplicateTableId { table: TableId },
 
     #[error("Serialization / Deserialization error: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(String),
+}
+
+impl From<serde_json::Error> for ModelError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Json(err.to_string())
+    }
 }

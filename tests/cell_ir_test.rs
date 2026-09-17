@@ -4,7 +4,10 @@ use finx::compiler::ir::{CellGrid, CellId, CellNode, CellPayload, IrError, Symbo
 use finx::expr::Expr;
 use finx::model::format::FormatPreset;
 use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
-use finx::model::table::{ColumnGroup, RowGroup, RowGroupChild, RowSpec, TableSpec, ValueLiteral};
+use finx::model::table::{
+    AxisRole, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec, ValueLiteral,
+};
+use indexmap::IndexMap;
 
 #[test]
 fn test_scenario_1_cell_id_display_and_formatting() {
@@ -144,9 +147,9 @@ fn test_scenario_5_symbol_table_table_registration() {
         id: TableId::new("IncomeStatement"),
         title: "Income Statement".to_string(),
         columns: vec![
-            ColId::new("2023A"),
-            ColId::new("2024E"),
-            ColId::new("2025E"),
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
         ],
         column_groups: vec![ColumnGroup {
             id: ColGroupId::new("forecast"),
@@ -164,33 +167,30 @@ fn test_scenario_5_symbol_table_table_registration() {
         rows: vec![
             RowSpec {
                 id: RowId::new("revenue"),
-                label: "Revenue".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("100".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
             RowSpec {
                 id: RowId::new("r_and_d"),
-                label: "R&D".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("20".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
             RowSpec {
                 id: RowId::new("s_and_m"),
-                label: "S&M".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("30".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
         ],
     };
@@ -238,18 +238,17 @@ fn test_scenario_6_symbol_table_duplicate_table_rejection() {
     let table = TableSpec {
         id: TableId::new("CashFlow"),
         title: "Cash Flow".to_string(),
-        columns: vec![ColId::new("2024E")],
+        columns: vec![ColumnSpec::new("2024E")],
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![RowSpec {
             id: RowId::new("fcf"),
-            label: "Free Cash Flow".to_string(),
+            role: AxisRole::Measure,
             format: None,
             note: None,
             source: None,
-            value: None,
             expr: Some("100".to_string()),
-            match_arms: None,
+            cells: IndexMap::new(),
         }],
     };
 
@@ -297,7 +296,7 @@ fn test_scenario_7_symbol_table_nested_row_groups_flattening() {
     let table = TableSpec {
         id: TableId::new("BalanceSheet"),
         title: "Balance Sheet".to_string(),
-        columns: vec![ColId::new("2024E"), ColId::new("2025E")],
+        columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
         column_groups: vec![],
         row_groups: vec![RowGroup {
             id: RowGroupId::new("assets"),
@@ -318,43 +317,39 @@ fn test_scenario_7_symbol_table_nested_row_groups_flattening() {
         rows: vec![
             RowSpec {
                 id: RowId::new("cash"),
-                label: "Cash".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("100".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
             RowSpec {
                 id: RowId::new("ar"),
-                label: "Accounts Receivable".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("50".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
             RowSpec {
                 id: RowId::new("inventory"),
-                label: "Inventory".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("30".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
             RowSpec {
                 id: RowId::new("ppe"),
-                label: "PP&E".to_string(),
+                role: AxisRole::Measure,
                 format: None,
                 note: None,
                 source: None,
-                value: None,
                 expr: Some("200".to_string()),
-                match_arms: None,
+                cells: IndexMap::new(),
             },
         ],
     };

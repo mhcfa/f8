@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use super::id::CellId;
+use crate::model::format::FormatPreset;
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 
 /// Errors encountered during intermediate representation construction and symbol registration.
@@ -41,12 +42,42 @@ pub enum IrError {
     #[error("table '{table}' contains no columns")]
     EmptyTable { table: TableId },
 
-    #[error("formula parse error in table '{table}', row '{row}'{}: {source}", column.as_ref().map(|c| format!(", col '{c}'")).unwrap_or_default())]
+    #[error(
+        "formula parse error in table '{table}'{}: {source}",
+        format_parse_coords(row, column)
+    )]
     FormulaParse {
         table: TableId,
-        row: RowId,
+        row: Option<RowId>,
         column: Option<ColId>,
         source: crate::expr::error::ParseError,
+    },
+
+    #[error(
+        "Table '{table}': ambiguous expression conflict at row '{row}', col '{column}' (both row and column define vector expressions without a cell override)"
+    )]
+    AmbiguousExpressionConflict {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+    },
+
+    #[error("Table '{table}': unassigned cell at row '{row}', col '{column}'")]
+    UnassignedCell {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+    },
+
+    #[error(
+        "Table '{table}': format conflict at row '{row}' ({row_format}) and column '{column}' ({col_format})"
+    )]
+    FormatConflict {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+        row_format: FormatPreset,
+        col_format: FormatPreset,
     },
 
     #[error("model validation error: {0}")]
@@ -56,5 +87,14 @@ pub enum IrError {
 impl From<crate::model::error::ModelError> for IrError {
     fn from(err: crate::model::error::ModelError) -> Self {
         Self::Model(err.to_string())
+    }
+}
+
+fn format_parse_coords(row: &Option<RowId>, column: &Option<ColId>) -> String {
+    match (row, column) {
+        (Some(r), Some(c)) => format!(", row '{r}', col '{c}'"),
+        (Some(r), None) => format!(", row '{r}'"),
+        (None, Some(c)) => format!(", col '{c}'"),
+        (None, None) => String::new(),
     }
 }

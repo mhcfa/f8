@@ -9,14 +9,17 @@ use finx::expr::ast::Expr;
 use finx::model::format::FormatPreset;
 use finx::model::id::{ColGroupId, ColId, RowId, SheetId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::{ColumnGroup, MatchArmSpec, RowSpec, TableSpec, ValueLiteral};
+use finx::model::table::{
+    AxisRole, CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowSpec, TableSpec,
+    ValueLiteral,
+};
 use indexmap::IndexMap;
 
 fn create_simple_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec {
     TableSpec {
         id: TableId::from(table_id),
         title: format!("Title for {table_id}"),
-        columns: cols.iter().map(|&c| ColId::from(c)).collect(),
+        columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
         column_groups: vec![],
         row_groups: vec![],
         rows,
@@ -25,19 +28,19 @@ fn create_simple_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> Tab
 
 #[test]
 fn test_scenario_1_expand_literal_row_across_columns() {
+    let mut cells = IndexMap::new();
+    cells.insert("2021A".into(), CellInput::number(100.0));
+    cells.insert("2022A".into(), CellInput::number(110.0));
+    cells.insert("2023A".into(), CellInput::number(120.0));
+
     let row = RowSpec {
         id: RowId::from("revenue"),
-        label: "Revenue".to_string(),
+        role: AxisRole::Measure,
         format: None,
         note: None,
         source: None,
-        value: Some(vec![
-            ValueLiteral::Number(100.0),
-            ValueLiteral::Number(110.0),
-            ValueLiteral::Number(120.0),
-        ]),
         expr: None,
-        match_arms: None,
+        cells,
     };
 
     let table = create_simple_table("IncomeStatement", &["2021A", "2022A", "2023A"], vec![row]);
@@ -83,13 +86,12 @@ fn test_scenario_1_expand_literal_row_across_columns() {
 fn test_scenario_2_expand_uniform_formula_row_across_columns() {
     let row = RowSpec {
         id: RowId::from("ebit"),
-        label: "Operating Income".to_string(),
+        role: AxisRole::Measure,
         format: Some(FormatPreset::Currency),
         note: Some("Operating margin formula".to_string()),
         source: None,
-        value: None,
         expr: Some("IncomeStatement[\"revenue\", @] * 0.1".to_string()),
-        match_arms: None,
+        cells: IndexMap::new(),
     };
 
     let table = create_simple_table("IncomeStatement", &["2024E", "2025E"], vec![row]);
@@ -115,35 +117,25 @@ fn test_scenario_2_expand_uniform_formula_row_across_columns() {
 }
 
 #[test]
-fn test_scenario_3_expand_partitioned_row_with_match_arms() {
+fn test_scenario_3_expand_vector_row_with_point_overrides() {
+    let mut cells = IndexMap::new();
+    cells.insert(
+        "2023A".into(),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(100.0)),
+            note: Some("Actual 10-K".to_string()),
+            ..Default::default()
+        }),
+    );
+
     let row = RowSpec {
         id: RowId::from("revenue"),
-        label: "Total Revenue".to_string(),
+        role: AxisRole::Measure,
         format: Some(FormatPreset::Currency),
-        note: None,
+        note: Some("5% growth projection".to_string()),
         source: None,
-        value: None,
-        expr: None,
-        match_arms: Some(IndexMap::from([
-            (
-                "2023A".to_string(),
-                MatchArmSpec {
-                    value: Some(vec![ValueLiteral::Number(100.0)]),
-                    expr: None,
-                    note: Some("Actual 10-K".to_string()),
-                    source: None,
-                },
-            ),
-            (
-                "2024E..2025E".to_string(),
-                MatchArmSpec {
-                    value: None,
-                    expr: Some("IncomeStatement[\"revenue\", col.prev] * 1.05".to_string()),
-                    note: Some("5% growth projection".to_string()),
-                    source: None,
-                },
-            ),
-        ])),
+        expr: Some("IncomeStatement[\"revenue\", col.prev] * 1.05".to_string()),
+        cells,
     };
 
     let table = create_simple_table("IncomeStatement", &["2023A", "2024E", "2025E"], vec![row]);
@@ -156,7 +148,7 @@ fn test_scenario_3_expand_partitioned_row_with_match_arms() {
     let cells = expand_table(&symbols, &table).expect("expansion succeeds");
     assert_eq!(cells.len(), 3);
 
-    // 2023A: Literal
+    // 2023A: Cell Override Literal
     assert_eq!(
         cells[0].id,
         CellId::new("IncomeStatement", "revenue", "2023A")
@@ -167,7 +159,7 @@ fn test_scenario_3_expand_partitioned_row_with_match_arms() {
     );
     assert_eq!(cells[0].note.as_deref(), Some("Actual 10-K"));
 
-    // 2024E: Formula
+    // 2024E: Vector Formula
     assert_eq!(
         cells[1].id,
         CellId::new("IncomeStatement", "revenue", "2024E")
@@ -175,7 +167,7 @@ fn test_scenario_3_expand_partitioned_row_with_match_arms() {
     assert!(cells[1].payload.is_formula());
     assert_eq!(cells[1].note.as_deref(), Some("5% growth projection"));
 
-    // 2025E: Formula
+    // 2025E: Vector Formula
     assert_eq!(
         cells[2].id,
         CellId::new("IncomeStatement", "revenue", "2025E")
@@ -186,37 +178,27 @@ fn test_scenario_3_expand_partitioned_row_with_match_arms() {
 
 #[test]
 fn test_scenario_4_metadata_and_format_preset_propagation() {
+    let mut cells = IndexMap::new();
+    cells.insert("2023A".into(), CellInput::number(100.0));
+    cells.insert("2024E".into(), CellInput::number(105.0));
+    cells.insert(
+        "2025E".into(),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(110.0)),
+            note: Some("Forecast update".to_string()),
+            source: Some(serde_json::json!({ "source_id": "Management Guidance" })),
+            ..Default::default()
+        }),
+    );
+
     let row = RowSpec {
         id: RowId::from("revenue"),
-        label: "Revenue".to_string(),
+        role: AxisRole::Measure,
         format: Some(FormatPreset::Currency),
         note: Some("Base revenue note".to_string()),
         source: Some(serde_json::json!({ "source_id": "10-K" })),
-        value: None,
         expr: None,
-        match_arms: Some(IndexMap::from([
-            (
-                "2023A..2024E".to_string(),
-                MatchArmSpec {
-                    value: Some(vec![
-                        ValueLiteral::Number(100.0),
-                        ValueLiteral::Number(105.0),
-                    ]),
-                    expr: None,
-                    note: None, // Should inherit row note
-                    source: None,
-                },
-            ),
-            (
-                "2025E".to_string(),
-                MatchArmSpec {
-                    value: Some(vec![ValueLiteral::Number(110.0)]),
-                    expr: None,
-                    note: Some("Forecast update".to_string()), // Should override row note
-                    source: Some(serde_json::json!({ "source_id": "Management Guidance" })),
-                },
-            ),
-        ])),
+        cells,
     };
 
     let table = create_simple_table("IncomeStatement", &["2023A", "2024E", "2025E"], vec![row]);
@@ -254,13 +236,12 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
 fn test_scenario_5_actionable_formula_parse_error_diagnostic() {
     let row = RowSpec {
         id: RowId::from("bad_calc"),
-        label: "Broken Formula".to_string(),
+        role: AxisRole::Measure,
         format: None,
         note: None,
         source: None,
-        value: None,
         expr: Some("IncomeStatement[\"revenue\", @] + * 5".to_string()),
-        match_arms: None,
+        cells: IndexMap::new(),
     };
 
     let table = create_simple_table("IncomeStatement", &["2024E"], vec![row]);
@@ -274,7 +255,7 @@ fn test_scenario_5_actionable_formula_parse_error_diagnostic() {
     match err {
         IrError::FormulaParse { table, row, .. } => {
             assert_eq!(table, TableId::from("IncomeStatement"));
-            assert_eq!(row, RowId::from("bad_calc"));
+            assert_eq!(row, Some(RowId::from("bad_calc")));
         }
         other => panic!("expected IrError::FormulaParse, got {other:?}"),
     }
@@ -303,36 +284,36 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
         ],
     };
 
+    let mut assumptions_cells = IndexMap::new();
+    assumptions_cells.insert("value".into(), CellInput::number(0.21));
     let assumptions_table = create_simple_table(
         "Assumptions",
         &["value"],
         vec![RowSpec {
             id: RowId::from("tax_rate"),
-            label: "Tax Rate".to_string(),
+            role: AxisRole::Measure,
             format: Some(FormatPreset::Percentage),
             note: None,
             source: None,
-            value: Some(vec![ValueLiteral::Number(0.21)]),
             expr: None,
-            match_arms: None,
+            cells: assumptions_cells,
         }],
     );
 
+    let mut is_cells = IndexMap::new();
+    is_cells.insert("2023A".into(), CellInput::number(1000.0));
+    is_cells.insert("2024E".into(), CellInput::number(1100.0));
     let is_table = create_simple_table(
         "IncomeStatement",
         &["2023A", "2024E"],
         vec![RowSpec {
             id: RowId::from("revenue"),
-            label: "Revenue".to_string(),
+            role: AxisRole::Measure,
             format: Some(FormatPreset::Currency),
             note: None,
             source: None,
-            value: Some(vec![
-                ValueLiteral::Number(1000.0),
-                ValueLiteral::Number(1100.0),
-            ]),
             expr: None,
-            match_arms: None,
+            cells: is_cells,
         }],
     );
 
@@ -362,18 +343,19 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
 
 #[test]
 fn test_scenario_7_reject_table_not_in_symbol_table() {
+    let mut cells = IndexMap::new();
+    cells.insert("2024E".into(), CellInput::number(100.0));
     let table = create_simple_table(
         "UnknownTable",
         &["2024E"],
         vec![RowSpec {
             id: RowId::from("revenue"),
-            label: "Revenue".to_string(),
+            role: AxisRole::Measure,
             format: None,
             note: None,
             source: None,
-            value: Some(vec![ValueLiteral::Number(100.0)]),
             expr: None,
-            match_arms: None,
+            cells,
         }],
     );
     let symbols = SymbolTable::new();
@@ -389,7 +371,7 @@ fn test_scenario_7_reject_table_not_in_symbol_table() {
 }
 
 #[test]
-fn test_expand_column_group_in_match_arms() {
+fn test_expand_column_group_with_vector_rules() {
     let mut table = create_simple_table(
         "BalanceSheet",
         &["2021A", "2022A", "2023A", "2024E", "2025E"],
@@ -411,38 +393,20 @@ fn test_expand_column_group_in_match_arms() {
             columns: vec![ColId::from("2024E"), ColId::from("2025E")],
         },
     ];
+
+    let mut cells = IndexMap::new();
+    cells.insert("2021A".into(), CellInput::number(50.0));
+    cells.insert("2022A".into(), CellInput::number(60.0));
+    cells.insert("2023A".into(), CellInput::number(70.0));
+
     table.rows = vec![RowSpec {
         id: RowId::from("cash"),
-        label: "Cash and Equivalents".to_string(),
+        role: AxisRole::Measure,
         format: Some(FormatPreset::Currency),
         note: None,
         source: None,
-        value: None,
-        expr: None,
-        match_arms: Some(IndexMap::from([
-            (
-                "cols.historical".to_string(),
-                MatchArmSpec {
-                    value: Some(vec![
-                        ValueLiteral::Number(50.0),
-                        ValueLiteral::Number(60.0),
-                        ValueLiteral::Number(70.0),
-                    ]),
-                    expr: None,
-                    note: None,
-                    source: None,
-                },
-            ),
-            (
-                "cols.forecast".to_string(),
-                MatchArmSpec {
-                    value: None,
-                    expr: Some("BalanceSheet[\"cash\", col.prev] + 10.0".to_string()),
-                    note: None,
-                    source: None,
-                },
-            ),
-        ])),
+        expr: Some("BalanceSheet[\"cash\", col.prev] + 10.0".to_string()),
+        cells,
     }];
 
     let mut symbols = SymbolTable::new();
@@ -481,33 +445,35 @@ fn test_expand_workbook_unassigned_table_rejected() {
         }],
     };
 
+    let mut t1_cells = IndexMap::new();
+    t1_cells.insert("value".into(), CellInput::number(0.21));
     let table1 = create_simple_table(
         "Assumptions",
         &["value"],
         vec![RowSpec {
             id: RowId::from("tax_rate"),
-            label: "Tax Rate".to_string(),
+            role: AxisRole::Measure,
             format: None,
             note: None,
             source: None,
-            value: Some(vec![ValueLiteral::Number(0.21)]),
             expr: None,
-            match_arms: None,
+            cells: t1_cells,
         }],
     );
 
+    let mut t2_cells = IndexMap::new();
+    t2_cells.insert("value".into(), CellInput::number(1.0));
     let table2 = create_simple_table(
         "OrphanTable",
         &["value"],
         vec![RowSpec {
             id: RowId::from("foo"),
-            label: "Foo".to_string(),
+            role: AxisRole::Measure,
             format: None,
             note: None,
             source: None,
-            value: Some(vec![ValueLiteral::Number(1.0)]),
             expr: None,
-            match_arms: None,
+            cells: t2_cells,
         }],
     );
 
@@ -523,33 +489,36 @@ fn test_expand_workbook_unassigned_table_rejected() {
 
 #[test]
 fn test_expand_grid_multi_table() {
+    let mut t1_cells = IndexMap::new();
+    t1_cells.insert("c1".into(), CellInput::number(1.0));
+    t1_cells.insert("c2".into(), CellInput::number(2.0));
     let t1 = create_simple_table(
         "TableA",
         &["c1", "c2"],
         vec![RowSpec {
             id: RowId::from("r1"),
-            label: "R1".to_string(),
+            role: AxisRole::Measure,
             format: None,
             note: None,
             source: None,
-            value: Some(vec![ValueLiteral::Number(1.0), ValueLiteral::Number(2.0)]),
             expr: None,
-            match_arms: None,
+            cells: t1_cells,
         }],
     );
 
+    let mut t2_cells = IndexMap::new();
+    t2_cells.insert("c1".into(), CellInput::number(3.0));
     let t2 = create_simple_table(
         "TableB",
         &["c1"],
         vec![RowSpec {
             id: RowId::from("r2"),
-            label: "R2".to_string(),
+            role: AxisRole::Measure,
             format: None,
             note: None,
             source: None,
-            value: Some(vec![ValueLiteral::Number(3.0)]),
             expr: None,
-            match_arms: None,
+            cells: t2_cells,
         }],
     );
 
@@ -581,4 +550,278 @@ fn test_expand_grid_multi_table() {
             .payload,
         CellPayload::Literal(ValueLiteral::Number(3.0))
     );
+}
+
+#[test]
+fn test_expand_column_vector_formula_broadcasts_downward() {
+    let mut actual_col = ColumnSpec::new("actual");
+    actual_col.format = Some(FormatPreset::Currency);
+
+    let mut forecast_col = ColumnSpec::new("forecast");
+    forecast_col.format = Some(FormatPreset::Currency);
+    forecast_col.expr = Some("IncomeStatement[\"revenue\", \"actual\"] * 1.1".to_string());
+
+    let mut rev_cells = IndexMap::new();
+    rev_cells.insert("actual".into(), CellInput::number(100.0));
+
+    let mut cogs_cells = IndexMap::new();
+    cogs_cells.insert("actual".into(), CellInput::number(50.0));
+
+    let mut opex_cells = IndexMap::new();
+    opex_cells.insert("actual".into(), CellInput::number(30.0));
+    // 0D Point override on forecast
+    opex_cells.insert("forecast".into(), CellInput::number(35.0));
+
+    let table = TableSpec {
+        id: TableId::from("IncomeStatement"),
+        title: "Income Statement".to_string(),
+        columns: vec![actual_col, forecast_col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![
+            RowSpec {
+                id: RowId::from("revenue"),
+                role: AxisRole::Measure,
+                format: None,
+                note: None,
+                source: None,
+                expr: None,
+                cells: rev_cells,
+            },
+            RowSpec {
+                id: RowId::from("cogs"),
+                role: AxisRole::Measure,
+                format: None,
+                note: None,
+                source: None,
+                expr: None,
+                cells: cogs_cells,
+            },
+            RowSpec {
+                id: RowId::from("opex"),
+                role: AxisRole::Measure,
+                format: None,
+                note: None,
+                source: None,
+                expr: None,
+                cells: opex_cells,
+            },
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 6);
+
+    // Revenue: actual is literal, forecast is formula from column rule
+    assert_eq!(
+        cells[0].id,
+        CellId::new("IncomeStatement", "revenue", "actual")
+    );
+    assert_eq!(
+        cells[0].payload,
+        CellPayload::Literal(ValueLiteral::Number(100.0))
+    );
+    assert_eq!(
+        cells[1].id,
+        CellId::new("IncomeStatement", "revenue", "forecast")
+    );
+    assert!(cells[1].payload.is_formula());
+
+    // COGS: actual is literal, forecast is formula from column rule
+    assert_eq!(
+        cells[2].id,
+        CellId::new("IncomeStatement", "cogs", "actual")
+    );
+    assert_eq!(
+        cells[3].id,
+        CellId::new("IncomeStatement", "cogs", "forecast")
+    );
+    assert!(cells[3].payload.is_formula());
+
+    // Opex: actual is literal, forecast has 0D cell override literal (35.0)
+    assert_eq!(
+        cells[4].id,
+        CellId::new("IncomeStatement", "opex", "actual")
+    );
+    assert_eq!(
+        cells[5].id,
+        CellId::new("IncomeStatement", "opex", "forecast")
+    );
+    assert_eq!(
+        cells[5].payload,
+        CellPayload::Literal(ValueLiteral::Number(35.0))
+    );
+}
+
+#[test]
+fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
+    let mut col1 = ColumnSpec::new("c1");
+    col1.expr = Some("10".to_string());
+
+    let mut col2 = ColumnSpec::new("c2");
+    col2.expr = Some("20".to_string());
+
+    // Unassigned descriptor row halts with UnassignedCell
+    let unassigned_table = TableSpec {
+        id: TableId::from("T_Unassigned"),
+        title: "Test".to_string(),
+        columns: vec![col1.clone(), col2.clone()],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![RowSpec {
+            id: RowId::from("header"),
+            role: AxisRole::Descriptor,
+            format: None,
+            note: None,
+            source: None,
+            expr: None,
+            cells: IndexMap::new(),
+        }],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &unassigned_table)
+        .unwrap();
+
+    let err = expand_table(&symbols, &unassigned_table).unwrap_err();
+    assert!(matches!(
+        err,
+        IrError::UnassignedCell { table, row, column }
+            if table.as_str() == "T_Unassigned" && row.as_str() == "header" && column.as_str() == "c1"
+    ));
+
+    // Assigned descriptor row emits literals and isolates column formulas
+    let mut header_cells = IndexMap::new();
+    header_cells.insert("c1".into(), CellInput::string("Header 1"));
+    header_cells.insert("c2".into(), CellInput::string("Header 2"));
+
+    let assigned_table = TableSpec {
+        id: TableId::from("T_Assigned"),
+        title: "Test".to_string(),
+        columns: vec![col1, col2],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![
+            RowSpec {
+                id: RowId::from("header"),
+                role: AxisRole::Descriptor,
+                format: None,
+                note: None,
+                source: None,
+                expr: None,
+                cells: header_cells,
+            },
+            RowSpec {
+                id: RowId::from("data"),
+                role: AxisRole::Measure,
+                format: None,
+                note: None,
+                source: None,
+                expr: None,
+                cells: IndexMap::new(),
+            },
+        ],
+    };
+
+    let mut symbols2 = SymbolTable::new();
+    symbols2
+        .register_table(SheetId::from("Model"), &assigned_table)
+        .unwrap();
+
+    let cells = expand_table(&symbols2, &assigned_table).unwrap();
+    assert_eq!(cells.len(), 4);
+
+    // Header cells are string literals
+    assert_eq!(
+        cells[0].payload,
+        CellPayload::Literal(ValueLiteral::String("Header 1".to_string()))
+    );
+    assert_eq!(
+        cells[1].payload,
+        CellPayload::Literal(ValueLiteral::String("Header 2".to_string()))
+    );
+
+    // Measure row receives column formula broadcasts
+    assert!(cells[2].payload.is_formula());
+    assert!(cells[3].payload.is_formula());
+}
+
+#[test]
+fn test_column_formula_parse_error_diagnostic() {
+    let mut bad_col = ColumnSpec::new("bad_col");
+    bad_col.expr = Some("1 + * 2".to_string());
+
+    let table = TableSpec {
+        id: TableId::from("BadColTable"),
+        title: "Bad Col".to_string(),
+        columns: vec![bad_col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![RowSpec {
+            id: RowId::from("r1"),
+            role: AxisRole::Measure,
+            format: None,
+            note: None,
+            source: None,
+            expr: None,
+            cells: IndexMap::new(),
+        }],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let err = expand_table(&symbols, &table).unwrap_err();
+    match &err {
+        IrError::FormulaParse {
+            table, row, column, ..
+        } => {
+            assert_eq!(table.as_str(), "BadColTable");
+            assert_eq!(*row, None);
+            assert_eq!(column.as_ref().map(|c| c.as_str()), Some("bad_col"));
+        }
+        other => panic!("expected FormulaParse error, got {other:?}"),
+    }
+
+    let err_msg = err.to_string();
+    assert!(err_msg.contains("col 'bad_col'"));
+    assert!(!err_msg.contains("row ''"));
+}
+
+#[test]
+fn test_dual_descriptor_format_fallback() {
+    let mut desc_col = ColumnSpec::descriptor("d_col", "Desc Col");
+    desc_col.format = None;
+
+    let mut desc_row = RowSpec::descriptor("d_row");
+    desc_row.format = Some(FormatPreset::Text);
+    desc_row
+        .cells
+        .insert("d_col".into(), CellInput::string("Label"));
+
+    let table = TableSpec {
+        id: TableId::from("DualDesc"),
+        title: "Dual Descriptor Table".to_string(),
+        columns: vec![desc_col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![desc_row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].format, Some(FormatPreset::Text));
 }
