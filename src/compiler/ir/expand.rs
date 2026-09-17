@@ -311,7 +311,9 @@ mod tests {
                             "cols.forecast".to_string(),
                             MatchArmSpec {
                                 value: None,
-                                expr: Some("IncomeStatement.revenue[col.prev] * 1.05".to_string()),
+                                expr: Some(
+                                    "IncomeStatement[\"revenue\", col.prev] * 1.05".to_string(),
+                                ),
                                 note: Some("5% growth".to_string()),
                                 source: None,
                             },
@@ -417,7 +419,7 @@ mod tests {
             note: None,
             source: None,
             value: None,
-            expr: Some("IncomeStatement.revenue[@] + * 2".to_string()),
+            expr: Some("IncomeStatement[\"revenue\", @] + * 2".to_string()),
             match_arms: None,
         };
 

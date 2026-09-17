@@ -88,7 +88,7 @@ fn test_scenario_2_expand_uniform_formula_row_across_columns() {
         note: Some("Operating margin formula".to_string()),
         source: None,
         value: None,
-        expr: Some("IncomeStatement.revenue[@] * 0.1".to_string()),
+        expr: Some("IncomeStatement[\"revenue\", @] * 0.1".to_string()),
         match_arms: None,
     };
 
@@ -102,7 +102,7 @@ fn test_scenario_2_expand_uniform_formula_row_across_columns() {
     let cells = expand_table(&symbols, &table).expect("expansion succeeds");
     assert_eq!(cells.len(), 2);
 
-    let expected_ast = Expr::parse("IncomeStatement.revenue[@] * 0.1").expect("valid formula");
+    let expected_ast = Expr::parse("IncomeStatement[\"revenue\", @] * 0.1").expect("valid formula");
 
     assert_eq!(cells[0].id, CellId::new("IncomeStatement", "ebit", "2024E"));
     assert_eq!(cells[0].payload, CellPayload::Formula(expected_ast.clone()));
@@ -138,7 +138,7 @@ fn test_scenario_3_expand_partitioned_row_with_match_arms() {
                 "2024E..2025E".to_string(),
                 MatchArmSpec {
                     value: None,
-                    expr: Some("IncomeStatement.revenue[col.prev] * 1.05".to_string()),
+                    expr: Some("IncomeStatement[\"revenue\", col.prev] * 1.05".to_string()),
                     note: Some("5% growth projection".to_string()),
                     source: None,
                 },
@@ -259,7 +259,7 @@ fn test_scenario_5_actionable_formula_parse_error_diagnostic() {
         note: None,
         source: None,
         value: None,
-        expr: Some("IncomeStatement.revenue[@] + * 5".to_string()),
+        expr: Some("IncomeStatement[\"revenue\", @] + * 5".to_string()),
         match_arms: None,
     };
 
@@ -437,7 +437,7 @@ fn test_expand_column_group_in_match_arms() {
                 "cols.forecast".to_string(),
                 MatchArmSpec {
                     value: None,
-                    expr: Some("BalanceSheet.cash[col.prev] + 10.0".to_string()),
+                    expr: Some("BalanceSheet[\"cash\", col.prev] + 10.0".to_string()),
                     note: None,
                     source: None,
                 },

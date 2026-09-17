@@ -51,7 +51,7 @@ When cell coordinates are passed via range references to numeric aggregators (e.
 To guarantee strict compliance with the FAST Standard and maintain full determinism:
 - Every cell formula evaluates to exactly one scalar [`CellValue`](evaluator.md#3-cell-value--error-representation).
 - Formulas never return dynamic arrays and never spill across neighboring cells.
-- Multi-column logic is handled explicitly during grid expansion (e.g. `"expr": "Price[@] * Volume[@]"` unrolled per column), eliminating implicit matrix broadcasting.
+- Multi-column logic is handled explicitly during grid expansion (e.g. `"expr": "Sales[\"price\", @] * Sales[\"volume\", @]"` unrolled per column), eliminating implicit matrix broadcasting.
 - Ranges and 2D arrays are strictly inputs to aggregating functions (`SUM`, `AVERAGE`, `XNPV`, `XLOOKUP`).
 
 ### 3.2. Short-Circuiting vs. Eager Evaluation
@@ -102,7 +102,7 @@ $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 
 ## 5. Range Slicing & Error Propagation
 
-- **Slices**: Range references (e.g. `Table.row["2024E".."2028E"]` or `Table[rows.opex, @]`) resolve to ordered vectors of `CellValue`.
+- **Slices**: Range references (e.g. `Table["row", "2024E".."2028E"]` or `Table[rows.opex, @]`) resolve to ordered vectors of `CellValue`.
 - **Multi-dimensional flattening**: Aggregators (`SUM`, `MAX`, `MIN`) flatten multi-dimensional slices before calculation.
 - **Error bubbling**: Domain errors (`#REF!`, `#VALUE!`, `#DIV/0!`, `#NUM!`, `#N/A`) propagate through strict scalar arithmetic operations to dependent cells.
 
@@ -111,6 +111,6 @@ $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 ## 6. Deterministic Purity (Zero Volatile Functions)
 
 - **Zero volatile functions**: Functions with runtime environmental dependencies (`TODAY`, `NOW`, `RAND`, `RANDBETWEEN`) are strictly excluded from Finx V1.
-- **Explicit assumption parameters**: All timeline dates and modeling milestones must be supplied via explicit static parameters (e.g. `Assumptions.as_of_date` or `Assumptions.model_start_date`). This guarantees that headless execution, CI/CD pipelines, and opened Excel workbooks remain bit-for-bit identical and never desynchronize over time.
+- **Explicit assumption parameters**: All timeline dates and modeling milestones must be supplied via explicit static parameters (e.g. `Assumptions["as_of_date", "value"]` or `Assumptions["model_start_date", "value"]`). This guarantees that headless execution, CI/CD pipelines, and opened Excel workbooks remain bit-for-bit identical and never desynchronize over time.
 
 See [In-Memory Evaluator](evaluator.md) for DAG execution, [Function Registry](../functions/registry.md) for registry traits, and [Standard Catalog](../functions/catalog.md) for catalog definitions.

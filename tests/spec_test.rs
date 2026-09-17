@@ -127,26 +127,26 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
                 "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth",
                 "match": {
                     "2023A": { "value": [100000.0] },
-                    "cols.forecast": { "expr": "IncomeStatement.revenue[col.prev] * 1.08" }
+                    "cols.forecast": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
                 }
             },
             {
                 "id": "cogs",
                 "label": "Cost of Goods Sold",
                 "format": "currency",
-                "expr": "IncomeStatement.revenue[@] * 0.45"
+                "expr": "IncomeStatement[\"revenue\", @] * 0.45"
             },
             {
                 "id": "gross_profit",
                 "label": "Gross Profit",
                 "format": "currency_total",
-                "expr": "IncomeStatement.revenue[@] - IncomeStatement.cogs[@]"
+                "expr": "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]"
             },
             {
                 "id": "tax_expense",
                 "label": "Income Tax Provision",
                 "format": "currency",
-                "expr": "IncomeStatement.gross_profit[@] * Assumptions.tax_rate[\"value\"]"
+                "expr": "IncomeStatement[\"gross_profit\", @] * Assumptions[\"tax_rate\", \"value\"]"
             }
         ]
     }"#;
@@ -159,7 +159,7 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
 fn test_scenario_3_reject_row_with_multiple_payloads() {
     let mut table = sample_table();
     table.rows[0].value = Some(vec![ValueLiteral::Number(1.0), ValueLiteral::Number(2.0)]);
-    table.rows[0].expr = Some("IncomeStatement.revenue[@]".to_string());
+    table.rows[0].expr = Some("IncomeStatement[\"revenue\", @]".to_string());
 
     let err = table.validate().unwrap_err();
     assert!(matches!(

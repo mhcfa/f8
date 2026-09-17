@@ -53,7 +53,7 @@ The root manifest defines workbook-level metadata and physical sheet presentatio
 When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/spatial-layout.md) stacks them vertically in the exact order listed, inserting standard blank-row gutters between tables:
 - **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans (e.g. stacking a 1-column assumptions table above a 5-column forecast table is completely valid).
 - **Physical anchoring**: Each table anchors its row stub labels and data columns at standard sheet offsets (Columns A/B for stubs, Column C onward for data columns).
-- **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table.row[col]`), remaining fully isolated from the physical row and column placement on the sheet.
+- **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table[row, col]`), remaining fully isolated from the physical row and column placement on the sheet.
 - **Column width resolution**: Physical column widths resolve to the maximum required width across all stacked tables sharing that column.
 
 ---
@@ -136,7 +136,7 @@ When a formula applies identically to all columns in a table:
   "id": "gross_profit",
   "label": "Gross Profit",
   "format": "currency_total",
-  "expr": "IncomeStatement.revenue[@] - IncomeStatement.cogs[@]"
+  "expr": "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]"
 }
 ```
 
@@ -165,7 +165,7 @@ Separates hardcoded historical values from formula-driven forecast projections:
   "format": "currency",
   "match": {
     "2021A..2023A": { "value": [85000, 92000, 100000] },
-    "2024E..2028E": { "expr": "IncomeStatement.revenue[col.prev] * 1.08" }
+    "2024E..2028E": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
   }
 }
 ```
@@ -180,8 +180,8 @@ Models balance sheet or debt roll-forwards with an explicit initial period and e
   "label": "Beginning Cash Balance",
   "format": "currency",
   "match": {
-    "2024E": { "expr": "Assumptions.initial_cash[\"value\"]" },
-    "2025E..2028E": { "expr": "BalanceSheet.ending_cash[col.prev]" }
+    "2024E": { "expr": "Assumptions[\"initial_cash\", \"value\"]" },
+    "2025E..2028E": { "expr": "BalanceSheet[\"ending_cash\", col.prev]" }
   }
 }
 ```
@@ -236,7 +236,7 @@ Columns can be grouped into semantic phases or analytical categories using the `
 - **Super-header rendering**: In physical Excel layout, the layout engine generates a top-tier super-header row with merged cells displaying group `label` values.
 - **Alias resolution**: Group names resolve dynamically in expressions:
   - Boundaries: `cols.historical.last`, `cols.forecast.first`.
-  - Full range slicing: `SUM(IncomeStatement.revenue[cols.forecast])` or `SUM(Comps.market_cap[cols.market_data])`.
+  - Full range slicing: `SUM(IncomeStatement["revenue", cols.forecast])` or `SUM(Comps["market_cap", cols.market_data])`.
 - **Automated styling**: The layout engine detects boundaries between adjacent column groups and applies standard vertical dividing borders.
 - **Timeline calculations**: Dynamic timing metrics (such as period fractions, discount periods, and day counts) must be defined as dedicated calculation rows within `rows`, keeping headers strictly declarative and coordinates static.
 
@@ -320,7 +320,7 @@ For multi-tier statements, parent groups nest sub-groups recursively using `chil
       "id": "total_assets",
       "label": "Total Assets",
       "format": "currency_total",
-      "expr": "BalanceSheet.total_current_assets[@] + BalanceSheet.total_non_current_assets[@]"
+      "expr": "BalanceSheet[\"total_current_assets\", @] + BalanceSheet[\"total_non_current_assets\", @]"
     }
   ]
 }
@@ -475,26 +475,26 @@ External or organization-specific styling plugins can provide custom themes with
       "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth",
       "match": {
         "2023A": { "value": [100000.0] },
-        "cols.forecast": { "expr": "IncomeStatement.revenue[col.prev] * 1.08" }
+        "cols.forecast": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
       }
     },
     {
       "id": "cogs",
       "label": "Cost of Goods Sold",
       "format": "currency",
-      "expr": "IncomeStatement.revenue[@] * 0.45"
+      "expr": "IncomeStatement[\"revenue\", @] * 0.45"
     },
     {
       "id": "gross_profit",
       "label": "Gross Profit",
       "format": "currency_total",
-      "expr": "IncomeStatement.revenue[@] - IncomeStatement.cogs[@]"
+      "expr": "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]"
     },
     {
       "id": "tax_expense",
       "label": "Income Tax Provision",
       "format": "currency",
-      "expr": "IncomeStatement.gross_profit[@] * Assumptions.tax_rate[\"value\"]"
+      "expr": "IncomeStatement[\"gross_profit\", @] * Assumptions[\"tax_rate\", \"value\"]"
     }
   ]
 }

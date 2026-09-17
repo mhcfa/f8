@@ -27,7 +27,7 @@ impl CellId {
 
 impl fmt::Display for CellId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}[\"{}\"]", self.table, self.row, self.col)
+        write!(f, "{}[\"{}\", \"{}\"]", self.table, self.row, self.col)
     }
 }
 
@@ -38,7 +38,7 @@ mod tests {
     #[test]
     fn test_cell_id_display() {
         let cell = CellId::new("IncomeStatement", "revenue", "2024E");
-        assert_eq!(cell.to_string(), "IncomeStatement.revenue[\"2024E\"]");
+        assert_eq!(cell.to_string(), "IncomeStatement[\"revenue\", \"2024E\"]");
     }
 
     #[test]

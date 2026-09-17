@@ -35,10 +35,10 @@ Every row must specify exactly one calculation payload: `value`, `expr`, or `mat
 #### Scenarios
 
 - **Valid Single Payload**:
-  - **When** a row defines only `"expr": "Table.x[@]"` or only `"value": [1.0, 2.0]`
+  - **When** a row defines only `"expr": "Table[\"x\", @]"` or only `"value": [1.0, 2.0]`
   - **Then** validation succeeds.
 - **Multiple Payloads Rejected**:
-  - **When** a row specifies both `"value": [1.0]` and `"expr": "Table.x[@]"`
+  - **When** a row specifies both `"value": [1.0]` and `"expr": "Table[\"x\", @]"`
   - **Then** validation returns `ModelError::MutuallyExclusivePayload`.
 - **Zero Payloads Rejected**:
   - **When** a row specifies neither `value`, `expr`, nor `match`

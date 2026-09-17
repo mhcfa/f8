@@ -9,21 +9,24 @@ Formula lowering resolves high-level semantic coordinates into concrete Excel re
 ```mermaid
 flowchart LR
     A["Formula AST Node"] --> B["Resolve Target CellId"]
-    B --> C["Lookup Physical (Sheet, Col, Row)\nfrom Spatial Layout Map"]
+    B --> C["Lookup Physical (Sheet, Col, Row)<br>from Spatial Layout Map"]
     C --> D["Apply Referencing Rules ($)"]
-    D --> E["Emit Excel Formula String\n(e.g. =C10-C11)"]
+    D --> E["Emit Excel Formula String<br>(e.g. =C10-C11)"]
 ```
 
 ### 1.1. Coordinate Lowering Rules
 
-| Reference Type | Spec Syntax | Sheet Context | Lowered Excel Formula |
-| :--- | :--- | :--- | :--- |
-| **Active Column (`[@]`)** | `Revenue[@]` | Same sheet | Relative column: `=C10` |
-| **Specific Column** | `Assumptions.tax_rate["value"]` | Different sheet (`Summary`) | Absolute coordinate: `='Summary'!$B$4` |
-| **Specific Column** | `Balance["2023A"]` | Same sheet | Absolute coordinate: `=$C$10` |
-| **Horizontal Range** | `Revenue[cols.forecast]` | Same sheet | Horizontal slice: `=SUM(C10:G10)` |
-| **Vertical Range** | `BalanceSheet[rows.current_assets, @]` | Same sheet | Vertical slice: `=SUM(C14:C18)` |
-| **2D Block Range** | `BalanceSheet[rows.current_assets, cols.forecast]` | Same sheet | 2D matrix: `=SUM(C14:G18)` |
+| Reference Type | Spec Syntax | Sheet Context | Lowered Excel Formula | Referencing Semantics |
+| :--- | :--- | :--- | :--- | :--- |
+| **Active Column (`[@]`)** | `IncomeStatement["revenue", @]` | Same sheet | `=C10` | Relative column (tracks evaluation column) |
+| **Temporal Offset** | `BalanceSheet["cash", col.prev]` | Same sheet | `=C10` (at D10) | Relative column offset ($t \pm k$) |
+| **Specific Column** | `Assumptions["tax_rate", "value"]` | Different sheet (`Summary`) | `='Summary'!$B$4` | Absolute coordinate (fixed key) |
+| **Specific Column** | `DebtSchedule["balance", "2023A"]` | Same sheet | `=$C$10` | Absolute coordinate (fixed key) |
+| **Group Milestone Anchor** | `DebtSchedule["balance", cols.historical.last]` | Same sheet | `=$C$10` | Absolute coordinate (statically resolved key) |
+| **Horizontal Range** | `IncomeStatement["revenue", cols.forecast]` | Same sheet | `=SUM($C$10:$G$10)` | Absolute column bounds (fixed group range) |
+| **Vertical Range (Active)** | `BalanceSheet[rows.current_assets, @]` | Same sheet | `=SUM(C$14:C$18)` | Relative column, absolute row bounds |
+| **Vertical Range (Specific)** | `BalanceSheet[rows.current_assets, "2024E"]` | Same sheet | `=SUM($C$14:$C$18)` | Absolute column, absolute row bounds |
+| **2D Block Range** | `BalanceSheet[rows.current_assets, cols.forecast]` | Same sheet | `=SUM($C$14:$G$18)` | Absolute 2D matrix bounds |
 
 ### 1.2. AST Serialization
 - Function names map to canonical uppercase names (`SUM`, `IF`, `XLOOKUP`).

@@ -1,6 +1,6 @@
 ---
 title: Formula Expression AST & Pratt Parser
-last_updated: 2026-09-16
+last_updated: 2026-09-17
 domain: expr
 status: active
 ---
@@ -12,7 +12,7 @@ The `expr` subsystem provides the Abstract Syntax Tree (AST), structured diagnos
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RefAccess`, `RowSelector`, `ColSelector`, `SpecialRow`, `SpecialCol`) and `Display` implementations.
+  - `finx::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RowSelector`, `ColSelector`, `SpecialRow`, `SpecialCol`) and `Display` implementations.
   - `finx::expr::error`: Diagnostic domain errors (`ParseError`).
   - `finx::expr::parser`: Two-stage parsing pipeline:
     - Lexer: `tokenize` parses `&str` into `Vec<SpannedToken>` using the borrowed `Token` enum with zero external dependencies.
@@ -52,33 +52,33 @@ Formulas must strictly observe algebraic precedence across five tiers:
   - **When** parsing `"(1 + 2) * 3"`
   - **Then** parentheses explicitly override default operator binding.
 
-### 2. Mandatory Two-Coordinate Addressing
+### 2. Mandatory Two-Coordinate Addressing & Orthogonal 2D Indexing
 
-Every reference must specify both a row selector and a column selector. Bare table or row identifiers without coordinate brackets are strictly rejected.
+Every table reference must specify both a row selector and a column selector separated by a comma: `Table[RowSelector, ColSelector]`. Legacy dot-access (`Table.row[...]`) and bare identifiers are strictly rejected.
 
 #### Scenarios
 
-- **Valid Dot Access**:
-  - **When** referencing `Table.row[@]` or `Table.row["col"]`
-  - **Then** parses into `TableRef` with `RefAccess::Dot`.
-- **Valid Bracket Access**:
-  - **When** referencing `Table[row, col]`
-  - **Then** parses into `TableRef` with `RefAccess::Bracket`.
+- **Valid Orthogonal 2D Access**:
+  - **When** referencing `Table["row", @]` or `Table["row", "col"]`
+  - **Then** parses into `TableRef` with `{ table, row, col }`.
+- **Legacy Dot-Access Rejection**:
+  - **When** encountering `IncomeStatement.revenue[@]` or `IncomeStatement.revenue`
+  - **Then** returns `ParseError::UnexpectedToken` pointing to `.` after table identifier.
 - **Bare Reference Rejection**:
-  - **When** encountering `IncomeStatement.revenue` without brackets
+  - **When** encountering bare `IncomeStatement` without brackets
   - **Then** returns `ParseError::UnexpectedToken`.
 
 ### 3. Strictly Quoted Coordinate Keys
 
-All coordinate row and column keys inside brackets must be double-quoted strings (e.g. `["value"]`, `["2024E".."2028E"]`). Bare identifiers are prohibited unless they match recognized semantic prefixes (`rows.`, `cols.`, `col.prev`, `col.next`).
+All coordinate row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @]`, `["tax_rate", "value"]`, `["revenue", "2024E".."2028E"]`). Bare identifiers are prohibited unless they match recognized semantic prefixes (`rows.`, `cols.`, `col.prev`, `col.next`).
 
 #### Scenarios
 
 - **Quoted Key Coordinate**:
-  - **When** referencing `IncomeStatement.revenue["2024E"]`
-  - **Then** parses into `ColSelector::Key("2024E")`.
+  - **When** referencing `IncomeStatement["revenue", "2024E"]`
+  - **Then** parses into `RowSelector::Key("revenue")` and `ColSelector::Key("2024E")`.
 - **Unquoted Key Rejection**:
-  - **When** encountering `IncomeStatement.revenue[2024E]` or `Opex[r_and_d, @]`
+  - **When** encountering `IncomeStatement["revenue", 2024E]` or `Opex[r_and_d, @]`
   - **Then** returns `ParseError::UnquotedCoordinateKey`.
 
 ### 4. Uppercase Function Names

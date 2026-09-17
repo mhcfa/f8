@@ -7,9 +7,8 @@ use finx::model::id::{ColGroupId, RowGroupId, RowId, TableId};
 
 #[test]
 fn test_complex_formula_expression_parsing() {
-    // Standard margin formula: (IncomeStatement.revenue[@] - IncomeStatement.cogs[@]) / IncomeStatement.revenue[@]
-    let input =
-        "(IncomeStatement.revenue[@] - IncomeStatement.cogs[@]) / IncomeStatement.revenue[@]";
+    // Standard margin formula: (IncomeStatement["revenue", @] - IncomeStatement["cogs", @]) / IncomeStatement["revenue", @]
+    let input = "(IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]) / IncomeStatement[\"revenue\", @]";
     let expr = Expr::parse(input).expect("Should parse valid margin formula");
 
     match expr {
@@ -24,17 +23,17 @@ fn test_complex_formula_expression_parsing() {
                     assert_eq!(sub_op, BinaryOp::Sub);
                     assert_eq!(
                         *sub_left,
-                        Expr::Reference(TableRef::dot(
+                        Expr::Reference(TableRef::new(
                             "IncomeStatement",
-                            "revenue",
+                            RowSelector::Key(RowId::new("revenue")),
                             ColSelector::Active
                         ))
                     );
                     assert_eq!(
                         *sub_right,
-                        Expr::Reference(TableRef::dot(
+                        Expr::Reference(TableRef::new(
                             "IncomeStatement",
-                            "cogs",
+                            RowSelector::Key(RowId::new("cogs")),
                             ColSelector::Active
                         ))
                     );
@@ -43,9 +42,9 @@ fn test_complex_formula_expression_parsing() {
             }
             assert_eq!(
                 *right,
-                Expr::Reference(TableRef::dot(
+                Expr::Reference(TableRef::new(
                     "IncomeStatement",
-                    "revenue",
+                    RowSelector::Key(RowId::new("revenue")),
                     ColSelector::Active
                 ))
             );
@@ -56,8 +55,8 @@ fn test_complex_formula_expression_parsing() {
 
 #[test]
 fn test_nested_functions_and_logical_operators() {
-    // IF(AND(a.b[@] > 0, a.c[@] <= 100), SUM(Opex["r_and_d".."g_and_a", @]), null)
-    let input = "IF(AND(a.b[@] > 0, a.c[@] <= 100), SUM(Opex[\"r_and_d\"..\"g_and_a\", @]), null)";
+    // IF(AND(a["b", @] > 0, a["c", @] <= 100), SUM(Opex["r_and_d".."g_and_a", @]), null)
+    let input = "IF(AND(a[\"b\", @] > 0, a[\"c\", @] <= 100), SUM(Opex[\"r_and_d\"..\"g_and_a\", @]), null)";
     let expr = Expr::parse(input).expect("Should parse nested logical expressions");
 
     if let Expr::FunctionCall { name, args } = expr {
@@ -86,7 +85,7 @@ fn test_nested_functions_and_logical_operators() {
             assert_eq!(sum_args.len(), 1);
             assert_eq!(
                 sum_args[0],
-                Expr::Reference(TableRef::bracket(
+                Expr::Reference(TableRef::new(
                     TableId::new("Opex"),
                     RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
                     ColSelector::Active,
@@ -105,21 +104,21 @@ fn test_nested_functions_and_logical_operators() {
 
 #[test]
 fn test_temporal_offsets() {
-    let input = "BalanceSheet.cash[col.prev] + CashFlow.net_change[@]";
+    let input = "BalanceSheet[\"cash\", col.prev] + CashFlow[\"net_change\", @]";
     let expr = Expr::parse(input).expect("Should parse temporal offset formula");
 
     assert_eq!(
         expr,
         Expr::Binary {
             op: BinaryOp::Add,
-            left: Box::new(Expr::Reference(TableRef::dot(
+            left: Box::new(Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
-                RowId::new("cash"),
+                RowSelector::Key(RowId::new("cash")),
                 ColSelector::Special(SpecialCol::Prev(1)),
             ))),
-            right: Box::new(Expr::Reference(TableRef::dot(
+            right: Box::new(Expr::Reference(TableRef::new(
                 TableId::new("CashFlow"),
-                RowId::new("net_change"),
+                RowSelector::Key(RowId::new("net_change")),
                 ColSelector::Active,
             ))),
         }
@@ -130,31 +129,31 @@ fn test_temporal_offsets() {
 fn test_all_special_col_and_row_variants() {
     let formulas = [
         (
-            "Table.row[col.prev]",
+            "Table[\"row\", col.prev]",
             ColSelector::Special(SpecialCol::Prev(1)),
         ),
         (
-            "Table.row[col.prev(5)]",
+            "Table[\"row\", col.prev(5)]",
             ColSelector::Special(SpecialCol::Prev(5)),
         ),
         (
-            "Table.row[col.next]",
+            "Table[\"row\", col.next]",
             ColSelector::Special(SpecialCol::Next(1)),
         ),
         (
-            "Table.row[col.next(2)]",
+            "Table[\"row\", col.next(2)]",
             ColSelector::Special(SpecialCol::Next(2)),
         ),
         (
-            "Table.row[cols.forecast]",
+            "Table[\"row\", cols.forecast]",
             ColSelector::Special(SpecialCol::Group(ColGroupId::new("forecast"))),
         ),
         (
-            "Table.row[cols.forecast.first]",
+            "Table[\"row\", cols.forecast.first]",
             ColSelector::Special(SpecialCol::GroupFirst(ColGroupId::new("forecast"))),
         ),
         (
-            "Table.row[cols.forecast.last]",
+            "Table[\"row\", cols.forecast.last]",
             ColSelector::Special(SpecialCol::GroupLast(ColGroupId::new("forecast"))),
         ),
     ];
@@ -163,9 +162,9 @@ fn test_all_special_col_and_row_variants() {
         let parsed = Expr::parse(formula).expect("Should parse");
         assert_eq!(
             parsed,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("Table"),
-                RowId::new("row"),
+                RowSelector::Key(RowId::new("row")),
                 expected_col
             ))
         );
@@ -190,7 +189,7 @@ fn test_all_special_col_and_row_variants() {
         let parsed = Expr::parse(formula).expect("Should parse");
         assert_eq!(
             parsed,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("Table"),
                 expected_row,
                 ColSelector::Active
@@ -214,7 +213,7 @@ fn test_syntax_errors_actionable_diagnostics() {
     assert_eq!(unclosed, ParseError::UnexpectedEof { expected: "')'" });
 
     // Bare coordinate key
-    let bare_key = Expr::parse("Table.row[unquoted_col]").unwrap_err();
+    let bare_key = Expr::parse("Table[\"row\", unquoted_col]").unwrap_err();
     match bare_key {
         ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "unquoted_col"),
         other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
@@ -232,5 +231,15 @@ fn test_syntax_errors_actionable_diagnostics() {
     match trailing {
         ParseError::TrailingInput { trailing, .. } => assert_eq!(trailing, "garbage"),
         other => panic!("Expected TrailingInput, got {other:?}"),
+    }
+
+    // Reject legacy dot-access
+    let dot_err = Expr::parse("IncomeStatement.revenue[@]").unwrap_err();
+    match dot_err {
+        ParseError::UnexpectedToken { found, offset, .. } => {
+            assert_eq!(found, ".");
+            assert_eq!(offset, 15);
+        }
+        other => panic!("Expected UnexpectedToken for dot-access, got {other:?}"),
     }
 }

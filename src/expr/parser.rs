@@ -626,12 +626,16 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
             let name = *ident;
             stream.advance();
 
-            match stream.peek_token() {
-                Some(Token::LParen) => parse_function_call(name, offset, stream),
-                Some(Token::Dot) => parse_dot_access(name, stream),
-                Some(Token::LBracket) => parse_bracket_access(name, stream),
-                _ => Err(ParseError::UnexpectedToken {
-                    expected: "function call '(', dot access '.', or bracket access '['",
+            match stream.peek() {
+                Some(st) if st.token == Token::LParen => parse_function_call(name, offset, stream),
+                Some(st) if st.token == Token::LBracket => parse_bracket_access(name, stream),
+                Some(st) => Err(ParseError::UnexpectedToken {
+                    expected: "function call '(' or table reference '['",
+                    found: st.token.to_string(),
+                    offset: st.offset,
+                }),
+                None => Err(ParseError::UnexpectedToken {
+                    expected: "function call '(' or table reference '['",
                     found: name.to_string(),
                     offset,
                 }),
@@ -732,35 +736,6 @@ fn parse_function_call(
     })
 }
 
-fn parse_dot_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
-    // Consume '.'
-    let _ = stream.expect(&Token::Dot, "'.'")?;
-
-    let row_name = match stream.consume() {
-        Some(st) => match st.token {
-            Token::Ident(id) => id,
-            ref other => {
-                return Err(ParseError::UnexpectedToken {
-                    expected: "row identifier",
-                    found: other.to_string(),
-                    offset: st.offset,
-                });
-            }
-        },
-        None => {
-            return Err(ParseError::UnexpectedEof {
-                expected: "row identifier",
-            });
-        }
-    };
-
-    let _ = stream.expect(&Token::LBracket, "'['")?;
-    let col = parse_col_spec(stream)?;
-    let _ = stream.expect(&Token::RBracket, "']'")?;
-
-    Ok(Expr::Reference(TableRef::dot(table, row_name, col)))
-}
-
 fn parse_bracket_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
     // Consume '['
     let _ = stream.expect(&Token::LBracket, "'['")?;
@@ -770,7 +745,7 @@ fn parse_bracket_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Exp
     let col = parse_col_spec(stream)?;
     let _ = stream.expect(&Token::RBracket, "']'")?;
 
-    Ok(Expr::Reference(TableRef::bracket(table, row, col)))
+    Ok(Expr::Reference(TableRef::new(table, row, col)))
 }
 
 fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseError> {
@@ -1163,14 +1138,14 @@ mod tests {
 
     #[test]
     fn test_relational_comparisons() {
-        let expr = parse_expr_str("IncomeStatement.revenue[@] >= 100").unwrap();
+        let expr = parse_expr_str("IncomeStatement[\"revenue\", @] >= 100").unwrap();
         assert_eq!(
             expr,
             Expr::Binary {
                 op: BinaryOp::Gte,
-                left: Box::new(Expr::Reference(TableRef::dot(
+                left: Box::new(Expr::Reference(TableRef::new(
                     "IncomeStatement",
-                    "revenue",
+                    RowSelector::Key(RowId::new("revenue")),
                     ColSelector::Active,
                 ))),
                 right: Box::new(Expr::number(100.0)),
@@ -1202,7 +1177,7 @@ mod tests {
 
     #[test]
     fn test_function_calls() {
-        let expr = parse_expr_str("IF(Assumptions.flag[\"active\"] = 1, 100, 0)").unwrap();
+        let expr = parse_expr_str("IF(Assumptions[\"flag\", \"active\"] = 1, 100, 0)").unwrap();
         match expr {
             Expr::FunctionCall { name, args } => {
                 assert_eq!(name, "IF");
@@ -1211,9 +1186,9 @@ mod tests {
                     args[0],
                     Expr::Binary {
                         op: BinaryOp::Eq,
-                        left: Box::new(Expr::Reference(TableRef::dot(
+                        left: Box::new(Expr::Reference(TableRef::new(
                             "Assumptions",
-                            "flag",
+                            RowSelector::Key(RowId::new("flag")),
                             ColSelector::Key(ColId::new("active")),
                         ))),
                         right: Box::new(Expr::number(1.0)),
@@ -1236,106 +1211,104 @@ mod tests {
     }
 
     #[test]
-    fn test_dot_access_addressing_forms() {
-        // Active column
-        let active = parse_expr_str("IncomeStatement.revenue[@]").unwrap();
+    fn test_orthogonal_addressing_forms() {
+        // Active column: Table["row", @]
+        let active = parse_expr_str("IncomeStatement[\"revenue\", @]").unwrap();
         assert_eq!(
             active,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("IncomeStatement"),
-                RowId::new("revenue"),
+                RowSelector::Key(RowId::new("revenue")),
                 ColSelector::Active,
             ))
         );
 
-        // Specific column key
-        let specific = parse_expr_str("Assumptions.tax_rate[\"value\"]").unwrap();
+        // Specific column key: Table["row", "col"]
+        let specific = parse_expr_str("Assumptions[\"tax_rate\", \"value\"]").unwrap();
         assert_eq!(
             specific,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("Assumptions"),
-                RowId::new("tax_rate"),
+                RowSelector::Key(RowId::new("tax_rate")),
                 ColSelector::Key(ColId::new("value")),
             ))
         );
 
         // col.prev default (1)
-        let prev1 = parse_expr_str("BalanceSheet.cash[col.prev]").unwrap();
+        let prev1 = parse_expr_str("BalanceSheet[\"cash\", col.prev]").unwrap();
         assert_eq!(
             prev1,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
-                RowId::new("cash"),
+                RowSelector::Key(RowId::new("cash")),
                 ColSelector::Special(SpecialCol::Prev(1)),
             ))
         );
 
         // col.prev(2)
-        let prev2 = parse_expr_str("BalanceSheet.cash[col.prev(2)]").unwrap();
+        let prev2 = parse_expr_str("BalanceSheet[\"cash\", col.prev(2)]").unwrap();
         assert_eq!(
             prev2,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
-                RowId::new("cash"),
+                RowSelector::Key(RowId::new("cash")),
                 ColSelector::Special(SpecialCol::Prev(2)),
             ))
         );
 
         // col.next(3)
-        let next3 = parse_expr_str("BalanceSheet.cash[col.next(3)]").unwrap();
+        let next3 = parse_expr_str("BalanceSheet[\"cash\", col.next(3)]").unwrap();
         assert_eq!(
             next3,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
-                RowId::new("cash"),
+                RowSelector::Key(RowId::new("cash")),
                 ColSelector::Special(SpecialCol::Next(3)),
             ))
         );
 
         // cols.historical.last
-        let hist_last = parse_expr_str("DebtSchedule.balance[cols.historical.last]").unwrap();
+        let hist_last = parse_expr_str("DebtSchedule[\"balance\", cols.historical.last]").unwrap();
         assert_eq!(
             hist_last,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("DebtSchedule"),
-                RowId::new("balance"),
+                RowSelector::Key(RowId::new("balance")),
                 ColSelector::Special(SpecialCol::GroupLast(ColGroupId::new("historical"))),
             ))
         );
 
         // cols.forecast.first
-        let fc_first = parse_expr_str("DebtSchedule.balance[cols.forecast.first]").unwrap();
+        let fc_first = parse_expr_str("DebtSchedule[\"balance\", cols.forecast.first]").unwrap();
         assert_eq!(
             fc_first,
-            Expr::Reference(TableRef::dot(
+            Expr::Reference(TableRef::new(
                 TableId::new("DebtSchedule"),
-                RowId::new("balance"),
+                RowSelector::Key(RowId::new("balance")),
                 ColSelector::Special(SpecialCol::GroupFirst(ColGroupId::new("forecast"))),
             ))
         );
 
-        // Horizontal range
-        let h_range = parse_expr_str("SUM(IncomeStatement.revenue[\"2024E\"..\"2028E\"])").unwrap();
+        // Horizontal range: SUM(Table["row", "2024E".."2028E"])
+        let h_range =
+            parse_expr_str("SUM(IncomeStatement[\"revenue\", \"2024E\"..\"2028E\"])").unwrap();
         assert_eq!(
             h_range,
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::dot(
+                args: vec![Expr::Reference(TableRef::new(
                     TableId::new("IncomeStatement"),
-                    RowId::new("revenue"),
+                    RowSelector::Key(RowId::new("revenue")),
                     ColSelector::Range(ColId::new("2024E"), ColId::new("2028E")),
                 ))],
             }
         );
-    }
 
-    #[test]
-    fn test_bracket_access_addressing_forms() {
         // Vertical slice active column: Opex["r_and_d".."g_and_a", @]
         let v_slice = parse_expr_str("Opex[\"r_and_d\"..\"g_and_a\", @]").unwrap();
         assert_eq!(
             v_slice,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("Opex"),
                 RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
                 ColSelector::Active,
@@ -1346,29 +1319,40 @@ mod tests {
         let rg_active = parse_expr_str("BalanceSheet[rows.current_assets, @]").unwrap();
         assert_eq!(
             rg_active,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Special(SpecialRow::Group(RowGroupId::new("current_assets"))),
                 ColSelector::Active,
             ))
         );
 
-        // Row group specific column: BalanceSheet[rows.current_assets, \"2024E\"]
+        // Row group specific column: BalanceSheet[rows.current_assets, "2024E"]
         let rg_specific = parse_expr_str("BalanceSheet[rows.current_assets, \"2024E\"]").unwrap();
         assert_eq!(
             rg_specific,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Special(SpecialRow::Group(RowGroupId::new("current_assets"))),
                 ColSelector::Key(ColId::new("2024E")),
             ))
         );
 
-        // Single row key specific column: BalanceSheet[\"cash\", \"2024E\"]
+        // Row group milestone: BalanceSheet[rows.current_assets.first, @]
+        let rg_first = parse_expr_str("BalanceSheet[rows.current_assets.first, @]").unwrap();
+        assert_eq!(
+            rg_first,
+            Expr::Reference(TableRef::new(
+                TableId::new("BalanceSheet"),
+                RowSelector::Special(SpecialRow::GroupFirst(RowGroupId::new("current_assets"))),
+                ColSelector::Active,
+            ))
+        );
+
+        // Single row key specific column: BalanceSheet["cash", "2024E"]
         let single_row = parse_expr_str("BalanceSheet[\"cash\", \"2024E\"]").unwrap();
         assert_eq!(
             single_row,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Key(RowId::new("cash")),
                 ColSelector::Key(ColId::new("2024E")),
@@ -1380,7 +1364,7 @@ mod tests {
             parse_expr_str("Opex[\"r_and_d\"..\"g_and_a\", \"2024E\"..\"2028E\"]").unwrap();
         assert_eq!(
             block2d,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("Opex"),
                 RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
                 ColSelector::Range(ColId::new("2024E"), ColId::new("2028E")),
@@ -1392,7 +1376,7 @@ mod tests {
             parse_expr_str("BalanceSheet[rows.current_assets, cols.forecast]").unwrap();
         assert_eq!(
             block_groups,
-            Expr::Reference(TableRef::bracket(
+            Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Special(SpecialRow::Group(RowGroupId::new("current_assets"))),
                 ColSelector::Special(SpecialCol::Group(ColGroupId::new("forecast"))),
@@ -1401,8 +1385,31 @@ mod tests {
     }
 
     #[test]
+    fn test_reject_dot_access() {
+        // Dot access with active column
+        let err_dot = parse_expr_str("IncomeStatement.revenue[@]").unwrap_err();
+        match err_dot {
+            ParseError::UnexpectedToken { found, offset, .. } => {
+                assert_eq!(found, ".");
+                assert_eq!(offset, 15);
+            }
+            other => panic!("Expected UnexpectedToken for dot, got {other:?}"),
+        }
+
+        // Dot access with row identifier only
+        let err_dot_bare = parse_expr_str("IncomeStatement.revenue").unwrap_err();
+        match err_dot_bare {
+            ParseError::UnexpectedToken { found, offset, .. } => {
+                assert_eq!(found, ".");
+                assert_eq!(offset, 15);
+            }
+            other => panic!("Expected UnexpectedToken for dot, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_reject_unquoted_coordinate_keys() {
-        let err1 = parse_expr_str("IncomeStatement.revenue[2024E]").unwrap_err();
+        let err1 = parse_expr_str("IncomeStatement[\"revenue\", 2024E]").unwrap_err();
         match err1 {
             ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "2024E"),
             other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
@@ -1426,10 +1433,6 @@ mod tests {
 
     #[test]
     fn test_reject_bare_identifiers() {
-        // Bare row access without column brackets at EOF
-        let err_row = parse_expr_str("IncomeStatement.revenue").unwrap_err();
-        assert_eq!(err_row, ParseError::UnexpectedEof { expected: "'['" });
-
         // Bare table identifier without access operator
         let err_table = parse_expr_str("IncomeStatement").unwrap_err();
         match err_table {
@@ -1441,7 +1444,7 @@ mod tests {
     #[test]
     fn test_keyword_boundary_validation() {
         // col.prevent should not parse as col.prev
-        let err = parse_expr_str("Table.row[col.prevent]").unwrap_err();
+        let err = parse_expr_str("Table[\"row\", col.prevent]").unwrap_err();
         match err {
             ParseError::UnexpectedToken { .. } => {}
             other => panic!("Expected unexpected token error, got {other:?}"),
@@ -1462,7 +1465,7 @@ mod tests {
             ParseError::UnexpectedEof { expected: "')'" }
         );
         assert_eq!(
-            parse_expr_str("Table.row[@").unwrap_err(),
+            parse_expr_str("Table[\"row\", @").unwrap_err(),
             ParseError::UnexpectedEof { expected: "']'" }
         );
         assert_eq!(
@@ -1482,13 +1485,13 @@ mod tests {
             }
         );
         assert_eq!(
-            parse_expr_str("Table.row[cols").unwrap_err(),
+            parse_expr_str("Table[\"row\", cols").unwrap_err(),
             ParseError::UnexpectedEof {
                 expected: "'.' after 'cols'"
             }
         );
         assert_eq!(
-            parse_expr_str("Table.row[col").unwrap_err(),
+            parse_expr_str("Table[\"row\", col").unwrap_err(),
             ParseError::UnexpectedEof {
                 expected: "'.' after 'col'"
             }
@@ -1502,17 +1505,18 @@ mod tests {
             "-2 ^ 2",
             "10 - 4 - 2",
             "(1 + 2) * 3",
-            "IF(Assumptions.flag[\"active\"] = 1, 100, 0)",
-            "IncomeStatement.revenue[@] - IncomeStatement.cogs[@]",
-            "SUM(IncomeStatement.revenue[\"2024E\"..\"2028E\"])",
+            "IF(Assumptions[\"flag\", \"active\"] = 1, 100, 0)",
+            "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]",
+            "SUM(IncomeStatement[\"revenue\", \"2024E\"..\"2028E\"])",
             "Opex[\"r_and_d\"..\"g_and_a\", @]",
             "BalanceSheet[rows.current_assets, cols.forecast]",
-            "BalanceSheet.cash[col.prev]",
-            "BalanceSheet.cash[col.prev(2)]",
-            "DebtSchedule.balance[cols.historical.last]",
+            "BalanceSheet[\"cash\", col.prev]",
+            "BalanceSheet[\"cash\", col.prev(2)]",
+            "DebtSchedule[\"balance\", cols.historical.last]",
             "(2 ^ 3) ^ 4",
             "2 ^ (3 ^ 4)",
             "BalanceSheet[\"cash\", @]",
+            "BalanceSheet[rows.current_assets.first, @]",
         ];
 
         for formula in formulas {
@@ -1528,12 +1532,12 @@ mod tests {
 
     #[test]
     fn test_tokenizer_direct() {
-        let tokens = tokenize("IncomeStatement.revenue[@] + 42").unwrap();
+        let tokens = tokenize("IncomeStatement[\"revenue\", @] + 42").unwrap();
         assert_eq!(tokens.len(), 8);
         assert_eq!(tokens[0].token, Token::Ident("IncomeStatement"));
-        assert_eq!(tokens[1].token, Token::Dot);
-        assert_eq!(tokens[2].token, Token::Ident("revenue"));
-        assert_eq!(tokens[3].token, Token::LBracket);
+        assert_eq!(tokens[1].token, Token::LBracket);
+        assert_eq!(tokens[2].token, Token::String("revenue".to_string()));
+        assert_eq!(tokens[3].token, Token::Comma);
         assert_eq!(tokens[4].token, Token::At);
         assert_eq!(tokens[5].token, Token::RBracket);
         assert_eq!(tokens[6].token, Token::Plus);

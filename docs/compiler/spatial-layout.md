@@ -37,7 +37,7 @@ Within each worksheet, tables stack vertically in the order declared in `finx.js
 Stacked tables on the same sheet remain structurally independent:
 - Tables do not need to share identical column counts, column keys, or timeline spans.
 - An assumptions table with 1 data column can precede a 5-column forecast table on the same worksheet.
-- Semantic formula references resolve via `Table.row[col]`, decoupled from physical grid locations.
+- Semantic formula references resolve via `Table[row, col]`, decoupled from physical grid locations.
 - **Sheet-wide column width resolution**: Because Excel column widths apply sheet-wide, physical column width for any column index $c$ is computed as the maximum required width across all stacked tables sharing that column:
   $$\text{ColWidth}(c) = \max_{T \in \text{StackedTables}} \text{RequiredWidth}(T, c)$$
 - **Modeling practice vs. compiler concern**: The layout engine applies the maximum required width to guarantee zero text clipping or `###` numeric overflow. Aligning column structures or isolating tables with disparate timelines onto dedicated worksheets is treated as a modeling practice (e.g. FAST Standard guidelines) rather than an artificial compiler barrier.

@@ -8,7 +8,7 @@ Once grid expansion completes, the compiler constructs a directed graph of cell 
 
 - **Nodes**: Each discrete `CellId` (`TableId`, `RowId`, `ColId`).
 - **Edges**: A directed edge `A -> B` signifies that cell $B$ references and depends on cell $A$.
-- **Slice expansion**: Range references (e.g. `Table.row["2024E".."2028E"]`) expand into individual incoming dependency edges for every cell within the range.
+- **Slice expansion**: Range references (e.g. `Table["row", "2024E".."2028E"]`) expand into individual incoming dependency edges for every cell within the range.
 
 ---
 
@@ -41,10 +41,10 @@ When a cycle is detected, compilation immediately halts with an actionable seman
 ```text
 Error: Circular dependency detected in model.
 Cycle trace:
-  1. BalanceSheet.cash["2025E"]
-  2. InterestIncome.interest["2025E"]
-  3. NetIncome.net_income["2025E"]
-  4. BalanceSheet.cash["2025E"]
+  1. BalanceSheet["cash", "2025E"]
+  2. InterestIncome["interest", "2025E"]
+  3. NetIncome["net_income", "2025E"]
+  4. BalanceSheet["cash", "2025E"]
 ```
 
 ---

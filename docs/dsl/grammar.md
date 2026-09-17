@@ -15,12 +15,10 @@ Argument           = Expression ;
 Primary            = Number | String | Reference | NullLiteral | "(" Expression ")" ;
 
 Reference          = TableRef ;
-TableRef           = Identifier ( DotAccess | BracketAccess ) ;
+TableRef           = Identifier "[" RowSpec "," ColSpec "]" ;
 
-DotAccess          = "." Identifier "[" ColSpec "]" ;
-BracketAccess      = "[" RowSpec "," ColSpec "]" ;
-
-RowSpec            = Key [ ".." Key ]
+RowSpec            = Key ".." Key
+                   | Key
                    | SpecialRow ;
 
 ColSpec            = "@"
@@ -70,7 +68,7 @@ Parentheses `( ... )` override default operator precedence.
 ## 3. Lexical Rules
 
 - **Keywords and functions**: Built-in Excel functions must be uppercase (`SUM`, `AVERAGE`, `IF`, `NPV`, `XIRR`, `MAX`, `MIN`, `XLOOKUP`). Supported functions and signatures are cataloged in the [Standard Function Catalog](../functions/catalog.md).
-- **Identifiers**: Identifiers must match `[a-zA-Z_][a-zA-Z0-9_]*` (used for table and row dot-access).
+- **Identifiers**: Identifiers must match `[a-zA-Z_][a-zA-Z0-9_]*` (used for table identifiers).
 - **Coordinate keys**: All row and column keys inside bracket selectors must be double-quoted strings (`Key = String`). Bare identifiers are prohibited as coordinate keys.
 - **String literals**: Double-quoted strings with standard escaping (`"value"`, `"2024E"`).
 - **Whitespace**: Whitespace between tokens is ignored during parsing.

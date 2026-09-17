@@ -166,52 +166,26 @@ impl fmt::Display for UnaryOp {
 pub struct TableRef {
     /// Target table identifier.
     pub table: TableId,
-    /// Addressing access mode (dot access or bracket access).
-    pub access: RefAccess,
+    /// Row coordinate selector.
+    pub row: RowSelector,
+    /// Column coordinate selector.
+    pub col: ColSelector,
 }
 
 impl TableRef {
-    /// Construct a dot-access reference: `Table.row[col]`.
-    pub fn dot(table: impl Into<TableId>, row: impl Into<RowId>, col: ColSelector) -> Self {
+    /// Constructs a table reference: `Table[row, col]`.
+    pub fn new(table: impl Into<TableId>, row: RowSelector, col: ColSelector) -> Self {
         Self {
             table: table.into(),
-            access: RefAccess::Dot {
-                row: row.into(),
-                col,
-            },
-        }
-    }
-
-    /// Construct a bracket-access reference: `Table[row, col]`.
-    pub fn bracket(table: impl Into<TableId>, row: RowSelector, col: ColSelector) -> Self {
-        Self {
-            table: table.into(),
-            access: RefAccess::Bracket { row, col },
+            row,
+            col,
         }
     }
 }
 
 impl fmt::Display for TableRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.table, self.access)
-    }
-}
-
-/// Access syntax shape for a table reference.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RefAccess {
-    /// Dot access: `Table.row[ColSpec]`.
-    Dot { row: RowId, col: ColSelector },
-    /// Bracket access: `Table[RowSpec, ColSpec]`.
-    Bracket { row: RowSelector, col: ColSelector },
-}
-
-impl fmt::Display for RefAccess {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Dot { row, col } => write!(f, ".{row}[{col}]"),
-            Self::Bracket { row, col } => write!(f, "[{row}, {col}]"),
-        }
+        write!(f, "{}[{}, {}]", self.table, self.row, self.col)
     }
 }
 

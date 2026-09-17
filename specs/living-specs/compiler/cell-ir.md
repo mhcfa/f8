@@ -33,13 +33,13 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
 
 ### 1. Canonical Cell Addressing
 
-Every discrete cell in the model is identified by `CellId(TableId, RowId, ColId)`. Its `Display` implementation strictly produces `{table}.{row}["{col}"]` matching the DSL reference addressing syntax.
+Every discrete cell in the model is identified by `CellId(TableId, RowId, ColId)`. Its `Display` implementation strictly produces `{table}["{row}", "{col}"]` matching the DSL reference addressing syntax.
 
 #### Scenarios
 
 - **Valid cell display**:
   - **When** formatting `CellId::new("IncomeStatement", "revenue", "2024E")`
-  - **Then** output is `IncomeStatement.revenue["2024E"]`.
+  - **Then** output is `IncomeStatement["revenue", "2024E"]`.
 - **Deterministic ordering and hash**:
   - **When** inserting `CellId` keys into maps or sorting them
   - **Then** ordering and hashing evaluate strictly on `(table, row, col)`.

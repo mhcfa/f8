@@ -9,11 +9,14 @@ use finx::model::table::{ColumnGroup, RowGroup, RowGroupChild, RowSpec, TableSpe
 #[test]
 fn test_scenario_1_cell_id_display_and_formatting() {
     let cell_id = CellId::new("IncomeStatement", "revenue", "2024E");
-    assert_eq!(cell_id.to_string(), "IncomeStatement.revenue[\"2024E\"]");
+    assert_eq!(
+        cell_id.to_string(),
+        "IncomeStatement[\"revenue\", \"2024E\"]"
+    );
 
     // Display roundtrip formatting check
     let formatted = format!("{cell_id}");
-    assert_eq!(formatted, "IncomeStatement.revenue[\"2024E\"]");
+    assert_eq!(formatted, "IncomeStatement[\"revenue\", \"2024E\"]");
 }
 
 #[test]
@@ -60,7 +63,7 @@ fn test_scenario_3_cell_grid_duplicate_rejection() {
     let cell2 = CellNode::new(
         id.clone(),
         SheetId::new("Model"),
-        CellPayload::Formula(Expr::parse("IncomeStatement.revenue[@] * 0.2").unwrap()),
+        CellPayload::Formula(Expr::parse("IncomeStatement[\"revenue\", @] * 0.2").unwrap()),
     );
 
     assert!(grid.insert(cell1).is_ok());
@@ -279,7 +282,7 @@ fn test_cell_payload_formula_and_literal_inspection() {
     );
     assert_eq!(lit_payload.as_formula(), None);
 
-    let parsed_expr = Expr::parse("SUM(A.b[@])").unwrap();
+    let parsed_expr = Expr::parse("SUM(A[\"b\", @])").unwrap();
     let formula_payload = CellPayload::Formula(parsed_expr.clone());
     assert!(formula_payload.is_formula());
     assert!(!formula_payload.is_literal());
