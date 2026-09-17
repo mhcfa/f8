@@ -7,6 +7,8 @@ Finx is a deterministic compiler for financial models that treats spreadsheets a
 Traditional financial modeling conflates business logic, multi-dimensional time series, and 2D spatial presentation inside Excel. Finx establishes a **"TypeScript for Spreadsheets"** paradigm:
 
 - **Code is single source of truth**: Models are defined in structured, declarative JSON project specifications (`finx.json` + `tables/*.json`).
+- **Agent-first intermediate representation (IR)**: The specification schema is an explicit, orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic compiler verification rather than human typing brevity. Ergonomics, domain scaffolding, and high-level abstractions reside in the **Adapter / Tooling Layer (MCP server & CLI)**, keeping the core data model strictly orthogonal, uniform, and free of special-case syntactic magic.
+- **Orthogonal 2D matrix paradigm**: A table is a general $R \times C$ matrix. Columns are user-defined and can represent timelines, categories, units, assumptions, or multi-directional metrics (Cap Tables, Comps, Sensitivity matrices, Vertical waterfalls). Every cell $(row, col)$ is a full calculation citizen addressable via `Table[row, col]`.
 - **Excel is an uneditable compile artifact**: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - **Deterministic compilation**: A Rust engine validates schemas, constructs cell-level dependency graphs, proves acyclicity, plans 2D layouts, and lowers semantic formulas to concrete Excel grid coordinates.
 
@@ -16,8 +18,9 @@ Traditional financial modeling conflates business logic, multi-dimensional time 
 
 ```mermaid
 flowchart TD
-    A["Spec Request / Prompt"] --> B["Authoring Agent or Human"]
-    B -->|"JSON Project Spec"| C["Finx Compiler Entrypoint"]
+    A["Agent Prompt / Goal"] --> B["AI Agent (LLM)"]
+    B -->|"High-Level Actions"| T["Adapter / Tooling Layer\n(MCP Server & Scaffolding)"]
+    T -->|"Canonical Spec JSON"| C["Finx Compiler Entrypoint"]
 
     subgraph Compiler ["Finx Core Engine"]
         C --> D["Deserializer & Spec AST"]
@@ -91,6 +94,19 @@ The architecture strictly decouples semantic identity, visual presentation, and 
 | **3. Physical Grid**          | Sheet assignment            | Row offset                        | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
 
 Modifying presentation labels, formatting rules, or table placement never invalidates logic or dependencies.
+
+### Core Compiler vs. Adapter / Tooling Layer
+
+To preserve both mathematical purity in the compiler and high authoring speed for AI agents, Finx strictly partitions responsibilities:
+
+- **Core Compiler (Intermediate Representation)**:
+  - Treats tables strictly as orthogonal 2D matrices ($R \times C$) of addressable cells `Table[row, col]`.
+  - Enforces explicit, unambiguous JSON schemas without implicit broadcasting or hidden layout side effects.
+  - Remains completely agnostic to table shapes (3-statement models, Cap Tables, Comps, Sensitivity matrices, and Vertical waterfalls share the exact same primitive data structures).
+- **Adapter / Tooling Layer (MCP Server & Scaffolding)**:
+  - Acts as the ergonomic bridge between AI agents and the core compiler.
+  - Exposes high-level tools (e.g. statement scaffolding, unit assignment, timeline generation) that translate intent into explicit, canonical table specifications.
+  - Absorbs repetitive boilerplate (such as `match` partitioning for metadata columns) without complicating compiler invariants.
 
 ---
 

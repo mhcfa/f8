@@ -107,7 +107,8 @@ Each table file defines the calculation dimensions, optional column groups, and 
 
 ## 4. Core Invariants
 
-- **Canonical core**: Specifications strictly enforce unambiguous forms with zero implicit type coercion or broadcasting.
+- **Canonical core & agent-first IR**: Specifications strictly enforce unambiguous forms with zero implicit type coercion, broadcasting, or hidden defaults. The schema is designed as an intermediate representation (IR) optimized for deterministic synthesis by AI agents and rigorous compiler verification.
+- **Universal column semantics**: Column identifiers (`ColId`) in `columns` are user-defined strings. Columns are not restricted to chronological timelines; they can represent units (`"unit"`), categorical metadata (`"segment"`, `"class"`), scenarios (`"Bull"`, `"Base"`), or multi-directional metrics (`"shares"`, `"ownership_pct"`). Every column declared in `columns` is an addressable coordinate in the table grid (`Table[row, col]`).
 - **Mutually exclusive row payload**: A row definition must specify exactly one calculation payload: `value`, `expr`, or `match`. Specifying multiple payloads or omitting all three produces a compile-time schema error. Similarly, within each `match` arm, exactly one of `value` or `expr` must be specified.
 - **Explicit input arrays**: All literal inputs are provided as explicit arrays: `"value": [...]`.
 - **Strict 1-to-1 dimension match**: The length of `value` must equal the number of targeted columns (`len(value) == len(target_columns)`). Single-cell inputs require single-element arrays: `"value": [0.25]`.
@@ -183,6 +184,86 @@ Models balance sheet or debt roll-forwards with an explicit initial period and e
     "2024E": { "expr": "Assumptions[\"initial_cash\", \"value\"]" },
     "2025E..2028E": { "expr": "BalanceSheet[\"ending_cash\", col.prev]" }
   }
+}
+```
+
+### 5.5. Mixing Units & Metadata with Timeseries Columns
+
+When declaring metadata columns (such as `"unit"`) alongside a financial timeline:
+
+```json
+{
+  "id": "revenue",
+  "label": "Total Revenue",
+  "format": "currency",
+  "match": {
+    "unit": { "expr": "Assumptions[\"reporting_currency\", \"value\"]" },
+    "2023A": { "value": [100000.0] },
+    "2024E..2028E": { "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }
+  }
+}
+```
+
+- **Partition isolation**: The `match` block isolates the text/metadata column from numeric operations, avoiding `#VALUE!` errors in Excel.
+- **Dynamic references**: The unit cell is a full calculation citizen (`IncomeStatement["revenue", "unit"]`) that can evaluate formulas referencing global parameters or be referenced by other tables.
+
+### 5.6. Capitalization Table (Cap Table / General Tabular Matrix)
+
+For non-temporal matrices where calculations vary by column rather than across time:
+
+```json
+{
+  "id": "CapTable",
+  "title": "Capitalization Table",
+  "columns": ["investor", "share_class", "shares", "share_price", "invested_capital", "ownership_pct"],
+  "rows": [
+    {
+      "id": "series_a",
+      "label": "Series A Lead Investor",
+      "match": {
+        "investor": { "value": ["Acme Capital"] },
+        "share_class": { "value": ["Preferred"] },
+        "shares": { "value": [2500000] },
+        "share_price": { "value": [2.00] },
+        "invested_capital": { "expr": "CapTable[\"series_a\", \"shares\"] * CapTable[\"series_a\", \"share_price\"]" },
+        "ownership_pct": { "expr": "CapTable[\"series_a\", \"shares\"] / CapTable[\"total\", \"shares\"]" }
+      }
+    }
+  ]
+}
+```
+
+### 5.7. Vertical Schedule (Time on Rows, Metrics on Columns)
+
+For vertical amortization waterfalls or schedules where rows represent time periods and columns represent metrics:
+
+```json
+{
+  "id": "DebtSchedule",
+  "title": "Senior Debt Amortization",
+  "columns": ["beg_balance", "interest", "repayment", "end_balance"],
+  "rows": [
+    {
+      "id": "period_1",
+      "label": "Month 1",
+      "match": {
+        "beg_balance": { "expr": "Assumptions[\"initial_debt\", \"value\"]" },
+        "interest": { "expr": "DebtSchedule[\"period_1\", \"beg_balance\"] * (Assumptions[\"interest_rate\", \"value\"] / 12)" },
+        "repayment": { "value": [50000.0] },
+        "end_balance": { "expr": "DebtSchedule[\"period_1\", \"beg_balance\"] - DebtSchedule[\"period_1\", \"repayment\"]" }
+      }
+    },
+    {
+      "id": "period_2",
+      "label": "Month 2",
+      "match": {
+        "beg_balance": { "expr": "DebtSchedule[\"period_1\", \"end_balance\"]" },
+        "interest": { "expr": "DebtSchedule[\"period_2\", \"beg_balance\"] * (Assumptions[\"interest_rate\", \"value\"] / 12)" },
+        "repayment": { "value": [50000.0] },
+        "end_balance": { "expr": "DebtSchedule[\"period_2\", \"beg_balance\"] - DebtSchedule[\"period_2\", \"repayment\"]" }
+      }
+    }
+  ]
 }
 ```
 
