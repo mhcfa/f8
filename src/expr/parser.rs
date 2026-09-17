@@ -32,8 +32,10 @@ pub(crate) enum Token<'a> {
     Dot,
     /// Range slice delimiter `..`.
     DotDot,
-    /// Active evaluation column symbol `@`.
-    At,
+    /// Active evaluation column symbol `@col`.
+    AtCol,
+    /// Active evaluation row symbol `@row`.
+    AtRow,
 
     // Operators
     /// Plus operator `+`.
@@ -94,7 +96,8 @@ impl<'a> fmt::Display for Token<'a> {
             Self::Comma => write!(f, ","),
             Self::Dot => write!(f, "."),
             Self::DotDot => write!(f, ".."),
-            Self::At => write!(f, "@"),
+            Self::AtCol => write!(f, "@col"),
+            Self::AtRow => write!(f, "@row"),
             Self::Plus => write!(f, "+"),
             Self::Minus => write!(f, "-"),
             Self::Star => write!(f, "*"),
@@ -316,13 +319,35 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
                 continue;
             }
             '@' => {
-                tokens.push(SpannedToken {
-                    token: Token::At,
-                    offset,
-                    len: 1,
-                });
-                cursor = &cursor[1..];
-                continue;
+                if cursor.starts_with("@col")
+                    && cursor
+                        .as_bytes()
+                        .get(4)
+                        .is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_')
+                {
+                    tokens.push(SpannedToken {
+                        token: Token::AtCol,
+                        offset,
+                        len: 4,
+                    });
+                    cursor = &cursor[4..];
+                    continue;
+                }
+                if cursor.starts_with("@row")
+                    && cursor
+                        .as_bytes()
+                        .get(4)
+                        .is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_')
+                {
+                    tokens.push(SpannedToken {
+                        token: Token::AtRow,
+                        offset,
+                        len: 4,
+                    });
+                    cursor = &cursor[4..];
+                    continue;
+                }
+                return Err(ParseError::RetiredBareAt { offset });
             }
             '+' => {
                 tokens.push(SpannedToken {
@@ -751,12 +776,84 @@ fn parse_bracket_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Exp
 fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseError> {
     let Some(st) = stream.peek() else {
         return Err(ParseError::UnexpectedEof {
-            expected: "row selector (quoted string key or 'rows.<group>')",
+            expected: "row selector ('@row', quoted string key, 'row.prev', 'row.next', or 'rows.<group>')",
         });
     };
 
     let offset = st.offset;
     match &st.token {
+        Token::AtRow => {
+            stream.advance();
+            Ok(RowSelector::Active)
+        }
+        Token::Ident("row") => {
+            stream.advance();
+            // Expect '.'
+            let _ = stream.expect(&Token::Dot, "'.' after 'row'")?;
+
+            // Expect 'prev' or 'next'
+            let is_prev = match stream.peek_token() {
+                Some(Token::Ident("prev")) => true,
+                Some(Token::Ident("next")) => false,
+                Some(other) => {
+                    let err_offset = stream.current_offset();
+                    let found = other.to_string();
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "'prev' or 'next'",
+                        found,
+                        offset: err_offset,
+                    });
+                }
+                None => {
+                    return Err(ParseError::UnexpectedEof {
+                        expected: "'prev' or 'next'",
+                    });
+                }
+            };
+            stream.advance();
+
+            // Check for optional (k)
+            if stream.peek_token() == Some(&Token::LParen) {
+                stream.advance();
+                let k = match stream.consume() {
+                    Some(num_st) => match num_st.token {
+                        Token::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as u32,
+                        ref other => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "integer offset",
+                                found: other.to_string(),
+                                offset: num_st.offset,
+                            });
+                        }
+                    },
+                    None => {
+                        let expected = if is_prev {
+                            "')' after row.prev offset"
+                        } else {
+                            "')' after row.next offset"
+                        };
+                        return Err(ParseError::UnexpectedEof { expected });
+                    }
+                };
+
+                let expected_rparen = if is_prev {
+                    "')' after row.prev offset"
+                } else {
+                    "')' after row.next offset"
+                };
+                let _ = stream.expect(&Token::RParen, expected_rparen)?;
+
+                if is_prev {
+                    Ok(RowSelector::Special(SpecialRow::Prev(k)))
+                } else {
+                    Ok(RowSelector::Special(SpecialRow::Next(k)))
+                }
+            } else if is_prev {
+                Ok(RowSelector::Special(SpecialRow::Prev(1)))
+            } else {
+                Ok(RowSelector::Special(SpecialRow::Next(1)))
+            }
+        }
         Token::Ident("rows") => {
             stream.advance();
             // Expect '.'
@@ -845,7 +942,7 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
         other => {
             let found = other.to_string();
             Err(ParseError::UnexpectedToken {
-                expected: "row selector (quoted string key or 'rows.<group>')",
+                expected: "row selector ('@row', quoted string key, 'row.prev', 'row.next', or 'rows.<group>')",
                 found,
                 offset,
             })
@@ -856,13 +953,13 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
 fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseError> {
     let Some(st) = stream.peek() else {
         return Err(ParseError::UnexpectedEof {
-            expected: "column selector ('@', quoted string key, 'col.prev', 'col.next', or 'cols.<group>')",
+            expected: "column selector ('@col', quoted string key, 'col.prev', 'col.next', or 'cols.<group>')",
         });
     };
 
     let offset = st.offset;
     match &st.token {
-        Token::At => {
+        Token::AtCol => {
             stream.advance();
             Ok(ColSelector::Active)
         }
@@ -1022,7 +1119,7 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
         other => {
             let found = other.to_string();
             Err(ParseError::UnexpectedToken {
-                expected: "column selector ('@', quoted string key, 'col.prev', 'col.next', or 'cols.<group>')",
+                expected: "column selector ('@col', quoted string key, 'col.prev', 'col.next', or 'cols.<group>')",
                 found,
                 offset,
             })
@@ -1138,7 +1235,7 @@ mod tests {
 
     #[test]
     fn test_relational_comparisons() {
-        let expr = parse_expr_str("IncomeStatement[\"revenue\", @] >= 100").unwrap();
+        let expr = parse_expr_str("IncomeStatement[\"revenue\", @col] >= 100").unwrap();
         assert_eq!(
             expr,
             Expr::Binary {
@@ -1212,14 +1309,25 @@ mod tests {
 
     #[test]
     fn test_orthogonal_addressing_forms() {
-        // Active column: Table["row", @]
-        let active = parse_expr_str("IncomeStatement[\"revenue\", @]").unwrap();
+        // Active column: Table["row", @col]
+        let active = parse_expr_str("IncomeStatement[\"revenue\", @col]").unwrap();
         assert_eq!(
             active,
             Expr::Reference(TableRef::new(
                 TableId::new("IncomeStatement"),
                 RowSelector::Key(RowId::new("revenue")),
                 ColSelector::Active,
+            ))
+        );
+
+        // Active row: Table[@row, "col"]
+        let active_row = parse_expr_str("CapTable[@row, \"shares\"]").unwrap();
+        assert_eq!(
+            active_row,
+            Expr::Reference(TableRef::new(
+                TableId::new("CapTable"),
+                RowSelector::Active,
+                ColSelector::Key(ColId::new("shares")),
             ))
         );
 
@@ -1267,6 +1375,28 @@ mod tests {
             ))
         );
 
+        // row.prev default (1)
+        let row_prev1 = parse_expr_str("DebtSchedule[row.prev, \"balance\"]").unwrap();
+        assert_eq!(
+            row_prev1,
+            Expr::Reference(TableRef::new(
+                TableId::new("DebtSchedule"),
+                RowSelector::Special(SpecialRow::Prev(1)),
+                ColSelector::Key(ColId::new("balance")),
+            ))
+        );
+
+        // row.next(2)
+        let row_next2 = parse_expr_str("DebtSchedule[row.next(2), \"balance\"]").unwrap();
+        assert_eq!(
+            row_next2,
+            Expr::Reference(TableRef::new(
+                TableId::new("DebtSchedule"),
+                RowSelector::Special(SpecialRow::Next(2)),
+                ColSelector::Key(ColId::new("balance")),
+            ))
+        );
+
         // cols.historical.last
         let hist_last = parse_expr_str("DebtSchedule[\"balance\", cols.historical.last]").unwrap();
         assert_eq!(
@@ -1304,8 +1434,8 @@ mod tests {
             }
         );
 
-        // Vertical slice active column: Opex["r_and_d".."g_and_a", @]
-        let v_slice = parse_expr_str("Opex[\"r_and_d\"..\"g_and_a\", @]").unwrap();
+        // Vertical slice active column: Opex["r_and_d".."g_and_a", @col]
+        let v_slice = parse_expr_str("Opex[\"r_and_d\"..\"g_and_a\", @col]").unwrap();
         assert_eq!(
             v_slice,
             Expr::Reference(TableRef::new(
@@ -1315,8 +1445,8 @@ mod tests {
             ))
         );
 
-        // Row group active column: BalanceSheet[rows.current_assets, @]
-        let rg_active = parse_expr_str("BalanceSheet[rows.current_assets, @]").unwrap();
+        // Row group active column: BalanceSheet[rows.current_assets, @col]
+        let rg_active = parse_expr_str("BalanceSheet[rows.current_assets, @col]").unwrap();
         assert_eq!(
             rg_active,
             Expr::Reference(TableRef::new(
@@ -1337,8 +1467,8 @@ mod tests {
             ))
         );
 
-        // Row group milestone: BalanceSheet[rows.current_assets.first, @]
-        let rg_first = parse_expr_str("BalanceSheet[rows.current_assets.first, @]").unwrap();
+        // Row group milestone: BalanceSheet[rows.current_assets.first, @col]
+        let rg_first = parse_expr_str("BalanceSheet[rows.current_assets.first, @col]").unwrap();
         assert_eq!(
             rg_first,
             Expr::Reference(TableRef::new(
@@ -1387,7 +1517,7 @@ mod tests {
     #[test]
     fn test_reject_dot_access() {
         // Dot access with active column
-        let err_dot = parse_expr_str("IncomeStatement.revenue[@]").unwrap_err();
+        let err_dot = parse_expr_str("IncomeStatement.revenue[@col]").unwrap_err();
         match err_dot {
             ParseError::UnexpectedToken { found, offset, .. } => {
                 assert_eq!(found, ".");
@@ -1415,7 +1545,7 @@ mod tests {
             other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
         }
 
-        let err2 = parse_expr_str("Opex[r_and_d, @]").unwrap_err();
+        let err2 = parse_expr_str("Opex[r_and_d, @col]").unwrap_err();
         match err2 {
             ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "r_and_d"),
             other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
@@ -1450,12 +1580,27 @@ mod tests {
             other => panic!("Expected unexpected token error, got {other:?}"),
         }
 
+        // row.prevent should not parse as row.prev
+        let err_row = parse_expr_str("Table[row.prevent, \"col\"]").unwrap_err();
+        match err_row {
+            ParseError::UnexpectedToken { .. } => {}
+            other => panic!("Expected unexpected token error, got {other:?}"),
+        }
+
         // rows.group.firstly should not parse as rows.group.first
-        let err = parse_expr_str("Table[rows.group.firstly, @]").unwrap_err();
+        let err = parse_expr_str("Table[rows.group.firstly, @col]").unwrap_err();
         match err {
             ParseError::UnexpectedToken { .. } => {}
             other => panic!("Expected unexpected token error, got {other:?}"),
         }
+
+        // Bare @ is retired
+        let err_at = parse_expr_str("Table[\"row\", @]").unwrap_err();
+        assert_eq!(err_at, ParseError::RetiredBareAt { offset: 13 });
+
+        // @column is retired/invalid
+        let err_at_col = parse_expr_str("Table[\"row\", @column]").unwrap_err();
+        assert_eq!(err_at_col, ParseError::RetiredBareAt { offset: 13 });
     }
 
     #[test]
@@ -1465,11 +1610,11 @@ mod tests {
             ParseError::UnexpectedEof { expected: "')'" }
         );
         assert_eq!(
-            parse_expr_str("Table[\"row\", @").unwrap_err(),
+            parse_expr_str("Table[\"row\", @col").unwrap_err(),
             ParseError::UnexpectedEof { expected: "']'" }
         );
         assert_eq!(
-            parse_expr_str("Table[rows.opex, @").unwrap_err(),
+            parse_expr_str("Table[rows.opex, @col").unwrap_err(),
             ParseError::UnexpectedEof { expected: "']'" }
         );
         assert_eq!(
@@ -1496,6 +1641,12 @@ mod tests {
                 expected: "'.' after 'col'"
             }
         );
+        assert_eq!(
+            parse_expr_str("Table[row").unwrap_err(),
+            ParseError::UnexpectedEof {
+                expected: "'.' after 'row'"
+            }
+        );
     }
 
     #[test]
@@ -1506,17 +1657,20 @@ mod tests {
             "10 - 4 - 2",
             "(1 + 2) * 3",
             "IF(Assumptions[\"flag\", \"active\"] = 1, 100, 0)",
-            "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]",
+            "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
             "SUM(IncomeStatement[\"revenue\", \"2024E\"..\"2028E\"])",
-            "Opex[\"r_and_d\"..\"g_and_a\", @]",
+            "Opex[\"r_and_d\"..\"g_and_a\", @col]",
             "BalanceSheet[rows.current_assets, cols.forecast]",
             "BalanceSheet[\"cash\", col.prev]",
             "BalanceSheet[\"cash\", col.prev(2)]",
             "DebtSchedule[\"balance\", cols.historical.last]",
             "(2 ^ 3) ^ 4",
             "2 ^ (3 ^ 4)",
-            "BalanceSheet[\"cash\", @]",
-            "BalanceSheet[rows.current_assets.first, @]",
+            "BalanceSheet[\"cash\", @col]",
+            "BalanceSheet[rows.current_assets.first, @col]",
+            "CapTable[@row, \"shares\"]",
+            "DebtSchedule[row.prev, \"balance\"]",
+            "DebtSchedule[row.next(2), \"balance\"]",
         ];
 
         for formula in formulas {
@@ -1532,13 +1686,13 @@ mod tests {
 
     #[test]
     fn test_tokenizer_direct() {
-        let tokens = tokenize("IncomeStatement[\"revenue\", @] + 42").unwrap();
+        let tokens = tokenize("IncomeStatement[\"revenue\", @col] + 42").unwrap();
         assert_eq!(tokens.len(), 8);
         assert_eq!(tokens[0].token, Token::Ident("IncomeStatement"));
         assert_eq!(tokens[1].token, Token::LBracket);
         assert_eq!(tokens[2].token, Token::String("revenue".to_string()));
         assert_eq!(tokens[3].token, Token::Comma);
-        assert_eq!(tokens[4].token, Token::At);
+        assert_eq!(tokens[4].token, Token::AtCol);
         assert_eq!(tokens[5].token, Token::RBracket);
         assert_eq!(tokens[6].token, Token::Plus);
         assert_eq!(tokens[7].token, Token::Number(42.0));

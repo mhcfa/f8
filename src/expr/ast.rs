@@ -192,6 +192,8 @@ impl fmt::Display for TableRef {
 /// Row coordinate selector within a table reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RowSelector {
+    /// Active evaluation row: `[@row]`.
+    Active,
     /// Explicit single row key: `["revenue"]`.
     Key(RowId),
     /// Explicit row range slice: `["r_and_d".."g_and_a"]`.
@@ -203,6 +205,7 @@ pub enum RowSelector {
 impl fmt::Display for RowSelector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Active => write!(f, "@row"),
             Self::Key(k) => write!(f, "\"{k}\""),
             Self::Range(a, b) => write!(f, "\"{a}\"..\"{b}\""),
             Self::Special(s) => write!(f, "{s}"),
@@ -213,7 +216,7 @@ impl fmt::Display for RowSelector {
 /// Column coordinate selector within a table reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ColSelector {
-    /// Active evaluation column: `[@]`.
+    /// Active evaluation column: `[@col]`.
     Active,
     /// Explicit column key: `["value"]`, `["2024E"]`.
     Key(ColId),
@@ -226,7 +229,7 @@ pub enum ColSelector {
 impl fmt::Display for ColSelector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Active => write!(f, "@"),
+            Self::Active => write!(f, "@col"),
             Self::Key(k) => write!(f, "\"{k}\""),
             Self::Range(a, b) => write!(f, "\"{a}\"..\"{b}\""),
             Self::Special(s) => write!(f, "{s}"),
@@ -234,9 +237,13 @@ impl fmt::Display for ColSelector {
     }
 }
 
-/// Semantic row milestone or group selector.
+/// Semantic row milestone, group, or temporal offset selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpecialRow {
+    /// Temporal predecessor offset: `row.prev` (offset 1) or `row.prev(k)`.
+    Prev(u32),
+    /// Temporal successor offset: `row.next` (offset 1) or `row.next(k)`.
+    Next(u32),
     /// All descendant rows in a group: `rows.<group>`.
     Group(RowGroupId),
     /// First row in a group: `rows.<group>.first`.
@@ -248,6 +255,10 @@ pub enum SpecialRow {
 impl fmt::Display for SpecialRow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Prev(1) => write!(f, "row.prev"),
+            Self::Prev(k) => write!(f, "row.prev({k})"),
+            Self::Next(1) => write!(f, "row.next"),
+            Self::Next(k) => write!(f, "row.next({k})"),
             Self::Group(g) => write!(f, "rows.{g}"),
             Self::GroupFirst(g) => write!(f, "rows.{g}.first"),
             Self::GroupLast(g) => write!(f, "rows.{g}.last"),

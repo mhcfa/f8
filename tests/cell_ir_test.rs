@@ -66,7 +66,7 @@ fn test_scenario_3_cell_grid_duplicate_rejection() {
     let cell2 = CellNode::new(
         id.clone(),
         SheetId::new("Model"),
-        CellPayload::Formula(Expr::parse("IncomeStatement[\"revenue\", @] * 0.2").unwrap()),
+        CellPayload::Formula(Expr::parse("IncomeStatement[\"revenue\", @col] * 0.2").unwrap()),
     );
 
     assert!(grid.insert(cell1).is_ok());
@@ -281,7 +281,7 @@ fn test_cell_payload_formula_and_literal_inspection() {
     );
     assert_eq!(lit_payload.as_formula(), None);
 
-    let parsed_expr = Expr::parse("SUM(A[\"b\", @])").unwrap();
+    let parsed_expr = Expr::parse("SUM(A[\"b\", @col])").unwrap();
     let formula_payload = CellPayload::Formula(parsed_expr.clone());
     assert!(formula_payload.is_formula());
     assert!(!formula_payload.is_literal());

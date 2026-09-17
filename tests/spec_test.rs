@@ -154,7 +154,7 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
             {
                 "id": "cogs",
                 "format": "currency",
-                "expr": "IncomeStatement[\"revenue\", @] * 0.45",
+                "expr": "IncomeStatement[\"revenue\", @col] * 0.45",
                 "cells": {
                     "line_item": "Cost of Goods Sold"
                 }
@@ -162,7 +162,7 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
             {
                 "id": "gross_profit",
                 "format": "currency_total",
-                "expr": "IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]",
+                "expr": "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
                 "cells": {
                     "line_item": "Gross Profit"
                 }
@@ -170,7 +170,7 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
             {
                 "id": "tax_expense",
                 "format": "currency",
-                "expr": "IncomeStatement[\"gross_profit\", @] * Assumptions[\"tax_rate\", \"value\"]",
+                "expr": "IncomeStatement[\"gross_profit\", @col] * Assumptions[\"tax_rate\", \"value\"]",
                 "cells": {
                     "line_item": "Income Tax Provision"
                 }

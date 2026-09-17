@@ -54,23 +54,26 @@ Formulas must strictly observe algebraic precedence across five tiers:
 
 ### 2. Mandatory Two-Coordinate Addressing & Orthogonal 2D Indexing
 
-Every table reference must specify both a row selector and a column selector separated by a comma: `Table[RowSelector, ColSelector]`. Legacy dot-access (`Table.row[...]`) and bare identifiers are strictly rejected.
+Every table reference must specify both a row selector and a column selector separated by a comma: `Table[RowSelector, ColSelector]`. Legacy dot-access (`Table.row[...]`) and bare identifiers are strictly rejected. Active evaluation coordinates must explicitly name the axis (`@col` or `@row`).
 
 #### Scenarios
 
 - **Valid Orthogonal 2D Access**:
-  - **When** referencing `Table["row", @]` or `Table["row", "col"]`
+  - **When** referencing `Table["row", @col]`, `Table[@row, "col"]`, or `Table["row", "col"]`
   - **Then** parses into `TableRef` with `{ table, row, col }`.
 - **Legacy Dot-Access Rejection**:
-  - **When** encountering `IncomeStatement.revenue[@]` or `IncomeStatement.revenue`
+  - **When** encountering `IncomeStatement.revenue[@col]` or `IncomeStatement.revenue`
   - **Then** returns `ParseError::UnexpectedToken` pointing to `.` after table identifier.
 - **Bare Reference Rejection**:
   - **When** encountering bare `IncomeStatement` without brackets
   - **Then** returns `ParseError::UnexpectedToken`.
+- **Retired Bare '@' Rejection**:
+  - **When** encountering bare `@` (e.g. `Table["row", @]`)
+  - **Then** returns `ParseError::RetiredBareAt` directing caller to `@col` or `@row`.
 
 ### 3. Strictly Quoted Coordinate Keys
 
-All coordinate row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @]`, `["tax_rate", "value"]`, `["revenue", "2024E".."2028E"]`). Bare identifiers are prohibited unless they match recognized semantic prefixes (`rows.`, `cols.`, `col.prev`, `col.next`).
+All coordinate row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @col]`, `["tax_rate", "value"]`, `["revenue", "2024E".."2028E"]`). Bare identifiers are prohibited unless they match recognized semantic prefixes (`rows.`, `cols.`, `col.prev`, `col.next`, `row.prev`, `row.next`).
 
 #### Scenarios
 
@@ -78,7 +81,7 @@ All coordinate row and column keys inside brackets must be double-quoted strings
   - **When** referencing `IncomeStatement["revenue", "2024E"]`
   - **Then** parses into `RowSelector::Key("revenue")` and `ColSelector::Key("2024E")`.
 - **Unquoted Key Rejection**:
-  - **When** encountering `IncomeStatement["revenue", 2024E]` or `Opex[r_and_d, @]`
+  - **When** encountering `IncomeStatement["revenue", 2024E]` or `Opex[r_and_d, @col]`
   - **Then** returns `ParseError::UnquotedCoordinateKey`.
 
 ### 4. Uppercase Function Names

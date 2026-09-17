@@ -3,12 +3,12 @@
 use finx::expr::{
     BinaryOp, ColSelector, Expr, ParseError, RowSelector, SpecialCol, SpecialRow, TableRef,
 };
-use finx::model::id::{ColGroupId, RowGroupId, RowId, TableId};
+use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 #[test]
 fn test_complex_formula_expression_parsing() {
-    // Standard margin formula: (IncomeStatement["revenue", @] - IncomeStatement["cogs", @]) / IncomeStatement["revenue", @]
-    let input = "(IncomeStatement[\"revenue\", @] - IncomeStatement[\"cogs\", @]) / IncomeStatement[\"revenue\", @]";
+    // Standard margin formula: (IncomeStatement["revenue", @col] - IncomeStatement["cogs", @col]) / IncomeStatement["revenue", @col]
+    let input = "(IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]) / IncomeStatement[\"revenue\", @col]";
     let expr = Expr::parse(input).expect("Should parse valid margin formula");
 
     match expr {
@@ -55,8 +55,8 @@ fn test_complex_formula_expression_parsing() {
 
 #[test]
 fn test_nested_functions_and_logical_operators() {
-    // IF(AND(a["b", @] > 0, a["c", @] <= 100), SUM(Opex["r_and_d".."g_and_a", @]), null)
-    let input = "IF(AND(a[\"b\", @] > 0, a[\"c\", @] <= 100), SUM(Opex[\"r_and_d\"..\"g_and_a\", @]), null)";
+    // IF(AND(a["b", @col] > 0, a["c", @col] <= 100), SUM(Opex["r_and_d".."g_and_a", @col]), null)
+    let input = "IF(AND(a[\"b\", @col] > 0, a[\"c\", @col] <= 100), SUM(Opex[\"r_and_d\"..\"g_and_a\", @col]), null)";
     let expr = Expr::parse(input).expect("Should parse nested logical expressions");
 
     if let Expr::FunctionCall { name, args } = expr {
@@ -104,7 +104,7 @@ fn test_nested_functions_and_logical_operators() {
 
 #[test]
 fn test_temporal_offsets() {
-    let input = "BalanceSheet[\"cash\", col.prev] + CashFlow[\"net_change\", @]";
+    let input = "BalanceSheet[\"cash\", col.prev] + CashFlow[\"net_change\", @col]";
     let expr = Expr::parse(input).expect("Should parse temporal offset formula");
 
     assert_eq!(
@@ -171,16 +171,33 @@ fn test_all_special_col_and_row_variants() {
     }
 
     let row_formulas = [
+        ("Table[@row, \"col\"]", RowSelector::Active),
         (
-            "Table[rows.opex, @]",
+            "Table[row.prev, \"col\"]",
+            RowSelector::Special(SpecialRow::Prev(1)),
+        ),
+        (
+            "Table[row.prev(5), \"col\"]",
+            RowSelector::Special(SpecialRow::Prev(5)),
+        ),
+        (
+            "Table[row.next, \"col\"]",
+            RowSelector::Special(SpecialRow::Next(1)),
+        ),
+        (
+            "Table[row.next(2), \"col\"]",
+            RowSelector::Special(SpecialRow::Next(2)),
+        ),
+        (
+            "Table[rows.opex, \"col\"]",
             RowSelector::Special(SpecialRow::Group(RowGroupId::new("opex"))),
         ),
         (
-            "Table[rows.opex.first, @]",
+            "Table[rows.opex.first, \"col\"]",
             RowSelector::Special(SpecialRow::GroupFirst(RowGroupId::new("opex"))),
         ),
         (
-            "Table[rows.opex.last, @]",
+            "Table[rows.opex.last, \"col\"]",
             RowSelector::Special(SpecialRow::GroupLast(RowGroupId::new("opex"))),
         ),
     ];
@@ -192,7 +209,7 @@ fn test_all_special_col_and_row_variants() {
             Expr::Reference(TableRef::new(
                 TableId::new("Table"),
                 expected_row,
-                ColSelector::Active
+                ColSelector::Key(ColId::new("col"))
             ))
         );
     }
@@ -234,7 +251,7 @@ fn test_syntax_errors_actionable_diagnostics() {
     }
 
     // Reject legacy dot-access
-    let dot_err = Expr::parse("IncomeStatement.revenue[@]").unwrap_err();
+    let dot_err = Expr::parse("IncomeStatement.revenue[@col]").unwrap_err();
     match dot_err {
         ParseError::UnexpectedToken { found, offset, .. } => {
             assert_eq!(found, ".");
@@ -242,4 +259,8 @@ fn test_syntax_errors_actionable_diagnostics() {
         }
         other => panic!("Expected UnexpectedToken for dot-access, got {other:?}"),
     }
+
+    // Reject retired bare '@'
+    let bare_at_err = Expr::parse("IncomeStatement[\"revenue\", @]").unwrap_err();
+    assert_eq!(bare_at_err, ParseError::RetiredBareAt { offset: 27 });
 }
