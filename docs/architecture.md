@@ -150,13 +150,13 @@ Detailed specifications and engine designs are organized into dedicated topics:
   - [End-to-End Project Example](dsl/project-example.md): Complete 3-file working reference model.
 - **Compiler Internals**:
   - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, 2D Specificity Resolution Lattice, and grid expansion.
-  - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
-  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
+  - [Dependency Graph](./compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
+  - [In-Memory Evaluator](./compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
   - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
   - [Spatial Layout Planning](compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
   - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
 - **Function Subsystem**:
-  - [Function Registry Architecture](functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
+  - [Function Registry Architecture](./functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
   - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces**:
   - [CLI](interfaces/cli.md): Command-line interface (in design).

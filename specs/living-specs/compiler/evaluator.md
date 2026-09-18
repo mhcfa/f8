@@ -16,7 +16,7 @@ The `compiler::eval` subsystem provides formula expression evaluation with Excel
   - `finx::compiler::eval::context`: `CellEvalContext` bridging cell coordinates, memoized values, symbol table, and function registry to implement `EvalContext` for functions (`eval_expr`, `eval_range`).
   - `finx::compiler::eval::model`: `EvaluatedModel` self-contained matrix combining computed `CellValue` entries with `SymbolTable`, providing symbol-integrated query APIs (`get_value`, `get_cell`, `get_row_values`, `find_errors`).
   - `finx::compiler::eval::error`: Structured compiler and evaluation diagnostic hierarchy (`EvalError`).
-  - `finx::compiler::eval::Evaluator`: Topological model execution engine iterating [`DependencyGraph::topological_order`](dependency-graph.md).
+  - `finx::compiler::eval::Evaluator`: Topological model execution engine iterating [`DependencyGraph::topological_order`](./dependency-graph.md).
   - `finx::compiler::graph::resolve::ResolvedSlice`: 2D slice metadata `(rows, cols, cells)` preserved during range reference resolution.
 - **Data flow & interfaces**:
   1. `CellGrid` + `DependencyGraph` + `SymbolTable` + `FunctionRegistry` $\rightarrow$ `Evaluator::evaluate(&grid, &graph, &symbol_table, &registry)`.

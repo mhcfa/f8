@@ -112,4 +112,4 @@ Finx models dates as dedicated calculation rows (`format: "date"`), keeping colu
 
 Day count conventions and basis values (`0` through `4`) for `YEARFRAC` are specified in [Excel Parity & Evaluation Semantics](../compiler/parity.md#44-contractual-day-count-conventions-yearfrac).
 
-See [Function Registry Architecture](registry.md) for traits and dispatch, [Excel Parity](../compiler/parity.md) for calculation rules, and [Formula Grammar](../dsl/grammar.md) for formula expressions.
+See [Function Registry Architecture](./registry.md) for traits and dispatch, [Excel Parity](../compiler/parity.md) for calculation rules, and [Formula Grammar](../dsl/grammar.md) for formula expressions.
