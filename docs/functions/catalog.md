@@ -20,7 +20,29 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 
 ---
 
-## 2. Logical Functions
+## 2. Conditional Aggregation Functions (*IFS)
+
+Finx standardizes exclusively on modern plural `*IFS` signatures with paired trailing criteria arguments, eliminating the inverted argument order of legacy singular `SUMIF`/`COUNTIF`.
+
+| Function | Min args | Max args | Variadic rule | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `SUMIFS` | 3 | Unlimited | `Pairs` | Sums cells in `sum_range` satisfying all paired criteria (`sum_range`, `criteria_range1`, `criteria1`, ...) |
+| `COUNTIFS` | 2 | Unlimited | `Pairs` | Counts cells satisfying all paired criteria (`criteria_range1`, `criteria1`, ...) |
+| `AVERAGEIFS` | 3 | Unlimited | `Pairs` | Computes arithmetic mean of cells in `average_range` satisfying all paired criteria |
+| `MINIFS` | 3 | Unlimited | `Pairs` | Returns minimum value among cells in `min_range` satisfying all paired criteria |
+| `MAXIFS` | 3 | Unlimited | `Pairs` | Returns maximum value among cells in `max_range` satisfying all paired criteria |
+
+### 2.1. 1:1 Criteria Parity & Syntax Rules
+
+- **Exact equality**: Scalar values (`"US"`, `42`, `TRUE`). String equality is case-insensitive.
+- **Comparison prefixes**: String expressions with relational operators (`">10"`, `"<=" & ref`, `"<>"`, `"="`).
+- **Wildcards**: Text criteria support `?` (any single character), `*` (zero or more characters), and `~` (escape character for `~?`, `~*`, `~~`).
+- **Dimension matching**: Every `criteria_range_k` must have identical row and column counts to the primary range; mismatched dimensions return `#VALUE!`.
+- **Excel emission parity**: Finx compiles and evaluates standard `*IFS` expressions directly and emits identical `=SUMIFS(...)` formulas into `.xlsx` binaries without synthetic AST transformations.
+
+---
+
+## 3. Logical Functions
 
 | Function | Min args | Max args | Variadic rule | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -36,7 +58,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 
 ---
 
-## 3. Financial Functions
+## 4. Financial Functions
 
 | Function | Min args | Max args | Variadic rule | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -48,7 +70,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 | `IPMT` | 4 | 6 | `None` | Interest portion of annuity payment for a given period |
 | `PPMT` | 4 | 6 | `None` | Principal portion of annuity payment for a given period |
 
-### 3.1. Periodic vs. Non-Periodic Discounting (`NPV` vs. `XNPV`)
+### 4.1. Periodic vs. Non-Periodic Discounting (`NPV` vs. `XNPV`)
 
 - **`NPV(rate, value1, [value2], ...)`**:
   - Treats cash flows as occurring at periodic intervals starting at $t=1$:
@@ -62,7 +84,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
   - Solves $\text{XNPV}(r, \mathbf{v}, \mathbf{d}) = 0$ via Newton-Raphson iteration (default guess: `0.10`).
   - Cash flows must contain at least one positive and one negative value; otherwise returns `ExcelError::Num`.
 
-### 3.2. Annuity Calculations (`PMT`, `IPMT`, `PPMT`)
+### 4.2. Annuity Calculations (`PMT`, `IPMT`, `PPMT`)
 
 - **Sign convention**: Cash outflows are negative; inflows are positive. For a loan borrowing $+pv$, `PMT` evaluates to a negative periodic debt service amount.
 - **Payment timing (`type`)**: `0` (or omitted) indicates payment at period end; `1` indicates payment at period start.
@@ -70,14 +92,14 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 
 ---
 
-## 4. Lookup & Reference Functions
+## 5. Lookup & Reference Functions
 
 | Function | Min args | Max args | Variadic rule | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `XLOOKUP` | 3 | 6 | `None` | Modern lookup returning scalar value from matching return range |
 | `INDEX` | 2 | 3 | `None` | Returns scalar value at row/col offset within range |
 
-### 4.1. Modern Lookup (`XLOOKUP`)
+### 5.1. Modern Lookup (`XLOOKUP`)
 
 - **Signature**: `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])`.
 - **Defaults**:
@@ -86,7 +108,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
   - `search_mode`: Defaults to `1` (search first-to-last). `-1` = search last-to-first, `2` = binary search ascending, `-2` = binary search descending.
 - **Return value**: Evaluates strictly to the matching scalar `CellValue` from `return_array`.
 
-### 4.2. Positional Indexing (`INDEX`)
+### 5.2. Positional Indexing (`INDEX`)
 
 - **`INDEX(array, row_num, [col_num])`**:
   - Retrieves the scalar `CellValue` located at the 1-based `row_num` and `col_num` offsets within `array`.
@@ -94,7 +116,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 
 ---
 
-## 5. Date & Time Functions
+## 6. Date & Time Functions
 
 Finx models dates as dedicated calculation rows (`format: "date"`), keeping column dimensions structural and coordinates static. Date math operates on numeric serial dates or explicit `DATE(year, month, day)` constructors, avoiding implicit string parsing.
 
@@ -110,6 +132,15 @@ Finx models dates as dedicated calculation rows (`format: "date"`), keeping colu
 | `DAY` | 1 | 1 | `None` | Day of the month (1–31) corresponding to serial date |
 | `DAYS` | 2 | 2 | `None` | Number of days between two dates (`end_date`, `start_date`) |
 
-Day count conventions and basis values (`0` through `4`) for `YEARFRAC` are specified in [Excel Parity & Evaluation Semantics](../compiler/parity.md#44-contractual-day-count-conventions-yearfrac).
+### 6.1. Serial Date Representation & The 1900 Leap Day Bug
+
+Excel represents dates as floating-point day counts where serial day `1.0` is `1900-01-01`.
+
+To guarantee bit-for-bit Excel calculation parity, Finx strictly reproduces the historical Lotus 1-2-3 / Excel leap year bug:
+- **Serial day 60.0**: Treats `1900-02-29` as serial day `60.0`, even though 1900 was not a leap year in the Gregorian calendar.
+- **Offset on modern dates**: All serial dates on or after March 1, 1900 carry a $+1$ offset relative to true astronomical day counts, causing the Unix epoch (`1970-01-01`) to map to serial day `25569.0` rather than `25568.0`.
+- See [The 1900 Leap Year Bug (Lotus 1-2-3 Parity)](../compiler/parity.md#42-the-1900-leap-year-bug-lotus-1-2-3-parity) for details.
+
+Day count conventions and basis values (`0` through `4`) for `YEARFRAC` are specified in [Contractual Day Count Conventions (YEARFRAC)](../compiler/parity.md#45-contractual-day-count-conventions-yearfrac).
 
 See [Function Registry Architecture](./registry.md) for traits and dispatch, [Excel Parity](../compiler/parity.md) for calculation rules, and [Formula Grammar](../dsl/grammar.md) for formula expressions.
