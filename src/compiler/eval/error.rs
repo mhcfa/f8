@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::compiler::graph::ResolveError;
 use crate::compiler::ir::id::CellId;
 use crate::functions::error::FunctionError;
+use crate::model::id::{RowId, TableId};
 
 /// Structured compiler and evaluation errors encountered during formula calculation.
 #[derive(Debug, Error)]
@@ -32,6 +33,19 @@ pub enum EvalError {
     /// The omitted argument placeholder `_` appeared outside a function call.
     #[error("Unexpected omitted argument placeholder '_' in cell '{0}'")]
     UnexpectedOmitted(Box<CellId>),
+
+    /// The specified table was not found in the symbol table.
+    #[error("Table '{0}' not found in symbol table")]
+    TableNotFound(TableId),
+
+    /// The specified row was not found in the table metadata.
+    #[error("Row '{row}' not found in table '{table}'")]
+    RowNotFound {
+        /// Table identifier.
+        table: TableId,
+        /// Row identifier.
+        row: RowId,
+    },
 }
 
 impl EvalError {
@@ -60,6 +74,18 @@ impl EvalError {
     #[must_use]
     pub fn unexpected_omitted(cell: CellId) -> Self {
         Self::UnexpectedOmitted(Box::new(cell))
+    }
+
+    /// Creates a `TableNotFound` error.
+    #[must_use]
+    pub fn table_not_found(table: TableId) -> Self {
+        Self::TableNotFound(table)
+    }
+
+    /// Creates a `RowNotFound` error.
+    #[must_use]
+    pub fn row_not_found(table: TableId, row: RowId) -> Self {
+        Self::RowNotFound { table, row }
     }
 }
 
@@ -93,6 +119,18 @@ mod tests {
         assert_eq!(
             err4.to_string(),
             "Function error in cell 'Table[\"r1\", \"c1\"]': unknown function 'FOO'"
+        );
+
+        let err5 = EvalError::table_not_found(TableId::from("NonExistentTable"));
+        assert_eq!(
+            err5.to_string(),
+            "Table 'NonExistentTable' not found in symbol table"
+        );
+
+        let err6 = EvalError::row_not_found(TableId::from("MyTable"), RowId::from("missing_row"));
+        assert_eq!(
+            err6.to_string(),
+            "Row 'missing_row' not found in table 'MyTable'"
         );
     }
 }

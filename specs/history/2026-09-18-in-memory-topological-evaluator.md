@@ -1,7 +1,7 @@
 ---
 title: In-Memory Topological Evaluator & Evaluated Model Matrix
 date: 2026-09-18
-status: draft
+status: completed
 target-living-spec: specs/living-specs/compiler/evaluator.md
 ---
 
@@ -133,17 +133,17 @@ impl Evaluator {
 
 ### Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Topological Evaluation of Pure Literal Grid**
+- [x] **Scenario 1: Topological Evaluation of Pure Literal Grid**
   - **Given** a `CellGrid` containing only literal values (numbers, strings, booleans, and nulls)
   - **When** evaluated via `Evaluator::evaluate`
   - **Then** produces an `EvaluatedModel` with matching `CellValue` entries and zero errors.
 
-- [ ] **Scenario 2: Multi-Table Topological Evaluation with Cross-References**
+- [x] **Scenario 2: Multi-Table Topological Evaluation with Cross-References**
   - **Given** a model with tables `Assumptions` and `IncomeStatement`, where `IncomeStatement` formulas reference `Assumptions` and previous columns
   - **When** evaluated via `Evaluator::evaluate`
   - **Then** calculates all cells in exact topological order, correctly propagating values across tables.
 
-- [ ] **Scenario 3: Model Query APIs and Column Ordering**
+- [x] **Scenario 3: Model Query APIs and Column Ordering**
   - **Given** an `EvaluatedModel` computed from a multi-table model
   - **When** querying `get_value`, `get_row_values`, and `find_errors`
   - **Then** `get_row_values` returns values in exact declared column order, returns `Err(EvalError::TableNotFound)` or `Err(EvalError::RowNotFound)` for invalid lookups, and `find_errors` accurately isolates all cells containing `ExcelError`.
@@ -154,21 +154,21 @@ impl Evaluator {
 
 ### Phase 1: Evaluated Model Data Structure & Query APIs
 
-- [ ] Implement `EvaluatedModel` in `src/compiler/eval/model.rs` storing `values` and `symbol_table`.
-- [ ] Implement query methods: `get_value`, `get_cell`, `get_row_values` (preserving declared column order), `find_errors`, and iteration accessors.
-- [ ] Add `TableNotFound` and `RowNotFound` variants to `EvalError` in `src/compiler/eval/error.rs`.
+- [x] Implement `EvaluatedModel` in `src/compiler/eval/model.rs` storing `values` and `symbol_table`.
+- [x] Implement query methods: `get_value`, `get_cell`, `get_row_values` (preserving declared column order), `find_errors`, and iteration accessors.
+- [x] Add `TableNotFound` and `RowNotFound` variants to `EvalError` in `src/compiler/eval/error.rs`.
 
 ### Phase 2: Topological Execution Loop
 
-- [ ] Implement `Evaluator::evaluate` in `src/compiler/eval/mod.rs` iterating `DependencyGraph::topological_order()`.
-- [ ] Re-export `Evaluator`, `EvaluatedModel`, and `EvalError` in `src/compiler/eval/mod.rs` and `src/compiler/mod.rs`.
+- [x] Implement `Evaluator::evaluate` in `src/compiler/eval/mod.rs` iterating `DependencyGraph::topological_order()`.
+- [x] Re-export `Evaluator`, `EvaluatedModel`, and `EvalError` in `src/compiler/eval/mod.rs` and `src/compiler/mod.rs`.
 
 ### Phase 3: Integration Verification Suite
 
-- [ ] Create `tests/evaluator_test.rs` covering:
+- [x] Create `tests/evaluator_test.rs` covering:
   - Pure literal grid evaluation.
   - Multi-table cross-referencing models and active column lowering.
   - Error propagation across formula dependencies.
   - Query APIs (`get_row_values` preserving column order, `TableNotFound`, `RowNotFound`, `find_errors`).
-- [ ] Run verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
-- [ ] Reconcile and promote living spec to `specs/living-specs/compiler/evaluator.md`, archive draft specs to `specs/history/`.
+- [x] Run verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- [x] Reconcile and promote living spec to `specs/living-specs/compiler/evaluator.md`, archive draft specs to `specs/history/`.

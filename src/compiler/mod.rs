@@ -10,4 +10,4 @@ pub mod ir;
 pub mod layout;
 pub mod lowering;
 
-pub use eval::{CellEvalContext, EvalError, eval_expr};
+pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
