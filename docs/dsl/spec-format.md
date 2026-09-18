@@ -1,12 +1,12 @@
 # Specification Format
 
-This document details Finx's multi-file JSON specification schema, table modularity, row partitioning rules, and authoring patterns.
+This document defines Finx's multi-file declarative JSON specification schemas, table structure, axis roles, cell input syntax, and validation invariants.
 
-## 1. Project Architecture Overview
+## 1. Project Directory Architecture
 
-A Finx financial model is structured as a modular project directory:
+A Finx financial model is structured as a modular project directory separating workbook containers from standalone calculation tables:
 
-```
+```text
 my_model/
 ├── finx.json                  # Root manifest: metadata, theme, and sheet layout
 └── tables/                    # Standalone table calculation specifications
@@ -15,17 +15,16 @@ my_model/
     └── balance_sheet.json
 ```
 
-### V1 Core Invariant: Strictly One Table Per File
-To guarantee clean separation of concerns and deterministic round-trips:
-- **Every table resides in its own JSON file**: Table definitions (`id`, `columns`, `rows`, formulas) must be stored in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining in V1**: Sheets in `finx.json` reference table file paths. Inlining table objects directly into `finx.json` is not supported in V1.
+### V1 Core Invariants
+- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) must reside in separate JSON files under `tables/` (or relative subdirectories).
+- **No inlining in V1**: Sheets in `finx.json` reference table file paths. Inlining table objects directly into `finx.json` is prohibited.
 - **Global table ID uniqueness**: Every table `id` must be globally unique across the entire workbook.
 
 ---
 
 ## 2. Project Manifest Schema (`finx.json`)
 
-The root manifest defines workbook-level metadata and physical sheet presentation containers.
+The root manifest defines workbook-level metadata, pluggable theme selection, and physical sheet presentation containers:
 
 ```json
 {
@@ -50,22 +49,32 @@ The root manifest defines workbook-level metadata and physical sheet presentatio
 ```
 
 ### Vertical Table Stacking & Modularity
-When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/layout-and-lowering.md) stacks them vertically in the exact order listed, inserting standard blank-row gutters between tables:
-- **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans (e.g. stacking a 1-column assumptions table above a 5-column forecast table is completely valid).
-- **Physical anchoring**: Each table anchors its row stub labels and data columns at standard sheet offsets (Columns A/B for stubs, Column C onward for data columns).
-- **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table.row[col]`), remaining fully isolated from the physical row and column placement on the sheet.
+When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/spatial-layout.md) stacks them vertically in the listed order, inserting blank-row gutters:
+- **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans.
+- **Physical anchoring**: Each table maps its declared columns $0 \dots C-1$ directly to worksheet column offsets, anchored by explicit descriptor columns without implicit Column A/B stubs.
+- **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table[row, col]`), remaining fully isolated from the physical row and column placement on the sheet.
 
 ---
 
 ## 3. Table Specification Schema (`tables/<id>.json`)
 
-Each table file defines the calculation dimensions, optional column groups, and row definitions for a single table:
+Each table file defines an orthogonal 2D matrix with symmetrical row and column axes:
 
 ```json
 {
   "id": "string",
   "title": "string",
-  "columns": ["string"],
+  "columns": [
+    {
+      "id": "string",
+      "role": "measure | descriptor (optional, default: measure)",
+      "label": "string (optional, defaults to id)",
+      "format": "FormatPreset (optional)",
+      "expr": "string (optional, column-wide vector formula)",
+      "note": "string (optional)",
+      "source": "string or object (optional)"
+    }
+  ],
   "column_groups": [
     {
       "id": "string",
@@ -83,420 +92,53 @@ Each table file defines the calculation dimensions, optional column groups, and 
   "rows": [
     {
       "id": "string",
-      "label": "string",
+      "role": "measure | descriptor (optional, default: measure)",
       "format": "FormatPreset (optional)",
+      "expr": "string (optional, row-wide vector formula)",
       "note": "string (optional)",
       "source": "string or object (optional)",
-      "value": ["number | string | null (exactly one of value/expr/match)"],
-      "expr": "string (exactly one of value/expr/match)",
-      "match": {
-        "<column_id | col_a..col_b | cols.group_id>": {
-          "value": ["number | string | null (exactly one of value/expr)"],
-          "expr": "string (exactly one of value/expr)",
-          "note": "string (optional)",
-          "source": "string or object (optional)"
-        }
+      "cells": {
+        "<col_id>": "ValueLiteral | { \"expr\": \"string\" } | DetailedCellInput"
       }
     }
   ]
 }
 ```
 
----
+### 3.1. Axis Roles (`role`)
+Both columns and rows explicitly declare their calculation role:
+- **`measure` (default)**: Numerical quantities, time periods, and calculation outputs. Vector formulas broadcast across opposing measure axes.
+- **`descriptor`**: Line-item names, categorical labels, units, tickers, and presentation stubs. Vector formulas and measure formats never broadcast into or across descriptor axes.
 
-## 4. Core Invariants
-
-- **Canonical core**: Specifications strictly enforce unambiguous forms with zero implicit type coercion or broadcasting.
-- **Mutually exclusive row payload**: A row definition must specify exactly one calculation payload: `value`, `expr`, or `match`. Specifying multiple payloads or omitting all three produces a compile-time schema error. Similarly, within each `match` arm, exactly one of `value` or `expr` must be specified.
-- **Explicit input arrays**: All literal inputs are provided as explicit arrays: `"value": [...]`.
-- **Strict 1-to-1 dimension match**: The length of `value` must equal the number of targeted columns (`len(value) == len(target_columns)`). Single-cell inputs require single-element arrays: `"value": [0.25]`.
-- **Explicit empty cells**: Empty cells must be explicitly represented with `null`, e.g. `[null, 92000, 100000]`.
-- **Disjoint & exhaustive partitioning (`match`)**: The `match` block is the sole mechanism for varying behavior across columns. Every column in the table's `columns` array must be covered by **exactly one** match arm. Overlapping selectors and uncovered columns produce compile-time errors. Catch-all wildcards or `default` arms are strictly prohibited in favor of explicit coordinates or groups.
-- **Match selector grammar**: Each key in a `match` object must be one of:
-  - Single column ID: e.g. `"2024E"`.
-  - Bounded contiguous range: e.g. `"2021A..2023A"` (start column must precede end column in `columns`).
-  - Column group alias: e.g. `"cols.forecast"`.
-- **Payload cardinality**: In an arm targeting $k$ columns:
-  - `value`: Array of literals of exact length $k$ (`len(value) == k`).
-  - `expr`: Scalar formula string evaluated dynamically across each column in the matched partition.
-- **Semantic format tokens**: The `format` field accepts strictly enumerated semantic format tokens (`currency`, `currency_total`, `percentage`, `multiple`, `integer`, `decimal`, `basis_points`, `date`, `text`). Raw Excel format masks or arbitrary pattern strings are prohibited. Presentation typography, number format strings, and accounting borders are resolved through the workbook's pluggable `theme`.
-- **First-class notes & provenance**: Use the `note` or `source` fields to record model notes and data provider provenance. These survive serialization and compile into native Excel cell comments.
+### 3.2. Cell Input Syntax (`cells`)
+Every key under `row.cells` is strictly a discrete column identifier (`ColId`). Each entry represents strictly one 0D coordinate point:
+- **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
+- **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
+- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency" }`.
 
 ---
 
-## 5. Row Authoring Patterns
+## 4. Core Validation Invariants
 
-### 5.1. Uniform Calculation Across All Columns
-
-When a formula applies identically to all columns in a table:
-
-```json
-{
-  "id": "gross_profit",
-  "label": "Gross Profit",
-  "format": "currency_total",
-  "expr": "IncomeStatement.revenue[@] - IncomeStatement.cogs[@]"
-}
-```
-
-### 5.2. Single Assumption (1-Column Table)
-
-Assumptions and global parameters are modeled as single-column tables:
-
-```json
-{
-  "id": "tax_rate",
-  "label": "Corporate Tax Rate",
-  "format": "percentage",
-  "value": [0.25],
-  "note": "Statutory corporate federal + blended state tax rate"
-}
-```
-
-### 5.3. Partitioned Row (Historical Actuals vs Forecast)
-
-Separates hardcoded historical values from formula-driven forecast projections:
-
-```json
-{
-  "id": "revenue",
-  "label": "Total Revenue",
-  "format": "currency",
-  "match": {
-    "2021A..2023A": { "value": [85000, 92000, 100000] },
-    "2024E..2028E": { "expr": "IncomeStatement.revenue[col.prev] * 1.08" }
-  }
-}
-```
-
-### 5.4. Corkscrew Roll-Forward with Base Anchor
-
-Models balance sheet or debt roll-forwards with an explicit initial period and explicit roll-forward range:
-
-```json
-{
-  "id": "beginning_cash",
-  "label": "Beginning Cash Balance",
-  "format": "currency",
-  "match": {
-    "2024E": { "expr": "Assumptions.initial_cash[\"value\"]" },
-    "2025E..2028E": { "expr": "BalanceSheet.ending_cash[col.prev]" }
-  }
-}
-```
+1. **Every column is explicit**: Every physical column rendered on a worksheet maps 1:1 to an explicit column declaration in `columns`. Implicit, unaddressed stub columns are never created.
+2. **Single source of truth**:
+   - `id`: Immutable programmatic identifier used in formulas and ASTs.
+   - `label` / descriptor cell: Display text rendered in headers and row stubs.
+   - Physical coordinates: Computed automatically by the layout engine.
+3. **Three-tier specificity lattice**:
+   $$\text{Cell Override (0D Point)} > \text{Vector Rule (1D Row or Column)} > \text{Explicit Null}$$
+4. **Zero silent precedence**: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, the compiler halts with `AmbiguousExpressionConflict`.
+5. **Zero silent blanks**: Every measure cell must resolve to a value, formula, or an explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`. Silent fallback to Excel zeros is strictly prohibited.
+6. **Formula isolation**: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing `measure` axes and never evaluate across `descriptor` axes.
 
 ---
 
-## 6. Column Groups & Structured Super-Headers
+## 5. Related Documentation
 
-Columns can be grouped into semantic phases or analytical categories using the `column_groups` block. This supports both chronological timelines (e.g. historical actuals vs forecast projections) and general tabular groupings (e.g. trading comps or scenario analysis).
-
-### 6.1. Financial Statement Timeline Example
-
-```json
-{
-  "column_groups": [
-    {
-      "id": "historical",
-      "label": "Historical Actuals",
-      "columns": ["2021A", "2022A", "2023A"]
-    },
-    {
-      "id": "forecast",
-      "label": "Forecast Projections",
-      "columns": ["2024E", "2025E", "2026E", "2027E", "2028E"]
-    }
-  ]
-}
-```
-
-### 6.2. Public Comparables (Comps) Example
-
-```json
-{
-  "column_groups": [
-    {
-      "id": "market_data",
-      "label": "Market & Capital Structure",
-      "columns": ["share_price", "market_cap", "net_debt", "enterprise_value"]
-    },
-    {
-      "id": "multiples",
-      "label": "NTM Valuation Multiples",
-      "columns": ["ev_sales_ntm", "ev_ebitda_ntm", "p_e_ntm"]
-    }
-  ]
-}
-```
-
-### 6.3. Invariants & Compiler Behaviors
-- **Contiguity invariant**: Columns within each group must form a contiguous sub-slice of the table's declared `columns` array.
-- **Disjoint partitions**: Each column can belong to at most one group. Groups cannot overlap.
-- **Super-header rendering**: In physical Excel layout, the layout engine generates a top-tier super-header row with merged cells displaying group `label` values.
-- **Alias resolution**: Group names resolve dynamically in expressions:
-  - Boundaries: `cols.historical.last`, `cols.forecast.first`.
-  - Full range slicing: `SUM(IncomeStatement.revenue[cols.forecast])` or `SUM(Comps.market_cap[cols.market_data])`.
-- **Automated styling**: The layout engine detects boundaries between adjacent column groups and applies standard vertical dividing borders.
-- **Timeline calculations**: Dynamic timing metrics (such as period fractions, discount periods, and day counts) must be defined as dedicated calculation rows within `rows`, keeping headers strictly declarative and coordinates static.
-
----
-
-## 7. Row Groups & Hierarchical Sections
-
-Rows can be organized into structural sections and calculation aggregates using the recursive `row_groups` block. This models the nested hierarchies common in financial statements (such as Balance Sheets and OpEx schedules) while keeping the underlying `rows` array as the single source of truth for calculations.
-
-### 7.1. Single-Level Row Group Example (OpEx)
-
-For tables with flat sections, groups list targeted row IDs in `children`:
-
-```json
-{
-  "row_groups": [
-    {
-      "id": "opex",
-      "label": "Operating Expenses",
-      "children": ["r_and_d", "sales_marketing", "g_and_a"]
-    }
-  ],
-  "rows": [
-    { "id": "r_and_d", "label": "Research & Development", "expr": "..." },
-    { "id": "sales_marketing", "label": "Sales & Marketing", "expr": "..." },
-    { "id": "g_and_a", "label": "General & Administrative", "expr": "..." },
-    {
-      "id": "total_opex",
-      "label": "Total Operating Expenses",
-      "format": "currency_total",
-      "expr": "SUM(IncomeStatement[rows.opex, @])"
-    }
-  ]
-}
-```
-
-### 7.2. Multi-Level Nested Hierarchy Example (Balance Sheet)
-
-For multi-tier statements, parent groups nest sub-groups recursively using `children`:
-
-```json
-{
-  "row_groups": [
-    {
-      "id": "assets",
-      "label": "Assets",
-      "children": [
-        {
-          "id": "current_assets",
-          "label": "Current Assets",
-          "children": ["cash", "accounts_receivable", "inventory"]
-        },
-        {
-          "id": "non_current_assets",
-          "label": "Non-Current Assets",
-          "children": ["ppe", "goodwill", "intangibles"]
-        }
-      ]
-    }
-  ],
-  "rows": [
-    { "id": "cash", "label": "Cash & Cash Equivalents", "match": { ... } },
-    { "id": "accounts_receivable", "label": "Accounts Receivable", "expr": "..." },
-    { "id": "inventory", "label": "Inventories", "expr": "..." },
-    {
-      "id": "total_current_assets",
-      "label": "Total Current Assets",
-      "format": "currency_total",
-      "expr": "SUM(BalanceSheet[rows.current_assets, @])"
-    },
-    { "id": "ppe", "label": "Property, Plant & Equipment", "expr": "..." },
-    { "id": "goodwill", "label": "Goodwill", "expr": "..." },
-    { "id": "intangibles", "label": "Intangibles", "expr": "..." },
-    {
-      "id": "total_non_current_assets",
-      "label": "Total Non-Current Assets",
-      "format": "currency_total",
-      "expr": "SUM(BalanceSheet[rows.non_current_assets, @])"
-    },
-    {
-      "id": "total_assets",
-      "label": "Total Assets",
-      "format": "currency_total",
-      "expr": "BalanceSheet.total_current_assets[@] + BalanceSheet.total_non_current_assets[@]"
-    }
-  ]
-}
-```
-
-### 7.3. Mixed Hierarchy Example
-
-Groups can also combine direct row IDs and nested sub-groups within the same `children` array:
-
-```json
-{
-  "row_groups": [
-    {
-      "id": "opex",
-      "label": "Operating Expenses",
-      "children": [
-        "depreciation",
-        {
-          "id": "marketing",
-          "label": "Marketing Expenses",
-          "children": ["digital_ads", "events"]
-        },
-        "general_admin"
-      ]
-    }
-  ]
-}
-```
-
-### 7.4. Invariants & Compiler Behaviors
-- **Unified member hierarchy**: Every group node contains `children`, which can hold row ID strings (referencing calculation line items in `rows`) and/or nested `RowGroup` objects.
-- **Contiguity invariant**: The flattened descendant row IDs of any group must form an exact contiguous sub-slice of the table's `rows` array.
-- **Disjoint row membership**: Every row ID can appear at most once across the entire `row_groups` tree.
-- **Subtotal exclusion**: Subtotal rows (e.g. `total_current_assets`) must **not** be members of the group they aggregate. They sit immediately after the group in `rows`, avoiding circular self-references and ensuring summary lines remain visible during outline collapse.
-- **Formula range lowering**: Group tokens (`rows.<group>`) resolve to the contiguous vertical slice of all flattened descendant row IDs of that group (e.g. `SUM(Table[rows.opex, @])` or `SUM(BalanceSheet[rows.assets, @])`). Both leaf and parent groups can be referenced in formulas as long as their descendant rows are contiguous.
-- **Layout generation**:
-  - Emits section header rows in the physical Excel grid without calculation `CellId` allocations.
-  - Automatically calculates row stub indentation based on nesting depth (depth 0: major header, depth 1: sub-header, depth 2: indented line items).
-  - Emits native Excel collapsible outline levels (`[+]` / `[-]`) corresponding to tree depth.
-
----
-
-## 8. Semantic Formatting & Pluggable Themes
-
-Finx enforces complete decoupling between calculation logic and visual styling. Row definitions declare semantic format intent rather than physical formatting instructions or raw Excel formatting masks.
-
-### 8.1. Standard Format Preset Catalog
-
-The `format` property accepts strictly enumerated semantic presets:
-
-| Format Preset | Semantic Purpose | Typical Rendered Appearance |
-| :--- | :--- | :--- |
-| `currency` | Standard monetary amounts | `$1,250,000` / `(125,000)` / `-` |
-| `currency_total` | Bottom-line/summary totals | Bold, top thin border, bottom double underline |
-| `percentage` | Rates and return metrics | `12.5%` or `12.50%` |
-| `multiple` | Valuation and leverage multiples | `12.4x` |
-| `integer` | Discrete counts, volumes, shares | `1,000` / `(500)` |
-| `decimal` | General floating point values | `12.34` |
-| `basis_points` | Spread and yield differences | `125 bps` |
-| `date` | Calendar dates and period markers | `2024-12-31` or `Dec-24` |
-| `text` | Unformatted textual strings | Left-aligned string |
-
-### 8.2. Pluggable Themes
-
-The root workbook manifest (`finx.json`) declares the active `theme` (e.g. `"theme": "corporate_navy"`). The theme acts as a pluggable styling provider responsible for:
-- **Number format masks**: Mapping semantic tokens to locale-aware Excel masks (e.g. accounting parentheses vs negative minus signs, zero dashes, currency symbols).
-- **Typography**: Font family, base point size, and weight hierarchy (e.g. bolding on section headers and `currency_total`).
-- **Accounting borders**: Automated insertion of standard financial underlines (top thin, bottom double) on subtotal and total rows.
-- **Palette and accents**: Tab colors, header fills, and column group dividing borders.
-
-External or organization-specific styling plugins can provide custom themes without modifying any underlying calculation files under `tables/`.
-
----
-
-## 9. End-to-End Model Project Example
-
-### `finx.json`
-
-```json
-{
-  "model_name": "LBO_Simple",
-  "theme": "corporate_navy",
-  "sheets": [
-    {
-      "name": "Summary",
-      "tab_color": "navy",
-      "tables": [
-        "tables/assumptions.json"
-      ]
-    },
-    {
-      "name": "Model",
-      "tab_color": "forest_green",
-      "freeze_panes": { "row": 2, "col": 1 },
-      "tables": [
-        "tables/income_statement.json"
-      ]
-    }
-  ]
-}
-```
-
-### `tables/assumptions.json`
-
-```json
-{
-  "id": "Assumptions",
-  "title": "Model Assumptions",
-  "columns": ["value"],
-  "rows": [
-    {
-      "id": "tax_rate",
-      "label": "Corporate Tax Rate",
-      "format": "percentage",
-      "value": [0.25],
-      "note": "Federal + blended state rate"
-    },
-    {
-      "id": "exit_multiple",
-      "label": "Exit EV / EBITDA Multiple",
-      "format": "multiple",
-      "value": [10.0]
-    }
-  ]
-}
-```
-
-### `tables/income_statement.json`
-
-```json
-{
-  "id": "IncomeStatement",
-  "title": "Income Statement",
-  "columns": ["2023A", "2024E", "2025E", "2026E", "2027E"],
-  "column_groups": [
-    {
-      "id": "historical",
-      "label": "Historical Actuals",
-      "columns": ["2023A"]
-    },
-    {
-      "id": "forecast",
-      "label": "Forecast Projections",
-      "columns": ["2024E", "2025E", "2026E", "2027E"]
-    }
-  ],
-  "rows": [
-    {
-      "id": "revenue",
-      "label": "Total Revenue",
-      "format": "currency",
-      "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth",
-      "match": {
-        "2023A": { "value": [100000.0] },
-        "cols.forecast": { "expr": "IncomeStatement.revenue[col.prev] * 1.08" }
-      }
-    },
-    {
-      "id": "cogs",
-      "label": "Cost of Goods Sold",
-      "format": "currency",
-      "expr": "IncomeStatement.revenue[@] * 0.45"
-    },
-    {
-      "id": "gross_profit",
-      "label": "Gross Profit",
-      "format": "currency_total",
-      "expr": "IncomeStatement.revenue[@] - IncomeStatement.cogs[@]"
-    },
-    {
-      "id": "tax_expense",
-      "label": "Income Tax Provision",
-      "format": "currency",
-      "expr": "IncomeStatement.gross_profit[@] * Assumptions.tax_rate[\"value\"]"
-    }
-  ]
-}
-```
-
-See [Addressing Syntax](addressing.md) and [Formula Grammar](grammar.md) for expression details.
+- [Column & Row Groups](groups.md): Structured super-headers and hierarchical row sections.
+- [Semantic Formatting & Themes](formatting.md): Format preset catalog, conflict resolution, and workbook themes.
+- [Modeling Patterns & Archetypes](patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
+- [End-to-End Project Example](project-example.md): Complete working 3-file reference model.
+- [Addressing Syntax](addressing.md): Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
+- [Formula Grammar](grammar.md): Formal EBNF expression grammar and operator precedence.
+- [Intermediate Representation (IR)](../compiler/ir.md): 2D Specificity Resolution Lattice flowchart and expansion pass.

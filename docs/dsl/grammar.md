@@ -9,25 +9,28 @@ Expression         = BinaryExpr | UnaryExpr | FunctionCall | Primary ;
 BinaryExpr         = Expression BinaryOp Expression ;
 UnaryExpr          = UnaryOp Expression ;
 FunctionCall       = FunctionName "(" [ ArgumentList ] ")" ;
-ArgumentList       = Expression { "," Expression } ;
+ArgumentList       = Argument { "," Argument } ;
+Argument           = Expression | OmittedArg ;
+OmittedArg         = "_" ;
 
-Primary            = Number | String | Reference | "(" Expression ")" ;
+Primary            = Number | String | Boolean | Reference | "(" Expression ")" ;
 
 Reference          = TableRef ;
-TableRef           = Identifier ( DotAccess | BracketAccess ) ;
+TableRef           = Identifier "[" RowSpec "," ColSpec "]" ;
 
-DotAccess          = "." Identifier "[" ColSpec "]" ;
-BracketAccess      = "[" RowSpec "," ColSpec "]" ;
-
-RowSpec            = Key [ ".." Key ]
+RowSpec            = "@row"
+                   | Key ".." Key
+                   | Key
                    | SpecialRow ;
 
-ColSpec            = "@"
+ColSpec            = "@col"
                    | Key ".." Key
                    | Key
                    | SpecialCol ;
 
-SpecialRow         = "rows." Identifier
+SpecialRow         = "row.prev" [ "(" Integer ")" ]
+                   | "row.next" [ "(" Integer ")" ]
+                   | "rows." Identifier
                    | "rows." Identifier ".last"
                    | "rows." Identifier ".first" ;
 
@@ -45,13 +48,14 @@ Identifier         = [a-zA-Z_][a-zA-Z0-9_]* ;
 String             = '"' [^"\\]* '"' ;
 Integer            = [0-9]+ ;
 Number             = [0-9]+ ( "." [0-9]+ )? ;
+Boolean            = "TRUE" | "FALSE" ;
 ```
 
 ---
 
 ## 2. Operator Precedence & Associativity
 
-Formulas are parsed using a Pratt parser (`winnow`) with standard algebraic precedence from highest to lowest:
+Formulas are parsed using a Pratt parser with standard algebraic precedence from highest to lowest:
 
 | Precedence | Operator | Description | Associativity |
 | :--- | :--- | :--- | :--- |
@@ -67,10 +71,10 @@ Parentheses `( ... )` override default operator precedence.
 
 ## 3. Lexical Rules
 
-- **Keywords and functions**: Built-in Excel functions must be uppercase (`SUM`, `AVERAGE`, `IF`, `NPV`, `XIRR`, `MAX`, `MIN`, `XLOOKUP`).
-- **Identifiers**: Identifiers must match `[a-zA-Z_][a-zA-Z0-9_]*` (used for table and row dot-access).
+- **Keywords and functions**: Built-in Excel functions must be uppercase (`SUM`, `AVERAGE`, `IF`, `NPV`, `XIRR`, `MAX`, `MIN`, `XLOOKUP`). Supported functions and signatures are cataloged in the [Standard Function Catalog](../functions/catalog.md).
+- **Identifiers**: Identifiers must match `[a-zA-Z_][a-zA-Z0-9_]*` (used for table identifiers).
 - **Coordinate keys**: All row and column keys inside bracket selectors must be double-quoted strings (`Key = String`). Bare identifiers are prohibited as coordinate keys.
 - **String literals**: Double-quoted strings with standard escaping (`"value"`, `"2024E"`).
 - **Whitespace**: Whitespace between tokens is ignored during parsing.
 
-See [Addressing Syntax](addressing.md) for how reference expressions map to cell coordinates, and [Specification Format](spec-format.md) for embedding expressions within JSON table specifications.
+See [Addressing Syntax](addressing.md) for reference coordinates, [Standard Function Catalog](../functions/catalog.md) for supported functions, and [Specification Format](spec-format.md) for embedding expressions within JSON table specifications.

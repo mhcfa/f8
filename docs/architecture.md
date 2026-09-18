@@ -7,17 +7,20 @@ Finx is a deterministic compiler for financial models that treats spreadsheets a
 Traditional financial modeling conflates business logic, multi-dimensional time series, and 2D spatial presentation inside Excel. Finx establishes a **"TypeScript for Spreadsheets"** paradigm:
 
 - **Code is single source of truth**: Models are defined in structured, declarative JSON project specifications (`finx.json` + `tables/*.json`).
+- **Agent-first intermediate representation (IR)**: The specification schema is an explicit, orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic compiler verification rather than human typing brevity. Ergonomics, domain scaffolding, and high-level abstractions reside in the **Adapter / Tooling Layer (MCP server & CLI)**, keeping the core data model strictly orthogonal, uniform, and free of special-case syntactic magic.
+- **Orthogonal 2D matrix paradigm**: A table is a general $R \times C$ matrix. Columns are user-defined and can represent timelines, categories, units, assumptions, or multi-directional metrics (Cap Tables, Comps, Sensitivity matrices, Vertical waterfalls). Every cell $(row, col)$ is a full calculation citizen addressable via `Table[row, col]`.
 - **Excel is an uneditable compile artifact**: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - **Deterministic compilation**: A Rust engine validates schemas, constructs cell-level dependency graphs, proves acyclicity, plans 2D layouts, and lowers semantic formulas to concrete Excel grid coordinates.
 
 ---
 
-## 2. Compilation Pipeline
+## 2. Compilation & Evaluation Pipeline
 
 ```mermaid
 flowchart TD
-    A["Spec Request / Prompt"] --> B["Authoring Agent or Human"]
-    B -->|"JSON Project Spec"| C["Finx Compiler Entrypoint"]
+    A["Agent Prompt / Goal"] --> B["AI Agent (LLM)"]
+    B -->|"High-Level Actions"| T["Adapter / Tooling Layer\n(MCP Server & Scaffolding)"]
+    T -->|"Canonical Spec JSON"| C["Finx Compiler Entrypoint"]
 
     subgraph Compiler ["Finx Core Engine"]
         C --> D["Deserializer & Spec AST"]
@@ -25,21 +28,35 @@ flowchart TD
         E --> F["Dependency Graph & Cycle Detector"]
         F --> G{"Cycles Detected?"}
         G -->|"Yes"| H["Emit Semantic Cycle Trace & Halt"]
-        G -->|"No"| I["Spatial Layout Planner"]
-        I --> J["Formula Lowering Engine"]
+        G -->|"No"| I["Topological Sorter"]
+
+        subgraph In-Memory Evaluation ["Headless Runtime"]
+            I --> J1["In-Memory Evaluator"]
+            J1 --> K1["Function Registry\n(Excel Built-ins)"]
+            J1 --> L1["Evaluated Cell Matrix\n(Queryable by Agent & CLI)"]
+        end
+
+        subgraph Excel Emission ["Workbook Compiler"]
+            I --> J2["Spatial Layout Planner"]
+            J2 --> K2["Formula Lowering Engine"]
+            K2 --> L2["Excel Binary Emitter\n(rust_xlsxwriter)"]
+        end
+
+        L1 -.->|"Precalculated Cache (<v>)"| L2
     end
 
-    J --> K["Excel Binary Emitter (rust_xlsxwriter)"]
-    K --> L[".xlsx Workbook (Live Formulas)"]
+    L1 --> N["Headless Exports\n(JSON / CSV / Parquet)"]
+    L2 --> M[".xlsx Workbook\n(Live Formulas + Precalculated Cache)"]
 ```
 
-The pipeline operates across five primary passes:
+The pipeline operates across six primary passes:
 
-1. **Ingest & Parse**: Deserializes specifications and parses formula expressions into AST nodes.
+1. **Ingest & Parse**: Deserializes specifications, verifies function signatures against the function registry, and parses formula expressions into AST nodes.
 2. **Grid Expansion**: Expands table rows across defined columns into discrete cell-level intermediate representation (`CellId`).
 3. **Dependency Graph & SCC**: Constructs a directed dependency graph and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
-4. **Spatial Layout Planning**: Arranges tables onto sheets with automated spacing, gutter planning, and freeze panes.
-5. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`) and writes standard `.xlsx` files.
+4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity for agent inspection, compile-time validation (`#DIV/0!`, `#VALUE!`), and workbook caching.
+5. **Spatial Layout Planning**: Arranges tables onto sheets with automated spacing, gutter planning, and freeze panes.
+6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`) and writes standard `.xlsx` files via `rust_xlsxwriter`. Formulas are emitted alongside precalculated in-memory results in the cell cache, enabling instant viewing in third-party tools (Apple Numbers, Quick Look, Google Drive, pandas) without waiting for Excel recalculation, with optional values-only freezing.
 
 ---
 
@@ -70,13 +87,26 @@ flowchart TD
 
 The architecture strictly decouples semantic identity, visual presentation, and physical grid location:
 
-| Tier                          | Table Axis                  | Row Axis                          | Column Axis                | Responsibility                               | Mutability                                 |
-| :---------------------------- | :-------------------------- | :-------------------------------- | :------------------------- | :------------------------------------------- | :----------------------------------------- |
-| **1. Identity (`id`)**        | `id: "IncomeStatement"`     | `id: "revenue"`                   | `id: "2024E"`              | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
-| **2. Presentation (`label`)** | `title: "Income Statement"` | `label: "Total Net Revenue ($M)"` | `label: "2024 (Forecast)"` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
-| **3. Physical Grid**          | Sheet assignment            | Row offset                        | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
+| Tier                          | Table Axis                  | Row Axis                                            | Column Axis                | Responsibility                               | Mutability                                 |
+| :---------------------------- | :-------------------------- | :-------------------------------------------------- | :------------------------- | :------------------------------------------- | :----------------------------------------- |
+| **1. Identity (`id`)**        | `id: "IncomeStatement"`     | `id: "revenue"`                                     | `id: "2024E"`              | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
+| **2. Presentation**           | `title: "Income Statement"` | Descriptor cell (`line_item: "Total Net Revenue"`) | `label: "2024 (Forecast)"` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
+| **3. Physical Grid**          | Sheet assignment            | Row offset                                          | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
 
 Modifying presentation labels, formatting rules, or table placement never invalidates logic or dependencies.
+
+### Core Compiler vs. Adapter / Tooling Layer
+
+To preserve both mathematical purity in the compiler and high authoring speed for AI agents, Finx strictly partitions responsibilities:
+
+- **Core Compiler (Intermediate Representation)**:
+  - Treats tables strictly as orthogonal 2D matrices ($R \times C$) of addressable cells `Table[row, col]`.
+  - Enforces explicit, unambiguous JSON schemas without implicit broadcasting or hidden layout side effects.
+  - Remains completely agnostic to table shapes (3-statement models, Cap Tables, Comps, Sensitivity matrices, and Vertical waterfalls share the exact same primitive data structures).
+- **Adapter / Tooling Layer (MCP Server & Scaffolding)**:
+  - Acts as the ergonomic bridge between AI agents and the core compiler.
+  - Exposes high-level tools (e.g. statement scaffolding, unit assignment, timeline generation) that translate intent into explicit, canonical table specifications.
+  - Absorbs repetitive scaffolding (such as statement line-item structures and timeline columns) without complicating compiler invariants.
 
 ---
 
@@ -94,8 +124,10 @@ Modifying presentation labels, formatting rules, or table placement never invali
 | Component                | Technology                          | Purpose                                                               |
 | :----------------------- | :---------------------------------- | :-------------------------------------------------------------------- |
 | **Data deserialization** | `serde`, `serde_json`               | Type-safe schema validation and project ingestion                     |
-| **Formula parser**       | `winnow`                            | Pratt-parsing formula expressions into AST representations            |
+| **Formula parser**       | Native Lexer & Pratt parser         | Parsing formula expressions into AST representations                  |
 | **Graph engine**         | `petgraph`                          | Directed dependency graph, topological sort, cycle isolation          |
+| **In-memory evaluator**  | Native Rust engine                  | Topological DAG execution with 100% Excel calculation parity          |
+| **Function catalog**     | Extensible registry pattern         | Single source of truth for Excel built-in functions                   |
 | **Workbook emitter**     | `rust_xlsxwriter`                   | Fast generation of native `.xlsx` files with live formulas and styles |
 | **CLI framework**        | `clap`                              | Command-line interface for human developers                           |
 | **Agent protocol**       | Stdio JSON-RPC (`rmcp`)             | Model Context Protocol server for AI agents                           |
@@ -106,14 +138,26 @@ Modifying presentation labels, formatting rules, or table placement never invali
 
 Detailed specifications and engine designs are organized into dedicated topics:
 
+- **System & Codebase**:
+  - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
-  - [Addressing Syntax](dsl/addressing.md): Reference syntax, active period (`[@]`), temporal offsets, and slicing.
+  - [Specification Format](dsl/spec-format.md): Multi-file JSON schemas, table structure, axis roles, and invariants.
+  - [Column & Row Groups](dsl/groups.md): Structured super-headers, timeline groupings, and hierarchical row outlines.
+  - [Semantic Formatting & Themes](dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.
+  - [Addressing Syntax](dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets, and slicing.
   - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.
-  - [Specification Format](dsl/spec-format.md): Multi-file JSON schema, table modularity, match partitioning, and project examples.
+  - [Modeling Patterns & Archetypes](dsl/patterns.md): Canonical 2D patterns (horizontal statements, cap tables, comps, debt schedules).
+  - [End-to-End Project Example](dsl/project-example.md): Complete 3-file working reference model.
 - **Compiler Internals**:
-  - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, `CellId` structure, and grid expansion.
+  - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, 2D Specificity Resolution Lattice, and grid expansion.
   - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
-  - [Layout & Lowering](compiler/layout-and-lowering.md): Spatial table stacking, coordinate translation, and formula lowering.
+  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
+  - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
+  - [Spatial Layout Planning](compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
+  - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
+- **Function Subsystem**:
+  - [Function Registry Architecture](functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
+  - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces**:
   - [CLI](interfaces/cli.md): Command-line interface (in design).
   - [Model Context Protocol (MCP)](interfaces/mcp.md): Agent interface via Model Context Protocol (in design).
