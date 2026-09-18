@@ -418,11 +418,27 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 3);
+    assert_eq!(registry.len(), 12);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
-    assert_eq!(names, vec!["ABS", "SUM", "IF"]);
+    assert_eq!(
+        names,
+        vec![
+            "ABS",
+            "SUM",
+            "AVERAGE",
+            "COUNT",
+            "COUNTA",
+            "MAX",
+            "MIN",
+            "ROUND",
+            "ROUNDUP",
+            "ROUNDDOWN",
+            "SUMPRODUCT",
+            "IF"
+        ]
+    );
 
     let if_func = registry.lookup("if").unwrap();
     assert_eq!(if_func.name(), "IF");

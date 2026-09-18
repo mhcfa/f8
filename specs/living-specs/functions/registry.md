@@ -24,8 +24,9 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
     - `FunctionArg`: Bound runtime argument (`Scalar`, `Array`, `Lazy`, `Omitted`).
     - `EvalContext`: Abstraction decoupling function evaluation from internal compiler topological state.
   - `finx::functions::registry`: Deterministic `IndexMap`-backed registry with uppercase lookup, static call validation, and argument binding (`bind_arguments`).
+  - `finx::functions::common`: Shared argument traversal helpers (`NumericCollector`, `count_numbers`, `count_non_empty`) and IEEE-754 decimal rounding routines.
   - `finx::functions::error`: Structured `FunctionError` diagnostic variants with 1-indexed argument positions.
-  - `finx::functions::math`: Built-in mathematical functions (`ABS`, `SUM`).
+  - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`).
   - `finx::functions::logical`: Built-in logical branching functions (`IF`).
 - **Data flow & interfaces**:
   1. AST parsing (Pass 1) $\rightarrow$ `FunctionRegistry::validate_call` validates identifier existence, arity bounds, and non-omittable required arguments.
@@ -65,7 +66,7 @@ Function dispatch is case-insensitive, thread-safe, and deterministic. Function 
   - **Then** resolves to `AbsFunction`.
 - **Deterministic iteration**:
   - **When** iterating through `FunctionRegistry::standard()`
-  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "IF"]`).
+  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "IF"]`).
 - **Arity validation**:
   - **When** validating `ABS` with 0 or 2 arguments
   - **Then** rejects with `FunctionError::TooFewArguments` or `FunctionError::TooManyArguments`.
@@ -86,18 +87,32 @@ Positional arguments are bound according to parameter metadata. Trailing missing
   - **When** binding a table coordinate range (e.g. `Table["r1".."r3", @col]`) to a `ParamKind::RangeOrArray` parameter
   - **Then** binds as `FunctionArg::Array` with `is_range_ref: true`.
 
-### 4. Core Archetype Execution Semantics
+### 4. Function Execution Semantics
 
-Canonical functions demonstrate distinct evaluation models.
+Standard functions demonstrate distinct evaluation models.
 
 #### Scenarios
 
 - **Unary scalar (`ABS`)**:
   - **When** evaluated with `-42.5`, `Empty`, or `TRUE`
   - **Then** produces `42.5`, `0.0`, and `1.0`. Text inputs produce `#VALUE!`, and existing domain errors propagate.
-- **Variadic range aggregator (`SUM`)**:
+- **Variadic arithmetic aggregators (`SUM`, `AVERAGE`, `MIN`, `MAX`)**:
   - **When** evaluated with a range reference containing numbers, text, booleans, and empty cells
   - **Then** text, booleans, and empty cells are ignored, numbers are aggregated, and cell errors immediately bubble up. Explicit scalar text produces `#VALUE!`.
+  - **When** evaluating `AVERAGE` over empty ranges, returns `#DIV/0!`.
+  - **When** evaluating `MAX`/`MIN` over empty ranges, returns `0.0`.
+- **Numeric count (`COUNT`)**:
+  - **When** evaluated with ranges or scalars
+  - **Then** counts numbers and direct booleans; text, empty cells, and range errors are ignored (+0) without error propagation (`COUNT("hello")` returns `0.0`).
+- **Non-empty count (`COUNTA`)**:
+  - **When** evaluated with ranges or scalars
+  - **Then** counts all non-empty cells (numbers, text, booleans, errors), ignoring only `CellValue::Empty`.
+- **Decimal rounding (`ROUND`, `ROUNDUP`, `ROUNDDOWN`)**:
+  - **When** evaluated with `number` and `num_digits`
+  - **Then** `ROUND` rounds half away from zero, `ROUNDUP` rounds away from zero, and `ROUNDDOWN` truncates toward zero. Negative `num_digits` rounds left of the decimal point.
+- **Vector product sum (`SUMPRODUCT`)**:
+  - **When** evaluated with matching array/range dimensions
+  - **Then** multiplies corresponding elements across ranges and sums products; non-numeric entries count as `0.0`, cell errors bubble immediately, and mismatched dimensions return `#VALUE!`.
 - **Short-circuiting conditional branch (`IF`)**:
   - **When** evaluating `IF(TRUE, val_true, val_false)` or `IF(FALSE, val_true, val_false)`
   - **Then** only the selected branch expression is evaluated, and the dormant branch is never executed.

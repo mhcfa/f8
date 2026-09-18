@@ -1,7 +1,5 @@
 use crate::expr::ast::Expr;
 use crate::functions::error::FunctionError;
-use crate::functions::logical::IfFunction;
-use crate::functions::math::{AbsFunction, SumFunction};
 use crate::functions::traits::{EvalContext, ExcelFunction, FunctionArg, ParamKind, VariadicRule};
 use indexmap::IndexMap;
 use std::sync::Arc;
@@ -25,9 +23,8 @@ impl FunctionRegistry {
     #[must_use]
     pub fn standard() -> Self {
         let mut registry = Self::new();
-        registry.register(Arc::new(AbsFunction));
-        registry.register(Arc::new(SumFunction));
-        registry.register(Arc::new(IfFunction));
+        crate::functions::math::register(&mut registry);
+        crate::functions::logical::register(&mut registry);
         registry
     }
 
