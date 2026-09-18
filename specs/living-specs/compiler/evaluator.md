@@ -126,3 +126,20 @@ Functions implementing `ExcelFunction` receive `EvalContext` implemented by `Cel
 - **Domain error isolation**:
   - **When** calling `find_errors` on a model containing `#DIV/0!` and `#VALUE!` cells
   - **Then** returns a vector of all failing `(&CellId, &ExcelError)` references.
+
+### 6. Unified Compiler Driver Facade (`Compiler`)
+
+The top-level `finx::Compiler` orchestrates Passes 1 through 4 into a single coherent call:
+- `Compiler::evaluate(manifest, tables)`: Validates manifest and table specifications, expands the cell grid, constructs the dependency DAG, verifies zero cycles, and evaluates all formulas topologically using `FunctionRegistry::standard()`.
+- `Compiler::evaluate_with_registry(manifest, tables, registry)`: Permits custom function registry injection.
+- Returns unified `CompilerError` wrapping `ModelError` (Pass 1), `IrError` (Pass 2), `GraphError` (Pass 3), and `EvalError` (Pass 4).
+
+#### Scenarios
+
+- **Single-call workbook compilation**:
+  - **When** calling `Compiler::evaluate(&manifest, &tables)` on valid specifications
+  - **Then** returns an `EvaluatedModel` with all calculated cell values populated in topological DAG order.
+- **Pass error bubbling**:
+  - **When** calling `Compiler::evaluate` on a specification with a cycle or duplicate sheet name
+  - **Then** returns the appropriate `CompilerError` variant (`Model`, `Ir`, `Graph`, or `Eval`).
+
