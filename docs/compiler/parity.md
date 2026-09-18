@@ -25,7 +25,8 @@ flowchart TD
 Formula expressions reject string literals in arithmetic operators and numeric function arguments at compile time:
 - Incompatible literal arithmetic (e.g. `1 + "2"` or `"foo" * 3`) produces a compile-time type mismatch error (`CompileError::TypeMismatch`).
 - Function signatures enforce parameter types. Passing a string literal to a numeric argument (e.g. `SUM(1, "2")` or `ROUND("1.5", 0)`) fails compilation.
-- Booleans passed as literals to arithmetic functions coerce to numbers according to signature: `TRUE -> 1.0`, `FALSE -> 0.0`.
+- Booleans passed as literals (`TRUE`, `FALSE`) to arithmetic functions coerce to numbers according to signature: `TRUE -> 1.0`, `FALSE -> 0.0`.
+- The omitted argument placeholder `_` is not an expression value and is strictly prohibited in arithmetic or logical operators (e.g. `1 + _` fails compilation).
 
 ### 2.2. Range Reference Aggregation Filtering
 When cell coordinates are passed via range references to numeric aggregators (e.g. `SUM(A1:A3)`, `AVERAGE(A1:A3)`):
@@ -35,6 +36,7 @@ When cell coordinates are passed via range references to numeric aggregators (e.
 - Example: If `A1 = 1.0`, `A2 = "text"`, `A3 = TRUE`, then `SUM(A1:A3)` evaluates to `1.0`.
 
 ### 2.3. Empty Cell Semantics
+- **Cell origin**: Empty cells (`CellValue::Empty`) originate strictly from grid input specifications (`null` in JSON `cells`). In compliance with Excel parity, cell formulas cannot evaluate to `CellValue::Empty`. Formulas intending to produce blank cell text must return empty strings (`""`), matching standard Excel modeling practice.
 - **Arithmetic context**: Empty cells coerce to `0.0` (`Empty + 10.0 = 10.0`).
 - **String context**: Empty cells coerce to empty strings (`""`).
 - **Aggregations**: `AVERAGE` and `COUNT` ignore empty cells, whereas cells containing explicit zero (`0.0`) are counted in divisors.
@@ -58,10 +60,11 @@ To guarantee strict compliance with the FAST Standard and maintain full determin
 - **Lazy evaluation**: `IF`, `IFS`, `IFERROR`, `IFNA`, `CHOOSE`, and `SWITCH` use `ParamKind::Lazy` for conditional branches. Dormant branches remain unevaluated, preventing false `#DIV/0!` or lookup errors.
 - **Eager logical evaluation**: `AND` and `OR` evaluate all arguments eagerly, mirroring Excel. In `=IF(AND(A1 > 0, 1 / A1 > 0.5), "ok", "zero")`, if `A1 == 0`, evaluating `1 / A1` produces `#DIV/0!`.
 
-### 3.3. Explicit Omitted Arguments (`null`)
-- Omitted optional positional arguments must be explicitly marked with `null` in formula expressions (e.g. `PMT(r, n, pv, null, 1)`).
+### 3.3. Explicit Omitted Arguments (`_`)
+- Omitted optional positional arguments must be explicitly marked with `_` in formula expressions (e.g. `PMT(r, n, pv, _, 1)`).
 - Consecutive empty commas (e.g. `,,`) are prohibited in formula grammar to eliminate parsing ambiguity and index miscounting.
-- The evaluator substitutes explicit `null` arguments with `ParameterDef::default_value` when defined, or passes `FunctionArg::Omitted` to the function implementation. During formula lowering, `null` lowers to standard Excel omitted positional argument syntax or configured defaults.
+- The evaluator substitutes explicit `_` arguments with `ParameterDef::default_value` when defined, or passes `FunctionArg::Omitted` to the function implementation. During formula lowering, `_` lowers to standard Excel omitted positional argument syntax (`, ,`) or configured defaults.
+- Required arguments cannot be omitted: passing `_` to a non-optional parameter (e.g. `ABS(_)`) halts compilation with `FunctionError::CannotOmitRequiredArgument`.
 
 ---
 

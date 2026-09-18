@@ -10,9 +10,10 @@ BinaryExpr         = Expression BinaryOp Expression ;
 UnaryExpr          = UnaryOp Expression ;
 FunctionCall       = FunctionName "(" [ ArgumentList ] ")" ;
 ArgumentList       = Argument { "," Argument } ;
-Argument           = Expression ;
+Argument           = Expression | OmittedArg ;
+OmittedArg         = "_" ;
 
-Primary            = Number | String | Reference | NullLiteral | "(" Expression ")" ;
+Primary            = Number | String | Boolean | Reference | "(" Expression ")" ;
 
 Reference          = TableRef ;
 TableRef           = Identifier "[" RowSpec "," ColSpec "]" ;
@@ -47,7 +48,7 @@ Identifier         = [a-zA-Z_][a-zA-Z0-9_]* ;
 String             = '"' [^"\\]* '"' ;
 Integer            = [0-9]+ ;
 Number             = [0-9]+ ( "." [0-9]+ )? ;
-NullLiteral        = "null" ;
+Boolean            = "TRUE" | "FALSE" ;
 ```
 
 ---

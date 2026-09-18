@@ -92,7 +92,7 @@ During topological evaluation, arguments are prepared as `FunctionArg`:
 /// Argument passed into function evaluation.
 pub enum FunctionArg<'a> {
     /// Unevaluated AST expression branch for conditional evaluation.
-    Lazy(&'a ExprAst),
+    Lazy(&'a Expr),
     /// Pre-evaluated scalar value.
     Scalar(CellValue),
     /// Evaluated range slice preserving dimensions and range provenance.
@@ -102,20 +102,26 @@ pub enum FunctionArg<'a> {
         values: Vec<CellValue>,
         is_range_ref: bool,
     },
-    /// Explicitly omitted positional argument (e.g. FUNC(a, null, c)).
+    /// Explicitly omitted positional argument (e.g. FUNC(a, _, c)).
     Omitted,
+}
+
+/// Context interface provided to functions for evaluating lazy expression branches.
+pub trait EvalContext {
+    /// Evaluates an unevaluated expression branch for lazy functions.
+    fn eval_expr(&self, expr: &Expr) -> Result<CellValue, FunctionError>;
 }
 
 impl<'a> FunctionArg<'a> {
     /// Resolves argument to a scalar, evaluating lazy branches or extracting single-cell values.
-    pub fn eval_scalar(&self, ctx: &EvalContext) -> Result<CellValue, EvalError>;
+    pub fn eval_scalar(&self, function: &'static str, ctx: &dyn EvalContext) -> Result<CellValue, FunctionError>;
 
     /// Resolves argument to an array slice, preserving row and column dimensions.
-    pub fn eval_array(&self, ctx: &EvalContext) -> Result<(usize, usize, Vec<CellValue>), EvalError>;
+    pub fn eval_array(&self, function: &'static str, ctx: &dyn EvalContext) -> Result<(usize, usize, Vec<CellValue>), FunctionError>;
 }
 ```
 
-Every function execution evaluates strictly to a scalar `Result<CellValue, EvalError>`, maintaining 1:1 mapping with target `CellId` nodes.
+Every function execution evaluates strictly to a scalar `Result<CellValue, FunctionError>`, maintaining 1:1 mapping with target `CellId` nodes.
 
 ---
 
@@ -153,7 +159,7 @@ pub trait ExcelFunction: Send + Sync {
     }
 
     /// Evaluates function arguments against cell context, returning a scalar cell value.
-    fn evaluate(&self, args: &[FunctionArg], ctx: &EvalContext) -> Result<CellValue, EvalError>;
+    fn evaluate(&self, args: &[FunctionArg], ctx: &dyn EvalContext) -> Result<CellValue, FunctionError>;
 }
 ```
 
@@ -162,7 +168,7 @@ pub trait ExcelFunction: Send + Sync {
 ## 5. Compiler Lifecycle Integration
 
 1. **Parser & signature validation**:
-   - Matches `FunctionName` against keys in `FunctionRegistry`. Unknown functions trigger `CompileError::UnknownFunction`.
+   - Matches `FunctionName` against keys in `FunctionRegistry`. Unknown functions trigger `FunctionError::UnknownFunction`.
    - Validates argument counts against `min_args()` and `max_args()`.
    - Enforces variadic repetition rules (e.g. `VariadicRule::Pairs` requires an even number of conditional arguments).
    - Verifies that omitted arguments occur only where `ParameterDef::optional` is `true`.
