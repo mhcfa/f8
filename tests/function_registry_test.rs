@@ -418,7 +418,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 20);
+    assert_eq!(registry.len(), 27);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -444,7 +444,14 @@ fn test_registry_metadata_and_iteration() {
             "OR",
             "NOT",
             "CHOOSE",
-            "SWITCH"
+            "SWITCH",
+            "NPV",
+            "XNPV",
+            "IRR",
+            "XIRR",
+            "PMT",
+            "IPMT",
+            "PPMT"
         ]
     );
 

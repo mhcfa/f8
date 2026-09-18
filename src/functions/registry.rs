@@ -27,6 +27,7 @@ impl FunctionRegistry {
         let mut registry = Self::new();
         crate::functions::math::register(&mut registry);
         crate::functions::logical::register(&mut registry);
+        crate::functions::financial::register(&mut registry);
         registry
     }
 

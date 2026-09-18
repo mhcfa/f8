@@ -29,6 +29,7 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
   - `finx::functions::error`: Structured `FunctionError` diagnostic variants with 1-indexed argument positions.
   - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`).
   - `finx::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
+  - `finx::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
 - **Data flow & interfaces**:
   1. AST parsing (Pass 1) $\rightarrow$ `FunctionRegistry::validate_call` validates identifier existence, arity bounds, variadic pair counts, and non-omittable required arguments.
   2. Evaluator execution (Pass 4) $\rightarrow$ `FunctionRegistry::bind_arguments` pre-evaluates scalar coordinates and multi-dimensional range slices while wrapping lazy branches $\rightarrow$ `ExcelFunction::evaluate`.
@@ -67,7 +68,7 @@ Function dispatch is case-insensitive, thread-safe, and deterministic. Function 
   - **Then** resolves to `AbsFunction`.
 - **Deterministic iteration**:
   - **When** iterating through `FunctionRegistry::standard()`
-  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH"]`).
+  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"]`).
 - **Arity validation**:
   - **When** validating `ABS` with 0 or 2 arguments
   - **Then** rejects with `FunctionError::TooFewArguments` or `FunctionError::TooManyArguments`.
@@ -138,3 +139,15 @@ Standard functions demonstrate distinct evaluation models.
 - **Case dispatch (`SWITCH`)**:
   - **When** evaluated with a target expression and case-result pairs
   - **Then** compares cases using Excel case-insensitive equality; evaluates and returns matching result; falls back to optional trailing default or `#N/A`.
+- **Periodic & non-periodic discounting (`NPV`, `XNPV`)**:
+  - **When** evaluated with periodic cash flows (`NPV`)
+  - **Then** discounts sequentially starting at $t=1$, ignores text and blank cells in ranges, and evaluates $r = -1.0$ as `#DIV/0!`.
+  - **When** evaluated with non-periodic cash flows and dates (`XNPV`)
+  - **Then** applies Actual/365 year fractions from initial date $d_1$; validates equal array lengths, monotonic dates ($d_i \ge d_1$), and discount rate $r > -1.0$ (returning `#NUM!` otherwise).
+- **Internal rate of return (`IRR`, `XIRR`)**:
+  - **When** evaluated with periodic (`IRR`) or date-scheduled (`XIRR`) cash flows
+  - **Then** solves for discount rate where net present value equals zero via Newton-Raphson iteration; enforces at least one positive and one negative cash flow, returning `#NUM!` otherwise.
+- **Periodic debt service & amortization (`PMT`, `IPMT`, `PPMT`)**:
+  - **When** evaluated with loan parameters (`rate`, `nper`, `pv`, `[fv]`, `[type]`)
+  - **Then** computes constant periodic payment (`PMT`), interest component (`IPMT`), and principal component (`PPMT`) across periods $1 \le per \le nper$; strictly satisfies $\text{PMT} = \text{IPMT} + \text{PPMT}$; supports period-end (`type = 0`) and period-start (`type = 1`) timing.
+

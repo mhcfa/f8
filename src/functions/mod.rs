@@ -5,6 +5,7 @@
 
 pub mod common;
 pub mod error;
+pub mod financial;
 pub mod logical;
 pub mod math;
 pub mod registry;
