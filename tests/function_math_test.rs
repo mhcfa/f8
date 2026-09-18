@@ -18,7 +18,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 12);
+    assert_eq!(registry.len(), 20);
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),
@@ -33,6 +33,14 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("ROUNDDOWN", FunctionCategory::Math),
         ("SUMPRODUCT", FunctionCategory::Math),
         ("IF", FunctionCategory::Logical),
+        ("IFS", FunctionCategory::Logical),
+        ("IFERROR", FunctionCategory::Logical),
+        ("IFNA", FunctionCategory::Logical),
+        ("AND", FunctionCategory::Logical),
+        ("OR", FunctionCategory::Logical),
+        ("NOT", FunctionCategory::Logical),
+        ("CHOOSE", FunctionCategory::Logical),
+        ("SWITCH", FunctionCategory::Logical),
     ];
 
     for (name, category) in expected_functions {

@@ -23,6 +23,21 @@ pub enum ExcelError {
     Name,
 }
 
+impl ExcelError {
+    /// Returns the canonical Excel error string literal (e.g. `"#DIV/0!"`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Div0 => "#DIV/0!",
+            Self::Value => "#VALUE!",
+            Self::Ref => "#REF!",
+            Self::Num => "#NUM!",
+            Self::Na => "#N/A",
+            Self::Name => "#NAME?",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

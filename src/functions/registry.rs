@@ -1,6 +1,8 @@
 use crate::expr::ast::Expr;
 use crate::functions::error::FunctionError;
-use crate::functions::traits::{EvalContext, ExcelFunction, FunctionArg, ParamKind, VariadicRule};
+use crate::functions::traits::{
+    EvalContext, ExcelFunction, FunctionArg, ParamKind, ParameterDef, VariadicRule,
+};
 use indexmap::IndexMap;
 use std::sync::Arc;
 
@@ -105,19 +107,11 @@ impl FunctionRegistry {
 
         for (i, arg) in args.iter().enumerate() {
             if matches!(arg, Expr::Omitted) {
-                let (param_name, optional) = if i < func.parameters().len() {
-                    let p = &func.parameters()[i];
-                    (p.name, p.optional)
-                } else if let Some(last) = func.parameters().last() {
-                    (last.name, last.optional)
-                } else {
-                    ("arg", false)
-                };
-
-                if !optional {
+                let param = resolve_parameter(func, i)?;
+                if !param.optional {
                     return Err(FunctionError::CannotOmitRequiredArgument {
                         function: func.name(),
-                        param: param_name,
+                        param: param.name,
                         position: i + 1,
                     });
                 }
@@ -140,16 +134,7 @@ impl FunctionRegistry {
         let mut bound = Vec::with_capacity(target_len);
 
         for (i, arg_expr) in expr_args.iter().enumerate() {
-            let param = if i < func.parameters().len() {
-                &func.parameters()[i]
-            } else {
-                func.parameters()
-                    .last()
-                    .ok_or_else(|| FunctionError::EvaluationFailure {
-                        function: func.name(),
-                        message: "variadic argument without parameter definition".into(),
-                    })?
-            };
+            let param = resolve_parameter(func, i)?;
 
             if matches!(arg_expr, Expr::Omitted) {
                 if let Some(default_val) = &param.default_value {
@@ -197,5 +182,33 @@ impl FunctionRegistry {
         }
 
         Ok(bound)
+    }
+}
+
+/// Resolves the expected parameter definition for a given 0-indexed argument position,
+/// applying cyclical pairs alternation when `VariadicRule::Pairs` is enabled.
+fn resolve_parameter(
+    func: &dyn ExcelFunction,
+    index: usize,
+) -> Result<&ParameterDef, FunctionError> {
+    if index < func.parameters().len() {
+        Ok(&func.parameters()[index])
+    } else if func.variadic_rule() == VariadicRule::Pairs {
+        let fixed_count = func.parameters().len();
+        if fixed_count < 2 {
+            return Err(FunctionError::EvaluationFailure {
+                function: func.name(),
+                message: "variadic pairs rule requires at least two parameter definitions".into(),
+            });
+        }
+        let offset = (index - fixed_count) % 2;
+        Ok(&func.parameters()[fixed_count - 2 + offset])
+    } else {
+        func.parameters()
+            .last()
+            .ok_or_else(|| FunctionError::EvaluationFailure {
+                function: func.name(),
+                message: "variadic argument without parameter definition".into(),
+            })
     }
 }

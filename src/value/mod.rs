@@ -98,16 +98,87 @@ impl CellValue {
     /// - `Number(n)` -> `Ok(n != 0.0)`
     /// - `Empty` -> `Ok(false)`
     /// - `Error(e)` -> `Err(e)` (bubbles up existing error)
-    /// - `Text(_)` -> `Err(ExcelError::Value)`
+    /// - `Text("true" / "false")` (case-insensitive) -> `Ok(true / false)`
+    /// - `Text(_)` (other strings) -> `Err(ExcelError::Value)`
     pub fn coerce_to_bool(&self) -> Result<bool, ExcelError> {
         match self {
             Self::Boolean(b) => Ok(*b),
             Self::Number(n) => Ok(*n != 0.0),
             Self::Empty => Ok(false),
             Self::Error(e) => Err(*e),
-            Self::Text(_) => Err(ExcelError::Value),
+            Self::Text(s) => {
+                if s.eq_ignore_ascii_case("true") {
+                    Ok(true)
+                } else if s.eq_ignore_ascii_case("false") {
+                    Ok(false)
+                } else {
+                    Err(ExcelError::Value)
+                }
+            }
         }
     }
+
+    /// Compares two cell values conforming to Excel type ranking and equality rules:
+    /// - Same types: standard comparison (strings compare case-insensitively using ASCII case folding).
+    /// - Empty cell coercions: Empty vs Number coerces to 0.0; Empty vs Text coerces to ""; Empty is less than Boolean.
+    /// - Mixed types: Number < Text < Boolean < Error.
+    #[must_use]
+    pub fn excel_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        match (self, other) {
+            (Self::Empty, Self::Empty) => Ordering::Equal,
+
+            // Empty vs Number coerces Empty to 0.0
+            (Self::Empty, Self::Number(n)) => 0.0f64.partial_cmp(n).unwrap_or(Ordering::Equal),
+            (Self::Number(n), Self::Empty) => n.partial_cmp(&0.0f64).unwrap_or(Ordering::Equal),
+
+            // Empty vs Text coerces Empty to ""
+            (Self::Empty, Self::Text(s)) => compare_ascii_case_insensitive("", s.as_str()),
+            (Self::Text(s), Self::Empty) => compare_ascii_case_insensitive(s.as_str(), ""),
+
+            // Empty vs Boolean: Empty ranks lower than any Boolean
+            (Self::Empty, Self::Boolean(_)) => Ordering::Less,
+            (Self::Boolean(_), Self::Empty) => Ordering::Greater,
+
+            // Same type comparisons
+            (Self::Number(a), Self::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (Self::Text(a), Self::Text(b)) => {
+                compare_ascii_case_insensitive(a.as_str(), b.as_str())
+            }
+            (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
+            (Self::Error(a), Self::Error(b)) => a.as_str().cmp(b.as_str()),
+
+            // Mixed type comparisons: Number < Text < Boolean < Error
+            (Self::Number(_), Self::Text(_)) => Ordering::Less,
+            (Self::Text(_), Self::Number(_)) => Ordering::Greater,
+
+            (Self::Number(_), Self::Boolean(_)) => Ordering::Less,
+            (Self::Boolean(_), Self::Number(_)) => Ordering::Greater,
+
+            (Self::Text(_), Self::Boolean(_)) => Ordering::Less,
+            (Self::Boolean(_), Self::Text(_)) => Ordering::Greater,
+
+            (Self::Error(_), _) => Ordering::Greater,
+            (_, Self::Error(_)) => Ordering::Less,
+        }
+    }
+
+    /// Tests equality conforming to Excel case-insensitive string and empty coercion rules.
+    #[must_use]
+    pub fn excel_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Error(a), Self::Error(b)) => a == b,
+            (Self::Error(_), _) | (_, Self::Error(_)) => false,
+            _ => self.excel_cmp(other) == std::cmp::Ordering::Equal,
+        }
+    }
+}
+
+/// Compares two strings case-insensitively using ASCII case folding.
+fn compare_ascii_case_insensitive(a: &str, b: &str) -> std::cmp::Ordering {
+    a.chars()
+        .map(|c| c.to_ascii_lowercase())
+        .cmp(b.chars().map(|c| c.to_ascii_lowercase()))
 }
 
 impl fmt::Display for CellValue {
@@ -262,8 +333,12 @@ mod tests {
         assert_eq!(CellValue::Number(1.0).coerce_to_bool(), Ok(true));
         assert_eq!(CellValue::Number(0.0).coerce_to_bool(), Ok(false));
         assert_eq!(CellValue::Empty.coerce_to_bool(), Ok(false));
+        assert_eq!(CellValue::Text("true".into()).coerce_to_bool(), Ok(true));
+        assert_eq!(CellValue::Text("TRUE".into()).coerce_to_bool(), Ok(true));
+        assert_eq!(CellValue::Text("false".into()).coerce_to_bool(), Ok(false));
+        assert_eq!(CellValue::Text("FALSE".into()).coerce_to_bool(), Ok(false));
         assert_eq!(
-            CellValue::Text("true".into()).coerce_to_bool(),
+            CellValue::Text("foo".into()).coerce_to_bool(),
             Err(ExcelError::Value)
         );
     }
@@ -279,5 +354,50 @@ mod tests {
         let err = CellValue::Error(ExcelError::Num);
         assert!(err.is_error());
         assert_eq!(err.as_error(), Some(ExcelError::Num));
+    }
+
+    #[test]
+    fn test_excel_cmp_and_excel_eq() {
+        use std::cmp::Ordering;
+
+        // Strings case-insensitivity
+        assert_eq!(
+            CellValue::Text("ABC".into()).excel_cmp(&CellValue::Text("abc".into())),
+            Ordering::Equal
+        );
+        assert!(CellValue::Text("ABC".into()).excel_eq(&CellValue::Text("abc".into())));
+        assert!(!CellValue::Text("ABC".into()).excel_eq(&CellValue::Text("def".into())));
+
+        // Empty vs Number
+        assert_eq!(
+            CellValue::Empty.excel_cmp(&CellValue::Number(0.0)),
+            Ordering::Equal
+        );
+        assert!(CellValue::Empty.excel_eq(&CellValue::Number(0.0)));
+
+        // Empty vs Text
+        assert_eq!(
+            CellValue::Empty.excel_cmp(&CellValue::Text("".into())),
+            Ordering::Equal
+        );
+        assert!(CellValue::Empty.excel_eq(&CellValue::Text("".into())));
+
+        // Empty vs Boolean
+        assert_eq!(
+            CellValue::Empty.excel_cmp(&CellValue::Boolean(false)),
+            Ordering::Less
+        );
+        assert!(!CellValue::Empty.excel_eq(&CellValue::Boolean(false)));
+
+        // Type ranking: Number < Text < Boolean
+        assert_eq!(
+            CellValue::Number(100.0).excel_cmp(&CellValue::Text("1".into())),
+            Ordering::Less
+        );
+        assert_eq!(
+            CellValue::Text("xyz".into()).excel_cmp(&CellValue::Boolean(false)),
+            Ordering::Less
+        );
+        assert!(!CellValue::Number(1.0).excel_eq(&CellValue::Text("1".into())));
     }
 }

@@ -186,7 +186,7 @@ fn eval_comparison_op(
         return Ok(CellValue::Error(*e));
     }
 
-    let ord = compare_cell_values(left, right);
+    let ord = left.excel_cmp(right);
     let outcome = match op {
         BinaryOp::Eq => ord == Ordering::Equal,
         BinaryOp::NotEq => ord != Ordering::Equal,
@@ -198,59 +198,6 @@ fn eval_comparison_op(
     };
 
     Ok(CellValue::Boolean(outcome))
-}
-
-/// Compares two cell values conforming to Excel type ranking and equality rules:
-/// - Same types: standard comparison (strings compare case-insensitively using ASCII case folding).
-/// - Empty cell coercions: Empty vs Number coerces to 0.0; Empty vs Text coerces to ""; Empty is less than Boolean.
-/// - Mixed types: Number < Text < Boolean.
-fn compare_cell_values(left: &CellValue, right: &CellValue) -> Ordering {
-    match (left, right) {
-        (CellValue::Empty, CellValue::Empty) => Ordering::Equal,
-
-        // Empty vs Number coerces Empty to 0.0
-        (CellValue::Empty, CellValue::Number(n)) => {
-            0.0f64.partial_cmp(n).unwrap_or(Ordering::Equal)
-        }
-        (CellValue::Number(n), CellValue::Empty) => {
-            n.partial_cmp(&0.0f64).unwrap_or(Ordering::Equal)
-        }
-
-        // Empty vs Text coerces Empty to ""
-        (CellValue::Empty, CellValue::Text(s)) => compare_ascii_case_insensitive("", s.as_str()),
-        (CellValue::Text(s), CellValue::Empty) => compare_ascii_case_insensitive(s.as_str(), ""),
-
-        // Empty vs Boolean: Empty ranks lower than any Boolean
-        (CellValue::Empty, CellValue::Boolean(_)) => Ordering::Less,
-        (CellValue::Boolean(_), CellValue::Empty) => Ordering::Greater,
-
-        // Same type comparisons
-        (CellValue::Number(a), CellValue::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
-        (CellValue::Text(a), CellValue::Text(b)) => {
-            compare_ascii_case_insensitive(a.as_str(), b.as_str())
-        }
-        (CellValue::Boolean(a), CellValue::Boolean(b)) => a.cmp(b),
-
-        // Mixed type comparisons: Number < Text < Boolean
-        (CellValue::Number(_), CellValue::Text(_)) => Ordering::Less,
-        (CellValue::Text(_), CellValue::Number(_)) => Ordering::Greater,
-
-        (CellValue::Number(_), CellValue::Boolean(_)) => Ordering::Less,
-        (CellValue::Boolean(_), CellValue::Number(_)) => Ordering::Greater,
-
-        (CellValue::Text(_), CellValue::Boolean(_)) => Ordering::Less,
-        (CellValue::Boolean(_), CellValue::Text(_)) => Ordering::Greater,
-
-        // Errors are filtered out before reaching here
-        (CellValue::Error(_), _) | (_, CellValue::Error(_)) => Ordering::Equal,
-    }
-}
-
-/// Compares two strings case-insensitively using ASCII case folding.
-fn compare_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
-    a.chars()
-        .map(|c| c.to_ascii_lowercase())
-        .cmp(b.chars().map(|c| c.to_ascii_lowercase()))
 }
 
 /// Normalizes floating point negative zero `-0.0` to `0.0`.

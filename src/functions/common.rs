@@ -1,4 +1,5 @@
-use crate::functions::traits::FunctionArg;
+use crate::functions::error::FunctionError;
+use crate::functions::traits::{EvalContext, FunctionArg};
 use crate::value::{CellValue, ExcelError};
 
 /// Normalizes signed negative zero (`-0.0`) to positive zero (`0.0`).
@@ -117,6 +118,110 @@ impl NumericCollector {
 }
 
 impl Default for NumericCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Evaluates an individual branch argument, returning its scalar value or evaluating its lazy expression.
+pub fn eval_branch_arg(
+    arg: &FunctionArg<'_>,
+    function: &'static str,
+    ctx: &dyn EvalContext,
+) -> Result<CellValue, FunctionError> {
+    match arg {
+        FunctionArg::Omitted => Ok(CellValue::Empty),
+        FunctionArg::Scalar(val) => Ok(val.clone()),
+        FunctionArg::Lazy(expr) => ctx.eval_expr(expr),
+        FunctionArg::Array { .. } => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "scalar or expression",
+            found: "array",
+        }),
+    }
+}
+
+/// Aggregated logical truth statistics gathered across arguments for boolean functions (`AND`, `OR`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogicalCollector {
+    /// Number of valid logical values collected.
+    pub count: usize,
+    /// Whether all collected values are true (logical conjunction).
+    pub all_true: bool,
+    /// Whether any collected value is true (logical disjunction).
+    pub any_true: bool,
+}
+
+impl LogicalCollector {
+    /// Constructs a new, empty `LogicalCollector`.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            count: 0,
+            all_true: true,
+            any_true: false,
+        }
+    }
+
+    /// Records a single logical truth observation.
+    pub fn record(&mut self, b: bool) {
+        self.count += 1;
+        self.all_true = self.all_true && b;
+        self.any_true = self.any_true || b;
+    }
+
+    /// Collects logical truth values across arguments for `AND` and `OR`.
+    ///
+    /// # Excel Parity Rules
+    /// - In range references (`is_range_ref: true`): text, empty cells are ignored; cell errors bubble immediately.
+    /// - In direct scalars: numbers (0 = false, non-zero = true), booleans, text ("TRUE"/"FALSE" case-insensitive, else `#VALUE!`), empty cells evaluate to false; errors bubble immediately.
+    /// - In array literals (`is_range_ref: false`): text parses if "TRUE"/"FALSE", else `#VALUE!`.
+    /// - If no logical values are found across all arguments and ranges, returns `ExcelError::Value`.
+    pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
+        let mut collector = Self::new();
+
+        for arg in args {
+            match arg {
+                FunctionArg::Scalar(val) => {
+                    let b = val.coerce_to_bool()?;
+                    collector.record(b);
+                }
+                FunctionArg::Array {
+                    values,
+                    is_range_ref,
+                    ..
+                } => {
+                    if *is_range_ref {
+                        for v in values {
+                            match v {
+                                CellValue::Boolean(b) => collector.record(*b),
+                                CellValue::Number(n) => collector.record(*n != 0.0),
+                                CellValue::Error(e) => return Err(*e),
+                                CellValue::Text(_) | CellValue::Empty => {
+                                    // Range references silently ignore text and empty cells
+                                }
+                            }
+                        }
+                    } else {
+                        for v in values {
+                            let b = v.coerce_to_bool()?;
+                            collector.record(b);
+                        }
+                    }
+                }
+                FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+            }
+        }
+
+        if collector.count == 0 {
+            return Err(ExcelError::Value);
+        }
+
+        Ok(collector)
+    }
+}
+
+impl Default for LogicalCollector {
     fn default() -> Self {
         Self::new()
     }
