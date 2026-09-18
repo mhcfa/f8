@@ -9,3 +9,5 @@ pub mod graph;
 pub mod ir;
 pub mod layout;
 pub mod lowering;
+
+pub use eval::{CellEvalContext, EvalError, eval_expr};
