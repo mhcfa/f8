@@ -12,10 +12,12 @@ pub(crate) enum Token<'a> {
     Number(f64),
     /// Quoted text string constant.
     String(String),
-    /// Explicit null literal (`null`).
-    Null,
+    /// Boolean constant (`TRUE` or `FALSE`).
+    Boolean(bool),
     /// General identifier (table name, row/col identifier, function name, or coordinate word).
     Ident(&'a str),
+    /// Explicit omitted argument placeholder (`_`).
+    Underscore,
 
     // Delimiters & punctuation
     /// Left parenthesis `(`.
@@ -87,8 +89,10 @@ impl<'a> fmt::Display for Token<'a> {
         match self {
             Self::Number(n) => write!(f, "{n}"),
             Self::String(s) => write!(f, "\"{s}\""),
-            Self::Null => write!(f, "null"),
+            Self::Boolean(true) => write!(f, "TRUE"),
+            Self::Boolean(false) => write!(f, "FALSE"),
             Self::Ident(id) => write!(f, "{id}"),
+            Self::Underscore => write!(f, "_"),
             Self::LParen => write!(f, "("),
             Self::RParen => write!(f, ")"),
             Self::LBracket => write!(f, "["),
@@ -512,7 +516,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
             }
         }
 
-        // Identifier or keyword
+        // Identifier, boolean literal, or underscore
         if first_char.is_ascii_alphabetic() || first_char == '_' {
             let ident_len = cursor
                 .bytes()
@@ -521,18 +525,27 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
             let ident = &cursor[..ident_len];
             cursor = &cursor[ident_len..];
 
-            if ident == "null" {
-                tokens.push(SpannedToken {
-                    token: Token::Null,
+            match ident {
+                "TRUE" => tokens.push(SpannedToken {
+                    token: Token::Boolean(true),
                     offset,
                     len: ident_len,
-                });
-            } else {
-                tokens.push(SpannedToken {
+                }),
+                "FALSE" => tokens.push(SpannedToken {
+                    token: Token::Boolean(false),
+                    offset,
+                    len: ident_len,
+                }),
+                "_" => tokens.push(SpannedToken {
+                    token: Token::Underscore,
+                    offset,
+                    len: ident_len,
+                }),
+                _ => tokens.push(SpannedToken {
                     token: Token::Ident(ident),
                     offset,
                     len: ident_len,
-                });
+                }),
             }
             continue;
         }
@@ -643,9 +656,10 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
             stream.advance();
             Ok(Expr::Literal(Literal::String(val)))
         }
-        Token::Null => {
+        Token::Boolean(b) => {
+            let val = *b;
             stream.advance();
-            Ok(Expr::Literal(Literal::Null))
+            Ok(Expr::Literal(Literal::Boolean(val)))
         }
         Token::Ident(ident) => {
             let name = *ident;
@@ -686,11 +700,16 @@ fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<Expr>, ParseE
     loop {
         if stream.is_empty() {
             return Err(ParseError::UnexpectedEof {
-                expected: "expression or ')'",
+                expected: "argument expression, '_', or ')'",
             });
         }
 
-        let arg = parse_expression(stream, 0)?;
+        let arg = if stream.peek_token() == Some(&Token::Underscore) {
+            stream.advance();
+            Expr::Omitted
+        } else {
+            parse_expression(stream, 0)?
+        };
         args.push(arg);
 
         if stream.peek_token() == Some(&Token::Comma) {
@@ -1656,7 +1675,11 @@ mod tests {
             "-2 ^ 2",
             "10 - 4 - 2",
             "(1 + 2) * 3",
+            "TRUE",
+            "FALSE",
+            "PMT(0.05, 10, 1000, _, 1)",
             "IF(Assumptions[\"flag\", \"active\"] = 1, 100, 0)",
+            "IF(Assumptions[\"flag\", \"active\"] = TRUE, 100, _)",
             "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
             "SUM(IncomeStatement[\"revenue\", \"2024E\"..\"2028E\"])",
             "Opex[\"r_and_d\"..\"g_and_a\", @col]",
@@ -1682,6 +1705,109 @@ mod tests {
                 "Roundtrip failed for formula: {formula} -> emitted: {emitted}"
             );
         }
+    }
+
+    #[test]
+    fn test_boolean_literals_parsing_and_roundtrip() {
+        let true_expr = parse_expr_str("TRUE").unwrap();
+        assert_eq!(true_expr, Expr::Literal(Literal::Boolean(true)));
+        assert_eq!(true_expr.to_string(), "TRUE");
+
+        let false_expr = parse_expr_str("FALSE").unwrap();
+        assert_eq!(false_expr, Expr::Literal(Literal::Boolean(false)));
+        assert_eq!(false_expr.to_string(), "FALSE");
+
+        // Compound expression with booleans
+        let if_bool = parse_expr_str("IF(TRUE, 1, 0)").unwrap();
+        assert_eq!(if_bool.to_string(), "IF(TRUE, 1, 0)");
+    }
+
+    #[test]
+    fn test_omitted_argument_in_function_call() {
+        let parsed = parse_expr_str("PMT(0.05, 10, 1000, _, 1)").unwrap();
+        if let Expr::FunctionCall { name, args } = &parsed {
+            assert_eq!(name, "PMT");
+            assert_eq!(args.len(), 5);
+            assert_eq!(args[0], Expr::number(0.05));
+            assert_eq!(args[1], Expr::number(10.0));
+            assert_eq!(args[2], Expr::number(1000.0));
+            assert_eq!(args[3], Expr::Omitted);
+            assert_eq!(args[4], Expr::number(1.0));
+        } else {
+            panic!("Expected FunctionCall");
+        }
+        assert_eq!(parsed.to_string(), "PMT(0.05, 10, 1000, _, 1)");
+    }
+
+    #[test]
+    fn test_grammatical_confinement_of_underscore() {
+        // Standalone underscore in arithmetic
+        assert!(matches!(
+            parse_expr_str("1 + _").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+        assert!(matches!(
+            parse_expr_str("-_").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+        assert!(matches!(
+            parse_expr_str("_ * 2").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+        assert!(matches!(
+            parse_expr_str("_ + 1").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+
+        // In table selector coordinates
+        assert!(matches!(
+            parse_expr_str("Table[_, @col]").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+        assert!(matches!(
+            parse_expr_str("Table[@row, _]").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+
+        // As table name
+        assert!(matches!(
+            parse_expr_str("_[\"rev\", @col]").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+    }
+
+    #[test]
+    fn test_identifier_preservation_with_underscores() {
+        // Embedded and leading underscores in identifiers
+        let tokens = tokenize("tax_rate _revenue rev_2024").unwrap();
+        assert_eq!(tokens[0].token, Token::Ident("tax_rate"));
+        assert_eq!(tokens[1].token, Token::Ident("_revenue"));
+        assert_eq!(tokens[2].token, Token::Ident("rev_2024"));
+
+        // Standalone underscore tokenizes as Underscore
+        let tokens2 = tokenize("FUNC(a, _, c)").unwrap();
+        assert_eq!(tokens2[4].token, Token::Underscore);
+    }
+
+    #[test]
+    fn test_rejection_of_null_in_formulas() {
+        // Standalone null is rejected
+        assert!(matches!(
+            parse_expr_str("null").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+
+        // null inside function calls is rejected as a bare identifier
+        assert!(matches!(
+            parse_expr_str("IF(A1, B1, null)").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+
+        // null in arithmetic is rejected
+        assert!(matches!(
+            parse_expr_str("1 + null").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
     }
 
     #[test]

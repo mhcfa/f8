@@ -391,3 +391,33 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
     assert!(tax_rate_dependents.contains(&&tax_2023));
     assert!(tax_rate_dependents.contains(&&tax_2024));
 }
+
+#[test]
+fn test_scenario_8_omitted_argument_contributes_zero_dependencies() {
+    let table = create_table(
+        "Forecast",
+        &["2024E"],
+        vec![
+            ("rate", None, Some(0.05)),
+            (
+                "pmt",
+                Some("PMT(Forecast[\"rate\", @col], 10, 1000, _, 1)"),
+                None,
+            ),
+        ],
+    );
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Sheet1"), &table)
+        .unwrap();
+    let grid = expand_grid(&symbols, &[table]).unwrap();
+    let dep_graph = DependencyGraph::from_grid(&grid, &symbols).unwrap();
+
+    let pmt = CellId::new("Forecast", "pmt", "2024E");
+    let rate = CellId::new("Forecast", "rate", "2024E");
+
+    let pmt_deps = dep_graph.dependencies_of(&pmt);
+    // Rate is the only dependency; _ contributes zero references
+    assert_eq!(pmt_deps, vec![&rate]);
+}

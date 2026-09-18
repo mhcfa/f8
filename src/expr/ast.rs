@@ -5,7 +5,7 @@ use std::fmt;
 /// An abstract syntax tree representation of a Finx formula expression.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Expr {
-    /// Atomic constant literal (number, string, null).
+    /// Atomic constant literal (number, string, boolean).
     Literal(Literal),
     /// Coordinate or slice reference to a table.
     Reference(TableRef),
@@ -19,6 +19,8 @@ pub enum Expr {
     },
     /// Uppercase built-in function invocation (e.g. `SUM(...)`, `IF(...)`).
     FunctionCall { name: String, args: Vec<Expr> },
+    /// Explicitly omitted positional argument in a function call (`_`).
+    Omitted,
 }
 
 impl Expr {
@@ -27,9 +29,9 @@ impl Expr {
         Self::Literal(Literal::Number(val))
     }
 
-    /// Helper to construct a null literal expression.
-    pub fn null() -> Self {
-        Self::Literal(Literal::Null)
+    /// Helper to construct a boolean literal expression.
+    pub fn boolean(val: bool) -> Self {
+        Self::Literal(Literal::Boolean(val))
     }
 
     /// Returns the binding power / precedence of this expression if it is a binary operation,
@@ -50,8 +52,8 @@ pub enum Literal {
     Number(f64),
     /// Quoted text string constant.
     String(String),
-    /// Explicit null literal.
-    Null,
+    /// Boolean constant (`TRUE` or `FALSE`).
+    Boolean(bool),
 }
 
 impl fmt::Display for Literal {
@@ -59,7 +61,8 @@ impl fmt::Display for Literal {
         match self {
             Self::Number(n) => write!(f, "{n}"),
             Self::String(s) => write!(f, "\"{s}\""),
-            Self::Null => write!(f, "null"),
+            Self::Boolean(true) => write!(f, "TRUE"),
+            Self::Boolean(false) => write!(f, "FALSE"),
         }
     }
 }
@@ -348,6 +351,7 @@ impl fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
+            Self::Omitted => write!(f, "_"),
         }
     }
 }

@@ -1,6 +1,6 @@
 ---
 title: Formula Expression AST & Pratt Parser
-last_updated: 2026-09-17
+last_updated: 2026-09-18
 domain: expr
 status: active
 ---
@@ -96,3 +96,28 @@ Built-in Excel functions must be uppercase identifiers matching `[A-Z][A-Z0-9_]*
 - **Lowercase Function Rejection**:
   - **When** invoking `sum(1, 2)`
   - **Then** returns `ParseError::InvalidFunctionName`.
+
+### 5. First-Class Booleans & Omitted Argument Confinement
+
+Formulas support native uppercase Excel boolean literals (`TRUE`, `FALSE`) and explicit positional argument omission in function calls via the underscore placeholder (`_`).
+
+- **Literal Booleans**: `TRUE` and `FALSE` parse as `Literal::Boolean` and round-trip via `Display`. Lowercase `true` / `false` are rejected as bare identifiers.
+- **Omitted Argument Placeholder (`_`)**: Optional positional parameters can be omitted explicitly via `_` (e.g. `PMT(r, n, pv, _, 1)`). Omitted arguments parse as `Expr::Omitted` and contribute zero dependency references during graph extraction.
+- **Grammatical Confinement**: The `_` token is strictly confined to function call argument lists (`Argument = Expression | OmittedArg`). Using `_` in arithmetic expressions (`1 + _`, `-_`, `_ * 2`), table coordinate selectors (`Table[_, @col]`), or table identifiers fails at parse time with `ParseError::UnexpectedToken`.
+- **Complete Purge of `null`**: The `null` keyword is prohibited in formula expressions. Encountering `null` produces `ParseError::UnexpectedToken`.
+
+#### Scenarios
+
+- **Boolean Literal Roundtrip**:
+  - **When** parsing `"TRUE"` and `"FALSE"`
+  - **Then** parses into `Expr::Literal(Literal::Boolean(true))` and `Expr::Literal(Literal::Boolean(false))`.
+- **Explicit Argument Omission**:
+  - **When** parsing `"PMT(0.05, 10, 1000, _, 1)"`
+  - **Then** argument 3 parses as `Expr::Omitted` and formats back as `"_"`.
+- **Confinement Rejection**:
+  - **When** parsing `"1 + _"`, `"-_"`, or `"Table[_, @col]"`
+  - **Then** parsing fails with `ParseError::UnexpectedToken`.
+- **Formula Null Rejection**:
+  - **When** parsing `"null"` or `"IF(A1, B1, null)"`
+  - **Then** parsing fails with `ParseError::UnexpectedToken`.
+

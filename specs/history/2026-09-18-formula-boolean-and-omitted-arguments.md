@@ -1,7 +1,7 @@
 ---
 title: Formula Boolean Literals & Omitted Argument Placeholder (_)
 date: 2026-09-18
-status: draft
+status: completed
 target-living-spec: specs/living-specs/expr/formula-parser.md
 ---
 
@@ -141,32 +141,32 @@ pub(crate) enum Token<'a> {
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Boolean literals parsing and roundtrip**
+- [x] **Scenario 1: Boolean literals parsing and roundtrip**
   - **Given** formula expressions `"TRUE"` and `"FALSE"`
   - **When** parsed via `Expr::parse`
   - **Then** produce `Expr::Literal(Literal::Boolean(true))` and `Expr::Literal(Literal::Boolean(false))`, and format back to `"TRUE"` and `"FALSE"`.
 
-- [ ] **Scenario 2: Omitted argument in function call**
+- [x] **Scenario 2: Omitted argument in function call**
   - **Given** formula expression `"PMT(0.05, 10, 1000, _, 1)"`
   - **When** parsed via `Expr::parse`
   - **Then** produces `Expr::FunctionCall` where argument 3 is `Expr::Omitted`, and formats back to `"PMT(0.05, 10, 1000, _, 1)"`.
 
-- [ ] **Scenario 3: Grammatical confinement of `_`**
+- [x] **Scenario 3: Grammatical confinement of `_`**
   - **Given** invalid formulas `"1 + _"`, `"-_"`, `"_ * 2"`, or `"Table[_, @col]"`
   - **When** parsed via `Expr::parse`
   - **Then** parsing fails with `ParseError::UnexpectedToken`.
 
-- [ ] **Scenario 4: Identifier preservation with underscores**
+- [x] **Scenario 4: Identifier preservation with underscores**
   - **Given** identifiers with leading or embedded underscores (`_rate`, `tax_bracket`, `rev_2024`)
   - **When** parsed in formulas like `Table["tax_bracket", @col]`
   - **Then** identifiers tokenize normally as `Token::Ident`.
 
-- [ ] **Scenario 5: Rejection of `null` keyword in formulas**
+- [x] **Scenario 5: Rejection of `null` keyword in formulas**
   - **Given** formula expressions containing `"null"` (e.g. `"IF(A1, B1, null)"` or `"null"`)
   - **When** parsed via `Expr::parse`
   - **Then** parsing fails with `ParseError::UnexpectedToken`.
 
-- [ ] **Scenario 6: Dependency reference collection on `Expr::Omitted`**
+- [x] **Scenario 6: Dependency reference collection on `Expr::Omitted`**
   - **Given** an expression containing `Expr::Omitted` (e.g. within a function call)
   - **When** references are extracted via `collect_refs_recursive`
   - **Then** zero references are extracted from the omitted argument branch.
@@ -176,28 +176,28 @@ pub(crate) enum Token<'a> {
 ## Tasks
 
 ### Phase 1: AST and Tokenizer Updates
-- [ ] Add `Literal::Boolean(bool)` to `Literal` in `src/expr/ast.rs`, implement `Display` emitting `"TRUE"` / `"FALSE"`, and add `Expr::boolean(val: bool)` helper if appropriate.
-- [ ] Add `Expr::Omitted` to `Expr` in `src/expr/ast.rs` and implement `Display` emitting `write!(f, "_")`.
-- [ ] Purge `Literal::Null` and `Expr::null()` from `src/expr/ast.rs`.
-- [ ] Add `Token::Boolean(bool)` and `Token::Underscore` to `Token` in `src/expr/parser.rs`, and remove `Token::Null`.
-- [ ] Update tokenizer in `src/expr/parser.rs`:
+- [x] Add `Literal::Boolean(bool)` to `Literal` in `src/expr/ast.rs`, implement `Display` emitting `"TRUE"` / `"FALSE"`, and add `Expr::boolean(val: bool)` helper if appropriate.
+- [x] Add `Expr::Omitted` to `Expr` in `src/expr/ast.rs` and implement `Display` emitting `write!(f, "_")`.
+- [x] Purge `Literal::Null` and `Expr::null()` from `src/expr/ast.rs`.
+- [x] Add `Token::Boolean(bool)` and `Token::Underscore` to `Token` in `src/expr/parser.rs`, and remove `Token::Null`.
+- [x] Update tokenizer in `src/expr/parser.rs`:
   - Tokenize `"TRUE"` as `Token::Boolean(true)`.
   - Tokenize `"FALSE"` as `Token::Boolean(false)`.
   - Tokenize standalone `"\_"` as `Token::Underscore`.
   - Preserve identifiers containing underscores (`_foo`, `tax_rate`).
 
 ### Phase 2: Parser and Grammatical Confinement
-- [ ] Update `parse_primary` in `src/expr/parser.rs` to parse `Token::Boolean` into `Expr::Literal(Literal::Boolean)`.
-- [ ] Update `parse_argument_list` in `src/expr/parser.rs` to detect `Token::Underscore` and insert `Expr::Omitted`.
-- [ ] Verify `parse_expression` and `parse_primary` treat `Token::Underscore` as an unexpected token.
+- [x] Update `parse_primary` in `src/expr/parser.rs` to parse `Token::Boolean` into `Expr::Literal(Literal::Boolean)`.
+- [x] Update `parse_argument_list` in `src/expr/parser.rs` to detect `Token::Underscore` and insert `Expr::Omitted`.
+- [x] Verify `parse_expression` and `parse_primary` treat `Token::Underscore` as an unexpected token.
 
 ### Phase 3: Downstream Compiler Pass and Test Reconciliations
-- [ ] Add `Expr::Omitted => {}` to `collect_refs_recursive` in `src/compiler/graph/resolve.rs`.
-- [ ] Update line 59 of `tests/formula_parser_test.rs` to use `_` instead of `null` and assert `Expr::Omitted`.
-- [ ] Add unit tests in `src/expr/parser.rs` for booleans, `_` in function calls, confinement rejections, and `null` rejection.
+- [x] Add `Expr::Omitted => {}` to `collect_refs_recursive` in `src/compiler/graph/resolve.rs`.
+- [x] Update line 59 of `tests/formula_parser_test.rs` to use `_` instead of `null` and assert `Expr::Omitted`.
+- [x] Add unit tests in `src/expr/parser.rs` for booleans, `_` in function calls, confinement rejections, and `null` rejection.
 
 ### Phase 4: Verification Suite
-- [ ] Run `cargo check`.
-- [ ] Run `cargo test`.
-- [ ] Run `cargo clippy --all-targets -- -D warnings`.
-- [ ] Run `cargo fmt --check`.
+- [x] Run `cargo check`.
+- [x] Run `cargo test`.
+- [x] Run `cargo clippy --all-targets -- -D warnings`.
+- [x] Run `cargo fmt --check`.

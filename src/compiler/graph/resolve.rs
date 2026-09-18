@@ -28,6 +28,7 @@ fn collect_refs_recursive<'a>(expr: &'a Expr, out: &mut Vec<&'a TableRef>) {
                 collect_refs_recursive(arg, out);
             }
         }
+        Expr::Omitted => {}
     }
 }
 

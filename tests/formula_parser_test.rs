@@ -55,8 +55,8 @@ fn test_complex_formula_expression_parsing() {
 
 #[test]
 fn test_nested_functions_and_logical_operators() {
-    // IF(AND(a["b", @col] > 0, a["c", @col] <= 100), SUM(Opex["r_and_d".."g_and_a", @col]), null)
-    let input = "IF(AND(a[\"b\", @col] > 0, a[\"c\", @col] <= 100), SUM(Opex[\"r_and_d\"..\"g_and_a\", @col]), null)";
+    // IF(AND(a["b", @col] > 0, a["c", @col] <= 100), SUM(Opex["r_and_d".."g_and_a", @col]), _)
+    let input = "IF(AND(a[\"b\", @col] > 0, a[\"c\", @col] <= 100), SUM(Opex[\"r_and_d\"..\"g_and_a\", @col]), _)";
     let expr = Expr::parse(input).expect("Should parse nested logical expressions");
 
     if let Expr::FunctionCall { name, args } = expr {
@@ -95,8 +95,8 @@ fn test_nested_functions_and_logical_operators() {
             panic!("Expected SUM function call");
         }
 
-        // Third arg: null
-        assert_eq!(args[2], Expr::null());
+        // Third arg: omitted argument (_)
+        assert_eq!(args[2], Expr::Omitted);
     } else {
         panic!("Expected root IF call");
     }
