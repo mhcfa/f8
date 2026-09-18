@@ -1,7 +1,7 @@
 ---
 title: Function Registry Architecture & Core Archetypes Skeleton
 date: 2026-09-18
-status: draft
+status: completed
 target-living-spec: specs/living-specs/functions/registry.md
 ---
 
@@ -285,27 +285,27 @@ impl FunctionRegistry {
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: `CellValue` and `ExcelError` representation and display**
+- [x] **Scenario 1: `CellValue` and `ExcelError` representation and display**
   - **Given** various `CellValue` and `ExcelError` variants
   - **When** formatted via `Display`
   - **Then** `ExcelError::Div0` prints `"#DIV/0!"`, `ExcelError::Value` prints `"#VALUE!"`, booleans print `"TRUE"` / `"FALSE"`, and `From<ValueLiteral>` converts correctly.
 
-- [ ] **Scenario 2: Registry signature, arity, and omission validation**
+- [x] **Scenario 2: Registry signature, arity, and omission validation**
   - **Given** a `FunctionRegistry` with `ABS` (fixed arity 1) and `SUM` (variadic single, min 1)
   - **When** validating calls with valid argument counts, invalid counts, or passing `_` to non-optional parameters
   - **Then** valid counts succeed; `ABS` with 0 or 2 args fails with `TooFewArguments` or `TooManyArguments`; passing `_` to `ABS(_)` fails with `CannotOmitRequiredArgument` with 1-indexed position; unknown functions fail with `UnknownFunction`.
 
-- [ ] **Scenario 3: `ABS` scalar evaluation**
+- [x] **Scenario 3: `ABS` scalar evaluation**
   - **Given** an `ABS` function instance
   - **When** evaluated with positive numbers, negative numbers, empty cells, booleans, and errors
   - **Then** `-42.5` evaluates to `42.5`, `Empty` evaluates to `0.0`, `TRUE` evaluates to `1.0`, errors propagate, and text evaluates to `ExcelError::Value`.
 
-- [ ] **Scenario 4: `SUM` aggregation and range filtering**
+- [x] **Scenario 4: `SUM` aggregation and range filtering**
   - **Given** a `SUM` function instance
   - **When** evaluated with a mix of scalar numbers, empty cells, and a range slice containing numbers, text, and booleans
   - **Then** range text and booleans are ignored, numbers are summed, empty cells contribute `0.0`, and cell errors in ranges immediately bubble up.
 
-- [ ] **Scenario 5: `IF` short-circuiting lazy branch execution and missing/omitted false branch**
+- [x] **Scenario 5: `IF` short-circuiting lazy branch execution and missing/omitted false branch**
   - **Given** an `IF` function instance and an `EvalContext` tracking branch execution
   - **When** evaluating `IF(TRUE, val_true, val_false)`, `IF(FALSE, val_true, val_false)`, `IF(FALSE, val_true, _)`, and `IF(FALSE, val_true)`
   - **Then** only the selected branch expression is dispatched to `eval_expr`, the dormant branch is never executed, and omitted false branch evaluates to `CellValue::Boolean(false)`.
@@ -315,24 +315,24 @@ impl FunctionRegistry {
 ## Tasks
 
 ### Phase 1: Runtime Values (`finx::value`)
-- [ ] Implement `ExcelError` in `src/value/error.rs` with `Display` and serde serialization.
-- [ ] Implement `CellValue` in `src/value/mod.rs` with `Display`, accessors, and `From<ValueLiteral>`.
-- [ ] Write unit tests in `src/value/mod.rs` verifying formatting, conversions, and error representations.
+- [x] Implement `ExcelError` in `src/value/error.rs` with `Display` and serde serialization.
+- [x] Implement `CellValue` in `src/value/mod.rs` with `Display`, accessors, and `From<ValueLiteral>`.
+- [x] Write unit tests in `src/value/mod.rs` verifying formatting, conversions, and error representations.
 
 ### Phase 2: Function Registry Architecture (`finx::functions`)
-- [ ] Define parameter and argument types (`ParamKind`, `VariadicRule`, `ParameterDef`, `FunctionCategory`, `FunctionArg`) in `src/functions/traits.rs`.
-- [ ] Implement `eval_scalar` and `eval_array` on `FunctionArg` taking `function: &'static str` for contextual error diagnostics.
-- [ ] Define `EvalContext` and `ExcelFunction` traits in `src/functions/traits.rs`.
-- [ ] Define `FunctionError` in `src/functions/error.rs` with 1-indexed `position` in `CannotOmitRequiredArgument`.
-- [ ] Implement `FunctionRegistry` in `src/functions/registry.rs` with `IndexMap` storage, registration, lookup, arity validation, and `bind_arguments`.
-- [ ] Re-export all core types in `src/functions/mod.rs`.
+- [x] Define parameter and argument types (`ParamKind`, `VariadicRule`, `ParameterDef`, `FunctionCategory`, `FunctionArg`) in `src/functions/traits.rs`.
+- [x] Implement `eval_scalar` and `eval_array` on `FunctionArg` taking `function: &'static str` for contextual error diagnostics.
+- [x] Define `EvalContext` and `ExcelFunction` traits in `src/functions/traits.rs`.
+- [x] Define `FunctionError` in `src/functions/error.rs` with 1-indexed `position` in `CannotOmitRequiredArgument`.
+- [x] Implement `FunctionRegistry` in `src/functions/registry.rs` with `IndexMap` storage, registration, lookup, arity validation, and `bind_arguments`.
+- [x] Re-export all core types in `src/functions/mod.rs`.
 
 ### Phase 3: Core Archetype Implementations
-- [ ] Implement `ABS` in `src/functions/math.rs`.
-- [ ] Implement `SUM` in `src/functions/math.rs` with scalar coercion and range reference filtering.
-- [ ] Implement `IF` in `src/functions/logical.rs` with lazy short-circuiting and default value handling.
-- [ ] Wire archetypes into `FunctionRegistry::standard()`.
+- [x] Implement `ABS` in `src/functions/math.rs`.
+- [x] Implement `SUM` in `src/functions/math.rs` with scalar coercion and range reference filtering.
+- [x] Implement `IF` in `src/functions/logical.rs` with lazy short-circuiting and default value handling.
+- [x] Wire archetypes into `FunctionRegistry::standard()`.
 
 ### Phase 4: Verification Suite
-- [ ] Create `tests/function_registry_test.rs` covering all acceptance criteria scenarios.
-- [ ] Run `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check`.
+- [x] Create `tests/function_registry_test.rs` covering all acceptance criteria scenarios.
+- [x] Run `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check`.
