@@ -6,11 +6,9 @@ use std::fmt;
 #[serde(rename_all = "snake_case")]
 pub enum FormatPreset {
     Currency,
-    CurrencyTotal,
+    Number,
     Percentage,
     Multiple,
-    Integer,
-    Decimal,
     BasisPoints,
     Date,
     Text,
@@ -20,11 +18,9 @@ impl FormatPreset {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Currency => "currency",
-            Self::CurrencyTotal => "currency_total",
+            Self::Number => "number",
             Self::Percentage => "percentage",
             Self::Multiple => "multiple",
-            Self::Integer => "integer",
-            Self::Decimal => "decimal",
             Self::BasisPoints => "basis_points",
             Self::Date => "date",
             Self::Text => "text",

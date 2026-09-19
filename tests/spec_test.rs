@@ -161,7 +161,7 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
             },
             {
                 "id": "gross_profit",
-                "format": "currency_total",
+                "format": "currency",
                 "expr": "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
                 "cells": {
                     "line_item": "Gross Profit"
@@ -383,11 +383,9 @@ fn test_valid_hierarchical_row_groups_contiguous() {
 fn test_format_presets() {
     let presets = [
         FormatPreset::Currency,
-        FormatPreset::CurrencyTotal,
+        FormatPreset::Number,
         FormatPreset::Percentage,
         FormatPreset::Multiple,
-        FormatPreset::Integer,
-        FormatPreset::Decimal,
         FormatPreset::BasisPoints,
         FormatPreset::Date,
         FormatPreset::Text,
@@ -425,7 +423,7 @@ fn sample_table() -> TableSpec {
         rows: vec![RowSpec {
             id: RowId::from("row_1"),
             role: AxisRole::Measure,
-            format: Some(FormatPreset::Decimal),
+            format: Some(FormatPreset::Number),
             note: None,
             source: None,
             expr: Some("1.0".to_string()),

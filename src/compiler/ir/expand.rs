@@ -580,7 +580,7 @@ mod tests {
             "c1".into(),
             CellInput::Detailed(DetailedCellInput {
                 value: Some(ValueLiteral::Number(42.0)),
-                format: Some(FormatPreset::Integer),
+                format: Some(FormatPreset::Number),
                 ..Default::default()
             }),
         );
@@ -604,6 +604,6 @@ mod tests {
 
         let symbols = make_test_symbol_table(&table);
         let expanded = expand_table(&symbols, &table).unwrap();
-        assert_eq!(expanded[0].format, Some(FormatPreset::Integer));
+        assert_eq!(expanded[0].format, Some(FormatPreset::Number));
     }
 }

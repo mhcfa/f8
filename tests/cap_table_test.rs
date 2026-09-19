@@ -15,7 +15,7 @@ use finx::value::CellValue;
 fn test_orthogonal_column_based_cap_table_and_waterfall() {
     // 1. CapTable: Rows are shareholder entities, Columns are calculation measures
     let mut shares_col = ColumnSpec::new("shares");
-    shares_col.format = Some(FormatPreset::Integer);
+    shares_col.format = Some(FormatPreset::Number);
 
     let mut pps_col = ColumnSpec::new("pps");
     pps_col.format = Some(FormatPreset::Currency);

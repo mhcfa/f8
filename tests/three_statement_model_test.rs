@@ -24,7 +24,7 @@ fn build_point_row(id: &str, values: &[(&str, f64)]) -> RowSpec {
     RowSpec {
         id: RowId::from(id),
         role: AxisRole::Measure,
-        format: Some(FormatPreset::Decimal),
+        format: Some(FormatPreset::Number),
         expr: None,
         note: None,
         source: None,
@@ -40,7 +40,7 @@ fn build_vector_row(id: &str, expr: &str, overrides: &[(&str, f64)]) -> RowSpec 
     RowSpec {
         id: RowId::from(id),
         role: AxisRole::Measure,
-        format: Some(FormatPreset::Decimal),
+        format: Some(FormatPreset::Number),
         expr: Some(expr.to_string()),
         note: None,
         source: None,
