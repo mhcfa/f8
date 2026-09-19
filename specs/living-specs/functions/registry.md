@@ -1,6 +1,6 @@
 ---
 title: Excel Function Registry & Core Archetypes
-last_updated: 2026-09-18
+last_updated: 2026-09-19
 domain: functions
 status: active
 ---
@@ -27,7 +27,7 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
   - `finx::functions::registry`: Deterministic `IndexMap`-backed registry with uppercase lookup, static call validation, and argument binding (`bind_arguments`), including cyclical pair resolution for `VariadicRule::Pairs`.
   - `finx::functions::common`: Shared argument traversal and branch evaluation helpers (`NumericCollector`, `LogicalCollector`, `eval_branch_arg`, `count_numbers`, `count_non_empty`) and IEEE-754 decimal rounding routines.
   - `finx::functions::error`: Structured `FunctionError` diagnostic variants with 1-indexed argument positions.
-  - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`).
+  - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`), conditional aggregation functions (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`), and criteria compilation engine (`Criterion`).
   - `finx::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
   - `finx::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
 - **Data flow & interfaces**:
@@ -68,7 +68,7 @@ Function dispatch is case-insensitive, thread-safe, and deterministic. Function 
   - **Then** resolves to `AbsFunction`.
 - **Deterministic iteration**:
   - **When** iterating through `FunctionRegistry::standard()`
-  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"]`).
+  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"]`).
 - **Arity validation**:
   - **When** validating `ABS` with 0 or 2 arguments
   - **Then** rejects with `FunctionError::TooFewArguments` or `FunctionError::TooManyArguments`.
@@ -150,4 +150,7 @@ Standard functions demonstrate distinct evaluation models.
 - **Periodic debt service & amortization (`PMT`, `IPMT`, `PPMT`)**:
   - **When** evaluated with loan parameters (`rate`, `nper`, `pv`, `[fv]`, `[type]`)
   - **Then** computes constant periodic payment (`PMT`), interest component (`IPMT`), and principal component (`PPMT`) across periods $1 \le per \le nper$; strictly satisfies $\text{PMT} = \text{IPMT} + \text{PPMT}$; supports period-end (`type = 0`) and period-start (`type = 1`) timing.
+- **Conditional aggregations (`*IFS` family)**:
+  - **When** evaluated with target range and paired criteria ranges
+  - **Then** `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, and `MAXIFS` match cells against compiled criteria (`=`, `<>`, `<`, `<=`, `>`, `>=`, wildcards `*`, `?`, `~`, empty `""`/`"="`, and non-blank `"<>"`). Strictly enforces dimensional conformity between target and criteria ranges, returning `#VALUE!` on mismatch. When no cells match, `SUMIFS`, `COUNTIFS`, `MINIFS`, and `MAXIFS` evaluate to `0.0`, while `AVERAGEIFS` evaluates to `#DIV/0!`. Cell errors in target range bubble immediately for matching cells and are ignored for non-matching cells.
 

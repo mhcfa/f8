@@ -5,7 +5,7 @@
 
 pub mod error;
 
-pub use error::ExcelError;
+pub use error::{ExcelError, ParseExcelError};
 
 use crate::expr::ast::Literal;
 use crate::model::table::ValueLiteral;
@@ -175,7 +175,7 @@ impl CellValue {
 }
 
 /// Compares two strings case-insensitively using ASCII case folding.
-fn compare_ascii_case_insensitive(a: &str, b: &str) -> std::cmp::Ordering {
+pub(crate) fn compare_ascii_case_insensitive(a: &str, b: &str) -> std::cmp::Ordering {
     a.chars()
         .map(|c| c.to_ascii_lowercase())
         .cmp(b.chars().map(|c| c.to_ascii_lowercase()))
