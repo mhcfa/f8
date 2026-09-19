@@ -97,22 +97,32 @@ Finx standardizes exclusively on modern plural `*IFS` signatures with paired tra
 | Function | Min args | Max args | Variadic rule | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `XLOOKUP` | 3 | 6 | `None` | Modern lookup returning scalar value from matching return range |
+| `XMATCH` | 2 | 4 | `None` | Returns relative position of an item in a 1D array or range |
 | `INDEX` | 2 | 3 | `None` | Returns scalar value at row/col offset within range |
 
 ### 5.1. Modern Lookup (`XLOOKUP`)
 
 - **Signature**: `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])`.
 - **Defaults**:
-  - `if_not_found`: Defaults to returning `#N/A` if no match is found.
+  - `if_not_found`: Defaults to returning `#N/A` if no match is found (short-circuiting lazy evaluation).
   - `match_mode`: Defaults to `0` (exact match). `-1` = exact or next smaller, `1` = exact or next larger, `2` = wildcard (`*`, `?`, `~`).
   - `search_mode`: Defaults to `1` (search first-to-last). `-1` = search last-to-first, `2` = binary search ascending, `-2` = binary search descending.
 - **Return value**: Evaluates strictly to the matching scalar `CellValue` from `return_array`.
 
-### 5.2. Positional Indexing (`INDEX`)
+### 5.2. Relative Position Matching (`XMATCH`)
+
+- **Signature**: `XMATCH(lookup_value, lookup_array, [match_mode], [search_mode])`.
+- **Defaults**:
+  - `match_mode`: Defaults to `0` (exact match). `-1` = exact or next smaller, `1` = exact or next larger, `2` = wildcard (`*`, `?`, `~`).
+  - `search_mode`: Defaults to `1` (search first-to-last). `-1` = search last-to-first, `2` = binary search ascending, `-2` = binary search descending.
+- **Return value**: Evaluates to the 1-based relative position integer (`f64`) of the matched item, or `#N/A` if not found.
+
+### 5.3. Positional Indexing (`INDEX`)
 
 - **`INDEX(array, row_num, [col_num])`**:
   - Retrieves the scalar `CellValue` located at the 1-based `row_num` and `col_num` offsets within `array`.
   - On 1D row ranges, `col_num` represents the column offset; on 1D column ranges, `row_num` represents the row offset.
+  - On 2D matrices, both `row_num` and `col_num` are evaluated; out-of-bounds coordinates return `#REF!`.
 
 ---
 

@@ -18,7 +18,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 32);
+    assert_eq!(registry.len(), 35);
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),
@@ -53,6 +53,9 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("PMT", FunctionCategory::Financial),
         ("IPMT", FunctionCategory::Financial),
         ("PPMT", FunctionCategory::Financial),
+        ("XLOOKUP", FunctionCategory::Lookup),
+        ("XMATCH", FunctionCategory::Lookup),
+        ("INDEX", FunctionCategory::Lookup),
     ];
 
     for (name, category) in expected_functions {

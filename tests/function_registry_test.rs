@@ -418,7 +418,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 32);
+    assert_eq!(registry.len(), 35);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -456,7 +456,10 @@ fn test_registry_metadata_and_iteration() {
             "XIRR",
             "PMT",
             "IPMT",
-            "PPMT"
+            "PPMT",
+            "XLOOKUP",
+            "XMATCH",
+            "INDEX"
         ]
     );
 

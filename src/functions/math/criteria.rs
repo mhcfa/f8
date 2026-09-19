@@ -4,6 +4,8 @@
 //! (`*IFS`) and pattern-matching lookup functions, conforming to Excel criteria parity
 //! rules specified in `docs/compiler/parity.md` Section 5.
 
+pub use crate::functions::common::WildcardToken;
+use crate::functions::common::{matches_wildcard, parse_wildcard_tokens};
 use crate::value::compare_ascii_case_insensitive;
 use crate::value::{CellValue, ExcelError};
 
@@ -37,17 +39,6 @@ impl ComparisonOp {
             Self::GtEq => ordering.is_ge(),
         }
     }
-}
-
-/// Token in a compiled Excel wildcard pattern.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WildcardToken {
-    /// Exact character to match (ASCII-lowercased for case-insensitivity).
-    Char(char),
-    /// Wildcard `?` matching exactly one character.
-    AnySingle,
-    /// Wildcard `*` matching zero or more characters.
-    AnyZeroOrMore,
 }
 
 /// Target operand against which candidate cells are compared.
@@ -301,84 +292,6 @@ impl Criterion {
             },
         }
     }
-}
-
-/// Parses a pattern string into wildcard tokens, handling the `~` escape sequence.
-fn parse_wildcard_tokens(pattern: &str) -> (Vec<WildcardToken>, bool) {
-    let mut tokens = Vec::new();
-    let mut chars = pattern.chars().peekable();
-    let mut has_wildcard = false;
-
-    while let Some(c) = chars.next() {
-        match c {
-            '~' => {
-                if let Some(&next_c) = chars.peek() {
-                    if next_c == '?' || next_c == '*' || next_c == '~' {
-                        chars.next();
-                        tokens.push(WildcardToken::Char(next_c.to_ascii_lowercase()));
-                    } else {
-                        tokens.push(WildcardToken::Char('~'));
-                    }
-                } else {
-                    tokens.push(WildcardToken::Char('~'));
-                }
-            }
-            '?' => {
-                has_wildcard = true;
-                tokens.push(WildcardToken::AnySingle);
-            }
-            '*' => {
-                has_wildcard = true;
-                // Collapse consecutive asterisks
-                if !matches!(tokens.last(), Some(WildcardToken::AnyZeroOrMore)) {
-                    tokens.push(WildcardToken::AnyZeroOrMore);
-                }
-            }
-            other => {
-                tokens.push(WildcardToken::Char(other.to_ascii_lowercase()));
-            }
-        }
-    }
-
-    (tokens, has_wildcard)
-}
-
-/// Evaluates whether a text string matches a slice of wildcard tokens using linear-time backtracking.
-fn matches_wildcard(tokens: &[WildcardToken], text: &str) -> bool {
-    let s: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
-    let mut s_idx = 0;
-    let mut p_idx = 0;
-    let mut star_idx: Option<usize> = None;
-    let mut s_match_idx = 0;
-
-    while s_idx < s.len() {
-        if p_idx < tokens.len()
-            && match tokens[p_idx] {
-                WildcardToken::Char(c) => c == s[s_idx],
-                WildcardToken::AnySingle => true,
-                WildcardToken::AnyZeroOrMore => false,
-            }
-        {
-            s_idx += 1;
-            p_idx += 1;
-        } else if p_idx < tokens.len() && tokens[p_idx] == WildcardToken::AnyZeroOrMore {
-            star_idx = Some(p_idx);
-            s_match_idx = s_idx;
-            p_idx += 1;
-        } else if let Some(star) = star_idx {
-            p_idx = star + 1;
-            s_match_idx += 1;
-            s_idx = s_match_idx;
-        } else {
-            return false;
-        }
-    }
-
-    while p_idx < tokens.len() && tokens[p_idx] == WildcardToken::AnyZeroOrMore {
-        p_idx += 1;
-    }
-
-    p_idx == tokens.len()
 }
 
 #[cfg(test)]

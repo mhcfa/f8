@@ -28,6 +28,7 @@ impl FunctionRegistry {
         crate::functions::math::register(&mut registry);
         crate::functions::logical::register(&mut registry);
         crate::functions::financial::register(&mut registry);
+        crate::functions::lookup::register(&mut registry);
         registry
     }
 

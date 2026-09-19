@@ -30,6 +30,7 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
   - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`), conditional aggregation functions (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`), and criteria compilation engine (`Criterion`).
   - `finx::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
   - `finx::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
+  - `finx::functions::lookup`: Built-in modern lookup and reference functions (`XLOOKUP`, `XMATCH`, `INDEX`) and shared 1D search engine (`search.rs`).
 - **Data flow & interfaces**:
   1. AST parsing (Pass 1) $\rightarrow$ `FunctionRegistry::validate_call` validates identifier existence, arity bounds, variadic pair counts, and non-omittable required arguments.
   2. Evaluator execution (Pass 4) $\rightarrow$ `FunctionRegistry::bind_arguments` pre-evaluates scalar coordinates and multi-dimensional range slices while wrapping lazy branches $\rightarrow$ `ExcelFunction::evaluate`.
@@ -68,7 +69,7 @@ Function dispatch is case-insensitive, thread-safe, and deterministic. Function 
   - **Then** resolves to `AbsFunction`.
 - **Deterministic iteration**:
   - **When** iterating through `FunctionRegistry::standard()`
-  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"]`).
+  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT", "XLOOKUP", "XMATCH", "INDEX"]`).
 - **Arity validation**:
   - **When** validating `ABS` with 0 or 2 arguments
   - **Then** rejects with `FunctionError::TooFewArguments` or `FunctionError::TooManyArguments`.
@@ -153,4 +154,13 @@ Standard functions demonstrate distinct evaluation models.
 - **Conditional aggregations (`*IFS` family)**:
   - **When** evaluated with target range and paired criteria ranges
   - **Then** `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, and `MAXIFS` match cells against compiled criteria (`=`, `<>`, `<`, `<=`, `>`, `>=`, wildcards `*`, `?`, `~`, empty `""`/`"="`, and non-blank `"<>"`). Strictly enforces dimensional conformity between target and criteria ranges, returning `#VALUE!` on mismatch. When no cells match, `SUMIFS`, `COUNTIFS`, `MINIFS`, and `MAXIFS` evaluate to `0.0`, while `AVERAGEIFS` evaluates to `#DIV/0!`. Cell errors in target range bubble immediately for matching cells and are ignored for non-matching cells.
+- **Modern vector lookup (`XLOOKUP`)**:
+  - **When** evaluated with lookup value, 1D lookup array, and 1D return array
+  - **Then** searches lookup array using specified match and search modes; returns matching item from return array; evaluates lazy `if_not_found` fallback only when no match is found (short-circuiting); returns `#VALUE!` on mismatched vector dimensions, 2D lookup arrays, or invalid mode parameters.
+- **Relative position matching (`XMATCH`)**:
+  - **When** evaluated with lookup value and 1D lookup array
+  - **Then** returns 1-based relative position integer of matched item; returns `#N/A` when no item matches; returns `#VALUE!` on 2D arrays, invalid modes, or wildcard matching combined with binary search.
+- **Positional indexing (`INDEX`)**:
+  - **When** evaluated with array and 1-based coordinates
+  - **Then** on 1D horizontal vector, treats coordinate as column offset; on 1D vertical vector, treats coordinate as row offset; on 2D matrices, evaluates row and column intersections; returns `#REF!` on out-of-bounds coordinates and `#VALUE!` when column index is omitted on multi-column matrices.
 
