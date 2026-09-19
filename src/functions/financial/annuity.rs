@@ -1,6 +1,5 @@
-use crate::functions::common::normalize_zero;
+use crate::functions::common::{extract_scalar_number, normalize_zero};
 use crate::functions::error::FunctionError;
-use crate::functions::financial::discounting::extract_scalar_number;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,

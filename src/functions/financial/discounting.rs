@@ -1,20 +1,10 @@
-use crate::functions::common::normalize_zero;
+use crate::functions::common::{extract_scalar_number, normalize_zero};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
 };
 use crate::value::{CellValue, ExcelError};
-
-/// Extracts a scalar numeric value from an argument, coercing booleans and empty cells,
-/// bubbling errors, and rejecting text with `#VALUE!`.
-pub(crate) fn extract_scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
-    match arg {
-        FunctionArg::Scalar(val) => val.coerce_to_number(),
-        FunctionArg::Array { values, .. } if values.len() == 1 => values[0].coerce_to_number(),
-        _ => Err(ExcelError::Value),
-    }
-}
 
 /// Collects an ordered sequence of numeric cash flows across one or more arguments.
 ///

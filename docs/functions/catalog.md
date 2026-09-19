@@ -134,9 +134,8 @@ Finx models dates as dedicated calculation rows (`format: "date"`), keeping colu
 | :--- | :--- | :--- | :--- | :--- |
 | `YEARFRAC` | 2 | 3 | `None` | Year fraction between two dates using specified day count convention |
 | `DATE` | 3 | 3 | `None` | Constructs Excel serial date from integer `year`, `month`, `day` |
-| `DATEVALUE` | 1 | 1 | `None` | Converts date string (ISO 8601 or Excel format) to serial date number |
-| `EOMONTH` | 2 | 2 | `None` | Serial date of the last day of the month before/after offset months |
 | `EDATE` | 2 | 2 | `None` | Serial date that is indicated number of months before/after start date |
+| `EOMONTH` | 2 | 2 | `None` | Serial date of the last day of the month before/after offset months |
 | `YEAR` | 1 | 1 | `None` | Calendar year (1900–9999) corresponding to serial date |
 | `MONTH` | 1 | 1 | `None` | Calendar month (1–12) corresponding to serial date |
 | `DAY` | 1 | 1 | `None` | Day of the month (1–31) corresponding to serial date |

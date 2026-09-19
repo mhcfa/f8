@@ -431,3 +431,13 @@ pub fn matches_wildcard(tokens: &[WildcardToken], text: &str) -> bool {
 
     p_idx == tokens.len()
 }
+
+/// Extracts a scalar numeric value from an argument, coercing booleans and empty cells,
+/// bubbling errors, and rejecting text with `#VALUE!`.
+pub fn extract_scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
+    match arg {
+        FunctionArg::Scalar(val) => val.coerce_to_number(),
+        FunctionArg::Array { values, .. } if values.len() == 1 => values[0].coerce_to_number(),
+        _ => Err(ExcelError::Value),
+    }
+}

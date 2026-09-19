@@ -18,7 +18,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 35);
+    assert_eq!(registry.len(), 43);
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),

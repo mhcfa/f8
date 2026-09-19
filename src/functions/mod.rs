@@ -4,6 +4,7 @@
 //! Excel functions documented in `docs/functions/registry.md` and `docs/functions/catalog.md`.
 
 pub mod common;
+pub mod date;
 pub mod error;
 pub mod financial;
 pub mod logical;

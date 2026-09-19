@@ -31,6 +31,7 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
   - `finx::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
   - `finx::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
   - `finx::functions::lookup`: Built-in modern lookup and reference functions (`XLOOKUP`, `XMATCH`, `INDEX`) and shared 1D search engine (`search.rs`).
+  - `finx::functions::date`: Built-in date and time functions (`DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`, `DAYS`) and pure Rust calendar conversion engine with Excel 1900 leap year bug parity (`serial.rs`).
 - **Data flow & interfaces**:
   1. AST parsing (Pass 1) $\rightarrow$ `FunctionRegistry::validate_call` validates identifier existence, arity bounds, variadic pair counts, and non-omittable required arguments.
   2. Evaluator execution (Pass 4) $\rightarrow$ `FunctionRegistry::bind_arguments` pre-evaluates scalar coordinates and multi-dimensional range slices while wrapping lazy branches $\rightarrow$ `ExcelFunction::evaluate`.
@@ -69,7 +70,7 @@ Function dispatch is case-insensitive, thread-safe, and deterministic. Function 
   - **Then** resolves to `AbsFunction`.
 - **Deterministic iteration**:
   - **When** iterating through `FunctionRegistry::standard()`
-  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT", "XLOOKUP", "XMATCH", "INDEX"]`).
+  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT", "XLOOKUP", "XMATCH", "INDEX", "DATE", "EDATE", "EOMONTH", "YEARFRAC", "YEAR", "MONTH", "DAY", "DAYS"]`).
 - **Arity validation**:
   - **When** validating `ABS` with 0 or 2 arguments
   - **Then** rejects with `FunctionError::TooFewArguments` or `FunctionError::TooManyArguments`.
@@ -163,4 +164,20 @@ Standard functions demonstrate distinct evaluation models.
 - **Positional indexing (`INDEX`)**:
   - **When** evaluated with array and 1-based coordinates
   - **Then** on 1D horizontal vector, treats coordinate as column offset; on 1D vertical vector, treats coordinate as row offset; on 2D matrices, evaluates row and column intersections; returns `#REF!` on out-of-bounds coordinates and `#VALUE!` when column index is omitted on multi-column matrices.
+- **Date constructor & 1900 leap day bug (`DATE`)**:
+  - **When** evaluated with `year`, `month`, and `day`
+  - **Then** constructs Excel serial date number; supports month/day integer rollover; maps 2-digit years ($0 \le y \le 1899$) to $y + 1900$; preserves the 1900 leap year bug mapping `1900-02-29` to `60.0`; rejects years $< 0$ or $\ge 10000$ and resulting dates outside `0.0..=2958465.0` with `#NUM!`.
+- **Monthly stepping & end-of-month clamping (`EDATE`, `EOMONTH`)**:
+  - **When** evaluated with `start_date` and `months`
+  - **Then** `EDATE` adjusts month component by $n$ months, clamping days exceeding target month length to the month's final day (e.g. `2024-01-31` + 1 mo $\rightarrow$ `2024-02-29`); `EOMONTH` evaluates to the exact final serial day of the target month.
+- **Calendar component extraction (`YEAR`, `MONTH`, `DAY`)**:
+  - **When** evaluated with serial date number
+  - **Then** extracts calendar year (1900–9999), month (1–12), or day of month (1–31); truncates fractional day times; correctly extracts `(1900, 2, 29)` for serial `60.0` and `(1900, 1, 0)` for serial `0.0`.
+- **Elapsed day counting (`DAYS`)**:
+  - **When** evaluated with `end_date` and `start_date`
+  - **Then** computes `end_date.trunc() - start_date.trunc()`; rejects dates outside `0.0..=2958465.0` with `#NUM!`.
+- **Contractual year fractions (`YEARFRAC`)**:
+  - **When** evaluated with `start_date`, `end_date`, and optional `basis` ($0 \le \text{basis} \le 4$)
+  - **Then** computes non-negative contractual year fraction; supports US 30/360 NASD (`0`), Actual/Actual (`1`), Actual/360 (`2`), Actual/365 (`3`), and European 30E/360 (`4`); evaluates order-independently when `start_date > end_date`; rejects invalid basis with `#NUM!`.
+
 
