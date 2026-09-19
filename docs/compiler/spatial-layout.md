@@ -54,7 +54,11 @@ $$\text{TableRows} = \text{TitleRow} + \text{SuperHeaderRows} + \text{ColumnHead
 - **Hierarchy indentation & outline levels**:
   - Indents descriptor text according to tree depth in `row_groups`.
   - Computes Excel outline levels (`group_level: 1..7`) to enable native collapsible grouping `[+]` / `[-]`.
-- **Subtotal & total rows**: Rows, columns, and cell overrides configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` are mapped with accounting borders (top thin, bottom double for rows and cells; left thin, right double for columns) and summary outline properties.
+- **Subtotal & total summary styling**:
+  - Rows configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` assign horizontal summary borders (`top thin` for subtotal; `top thin` + `bottom double` for total).
+  - Columns configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` assign vertical summary borders (`left thin` for subtotal; `left thin` + `right double` for total).
+  - Cells at the intersection of total rows and total columns compose both rules into fully framed accounting boxes.
+  - Cell overrides declaring `style: "data"` cleanly suppress inherited borders on descriptor or memo cells.
 
 ---
 
@@ -112,7 +116,8 @@ pub struct PhysicalCoordinate {
 }
 
 pub struct StyleRole {
-    pub semantic_style: SemanticStyle,
+    pub horizontal: SemanticStyle,
+    pub vertical: SemanticStyle,
     pub is_highlight: bool,
 }
 

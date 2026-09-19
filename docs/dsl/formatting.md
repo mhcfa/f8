@@ -71,6 +71,7 @@ Numeric precision is an orthogonal property decoupled from the format preset:
 - **Separation of unit and precision**: `currency` represents monetary formatting, while `decimals` controls whether it renders as whole dollars (`$1,250,000` with `decimals: 0`), EPS/cents (`$1.25` with `decimals: 2`), or cap table share prices (`$0.0125` with `decimals: 4`).
 - **Unified numeric formatting**: Replaces rigid legacy presets (`integer`, `decimal`, `currency_decimal`) with pure `format: "number"` or `format: "currency"` paired with optional `decimals`.
 - **Theme defaults**: When `decimals` is omitted, the compiler defaults to the active theme's standard precision for that preset (`currency` -> 0, `number` -> 0, `percentage` -> 1, `multiple` -> 1, `basis_points` -> 0).
+- **Numeric applicability**: `decimals` applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) ignore `decimals` or trigger a validation error (`InvalidPrecisionForPresetError`) if explicitly configured.
 
 ### 4.1. Symmetrical Usage in Specifications
 The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](spec-format.md#3-table-specification-schema), [`RowSpec`](spec-format.md#3-table-specification-schema), and point-level [`DetailedCellInput`](spec-format.md#33-cell-input-syntax-cells):
@@ -114,26 +115,56 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 5. **Default fallback**: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.
 
 ### 5.2. Precision (`decimals`) resolution
-1. **Cell decimals override (Tier 1)**: An explicit `decimals` declared on `CellInput` always wins.
-2. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
-3. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
-4. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
+1. **Numeric applicability**: `decimals` resolution applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) have no precision concept and always resolve `decimals: None`.
+2. **Cell decimals override (Tier 1)**: An explicit `decimals` declared on `CellInput` always wins.
+3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
+4. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
+5. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
 
-### 5.3. Style resolution & composition
-1. **Structural style precedence**: `cell.style.or(row.style).or(col.style).unwrap_or(SemanticStyle::Data)`.
-   - An explicit cell override with `style: "data"` cleanly suppresses inherited row or column summary borders.
-2. **Symmetrical border composition**:
-   - When a row is `total` and a column is `total` (e.g. *Net Income* row $\times$ *FY Total* column), both rules apply:
-     - Horizontal: top thin border + bottom double underline.
-     - Vertical: left thin border + right double border.
-     - Font: bold.
-     The cell naturally forms a completely framed accounting total block without conflict.
-3. **Fill and border orthogonality**:
-   - `highlight` controls background fill tint and accent text color.
-   - `subtotal` and `total` control borders and font weight.
-   - Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `style: "total"` and `highlight: true` (e.g. a total row where a punchline cell is highlighted), rendering both the accent background fill and the accounting double underline without schema collision.
-4. **Highlight resolution**: `cell.highlight.unwrap_or(row.highlight || col.highlight)`.
-   - Point override `highlight: false` explicitly un-highlights a cell even if its row or column is highlighted.
+### 5.3. Style resolution & symmetrical 2D border composition
+
+In a 2D matrix, rows and columns do not compete for a single border style. Instead, they govern orthogonal geometric axes:
+- **Rows** govern the **horizontal axis** ($\text{top}$ and $\text{bottom}$ edges).
+- **Columns** govern the **vertical axis** ($\text{left}$ and $\text{right}$ edges).
+- **Cell overrides** act as the point-level escape hatch to reset or enforce styles.
+
+#### 5.3.1. Resolution algorithm
+For coordinate $(r, c)$, the effective `(horizontal, vertical)` structural style pair resolves as follows:
+
+1. **Explicit cell reset**: If `cell.style == Some(SemanticStyle::Data)`, both horizontal and vertical summary rules are suppressed:
+   $$(\text{horizontal}, \text{vertical}) = (\text{Data}, \text{Data})$$
+   This provides the clean escape hatch for descriptor columns or memo cells on total rows (e.g. preventing double underlines under line item names).
+2. **Explicit cell summary rule**: If `cell.style == Some(s)` where `s` is `Subtotal` or `Total`:
+   $$\text{horizontal} = s, \quad \text{vertical} = \text{col.style.unwrap\_or(Data)}$$
+   The cell applies the explicit horizontal summary rule while preserving column boundaries.
+3. **Vector rules (default)**: When `cell.style` is `None`:
+   $$\text{horizontal} = \text{row.style.unwrap\_or(Data)}, \quad \text{vertical} = \text{col.style.unwrap\_or(Data)}$$
+
+#### 5.3.2. Symmetrical border composition & emission
+During OpenXML emission (Pass 6b), the emitter maps `(horizontal, vertical)` through the active `Theme`:
+
+| Coordinate Scenario | Resolved `horizontal` | Resolved `vertical` | Applied Excel Borders | Font Weight | Typical Rendered Appearance |
+| :--- | :---: | :---: | :--- | :---: | :--- |
+| **Standard Data Cell** | `Data` | `Data` | None | Normal | Standard data values |
+| **Row Subtotal** *(e.g. Gross Profit)* | `Subtotal` | `Data` | **Top**: Thin | Normal | Intermediate section subtotal |
+| **Row Total** *(e.g. Net Income)* | `Total` | `Data` | **Top**: Thin<br>**Bottom**: Double | **Bold** | Institutional accounting total line |
+| **Column Subtotal** *(e.g. Segment divider)* | `Data` | `Subtotal` | **Left**: Thin | Normal | Vertical section dividing line |
+| **Column Total** *(e.g. FY Total column)* | `Data` | `Total` | **Left**: Thin<br>**Right**: Double | **Bold** | Vertical total summary column |
+| **Intersection (Grand Total / Punchline)** | `Total` | `Total` | **Top**: Thin, **Bottom**: Double<br>**Left**: Thin, **Right**: Double | **Bold** | **Framed accounting total box** |
+| **Descriptor / Memo on Total Row** *(with `style: "data"`)* | `Data` | `Data` | None | Normal | Clean label without unwanted underlines |
+
+#### 5.3.3. Font weight composition
+A cell renders with **bold typography** if either axis demands total styling:
+$$\text{is\_bold} = (\text{horizontal} == \text{SemanticStyle::Total}) \lor (\text{vertical} == \text{SemanticStyle::Total})$$
+
+#### 5.3.4. Fill and border orthogonality
+- `highlight` controls background fill tint and accent text color.
+- `horizontal` and `vertical` styles control border placement and font weight.
+Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `horizontal: Total` and `highlight: true` (e.g. an acquisition IRR punchline cell), rendering both the accent background fill and the accounting double underline without schema collision.
+
+#### 5.3.5. Highlight resolution
+$$\text{effective\_highlight} = \text{cell.highlight.unwrap\_or}(\text{row.highlight} \lor \text{col.highlight})$$
+A point override `highlight: false` explicitly un-highlights a cell even if its row or column has `highlight: true`.
 
 ---
 

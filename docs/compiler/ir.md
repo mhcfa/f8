@@ -93,17 +93,26 @@ flowchart TD
 
 ### 3.3. Precision (Decimals) Resolution Algorithm
 
-1. **Cell decimals override**: An explicit `decimals` declared on the cell always wins.
-2. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` without an explicit cell override, compilation halts with `DecimalsConflictError`.
-3. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
-4. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
+1. **Numeric applicability**: `decimals` resolution applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) have no precision concept and always resolve `decimals: None`.
+2. **Cell decimals override**: An explicit `decimals` declared on the cell always wins.
+3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` without an explicit cell override, compilation halts with `DecimalsConflictError`.
+4. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
+5. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
 
 ### 3.4. Semantic Style & Highlight Resolution Algorithm
 
-1. **Structural style precedence**: `cell.style.or(row.style).or(col.style).unwrap_or(SemanticStyle::Data)`.
-   - Explicit `style: "data"` on a cell explicitly suppresses inherited summary borders from row or column totals (e.g. memo or descriptor cells).
-2. **Symmetrical border composition**: If both row and column define structural styles (e.g. Total row $\times$ Total column), both horizontal and vertical borders apply, forming an accounting total intersection block.
-3. **Highlight precedence**: `cell.highlight.unwrap_or(row.highlight || col.highlight)`.
+In a 2D matrix, rows and columns govern orthogonal geometric axes:
+- **Rows** govern horizontal summary rules (`top` and `bottom` edges).
+- **Columns** govern vertical summary rules (`left` and `right` edges).
+
+1. **Explicit cell reset**: `cell.style == Some(SemanticStyle::Data)` suppresses both horizontal and vertical summary rules (`horizontal = Data, vertical = Data`).
+2. **Explicit cell summary rule**: `cell.style == Some(s)` sets `horizontal = s` (applying horizontal accounting rules), preserving `vertical = col.style.unwrap_or(Data)`.
+3. **Vector rules (default)**: When `cell.style` is `None`:
+   - `horizontal = row.style.unwrap_or(SemanticStyle::Data)`
+   - `vertical = col.style.unwrap_or(SemanticStyle::Data)`
+4. **Symmetrical border composition**: Intersection cells where both axes are `Total` receive top thin, bottom double, left thin, and right double borders, forming a fully framed accounting box.
+5. **Font weight composition**: Bold typography is applied if `horizontal == SemanticStyle::Total || vertical == SemanticStyle::Total`.
+6. **Highlight precedence**: `cell.highlight.unwrap_or(row.highlight || col.highlight)`.
    - Point override `highlight: false` explicitly un-highlights a cell even if its row or column is highlighted.
 
 ### 3.5. Note & Provenance Resolution
@@ -124,7 +133,7 @@ Each expanded cell node contains:
   - `Literal(ValueLiteral)`: Number, string, boolean, or null.
   - `Formula(AstNode)`: Parsed expression AST containing reference targets.
 - **Formatting & Precision**: Resolved format preset token (`FormatPreset`) and optional display precision (`decimals: Option<u32>`).
-- **Style**: Resolved structural style (`SemanticStyle`) and visual emphasis flag (`is_highlight: bool`).
+- **Style**: Resolved structural style pair (`horizontal: SemanticStyle`, `vertical: SemanticStyle`) and visual emphasis flag (`is_highlight: bool`).
 - **Notes & Provenance**: Inherited or overridden note string and provenance metadata.
 - **Spatial Position**: Populated later by the layout engine (`sheet_name`, `col_idx`, `row_idx`).
 
