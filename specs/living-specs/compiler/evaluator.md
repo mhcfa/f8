@@ -143,3 +143,16 @@ The top-level `finx::Compiler` orchestrates Passes 1 through 4 into a single coh
   - **When** calling `Compiler::evaluate` on a specification with a cycle or duplicate sheet name
   - **Then** returns the appropriate `CompilerError` variant (`Model`, `Ir`, `Graph`, or `Eval`).
 
+### 7. Anchoring Model Benchmarks
+
+The evaluator is validated against three realistic end-to-end financial model benchmarks:
+1. **Institutional LBO Model** (`tests/lbo_model_test.rs`): Canonical anchoring benchmark across 2 worksheets, 7 tables, and 6 timeline columns (`y0` close to `y5` exit). Exercises dynamic scenario selection (`XLOOKUP`), calendar timeline generation (`DATE`, `EDATE`, `YEAR`, `DAYS`, `YEARFRAC`), operating forecast with tax guard (`IF`), multi-tranche debt waterfall with mandatory amortization and cash sweep prepayments (`MIN`, `MAX`), and non-periodic sponsor returns (`XIRR`, `XNPV`).
+2. **3-Statement Financial Model** (`tests/three_statement_model_test.rs`): Multi-sheet financial model (Income Statement, Balance Sheet, Cash Flow, Assumptions) with temporal predecessor offsets (`col.prev`) and accounting identities.
+3. **Orthogonal Column-Based Cap Table** (`tests/cap_table_test.rs`): Financing rounds/shareholders as entity rows and calculation metrics as columns, exercising column vector formulas (`col.expr`) and active row selectors (`@row`).
+
+#### Scenarios
+
+- **LBO Base Case and sensitivity evaluation**:
+  - **When** evaluating the institutional LBO model under Base (`active_case = "base"`), Bull, and Bear cases
+  - **Then** evaluates with zero errors, confirms 2028 leap-year day count (`DAYS = 366`), executes senior debt cash sweeps, and computes exact `XIRR` and `XNPV` matching Excel.
+
