@@ -9,7 +9,7 @@ use finx::functions::FunctionRegistry;
 use finx::model::format::FormatPreset;
 use finx::model::id::{ColId, RowId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::{AxisRole, CellInput, ColumnSpec, RowSpec, TableSpec};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use finx::value::CellValue;
 
 fn build_measure_col(id: &str) -> ColumnSpec {
@@ -21,15 +21,9 @@ fn build_point_row(id: &str, values: &[(&str, f64)]) -> RowSpec {
     for &(col, val) in values {
         cells.insert(ColId::from(col), CellInput::number(val));
     }
-    RowSpec {
-        id: RowId::from(id),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Number),
-        expr: None,
-        note: None,
-        source: None,
-        cells,
-    }
+    RowSpec::new(id)
+        .with_format(Some(FormatPreset::Number))
+        .with_cells(cells)
 }
 
 fn build_vector_row(id: &str, expr: &str, overrides: &[(&str, f64)]) -> RowSpec {
@@ -37,15 +31,10 @@ fn build_vector_row(id: &str, expr: &str, overrides: &[(&str, f64)]) -> RowSpec 
     for &(col, val) in overrides {
         cells.insert(ColId::from(col), CellInput::number(val));
     }
-    RowSpec {
-        id: RowId::from(id),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Number),
-        expr: Some(expr.to_string()),
-        note: None,
-        source: None,
-        cells,
-    }
+    RowSpec::new(id)
+        .with_format(Some(FormatPreset::Number))
+        .with_expr(expr)
+        .with_cells(cells)
 }
 
 #[test]
@@ -375,24 +364,8 @@ fn test_compiler_facade_error_propagation() {
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![
-            RowSpec {
-                id: RowId::from("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("CyclicTable[\"r2\", @col]".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::from("r2"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("CyclicTable[\"r1\", @col]".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            },
+            RowSpec::new("r1").with_expr("CyclicTable[\"r2\", @col]"),
+            RowSpec::new("r2").with_expr("CyclicTable[\"r1\", @col]"),
         ],
     };
 
@@ -423,28 +396,12 @@ fn test_compiler_facade_error_propagation() {
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![
-            RowSpec {
-                id: RowId::from("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: None,
-                note: None,
-                source: None,
-                cells: {
-                    let mut cells = IndexMap::new();
-                    cells.insert(ColId::from("c1"), CellInput::number(42.0));
-                    cells
-                },
-            },
-            RowSpec {
-                id: RowId::from("r2"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("SUM(SumTable[\"r1\", @col])".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            },
+            RowSpec::new("r1").with_cells({
+                let mut cells = IndexMap::new();
+                cells.insert(ColId::from("c1"), CellInput::number(42.0));
+                cells
+            }),
+            RowSpec::new("r2").with_expr("SUM(SumTable[\"r1\", @col])"),
         ],
     };
 

@@ -5,9 +5,10 @@ use super::cell::{CellGrid, CellNode, CellPayload};
 use super::error::IrError;
 use super::id::CellId;
 use super::symbol::SymbolTable;
+use crate::model::format::{FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
-use crate::model::table::{CellInput, TableSpec};
+use crate::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 
 /// Expands a single table specification into an ordered vector of discrete cell calculation nodes.
 ///
@@ -70,12 +71,17 @@ pub fn expand_table(
 
             // Tier 1: Cell Override (0D Point)
             if let Some(cell_input) = row.cells.get(&col.id) {
-                let (payload, cell_format, cell_note, cell_source) = match cell_input {
-                    CellInput::Literal(lit) => {
-                        (CellPayload::Literal(lit.clone()), None, None, None)
-                    }
+                let cell_style = cell_input.style();
+                let cell_highlight = cell_input.highlight();
+                let cell_format = cell_input.format();
+                let cell_decimals = cell_input.decimals();
+                let cell_note = cell_input.note();
+                let cell_source = cell_input.source().cloned();
+
+                let payload = match cell_input {
+                    CellInput::Literal(lit) => CellPayload::Literal(lit.clone()),
                     CellInput::Detailed(d) => {
-                        let payload = if let Some(val) = &d.value {
+                        if let Some(val) = &d.value {
                             CellPayload::Literal(val.clone())
                         } else if let Some(expr_str) = &d.expr {
                             let parsed =
@@ -92,38 +98,18 @@ pub fn expand_table(
                             return Err(IrError::Model(format!(
                                 "Cell '{cell_id}' specifies neither 'value' nor 'expr'"
                             )));
-                        };
-                        (payload, d.format, d.note.clone(), d.source.clone())
+                        }
                     }
                 };
 
-                // Format resolution: Cell override format > Row format / Col format
-                let effective_format = if cell_format.is_some() {
-                    cell_format
-                } else if col.role.is_descriptor() && row.role.is_descriptor() {
-                    col.format.or(row.format)
-                } else if col.role.is_descriptor() {
-                    col.format
-                } else if row.role.is_descriptor() {
-                    row.format
-                } else {
-                    match (row.format, col.format) {
-                        (Some(rf), Some(cf)) if rf != cf => {
-                            return Err(IrError::FormatConflict {
-                                table: table.id.clone(),
-                                row: row.id.clone(),
-                                column: col.id.clone(),
-                                row_format: rf,
-                                col_format: cf,
-                            });
-                        }
-                        (Some(rf), _) => Some(rf),
-                        (_, Some(cf)) => Some(cf),
-                        (None, None) => None,
-                    }
-                };
+                let effective_format = resolve_format(cell_format, row, col, &table.id)?;
+                let effective_decimals =
+                    resolve_decimals(cell_decimals, effective_format, row, col, &table.id)?;
+                let (horizontal, vertical) = resolve_style(cell_style, row.style, col.style);
+                let is_highlight = resolve_highlight(cell_highlight, row.highlight, col.highlight);
 
                 let effective_note = cell_note
+                    .map(String::from)
                     .or_else(|| row.note.clone())
                     .or_else(|| col.note.clone());
                 let effective_source = cell_source
@@ -133,6 +119,9 @@ pub fn expand_table(
                 cells.push(
                     CellNode::new(cell_id, sheet_id.clone(), payload)
                         .with_format(effective_format)
+                        .with_decimals(effective_decimals)
+                        .with_style(horizontal, vertical)
+                        .with_highlight(is_highlight)
                         .with_note(effective_note)
                         .with_source(effective_source),
                 );
@@ -172,20 +161,10 @@ pub fn expand_table(
                 });
             };
 
-            let effective_format = match (row.format, col.format) {
-                (Some(rf), Some(cf)) if rf != cf => {
-                    return Err(IrError::FormatConflict {
-                        table: table.id.clone(),
-                        row: row.id.clone(),
-                        column: col.id.clone(),
-                        row_format: rf,
-                        col_format: cf,
-                    });
-                }
-                (Some(rf), _) => Some(rf),
-                (_, Some(cf)) => Some(cf),
-                (None, None) => None,
-            };
+            let effective_format = resolve_format(None, row, col, &table.id)?;
+            let effective_decimals = resolve_decimals(None, effective_format, row, col, &table.id)?;
+            let (horizontal, vertical) = resolve_style(None, row.style, col.style);
+            let is_highlight = resolve_highlight(None, row.highlight, col.highlight);
 
             let effective_note = row.note.clone().or_else(|| col.note.clone());
             let effective_source = row.source.clone().or_else(|| col.source.clone());
@@ -193,6 +172,9 @@ pub fn expand_table(
             cells.push(
                 CellNode::new(cell_id, sheet_id.clone(), payload)
                     .with_format(effective_format)
+                    .with_decimals(effective_decimals)
+                    .with_style(horizontal, vertical)
+                    .with_highlight(is_highlight)
                     .with_note(effective_note)
                     .with_source(effective_source),
             );
@@ -200,6 +182,102 @@ pub fn expand_table(
     }
 
     Ok(cells)
+}
+
+/// Resolves the effective format preset according to the 3-Tier Specificity Lattice.
+fn resolve_format(
+    cell_format: Option<FormatPreset>,
+    row: &RowSpec,
+    col: &ColumnSpec,
+    table_id: &TableId,
+) -> Result<Option<FormatPreset>, IrError> {
+    if cell_format.is_some() {
+        Ok(cell_format)
+    } else if col.role.is_descriptor() && row.role.is_descriptor() {
+        Ok(col.format.or(row.format))
+    } else if col.role.is_descriptor() {
+        Ok(col.format)
+    } else if row.role.is_descriptor() {
+        Ok(row.format)
+    } else {
+        match (row.format, col.format) {
+            (Some(rf), Some(cf)) if rf != cf => Err(IrError::FormatConflict {
+                table: table_id.clone(),
+                row: row.id.clone(),
+                column: col.id.clone(),
+                row_format: rf,
+                col_format: cf,
+            }),
+            (Some(rf), _) => Ok(Some(rf)),
+            (_, Some(cf)) => Ok(Some(cf)),
+            (None, None) => Ok(None),
+        }
+    }
+}
+
+/// Resolves display precision (decimals) according to preset applicability and the 3-Tier Specificity Lattice.
+fn resolve_decimals(
+    cell_decimals: Option<u32>,
+    effective_format: Option<FormatPreset>,
+    row: &RowSpec,
+    col: &ColumnSpec,
+    table_id: &TableId,
+) -> Result<Option<u32>, IrError> {
+    // Non-numeric presets have no precision concept and always resolve to None
+    if let Some(format) = effective_format
+        && !format.is_numeric()
+    {
+        return Ok(None);
+    }
+
+    if cell_decimals.is_some() {
+        Ok(cell_decimals)
+    } else if col.role.is_descriptor() && row.role.is_descriptor() {
+        Ok(col.decimals.or(row.decimals))
+    } else if col.role.is_descriptor() {
+        Ok(col.decimals)
+    } else if row.role.is_descriptor() {
+        Ok(row.decimals)
+    } else {
+        match (row.decimals, col.decimals) {
+            (Some(rd), Some(cd)) if rd != cd => Err(IrError::DecimalsConflict {
+                table: table_id.clone(),
+                row: row.id.clone(),
+                column: col.id.clone(),
+                row_decimals: rd,
+                col_decimals: cd,
+            }),
+            (Some(rd), _) => Ok(Some(rd)),
+            (_, Some(cd)) => Ok(Some(cd)),
+            (None, None) => Ok(None),
+        }
+    }
+}
+
+/// Resolves the orthogonal (horizontal, vertical) structural style pair.
+fn resolve_style(
+    cell_style: Option<SemanticStyle>,
+    row_style: Option<SemanticStyle>,
+    col_style: Option<SemanticStyle>,
+) -> (SemanticStyle, SemanticStyle) {
+    match cell_style {
+        Some(SemanticStyle::Data) => (SemanticStyle::Data, SemanticStyle::Data),
+        Some(s) => (s, col_style.unwrap_or(SemanticStyle::Data)),
+        None => (
+            row_style.unwrap_or(SemanticStyle::Data),
+            col_style.unwrap_or(SemanticStyle::Data),
+        ),
+    }
+}
+
+/// Resolves visual highlight emphasis according to point override and vector rules.
+fn resolve_highlight(
+    cell_highlight: Option<bool>,
+    row_highlight: Option<bool>,
+    col_highlight: Option<bool>,
+) -> bool {
+    cell_highlight
+        .unwrap_or_else(|| row_highlight.unwrap_or(false) || col_highlight.unwrap_or(false))
 }
 
 /// Expands a slice of table specifications into a populated `CellGrid`.
@@ -285,8 +363,8 @@ pub fn expand_workbook(
 mod tests {
     use super::*;
     use crate::model::format::FormatPreset;
-    use crate::model::id::{RowId, SheetId, TableId};
-    use crate::model::table::{AxisRole, ColumnSpec, DetailedCellInput, RowSpec, ValueLiteral};
+    use crate::model::id::{SheetId, TableId};
+    use crate::model::table::{ColumnSpec, DetailedCellInput, RowSpec, ValueLiteral};
 
     fn make_test_symbol_table(table: &TableSpec) -> SymbolTable {
         let mut st = SymbolTable::new();
@@ -306,34 +384,23 @@ mod tests {
             column_groups: vec![],
             row_groups: vec![],
             rows: vec![
-                RowSpec {
-                    id: RowId::new("tax_rate"),
-                    role: AxisRole::Measure,
-                    format: Some(FormatPreset::Percentage),
-                    expr: None,
-                    note: Some("Federal tax rate".to_string()),
-                    source: None,
-                    cells: {
+                RowSpec::new("tax_rate")
+                    .with_format(Some(FormatPreset::Percentage))
+                    .with_note("Federal tax rate")
+                    .with_cells({
                         let mut map = IndexMap::new();
                         map.insert("param".into(), CellInput::string("Corporate Tax Rate"));
                         map.insert("val".into(), CellInput::number(0.25));
                         map
-                    },
-                },
-                RowSpec {
-                    id: RowId::new("exit_multiple"),
-                    role: AxisRole::Measure,
-                    format: Some(FormatPreset::Multiple),
-                    expr: None,
-                    note: None,
-                    source: None,
-                    cells: {
+                    }),
+                RowSpec::new("exit_multiple")
+                    .with_format(Some(FormatPreset::Multiple))
+                    .with_cells({
                         let mut map = IndexMap::new();
                         map.insert("param".into(), CellInput::string("Exit Multiple"));
                         map.insert("val".into(), CellInput::number(10.0));
                         map
-                    },
-                },
+                    }),
             ],
         };
 
@@ -375,15 +442,7 @@ mod tests {
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("1".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            }],
+            rows: vec![RowSpec::new("r1").with_expr("1")],
         };
 
         let symbols = SymbolTable::new();
@@ -401,15 +460,7 @@ mod tests {
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("1 + * 2".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            }],
+            rows: vec![RowSpec::new("r1").with_expr("1 + * 2")],
         };
 
         let symbols = make_test_symbol_table(&table);
@@ -425,15 +476,7 @@ mod tests {
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("10".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            }],
+            rows: vec![RowSpec::new("r1").with_expr("10")],
         };
 
         let symbols = make_test_symbol_table(&table);
@@ -454,15 +497,7 @@ mod tests {
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("200".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            }],
+            rows: vec![RowSpec::new("r1").with_expr("200")],
         };
 
         let symbols = make_test_symbol_table(&table);
@@ -488,15 +523,7 @@ mod tests {
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: Some("200".to_string()),
-                note: None,
-                source: None,
-                cells,
-            }],
+            rows: vec![RowSpec::new("r1").with_expr("200").with_cells(cells)],
         };
 
         let symbols = make_test_symbol_table(&table);
@@ -516,15 +543,7 @@ mod tests {
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: None,
-                expr: None,
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            }],
+            rows: vec![RowSpec::new("r1")],
         };
 
         let symbols = make_test_symbol_table(&table);
@@ -547,15 +566,11 @@ mod tests {
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: Some(FormatPreset::Currency),
-                expr: Some("10".to_string()),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            }],
+            rows: vec![
+                RowSpec::new("r1")
+                    .with_format(Some(FormatPreset::Currency))
+                    .with_expr("10"),
+            ],
         };
 
         let symbols = make_test_symbol_table(&table);
@@ -591,15 +606,12 @@ mod tests {
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
-            rows: vec![RowSpec {
-                id: RowId::new("r1"),
-                role: AxisRole::Measure,
-                format: Some(FormatPreset::Currency),
-                expr: Some("10".to_string()),
-                note: None,
-                source: None,
-                cells,
-            }],
+            rows: vec![
+                RowSpec::new("r1")
+                    .with_format(Some(FormatPreset::Currency))
+                    .with_expr("10")
+                    .with_cells(cells),
+            ],
         };
 
         let symbols = make_test_symbol_table(&table);

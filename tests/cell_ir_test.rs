@@ -5,9 +5,8 @@ use finx::expr::Expr;
 use finx::model::format::FormatPreset;
 use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
 use finx::model::table::{
-    AxisRole, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec, ValueLiteral,
+    ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec, ValueLiteral,
 };
-use indexmap::IndexMap;
 
 #[test]
 fn test_scenario_1_cell_id_display_and_formatting() {
@@ -165,33 +164,9 @@ fn test_scenario_5_symbol_table_table_registration() {
             ],
         }],
         rows: vec![
-            RowSpec {
-                id: RowId::new("revenue"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("100".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("r_and_d"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("20".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("s_and_m"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("30".to_string()),
-                cells: IndexMap::new(),
-            },
+            RowSpec::new("revenue").with_expr("100"),
+            RowSpec::new("r_and_d").with_expr("20"),
+            RowSpec::new("s_and_m").with_expr("30"),
         ],
     };
 
@@ -241,15 +216,7 @@ fn test_scenario_6_symbol_table_duplicate_table_rejection() {
         columns: vec![ColumnSpec::new("2024E")],
         column_groups: vec![],
         row_groups: vec![],
-        rows: vec![RowSpec {
-            id: RowId::new("fcf"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: Some("100".to_string()),
-            cells: IndexMap::new(),
-        }],
+        rows: vec![RowSpec::new("fcf").with_expr("100")],
     };
 
     symbols
@@ -315,42 +282,10 @@ fn test_scenario_7_symbol_table_nested_row_groups_flattening() {
             ],
         }],
         rows: vec![
-            RowSpec {
-                id: RowId::new("cash"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("100".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("ar"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("50".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("inventory"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("30".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("ppe"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("200".to_string()),
-                cells: IndexMap::new(),
-            },
+            RowSpec::new("cash").with_expr("100"),
+            RowSpec::new("ar").with_expr("50"),
+            RowSpec::new("inventory").with_expr("30"),
+            RowSpec::new("ppe").with_expr("200"),
         ],
     };
 

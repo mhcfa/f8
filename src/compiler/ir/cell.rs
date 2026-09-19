@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::error::IrError;
 use super::id::CellId;
 use crate::expr::ast::Expr;
-use crate::model::format::FormatPreset;
+use crate::model::format::{FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::table::ValueLiteral;
 
@@ -54,6 +54,14 @@ pub struct CellNode {
     pub sheet: SheetId,
     /// Optional number formatting preset.
     pub format: Option<FormatPreset>,
+    /// Optional display precision override.
+    pub decimals: Option<u32>,
+    /// Resolved horizontal structural style (top/bottom borders).
+    pub horizontal: SemanticStyle,
+    /// Resolved vertical structural style (left/right borders).
+    pub vertical: SemanticStyle,
+    /// Visual highlight emphasis flag.
+    pub is_highlight: bool,
     /// Evaluatable payload: literal value or formula AST.
     pub payload: CellPayload,
     /// Optional developer or audit note.
@@ -69,6 +77,10 @@ impl CellNode {
             id,
             sheet,
             format: None,
+            decimals: None,
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
             payload,
             note: None,
             source: None,
@@ -79,6 +91,30 @@ impl CellNode {
     pub fn with_format(mut self, format: Option<FormatPreset>) -> Self {
         self.format = format;
         self
+    }
+
+    /// Builder method attaching display precision.
+    pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
+        self.decimals = decimals;
+        self
+    }
+
+    /// Builder method attaching horizontal and vertical structural styles.
+    pub fn with_style(mut self, horizontal: SemanticStyle, vertical: SemanticStyle) -> Self {
+        self.horizontal = horizontal;
+        self.vertical = vertical;
+        self
+    }
+
+    /// Builder method attaching visual highlight emphasis.
+    pub fn with_highlight(mut self, is_highlight: bool) -> Self {
+        self.is_highlight = is_highlight;
+        self
+    }
+
+    /// Returns true if this cell renders with bold typography according to total style composition.
+    pub fn is_bold(&self) -> bool {
+        self.horizontal.is_total() || self.vertical.is_total()
     }
 
     /// Builder method attaching an audit note.

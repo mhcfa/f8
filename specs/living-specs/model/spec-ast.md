@@ -1,6 +1,6 @@
 ---
 title: Specification AST & Schema Ingestion
-last_updated: 2026-09-17
+last_updated: 2026-09-19
 domain: model
 status: active
 ---
@@ -13,13 +13,13 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 
 - **Modules & components**:
   - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `ColGroupId`, `RowGroupId`).
-  - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`).
+  - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`) and structural style enum (`SemanticStyle`).
   - `finx::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
-  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`).
+  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`) are defined symmetrically on `ColumnSpec`, `RowSpec`, and `DetailedCellInput`.
   - `finx::model::error`: Diagnostic error types (`ModelError`).
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
-  2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification $\rightarrow$ `Ok(())` or `Err(ModelError)`.
+  2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification (unique IDs, contiguous groups, cell payload validity, numeric precision applicability) $\rightarrow$ `Ok(())` or `Err(ModelError)`.
   3. Validated models are ready for 2D grid expansion and dependency analysis.
 - **Dependencies**:
   - `serde`, `serde_json`: JSON serialization and deserialization with untagged cell inputs.
@@ -78,3 +78,17 @@ Column groups and row groups must form contiguous sub-slices of their respective
 - **Cyclic Group Hierarchy**:
   - **When** a nested row group references an ancestor group ID
   - **Then** validation returns `ModelError::CyclicRowGroup`.
+
+### 4. Numeric Precision Applicability
+
+The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) reject explicit precision declarations.
+
+#### Scenarios
+
+- **Valid Numeric Precision**:
+  - **When** a column, row, or detailed cell override specifies `format: "currency"` and `decimals: 2`
+  - **Then** validation succeeds.
+- **Precision on Non-Numeric Preset Rejected**:
+  - **When** a column, row, or detailed cell override specifies `format: "date"` or `format: "text"` with `decimals: Some(n)`
+  - **Then** validation returns `ModelError::InvalidPrecisionForPreset`.
+

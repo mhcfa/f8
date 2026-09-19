@@ -6,12 +6,11 @@ use finx::compiler::ir::{
     CellId, CellPayload, IrError, SymbolTable, expand_grid, expand_table, expand_workbook,
 };
 use finx::expr::ast::Expr;
-use finx::model::format::FormatPreset;
+use finx::model::format::{FormatPreset, SemanticStyle};
 use finx::model::id::{ColGroupId, ColId, RowId, SheetId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{
-    AxisRole, CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowSpec, TableSpec,
-    ValueLiteral,
+    CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
 };
 use indexmap::IndexMap;
 
@@ -33,15 +32,7 @@ fn test_scenario_1_expand_literal_row_across_columns() {
     cells.insert("2022A".into(), CellInput::number(110.0));
     cells.insert("2023A".into(), CellInput::number(120.0));
 
-    let row = RowSpec {
-        id: RowId::from("revenue"),
-        role: AxisRole::Measure,
-        format: None,
-        note: None,
-        source: None,
-        expr: None,
-        cells,
-    };
+    let row = RowSpec::new("revenue").with_cells(cells);
 
     let table = create_simple_table("IncomeStatement", &["2021A", "2022A", "2023A"], vec![row]);
 
@@ -84,15 +75,10 @@ fn test_scenario_1_expand_literal_row_across_columns() {
 
 #[test]
 fn test_scenario_2_expand_uniform_formula_row_across_columns() {
-    let row = RowSpec {
-        id: RowId::from("ebit"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: Some("Operating margin formula".to_string()),
-        source: None,
-        expr: Some("IncomeStatement[\"revenue\", @col] * 0.1".to_string()),
-        cells: IndexMap::new(),
-    };
+    let row = RowSpec::new("ebit")
+        .with_format(Some(FormatPreset::Currency))
+        .with_note("Operating margin formula")
+        .with_expr("IncomeStatement[\"revenue\", @col] * 0.1");
 
     let table = create_simple_table("IncomeStatement", &["2024E", "2025E"], vec![row]);
 
@@ -129,15 +115,11 @@ fn test_scenario_3_expand_vector_row_with_point_overrides() {
         }),
     );
 
-    let row = RowSpec {
-        id: RowId::from("revenue"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: Some("5% growth projection".to_string()),
-        source: None,
-        expr: Some("IncomeStatement[\"revenue\", col.prev] * 1.05".to_string()),
-        cells,
-    };
+    let row = RowSpec::new("revenue")
+        .with_format(Some(FormatPreset::Currency))
+        .with_note("5% growth projection")
+        .with_expr("IncomeStatement[\"revenue\", col.prev] * 1.05")
+        .with_cells(cells);
 
     let table = create_simple_table("IncomeStatement", &["2023A", "2024E", "2025E"], vec![row]);
 
@@ -192,15 +174,11 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
         }),
     );
 
-    let row = RowSpec {
-        id: RowId::from("revenue"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: Some("Base revenue note".to_string()),
-        source: Some(serde_json::json!({ "source_id": "10-K" })),
-        expr: None,
-        cells,
-    };
+    let row = RowSpec::new("revenue")
+        .with_format(Some(FormatPreset::Currency))
+        .with_note("Base revenue note")
+        .with_source(Some(serde_json::json!({ "source_id": "10-K" })))
+        .with_cells(cells);
 
     let table = create_simple_table("IncomeStatement", &["2023A", "2024E", "2025E"], vec![row]);
 
@@ -235,15 +213,7 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
 
 #[test]
 fn test_scenario_5_actionable_formula_parse_error_diagnostic() {
-    let row = RowSpec {
-        id: RowId::from("bad_calc"),
-        role: AxisRole::Measure,
-        format: None,
-        note: None,
-        source: None,
-        expr: Some("IncomeStatement[\"revenue\", @col] + * 5".to_string()),
-        cells: IndexMap::new(),
-    };
+    let row = RowSpec::new("bad_calc").with_expr("IncomeStatement[\"revenue\", @col] + * 5");
 
     let table = create_simple_table("IncomeStatement", &["2024E"], vec![row]);
 
@@ -290,15 +260,11 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
     let assumptions_table = create_simple_table(
         "Assumptions",
         &["value"],
-        vec![RowSpec {
-            id: RowId::from("tax_rate"),
-            role: AxisRole::Measure,
-            format: Some(FormatPreset::Percentage),
-            note: None,
-            source: None,
-            expr: None,
-            cells: assumptions_cells,
-        }],
+        vec![
+            RowSpec::new("tax_rate")
+                .with_format(Some(FormatPreset::Percentage))
+                .with_cells(assumptions_cells),
+        ],
     );
 
     let mut is_cells = IndexMap::new();
@@ -307,15 +273,11 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
     let is_table = create_simple_table(
         "IncomeStatement",
         &["2023A", "2024E"],
-        vec![RowSpec {
-            id: RowId::from("revenue"),
-            role: AxisRole::Measure,
-            format: Some(FormatPreset::Currency),
-            note: None,
-            source: None,
-            expr: None,
-            cells: is_cells,
-        }],
+        vec![
+            RowSpec::new("revenue")
+                .with_format(Some(FormatPreset::Currency))
+                .with_cells(is_cells),
+        ],
     );
 
     let (symbols, grid) = expand_workbook(&manifest, &[assumptions_table, is_table])
@@ -349,15 +311,7 @@ fn test_scenario_7_reject_table_not_in_symbol_table() {
     let table = create_simple_table(
         "UnknownTable",
         &["2024E"],
-        vec![RowSpec {
-            id: RowId::from("revenue"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells,
-        }],
+        vec![RowSpec::new("revenue").with_cells(cells)],
     );
     let symbols = SymbolTable::new();
 
@@ -400,15 +354,12 @@ fn test_expand_column_group_with_vector_rules() {
     cells.insert("2022A".into(), CellInput::number(60.0));
     cells.insert("2023A".into(), CellInput::number(70.0));
 
-    table.rows = vec![RowSpec {
-        id: RowId::from("cash"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: None,
-        source: None,
-        expr: Some("BalanceSheet[\"cash\", col.prev] + 10.0".to_string()),
-        cells,
-    }];
+    table.rows = vec![
+        RowSpec::new("cash")
+            .with_format(Some(FormatPreset::Currency))
+            .with_expr("BalanceSheet[\"cash\", col.prev] + 10.0")
+            .with_cells(cells),
+    ];
 
     let mut symbols = SymbolTable::new();
     symbols
@@ -451,15 +402,7 @@ fn test_expand_workbook_unassigned_table_rejected() {
     let table1 = create_simple_table(
         "Assumptions",
         &["value"],
-        vec![RowSpec {
-            id: RowId::from("tax_rate"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells: t1_cells,
-        }],
+        vec![RowSpec::new("tax_rate").with_cells(t1_cells)],
     );
 
     let mut t2_cells = IndexMap::new();
@@ -467,15 +410,7 @@ fn test_expand_workbook_unassigned_table_rejected() {
     let table2 = create_simple_table(
         "OrphanTable",
         &["value"],
-        vec![RowSpec {
-            id: RowId::from("foo"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells: t2_cells,
-        }],
+        vec![RowSpec::new("foo").with_cells(t2_cells)],
     );
 
     let err = expand_workbook(&manifest, &[table1, table2]).unwrap_err();
@@ -496,15 +431,7 @@ fn test_expand_grid_multi_table() {
     let t1 = create_simple_table(
         "TableA",
         &["c1", "c2"],
-        vec![RowSpec {
-            id: RowId::from("r1"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells: t1_cells,
-        }],
+        vec![RowSpec::new("r1").with_cells(t1_cells)],
     );
 
     let mut t2_cells = IndexMap::new();
@@ -512,15 +439,7 @@ fn test_expand_grid_multi_table() {
     let t2 = create_simple_table(
         "TableB",
         &["c1"],
-        vec![RowSpec {
-            id: RowId::from("r2"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells: t2_cells,
-        }],
+        vec![RowSpec::new("r2").with_cells(t2_cells)],
     );
 
     let mut symbols = SymbolTable::new();
@@ -580,33 +499,9 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![
-            RowSpec {
-                id: RowId::from("revenue"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: rev_cells,
-            },
-            RowSpec {
-                id: RowId::from("cogs"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: cogs_cells,
-            },
-            RowSpec {
-                id: RowId::from("opex"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: opex_cells,
-            },
+            RowSpec::new("revenue").with_cells(rev_cells),
+            RowSpec::new("cogs").with_cells(cogs_cells),
+            RowSpec::new("opex").with_cells(opex_cells),
         ],
     };
 
@@ -674,15 +569,7 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
         columns: vec![col1.clone(), col2.clone()],
         column_groups: vec![],
         row_groups: vec![],
-        rows: vec![RowSpec {
-            id: RowId::from("header"),
-            role: AxisRole::Descriptor,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells: IndexMap::new(),
-        }],
+        rows: vec![RowSpec::descriptor("header")],
     };
 
     let mut symbols = SymbolTable::new();
@@ -709,24 +596,8 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![
-            RowSpec {
-                id: RowId::from("header"),
-                role: AxisRole::Descriptor,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: header_cells,
-            },
-            RowSpec {
-                id: RowId::from("data"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: IndexMap::new(),
-            },
+            RowSpec::descriptor("header").with_cells(header_cells),
+            RowSpec::new("data"),
         ],
     };
 
@@ -764,15 +635,7 @@ fn test_column_formula_parse_error_diagnostic() {
         columns: vec![bad_col],
         column_groups: vec![],
         row_groups: vec![],
-        rows: vec![RowSpec {
-            id: RowId::from("r1"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: None,
-            cells: IndexMap::new(),
-        }],
+        rows: vec![RowSpec::new("r1")],
     };
 
     let mut symbols = SymbolTable::new();
@@ -825,4 +688,235 @@ fn test_dual_descriptor_format_fallback() {
     let cells = expand_table(&symbols, &table).unwrap();
     assert_eq!(cells.len(), 1);
     assert_eq!(cells[0].format, Some(FormatPreset::Text));
+}
+
+#[test]
+fn test_scenario_1_symmetrical_2d_border_composition_at_matrix_intersection() {
+    let col = ColumnSpec::new("fy").with_style(Some(SemanticStyle::Total));
+    let row = RowSpec::new("net_income")
+        .with_style(Some(SemanticStyle::Total))
+        .with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("IncomeStatement"),
+        title: "Income Statement".to_string(),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    let cell = &cells[0];
+    assert_eq!(cell.horizontal, SemanticStyle::Total);
+    assert_eq!(cell.vertical, SemanticStyle::Total);
+    assert!(cell.is_bold());
+}
+
+#[test]
+fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
+    let col = ColumnSpec::descriptor("line_item", "Line Item");
+    let mut row_cells = IndexMap::new();
+    row_cells.insert(
+        ColId::from("line_item"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::String("Gross Profit".to_string())),
+            expr: None,
+            style: Some(SemanticStyle::Data),
+            highlight: None,
+            format: None,
+            decimals: None,
+            note: None,
+            source: None,
+        }),
+    );
+
+    let row = RowSpec::new("gross_profit")
+        .with_style(Some(SemanticStyle::Subtotal))
+        .with_cells(row_cells);
+
+    let table = TableSpec {
+        id: TableId::from("IncomeStatement"),
+        title: "Income Statement".to_string(),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    let cell = &cells[0];
+    // Explicit cell reset to Data suppresses both horizontal and vertical summary rules
+    assert_eq!(cell.horizontal, SemanticStyle::Data);
+    assert_eq!(cell.vertical, SemanticStyle::Data);
+    assert!(!cell.is_bold());
+}
+
+#[test]
+fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
+    let col = ColumnSpec::new("q1").with_decimals(Some(2));
+    let mut row_cells = IndexMap::new();
+    row_cells.insert(
+        ColId::from("q1"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(1.2345)),
+            expr: None,
+            style: None,
+            highlight: None,
+            format: None,
+            decimals: Some(4),
+            note: None,
+            source: None,
+        }),
+    );
+
+    let row = RowSpec::new("eps")
+        .with_decimals(Some(2))
+        .with_cells(row_cells);
+
+    let table = TableSpec {
+        id: TableId::from("EPS"),
+        title: "EPS Table".to_string(),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].decimals, Some(4));
+}
+
+#[test]
+fn test_scenario_4_measure_vector_precision_conflict_rejected() {
+    let col = ColumnSpec::new("c1").with_decimals(Some(0));
+    let row = RowSpec::new("r1").with_decimals(Some(2)).with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("ConflictTable"),
+        title: "Conflict Table".to_string(),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let err = expand_table(&symbols, &table).unwrap_err();
+    match err {
+        IrError::DecimalsConflict {
+            table,
+            row,
+            column,
+            row_decimals,
+            col_decimals,
+        } => {
+            assert_eq!(table.as_str(), "ConflictTable");
+            assert_eq!(row.as_str(), "r1");
+            assert_eq!(column.as_str(), "c1");
+            assert_eq!(row_decimals, 2);
+            assert_eq!(col_decimals, 0);
+        }
+        other => panic!("expected DecimalsConflict, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
+    let col = ColumnSpec::new("c1");
+    let mut row_cells = IndexMap::new();
+    row_cells.insert(
+        ColId::from("c1"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(50.0)),
+            expr: None,
+            style: None,
+            highlight: Some(false),
+            format: None,
+            decimals: None,
+            note: None,
+            source: None,
+        }),
+    );
+
+    let row = RowSpec::new("r1")
+        .with_highlight(Some(true))
+        .with_cells(row_cells);
+
+    let table = TableSpec {
+        id: TableId::from("HighlightTable"),
+        title: "Highlight Table".to_string(),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert!(!cells[0].is_highlight);
+}
+
+#[test]
+fn test_scenario_7_highlight_inheritance_from_row_or_column() {
+    let col_highlight = ColumnSpec::new("c_hi").with_highlight(Some(true));
+    let col_normal = ColumnSpec::new("c_norm");
+
+    let row_hi = RowSpec::new("r_hi")
+        .with_highlight(Some(true))
+        .with_expr("1");
+    let row_norm = RowSpec::new("r_norm").with_expr("2");
+
+    let table = TableSpec {
+        id: TableId::from("InheritanceTable"),
+        title: "Inheritance Table".to_string(),
+        columns: vec![col_highlight, col_normal],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row_hi, row_norm],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 4);
+
+    // ("r_hi", "c_hi") -> row: true, col: true -> true
+    assert!(cells[0].is_highlight);
+    // ("r_hi", "c_norm") -> row: true, col: false -> true
+    assert!(cells[1].is_highlight);
+    // ("r_norm", "c_hi") -> row: false, col: true -> true
+    assert!(cells[2].is_highlight);
+    // ("r_norm", "c_norm") -> row: false, col: false -> false
+    assert!(!cells[3].is_highlight);
 }

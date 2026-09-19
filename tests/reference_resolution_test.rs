@@ -5,7 +5,7 @@ use finx::compiler::ir::{CellGrid, CellId, SymbolTable, expand_table};
 use finx::expr::ast::{ColSelector, RowSelector, SpecialCol, SpecialRow, TableRef};
 use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
 use finx::model::table::{
-    AxisRole, CellInput, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec,
+    CellInput, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec,
 };
 use indexmap::IndexMap;
 
@@ -117,35 +117,10 @@ fn test_scenario_2_resolving_active_column_reference() {
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![
-            RowSpec {
-                id: RowId::from("rev"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: row_cells.clone(),
-            },
-            RowSpec {
-                id: RowId::from("cogs"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: None,
-                cells: row_cells.clone(),
-            },
-            RowSpec {
-                id: RowId::from("ebit"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some(
-                    "IncomeStatement[\"rev\", @col] - IncomeStatement[\"cogs\", @col]".into(),
-                ),
-                cells: IndexMap::new(),
-            },
+            RowSpec::new("rev").with_cells(row_cells.clone()),
+            RowSpec::new("cogs").with_cells(row_cells.clone()),
+            RowSpec::new("ebit")
+                .with_expr("IncomeStatement[\"rev\", @col] - IncomeStatement[\"cogs\", @col]"),
         ],
     };
 

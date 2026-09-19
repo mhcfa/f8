@@ -1,10 +1,21 @@
 use thiserror::Error;
 
+use super::format::FormatPreset;
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 /// Structured diagnostic errors for Finx specifications and model validation.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ModelError {
+    #[error(
+        "Table '{table}': {context} specifies decimals ({decimals}) for non-numeric preset '{preset}'"
+    )]
+    InvalidPrecisionForPreset {
+        table: TableId,
+        context: String,
+        preset: FormatPreset,
+        decimals: u32,
+    },
+
     #[error("Table '{table}': row '{row}' specifies unknown column '{column}' in cells")]
     UnknownCellColumn {
         table: TableId,

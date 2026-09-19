@@ -8,7 +8,7 @@ use finx::Compiler;
 use finx::model::format::FormatPreset;
 use finx::model::id::{ColId, RowId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::{AxisRole, CellInput, ColumnSpec, RowSpec, TableSpec};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use finx::value::CellValue;
 
 #[test]
@@ -50,15 +50,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         let mut cells = IndexMap::new();
         cells.insert(ColId::from("shares"), CellInput::number(shares));
         cells.insert(ColId::from("pps"), CellInput::number(pps));
-        RowSpec {
-            id: RowId::from(id),
-            role: AxisRole::Measure,
-            format: None,
-            expr: None,
-            note: None,
-            source: None,
-            cells,
-        }
+        RowSpec::new(id).with_cells(cells)
     };
 
     // Summary "total" row with point overrides for vertical SUM aggregations
@@ -78,15 +70,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         CellInput::formula("SUM(CapTable[\"founders\"..\"option_pool\", \"exit_proceeds\"])"),
     );
 
-    let total_row = RowSpec {
-        id: RowId::from("total"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: total_cells,
-    };
+    let total_row = RowSpec::new("total").with_cells(total_cells);
 
     let cap_table = TableSpec {
         id: TableId::from("CapTable"),
@@ -114,27 +98,14 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         column_groups: vec![],
         row_groups: vec![],
         rows: vec![
-            RowSpec {
-                id: RowId::from("exit_valuation"),
-                role: AxisRole::Measure,
-                format: Some(FormatPreset::Currency),
-                expr: None,
-                note: None,
-                source: None,
-                cells: exit_val_cells,
-            },
-            RowSpec {
-                id: RowId::from("exit_share_price"),
-                role: AxisRole::Measure,
-                format: Some(FormatPreset::Currency),
-                expr: Some(
-                    "Valuation[\"exit_valuation\", \"val\"] / CapTable[\"total\", \"shares\"]"
-                        .to_string(),
+            RowSpec::new("exit_valuation")
+                .with_format(Some(FormatPreset::Currency))
+                .with_cells(exit_val_cells),
+            RowSpec::new("exit_share_price")
+                .with_format(Some(FormatPreset::Currency))
+                .with_expr(
+                    "Valuation[\"exit_valuation\", \"val\"] / CapTable[\"total\", \"shares\"]",
                 ),
-                note: None,
-                source: None,
-                cells: IndexMap::new(),
-            },
         ],
     };
 

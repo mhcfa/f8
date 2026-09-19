@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::error::ModelError;
-use super::format::FormatPreset;
+use super::format::{FormatPreset, SemanticStyle};
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 /// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
@@ -36,7 +36,13 @@ pub struct ColumnSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<SemanticStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -52,7 +58,10 @@ impl ColumnSpec {
             id: id.into(),
             role: AxisRole::Measure,
             label: None,
+            style: None,
+            highlight: None,
             format: None,
+            decimals: None,
             expr: None,
             note: None,
             source: None,
@@ -65,16 +74,67 @@ impl ColumnSpec {
             id: id.into(),
             role: AxisRole::Descriptor,
             label: Some(label.into()),
+            style: None,
+            highlight: None,
             format: None,
+            decimals: None,
             expr: None,
             note: None,
             source: None,
         }
     }
 
+    /// Builder method attaching a formatting preset.
+    pub fn with_format(mut self, format: Option<FormatPreset>) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// Builder method attaching a structural style.
+    pub fn with_style(mut self, style: Option<SemanticStyle>) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Builder method attaching visual highlight emphasis.
+    pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
+        self.highlight = highlight;
+        self
+    }
+
+    /// Builder method attaching display precision.
+    pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
+        self.decimals = decimals;
+        self
+    }
+
+    /// Builder method attaching a formula expression.
+    pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
+        self.expr = Some(expr.into());
+        self
+    }
+
+    /// Builder method attaching an audit note.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
+        self
+    }
+
+    /// Builder method attaching provenance source metadata.
+    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
+        self.source = source;
+        self
+    }
+
     /// Returns the effective display label, falling back to the column ID string.
     pub fn display_label(&self) -> &str {
         self.label.as_deref().unwrap_or(self.id.as_str())
+    }
+}
+
+impl Default for ColumnSpec {
+    fn default() -> Self {
+        Self::new("")
     }
 }
 
@@ -196,7 +256,13 @@ pub struct DetailedCellInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<SemanticStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -256,11 +322,35 @@ impl CellInput {
         }
     }
 
+    /// Returns the structural style override if present.
+    pub fn style(&self) -> Option<SemanticStyle> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.style,
+        }
+    }
+
+    /// Returns the visual emphasis override if present.
+    pub fn highlight(&self) -> Option<bool> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.highlight,
+        }
+    }
+
     /// Returns the format preset override if present.
     pub fn format(&self) -> Option<FormatPreset> {
         match self {
             Self::Literal(_) => None,
             Self::Detailed(d) => d.format,
+        }
+    }
+
+    /// Returns the display precision override if present.
+    pub fn decimals(&self) -> Option<u32> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.decimals,
         }
     }
 
@@ -324,7 +414,13 @@ pub struct RowSpec {
     #[serde(default)]
     pub role: AxisRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<SemanticStyle>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -341,7 +437,10 @@ impl RowSpec {
         Self {
             id: id.into(),
             role: AxisRole::Measure,
+            style: None,
+            highlight: None,
             format: None,
+            decimals: None,
             expr: None,
             note: None,
             source: None,
@@ -354,12 +453,69 @@ impl RowSpec {
         Self {
             id: id.into(),
             role: AxisRole::Descriptor,
+            style: None,
+            highlight: None,
             format: None,
+            decimals: None,
             expr: None,
             note: None,
             source: None,
             cells: IndexMap::new(),
         }
+    }
+
+    /// Builder method attaching a formatting preset.
+    pub fn with_format(mut self, format: Option<FormatPreset>) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// Builder method attaching a structural style.
+    pub fn with_style(mut self, style: Option<SemanticStyle>) -> Self {
+        self.style = style;
+        self
+    }
+
+    /// Builder method attaching visual highlight emphasis.
+    pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
+        self.highlight = highlight;
+        self
+    }
+
+    /// Builder method attaching display precision.
+    pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
+        self.decimals = decimals;
+        self
+    }
+
+    /// Builder method attaching a formula expression.
+    pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
+        self.expr = Some(expr.into());
+        self
+    }
+
+    /// Builder method attaching an audit note.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
+        self
+    }
+
+    /// Builder method attaching cell inputs.
+    pub fn with_cells(mut self, cells: IndexMap<ColId, CellInput>) -> Self {
+        self.cells = cells;
+        self
+    }
+
+    /// Builder method attaching provenance source metadata.
+    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
+        self.source = source;
+        self
+    }
+}
+
+impl Default for RowSpec {
+    fn default() -> Self {
+        Self::new("")
     }
 }
 
@@ -430,6 +586,17 @@ impl TableSpec {
                 return Err(ModelError::DuplicateColumnId {
                     table: self.id.clone(),
                     column: col.id.clone(),
+                });
+            }
+
+            if let (Some(format), Some(decimals)) = (col.format, col.decimals)
+                && !format.is_numeric()
+            {
+                return Err(ModelError::InvalidPrecisionForPreset {
+                    table: self.id.clone(),
+                    context: format!("column '{}'", col.id),
+                    preset: format,
+                    decimals,
                 });
             }
         }
@@ -505,6 +672,17 @@ impl TableSpec {
                 return Err(ModelError::DuplicateRowId {
                     table: self.id.clone(),
                     row: row.id.clone(),
+                });
+            }
+
+            if let (Some(format), Some(decimals)) = (row.format, row.decimals)
+                && !format.is_numeric()
+            {
+                return Err(ModelError::InvalidPrecisionForPreset {
+                    table: self.id.clone(),
+                    context: format!("row '{}'", row.id),
+                    preset: format,
+                    decimals,
                 });
             }
         }
@@ -671,6 +849,16 @@ impl TableSpec {
                             table: self.id.clone(),
                             row: row.id.clone(),
                             column: col_id.clone(),
+                        });
+                    }
+                    if let (Some(format), Some(decimals)) = (d.format, d.decimals)
+                        && !format.is_numeric()
+                    {
+                        return Err(ModelError::InvalidPrecisionForPreset {
+                            table: self.id.clone(),
+                            context: format!("row '{}', column '{}' cell", row.id, col_id),
+                            preset: format,
+                            decimals,
                         });
                     }
                 }

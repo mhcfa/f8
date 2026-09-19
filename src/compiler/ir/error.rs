@@ -80,6 +80,17 @@ pub enum IrError {
         col_format: FormatPreset,
     },
 
+    #[error(
+        "Table '{table}': decimals conflict at row '{row}' ({row_decimals}) and column '{column}' ({col_decimals})"
+    )]
+    DecimalsConflict {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+        row_decimals: u32,
+        col_decimals: u32,
+    },
+
     #[error("model validation error: {0}")]
     Model(String),
 }

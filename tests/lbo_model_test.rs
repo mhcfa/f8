@@ -12,7 +12,7 @@ use finx::Compiler;
 use finx::model::format::FormatPreset;
 use finx::model::id::{ColId, RowId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::{AxisRole, CellInput, ColumnSpec, RowSpec, TableSpec};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use finx::value::CellValue;
 use indexmap::IndexMap;
 
@@ -25,15 +25,9 @@ fn build_point_row(id: &str, values: &[(&str, CellInput)]) -> RowSpec {
     for &(col, ref input) in values {
         cells.insert(ColId::from(col), input.clone());
     }
-    RowSpec {
-        id: RowId::from(id),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Number),
-        expr: None,
-        note: None,
-        source: None,
-        cells,
-    }
+    RowSpec::new(id)
+        .with_format(Some(FormatPreset::Number))
+        .with_cells(cells)
 }
 
 fn build_vector_row(id: &str, expr: &str, overrides: &[(&str, CellInput)]) -> RowSpec {
@@ -41,15 +35,10 @@ fn build_vector_row(id: &str, expr: &str, overrides: &[(&str, CellInput)]) -> Ro
     for &(col, ref input) in overrides {
         cells.insert(ColId::from(col), input.clone());
     }
-    RowSpec {
-        id: RowId::from(id),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Number),
-        expr: Some(expr.to_string()),
-        note: None,
-        source: None,
-        cells,
-    }
+    RowSpec::new(id)
+        .with_format(Some(FormatPreset::Number))
+        .with_expr(expr)
+        .with_cells(cells)
 }
 
 /// Assembles the complete 7-table, 2-sheet institutional LBO model specification.

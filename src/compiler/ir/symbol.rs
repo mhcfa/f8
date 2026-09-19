@@ -260,24 +260,8 @@ mod tests {
             column_groups: vec![],
             row_groups: vec![],
             rows: vec![
-                RowSpec {
-                    id: RowId::new("revenue"),
-                    role: AxisRole::Measure,
-                    format: None,
-                    note: None,
-                    source: None,
-                    expr: Some("100".to_string()),
-                    cells: IndexMap::new(),
-                },
-                RowSpec {
-                    id: RowId::new("cogs"),
-                    role: AxisRole::Measure,
-                    format: None,
-                    note: None,
-                    source: None,
-                    expr: Some("50".to_string()),
-                    cells: IndexMap::new(),
-                },
+                RowSpec::new("revenue").with_expr("100"),
+                RowSpec::new("cogs").with_expr("50"),
             ],
         };
 

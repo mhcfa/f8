@@ -3,9 +3,8 @@
 use finx::model::{
     AxisRole, CellInput, ColGroupId, ColId, ColumnGroup, ColumnSpec, DetailedCellInput,
     FormatPreset, FreezePanes, ModelError, ProjectManifest, RowGroup, RowGroupChild, RowGroupId,
-    RowId, RowSpec, SheetSpec, TableId, TableSpec, ValueLiteral,
+    RowId, RowSpec, SemanticStyle, SheetSpec, TableId, TableSpec, ValueLiteral,
 };
-use indexmap::IndexMap;
 use std::path::PathBuf;
 
 #[test]
@@ -331,33 +330,9 @@ fn test_scenario_8_parse_and_validate_complex_nested_row_groups() {
 fn test_valid_hierarchical_row_groups_contiguous() {
     let mut table = sample_table();
     table.rows = vec![
-        RowSpec {
-            id: RowId::from("r1"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: Some("1.0".to_string()),
-            cells: IndexMap::new(),
-        },
-        RowSpec {
-            id: RowId::from("r2"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: Some("2.0".to_string()),
-            cells: IndexMap::new(),
-        },
-        RowSpec {
-            id: RowId::from("r3"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: Some("3.0".to_string()),
-            cells: IndexMap::new(),
-        },
+        RowSpec::new("r1").with_expr("1.0"),
+        RowSpec::new("r2").with_expr("2.0"),
+        RowSpec::new("r3").with_expr("3.0"),
     ];
 
     table.row_groups = vec![RowGroup {
@@ -420,15 +395,11 @@ fn sample_table() -> TableSpec {
         columns: vec![ColumnSpec::new("col_1"), ColumnSpec::new("col_2")],
         column_groups: Vec::new(),
         row_groups: Vec::new(),
-        rows: vec![RowSpec {
-            id: RowId::from("row_1"),
-            role: AxisRole::Measure,
-            format: Some(FormatPreset::Number),
-            note: None,
-            source: None,
-            expr: Some("1.0".to_string()),
-            cells: IndexMap::new(),
-        }],
+        rows: vec![
+            RowSpec::new("row_1")
+                .with_format(Some(FormatPreset::Number))
+                .with_expr("1.0"),
+        ],
     }
 }
 
@@ -461,15 +432,7 @@ fn test_reject_duplicate_column_id() {
 #[test]
 fn test_reject_duplicate_row_id() {
     let mut table = sample_table();
-    table.rows.push(RowSpec {
-        id: RowId::from("row_1"),
-        role: AxisRole::Measure,
-        format: None,
-        note: None,
-        source: None,
-        expr: Some("2.0".to_string()),
-        cells: IndexMap::new(),
-    });
+    table.rows.push(RowSpec::new("row_1").with_expr("2.0"));
     let err = table.validate().unwrap_err();
     assert!(matches!(err, ModelError::DuplicateRowId { row, .. } if row.as_str() == "row_1"));
 }
@@ -498,15 +461,7 @@ fn test_reject_duplicate_column_group_id() {
 #[test]
 fn test_reject_duplicate_row_group_id() {
     let mut table = sample_table();
-    table.rows.push(RowSpec {
-        id: RowId::from("row_2"),
-        role: AxisRole::Measure,
-        format: None,
-        note: None,
-        source: None,
-        expr: Some("2.0".to_string()),
-        cells: IndexMap::new(),
-    });
+    table.rows.push(RowSpec::new("row_2").with_expr("2.0"));
     table.row_groups = vec![
         RowGroup {
             id: RowGroupId::from("rg1"),
@@ -612,4 +567,149 @@ fn test_reject_cyclic_row_group() {
     }];
     let err = table.validate().unwrap_err();
     assert!(matches!(err, ModelError::CyclicRowGroup { group, .. } if group.as_str() == "rg1"));
+}
+
+#[test]
+fn test_semantic_style_serde() {
+    let data: SemanticStyle = serde_json::from_str(r#""data""#).unwrap();
+    assert_eq!(data, SemanticStyle::Data);
+
+    let subtotal: SemanticStyle = serde_json::from_str(r#""subtotal""#).unwrap();
+    assert_eq!(subtotal, SemanticStyle::Subtotal);
+
+    let total: SemanticStyle = serde_json::from_str(r#""total""#).unwrap();
+    assert_eq!(total, SemanticStyle::Total);
+
+    assert_eq!(
+        serde_json::to_string(&SemanticStyle::Data).unwrap(),
+        r#""data""#
+    );
+    assert_eq!(
+        serde_json::to_string(&SemanticStyle::Subtotal).unwrap(),
+        r#""subtotal""#
+    );
+    assert_eq!(
+        serde_json::to_string(&SemanticStyle::Total).unwrap(),
+        r#""total""#
+    );
+}
+
+#[test]
+fn test_scenario_5_reject_non_numeric_preset_with_decimals_column() {
+    let mut table = sample_table();
+    table.columns[0].format = Some(FormatPreset::Date);
+    table.columns[0].decimals = Some(2);
+
+    let err = table.validate().unwrap_err();
+    match err {
+        ModelError::InvalidPrecisionForPreset {
+            context,
+            preset,
+            decimals,
+            ..
+        } => {
+            assert!(context.contains("column 'col_1'"));
+            assert_eq!(preset, FormatPreset::Date);
+            assert_eq!(decimals, 2);
+        }
+        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_scenario_5_reject_non_numeric_preset_with_decimals_row() {
+    let mut table = sample_table();
+    table.rows[0].format = Some(FormatPreset::Text);
+    table.rows[0].decimals = Some(0);
+
+    let err = table.validate().unwrap_err();
+    match err {
+        ModelError::InvalidPrecisionForPreset {
+            context,
+            preset,
+            decimals,
+            ..
+        } => {
+            assert!(context.contains("row 'row_1'"));
+            assert_eq!(preset, FormatPreset::Text);
+            assert_eq!(decimals, 0);
+        }
+        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
+    let mut table = sample_table();
+    table.rows[0].cells.insert(
+        ColId::from("col_1"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::String("abc".to_string())),
+            expr: None,
+            format: Some(FormatPreset::Text),
+            decimals: Some(2),
+            style: None,
+            highlight: None,
+            note: None,
+            source: None,
+        }),
+    );
+
+    let err = table.validate().unwrap_err();
+    match err {
+        ModelError::InvalidPrecisionForPreset {
+            context,
+            preset,
+            decimals,
+            ..
+        } => {
+            assert!(context.contains("row 'row_1', column 'col_1'"));
+            assert_eq!(preset, FormatPreset::Text);
+            assert_eq!(decimals, 2);
+        }
+        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_table_with_semantic_formatting_json_deserialization() {
+    let json_data = r#"{
+        "id": "FormattingTest",
+        "title": "Formatting Test Table",
+        "columns": [
+            { "id": "q1", "role": "measure", "style": "subtotal", "highlight": true, "decimals": 1 }
+        ],
+        "rows": [
+            {
+                "id": "net_income",
+                "role": "measure",
+                "style": "total",
+                "highlight": true,
+                "decimals": 2,
+                "cells": {
+                    "q1": {
+                        "value": 123.45,
+                        "style": "data",
+                        "highlight": false,
+                        "decimals": 4
+                    }
+                }
+            }
+        ]
+    }"#;
+
+    let table: TableSpec = serde_json::from_str(json_data).unwrap();
+    assert_eq!(table.columns[0].style, Some(SemanticStyle::Subtotal));
+    assert_eq!(table.columns[0].highlight, Some(true));
+    assert_eq!(table.columns[0].decimals, Some(1));
+
+    assert_eq!(table.rows[0].style, Some(SemanticStyle::Total));
+    assert_eq!(table.rows[0].highlight, Some(true));
+    assert_eq!(table.rows[0].decimals, Some(2));
+
+    let cell = table.rows[0].cells.get(&ColId::from("q1")).unwrap();
+    assert_eq!(cell.style(), Some(SemanticStyle::Data));
+    assert_eq!(cell.highlight(), Some(false));
+    assert_eq!(cell.decimals(), Some(4));
+    assert!(table.validate().is_ok());
 }
