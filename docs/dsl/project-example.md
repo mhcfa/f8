@@ -129,7 +129,8 @@ A multi-period forecast statement demonstrating column groups, forward growth ve
     },
     {
       "id": "gross_profit",
-      "format": "currency_total",
+      "style": "subtotal",
+      "format": "currency",
       "expr": "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
       "cells": {
         "line_item": "Gross Profit"

@@ -85,7 +85,8 @@ Rows can be organized into structural sections and calculation aggregates using 
     { "id": "g_and_a", "expr": "..." },
     {
       "id": "total_opex",
-      "format": "currency_total",
+      "style": "subtotal",
+      "format": "currency",
       "expr": "SUM(IncomeStatement[rows.opex, @col])",
       "cells": {
         "line_item": "Total Operating Expenses"
@@ -123,7 +124,8 @@ Rows can be organized into structural sections and calculation aggregates using 
     { "id": "inventory", "expr": "..." },
     {
       "id": "total_current_assets",
-      "format": "currency_total",
+      "style": "subtotal",
+      "format": "currency",
       "expr": "SUM(BalanceSheet[rows.current_assets, @col])",
       "cells": { "line_item": "Total Current Assets" }
     },
@@ -132,13 +134,15 @@ Rows can be organized into structural sections and calculation aggregates using 
     { "id": "intangibles", "expr": "..." },
     {
       "id": "total_non_current_assets",
-      "format": "currency_total",
+      "style": "subtotal",
+      "format": "currency",
       "expr": "SUM(BalanceSheet[rows.non_current_assets, @col])",
       "cells": { "line_item": "Total Non-Current Assets" }
     },
     {
       "id": "total_assets",
-      "format": "currency_total",
+      "style": "total",
+      "format": "currency",
       "expr": "BalanceSheet[\"total_current_assets\", @col] + BalanceSheet[\"total_non_current_assets\", @col]",
       "cells": { "line_item": "Total Assets" }
     }

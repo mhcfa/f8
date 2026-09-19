@@ -58,7 +58,8 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
     },
     {
       "id": "gross_profit",
-      "format": "currency_total",
+      "style": "subtotal",
+      "format": "currency",
       "expr": "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
       "cells": {
         "line_item": "Gross Profit",
@@ -96,8 +97,8 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
   "columns": [
     { "id": "investor", "role": "descriptor", "label": "Investor Name" },
     { "id": "share_class", "role": "descriptor", "label": "Share Class" },
-    { "id": "shares", "label": "Shares Held", "format": "integer" },
-    { "id": "share_price", "label": "Issue Price", "format": "currency" },
+    { "id": "shares", "label": "Shares Held", "format": "number" },
+    { "id": "share_price", "label": "Issue Price", "format": "currency", "decimals": 2 },
     {
       "id": "invested_capital",
       "label": "Invested Capital",
@@ -142,7 +143,7 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
     },
     {
       "id": "total",
-      "format": "currency_total",
+      "style": "total",
       "cells": {
         "investor": "Total",
         "shares": { "expr": "SUM(CapTable[\"founders\"..\"series_a\", \"shares\"])" },

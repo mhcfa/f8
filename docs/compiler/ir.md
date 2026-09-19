@@ -86,12 +86,27 @@ flowchart TD
 ### 3.2. Format Preset Resolution Algorithm
 
 1. **Cell format override**: An explicit point format declared on the cell always wins.
-2. **Descriptor boundary**: A `descriptor` axis specifies text formatting for its labels. Measure formats (`currency`, `percentage`) never broadcast to descriptor coordinates.
-3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing format presets (e.g. `row.format: "currency_total"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
+2. **Descriptor boundary**: A `descriptor` axis specifies text formatting for its labels. Measure formats (`currency`, `number`, `percentage`, etc.) never broadcast to descriptor coordinates.
+3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing format presets (e.g. `row.format: "currency"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
 4. **Single vector format**: If only the row or only the column specifies a format preset, that preset applies.
 5. **Default**: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.
 
-### 3.3. Note & Provenance Resolution
+### 3.3. Precision (Decimals) Resolution Algorithm
+
+1. **Cell decimals override**: An explicit `decimals` declared on the cell always wins.
+2. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` without an explicit cell override, compilation halts with `DecimalsConflictError`.
+3. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
+4. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
+
+### 3.4. Semantic Style & Highlight Resolution Algorithm
+
+1. **Structural style precedence**: `cell.style.or(row.style).or(col.style).unwrap_or(SemanticStyle::Data)`.
+   - Explicit `style: "data"` on a cell explicitly suppresses inherited summary borders from row or column totals (e.g. memo or descriptor cells).
+2. **Symmetrical border composition**: If both row and column define structural styles (e.g. Total row $\times$ Total column), both horizontal and vertical borders apply, forming an accounting total intersection block.
+3. **Highlight precedence**: `cell.highlight.unwrap_or(row.highlight || col.highlight)`.
+   - Point override `highlight: false` explicitly un-highlights a cell even if its row or column is highlighted.
+
+### 3.5. Note & Provenance Resolution
 
 - **Precedence**: `Cell.note > Row.note > Col.note`.
 - **Inheritance**: A cell inherits its row or column note/source unless explicitly overridden at the cell level.
@@ -108,7 +123,8 @@ Each expanded cell node contains:
 - **Payload**: Either:
   - `Literal(ValueLiteral)`: Number, string, boolean, or null.
   - `Formula(AstNode)`: Parsed expression AST containing reference targets.
-- **Formatting**: Resolved format preset token (e.g. `currency`, `percentage`, `text`).
+- **Formatting & Precision**: Resolved format preset token (`FormatPreset`) and optional display precision (`decimals: Option<u32>`).
+- **Style**: Resolved structural style (`SemanticStyle`) and visual emphasis flag (`is_highlight: bool`).
 - **Notes & Provenance**: Inherited or overridden note string and provenance metadata.
 - **Spatial Position**: Populated later by the layout engine (`sheet_name`, `col_idx`, `row_idx`).
 

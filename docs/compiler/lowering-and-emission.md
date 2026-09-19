@@ -45,12 +45,15 @@ The binary emitter streams the spatial layout, styling, and lowered formulas int
 1. **Calculation configuration**: Sets calculation properties in workbook XML:
    - `calcPr.iterate = false` (enforcing zero circularity).
    - `calcPr.fullCalcOnLoad = true` (requesting full calculation on first open).
-2. **Format cache**: Deduplicates styles, fonts, borders, fills, and number format strings.
-3. **Cell streaming**:
-   - **Literal cells**: Emitted via `write_number`, `write_string`, or `write_boolean`.
-   - **Formula cells**: Emitted via `write_formula`. In standard builds, each formula cell is pre-populated with its in-memory evaluated result (`set_result`). This ensures non-Excel viewers (Apple Numbers, macOS Quick Look, Google Drive preview, pandas, LibreOffice) display valid numbers immediately without an Excel recalculation pass.
+2. **Format cache & theme translation**: Deduplicates styles, fonts, borders, fills, and number format strings by translating each coordinate's `StyleRole` and resolved `(format, decimals)` tuple through the active `Theme`, dynamically synthesizing concrete Excel number format masks via `{dec}` template expansion.
+3. **Deterministic metadata & reproducible compilation**:
+   - Workbook package properties (`docProps/core.xml`) are populated deterministically.
+   - Dynamic wall-clock timestamps are omitted to ensure bit-for-bit reproducible binary outputs across identical Git commits (respecting `SOURCE_DATE_EPOCH`).
+4. **Cell streaming**:
+   - **Literal cells**: Emitted via `write_number_with_format`, `write_string_with_format`, or `write_boolean_with_format`.
+   - **Formula cells**: Emitted via `write_formula_with_format`. In standard builds, each formula cell is pre-populated with its in-memory evaluated result (`set_result`). This ensures non-Excel viewers (Apple Numbers, macOS Quick Look, Google Drive preview, pandas, LibreOffice) display valid numbers immediately without an Excel recalculation pass.
    - **Values-only freezing**: When compiled with `--values-only`, formula cells are emitted as pure literals, producing frozen workbooks suitable for M&A data rooms and audit baselines.
-4. **Finalization**: Compresses and saves the OpenXML package.
+5. **Finalization**: Compresses and saves the OpenXML package.
 
 ---
 
@@ -60,4 +63,4 @@ Because the in-memory evaluator maintains the complete `CellValue` matrix across
 
 - **JSON / CSV / Parquet**: Exports evaluated tables directly to structured files for AI agent consumption, CI/CD verification, and database pipelines.
 
-See [Spatial Layout Planning](spatial-layout.md) for grid assignment, [In-Memory Evaluator](./evaluator.md) for precalculated cache values, and [Addressing Syntax](../dsl/addressing.md) for input reference formats.
+See [Spatial Layout Planning](spatial-layout.md) for grid assignment, [Semantic Formatting & Themes](../dsl/formatting.md) for theme configurations, [In-Memory Evaluator](./evaluator.md) for precalculated cache values, and [Addressing Syntax](../dsl/addressing.md) for input reference formats.

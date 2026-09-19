@@ -1,64 +1,142 @@
 # Spatial Layout Planning
 
-This document specifies Finx's spatial layout engine (Pass 5), mapping semantic tables and row structures into physical 2D grid coordinates on Excel worksheets.
+This document specifies Finx's spatial layout engine (Pass 5), mapping semantic tables, hierarchical row groups, and column groups into physical 2D grid coordinates on Excel worksheets.
 
 ## 1. Overview
 
-The spatial layout engine arranges tables, row stubs, column headers, and gutters onto sheets, computing concrete row and column indices for each cell before formula lowering.
+The spatial layout engine arranges tables, title banners, super-headers, column headers, data rows, section headers, and gutters onto sheets. It computes concrete row and column indices, derives outline levels, resolves sheet-wide column widths and row heights using theme metrics, and assigns semantic style roles before formula lowering.
 
 ```mermaid
 flowchart TD
-    A["Cell IR & Symbol Table"] --> B["Spatial Layout Engine"]
-    B --> C["Assign Sheet Boundaries & Tab Properties"]
-    B --> D["Stack Tables Vertically with Configured Gutters"]
-    B --> E["Compute Coordinate Matrix:\nCellId -> (Sheet, ColIdx, RowIdx)"]
+    A["Cell IR & Symbol Table"] --> B["Spatial Layout Engine (Pass 5)"]
+    T["Theme Metrics (Font, Sizes)"] --> B
+    B --> C["Sheet Margins & Vertical Table Stacking"]
+    B --> D["Interleave Section Headers from Row Groups"]
+    B --> E["Arbitrate Sheet-Wide Column Widths & Row Heights"]
+    B --> F["Generate LayoutMap:\nCoordinates, Bounding Boxes, Style Roles"]
 ```
 
 ---
 
-## 2. Vertical Stacking & Grid Structure
+## 2. Worksheet Margins & Table Placement
 
-Within each worksheet, tables stack vertically in the order declared in `finx.json`.
+Within each worksheet, tables stack vertically in the order declared in `finx.json` by default.
 
-### 2.1. Column Structure
-- **Explicit 1:1 Column Mapping**: Table columns $0 \dots C-1$ map directly to physical worksheet column offsets starting at column index 0 (or configured sheet margin). The compiler never injects implicit, unaddressed stub columns (e.g. magic Columns A and B).
-- **Descriptor Anchoring**: Designated descriptor columns (`role: "descriptor"`) anchor line item descriptions, units, and categories.
-  - **Hierarchy Indentation**: The primary (first declared) descriptor column receives indentation typography and collapsible outline levels (`[+]` / `[-]`) derived from `row_groups` tree depth.
-  - **Category Section Rows**: Parent `row_groups` emit styled section headers across descriptor columns with distinct typography, without allocating calculation `CellId` nodes.
-
-### 2.2. Row Structure & Headers
-1. **Table Title Row**: Optional styled title banner.
-2. **Super-Headers**: Emitted when `column_groups` are present (spanning group child columns).
-3. **Column Key Headers**: Primary column header row displaying column labels or IDs.
-4. **Data Rows**: Expanded rows containing calculation or literal cells.
-5. **Gutter Rows**: Configurable blank rows (default: 2) placed between adjacent stacked tables to prevent coordinate collisions.
-
-### 2.3. Multi-Table Modularity
-Stacked tables on the same sheet remain structurally independent:
-- Tables do not need to share identical column counts, column keys, or timeline spans.
-- An assumptions table with 1 data column can precede a 5-column forecast table on the same worksheet.
-- Semantic formula references resolve via `Table[row, col]`, decoupled from physical grid locations.
-- **Sheet-wide column width resolution**: Because Excel column widths apply sheet-wide, physical column width for any column index $c$ is computed as the maximum required width across all stacked tables sharing that column:
-  $$\text{ColWidth}(c) = \max_{T \in \text{StackedTables}} \text{RequiredWidth}(T, c)$$
-- **Modeling practice vs. compiler concern**: The layout engine applies the maximum required width to guarantee zero text clipping or `###` numeric overflow. Aligning column structures or isolating tables with disparate timelines onto dedicated worksheets is treated as a modeling practice (e.g. FAST Standard guidelines) rather than an artificial compiler barrier.
+### 2.1. Sheet margins and gutters
+- **Default sheet margins**: Institutional models start with visual breathing room rather than flush at `A1`. By default, the layout engine applies:
+  - Top margin: 1 blank row (row index 0).
+  - Left margin: 1 blank column (column index 0 / Column A as gutter).
+  - Primary table origin: cell `B2` (row index 1, column index 1).
+- **Inter-table gutters**: Configurable blank rows (default: 2 blank rows) separate vertically stacked tables to cleanly isolate distinct financial statements (e.g. Income Statement above Balance Sheet).
+- **Configurable placement**:
+  - `StackVertical` (default): Places the table below the preceding table separated by `gutter_rows`.
+  - `Explicit`: Places the table at a specified `(start_row, start_col)` coordinate (e.g. for side-by-side Sources and Uses or KPI summary blocks).
 
 ---
 
-## 3. Worksheet-Level Properties
+## 3. Table Header & Row Structure
 
-The layout engine applies worksheet attributes defined in the project manifest:
-- **`freeze_panes`**: Freezes header rows and descriptor columns (`{"row": 4, "col": 2}`).
-- **`tab_color`**: Applies visual hex color to worksheet tabs in Excel.
+Every table occupies a contiguous physical bounding box computed from its header components, data rows, and hierarchical group structure:
+
+$$\text{TableRows} = \text{TitleRow} + \text{SuperHeaderRows} + \text{ColumnHeaderRow} + \text{DataRows} + \text{SectionHeaderRows}$$
+
+### 3.1. Header rows
+1. **Table title row (optional)**: 1 row displaying the table title banner, formatted with elevated typography from the theme.
+2. **Super-header rows (optional)**: 1 row per `column_groups` tier. Spans across grouped child column indices (e.g. "Historical Periods" spanning columns `2021A..2023A`, "Forecast Periods" spanning `2024E..2028E`).
+3. **Column key header row**: 1 row displaying column display labels or identifiers.
+
+### 3.2. Section headers & row hierarchy
+- **Visual section header rows**: When `row_groups` define hierarchical categories (e.g. "Operating Expenses" grouping `r&d`, `s&m`, and `g&a`), the layout engine inserts a dedicated visual section header row:
+  - Consumes 1 physical worksheet row.
+  - Displays the group label in the primary descriptor column.
+  - Remains blank across measure columns (or styled with group background shading).
+  - Allocates no calculation `CellId` node in the DAG.
+- **Hierarchy indentation & outline levels**:
+  - Indents descriptor text according to tree depth in `row_groups`.
+  - Computes Excel outline levels (`group_level: 1..7`) to enable native collapsible grouping `[+]` / `[-]`.
+- **Subtotal & total rows**: Rows, columns, and cell overrides configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` are mapped with accounting borders (top thin, bottom double for rows and cells; left thin, right double for columns) and summary outline properties.
+
+---
+
+## 4. Column Structure & Sheet-Wide Arbitration
+
+### 4.1. Explicit 1:1 column mapping
+Table columns $0 \dots C-1$ map directly to worksheet column offsets relative to the table's starting column. The compiler never injects implicit, unaddressed stub columns.
+
+### 4.2. Sheet-wide column width resolution
+Because Excel column widths apply across the entire worksheet:
+- Physical column width for any column index $c$ is computed as the maximum required width across all stacked tables sharing that column:
+  $$\text{ColWidth}(c) = \max_{T \in \text{StackedTables}} \text{RequiredWidth}(T, c)$$
+- **Width calculation**:
+  - Based on maximum string length of headers, formatted literals, and evaluate cache values.
+  - Scaled by theme font family and size metrics.
+  - Enforces a safe minimum column width (default: 12.0 character widths) on measure columns to prevent `###` numeric overflow on formatted currency, percentage, and negative numbers with parentheses.
+
+### 4.3. Typography-aware row heights
+Row heights are assigned based on theme typography:
+- Table title rows: default 24.0 pt.
+- Super-header and column header rows: default 18.0 pt.
+- Section category rows: default 18.0 pt.
+- Standard data rows: default 15.0 pt.
+
+---
+
+## 5. Worksheet Properties & Freeze Panes
+
+- **`freeze_panes`**: Optional explicit physical coordinates `{ row: R, col: C }` configured in `SheetSpec`. When present, freezes rows above index $R$ and columns to the left of index $C$. Omitted (`None`) for unpinned sheets.
+- **`tab_color`**: Optional hex color string applied to the worksheet tab.
 - **`show_gridlines`**: Configures workbook gridline visibility (default: `true`).
 
 ---
 
-## 4. Coordinate Matrix Output
+## 6. Output Data Contract (`LayoutMap`)
 
-The spatial layout pass produces a deterministic lookup table:
+Pass 5 produces a deterministic layout contract consumed by Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission):
 
-$$\text{LayoutMap}: \text{CellId} \rightarrow (\text{SheetId}, \text{ColIdx}, \text{RowIdx})$$
+```rust
+pub struct LayoutMap {
+    /// Physical location and style role for every CellId.
+    pub cells: IndexMap<CellId, PhysicalCoordinate>,
+    /// Bounding boxes and header offsets for every table.
+    pub tables: IndexMap<TableId, TablePlacement>,
+    /// Sheet-level layout metrics, widths, heights, and visual rows.
+    pub sheets: IndexMap<SheetId, SheetLayout>,
+}
 
-This mapping provides the physical target coordinates consumed by the formula lowering engine.
+pub struct PhysicalCoordinate {
+    pub sheet: SheetId,
+    pub col: u32,
+    pub row: u32,
+    pub a1: String,
+    pub style_role: StyleRole,
+}
 
-See [Intermediate Representation (IR)](ir.md) for input cell structures and [Formula Lowering & Emission](lowering-and-emission.md) for coordinate translation and workbook writing.
+pub struct StyleRole {
+    pub semantic_style: SemanticStyle,
+    pub is_highlight: bool,
+}
+
+pub struct TablePlacement {
+    pub sheet: SheetId,
+    pub start_col: u32,
+    pub start_row: u32,
+    pub end_col: u32,
+    pub end_row: u32,
+    pub title_row: Option<u32>,
+    pub super_header_rows: Vec<SuperHeaderPlacement>,
+    pub col_header_row: u32,
+    pub data_row_range: (u32, u32),
+}
+
+pub struct SheetLayout {
+    pub sheet: SheetId,
+    pub col_widths: IndexMap<u32, f64>,
+    pub row_heights: IndexMap<u32, f64>,
+    pub section_header_rows: Vec<SectionHeaderRow>,
+    pub freeze_panes: Option<FreezePanes>,
+    pub show_gridlines: bool,
+    pub tab_color: Option<String>,
+}
+```
+
+See [Semantic Formatting & Themes](../dsl/formatting.md) for theme structure, and [Formula Lowering & Emission](lowering-and-emission.md) for coordinate translation and workbook writing.

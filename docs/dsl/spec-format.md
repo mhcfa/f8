@@ -68,8 +68,11 @@ Each table file defines an orthogonal 2D matrix with symmetrical row and column 
     {
       "id": "string",
       "role": "measure | descriptor (optional, default: measure)",
+      "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
+      "highlight": "boolean (optional, default: false)",
       "label": "string (optional, defaults to id)",
       "format": "FormatPreset (optional)",
+      "decimals": "integer (optional, fractional display precision)",
       "expr": "string (optional, column-wide vector formula)",
       "note": "string (optional)",
       "source": "string or object (optional)"
@@ -93,7 +96,10 @@ Each table file defines an orthogonal 2D matrix with symmetrical row and column 
     {
       "id": "string",
       "role": "measure | descriptor (optional, default: measure)",
+      "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
+      "highlight": "boolean (optional, default: false)",
       "format": "FormatPreset (optional)",
+      "decimals": "integer (optional, fractional display precision)",
       "expr": "string (optional, row-wide vector formula)",
       "note": "string (optional)",
       "source": "string or object (optional)",
@@ -110,11 +116,14 @@ Both columns and rows explicitly declare their calculation role:
 - **`measure` (default)**: Numerical quantities, time periods, and calculation outputs. Vector formulas broadcast across opposing measure axes.
 - **`descriptor`**: Line-item names, categorical labels, units, tickers, and presentation stubs. Vector formulas and measure formats never broadcast into or across descriptor axes.
 
-### 3.2. Cell Input Syntax (`cells`)
+### 3.2. Semantic Styles (`style`), Highlights (`highlight`), & Precision (`decimals`)
+Columns and rows can declare structural presentation styles (`data`, `subtotal`, `total`), visual emphasis (`highlight: true`), and numeric display precision (`decimals: integer`), completely decoupled from number format masks. See [Semantic Formatting & Themes](formatting.md#3-structural-semantic-styles-semanticstyle).
+
+### 3.3. Cell Input Syntax (`cells`)
 Every key under `row.cells` is strictly a discrete column identifier (`ColId`). Each entry represents strictly one 0D coordinate point:
 - **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
 - **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
-- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency" }`.
+- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency", "decimals": 2, "style": "total", "highlight": true }`. Cell overrides can declare any format preset, precision override, structural style (`data`, `subtotal`, `total`), or highlight flag. An explicit `style: "data"` suppresses inherited row/column total borders.
 
 ---
 
