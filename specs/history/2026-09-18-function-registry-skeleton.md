@@ -44,7 +44,7 @@ Implement the foundational runtime value system (`finx::value`), the extensible 
     - `IF`: Conditional branch (`ParamKind::Lazy`, arity 2..=3). Evaluates condition eagerly; lazily evaluates only the chosen branch; defaults omitted false branch (`_` or missing 3rd arg) to `CellValue::Boolean(false)`.
   - Comprehensive unit and integration test suite in `tests/function_registry_test.rs`.
 - **Prerequisites / Dependencies**:
-  - Formula boolean literals (`TRUE`, `FALSE`) and omitted argument placeholders (`Expr::Omitted`) implemented via [`specs/drafts/2026-09-18-formula-boolean-and-omitted-arguments.md`](specs/drafts/2026-09-18-formula-boolean-and-omitted-arguments.md).
+  - Formula boolean literals (`TRUE`, `FALSE`) and omitted argument placeholders (`Expr::Omitted`) implemented via [`2026-09-18-formula-boolean-and-omitted-arguments.md`](./2026-09-18-formula-boolean-and-omitted-arguments.md).
 - **Out-of-scope**:
   - In-memory topological evaluator walking `DependencyGraph` (Phase 4B: `finx::compiler::eval`).
   - Remaining standard catalog functions (Financial: `XIRR`, `NPV`, `PMT`; Date: `YEARFRAC`, `DATE`; Lookup: `XLOOKUP`, `INDEX`).

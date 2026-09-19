@@ -105,4 +105,4 @@ impl EvaluatedModel {
 }
 ```
 
-See [Dependency Graph](dependency-graph.md) for DAG construction, [Function Registry](../functions/registry.md) for function contracts, and [Excel Parity](parity.md) for calculation parity rules.
+See [Dependency Graph](./dependency-graph.md) for DAG construction, [Function Registry](../functions/registry.md) for function contracts, and [Excel Parity](parity.md) for calculation parity rules.

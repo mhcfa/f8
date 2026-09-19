@@ -3,15 +3,17 @@
 //! Provides the `ExcelFunction` trait, parameter definitions, and built-in
 //! Excel functions documented in `docs/functions/registry.md` and `docs/functions/catalog.md`.
 
+pub mod common;
+pub mod date;
 pub mod error;
+pub mod financial;
 pub mod logical;
+pub mod lookup;
 pub mod math;
 pub mod registry;
 pub mod traits;
 
 pub use error::FunctionError;
-pub use logical::IfFunction;
-pub use math::{AbsFunction, SumFunction};
 pub use registry::FunctionRegistry;
 pub use traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,

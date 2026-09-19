@@ -79,15 +79,23 @@ Excel represents dates as floating-point day counts rather than a dedicated prim
   $$\text{excel\_serial} = \frac{\text{unix\_timestamp\_seconds}}{86400.0} + 25569.0$$
 - **No implicit string coercion**: Date arithmetic and date functions require explicit numeric serial dates or explicit `DATE(year, month, day)` constructor expressions. Passing string literals (e.g. `"2024-01-31"`) directly into date math is prohibited to prevent locale-dependent parsing errors across regional spreadsheet environments.
 
-### 4.2. Date Difference & Stepping
+### 4.2. The 1900 Leap Year Bug (Lotus 1-2-3 Parity)
+In 1983, Lotus 1-2-3 incorrectly assumed that the year 1900 was a leap year, failing to account for the Gregorian rule that century years are not leap years unless divisible by 400. Microsoft Excel intentionally replicated this bug in 1987 to maintain full backward compatibility with Lotus 1-2-3 spreadsheets, treating February 29, 1900 as a valid date with serial day `60.0`. Microsoft has officially documented that this bug will never be fixed to prevent invalidating existing spreadsheets.
+
+To maintain bit-for-bit Excel calculation parity:
+- **Serial day 60.0**: Serial day `60.0` represents `1900-02-29`.
+- **Offset for modern dates**: Every calendar date on or after March 1, 1900 (serial day $\ge 61.0$) carries a $+1$ day offset relative to an astronomical day count from January 1, 1900.
+- **Universal adoption**: All calendar transformations, date constructors (`DATE`), date component extractors (`DAY`, `MONTH`, `YEAR`), month offset utilities (`EDATE`, `EOMONTH`), and day-count calculators (`DAYS`, `YEARFRAC`) strictly adhere to the 1900 leap year system.
+
+### 4.3. Date Difference & Stepping
 - **Day differences**: Subtracting two date numbers yields elapsed days ($\Delta d = d_2 - d_1$).
 - **Month stepping (`EDATE`, `EOMONTH`)**: Adding or subtracting calendar months adjusts year and month components while clamping the day to the last valid day of the target month (e.g. `EDATE(DATE(2024, 1, 31), 1)` clamps to `2024-02-29` in leap years).
 
-### 4.3. Discounting Year Fractions (`XNPV` & `XIRR`)
+### 4.4. Discounting Year Fractions (`XNPV` & `XIRR`)
 Non-periodic discounting functions use the Actual/365 convention with a fixed annual divisor of `365.0`:
 $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 
-### 4.4. Contractual Day Count Conventions (`YEARFRAC`)
+### 4.5. Contractual Day Count Conventions (`YEARFRAC`)
 `YEARFRAC(start_date, end_date, [basis])` supports standard financial day count conventions:
 
 | Basis | Day count convention | Annual divisor | Primary modeling use case |
@@ -103,7 +111,47 @@ $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 
 ---
 
-## 5. Range Slicing & Error Propagation
+## 5. Conditional Criteria & *IFS Evaluation Parity
+
+Finx provides 1:1 parity with Excel's criteria evaluation engine across the `*IFS` family (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`).
+
+### 5.1. Standardized Plural Signatures
+Finx standardizes exclusively on modern plural `*IFS` signatures where the primary target aggregation range is always positioned first:
+- `SUMIFS(sum_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
+- `COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
+- `AVERAGEIFS(average_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
+- `MINIFS(min_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
+- `MAXIFS(max_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
+
+Legacy singular variants (`SUMIF`, `COUNTIF`, `AVERAGEIF`), which invert argument ordering by placing the target aggregation range last, are omitted to enforce consistency and eliminate parameter ordering bugs.
+
+### 5.2. Criteria Evaluation Engine
+The criteria argument accepts numbers, strings, cell references, or logical comparisons evaluated against each element in `criteria_range_k`:
+- **Exact equality**: Numeric (`42`), boolean (`TRUE`), or string (`"US"`) matching. String comparison is case-insensitive ASCII matching (`CellValue::excel_eq`).
+- **Relational comparison prefixes**: Strings containing leading operators (`">"`, `"<"`, `">="`, `"<="`, `"<>"`, `"="`). For example, `">0"` or `"<=" & Assumptions["hurdle_rate", "value"]`.
+- **Wildcard matching**: Text criteria support wildcard characters:
+  - `?`: Matches any single character.
+  - `*`: Matches any sequence of zero or more characters.
+  - `~`: Escape character to match literal `~?`, `~*`, or `~~`.
+- **Non-blank criteria**: `"<>"` matches non-empty cells.
+- **Empty cell matching**: `""` matches blank cells.
+
+### 5.3. Dimensional Conformity Invariant
+Every `criteria_range_k` must have identical row count and column count to the primary target range (`sum_range`, `average_range`, `min_range`, `max_range`, or the first `criteria_range1` for `COUNTIFS`). If dimensions differ, evaluation returns `ExcelError::Value` (`#VALUE!`).
+
+### 5.4. No Formula Translation Surprise
+Finx evaluates criteria expressions natively during in-memory topological calculation and emits identical `=SUMIFS(...)` formulas during Excel binary emission. Finx does not invent bespoke syntax for `*IFS` in the DSL, ensuring complete alignment between the written model specification and the emitted Excel formula bar.
+
+### 5.5. Canonical Role Over SUMPRODUCT
+In Excel, modelers occasionally emulate conditional filtering in `SUMPRODUCT` via intermediate boolean array expressions (e.g. `-- (region = "US")`). However:
+- Per Excel standard semantics, `SUMPRODUCT` treats non-numeric cells (text strings, empty cells, booleans) directly as `0.0`.
+- Finx strictly prohibits intermediate array arithmetic (such as evaluating comparison operators over entire vector slices) to maintain zero dynamic spill, static DAG analysis, and compile-time determinism.
+
+Consequently, the `*IFS` family and its criteria evaluation engine serve as the **single canonical mechanism** in Finx for multi-criteria range filtering across text labels, numeric thresholds, and dates.
+
+---
+
+## 6. Range Slicing & Error Propagation
 
 - **Slices**: Range references (e.g. `Table["row", "2024E".."2028E"]` or `Table[rows.opex, @col]`) resolve to ordered vectors of `CellValue`.
 - **Multi-dimensional flattening**: Aggregators (`SUM`, `MAX`, `MIN`) flatten multi-dimensional slices before calculation.
@@ -111,9 +159,9 @@ $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 
 ---
 
-## 6. Deterministic Purity (Zero Volatile Functions)
+## 7. Deterministic Purity (Zero Volatile Functions)
 
 - **Zero volatile functions**: Functions with runtime environmental dependencies (`TODAY`, `NOW`, `RAND`, `RANDBETWEEN`) are strictly excluded from Finx V1.
 - **Explicit assumption parameters**: All timeline dates and modeling milestones must be supplied via explicit static parameters (e.g. `Assumptions["as_of_date", "value"]` or `Assumptions["model_start_date", "value"]`). This guarantees that headless execution, CI/CD pipelines, and opened Excel workbooks remain bit-for-bit identical and never desynchronize over time.
 
-See [In-Memory Evaluator](evaluator.md) for DAG execution, [Function Registry](../functions/registry.md) for registry traits, and [Standard Catalog](../functions/catalog.md) for catalog definitions.
+See [In-Memory Evaluator](./evaluator.md) for DAG execution, [Function Registry](../functions/registry.md) for registry traits, and [Standard Catalog](../functions/catalog.md) for catalog definitions.

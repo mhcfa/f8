@@ -43,8 +43,8 @@ Introduce first-class boolean literals (`TRUE`, `FALSE`) and an explicit omitted
     - Update existing parser test in `tests/formula_parser_test.rs` from `null` to `_`.
     - Add unit tests in `src/expr/parser.rs` verifying boolean parsing, argument omission, identifier preservation, and rejection of `_` and `null` in invalid positions.
 - **Out-of-scope**:
-  - Function signature validation and argument binding (covered in [`specs/drafts/2026-09-18-function-registry-skeleton.md`](specs/drafts/2026-09-18-function-registry-skeleton.md)).
-  - Runtime calculation values `CellValue` and `ExcelError` (covered in [`specs/drafts/2026-09-18-function-registry-skeleton.md`](specs/drafts/2026-09-18-function-registry-skeleton.md)).
+  - Function signature validation and argument binding (covered in [`2026-09-18-function-registry-skeleton.md`](./2026-09-18-function-registry-skeleton.md)).
+  - Runtime calculation values `CellValue` and `ExcelError` (covered in [`2026-09-18-function-registry-skeleton.md`](./2026-09-18-function-registry-skeleton.md)).
   - Topological evaluation (Phase 4B: `compiler::eval`).
 
 ### What Changes

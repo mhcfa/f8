@@ -369,12 +369,81 @@ fn resolve_col_selector(
     }
 }
 
+/// Two-dimensional slice of resolved cell coordinates preserving matrix dimensions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSlice {
+    /// Number of rows in the resolved slice.
+    pub rows: usize,
+    /// Number of columns in the resolved slice.
+    pub cols: usize,
+    /// Flattened row-major list of cell coordinates.
+    pub cells: Vec<CellId>,
+}
+
+impl ResolvedSlice {
+    /// Creates a new `ResolvedSlice` with specified row and column dimensions.
+    #[must_use]
+    pub fn new(rows: usize, cols: usize, cells: Vec<CellId>) -> Self {
+        Self { rows, cols, cells }
+    }
+
+    /// Returns `true` if the slice contains no cells.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.cells.is_empty()
+    }
+
+    /// Returns the total number of cells in the slice.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.cells.len()
+    }
+
+    /// Borrows the resolved cells as a slice.
+    #[must_use]
+    pub fn cells(&self) -> &[CellId] {
+        &self.cells
+    }
+
+    /// Consumes the slice and returns the underlying vector of cell coordinates.
+    #[must_use]
+    pub fn into_cells(self) -> Vec<CellId> {
+        self.cells
+    }
+}
+
+impl std::ops::Deref for ResolvedSlice {
+    type Target = [CellId];
+
+    fn deref(&self) -> &Self::Target {
+        &self.cells
+    }
+}
+
+impl IntoIterator for ResolvedSlice {
+    type Item = CellId;
+    type IntoIter = std::vec::IntoIter<CellId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.cells.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ResolvedSlice {
+    type Item = &'a CellId;
+    type IntoIter = std::slice::Iter<'a, CellId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.cells.iter()
+    }
+}
+
 /// Resolves a single TableRef expression in the context of an evaluating cell coordinate.
 pub fn resolve_table_ref(
     origin: &CellId,
     table_ref: &TableRef,
     symbol_table: &SymbolTable,
-) -> Result<Vec<CellId>, ResolveError> {
+) -> Result<ResolvedSlice, ResolveError> {
     let origin_table = symbol_table
         .get_table(&origin.table)
         .ok_or_else(|| ResolveError::unregistered_table(origin, origin.table.clone()))?;
@@ -386,7 +455,9 @@ pub fn resolve_table_ref(
     let rows = resolve_row_selector(origin, target_table, origin_table, &table_ref.row)?;
     let cols = resolve_col_selector(origin, target_table, origin_table, &table_ref.col)?;
 
-    let mut resolved = Vec::with_capacity(rows.len() * cols.len());
+    let num_rows = rows.len();
+    let num_cols = cols.len();
+    let mut resolved = Vec::with_capacity(num_rows * num_cols);
     for row in rows {
         for col in &cols {
             resolved.push(CellId::new(
@@ -396,7 +467,7 @@ pub fn resolve_table_ref(
             ));
         }
     }
-    Ok(resolved)
+    Ok(ResolvedSlice::new(num_rows, num_cols, resolved))
 }
 
 /// Traverses all formulas in the cell grid, resolving each cell's references into discrete target CellIds.
