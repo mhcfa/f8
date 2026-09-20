@@ -350,7 +350,7 @@ pub fn expand_grid(symbol_table: &SymbolTable, tables: &[TableSpec]) -> Result<C
 }
 
 /// Helper to match a path string from `SheetSpec.tables` to a `TableId`.
-fn matches_table_id(path: &Path, table_id: &TableId) -> bool {
+pub fn matches_table_id(path: &Path, table_id: &TableId) -> bool {
     let id_str = table_id.as_str();
     let norm_id = id_str.replace(['_', '-'], "");
 

@@ -28,4 +28,8 @@ pub enum CompilerError {
     /// In-memory formula calculation error occurring during Pass 4.
     #[error("Evaluation error: {0}")]
     Eval(#[from] EvalError),
+
+    /// Spatial layout planning error occurring during Pass 5.
+    #[error("Spatial layout error: {0}")]
+    Layout(#[from] crate::compiler::layout::error::LayoutError),
 }

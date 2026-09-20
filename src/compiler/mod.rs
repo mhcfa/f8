@@ -13,10 +13,15 @@ pub mod lowering;
 
 pub use error::CompilerError;
 pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
+pub use layout::{
+    LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SectionHeaderRow, SheetLayout,
+    StyleRole, SuperHeaderPlacement, TablePlacement,
+};
 
 use crate::functions::registry::FunctionRegistry;
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::TableSpec;
+use crate::model::theme::Theme;
 
 /// High-level compiler driver orchestrating compilation passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -57,5 +62,25 @@ impl Compiler {
         let evaluated_model = eval::Evaluator::evaluate(&grid, &graph, &symbol_table, registry)?;
 
         Ok(evaluated_model)
+    }
+
+    /// Plans the 2D spatial layout for a workbook model and theme (Pass 5).
+    ///
+    /// # Errors
+    /// Returns [`CompilerError`] if specification validation, IR expansion, or spatial layout planning encounters an error.
+    pub fn plan_layout(
+        manifest: &ProjectManifest,
+        tables: &[TableSpec],
+        theme: &Theme,
+        evaluated: Option<&EvaluatedModel>,
+    ) -> Result<LayoutMap, CompilerError> {
+        manifest.validate()?;
+        for table in tables {
+            table.validate()?;
+        }
+
+        let (_symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let layout_map = layout::LayoutPlanner::plan(manifest, tables, &grid, theme, evaluated)?;
+        Ok(layout_map)
     }
 }
