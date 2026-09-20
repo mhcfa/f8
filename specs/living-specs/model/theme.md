@@ -51,7 +51,7 @@ Format masks dynamically expand decimal precision and currency symbols from sing
 
 - **Zero decimals expansion**:
   - **When** `theme.resolve_number_format` is invoked with `decimals: Some(0)`
-  - **Then** `{dec}` is stripped cleanly (e.g. `_($* #,##0_);_($* (#,##0);_($* "-"_);_(@_)`, `0%`, `0"x"`, `#,##0" bps"`).
+  - **Then** `{dec}` is stripped cleanly (e.g. `$#,##0_);($#,##0);"-"_)`, `0%`, `0"x"`, `#,##0" bps"`).
 - **Positive precision and international currencies**:
   - **When** invoked with `decimals: Some(2)` and `currency: Some(CurrencyCode::Chf)`
   - **Then** `{sym}` expands to `"\"CHF\""` and `{dec}` to `".00"`.

@@ -50,7 +50,7 @@ Data cell number format strings are dynamically generated via `theme.resolve_num
 
 - **Formatted currency cell**:
   - **When** `CellFormatKey` has `preset: Some(Currency)`, `decimals: Some(2)`, and `currency: Some(Usd)`
-  - **Then** synthesized `Format` carries mask `_($* #,##0.00_);_($* (#,##0.00);_($* "-"_);_(@_)`.
+  - **Then** synthesized `Format` carries mask `$#,##0.00_);($#,##0.00);"-"_)`.
 - **Unformatted general cell**:
   - **When** `CellFormatKey` has `preset: None`
   - **Then** typography and borders are configured, but no custom number format mask is set.

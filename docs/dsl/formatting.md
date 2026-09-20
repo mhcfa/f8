@@ -5,7 +5,7 @@ This document specifies Finx's semantic formatting system, preset catalog, struc
 ## 1. Core Philosophy
 
 Finx enforces complete decoupling between calculation logic and visual styling:
-- **Semantic intent over raw masks**: Model authors specify *what* data represents (`currency`, `number`, `percentage`, `multiple`), never raw Excel format strings (e.g. `_($* #,##0_);_($* (#,##0);_($* "-"_);_(@_)`).
+- **Semantic intent over raw masks**: Model authors specify *what* data represents (`currency`, `number`, `percentage`, `multiple`), never raw Excel format strings (e.g. `$#,##0_);($#,##0);"-"_)`).
 - **Orthogonal visual axes**: Presentation decomposes cleanly into four independent, composable axes:
   1. **Structural style (`style`)**: Borders, summary rules, and bold typography (`data`, `subtotal`, `total`).
   2. **Visual emphasis (`highlight`)**: Background fill tint and text accenting (`true` / `false`).
@@ -280,8 +280,8 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "col_total_border_right": "double"
   },
   "number_formats": {
-    "currency": "_({sym}* #,##0{dec}_);_({sym}* (#,##0{dec});_({sym}* \"-\"_);_(@_)",
-    "number": "#,##0{dec};(#,##0{dec});\"-\"",
+    "currency": "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)",
+    "number": "#,##0{dec}_);(#,##0{dec});\"-\"_)",
     "percentage": "0{dec}%",
     "multiple": "0{dec}\"x\"",
     "basis_points": "#,##0{dec}\" bps\"",
@@ -301,8 +301,8 @@ Custom themes conform to a structured schema defining typography, palette, borde
 ### 6.4. Dynamic decimal and currency mask generation (`{dec}` and `{sym}`)
 
 Themes declare format pattern templates utilizing `{dec}` and `{sym}` placeholders. During OpenXML compilation, the emitter dynamically synthesizes the concrete format string by globally replacing all occurrences:
-- **`decimals == 0`**: `{dec}` expands to empty string `""` (e.g. `_($* #,##0_);_($* (#,##0);_($* "-"_);_(@_)`, `#,##0;(#,##0);"-"`).
-- **`decimals > 0`**: `{dec}` expands to `.` followed by $N$ zeros (e.g. for `decimals: 2`, `{dec}` $\rightarrow$ `.00`, yielding `_($* #,##0.00_);_($* (#,##0.00);_($* "-"_);_(@_)`). Maximum supported decimal precision is $N \le 14$ (in table specs, precision exceeding 14 raises `PrecisionOutOfBounds`; in theme configurations or expansions, exceeding 14 raises `ThemePrecisionOutOfBounds`).
+- **`decimals == 0`**: `{dec}` expands to empty string `""` (e.g. `$#,##0_);($#,##0);"-"_)`, `#,##0_);(#,##0);"-"_)`).
+- **`decimals > 0`**: `{dec}` expands to `.` followed by $N$ zeros (e.g. for `decimals: 2`, `{dec}` $\rightarrow$ `.00`, yielding `$#,##0.00_);($#,##0.00);"-"_)`). Maximum supported decimal precision is $N \le 14$ (in table specs, precision exceeding 14 raises `PrecisionOutOfBounds`; in theme configurations or expansions, exceeding 14 raises `ThemePrecisionOutOfBounds`).
 - **`{sym}`**: Expands to the display symbol of the resolved `CurrencyCode` (defaulting to `CurrencyCode::Usd` / `"$"` if omitted). Standard single-character symbols (`$`, `€`, `£`, `¥`) substitute directly; multi-character codes and non-ASCII glyphs (`CHF`, `kr`, `C$`, `A$`, `₹`) are safely wrapped in double quotes (e.g. `"\"CHF\""`, `"\"₹\""`) to prevent collision with Excel format syntax tokens.
 
 This completely eliminates combinatorial mask explosion while giving model authors arbitrary precision control across any numerical preset and seamless international currency localization.

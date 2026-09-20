@@ -88,7 +88,7 @@ fn test_scenario_1_dynamic_number_format_mask_synthesis() {
     let debug = format!("{format:?}");
 
     assert!(
-        debug.contains(r#"num_format: "_($* #,##0.00_);_($* (#,##0.00);_($* \"-\"_);_(@_)""#),
+        debug.contains(r#"num_format: "$#,##0.00_);($#,##0.00);\"-\"_)""#),
         "Expected currency number format mask in: {debug}"
     );
 }

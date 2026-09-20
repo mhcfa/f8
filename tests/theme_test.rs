@@ -46,13 +46,13 @@ fn test_scenario_2_dynamic_dec_and_sym_expansion_zero_decimals() {
     let curr_mask = theme
         .resolve_number_format(FormatPreset::Currency, Some(0), None)
         .expect("currency format resolution failed");
-    assert_eq!(curr_mask, "_($* #,##0_);_($* (#,##0);_($* \"-\"_);_(@_)");
+    assert_eq!(curr_mask, "$#,##0_);($#,##0);\"-\"_)");
 
     // Number with zero decimals
     let num_mask = theme
         .resolve_number_format(FormatPreset::Number, Some(0), None)
         .expect("number format resolution failed");
-    assert_eq!(num_mask, "#,##0;(#,##0);\"-\"");
+    assert_eq!(num_mask, "#,##0_);(#,##0);\"-\"_)");
 
     // Percentage with zero decimals
     let pct_mask = theme
@@ -81,19 +81,13 @@ fn test_scenario_3_dynamic_dec_and_sym_expansion_positive_decimals_and_currency(
     let eur_mask = theme
         .resolve_number_format(FormatPreset::Currency, Some(2), Some(CurrencyCode::Eur))
         .expect("eur currency resolution failed");
-    assert_eq!(
-        eur_mask,
-        "_(€* #,##0.00_);_(€* (#,##0.00);_(€* \"-\"_);_(@_)"
-    );
+    assert_eq!(eur_mask, "€#,##0.00_);(€#,##0.00);\"-\"_)");
 
     // Currency: 2 decimals, CHF (quoted symbol)
     let chf_mask = theme
         .resolve_number_format(FormatPreset::Currency, Some(2), Some(CurrencyCode::Chf))
         .expect("chf currency resolution failed");
-    assert_eq!(
-        chf_mask,
-        "_(\"CHF\"* #,##0.00_);_(\"CHF\"* (#,##0.00);_(\"CHF\"* \"-\"_);_(@_)"
-    );
+    assert_eq!(chf_mask, "\"CHF\"#,##0.00_);(\"CHF\"#,##0.00);\"-\"_)");
 
     // Percentage: 1 decimal
     let pct_mask = theme
@@ -105,7 +99,7 @@ fn test_scenario_3_dynamic_dec_and_sym_expansion_positive_decimals_and_currency(
     let num_mask = theme
         .resolve_number_format(FormatPreset::Number, Some(4), None)
         .expect("number resolution failed");
-    assert_eq!(num_mask, "#,##0.0000;(#,##0.0000);\"-\"");
+    assert_eq!(num_mask, "#,##0.0000_);(#,##0.0000);\"-\"_)");
 }
 
 #[test]
@@ -116,7 +110,7 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let curr_mask = theme
         .resolve_number_format(FormatPreset::Currency, None, None)
         .expect("default currency resolution failed");
-    assert_eq!(curr_mask, "_($* #,##0_);_($* (#,##0);_($* \"-\"_);_(@_)");
+    assert_eq!(curr_mask, "$#,##0_);($#,##0);\"-\"_)");
 
     // Percentage default: 1 decimal
     let pct_mask = theme
@@ -134,7 +128,7 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let num_mask = theme
         .resolve_number_format(FormatPreset::Number, None, None)
         .expect("default number resolution failed");
-    assert_eq!(num_mask, "#,##0;(#,##0);\"-\"");
+    assert_eq!(num_mask, "#,##0_);(#,##0);\"-\"_)");
 
     // BasisPoints default: 0 decimals
     let bps_mask = theme
@@ -225,8 +219,8 @@ fn test_scenario_6_external_custom_theme_loading() {
             "col_total_border_right": "double"
         },
         "number_formats": {
-            "currency": "_({sym}* #,##0{dec}_);_({sym}* (#,##0{dec});_({sym}* \"-\"_);_(@_)",
-            "number": "#,##0{dec};(#,##0{dec});\"-\"",
+            "currency": "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)",
+            "number": "#,##0{dec}_);(#,##0{dec});\"-\"_)",
             "percentage": "0{dec}%",
             "multiple": "0{dec}\"x\"",
             "basis_points": "#,##0{dec}\" bps\"",
@@ -289,8 +283,7 @@ fn test_scenario_7_rejection_of_invalid_theme_configurations() {
 
     // 4. Missing {sym} placeholder in currency format template
     let mut theme = Theme::corporate_navy();
-    theme.number_formats.currency =
-        "_($* #,##0{dec}_);_($* (#,##0{dec});_($* \"-\"_);_(@_)".to_string();
+    theme.number_formats.currency = "$#,##0{dec}_);($#,##0{dec});\"-\"_)".to_string();
     assert!(matches!(
         theme.validate().unwrap_err(),
         ModelError::MissingCurrencySymbolPlaceholder

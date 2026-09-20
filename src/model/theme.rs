@@ -166,9 +166,8 @@ pub struct NumberFormatsConfig {
 impl Default for NumberFormatsConfig {
     fn default() -> Self {
         Self {
-            currency: "_({sym}* #,##0{dec}_);_({sym}* (#,##0{dec});_({sym}* \"-\"_);_(@_)"
-                .to_string(),
-            number: "#,##0{dec};(#,##0{dec});\"-\"".to_string(),
+            currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)".to_string(),
+            number: "#,##0{dec}_);(#,##0{dec});\"-\"_)".to_string(),
             percentage: "0{dec}%".to_string(),
             multiple: "0{dec}\"x\"".to_string(),
             basis_points: "#,##0{dec}\" bps\"".to_string(),
