@@ -32,4 +32,8 @@ pub enum CompilerError {
     /// Spatial layout planning error occurring during Pass 5.
     #[error("Spatial layout error: {0}")]
     Layout(#[from] crate::compiler::layout::error::LayoutError),
+
+    /// Formula lowering error occurring during Pass 6a.
+    #[error("Formula lowering error: {0}")]
+    Lowering(#[from] crate::compiler::lowering::error::LoweringError),
 }

@@ -33,7 +33,7 @@ fn collect_refs_recursive<'a>(expr: &'a Expr, out: &mut Vec<&'a TableRef>) {
 }
 
 /// Resolves a row selector against target and origin table metadata.
-fn resolve_row_selector(
+pub(crate) fn resolve_row_selector(
     origin: &CellId,
     target_table: &TableMetadata,
     origin_table: &TableMetadata,
@@ -193,7 +193,7 @@ fn resolve_row_selector(
 }
 
 /// Resolves a column selector against target and origin table metadata.
-fn resolve_col_selector(
+pub(crate) fn resolve_col_selector(
     origin: &CellId,
     target_table: &TableMetadata,
     origin_table: &TableMetadata,

@@ -17,6 +17,7 @@ pub use layout::{
     LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SectionHeaderRow, SheetLayout,
     StyleRole, SuperHeaderPlacement, TablePlacement,
 };
+pub use lowering::{FormulaLowerer, LoweredFormulaMap, LoweringError};
 
 use crate::functions::registry::FunctionRegistry;
 use crate::model::manifest::ProjectManifest;
@@ -82,5 +83,24 @@ impl Compiler {
         let (_symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
         let layout_map = layout::LayoutPlanner::plan(manifest, tables, &grid, theme, evaluated)?;
         Ok(layout_map)
+    }
+
+    /// Lowers all formula expressions across the workbook into concrete Excel formula strings (Pass 6a).
+    ///
+    /// # Errors
+    /// Returns [`CompilerError`] if specification validation, IR expansion, or formula lowering encounters an error.
+    pub fn lower_formulas(
+        manifest: &ProjectManifest,
+        tables: &[TableSpec],
+        layout_map: &LayoutMap,
+    ) -> Result<LoweredFormulaMap, CompilerError> {
+        manifest.validate()?;
+        for table in tables {
+            table.validate()?;
+        }
+
+        let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, layout_map)?;
+        Ok(lowered_map)
     }
 }
