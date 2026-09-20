@@ -508,6 +508,8 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
     let table = TableSpec {
         id: TableId::from("Data"),
         title: "Data".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("c1"), ColumnSpec::new("c2")],
         column_groups: vec![],
         row_groups: vec![],

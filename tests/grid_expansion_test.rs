@@ -6,7 +6,7 @@ use finx::compiler::ir::{
     CellId, CellPayload, IrError, SymbolTable, expand_grid, expand_table, expand_workbook,
 };
 use finx::expr::ast::Expr;
-use finx::model::format::{FormatPreset, SemanticStyle};
+use finx::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use finx::model::id::{ColGroupId, ColId, RowId, SheetId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{
@@ -18,6 +18,8 @@ fn create_simple_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> Tab
     TableSpec {
         id: TableId::from(table_id),
         title: format!("Title for {table_id}"),
+        subtitle: None,
+        currency: None,
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
         column_groups: vec![],
         row_groups: vec![],
@@ -169,6 +171,7 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
         CellInput::Detailed(DetailedCellInput {
             value: Some(ValueLiteral::Number(110.0)),
             note: Some("Forecast update".to_string()),
+            currency: None,
             source: Some(serde_json::json!({ "source_id": "Management Guidance" })),
             ..Default::default()
         }),
@@ -495,6 +498,8 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
     let table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![actual_col, forecast_col],
         column_groups: vec![],
         row_groups: vec![],
@@ -566,6 +571,8 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
     let unassigned_table = TableSpec {
         id: TableId::from("T_Unassigned"),
         title: "Test".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col1.clone(), col2.clone()],
         column_groups: vec![],
         row_groups: vec![],
@@ -592,6 +599,8 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
     let assigned_table = TableSpec {
         id: TableId::from("T_Assigned"),
         title: "Test".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col1, col2],
         column_groups: vec![],
         row_groups: vec![],
@@ -632,6 +641,8 @@ fn test_column_formula_parse_error_diagnostic() {
     let table = TableSpec {
         id: TableId::from("BadColTable"),
         title: "Bad Col".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![bad_col],
         column_groups: vec![],
         row_groups: vec![],
@@ -674,6 +685,8 @@ fn test_dual_descriptor_format_fallback() {
     let table = TableSpec {
         id: TableId::from("DualDesc"),
         title: "Dual Descriptor Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![desc_col],
         column_groups: vec![],
         row_groups: vec![],
@@ -700,6 +713,8 @@ fn test_scenario_1_symmetrical_2d_border_composition_at_matrix_intersection() {
     let table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col],
         column_groups: vec![],
         row_groups: vec![],
@@ -734,6 +749,7 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
             decimals: None,
             note: None,
             source: None,
+            currency: None,
         }),
     );
 
@@ -744,6 +760,8 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
     let table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col],
         column_groups: vec![],
         row_groups: vec![],
@@ -779,6 +797,7 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
             decimals: Some(4),
             note: None,
             source: None,
+            currency: None,
         }),
     );
 
@@ -789,6 +808,8 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
     let table = TableSpec {
         id: TableId::from("EPS"),
         title: "EPS Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col],
         column_groups: vec![],
         row_groups: vec![],
@@ -813,6 +834,8 @@ fn test_scenario_4_measure_vector_precision_conflict_rejected() {
     let table = TableSpec {
         id: TableId::from("ConflictTable"),
         title: "Conflict Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col],
         column_groups: vec![],
         row_groups: vec![],
@@ -858,6 +881,7 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
             decimals: None,
             note: None,
             source: None,
+            currency: None,
         }),
     );
 
@@ -868,6 +892,8 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
     let table = TableSpec {
         id: TableId::from("HighlightTable"),
         title: "Highlight Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col],
         column_groups: vec![],
         row_groups: vec![],
@@ -897,6 +923,8 @@ fn test_scenario_7_highlight_inheritance_from_row_or_column() {
     let table = TableSpec {
         id: TableId::from("InheritanceTable"),
         title: "Inheritance Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![col_highlight, col_normal],
         column_groups: vec![],
         row_groups: vec![],
@@ -919,4 +947,269 @@ fn test_scenario_7_highlight_inheritance_from_row_or_column() {
     assert!(cells[2].is_highlight);
     // ("r_norm", "c_norm") -> row: false, col: false -> false
     assert!(!cells[3].is_highlight);
+}
+
+#[test]
+fn test_scenario_1_point_currency_override_wins_over_vectors_and_table() {
+    let col = ColumnSpec::new("c1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Gbp));
+
+    let mut row_cells = IndexMap::new();
+    row_cells.insert(
+        ColId::from("c1"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(100.0)),
+            currency: Some(CurrencyCode::Chf),
+            ..Default::default()
+        }),
+    );
+
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Jpy))
+        .with_cells(row_cells);
+
+    let table = TableSpec {
+        id: TableId::from("Tier1Table"),
+        title: "Tier 1 Table".to_string(),
+        subtitle: None,
+        currency: Some(CurrencyCode::Eur),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].currency, Some(CurrencyCode::Chf));
+}
+
+#[test]
+fn test_scenario_2_vector_currency_wins_over_table_default() {
+    let col = ColumnSpec::new("c1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Gbp));
+
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("Tier2Table"),
+        title: "Tier 2 Table".to_string(),
+        subtitle: None,
+        currency: Some(CurrencyCode::Eur),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].currency, Some(CurrencyCode::Gbp));
+}
+
+#[test]
+fn test_scenario_3_measure_vector_currency_conflict_rejected() {
+    let col = ColumnSpec::new("c1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Usd));
+
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Eur))
+        .with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("ConflictTable"),
+        title: "Conflict Table".to_string(),
+        subtitle: None,
+        currency: None,
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let err = expand_table(&symbols, &table).unwrap_err();
+    assert!(matches!(
+        err,
+        IrError::CurrencyConflict {
+            row_currency: CurrencyCode::Eur,
+            col_currency: CurrencyCode::Usd,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn test_scenario_4_harmonious_measure_vector_currencies_accepted() {
+    let col = ColumnSpec::new("c1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Eur));
+
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_currency(Some(CurrencyCode::Eur))
+        .with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("HarmoniousTable"),
+        title: "Harmonious Table".to_string(),
+        subtitle: None,
+        currency: None,
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].currency, Some(CurrencyCode::Eur));
+}
+
+#[test]
+fn test_scenario_5_table_default_applies_when_vectors_omit_currency() {
+    let col = ColumnSpec::new("c1").with_format(Some(FormatPreset::Currency));
+
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("TableDefault"),
+        title: "Table Default".to_string(),
+        subtitle: None,
+        currency: Some(CurrencyCode::Eur),
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].currency, Some(CurrencyCode::Eur));
+}
+
+#[test]
+fn test_scenario_6_fallback_to_usd_when_omitted_across_all_tiers() {
+    let col = ColumnSpec::new("c1").with_format(Some(FormatPreset::Currency));
+
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_expr("100");
+
+    let table = TableSpec {
+        id: TableId::from("UsdFallback"),
+        title: "USD Fallback Table".to_string(),
+        subtitle: None,
+        currency: None,
+        columns: vec![col],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].currency, Some(CurrencyCode::Usd));
+}
+
+#[test]
+fn test_scenario_7_non_currency_format_presets_resolve_none() {
+    let col_num = ColumnSpec::new("c_num").with_format(Some(FormatPreset::Number));
+    let col_pct = ColumnSpec::new("c_pct").with_format(Some(FormatPreset::Percentage));
+    let col_date = ColumnSpec::new("c_date").with_format(Some(FormatPreset::Date));
+    let col_txt = ColumnSpec::new("c_txt").with_format(Some(FormatPreset::Text));
+
+    let row = RowSpec::new("r1").with_expr("1");
+
+    let table = TableSpec {
+        id: TableId::from("NonCurrency"),
+        title: "Non Currency Table".to_string(),
+        subtitle: None,
+        currency: Some(CurrencyCode::Eur),
+        columns: vec![col_num, col_pct, col_date, col_txt],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![row],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 4);
+    for cell in &cells {
+        assert_eq!(cell.currency, None);
+    }
+}
+
+#[test]
+fn test_scenario_10_descriptor_axis_isolation_suppresses_currency_and_conflicts() {
+    let table_desc_only = TableSpec {
+        id: TableId::from("DescOnly"),
+        title: "Descriptor Only Table".to_string(),
+        subtitle: None,
+        currency: None,
+        columns: vec![ColumnSpec::descriptor("desc", "Description")],
+        column_groups: vec![],
+        row_groups: vec![],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_format(Some(FormatPreset::Currency))
+                .with_currency(Some(CurrencyCode::Eur))
+                .with_cells({
+                    let mut map = IndexMap::new();
+                    map.insert(ColId::from("desc"), CellInput::string("Label"));
+                    map
+                }),
+        ],
+    };
+
+    let mut symbols_desc = SymbolTable::new();
+    symbols_desc
+        .register_table(SheetId::from("Model"), &table_desc_only)
+        .unwrap();
+
+    let cells = expand_table(&symbols_desc, &table_desc_only).unwrap();
+    assert_eq!(cells.len(), 1);
+    assert_eq!(cells[0].currency, None);
 }

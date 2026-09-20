@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::error::ModelError;
-use super::format::{FormatPreset, SemanticStyle};
+use super::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 /// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
@@ -44,6 +44,8 @@ pub struct ColumnSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<CurrencyCode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -62,6 +64,7 @@ impl ColumnSpec {
             highlight: None,
             format: None,
             decimals: None,
+            currency: None,
             expr: None,
             note: None,
             source: None,
@@ -78,6 +81,7 @@ impl ColumnSpec {
             highlight: None,
             format: None,
             decimals: None,
+            currency: None,
             expr: None,
             note: None,
             source: None,
@@ -105,6 +109,12 @@ impl ColumnSpec {
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         self.decimals = decimals;
+        self
+    }
+
+    /// Builder method attaching a currency denomination.
+    pub fn with_currency(mut self, currency: Option<CurrencyCode>) -> Self {
+        self.currency = currency;
         self
     }
 
@@ -264,6 +274,8 @@ pub struct DetailedCellInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<CurrencyCode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<serde_json::Value>,
@@ -354,6 +366,14 @@ impl CellInput {
         }
     }
 
+    /// Returns the currency override if present.
+    pub fn currency(&self) -> Option<CurrencyCode> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.currency,
+        }
+    }
+
     /// Returns the audit note if present.
     pub fn note(&self) -> Option<&str> {
         match self {
@@ -422,6 +442,8 @@ pub struct RowSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<CurrencyCode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -441,6 +463,7 @@ impl RowSpec {
             highlight: None,
             format: None,
             decimals: None,
+            currency: None,
             expr: None,
             note: None,
             source: None,
@@ -457,6 +480,7 @@ impl RowSpec {
             highlight: None,
             format: None,
             decimals: None,
+            currency: None,
             expr: None,
             note: None,
             source: None,
@@ -485,6 +509,12 @@ impl RowSpec {
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         self.decimals = decimals;
+        self
+    }
+
+    /// Builder method attaching a currency denomination.
+    pub fn with_currency(mut self, currency: Option<CurrencyCode>) -> Self {
+        self.currency = currency;
         self
     }
 
@@ -519,11 +549,21 @@ impl Default for RowSpec {
     }
 }
 
+impl Default for TableSpec {
+    fn default() -> Self {
+        Self::new("", "")
+    }
+}
+
 /// Table specification schema for standalone 2D calculation tables.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableSpec {
     pub id: TableId,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<CurrencyCode>,
     pub columns: Vec<ColumnSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub column_groups: Vec<ColumnGroup>,
@@ -533,6 +573,32 @@ pub struct TableSpec {
 }
 
 impl TableSpec {
+    /// Creates a table specification with empty columns and rows.
+    pub fn new(id: impl Into<TableId>, title: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            subtitle: None,
+            currency: None,
+            columns: Vec::new(),
+            column_groups: Vec::new(),
+            row_groups: Vec::new(),
+            rows: Vec::new(),
+        }
+    }
+
+    /// Builder method attaching a subtitle banner.
+    pub fn with_subtitle(mut self, subtitle: impl Into<String>) -> Self {
+        self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    /// Builder method attaching default table currency.
+    pub fn with_currency(mut self, currency: Option<CurrencyCode>) -> Self {
+        self.currency = currency;
+        self
+    }
+
     /// Returns an iterator over all declared column IDs.
     pub fn col_ids(&self) -> impl Iterator<Item = &ColId> {
         self.columns.iter().map(|c| &c.id)
@@ -565,6 +631,14 @@ impl TableSpec {
 
     /// Validates all table-level domain invariants.
     pub fn validate(&self) -> Result<(), ModelError> {
+        if let Some(subtitle) = &self.subtitle
+            && subtitle.trim().is_empty()
+        {
+            return Err(ModelError::EmptyTableSubtitle {
+                table: self.id.clone(),
+            });
+        }
+
         self.validate_columns()?;
         self.validate_column_groups()?;
         self.validate_rows()?;
@@ -586,6 +660,28 @@ impl TableSpec {
                 return Err(ModelError::DuplicateColumnId {
                     table: self.id.clone(),
                     column: col.id.clone(),
+                });
+            }
+
+            if let Some(decimals) = col.decimals
+                && decimals > 14
+            {
+                return Err(ModelError::PrecisionOutOfBounds {
+                    table: self.id.clone(),
+                    context: format!("column '{}'", col.id),
+                    decimals,
+                    max: 14,
+                });
+            }
+
+            if let (Some(format), Some(currency)) = (col.format, col.currency)
+                && format != FormatPreset::Currency
+            {
+                return Err(ModelError::InvalidCurrencyForPreset {
+                    table: self.id.clone(),
+                    context: format!("column '{}'", col.id),
+                    preset: format,
+                    currency,
                 });
             }
 
@@ -672,6 +768,28 @@ impl TableSpec {
                 return Err(ModelError::DuplicateRowId {
                     table: self.id.clone(),
                     row: row.id.clone(),
+                });
+            }
+
+            if let Some(decimals) = row.decimals
+                && decimals > 14
+            {
+                return Err(ModelError::PrecisionOutOfBounds {
+                    table: self.id.clone(),
+                    context: format!("row '{}'", row.id),
+                    decimals,
+                    max: 14,
+                });
+            }
+
+            if let (Some(format), Some(currency)) = (row.format, row.currency)
+                && format != FormatPreset::Currency
+            {
+                return Err(ModelError::InvalidCurrencyForPreset {
+                    table: self.id.clone(),
+                    context: format!("row '{}'", row.id),
+                    preset: format,
+                    currency,
                 });
             }
 
@@ -849,6 +967,26 @@ impl TableSpec {
                             table: self.id.clone(),
                             row: row.id.clone(),
                             column: col_id.clone(),
+                        });
+                    }
+                    if let Some(decimals) = d.decimals
+                        && decimals > 14
+                    {
+                        return Err(ModelError::PrecisionOutOfBounds {
+                            table: self.id.clone(),
+                            context: format!("row '{}', column '{}' cell", row.id, col_id),
+                            decimals,
+                            max: 14,
+                        });
+                    }
+                    if let (Some(format), Some(currency)) = (d.format, d.currency)
+                        && format != FormatPreset::Currency
+                    {
+                        return Err(ModelError::InvalidCurrencyForPreset {
+                            table: self.id.clone(),
+                            context: format!("row '{}', column '{}' cell", row.id, col_id),
+                            preset: format,
+                            currency,
                         });
                     }
                     if let (Some(format), Some(decimals)) = (d.format, d.decimals)

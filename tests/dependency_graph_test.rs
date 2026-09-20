@@ -36,6 +36,8 @@ fn create_table(
     TableSpec {
         id: TableId::from(table_id),
         title: table_id.into(),
+        subtitle: None,
+        currency: None,
         columns,
         column_groups: Vec::new(),
         row_groups: Vec::new(),
@@ -287,6 +289,8 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
     let assumptions_table = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Key Assumptions".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("value")],
         column_groups: Vec::new(),
         row_groups: Vec::new(),
@@ -314,6 +318,8 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
     let forecast_table = TableSpec {
         id: TableId::from("Forecast"),
         title: "Three Year Forecast".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("2023A"), ColumnSpec::new("2024E")],
         column_groups: Vec::new(),
         row_groups: Vec::new(),

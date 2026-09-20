@@ -141,6 +141,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::from("T"),
             title: "T".into(),
+            subtitle: None,
+            currency: None,
             columns: vec![
                 ColumnSpec::new("c1"),
                 ColumnSpec::new("c2"),

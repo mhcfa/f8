@@ -616,6 +616,8 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
     let table = TableSpec {
         id: TableId::from("DebtService"),
         title: "DebtService".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("value")],
         column_groups: vec![],
         row_groups: vec![],

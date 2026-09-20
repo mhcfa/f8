@@ -904,6 +904,8 @@ fn test_end_to_end_formula_evaluation() {
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),

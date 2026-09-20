@@ -75,6 +75,8 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
     let cap_table = TableSpec {
         id: TableId::from("CapTable"),
         title: "Capitalization Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns,
         column_groups: vec![],
         row_groups: vec![],
@@ -94,6 +96,8 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
     let valuation_table = TableSpec {
         id: TableId::from("Valuation"),
         title: "Valuation Scenario".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("val")],
         column_groups: vec![],
         row_groups: vec![],

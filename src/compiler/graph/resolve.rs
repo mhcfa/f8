@@ -518,6 +518,8 @@ mod tests {
         let target_table = TableSpec {
             id: TableId::from("Target"),
             title: "Target".into(),
+            subtitle: None,
+            currency: None,
             columns: vec![ColumnSpec::new("2024E")],
             column_groups: vec![],
             row_groups: vec![],

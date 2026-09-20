@@ -5,7 +5,7 @@ use super::cell::{CellGrid, CellNode, CellPayload};
 use super::error::IrError;
 use super::id::CellId;
 use super::symbol::SymbolTable;
-use crate::model::format::{FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
@@ -75,6 +75,7 @@ pub fn expand_table(
                 let cell_highlight = cell_input.highlight();
                 let cell_format = cell_input.format();
                 let cell_decimals = cell_input.decimals();
+                let cell_currency = cell_input.currency();
                 let cell_note = cell_input.note();
                 let cell_source = cell_input.source().cloned();
 
@@ -105,6 +106,14 @@ pub fn expand_table(
                 let effective_format = resolve_format(cell_format, row, col, &table.id)?;
                 let effective_decimals =
                     resolve_decimals(cell_decimals, effective_format, row, col, &table.id)?;
+                let effective_currency = resolve_currency(
+                    cell_currency,
+                    effective_format,
+                    row,
+                    col,
+                    table.currency,
+                    &table.id,
+                )?;
                 let (horizontal, vertical) = resolve_style(cell_style, row.style, col.style);
                 let is_highlight = resolve_highlight(cell_highlight, row.highlight, col.highlight);
 
@@ -120,6 +129,7 @@ pub fn expand_table(
                     CellNode::new(cell_id, sheet_id.clone(), payload)
                         .with_format(effective_format)
                         .with_decimals(effective_decimals)
+                        .with_currency(effective_currency)
                         .with_style(horizontal, vertical)
                         .with_highlight(is_highlight)
                         .with_note(effective_note)
@@ -163,6 +173,8 @@ pub fn expand_table(
 
             let effective_format = resolve_format(None, row, col, &table.id)?;
             let effective_decimals = resolve_decimals(None, effective_format, row, col, &table.id)?;
+            let effective_currency =
+                resolve_currency(None, effective_format, row, col, table.currency, &table.id)?;
             let (horizontal, vertical) = resolve_style(None, row.style, col.style);
             let is_highlight = resolve_highlight(None, row.highlight, col.highlight);
 
@@ -173,6 +185,7 @@ pub fn expand_table(
                 CellNode::new(cell_id, sheet_id.clone(), payload)
                     .with_format(effective_format)
                     .with_decimals(effective_decimals)
+                    .with_currency(effective_currency)
                     .with_style(horizontal, vertical)
                     .with_highlight(is_highlight)
                     .with_note(effective_note)
@@ -251,6 +264,46 @@ fn resolve_decimals(
             (_, Some(cd)) => Ok(Some(cd)),
             (None, None) => Ok(None),
         }
+    }
+}
+
+/// Resolves currency denomination according to preset applicability and the 3-Tier Specificity Lattice.
+fn resolve_currency(
+    cell_currency: Option<CurrencyCode>,
+    effective_format: Option<FormatPreset>,
+    row: &RowSpec,
+    col: &ColumnSpec,
+    table_currency: Option<CurrencyCode>,
+    table_id: &TableId,
+) -> Result<Option<CurrencyCode>, IrError> {
+    // Non-currency presets receive no currency denomination
+    if effective_format != Some(FormatPreset::Currency) {
+        return Ok(None);
+    }
+
+    // Descriptor axis isolates currency and prevents vector conflicts
+    if col.role.is_descriptor() || row.role.is_descriptor() {
+        return Ok(None);
+    }
+
+    // Tier 1: Cell point override wins
+    if cell_currency.is_some() {
+        return Ok(cell_currency);
+    }
+
+    // Tier 2: Vector rules (row and column)
+    match (row.currency, col.currency) {
+        (Some(rc), Some(cc)) if rc != cc => Err(IrError::CurrencyConflict {
+            table: table_id.clone(),
+            row: row.id.clone(),
+            column: col.id.clone(),
+            row_currency: rc,
+            col_currency: cc,
+        }),
+        (Some(rc), _) => Ok(Some(rc)),
+        (_, Some(cc)) => Ok(Some(cc)),
+        // Tier 3: Table default (defaults to USD)
+        (None, None) => Ok(Some(table_currency.unwrap_or(CurrencyCode::Usd))),
     }
 }
 
@@ -377,6 +430,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("Assumptions"),
             title: "Model Assumptions".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![
                 ColumnSpec::descriptor("param", "Parameter"),
                 ColumnSpec::new("val"),
@@ -439,6 +494,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("Unregistered"),
             title: "Unregistered Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
@@ -457,6 +514,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("BadExpr"),
             title: "Bad Expr Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
@@ -473,6 +532,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("T1"),
             title: "Table 1".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
@@ -494,6 +555,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("ConflictTable"),
             title: "Conflict Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
@@ -520,6 +583,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("ConflictResolved"),
             title: "Resolved Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
@@ -540,6 +605,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("UnassignedTable"),
             title: "Unassigned Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![ColumnSpec::new("c1")],
             column_groups: vec![],
             row_groups: vec![],
@@ -563,6 +630,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("FmtConflict"),
             title: "Format Conflict Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],
@@ -603,6 +672,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("FmtResolved"),
             title: "Format Resolved Table".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![col],
             column_groups: vec![],
             row_groups: vec![],

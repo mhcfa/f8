@@ -1,9 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use finx::model::{
-    AxisRole, CellInput, ColGroupId, ColId, ColumnGroup, ColumnSpec, DetailedCellInput,
-    FormatPreset, FreezePanes, ModelError, ProjectManifest, RowGroup, RowGroupChild, RowGroupId,
-    RowId, RowSpec, SemanticStyle, SheetSpec, TableId, TableSpec, ValueLiteral,
+    AxisRole, CellInput, ColGroupId, ColId, ColumnGroup, ColumnSpec, CurrencyCode,
+    DetailedCellInput, FormatPreset, FreezePanes, ModelError, ProjectManifest, RowGroup,
+    RowGroupChild, RowGroupId, RowId, RowSpec, SemanticStyle, SheetSpec, TableId, TableSpec,
+    ValueLiteral,
 };
 use std::path::PathBuf;
 
@@ -392,6 +393,8 @@ fn sample_table() -> TableSpec {
     TableSpec {
         id: TableId::from("TestTable"),
         title: "Test Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("col_1"), ColumnSpec::new("col_2")],
         column_groups: Vec::new(),
         row_groups: Vec::new(),
@@ -652,6 +655,7 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
             highlight: None,
             note: None,
             source: None,
+            currency: None,
         }),
     );
 
@@ -712,4 +716,176 @@ fn test_table_with_semantic_formatting_json_deserialization() {
     assert_eq!(cell.highlight(), Some(false));
     assert_eq!(cell.decimals(), Some(4));
     assert!(table.validate().is_ok());
+}
+
+#[test]
+fn test_currency_code_metadata_and_excel_escaping() {
+    assert_eq!(CurrencyCode::Usd.symbol(), "$");
+    assert_eq!(CurrencyCode::Usd.excel_symbol(), "$");
+    assert_eq!(CurrencyCode::Eur.symbol(), "€");
+    assert_eq!(CurrencyCode::Eur.excel_symbol(), "€");
+    assert_eq!(CurrencyCode::Gbp.symbol(), "£");
+    assert_eq!(CurrencyCode::Gbp.excel_symbol(), "£");
+    assert_eq!(CurrencyCode::Jpy.symbol(), "¥");
+    assert_eq!(CurrencyCode::Jpy.excel_symbol(), "¥");
+    assert_eq!(CurrencyCode::Cny.symbol(), "¥");
+    assert_eq!(CurrencyCode::Cny.excel_symbol(), "¥");
+    assert_eq!(CurrencyCode::Chf.symbol(), "CHF");
+    assert_eq!(CurrencyCode::Chf.excel_symbol(), "\"CHF\"");
+    assert_eq!(CurrencyCode::Cad.symbol(), "C$");
+    assert_eq!(CurrencyCode::Cad.excel_symbol(), "\"C$\"");
+    assert_eq!(CurrencyCode::Aud.symbol(), "A$");
+    assert_eq!(CurrencyCode::Aud.excel_symbol(), "\"A$\"");
+    assert_eq!(CurrencyCode::Hkd.symbol(), "HK$");
+    assert_eq!(CurrencyCode::Hkd.excel_symbol(), "\"HK$\"");
+    assert_eq!(CurrencyCode::Sgd.symbol(), "S$");
+    assert_eq!(CurrencyCode::Sgd.excel_symbol(), "\"S$\"");
+    assert_eq!(CurrencyCode::Sek.symbol(), "kr");
+    assert_eq!(CurrencyCode::Sek.excel_symbol(), "\"kr\"");
+    assert_eq!(CurrencyCode::Nok.symbol(), "kr");
+    assert_eq!(CurrencyCode::Nok.excel_symbol(), "\"kr\"");
+    assert_eq!(CurrencyCode::Nzd.symbol(), "NZ$");
+    assert_eq!(CurrencyCode::Nzd.excel_symbol(), "\"NZ$\"");
+    assert_eq!(CurrencyCode::Inr.symbol(), "₹");
+    assert_eq!(CurrencyCode::Inr.excel_symbol(), "\"₹\"");
+    assert_eq!(CurrencyCode::Brl.symbol(), "R$");
+    assert_eq!(CurrencyCode::Brl.excel_symbol(), "\"R$\"");
+}
+
+#[test]
+fn test_scenario_8_reject_currency_on_non_currency_presets() {
+    // Column rejection
+    let mut table = sample_table();
+    table.columns[0].format = Some(FormatPreset::Percentage);
+    table.columns[0].currency = Some(CurrencyCode::Usd);
+    let err = table.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::InvalidCurrencyForPreset {
+            preset: FormatPreset::Percentage,
+            currency: CurrencyCode::Usd,
+            ..
+        }
+    ));
+
+    // Row rejection
+    let mut table = sample_table();
+    table.rows[0].format = Some(FormatPreset::Date);
+    table.rows[0].currency = Some(CurrencyCode::Eur);
+    let err = table.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::InvalidCurrencyForPreset {
+            preset: FormatPreset::Date,
+            currency: CurrencyCode::Eur,
+            ..
+        }
+    ));
+
+    // Cell rejection
+    let mut table = sample_table();
+    table.rows[0].cells.insert(
+        ColId::from("col_1"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(10.0)),
+            format: Some(FormatPreset::Number),
+            currency: Some(CurrencyCode::Gbp),
+            ..Default::default()
+        }),
+    );
+    let err = table.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::InvalidCurrencyForPreset {
+            preset: FormatPreset::Number,
+            currency: CurrencyCode::Gbp,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn test_scenario_9_reject_invalid_currency_serde() {
+    let json_data = r#"{
+        "id": "Test",
+        "title": "Test",
+        "currency": "bitcoin",
+        "columns": [{ "id": "c1" }],
+        "rows": [{ "id": "r1" }]
+    }"#;
+    let err = serde_json::from_str::<TableSpec>(json_data).unwrap_err();
+    assert!(err.to_string().contains("unknown variant"));
+}
+
+#[test]
+fn test_scenario_11_table_subtitle_validation() {
+    // Empty subtitle
+    let mut table = sample_table();
+    table.subtitle = Some("".to_string());
+    assert!(matches!(
+        table.validate().unwrap_err(),
+        ModelError::EmptyTableSubtitle { .. }
+    ));
+
+    // Whitespace subtitle
+    let mut table = sample_table();
+    table.subtitle = Some("   \t\n  ".to_string());
+    assert!(matches!(
+        table.validate().unwrap_err(),
+        ModelError::EmptyTableSubtitle { .. }
+    ));
+
+    // Valid subtitle
+    let mut table = sample_table();
+    table.subtitle = Some("($ in thousands)".to_string());
+    assert!(table.validate().is_ok());
+}
+
+#[test]
+fn test_scenario_12_reject_precision_exceeding_max_bounds() {
+    // Column with decimals > 14
+    let mut table = sample_table();
+    table.columns[0].decimals = Some(15);
+    let err = table.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::PrecisionOutOfBounds {
+            decimals: 15,
+            max: 14,
+            ..
+        }
+    ));
+
+    // Row with decimals > 14
+    let mut table = sample_table();
+    table.rows[0].decimals = Some(18);
+    let err = table.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::PrecisionOutOfBounds {
+            decimals: 18,
+            max: 14,
+            ..
+        }
+    ));
+
+    // Cell with decimals > 14
+    let mut table = sample_table();
+    table.rows[0].cells.insert(
+        ColId::from("col_1"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(1.23)),
+            decimals: Some(15),
+            ..Default::default()
+        }),
+    );
+    let err = table.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::PrecisionOutOfBounds {
+            decimals: 15,
+            max: 14,
+            ..
+        }
+    ));
 }

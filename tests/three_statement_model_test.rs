@@ -45,6 +45,8 @@ fn test_simplified_three_statement_financial_model() {
     let assumptions_table = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Model Assumptions".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![build_measure_col("val")],
         column_groups: vec![],
         row_groups: vec![],
@@ -67,6 +69,8 @@ fn test_simplified_three_statement_financial_model() {
     let income_statement_table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
+        subtitle: None,
+        currency: None,
         columns: is_cols,
         column_groups: vec![],
         row_groups: vec![],
@@ -118,6 +122,8 @@ fn test_simplified_three_statement_financial_model() {
     let cash_flow_table = TableSpec {
         id: TableId::from("CashFlow"),
         title: "Cash Flow Statement".to_string(),
+        subtitle: None,
+        currency: None,
         columns: cf_cols,
         column_groups: vec![],
         row_groups: vec![],
@@ -161,6 +167,8 @@ fn test_simplified_three_statement_financial_model() {
     let balance_sheet_table = TableSpec {
         id: TableId::from("BalanceSheet"),
         title: "Balance Sheet".to_string(),
+        subtitle: None,
+        currency: None,
         columns: bs_cols,
         column_groups: vec![],
         row_groups: vec![],
@@ -360,6 +368,8 @@ fn test_compiler_facade_error_propagation() {
     let cyclic_table = TableSpec {
         id: TableId::from("CyclicTable"),
         title: "Cyclic Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("c1")],
         column_groups: vec![],
         row_groups: vec![],
@@ -392,6 +402,8 @@ fn test_compiler_facade_error_propagation() {
     let sum_table = TableSpec {
         id: TableId::from("SumTable"),
         title: "Sum Table".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![ColumnSpec::new("c1")],
         column_groups: vec![],
         row_groups: vec![],

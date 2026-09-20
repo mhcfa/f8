@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::error::IrError;
 use super::id::CellId;
 use crate::expr::ast::Expr;
-use crate::model::format::{FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::table::ValueLiteral;
 
@@ -56,6 +56,8 @@ pub struct CellNode {
     pub format: Option<FormatPreset>,
     /// Optional display precision override.
     pub decimals: Option<u32>,
+    /// Optional currency denomination code.
+    pub currency: Option<CurrencyCode>,
     /// Resolved horizontal structural style (top/bottom borders).
     pub horizontal: SemanticStyle,
     /// Resolved vertical structural style (left/right borders).
@@ -78,6 +80,7 @@ impl CellNode {
             sheet,
             format: None,
             decimals: None,
+            currency: None,
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: false,
@@ -96,6 +99,12 @@ impl CellNode {
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         self.decimals = decimals;
+        self
+    }
+
+    /// Builder method attaching a currency denomination.
+    pub fn with_currency(mut self, currency: Option<CurrencyCode>) -> Self {
+        self.currency = currency;
         self
     }
 

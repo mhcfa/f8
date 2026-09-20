@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::format::FormatPreset;
+use super::format::{CurrencyCode, FormatPreset};
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 /// Structured diagnostic errors for Finx specifications and model validation.
@@ -14,6 +14,29 @@ pub enum ModelError {
         context: String,
         preset: FormatPreset,
         decimals: u32,
+    },
+
+    #[error(
+        "Table '{table}': {context} specifies currency ('{currency}') for non-currency preset '{preset}'"
+    )]
+    InvalidCurrencyForPreset {
+        table: TableId,
+        context: String,
+        preset: FormatPreset,
+        currency: CurrencyCode,
+    },
+
+    #[error("Table '{table}': subtitle must not be empty or whitespace")]
+    EmptyTableSubtitle { table: TableId },
+
+    #[error(
+        "Table '{table}': {context} specifies decimals ({decimals}) exceeding maximum supported precision ({max})"
+    )]
+    PrecisionOutOfBounds {
+        table: TableId,
+        context: String,
+        decimals: u32,
+        max: u32,
     },
 
     #[error("Table '{table}': row '{row}' specifies unknown column '{column}' in cells")]

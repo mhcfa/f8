@@ -1,6 +1,6 @@
 ---
 title: Specification AST & Schema Ingestion
-last_updated: 2026-09-19
+last_updated: 2026-09-20
 domain: model
 status: active
 ---
@@ -13,9 +13,9 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 
 - **Modules & components**:
   - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `ColGroupId`, `RowGroupId`).
-  - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`) and structural style enum (`SemanticStyle`).
+  - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`), structural style enum (`SemanticStyle`), and canonical ISO currency codes (`CurrencyCode`).
   - `finx::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
-  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`) are defined symmetrically on `ColumnSpec`, `RowSpec`, and `DetailedCellInput`.
+  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `ColumnSpec`, `RowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata and default table `currency`.
   - `finx::model::error`: Diagnostic error types (`ModelError`).
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
@@ -81,7 +81,7 @@ Column groups and row groups must form contiguous sub-slices of their respective
 
 ### 4. Numeric Precision Applicability
 
-The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) reject explicit precision declarations.
+The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) reject explicit precision declarations. In addition, explicit precision declarations must not exceed the maximum display bound of 14 decimal places.
 
 #### Scenarios
 
@@ -91,4 +91,21 @@ The `decimals` attribute specifies fractional display precision and is strictly 
 - **Precision on Non-Numeric Preset Rejected**:
   - **When** a column, row, or detailed cell override specifies `format: "date"` or `format: "text"` with `decimals: Some(n)`
   - **Then** validation returns `ModelError::InvalidPrecisionForPreset`.
+- **Precision Exceeding Bound Rejected**:
+  - **When** a column, row, or detailed cell override specifies `decimals > 14`
+  - **Then** validation returns `ModelError::PrecisionOutOfBounds`.
+
+### 5. Table Subtitle and Currency Applicability
+
+Tables accept optional `subtitle` metadata and an optional default table `currency`. Explicit `currency` declarations may also be applied to columns, rows, and cell overrides, but are strictly permitted only when the effective format preset is `currency`.
+
+#### Scenarios
+
+- **Empty or Whitespace Table Subtitle Rejected**:
+  - **When** `table.subtitle` is present but empty or contains only whitespace characters
+  - **Then** validation returns `ModelError::EmptyTableSubtitle`.
+- **Currency on Non-Currency Preset Rejected**:
+  - **When** a column, row, or cell override specifies `currency` with any format preset other than `currency` (e.g. `number`, `percentage`, `date`, `text`)
+  - **Then** validation returns `ModelError::InvalidCurrencyForPreset`.
+
 

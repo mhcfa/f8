@@ -14,6 +14,8 @@ fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec 
     TableSpec {
         id: TableId::from(table_id),
         title: table_id.into(),
+        subtitle: None,
+        currency: None,
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
         column_groups: Vec::new(),
         row_groups: Vec::new(),

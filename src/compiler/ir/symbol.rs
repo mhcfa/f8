@@ -252,6 +252,8 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("IncomeStatement"),
             title: "Income Statement".to_string(),
+            subtitle: None,
+            currency: None,
             columns: vec![
                 ColumnSpec::descriptor("line_item", "Line Item"),
                 ColumnSpec::new("2023A"),

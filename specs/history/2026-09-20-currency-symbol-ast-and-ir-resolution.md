@@ -1,7 +1,7 @@
 ---
 title: Currency Code AST & IR Resolution
 date: 2026-09-20
-status: draft
+status: completed
 target-living-spec:
   - specs/living-specs/model/spec-ast.md
   - specs/living-specs/compiler/cell-ir.md
@@ -273,62 +273,62 @@ pub enum ModelError {
 
 ### Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Point override (Cell) wins over vector and table tiers**
+- [x] **Scenario 1: Point override (Cell) wins over vector and table tiers**
   - **Given** table currency `eur`, column currency `gbp`, and row currency `jpy`
   - **When** cell specifies `currency: "chf"` and format resolves to `Currency`
   - **Then** `cell_node.currency` resolves to `Some(CurrencyCode::Chf)`.
 
-- [ ] **Scenario 2: Vector rule (Row or Column) wins over table default**
+- [x] **Scenario 2: Vector rule (Row or Column) wins over table default**
   - **Given** table currency `eur` and column currency `gbp`
   - **When** cell has no currency override and format resolves to `Currency`
   - **Then** `cell_node.currency` resolves to `Some(CurrencyCode::Gbp)`.
 
-- [ ] **Scenario 3: Measure vector currency conflict rejected**
+- [x] **Scenario 3: Measure vector currency conflict rejected**
   - **Given** a measure row with `currency: "eur"` and measure column with `currency: "usd"` without a cell override
   - **When** the table is expanded into `CellGrid`
   - **Then** compilation halts with `IrError::CurrencyConflict`.
 
-- [ ] **Scenario 4: Harmonious measure vector currencies accepted**
+- [x] **Scenario 4: Harmonious measure vector currencies accepted**
   - **Given** a measure row with `currency: "eur"` and measure column with `currency: "eur"`
   - **When** the table is expanded into `CellGrid`
   - **Then** `cell_node.currency` resolves to `Some(CurrencyCode::Eur)`.
 
-- [ ] **Scenario 5: Table default applies when vectors omit currency**
+- [x] **Scenario 5: Table default applies when vectors omit currency**
   - **Given** table currency `eur` and rows/columns with no currency
   - **When** format resolves to `Currency`
   - **Then** `cell_node.currency` resolves to `Some(CurrencyCode::Eur)`.
 
-- [ ] **Scenario 6: Fallback to USD when omitted across all tiers**
+- [x] **Scenario 6: Fallback to USD when omitted across all tiers**
   - **Given** table with `currency: None` and no vector or cell currency
   - **When** format resolves to `Currency`
   - **Then** `cell_node.currency` resolves to `Some(CurrencyCode::Usd)`.
 
-- [ ] **Scenario 7: Non-currency format presets resolve `currency: None`**
+- [x] **Scenario 7: Non-currency format presets resolve `currency: None`**
   - **Given** table currency `eur`
   - **When** a cell's format resolves to `Number`, `Percentage`, `Date`, or `Text`
   - **Then** `cell_node.currency` resolves to `None`.
 
-- [ ] **Scenario 8: Rejection of currency on non-currency preset during AST validation**
+- [x] **Scenario 8: Rejection of currency on non-currency preset during AST validation**
   - **Given** a `ColumnSpec`, `RowSpec`, or `DetailedCellInput` with `format: "percentage"` and `currency: "usd"`
   - **When** `table.validate()` is executed
   - **Then** validation fails with `ModelError::InvalidCurrencyForPreset`.
 
-- [ ] **Scenario 9: Rejection of invalid currency code by Serde**
+- [x] **Scenario 9: Rejection of invalid currency code by Serde**
   - **Given** JSON containing `"currency": "invalid_curr"`
   - **When** deserialized into `TableSpec`, `ColumnSpec`, `RowSpec`, or `DetailedCellInput`
   - **Then** deserialization fails with a Serde error listing valid variants.
 
-- [ ] **Scenario 10: Descriptor axis isolation suppresses currency and prevents conflicts**
+- [x] **Scenario 10: Descriptor axis isolation suppresses currency and prevents conflicts**
   - **Given** a descriptor column (e.g. `item`) and a measure row with `currency: "eur"`
   - **When** the table is expanded
   - **Then** the descriptor cell resolves `currency: None` and no vector conflict is raised.
 
-- [ ] **Scenario 11: Table subtitle deserialization and validation**
+- [x] **Scenario 11: Table subtitle deserialization and validation**
   - **Given** a table with `"subtitle": "   "`
   - **When** `table.validate()` is executed
   - **Then** validation fails with `ModelError::EmptyTableSubtitle`.
 
-- [ ] **Scenario 12: Rejection of precision exceeding maximum bounds during AST validation**
+- [x] **Scenario 12: Rejection of precision exceeding maximum bounds during AST validation**
   - **Given** a `ColumnSpec`, `RowSpec`, or `DetailedCellInput` with `decimals: 15`
   - **When** `table.validate()` is executed
   - **Then** validation fails with `ModelError::PrecisionOutOfBounds` identifying the table and vector/cell context.
@@ -338,25 +338,25 @@ pub enum ModelError {
 ## Tasks
 
 ### Phase 1: Model Subsystem AST & Validation
-- [ ] Define `CurrencyCode` enum with display and Excel mask helpers in `src/model/format.rs`.
-- [ ] Add `currency: Option<CurrencyCode>` and builder methods to `TableSpec`, `ColumnSpec`, `RowSpec`, and `DetailedCellInput` in `src/model/table.rs`.
-- [ ] Add `subtitle: Option<String>` and `with_subtitle` builder method to `TableSpec` in `src/model/table.rs`.
-- [ ] Add `InvalidCurrencyForPreset`, `EmptyTableSubtitle`, and `PrecisionOutOfBounds` to `src/model/error.rs`.
-- [ ] Update `TableSpec::validate` to reject empty subtitle, currency on non-currency presets, and precision exceeding 14.
+- [x] Define `CurrencyCode` enum with display and Excel mask helpers in `src/model/format.rs`.
+- [x] Add `currency: Option<CurrencyCode>` and builder methods to `TableSpec`, `ColumnSpec`, `RowSpec`, and `DetailedCellInput` in `src/model/table.rs`.
+- [x] Add `subtitle: Option<String>` and `with_subtitle` builder method to `TableSpec` in `src/model/table.rs`.
+- [x] Add `InvalidCurrencyForPreset`, `EmptyTableSubtitle`, and `PrecisionOutOfBounds` to `src/model/error.rs`.
+- [x] Update `TableSpec::validate` to reject empty subtitle, currency on non-currency presets, and precision exceeding 14.
 
 ### Phase 2: Compiler IR Subsystem
-- [ ] Add `currency: Option<CurrencyCode>` and `with_currency` builder method to `CellNode` in `src/compiler/ir/cell.rs`.
-- [ ] Add `CurrencyConflict` variant to `IrError` in `src/compiler/ir/error.rs`.
+- [x] Add `currency: Option<CurrencyCode>` and `with_currency` builder method to `CellNode` in `src/compiler/ir/cell.rs`.
+- [x] Add `CurrencyConflict` variant to `IrError` in `src/compiler/ir/error.rs`.
 
 ### Phase 3: Resolution Algorithm in IR Expander
-- [ ] Implement `resolve_currency` in `src/compiler/ir/expand.rs` adhering to the 3-tier specificity lattice.
-- [ ] Enforce preset isolation (non-currency presets resolve `None`).
-- [ ] Enforce descriptor boundary isolation.
-- [ ] Wire `resolve_currency` into `expand_table` and `expand_workbook`.
+- [x] Implement `resolve_currency` in `src/compiler/ir/expand.rs` adhering to the 3-tier specificity lattice.
+- [x] Enforce preset isolation (non-currency presets resolve `None`).
+- [x] Enforce descriptor boundary isolation.
+- [x] Wire `resolve_currency` into `expand_table` and `expand_workbook`.
 
 ### Phase 4: Verification & Testing
-- [ ] Add unit tests in `tests/` covering all 12 acceptance scenarios.
-- [ ] Verify clean compilation: `cargo check`.
-- [ ] Run full test suite: `cargo test`.
-- [ ] Run linter: `cargo clippy --all-targets -- -D warnings`.
-- [ ] Run formatter check: `cargo fmt --check`.
+- [x] Add unit tests in `tests/` covering all 12 acceptance scenarios.
+- [x] Verify clean compilation: `cargo check`.
+- [x] Run full test suite: `cargo test`.
+- [x] Run linter: `cargo clippy --all-targets -- -D warnings`.
+- [x] Run formatter check: `cargo fmt --check`.

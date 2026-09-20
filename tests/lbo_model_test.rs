@@ -51,6 +51,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let scenarios_table = TableSpec {
         id: TableId::from("Scenarios"),
         title: "Operating & Exit Scenarios".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![
             build_measure_col("case_id"),
             build_measure_col("rev_growth"),
@@ -96,6 +98,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let deal_assumptions_table = TableSpec {
         id: TableId::from("DealAssumptions"),
         title: "Transaction & Financing Assumptions".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![build_measure_col("val")],
         column_groups: vec![],
         row_groups: vec![],
@@ -194,6 +198,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let timeline_table = TableSpec {
         id: TableId::from("Timeline"),
         title: "Investment Timeline".to_string(),
+        subtitle: None,
+        currency: None,
         columns: timeline_cols
             .iter()
             .map(|&c| build_measure_col(c))
@@ -226,6 +232,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let operations_table = TableSpec {
         id: TableId::from("Operations"),
         title: "Operating Forecast & Cash Flows".to_string(),
+        subtitle: None,
+        currency: None,
         columns: timeline_cols
             .iter()
             .map(|&c| build_measure_col(c))
@@ -292,6 +300,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let debt_schedule_table = TableSpec {
         id: TableId::from("DebtSchedule"),
         title: "Debt Schedule & Cash Sweep".to_string(),
+        subtitle: None,
+        currency: None,
         columns: timeline_cols
             .iter()
             .map(|&c| build_measure_col(c))
@@ -369,6 +379,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let cash_flows_table = TableSpec {
         id: TableId::from("CashFlows"),
         title: "Sponsor Equity Cash Flows".to_string(),
+        subtitle: None,
+        currency: None,
         columns: timeline_cols
             .iter()
             .map(|&c| build_measure_col(c))
@@ -400,6 +412,8 @@ fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let returns_summary_table = TableSpec {
         id: TableId::from("ReturnsSummary"),
         title: "Exit Valuation & Sponsor Returns".to_string(),
+        subtitle: None,
+        currency: None,
         columns: vec![build_measure_col("val")],
         column_groups: vec![],
         row_groups: vec![],

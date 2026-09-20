@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use super::id::CellId;
-use crate::model::format::FormatPreset;
+use crate::model::format::{CurrencyCode, FormatPreset};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 
 /// Errors encountered during intermediate representation construction and symbol registration.
@@ -89,6 +89,17 @@ pub enum IrError {
         column: ColId,
         row_decimals: u32,
         col_decimals: u32,
+    },
+
+    #[error(
+        "Table '{table}': currency conflict at row '{row}' ('{row_currency}') and column '{column}' ('{col_currency}')"
+    )]
+    CurrencyConflict {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+        row_currency: CurrencyCode,
+        col_currency: CurrencyCode,
     },
 
     #[error("model validation error: {0}")]

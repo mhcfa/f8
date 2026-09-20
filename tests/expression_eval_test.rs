@@ -21,6 +21,8 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
     let assumptions_table = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![
             ColumnSpec::new("rate"),
             ColumnSpec::new("active"),
@@ -41,6 +43,8 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
     let is_table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),

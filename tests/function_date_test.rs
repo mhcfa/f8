@@ -690,6 +690,8 @@ fn test_end_to_end_date_formula_evaluation() {
     let dates_table = TableSpec {
         id: TableId::from("Timeline"),
         title: "Timeline".into(),
+        subtitle: None,
+        currency: None,
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),
