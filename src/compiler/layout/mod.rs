@@ -26,7 +26,7 @@ use crate::model::theme::Theme;
 use crate::value::CellValue;
 
 /// Semantic styling role assigned to a physical coordinate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StyleRole {
     /// Horizontal summary borders (top/bottom).
     pub horizontal: SemanticStyle,

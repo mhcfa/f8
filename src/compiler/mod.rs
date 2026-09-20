@@ -11,6 +11,7 @@ pub mod ir;
 pub mod layout;
 pub mod lowering;
 
+pub use emission::{CellFormatKey, EmissionError, FormatCache};
 pub use error::CompilerError;
 pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
