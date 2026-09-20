@@ -49,17 +49,21 @@ Worksheets and tables are emitted in the exact order declared in `manifest.sheet
 ### 2. Structural Headers & Super-Header Safety
 
 Table title banners, subtitles, super-headers, and column key headers are placed at exact physical row offsets determined in Pass 5.
-- Multi-cell column groups (`start_col < end_col`) invoke `worksheet.merge_range`.
-- Single-cell column groups (`start_col == end_col`) invoke `worksheet.write_string_with_format`, preventing `XlsxError::MergeRangeSingleCell`.
+- **Table title banner**: Written to `start_col` and filled across `(start_col + 1)..=end_col` with `title_format` blanks to create a seamless banner matching the exact table width.
+- **Super-headers (Center Across Selection)**: To conform with institutional financial modeling standards (FAST standard: zero merged cells), column groups are emitted using `FormatAlign::CenterAcross` across `start_col..=end_col` without any `<mergeCell>` tags.
+- **Row heights**: Left automatic so Excel dynamically computes natural line heights based on font size metrics, maintaining unified row heights across data and gutters.
 
 #### Scenarios
 
-- **Multi-column super-header**:
+- **Full-width title banner**:
+  - **When** table title is emitted
+  - **Then** all columns across `start_col..=end_col` receive the title background fill and bottom border.
+- **Multi-column super-header without merge cells**:
   - **When** column group covers multiple columns
-  - **Then** emitted with `<mergeCell>` spanning the column range.
+  - **Then** emitted with `FormatAlign::CenterAcross` across the range without any `<mergeCell>` elements.
 - **Single-column super-header**:
   - **When** column group spans exactly one column
-  - **Then** emitted as a regular formatted cell without a 1x1 merge range.
+  - **Then** emitted as a regular formatted cell with CenterAcross alignment.
 
 ### 3. Formula Evaluation Result Caching
 
@@ -120,9 +124,9 @@ Missing coordinates or unassigned entities propagate structured diagnostics (`Em
 ### 8. End-to-End Integration Verification & Model Exports
 
 Complete financial models are verified end-to-end across all six compiler passes without polluting CI environments with physical disk artifacts:
-- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement and Institutional LBO models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
+- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement, Institutional LBO, and Styling Showcase models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
 - On-demand disk export: `test_export_xlsx_to_disk` is marked with `#[ignore]` and executes only when explicitly requested (`cargo test --test export_integration_test -- --ignored`).
-- Standalone runner: `examples/export_models.rs` compiles production models with real themes and exports inspectable `.xlsx` workbooks on demand (`cargo run --example export_models`).
+- Standalone runners: `examples/export_models.rs` compiles and exports all models on demand (`cargo run --example export_models`), and `examples/export_styling_showcase.rs` exports the dedicated styling and formatting visual showcase (`cargo run --example export_styling_showcase`).
 
 ## Public Interfaces
 

@@ -209,7 +209,7 @@ impl FormatCache {
             .set_bold()
             .set_font_color(palette.super_header_text)
             .set_background_color(palette.super_header_fill)
-            .set_align(FormatAlign::Center);
+            .set_align(FormatAlign::CenterAcross);
         if theme.borders.super_header_border_bottom != BorderStyle::None {
             super_header_format = super_header_format
                 .set_border_bottom(translate_border_style(

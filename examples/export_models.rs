@@ -139,6 +139,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // -------------------------------------------------------------------------
+    // 4. Styling & Formatting Showcase Model
+    // -------------------------------------------------------------------------
+    println!("\n▶ Compiling Styling & Formatting Showcase Model...");
+    let sc_start = Instant::now();
+    let (sc_manifest, sc_tables) = fixtures::styling_showcase::build_styling_showcase_model();
+    let sc_file = canonical_out.join("styling_showcase.xlsx");
+
+    let sc_options = EmissionOptions {
+        title: Some("Finx Institutional Styling & Formatting Showcase".to_string()),
+        author: Some("Finx Design System".to_string()),
+        values_only: false,
+    };
+
+    Compiler::save_workbook(
+        &sc_manifest,
+        &sc_tables,
+        &theme_navy,
+        None, // Automatic DAG evaluation and formula caching
+        &sc_options,
+        &sc_file,
+    )?;
+
+    let sc_meta = fs::metadata(&sc_file)?;
+    println!(
+        "  ✔ Saved to: {} ({}, {} tables, 2 sheets) in {:.2?}",
+        sc_file.display(),
+        format_bytes(sc_meta.len()),
+        sc_tables.len(),
+        sc_start.elapsed()
+    );
+
+    // -------------------------------------------------------------------------
     // Summary
     // -------------------------------------------------------------------------
     println!("\n────────────────────────────────────────────────────────────────────────");
@@ -150,6 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • file://{}", ts_file.display());
     println!("  • file://{}", ts_frozen_file.display());
     println!("  • file://{}", lbo_file.display());
+    println!("  • file://{}", sc_file.display());
     println!("────────────────────────────────────────────────────────────────────────\n");
 
     Ok(())

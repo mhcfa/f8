@@ -188,10 +188,8 @@ impl WorkbookEmitter {
                 worksheet.set_column_width(col as u16, width)?;
             }
 
-            // Apply sheet-wide row heights
-            for (&row, &height) in &sheet_layout.row_heights {
-                worksheet.set_row_height(row, height)?;
-            }
+            // Note: Row heights are left automatic so Excel dynamically sizes rows based on
+            // font metrics, maintaining natural line height and standard unified row heights.
 
             // 4. Resolve tables belonging to this worksheet in declared order
             for table_path in &sheet_spec.tables {
@@ -214,7 +212,7 @@ impl WorkbookEmitter {
                             table: table.id.clone(),
                         })?;
 
-                // Table Title Banner
+                // Table Title Banner: Fill entire table width from start_col to end_col
                 if let Some(title_row) = placement.title_row
                     && !table.title.trim().is_empty()
                 {
@@ -224,6 +222,13 @@ impl WorkbookEmitter {
                         &table.title,
                         &format_cache.title_format(),
                     )?;
+                    for col in (placement.start_col + 1)..=placement.end_col {
+                        worksheet.write_blank(
+                            title_row,
+                            col as u16,
+                            &format_cache.title_format(),
+                        )?;
+                    }
                 }
 
                 // Table Subtitle Banner
@@ -238,22 +243,18 @@ impl WorkbookEmitter {
                     )?;
                 }
 
-                // Super-Headers (with single-cell guard against MergeRangeSingleCell)
+                // Super-Headers: Center Across Selection without merging cells (FAST standard)
                 for sh in &placement.super_header_rows {
-                    if sh.start_col < sh.end_col {
-                        worksheet.merge_range(
+                    worksheet.write_string_with_format(
+                        sh.row,
+                        sh.start_col as u16,
+                        &sh.label,
+                        &format_cache.super_header_format(),
+                    )?;
+                    for col in (sh.start_col + 1)..=sh.end_col {
+                        worksheet.write_blank(
                             sh.row,
-                            sh.start_col as u16,
-                            sh.row,
-                            sh.end_col as u16,
-                            &sh.label,
-                            &format_cache.super_header_format(),
-                        )?;
-                    } else {
-                        worksheet.write_string_with_format(
-                            sh.row,
-                            sh.start_col as u16,
-                            &sh.label,
+                            col as u16,
                             &format_cache.super_header_format(),
                         )?;
                     }

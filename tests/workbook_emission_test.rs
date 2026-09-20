@@ -216,9 +216,18 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
     // Subtitle text
     assert!(shared_strings.contains("($ in thousands, except per share data)"));
 
-    // Super-header merged range across 3 columns (C..E) at physical row 4 (1-indexed row 5)
+    // Super-header Center Across Selection: label is present, zero merged cells (FAST standard)
     assert!(shared_strings.contains("Forecast Horizon"));
-    assert!(sheet_xml.contains("<mergeCell ref=\"C5:E5\"/>"));
+    assert!(
+        !sheet_xml.contains("<mergeCell"),
+        "No merged cells allowed in financial models"
+    );
+    assert!(sheet_xml.contains("r=\"C5\""));
+    assert!(sheet_xml.contains("r=\"D5\""));
+    assert!(sheet_xml.contains("r=\"E5\""));
+
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+    assert!(styles_xml.contains("horizontal=\"centerContinuous\""));
 
     // Column key headers
     assert!(shared_strings.contains("Line Item"));

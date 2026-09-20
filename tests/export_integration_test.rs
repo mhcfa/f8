@@ -160,6 +160,45 @@ fn test_models_emit_in_memory() {
             || combined_sheets.contains("XIRR"),
         "Expected lowered financial functions in formula tags"
     );
+
+    // 4. Institutional Styling & Formatting Showcase Model
+    let (showcase_manifest, showcase_tables) =
+        fixtures::styling_showcase::build_styling_showcase_model();
+    let showcase_evaluated = Compiler::evaluate(&showcase_manifest, &showcase_tables)
+        .expect("Styling showcase model must evaluate cleanly");
+
+    let showcase_options = EmissionOptions {
+        title: Some("Finx Institutional Styling Showcase".to_string()),
+        author: Some("Finx Design System".to_string()),
+        values_only: false,
+    };
+
+    let showcase_buffer = Compiler::emit_workbook(
+        &showcase_manifest,
+        &showcase_tables,
+        &theme_navy,
+        Some(&showcase_evaluated),
+        &showcase_options,
+    )
+    .expect("Styling showcase model must emit to OpenXML buffer");
+
+    assert_eq!(&showcase_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    assert!(has_zip_entry(&showcase_buffer, "xl/worksheets/sheet1.xml"));
+    assert!(has_zip_entry(&showcase_buffer, "xl/worksheets/sheet2.xml"));
+
+    let showcase_workbook_xml = read_zip_entry(&showcase_buffer, "xl/workbook.xml");
+    assert!(showcase_workbook_xml.contains("name=\"Styling_Showcase\""));
+    assert!(showcase_workbook_xml.contains("name=\"Freeze_Panes_Demo\""));
+
+    let sc_sheet1_xml = read_zip_entry(&showcase_buffer, "xl/worksheets/sheet1.xml");
+    assert!(
+        sc_sheet1_xml.contains("<f>"),
+        "Showcase formulas must be emitted"
+    );
+    assert!(
+        sc_sheet1_xml.contains("<v>"),
+        "Showcase cached values must be emitted"
+    );
 }
 
 // ----------------------------------------------------------------------------
@@ -246,7 +285,37 @@ fn test_export_xlsx_to_disk() {
         "LBO entry EV must have precalculated 500 cached in <v> tag"
     );
 
+    // 3. Export Styling Showcase Model
+    let sc_file = output_dir.join("styling_showcase.xlsx");
+    let _ = std::fs::remove_file(&sc_file);
+
+    let (showcase_manifest, showcase_tables) =
+        fixtures::styling_showcase::build_styling_showcase_model();
+    let showcase_options = EmissionOptions {
+        title: Some("Finx Institutional Styling Showcase".to_string()),
+        author: Some("Finx Design System".to_string()),
+        values_only: false,
+    };
+
+    Compiler::save_workbook(
+        &showcase_manifest,
+        &showcase_tables,
+        &theme,
+        None, // Automatically evaluates during compilation
+        &showcase_options,
+        &sc_file,
+    )
+    .expect("Failed to save styling showcase model to disk");
+
+    assert!(sc_file.exists());
+    let sc_bytes = std::fs::read(&sc_file).expect("Failed to read saved showcase file");
+    assert!(sc_bytes.len() > 6000, "Expected non-trivial file size");
+    assert_eq!(&sc_bytes[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    assert!(has_zip_entry(&sc_bytes, "xl/worksheets/sheet1.xml"));
+    assert!(has_zip_entry(&sc_bytes, "xl/worksheets/sheet2.xml"));
+
     println!("\nExported test workbooks successfully:");
     println!("  - Three-Statement Model: {}", ts_file.display());
     println!("  - Institutional LBO Model: {}", lbo_file.display());
+    println!("  - Styling Showcase Model: {}", sc_file.display());
 }

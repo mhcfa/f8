@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod lbo;
+pub mod styling_showcase;
 pub mod three_statement;
 
 use indexmap::IndexMap;
