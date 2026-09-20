@@ -24,10 +24,10 @@ Within each worksheet, tables stack vertically in the order declared in `finx.js
 
 ### 2.1. Sheet margins and gutters
 - **Default sheet margins**: Institutional models start with visual breathing room rather than flush at `A1`. By default, the layout engine applies:
-  - Top margin: 1 blank row (row index 0).
-  - Left margin: 1 blank column (column index 0 / Column A as gutter).
+  - Top margin: 1 blank row (row index 0, height governed by `theme.metrics.gutter_row_height`, default 9.0 pt).
+  - Left margin: 1 blank column (column index 0 / Column A as gutter, width governed by `theme.metrics.gutter_col_width`, default 3.0 character widths).
   - Primary table origin: cell `B2` (row index 1, column index 1).
-- **Inter-table gutters**: Configurable blank rows (default: 2 blank rows) separate vertically stacked tables to cleanly isolate distinct financial statements (e.g. Income Statement above Balance Sheet).
+- **Inter-table gutters**: Configurable blank rows (default: 2 blank rows, each sized to `theme.metrics.gutter_row_height`) separate vertically stacked tables to cleanly isolate distinct financial statements (e.g. Income Statement above Balance Sheet).
 - **Configurable placement**:
   - `StackVertical` (default): Places the table below the preceding table separated by `gutter_rows`.
   - `Explicit`: Places the table at a specified `(start_row, start_col)` coordinate (e.g. for side-by-side Sources and Uses or KPI summary blocks).
@@ -38,12 +38,14 @@ Within each worksheet, tables stack vertically in the order declared in `finx.js
 
 Every table occupies a contiguous physical bounding box computed from its header components, data rows, and hierarchical group structure:
 
-$$\text{TableRows} = \text{TitleRow} + \text{SuperHeaderRows} + \text{ColumnHeaderRow} + \text{DataRows} + \text{SectionHeaderRows}$$
+$$\text{TableRows} = \text{TitleRow} + \text{SubtitleRow} + \text{TitleGutterRow} + \text{SuperHeaderRows} + \text{ColumnHeaderRow} + \text{DataRows} + \text{SectionHeaderRows}$$
 
 ### 3.1. Header rows
-1. **Table title row (optional)**: 1 row displaying the table title banner, formatted with elevated typography from the theme.
-2. **Super-header rows (optional)**: 1 row per `column_groups` tier. Spans across grouped child column indices (e.g. "Historical Periods" spanning columns `2021A..2023A`, "Forecast Periods" spanning `2024E..2028E`).
-3. **Column key header row**: 1 row displaying column display labels or identifiers.
+1. **Table title row (optional)**: 1 row displaying the table title banner (`table.title`), formatted with elevated typography from the theme (`theme.typography.title_size`, `theme.palette.table_title_fill`, `table_title_text`).
+2. **Table subtitle row (optional)**: 1 row displaying free-form metadata when declared on the table specification (`table.subtitle`, e.g. units `"($ in thousands)"`, accounting standard, scenario, or source), formatted with muted typography (`theme.typography.subtitle_size`, `theme.palette.table_subtitle_text`).
+3. **Title buffer gutter (optional)**: 1 blank buffer row separating the title/subtitle block from the table grid, sized via `theme.metrics.title_gutter_row_height` (default 8.0 pt) to prevent visual crowding against column headers. Allocated whenever a title block is present (`!table.title.trim().is_empty() || table.subtitle.is_some()`).
+4. **Super-header rows (optional)**: 1 row per `column_groups` tier. Spans across grouped child column indices (e.g. "Historical Periods" spanning columns `2021A..2023A`, "Forecast Periods" spanning `2024E..2028E`).
+5. **Column key header row**: 1 row displaying column display labels or identifiers.
 
 ### 3.2. Section headers & row hierarchy
 - **Visual section header rows**: When `row_groups` define hierarchical categories (e.g. "Operating Expenses" grouping `r&d`, `s&m`, and `g&a`), the layout engine inserts a dedicated visual section header row:
@@ -55,7 +57,7 @@ $$\text{TableRows} = \text{TitleRow} + \text{SuperHeaderRows} + \text{ColumnHead
   - Indents descriptor text according to tree depth in `row_groups`.
   - Computes Excel outline levels (`group_level: 1..7`) to enable native collapsible grouping `[+]` / `[-]`.
 - **Subtotal & total summary styling**:
-  - Rows configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` assign horizontal summary borders (`top thin` for subtotal; `top thin` + `bottom double` for total).
+  - Rows configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` assign horizontal summary borders (`top thin` for subtotal; `top thin` + `bottom double` for total) and summary background fills/text colors.
   - Columns configured with `SemanticStyle::Subtotal` or `SemanticStyle::Total` assign vertical summary borders (`left thin` for subtotal; `left thin` + `right double` for total).
   - Cells at the intersection of total rows and total columns compose both rules into fully framed accounting boxes.
   - Cell overrides declaring `style: "data"` cleanly suppress inherited borders on descriptor or memo cells.
@@ -73,15 +75,17 @@ Because Excel column widths apply across the entire worksheet:
   $$\text{ColWidth}(c) = \max_{T \in \text{StackedTables}} \text{RequiredWidth}(T, c)$$
 - **Width calculation**:
   - Based on maximum string length of headers, formatted literals, and evaluate cache values.
-  - Scaled by theme font family and size metrics.
-  - Enforces a safe minimum column width (default: 12.0 character widths) on measure columns to prevent `###` numeric overflow on formatted currency, percentage, and negative numbers with parentheses.
+  - Scaled by theme font family and size metrics, plus character padding (`theme.metrics.col_padding`, default 2.0).
+  - Enforces a safe minimum column width (`theme.metrics.min_col_width`, default: 12.0 character widths) on measure columns to prevent `###` numeric overflow on formatted currency, percentage, and negative numbers with parentheses.
 
 ### 4.3. Typography-aware row heights
-Row heights are assigned based on theme typography:
-- Table title rows: default 24.0 pt.
-- Super-header and column header rows: default 18.0 pt.
-- Section category rows: default 18.0 pt.
-- Standard data rows: default 15.0 pt.
+Row heights are assigned based on theme typography and metrics:
+- Table title rows: default 24.0 pt (`theme.metrics.title_row_height`).
+- Super-header and column header rows: default 18.0 pt (`theme.metrics.header_row_height`).
+- Section category rows: default 18.0 pt (`theme.metrics.section_row_height`).
+- Standard data rows: default 15.0 pt (`theme.metrics.data_row_height`).
+- Gutter buffer rows: default 9.0 pt (`theme.metrics.gutter_row_height`).
+- Title buffer gutter: default 8.0 pt (`theme.metrics.title_gutter_row_height`).
 
 ---
 
@@ -128,6 +132,8 @@ pub struct TablePlacement {
     pub end_col: u32,
     pub end_row: u32,
     pub title_row: Option<u32>,
+    pub subtitle_row: Option<u32>,
+    pub title_gutter_row: Option<u32>,
     pub super_header_rows: Vec<SuperHeaderPlacement>,
     pub col_header_row: u32,
     pub data_row_range: (u32, u32),

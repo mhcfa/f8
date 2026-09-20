@@ -115,20 +115,30 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 5. **Default fallback**: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.
 
 ### 5.2. Precision (`decimals`) resolution
-1. **Numeric applicability**: `decimals` resolution applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) have no precision concept and always resolve `decimals: None`.
+1. **Numeric applicability**: `decimals` resolution applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) have no precision concept and always resolve `decimals: None`. Supported fractional precision is bounded to $0 \le N \le 14$ (exceeding 14 raises `PrecisionOutOfBounds`).
 2. **Cell decimals override (Tier 1)**: An explicit `decimals` declared on `CellInput` always wins.
 3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
 4. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
 5. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
 
-### 5.3. Style resolution & symmetrical 2D border composition
+### 5.3. Currency resolution & 3-tier specificity lattice
+Monetary denominations use canonical 3-letter lowercase ISO codes (`CurrencyCode`, e.g. `"usd"`, `"eur"`, `"gbp"`, `"jpy"`, `"chf"`) and resolve via a deterministic 3-tier specificity lattice:
+$$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \text{Table Default (defaults to USD)}$$
+
+1. **Cell override (Tier 1)**: An explicit `currency` code (e.g. `"currency": "eur"`) on `DetailedCellInput` always takes precedence for that coordinate.
+2. **Vector rule (Tier 2)**: Declaring `currency` on a `ColumnSpec` or `RowSpec` applies across measure cells (e.g. an FX conversion table with an `eur_amount` column). If a measure row and measure column declare differing currencies without a cell override, compilation halts with a currency conflict error.
+3. **Table default (Tier 3)**: Declaring `currency` on `TableSpec` sets the default currency for all currency cells within that table (e.g. a European subsidiary cash flow statement). If omitted, the table defaults to `"usd"`.
+4. **Preset isolation**: Only cells resolving `format == Some(FormatPreset::Currency)` receive a resolved currency. All other presets (`number`, `percentage`, `multiple`, `basis_points`, `date`, `text`) resolve `currency: None`.
+5. **Descriptor boundary**: Descriptor rows and columns isolate calculation axes, resolve `currency: None`, and never trigger vector currency conflicts.
+
+### 5.4. Style resolution & symmetrical 2D border composition
 
 In a 2D matrix, rows and columns do not compete for a single border style. Instead, they govern orthogonal geometric axes:
 - **Rows** govern the **horizontal axis** ($\text{top}$ and $\text{bottom}$ edges).
 - **Columns** govern the **vertical axis** ($\text{left}$ and $\text{right}$ edges).
 - **Cell overrides** act as the point-level escape hatch to reset or enforce styles.
 
-#### 5.3.1. Resolution algorithm
+#### 5.4.1. Resolution algorithm
 For coordinate $(r, c)$, the effective `(horizontal, vertical)` structural style pair resolves as follows:
 
 1. **Explicit cell reset**: If `cell.style == Some(SemanticStyle::Data)`, both horizontal and vertical summary rules are suppressed:
@@ -140,29 +150,30 @@ For coordinate $(r, c)$, the effective `(horizontal, vertical)` structural style
 3. **Vector rules (default)**: When `cell.style` is `None`:
    $$\text{horizontal} = \text{row.style.unwrap\_or(Data)}, \quad \text{vertical} = \text{col.style.unwrap\_or(Data)}$$
 
-#### 5.3.2. Symmetrical border composition & emission
+#### 5.4.2. Symmetrical border and summary composition & emission
 During OpenXML emission (Pass 6b), the emitter maps `(horizontal, vertical)` through the active `Theme`:
 
-| Coordinate Scenario | Resolved `horizontal` | Resolved `vertical` | Applied Excel Borders | Font Weight | Typical Rendered Appearance |
-| :--- | :---: | :---: | :--- | :---: | :--- |
-| **Standard Data Cell** | `Data` | `Data` | None | Normal | Standard data values |
-| **Row Subtotal** *(e.g. Gross Profit)* | `Subtotal` | `Data` | **Top**: Thin | Normal | Intermediate section subtotal |
-| **Row Total** *(e.g. Net Income)* | `Total` | `Data` | **Top**: Thin<br>**Bottom**: Double | **Bold** | Institutional accounting total line |
-| **Column Subtotal** *(e.g. Segment divider)* | `Data` | `Subtotal` | **Left**: Thin | Normal | Vertical section dividing line |
-| **Column Total** *(e.g. FY Total column)* | `Data` | `Total` | **Left**: Thin<br>**Right**: Double | **Bold** | Vertical total summary column |
-| **Intersection (Grand Total / Punchline)** | `Total` | `Total` | **Top**: Thin, **Bottom**: Double<br>**Left**: Thin, **Right**: Double | **Bold** | **Framed accounting total box** |
-| **Descriptor / Memo on Total Row** *(with `style: "data"`)* | `Data` | `Data` | None | Normal | Clean label without unwanted underlines |
+| Coordinate Scenario | Resolved `horizontal` | Resolved `vertical` | Applied Excel Borders | Fill & Typography | Typical Rendered Appearance |
+| :--- | :---: | :---: | :--- | :--- | :--- |
+| **Standard Data Cell** | `Data` | `Data` | None | `data_fill`, `data_text` (or `input_text` / `formula_text`), Normal weight | Standard data values |
+| **Row Subtotal** *(e.g. Gross Profit)* | `Subtotal` | `Data` | **Top**: `subtotal_border_top` | `subtotal_fill`, `subtotal_text`, Normal weight | Intermediate section subtotal |
+| **Row Total** *(e.g. Net Income)* | `Total` | `Data` | **Top**: `total_border_top`<br>**Bottom**: `total_border_bottom` (`total_border_color`) | `total_fill`, `total_text`, **Bold** | Institutional accounting total line |
+| **Column Subtotal** *(e.g. Segment divider)* | `Data` | `Subtotal` | **Left**: `col_subtotal_border_left` | `subtotal_fill`, `subtotal_text`, Normal weight | Vertical section dividing line |
+| **Column Total** *(e.g. FY Total column)* | `Data` | `Total` | **Left**: `col_total_border_left`<br>**Right**: `col_total_border_right` (`total_border_color`) | `total_fill`, `total_text`, **Bold** | Vertical total summary column |
+| **Intersection (Grand Total / Punchline)** | `Total` | `Total` | **Top/Left**: Thin, **Bottom/Right**: Double (`total_border_color`) | `total_fill`, `total_text`, **Bold** | **Framed accounting total box** |
+| **Descriptor / Memo on Total Row** *(with `style: "data"`)* | `Data` | `Data` | None | `data_fill`, `data_text`, Normal weight | Clean label without unwanted underlines |
 
-#### 5.3.3. Font weight composition
+#### 5.4.3. Font weight composition
 A cell renders with **bold typography** if either axis demands total styling:
 $$\text{is\_bold} = (\text{horizontal} == \text{SemanticStyle::Total}) \lor (\text{vertical} == \text{SemanticStyle::Total})$$
 
-#### 5.3.4. Fill and border orthogonality
-- `highlight` controls background fill tint and accent text color.
-- `horizontal` and `vertical` styles control border placement and font weight.
-Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `horizontal: Total` and `highlight: true` (e.g. an acquisition IRR punchline cell), rendering both the accent background fill and the accounting double underline without schema collision.
+#### 5.4.4. Fill, text color, and border orthogonality
+- **Summary vs data shading**: Standard data cells apply `theme.palette.data_fill` and `data_text`. Subtotals apply `subtotal_fill` and `subtotal_text`. Totals apply `total_fill` and `total_text`.
+- **Financial hardcode color coding**: In standard data cells, literal cell inputs (`ValueLiteral`) apply `theme.palette.input_text` (institutional blue, e.g. `#002060`), while calculated formula cells apply `theme.palette.formula_text` (standard black, e.g. `#000000`).
+- **Visual emphasis (`highlight`)**: Declaring `highlight: true` overrides cell fills and text colors with `highlight_fill` and `highlight_text`.
+Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `horizontal: Total` and `highlight: true` (e.g. an acquisition IRR punchline cell), rendering both the accent highlight background fill and the accounting double underline without schema collision.
 
-#### 5.3.5. Highlight resolution
+#### 5.4.5. Highlight resolution
 $$\text{effective\_highlight} = \text{cell.highlight.unwrap\_or}(\text{row.highlight} \lor \text{col.highlight})$$
 A point override `highlight: false` explicitly un-highlights a cell even if its row or column has `highlight: true`.
 
@@ -174,7 +185,7 @@ Finx supports pluggable, external workbook themes inspired by modern IDE and edi
 
 ### 6.1. Manifest theme declaration
 
-The root workbook manifest (`finx.json`) declares the active `theme` either by referencing a built-in preset or a relative file path to a custom theme JSON:
+The root workbook manifest (`finx.json`) declares the active `theme` either by referencing a built-in preset or a relative file path to a custom theme JSON. If omitted, it defaults to `"corporate_navy"`:
 
 ```json
 {
@@ -197,7 +208,7 @@ Or pointing to an external custom theme file:
 ### 6.2. Built-in theme catalog
 
 Finx packages institutional built-in themes out of the box:
-- **`corporate_navy`**: Institutional private equity and investment banking style with deep navy headers, subtle blue section fills, and crisp thin borders.
+- **`corporate_navy`**: Institutional private equity and investment banking style with deep navy headers, subtle blue section fills, crisp thin borders, and classic blue inputs.
 - **`classic_green`**: Traditional financial modeling style with hunter green headers and muted mint accents.
 - **`modern_slate`**: Tech and venture capital style with slate/charcoal headers and cool gray section dividers.
 - **`minimal_monochrome`**: High-contrast black and white styling with zero colored fills, optimized for black-and-white printing and audit packages.
@@ -213,6 +224,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
   "typography": {
     "font_family": "Aptos",
     "title_size": 14.0,
+    "subtitle_size": 9.0,
     "super_header_size": 10.0,
     "col_header_size": 10.0,
     "section_header_size": 10.0,
@@ -223,26 +235,43 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "header_row_height": 18.0,
     "section_row_height": 18.0,
     "data_row_height": 15.0,
+    "gutter_row_height": 9.0,
+    "gutter_col_width": 3.0,
+    "title_gutter_row_height": 8.0,
     "char_width_multiplier": 1.15,
+    "col_padding": 2.0,
     "min_col_width": 12.0
   },
   "palette": {
     "table_title_fill": "#1B365D",
     "table_title_text": "#FFFFFF",
+    "table_subtitle_text": "#4B5563",
     "super_header_fill": "#2C4D75",
     "super_header_text": "#FFFFFF",
     "col_header_fill": "#F0F4F8",
     "col_header_text": "#1B365D",
     "section_header_fill": "#F7F9FC",
     "section_header_text": "#1B365D",
+    "data_fill": "#FFFFFF",
+    "data_text": "#1F2937",
+    "subtotal_fill": "#F7F9FC",
+    "subtotal_text": "#1B365D",
+    "total_fill": "#F0F4F8",
+    "total_text": "#1B365D",
+    "input_text": "#002060",
+    "formula_text": "#000000",
     "zebra_fill": "#FAFBFC",
     "highlight_fill": "#FEF3C7",
     "highlight_text": "#92400E",
     "gridline_color": "#E5E7EB",
-    "border_color": "#D1D5DB"
+    "border_color": "#D1D5DB",
+    "total_border_color": "#1B365D"
   },
   "borders": {
+    "table_title_border_bottom": "none",
+    "super_header_border_bottom": "thin",
     "header_border_bottom": "thin",
+    "descriptor_border_right": "none",
     "subtotal_border_top": "thin",
     "total_border_top": "thin",
     "total_border_bottom": "double",
@@ -251,7 +280,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "col_total_border_right": "double"
   },
   "number_formats": {
-    "currency": "_($* #,##0{dec}_);_($* (#,##0{dec});_($* \"-\"_);_(@_)",
+    "currency": "_({sym}* #,##0{dec}_);_({sym}* (#,##0{dec});_({sym}* \"-\"_);_(@_)",
     "number": "#,##0{dec};(#,##0{dec});\"-\"",
     "percentage": "0{dec}%",
     "multiple": "0{dec}\"x\"",
@@ -269,13 +298,14 @@ Custom themes conform to a structured schema defining typography, palette, borde
 }
 ```
 
-### 6.4. Dynamic decimal mask generation (`{dec}`)
+### 6.4. Dynamic decimal and currency mask generation (`{dec}` and `{sym}`)
 
-Themes declare format pattern templates utilizing the `{dec}` placeholder. During OpenXML compilation, the emitter dynamically synthesizes the concrete format string:
-- **`decimals == 0`**: `{dec}` expands to empty string `""` (e.g. `_($* #,##0_);_($* (#,##0);_($* "-"_);_(@_)`).
-- **`decimals > 0`**: `{dec}` expands to `.` followed by $N$ zeros (e.g. for `decimals: 2`, `{dec}` $\rightarrow$ `.00`, yielding `_($* #,##0.00_);_($* (#,##0.00);_($* "-"_);_(@_)`).
+Themes declare format pattern templates utilizing `{dec}` and `{sym}` placeholders. During OpenXML compilation, the emitter dynamically synthesizes the concrete format string by globally replacing all occurrences:
+- **`decimals == 0`**: `{dec}` expands to empty string `""` (e.g. `_($* #,##0_);_($* (#,##0);_($* "-"_);_(@_)`, `#,##0;(#,##0);"-"`).
+- **`decimals > 0`**: `{dec}` expands to `.` followed by $N$ zeros (e.g. for `decimals: 2`, `{dec}` $\rightarrow$ `.00`, yielding `_($* #,##0.00_);_($* (#,##0.00);_($* "-"_);_(@_)`). Maximum supported decimal precision is $N \le 14$ (in table specs, precision exceeding 14 raises `PrecisionOutOfBounds`; in theme configurations or expansions, exceeding 14 raises `ThemePrecisionOutOfBounds`).
+- **`{sym}`**: Expands to the display symbol of the resolved `CurrencyCode` (defaulting to `CurrencyCode::Usd` / `"$"` if omitted). Standard single-character symbols (`$`, `€`, `£`, `¥`) substitute directly; multi-character codes and non-ASCII glyphs (`CHF`, `kr`, `C$`, `A$`, `₹`) are safely wrapped in double quotes (e.g. `"\"CHF\""`, `"\"₹\""`) to prevent collision with Excel format syntax tokens.
 
-This completely eliminates combinatorial mask explosion while giving model authors arbitrary precision control across any numerical preset.
+This completely eliminates combinatorial mask explosion while giving model authors arbitrary precision control across any numerical preset and seamless international currency localization.
 
 ### 6.5. Two-phase theme utilization in the compiler
 
