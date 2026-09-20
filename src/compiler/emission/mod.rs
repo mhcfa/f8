@@ -5,6 +5,8 @@
 
 pub mod error;
 pub mod format;
+pub mod workbook;
 
 pub use error::EmissionError;
 pub use format::{CellFormatKey, FormatCache, parse_hex_color, translate_border_style};
+pub use workbook::{EmissionOptions, WorkbookEmitter};

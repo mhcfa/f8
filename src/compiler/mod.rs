@@ -11,7 +11,10 @@ pub mod ir;
 pub mod layout;
 pub mod lowering;
 
-pub use emission::{CellFormatKey, EmissionError, FormatCache};
+use std::borrow::Cow;
+use std::path::Path;
+
+pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 pub use error::CompilerError;
 pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
@@ -28,6 +31,14 @@ use crate::model::theme::Theme;
 /// High-level compiler driver orchestrating compilation passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Compiler;
+
+/// Internal compilation artifacts prepared for workbook binary emission.
+struct EmissionContext<'a> {
+    grid: ir::cell::CellGrid,
+    layout_map: layout::LayoutMap,
+    lowered_map: lowering::LoweredFormulaMap,
+    effective_evaluated: Option<Cow<'a, EvaluatedModel>>,
+}
 
 impl Compiler {
     /// Compiles and topologically evaluates a model specification into an in-memory evaluated model.
@@ -103,5 +114,110 @@ impl Compiler {
         let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
         let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, layout_map)?;
         Ok(lowered_map)
+    }
+
+    /// Prepares artifacts for workbook emission: validates specifications, evaluates model if required,
+    /// expands IR grid, computes spatial layout, and lowers formula expressions.
+    fn prepare_emission_context<'a>(
+        manifest: &ProjectManifest,
+        tables: &[TableSpec],
+        theme: &Theme,
+        evaluated: Option<&'a EvaluatedModel>,
+        options: &EmissionOptions,
+    ) -> Result<EmissionContext<'a>, CompilerError> {
+        manifest.validate()?;
+        for table in tables {
+            table.validate()?;
+        }
+
+        let effective_evaluated = match evaluated {
+            Some(eval) => Some(Cow::Borrowed(eval)),
+            None if options.values_only => {
+                let eval = Self::evaluate(manifest, tables)?;
+                Some(Cow::Owned(eval))
+            }
+            None => None,
+        };
+
+        let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let layout_map = layout::LayoutPlanner::plan(
+            manifest,
+            tables,
+            &grid,
+            theme,
+            effective_evaluated.as_deref(),
+        )?;
+        let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, &layout_map)?;
+
+        Ok(EmissionContext {
+            grid,
+            layout_map,
+            lowered_map,
+            effective_evaluated,
+        })
+    }
+
+    /// Compiles a model specification and theme into an in-memory `.xlsx` workbook byte buffer.
+    ///
+    /// If `options.values_only` is true and `evaluated` is `None`, this method automatically
+    /// evaluates the model to ensure concrete values are frozen without blank cells.
+    ///
+    /// # Errors
+    /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
+    /// formula lowering, or binary emission fails.
+    pub fn emit_workbook(
+        manifest: &ProjectManifest,
+        tables: &[TableSpec],
+        theme: &Theme,
+        evaluated: Option<&EvaluatedModel>,
+        options: &EmissionOptions,
+    ) -> Result<Vec<u8>, CompilerError> {
+        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated, options)?;
+
+        let buffer = emission::WorkbookEmitter::emit_to_buffer(
+            manifest,
+            tables,
+            &ctx.grid,
+            &ctx.layout_map,
+            &ctx.lowered_map,
+            theme,
+            ctx.effective_evaluated.as_deref(),
+            options,
+        )?;
+
+        Ok(buffer)
+    }
+
+    /// Compiles a model specification and theme and saves the `.xlsx` workbook to a file path.
+    ///
+    /// If `options.values_only` is true and `evaluated` is `None`, this method automatically
+    /// evaluates the model to ensure concrete values are frozen without blank cells.
+    ///
+    /// # Errors
+    /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
+    /// formula lowering, binary emission, or file I/O fails.
+    pub fn save_workbook<P: AsRef<Path>>(
+        manifest: &ProjectManifest,
+        tables: &[TableSpec],
+        theme: &Theme,
+        evaluated: Option<&EvaluatedModel>,
+        options: &EmissionOptions,
+        path: P,
+    ) -> Result<(), CompilerError> {
+        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated, options)?;
+
+        emission::WorkbookEmitter::emit_to_file(
+            manifest,
+            tables,
+            &ctx.grid,
+            &ctx.layout_map,
+            &ctx.lowered_map,
+            theme,
+            ctx.effective_evaluated.as_deref(),
+            options,
+            path,
+        )?;
+
+        Ok(())
     }
 }

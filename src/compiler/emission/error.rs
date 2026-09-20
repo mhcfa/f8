@@ -2,7 +2,9 @@
 
 use thiserror::Error;
 
+use crate::compiler::ir::id::CellId;
 use crate::model::error::ModelError;
+use crate::model::id::{SheetId, TableId};
 
 /// Diagnostic errors occurring during OpenXML styling, format synthesis, and workbook emission.
 #[derive(Debug, Error)]
@@ -25,4 +27,25 @@ pub enum EmissionError {
     /// Theme or number format resolution error.
     #[error("Theme resolution error: {0}")]
     Model(#[from] ModelError),
+
+    /// Worksheet declared in manifest was not found in layout.
+    #[error("Worksheet '{sheet}' was not found in layout")]
+    MissingSheet {
+        /// Worksheet identifier.
+        sheet: SheetId,
+    },
+
+    /// Table placement was not found in layout.
+    #[error("Table '{table}' was not found in layout")]
+    MissingTable {
+        /// Table identifier.
+        table: TableId,
+    },
+
+    /// Cell coordinate was not found in layout.
+    #[error("Cell coordinate '{cell}' was not found in layout")]
+    MissingCell {
+        /// Cell identifier.
+        cell: CellId,
+    },
 }

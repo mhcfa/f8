@@ -1,7 +1,7 @@
 ---
 title: Workbook Assembly & OpenXML Binary Emission
 date: 2026-09-20
-status: draft
+status: completed
 target-living-spec: specs/living-specs/compiler/workbook-emission.md
 ---
 
@@ -195,52 +195,52 @@ impl Compiler {
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: End-to-End Workbook Binary Generation**
+- [x] **Scenario 1: End-to-End Workbook Binary Generation**
   - **Given** a valid project manifest and table specifications
   - **When** executing `Compiler::emit_workbook` with default options
   - **Then** produces a non-empty `.xlsx` byte buffer that parses as a valid zip/OpenXML archive with all declared sheets.
 
-- [ ] **Scenario 2: Sheet Layout Metrics and Column Widths Application**
+- [x] **Scenario 2: Sheet Layout Metrics and Column Widths Application**
   - **Given** a sheet layout with computed column widths, row heights, freeze panes, tab color, and gridline visibility
   - **When** assembling the worksheet in `WorkbookEmitter`
   - **Then** each worksheet attribute is applied to the corresponding `rust_xlsxwriter::Worksheet`.
 
-- [ ] **Scenario 3: Structural Headers and Super-Headers Emission**
+- [x] **Scenario 3: Structural Headers and Super-Headers Emission**
   - **Given** tables with title, subtitle, title buffer gutter, super-headers, and column key headers
   - **When** emitting the table header block
   - **Then** table title is written with title format, subtitle with subtitle format, multi-column super-headers are merged, and column headers are placed at physical row indices.
 
-- [ ] **Scenario 4: Single-Cell Super-Header Safety**
+- [x] **Scenario 4: Single-Cell Super-Header Safety**
   - **Given** a column group spanning exactly one column (`start_col == end_col`)
   - **When** emitting the super-header
   - **Then** the header is written as a regular cell without calling `merge_range`, avoiding `MergeRangeSingleCell` errors.
 
-- [ ] **Scenario 5: Live Formulas with Evaluated Result Caching**
+- [x] **Scenario 5: Live Formulas with Evaluated Result Caching**
   - **Given** a model with formula cells and an in-memory `EvaluatedModel`
   - **When** emitting the workbook
   - **Then** formula cells are written via `write_formula_with_format` with their evaluated result pre-populated in the formula cache.
 
-- [ ] **Scenario 6: Values-Only Freezing Mode**
+- [x] **Scenario 6: Values-Only Freezing Mode**
   - **Given** `EmissionOptions { values_only: true, .. }`
   - **When** emitting the workbook
   - **Then** formula cells are written as literal numbers/strings without formula definitions, preserving black text formatting.
 
-- [ ] **Scenario 7: Input Blue vs Formula Black Color Coding**
+- [x] **Scenario 7: Input Blue vs Formula Black Color Coding**
   - **Given** a model with measure input literals and formula cells
   - **When** streaming data cells
   - **Then** measure input cells use blue `input_text` format and formula cells use black `formula_text` format.
 
-- [ ] **Scenario 8: Collapsible Row Group Outlining**
+- [x] **Scenario 8: Collapsible Row Group Outlining**
   - **Given** a table with hierarchical row groups
   - **When** emitting the table
   - **Then** `group_rows` is invoked for row ranges matching the group hierarchy.
 
-- [ ] **Scenario 9: Save Workbook Directly to Disk File**
+- [x] **Scenario 9: Save Workbook Directly to Disk File**
   - **Given** a valid model and destination file path
   - **When** executing `Compiler::save_workbook`
   - **Then** the `.xlsx` file is successfully created on disk.
 
-- [ ] **Scenario 10: Missing Coordinate or Entity Diagnostics**
+- [x] **Scenario 10: Missing Coordinate or Entity Diagnostics**
   - **Given** an inconsistent layout map missing a required cell coordinate
   - **When** streaming workbook cells
   - **Then** returns `EmissionError::MissingCell` without panicking.
@@ -250,22 +250,22 @@ impl Compiler {
 ## Tasks
 
 ### Phase 1: Error Types & Options
-- [ ] Add `MissingSheet { sheet: SheetId }`, `MissingTable { table: TableId }`, and `MissingCell { cell: CellId }` variants to `EmissionError` in `src/compiler/emission/error.rs`.
-- [ ] Define `EmissionOptions` in `src/compiler/emission/workbook.rs`.
-- [ ] Update `src/compiler/emission/mod.rs` to declare and re-export `workbook` types.
+- [x] Add `MissingSheet { sheet: SheetId }`, `MissingTable { table: TableId }`, and `MissingCell { cell: CellId }` variants to `EmissionError` in `src/compiler/emission/error.rs`.
+- [x] Define `EmissionOptions` in `src/compiler/emission/workbook.rs`.
+- [x] Update `src/compiler/emission/mod.rs` to declare and re-export `workbook` types.
 
 ### Phase 2: Workbook Assembly Engine
-- [ ] Implement worksheet setup: creation, tab colors, gridlines, freeze panes, column widths, row heights.
-- [ ] Implement structural header streaming: title, subtitle, title gutter, super-headers (with 1-cell check), column headers, section headers.
-- [ ] Implement row group outline grouping (`worksheet.group_rows`).
-- [ ] Implement data cell streaming: format cache lookup, literal cells, formula cells with cached results, values-only mode.
-- [ ] Implement `WorkbookEmitter::emit_to_buffer` and `WorkbookEmitter::emit_to_file`.
+- [x] Implement worksheet setup: creation, tab colors, gridlines, freeze panes, column widths, row heights.
+- [x] Implement structural header streaming: title, subtitle, title gutter, super-headers (with 1-cell check), column headers, section headers.
+- [x] Implement row group outline grouping (`worksheet.group_rows`).
+- [x] Implement data cell streaming: format cache lookup, literal cells, formula cells with cached results, values-only mode.
+- [x] Implement `WorkbookEmitter::emit_to_buffer` and `WorkbookEmitter::emit_to_file`.
 
 ### Phase 3: Compiler Driver Integration
-- [ ] Add `Compiler::emit_workbook` and `Compiler::save_workbook` methods to `src/compiler/mod.rs`.
-- [ ] Export `EmissionOptions` and `WorkbookEmitter` from `src/compiler/mod.rs`.
+- [x] Add `Compiler::emit_workbook` and `Compiler::save_workbook` methods to `src/compiler/mod.rs`.
+- [x] Export `EmissionOptions` and `WorkbookEmitter` from `src/compiler/mod.rs`.
 
 ### Phase 4: Integration Test Suite & Verification
-- [ ] Create `tests/workbook_emission_test.rs` covering all 10 acceptance scenarios.
-- [ ] Run verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
-- [ ] Update living specification `specs/living-specs/compiler/workbook-emission.md` and archive draft to `specs/history/`.
+- [x] Create `tests/workbook_emission_test.rs` covering all 10 acceptance scenarios.
+- [x] Run verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- [x] Update living specification `specs/living-specs/compiler/workbook-emission.md` and archive draft to `specs/history/`.
