@@ -37,7 +37,7 @@ struct EmissionContext<'a> {
     grid: ir::cell::CellGrid,
     layout_map: layout::LayoutMap,
     lowered_map: lowering::LoweredFormulaMap,
-    effective_evaluated: Option<Cow<'a, EvaluatedModel>>,
+    effective_evaluated: Cow<'a, EvaluatedModel>,
 }
 
 impl Compiler {
@@ -123,7 +123,6 @@ impl Compiler {
         tables: &[TableSpec],
         theme: &Theme,
         evaluated: Option<&'a EvaluatedModel>,
-        options: &EmissionOptions,
     ) -> Result<EmissionContext<'a>, CompilerError> {
         manifest.validate()?;
         for table in tables {
@@ -131,12 +130,8 @@ impl Compiler {
         }
 
         let effective_evaluated = match evaluated {
-            Some(eval) => Some(Cow::Borrowed(eval)),
-            None if options.values_only => {
-                let eval = Self::evaluate(manifest, tables)?;
-                Some(Cow::Owned(eval))
-            }
-            None => None,
+            Some(eval) => Cow::Borrowed(eval),
+            None => Cow::Owned(Self::evaluate(manifest, tables)?),
         };
 
         let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
@@ -145,7 +140,7 @@ impl Compiler {
             tables,
             &grid,
             theme,
-            effective_evaluated.as_deref(),
+            Some(&effective_evaluated),
         )?;
         let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, &layout_map)?;
 
@@ -159,8 +154,8 @@ impl Compiler {
 
     /// Compiles a model specification and theme into an in-memory `.xlsx` workbook byte buffer.
     ///
-    /// If `options.values_only` is true and `evaluated` is `None`, this method automatically
-    /// evaluates the model to ensure concrete values are frozen without blank cells.
+    /// If `evaluated` is `None`, this method automatically evaluates the model to pre-populate
+    /// formula calculation result caches `<v>` or freeze concrete values.
     ///
     /// # Errors
     /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
@@ -172,7 +167,7 @@ impl Compiler {
         evaluated: Option<&EvaluatedModel>,
         options: &EmissionOptions,
     ) -> Result<Vec<u8>, CompilerError> {
-        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated, options)?;
+        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated)?;
 
         let buffer = emission::WorkbookEmitter::emit_to_buffer(
             manifest,
@@ -181,7 +176,7 @@ impl Compiler {
             &ctx.layout_map,
             &ctx.lowered_map,
             theme,
-            ctx.effective_evaluated.as_deref(),
+            Some(&ctx.effective_evaluated),
             options,
         )?;
 
@@ -190,8 +185,8 @@ impl Compiler {
 
     /// Compiles a model specification and theme and saves the `.xlsx` workbook to a file path.
     ///
-    /// If `options.values_only` is true and `evaluated` is `None`, this method automatically
-    /// evaluates the model to ensure concrete values are frozen without blank cells.
+    /// If `evaluated` is `None`, this method automatically evaluates the model to pre-populate
+    /// formula calculation result caches `<v>` or freeze concrete values.
     ///
     /// # Errors
     /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
@@ -204,7 +199,7 @@ impl Compiler {
         options: &EmissionOptions,
         path: P,
     ) -> Result<(), CompilerError> {
-        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated, options)?;
+        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated)?;
 
         emission::WorkbookEmitter::emit_to_file(
             manifest,
@@ -213,7 +208,7 @@ impl Compiler {
             &ctx.layout_map,
             &ctx.lowered_map,
             theme,
-            ctx.effective_evaluated.as_deref(),
+            Some(&ctx.effective_evaluated),
             options,
             path,
         )?;

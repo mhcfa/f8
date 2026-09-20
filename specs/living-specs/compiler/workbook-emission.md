@@ -117,6 +117,13 @@ Missing coordinates or unassigned entities propagate structured diagnostics (`Em
   - **When** layout map is missing a required cell ID
   - **Then** returns `EmissionError::MissingCell` cleanly.
 
+### 8. End-to-End Integration Verification & Model Exports
+
+Complete financial models are verified end-to-end across all six compiler passes without polluting CI environments with physical disk artifacts:
+- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement and Institutional LBO models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
+- On-demand disk export: `test_export_xlsx_to_disk` is marked with `#[ignore]` and executes only when explicitly requested (`cargo test --test export_integration_test -- --ignored`).
+- Standalone runner: `examples/export_models.rs` compiles production models with real themes and exports inspectable `.xlsx` workbooks on demand (`cargo run --example export_models`).
+
 ## Public Interfaces
 
 | Type / Method | Purpose | Signature |
@@ -126,3 +133,4 @@ Missing coordinates or unassigned entities propagate structured diagnostics (`Em
 | `WorkbookEmitter::emit_to_file` | Assemble and write to file | `emit_to_file<P: AsRef<Path>>(...) -> Result<(), EmissionError>` |
 | `Compiler::emit_workbook` | Facade compiling model to buffer | `emit_workbook(...) -> Result<Vec<u8>, CompilerError>` |
 | `Compiler::save_workbook` | Facade compiling and saving to disk | `save_workbook<P: AsRef<Path>>(...) -> Result<(), CompilerError>` |
+
