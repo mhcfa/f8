@@ -1,10 +1,11 @@
+use std::path::PathBuf;
 use thiserror::Error;
 
 use super::format::{CurrencyCode, FormatPreset};
 use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
 
 /// Structured diagnostic errors for Finx specifications and model validation.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 pub enum ModelError {
     #[error(
         "Table '{table}': {context} specifies decimals ({decimals}) for non-numeric preset '{preset}'"
@@ -123,6 +124,9 @@ pub enum ModelError {
     #[error("Table '{table}': duplicate row group id '{group}'")]
     DuplicateRowGroupId { table: TableId, group: RowGroupId },
 
+    #[error("Table '{table}': duplicate table id '{table}' across project")]
+    DuplicateTableId { table: TableId },
+
     #[error("Table '{table}' has no columns declared")]
     EmptyColumns { table: TableId },
 
@@ -132,8 +136,43 @@ pub enum ModelError {
     #[error("Duplicate sheet name '{sheet}' in project manifest")]
     DuplicateSheetName { sheet: String },
 
-    #[error("Duplicate table id '{table}' across project")]
-    DuplicateTableId { table: TableId },
+    #[error("Theme '{name}' not found in built-in catalog and file does not exist: {path}")]
+    ThemeNotFound { name: String, path: PathBuf },
+
+    #[error("Invalid hex color code '{color}' in theme palette for field '{field}'")]
+    InvalidThemeColor { field: String, color: String },
+
+    #[error("Invalid theme metric '{metric}': expected positive finite value, found {value}")]
+    InvalidThemeMetric { metric: String, value: f64 },
+
+    #[error("Theme format template for '{preset}' must contain '{{dec}}' placeholder")]
+    MissingDecimalPlaceholder { preset: FormatPreset },
+
+    #[error("Theme format template for 'currency' must contain '{{sym}}' placeholder")]
+    MissingCurrencySymbolPlaceholder,
+
+    #[error("Failed to read theme file '{path}': {source}")]
+    ThemeIoError {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("Failed to parse theme file '{path}': {source}")]
+    ThemeParseError {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error(
+        "Theme format for '{preset}' specifies precision ({decimals}) exceeding maximum supported precision ({max})"
+    )]
+    ThemePrecisionOutOfBounds {
+        preset: FormatPreset,
+        decimals: u32,
+        max: u32,
+    },
 
     #[error("Serialization / Deserialization error: {0}")]
     Json(String),

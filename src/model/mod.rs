@@ -3,6 +3,7 @@ pub mod format;
 pub mod id;
 pub mod manifest;
 pub mod table;
+pub mod theme;
 
 pub use error::ModelError;
 pub use format::{CurrencyCode, FormatPreset, SemanticStyle};
@@ -11,4 +12,8 @@ pub use manifest::{FreezePanes, ProjectManifest, SheetSpec};
 pub use table::{
     AxisRole, CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowGroup, RowGroupChild,
     RowSpec, TableSpec, ValueLiteral,
+};
+pub use theme::{
+    BorderStyle, BordersConfig, FormatDefaults, MetricsConfig, NumberFormatsConfig, PaletteConfig,
+    Theme, TypographyConfig,
 };

@@ -1,7 +1,7 @@
 ---
 title: Pluggable Themes & Dynamic Format Masks
 date: 2026-09-20
-status: draft
+status: completed
 target-living-spec: specs/living-specs/model/theme.md
 ---
 
@@ -259,7 +259,7 @@ pub enum ModelError {
     InvalidThemeMetric { metric: String, value: f64 },
 
     #[error("Theme format template for '{preset}' must contain '{{dec}}' placeholder")]
-    MissingDecimalPlaceholder { preset: String },
+    MissingDecimalPlaceholder { preset: FormatPreset },
 
     #[error("Theme format template for 'currency' must contain '{{sym}}' placeholder")]
     MissingCurrencySymbolPlaceholder,
@@ -281,19 +281,19 @@ pub enum ModelError {
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Built-in theme catalog resolution**
+- [x] **Scenario 1: Built-in theme catalog resolution**
   - **Given** theme identifiers `"corporate_navy"`, `"classic_green"`, `"modern_slate"`, and `"minimal_monochrome"`
   - **When** `Theme::resolve` is invoked with each name
   - **Then** the corresponding built-in theme is returned with valid typography (including `subtitle_size`), palette (including body, subtitle, summary, input/formula, and total border colors), metrics (including margins, gutters, title buffer rows, and padding), and borders.
 
-- [ ] **Scenario 2: Dynamic `{dec}` and `{sym}` expansion for zero decimals**
+- [x] **Scenario 2: Dynamic `{dec}` and `{sym}` expansion for zero decimals**
   - **Given** active theme `corporate_navy` and `decimals: Some(0)`
   - **When** `theme.resolve_number_format` is invoked for `FormatPreset::Currency` with `currency: None`
   - **Then** `{sym}` expands to `"$"`, and `{dec}` expands to `""` yielding `_($* #,##0_);_($* (#,##0);_($* "-"_);_(@_)`.
   - **When** invoked for `Number`, `Percentage`, `Multiple`, and `BasisPoints`
   - **Then** all `{dec}` placeholders expand to `""` (e.g. `#,##0;(#,##0);"-"`, `0%`, `0"x"`, `#,##0" bps"`).
 
-- [ ] **Scenario 3: Dynamic `{dec}` and `{sym}` expansion for positive decimals and custom currency**
+- [x] **Scenario 3: Dynamic `{dec}` and `{sym}` expansion for positive decimals and custom currency**
   - **Given** active theme `corporate_navy`
   - **When** `theme.resolve_number_format` is invoked for `FormatPreset::Currency` with `decimals: Some(2)` and `currency: Some(CurrencyCode::Eur)`
   - **Then** all `{dec}` placeholders expand to `".00"` and `{sym}` to `"€"` yielding `_(€* #,##0.00_);_(€* (#,##0.00);_(€* "-"_);_(@_)`.
@@ -304,32 +304,32 @@ pub enum ModelError {
   - **When** `decimals: Some(4)` is invoked for `FormatPreset::Number`
   - **Then** all `{dec}` placeholders expand to `".0000"` yielding `#,##0.0000;(#,##0.0000);"-"`.
 
-- [ ] **Scenario 4: Fallback to theme defaults when precision or currency is omitted**
+- [x] **Scenario 4: Fallback to theme defaults when precision or currency is omitted**
   - **Given** active theme `corporate_navy` with defaults (currency=0, number=0, percentage=1, multiple=1, basis_points=0)
   - **When** `theme.resolve_number_format(preset, None, None)` is called
   - **Then** `currency` renders with `"$"` and 0 decimals, `percentage` with 1 decimal (`0.0%`), and `multiple` with 1 decimal (`0.0"x"`).
 
-- [ ] **Scenario 5: Non-numeric presets ignore decimals and currency**
+- [x] **Scenario 5: Non-numeric presets ignore decimals and currency**
   - **Given** active theme `corporate_navy`
   - **When** `theme.resolve_number_format` is invoked for `Date` or `Text` with `Some(2)` and `Some(CurrencyCode::Eur)`
   - **Then** the static masks `yyyy-mm-dd` and `@` are returned unaltered.
 
-- [ ] **Scenario 6: External custom theme loading**
+- [x] **Scenario 6: External custom theme loading**
   - **Given** a valid custom theme JSON file on disk containing optional `"$schema"` and custom palette/metrics
   - **When** `Theme::resolve("./themes/custom.json", Some(base_dir))` is called
   - **Then** the custom theme is loaded, validated, and returned.
 
-- [ ] **Scenario 7: Rejection of invalid theme configurations**
+- [x] **Scenario 7: Rejection of invalid theme configurations**
   - **Given** a custom theme JSON with an invalid color (e.g. `"blue"` instead of `#1B365D`), non-positive row height or padding ($\le 0.0$), missing `{dec}` in templates, missing `{sym}` in currency template, or precision exceeding maximum bounds ($> 14$)
   - **When** theme validation or format resolution is executed
   - **Then** the appropriate `ModelError` (`InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, or `ThemePrecisionOutOfBounds`) is returned.
 
-- [ ] **Scenario 8: Rejection of non-existent theme**
+- [x] **Scenario 8: Rejection of non-existent theme**
   - **Given** an unknown theme name `"neon_cyberpunk"` that does not exist in built-ins and has no file on disk
   - **When** `Theme::resolve("neon_cyberpunk", None)` is called
   - **Then** `ModelError::ThemeNotFound` is returned.
 
-- [ ] **Scenario 9: Manifest theme default fallback**
+- [x] **Scenario 9: Manifest theme default fallback**
   - **Given** a `ProjectManifest` where `theme` is omitted or empty
   - **When** `manifest.resolve_theme(base_dir)` is invoked
   - **Then** it cleanly resolves to the built-in `"corporate_navy"` theme.
@@ -339,31 +339,32 @@ pub enum ModelError {
 ## Tasks
 
 ### Phase 1: Theme Data Structures & Serde Model
-- [ ] Create `src/model/theme.rs` with `Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, and `FormatDefaults`.
-- [ ] Add theme error variants (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeIoError`, `ThemeParseError`, `ThemePrecisionOutOfBounds`) to `src/model/error.rs`.
-- [ ] Implement `Theme::validate(&self)` checking hex colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA`), metric positivity, and `{dec}` / `{sym}` placeholders.
-- [ ] Export `theme` module in `src/model/mod.rs`.
+- [x] Create `src/model/theme.rs` with `Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, and `FormatDefaults`.
+- [x] Add theme error variants (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeIoError`, `ThemeParseError`, `ThemePrecisionOutOfBounds`) to `src/model/error.rs`.
+- [x] Implement `Theme::validate(&self)` checking hex colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA`), metric positivity, and `{dec}` / `{sym}` placeholders.
+- [x] Export `theme` module in `src/model/mod.rs`.
 
 ### Phase 2: Dynamic Format Mask Generation
-- [ ] Implement `resolve_number_format(&self, preset: FormatPreset, decimals: Option<u32>, currency: Option<CurrencyCode>) -> Result<String, ModelError>`.
-- [ ] Implement `{dec}` and `{sym}` global expansion helper function handling 0 decimals (`""`), $1 \le N \le 14$ decimals (`.00...0`), currency Excel mask symbol (`code.excel_symbol()`), and rejecting $N > 14$ with `ThemePrecisionOutOfBounds`.
-- [ ] Implement non-numeric preset static passthrough.
+- [x] Implement `resolve_number_format(&self, preset: FormatPreset, decimals: Option<u32>, currency: Option<CurrencyCode>) -> Result<String, ModelError>`.
+- [x] Implement `{dec}` and `{sym}` global expansion helper function handling 0 decimals (`""`), $1 \le N \le 14$ decimals (`.00...0`), currency Excel mask symbol (`code.excel_symbol()`), and rejecting $N > 14$ with `ThemePrecisionOutOfBounds`.
+- [x] Implement non-numeric preset static passthrough.
 
 ### Phase 3: Built-in Institutional Themes
-- [ ] Implement `corporate_navy` (default institutional private equity / investment banking theme).
-- [ ] Implement `classic_green` (traditional corporate finance / hunter green theme).
-- [ ] Implement `modern_slate` (tech / venture capital slate theme).
-- [ ] Implement `minimal_monochrome` (high-contrast black & white print/audit theme).
-- [ ] Add `Theme::built_in(name: &str) -> Option<Self>` lookup.
+- [x] Implement `corporate_navy` (default institutional private equity / investment banking theme).
+- [x] Implement `classic_green` (traditional corporate finance / hunter green theme).
+- [x] Implement `modern_slate` (tech / venture capital slate theme).
+- [x] Implement `minimal_monochrome` (high-contrast black & white print/audit theme).
+- [x] Add `Theme::built_in(name: &str) -> Option<Self>` lookup.
 
 ### Phase 4: Theme Resolution & Manifest Integration
-- [ ] Implement `Theme::resolve(name_or_path: &str, base_dir: Option<&Path>) -> Result<Theme, ModelError>`.
-- [ ] Implement `ProjectManifest::resolve_theme(&self, base_dir: Option<&Path>) -> Result<Theme, ModelError>` with `"corporate_navy"` default.
-- [ ] Add `#[serde(default = "default_theme")]` to `ProjectManifest.theme`.
+- [x] Implement `Theme::resolve(name_or_path: &str, base_dir: Option<&Path>) -> Result<Theme, ModelError>`.
+- [x] Implement `ProjectManifest::resolve_theme(&self, base_dir: Option<&Path>) -> Result<Theme, ModelError>` with `"corporate_navy"` default.
+- [x] Add `#[serde(default = "default_theme")]` to `ProjectManifest.theme`.
 
 ### Phase 5: Verification & Testing
-- [ ] Create `tests/theme_test.rs` covering all 9 acceptance scenarios.
-- [ ] Verify complete project compilation: `cargo check`.
-- [ ] Run full test suite: `cargo test`.
-- [ ] Run linter: `cargo clippy --all-targets -- -D warnings`.
-- [ ] Run formatter check: `cargo fmt --check`.
+- [x] Create `tests/theme_test.rs` covering all 9 acceptance scenarios.
+- [x] Verify complete project compilation: `cargo check`.
+- [x] Run full test suite: `cargo test`.
+- [x] Run linter: `cargo clippy --all-targets -- -D warnings`.
+- [x] Run formatter check: `cargo fmt --check`.
+
