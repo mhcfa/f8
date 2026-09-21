@@ -13,7 +13,6 @@ pub enum AxisRole {
     #[default]
     Measure,
     Descriptor,
-    PrimaryDescriptor,
 }
 
 impl AxisRole {
@@ -22,14 +21,9 @@ impl AxisRole {
         matches!(self, Self::Measure)
     }
 
-    /// Returns true if this axis is a descriptor (primary or secondary).
+    /// Returns true if this axis is a descriptor.
     pub fn is_descriptor(&self) -> bool {
-        matches!(self, Self::Descriptor | Self::PrimaryDescriptor)
-    }
-
-    /// Returns true if this axis is the primary descriptor.
-    pub fn is_primary_descriptor(&self) -> bool {
-        matches!(self, Self::PrimaryDescriptor)
+        matches!(self, Self::Descriptor)
     }
 }
 
@@ -50,11 +44,6 @@ impl ColumnSpec {
     /// Creates a descriptor column specification with an explicit display label.
     pub fn descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
         Self::Data(DataColumnSpec::descriptor(id, label))
-    }
-
-    /// Creates a primary descriptor column specification.
-    pub fn primary_descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
-        Self::Data(DataColumnSpec::primary_descriptor(id, label))
     }
 
     /// Creates a spacing gutter column specification.
@@ -230,23 +219,6 @@ impl DataColumnSpec {
         Self {
             id: id.into(),
             role: AxisRole::Descriptor,
-            headers: vec![label.into()],
-            style: None,
-            highlight: None,
-            format: None,
-            decimals: None,
-            currency: None,
-            expr: None,
-            note: None,
-            source: None,
-        }
-    }
-
-    /// Creates a primary descriptor column specification.
-    pub fn primary_descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
-        Self {
-            id: id.into(),
-            role: AxisRole::PrimaryDescriptor,
             headers: vec![label.into()],
             style: None,
             highlight: None,
@@ -435,6 +407,8 @@ pub struct DetailedCellInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<CurrencyCode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<serde_json::Value>,
@@ -548,6 +522,20 @@ impl CellInput {
             Self::Detailed(d) => d.source.as_ref(),
         }
     }
+
+    /// Returns the typographic cell indentation if present.
+    pub fn indent(&self) -> Option<u8> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.indent,
+        }
+    }
+}
+
+impl From<DetailedCellInput> for CellInput {
+    fn from(d: DetailedCellInput) -> Self {
+        Self::Detailed(d)
+    }
 }
 
 impl From<f64> for CellInput {
@@ -617,25 +605,6 @@ impl RowSpec {
             Self::Data(d) => Some(&d.id),
             Self::SectionHeader(_) | Self::Gutter => None,
         }
-    }
-
-    /// Returns the typographic cell indentation if specified.
-    pub fn indent(&self) -> Option<u8> {
-        match self {
-            Self::Data(d) => d.indent,
-            Self::SectionHeader(h) => h.indent,
-            Self::Gutter => None,
-        }
-    }
-
-    /// Builder method attaching indentation.
-    pub fn with_indent(mut self, indent: Option<u8>) -> Self {
-        match &mut self {
-            Self::Data(d) => d.indent = indent,
-            Self::SectionHeader(h) => h.indent = indent,
-            Self::Gutter => {}
-        }
-        self
     }
 
     /// Builder method attaching a formatting preset.
@@ -738,8 +707,6 @@ impl From<SectionHeaderRowSpec> for RowSpec {
 pub struct DataRowSpec {
     pub id: RowId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub indent: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<SemanticStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
@@ -764,7 +731,6 @@ impl DataRowSpec {
     pub fn new(id: impl Into<RowId>) -> Self {
         Self {
             id: id.into(),
-            indent: None,
             style: None,
             highlight: None,
             format: None,
@@ -775,12 +741,6 @@ impl DataRowSpec {
             source: None,
             cells: IndexMap::new(),
         }
-    }
-
-    /// Builder method attaching typographic indentation.
-    pub fn with_indent(mut self, indent: Option<u8>) -> Self {
-        self.indent = indent;
-        self
     }
 
     /// Builder method attaching a formatting preset.
@@ -990,7 +950,6 @@ impl TableSpec {
         }
 
         let mut seen_cols = IndexSet::new();
-        let mut primary_desc: Option<&ColId> = None;
 
         for col in &self.columns {
             let data_col = match col {
@@ -1003,17 +962,6 @@ impl TableSpec {
                     table: self.id.clone(),
                     column: data_col.id.clone(),
                 });
-            }
-
-            if data_col.role.is_primary_descriptor() {
-                if let Some(first) = primary_desc {
-                    return Err(ModelError::DuplicatePrimaryDescriptor {
-                        table: self.id.clone(),
-                        first: first.clone(),
-                        second: data_col.id.clone(),
-                    });
-                }
-                primary_desc = Some(&data_col.id);
             }
 
             if let Some(decimals) = data_col.decimals
@@ -1059,24 +1007,8 @@ impl TableSpec {
             });
         }
 
-        let has_primary_desc = self
-            .columns
-            .iter()
-            .any(|c| c.role().is_some_and(|r| r.is_primary_descriptor()));
-
         let mut seen_rows = IndexSet::new();
         for row in &self.rows {
-            if let Some(indent) = row.indent()
-                && indent > 0
-                && !has_primary_desc
-            {
-                return Err(ModelError::IndentWithoutPrimaryDescriptor {
-                    table: self.id.clone(),
-                    row: row.id().cloned(),
-                    indent,
-                });
-            }
-
             let data_row = match row {
                 RowSpec::Data(d) => d,
                 RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
@@ -1126,6 +1058,15 @@ impl TableSpec {
     }
 
     fn validate_cells(&self) -> Result<(), ModelError> {
+        let col_roles: IndexMap<&ColId, AxisRole> = self
+            .columns
+            .iter()
+            .filter_map(|c| match c {
+                ColumnSpec::Data(d) => Some((&d.id, d.role)),
+                ColumnSpec::Gutter => None,
+            })
+            .collect();
+
         for row in &self.rows {
             let data_row = match row {
                 RowSpec::Data(d) => d,
@@ -1133,11 +1074,23 @@ impl TableSpec {
             };
 
             for (col_id, cell_input) in &data_row.cells {
-                if !self.contains_col(col_id) {
+                let Some(role) = col_roles.get(col_id) else {
                     return Err(ModelError::UnknownCellColumn {
                         table: self.id.clone(),
                         row: data_row.id.clone(),
                         column: col_id.clone(),
+                    });
+                };
+
+                if let Some(indent) = cell_input.indent()
+                    && indent > 0
+                    && !role.is_descriptor()
+                {
+                    return Err(ModelError::InvalidIndentOnMeasureCell {
+                        table: self.id.clone(),
+                        row: data_row.id.clone(),
+                        column: col_id.clone(),
+                        indent,
                     });
                 }
 

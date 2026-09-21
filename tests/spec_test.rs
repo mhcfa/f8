@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use finx::model::{
     AxisRole, CellInput, ColId, ColumnSpec, CurrencyCode, DetailedCellInput, FormatPreset,
-    FreezePanes, ModelError, ProjectManifest, RowSpec, SemanticStyle, SheetSpec, TableId,
-    TableSpec, ValueLiteral,
+    FreezePanes, ModelError, ProjectManifest, RowSpec, SectionHeaderRowSpec, SemanticStyle,
+    SheetSpec, TableId, TableSpec, ValueLiteral,
 };
 
 #[test]
@@ -240,31 +240,37 @@ fn test_reject_detailed_cell_with_empty_payload() {
 }
 
 #[test]
-fn test_reject_duplicate_primary_descriptor() {
+fn test_reject_indent_on_measure_cell() {
     let mut table = sample_table();
     table.columns = vec![
-        ColumnSpec::primary_descriptor("desc1", "Description 1"),
-        ColumnSpec::primary_descriptor("desc2", "Description 2"),
+        ColumnSpec::descriptor("desc", "Description"),
         ColumnSpec::new("c1"),
     ];
+    table.rows = vec![RowSpec::new("r1").with_cell(
+        "c1",
+        DetailedCellInput {
+            value: Some(ValueLiteral::Number(100.0)),
+            indent: Some(1),
+            ..Default::default()
+        },
+    )];
     let err = table.validate().unwrap_err();
     assert!(matches!(
         err,
-        ModelError::DuplicatePrimaryDescriptor { table: t, first, second }
-        if t.as_str() == "TestTable" && first.as_str() == "desc1" && second.as_str() == "desc2"
+        ModelError::InvalidIndentOnMeasureCell {
+            table: t,
+            row: r,
+            column: c,
+            indent: 1,
+        }
+        if t.as_str() == "TestTable" && r.as_str() == "r1" && c.as_str() == "c1"
     ));
 }
 
 #[test]
-fn test_reject_indent_without_primary_descriptor() {
-    let mut table = sample_table();
-    table.rows = vec![RowSpec::new("r1").with_indent(Some(1)).with_expr("1.0")];
-    let err = table.validate().unwrap_err();
-    assert!(matches!(
-        err,
-        ModelError::IndentWithoutPrimaryDescriptor { table: t, indent: 1, .. }
-        if t.as_str() == "TestTable"
-    ));
+fn test_reject_primary_descriptor_deserialization() {
+    let json = r#""primary_descriptor""#;
+    assert!(serde_json::from_str::<AxisRole>(json).is_err());
 }
 
 #[test]
@@ -287,7 +293,9 @@ fn test_tagged_spec_enums_serde() {
     let deser_col: ColumnSpec = serde_json::from_str(&json_gutter_col).unwrap();
     assert_eq!(gutter_col, deser_col);
 
-    let sec_header = RowSpec::section_header("Operating Expenses").with_indent(Some(1));
+    let sec_header: RowSpec = SectionHeaderRowSpec::new("Operating Expenses")
+        .with_indent(Some(1))
+        .into();
     let json_sec = serde_json::to_string(&sec_header).unwrap();
     assert!(json_sec.contains(r#""kind":"section_header""#));
     let deser_row: RowSpec = serde_json::from_str(&json_sec).unwrap();
@@ -472,6 +480,7 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
             note: None,
             source: None,
             currency: None,
+            indent: None,
         }),
     );
 

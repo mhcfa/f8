@@ -8,6 +8,7 @@ Guidelines for AI agents working with this codebase.
 - **Separation of concerns**: Keep clean boundaries between features.
 - **Local reasoning and single responsibility**: Keep functions and modules small and focused on a single task.
 - **Pragmatic simplicity**: Favor direct, idiomatic Rust code. Avoid premature abstractions, unnecessary wrappers, or speculative generalities unless there is a demonstrated requirement.
+- **Explicit and predictable core data structures**: Keep compiler core types and IR representations dead simple, explicit, and predictable, with strictly one way to represent any concept. Reject implicit behavior, magic fallbacks, or core syntactic sugar; leave authoring ergonomics, scaffolding, and syntactic convenience entirely to outer adapters and tooling.
 - **Explicit data flow**: Prefer pure functions with explicit inputs and outputs. Minimize hidden side effects, implicit state dependencies, and unexpected argument mutations.
 
 ## Spec-Driven-Development

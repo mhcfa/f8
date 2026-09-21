@@ -45,7 +45,7 @@ $$\text{TableRows} = \text{TitleRow} + \text{SubtitleRow} + \text{TitleGutterRow
 
 ### 3.2. Body Rows (1:1 Physical Mapping)
 Body rows map 1:1 to physical rows ($row_{\text{phys}} = row_{\text{body\_start}} + \text{index}$):
-- **Data rows (`kind: "data"`)**: Assigned `data_row_height` (15.0 pt). Primary descriptor cells receive typographic indent from `row.indent`.
+- **Data rows (`kind: "data"`)**: Assigned `data_row_height` (15.0 pt). Descriptor cells receive typographic indent from their cell-level `indent` attribute.
 - **Section headers (`kind: "section_header"`)**: Assigned `section_row_height` (18.0 pt). Titles are placed at table `start_col` with left alignment and natural text overflow.
 - **Gutters (`kind: "gutter"`)**: Assigned `gutter_row_height` (9.0 pt) with blank cells.
 

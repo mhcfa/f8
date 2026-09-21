@@ -71,7 +71,7 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
     {
       "kind": "data",
       "id": "string",
-      "role": "measure | descriptor | primary_descriptor (optional, default: measure)",
+      "role": "measure | descriptor (optional, default: measure)",
       "headers": ["string (multi-tier header labels, optional)"],
       "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
       "highlight": "boolean (optional, default: false)",
@@ -90,7 +90,7 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
     {
       "kind": "section_header",
       "title": "string",
-      "indent": "integer (optional, typographic indent on primary descriptor)",
+      "indent": "integer (optional, typographic indent level, default: 0)",
       "note": "string (optional)"
     },
     {
@@ -99,7 +99,6 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
     {
       "kind": "data",
       "id": "string",
-      "indent": "integer (optional, typographic indent on primary descriptor)",
       "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
       "highlight": "boolean (optional, default: false)",
       "format": "FormatPreset (optional)",
@@ -119,8 +118,7 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
 ### 3.1. Axis Roles (`role`)
 Data columns explicitly declare their calculation role:
 - **`measure` (default)**: Numerical quantities, time periods, and calculation outputs. Vector formulas broadcast across opposing measure axes.
-- **`descriptor`**: Categorical labels, metadata, units, and secondary stub information. Excluded from vector broadcasting and temporal navigation.
-- **`primary_descriptor`**: Primary row-entity label column (e.g. line item names). Sole recipient of row-level `indent`. At most one per table.
+- **`descriptor`**: Categorical labels, metadata, units, and stub information. Excluded from vector broadcasting and temporal navigation.
 
 ### 3.2. Semantic Styles (`style`), Highlights (`highlight`), & Precision (`decimals`)
 Columns and rows declare structural presentation styles (`data`, `subtotal`, `total`), visual emphasis (`highlight: true`), and numeric display precision (`decimals: integer`), completely decoupled from number format masks. See [Semantic Formatting & Themes](formatting.md#3-structural-semantic-styles-semanticstyle).
@@ -129,7 +127,7 @@ Columns and rows declare structural presentation styles (`data`, `subtotal`, `to
 Every key under `data_row.cells` refers strictly to a declared data column identifier (`ColId`). Each entry represents one 0D coordinate point:
 - **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
 - **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
-- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency", "decimals": 2, "style": "total", "highlight": true }`. An explicit `style: "data"` suppresses inherited row/column total borders.
+- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency", "decimals": 2, "style": "total", "highlight": true, "indent": 1 }`. An explicit `style: "data"` suppresses inherited row/column total borders. Note that `indent` is valid only on descriptor columns; setting `indent > 0` on a measure column produces a validation error.
 
 ---
 

@@ -64,6 +64,9 @@ pub struct CellNode {
     pub vertical: SemanticStyle,
     /// Visual highlight emphasis flag.
     pub is_highlight: bool,
+    /// Descriptor text indentation level.
+    #[serde(default)]
+    pub indent: u8,
     /// Evaluatable payload: literal value or formula AST.
     pub payload: CellPayload,
     /// Optional developer or audit note.
@@ -84,6 +87,7 @@ impl CellNode {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: false,
+            indent: 0,
             payload,
             note: None,
             source: None,
@@ -118,6 +122,12 @@ impl CellNode {
     /// Builder method attaching visual highlight emphasis.
     pub fn with_highlight(mut self, is_highlight: bool) -> Self {
         self.is_highlight = is_highlight;
+        self
+    }
+
+    /// Builder method attaching typographic indentation.
+    pub fn with_indent(mut self, indent: u8) -> Self {
+        self.indent = indent;
         self
     }
 

@@ -54,7 +54,7 @@ The binary emitter streams the spatial layout, styling, and lowered formulas int
    - **Section headers & gutters**: Emitted at explicit physical coordinates without calculation node overhead.
    - **Table collapsing (opt-in)**: When `table.collapsible: true`, groups body rows below the title banner (`worksheet.group_rows`) with `group_symbols_above(true)`.
 5. **Cell streaming**:
-   - **Descriptor indentation**: Applies `format.set_indent(indent)` exclusively to the table's `primary_descriptor` column.
+   - **Descriptor indentation**: Applies `format.set_indent(indent)` to descriptor cells that specify an indentation level.
    - **Literal cells**: Emitted via `write_number_with_format`, `write_string_with_format`, or `write_boolean_with_format`.
    - **Formula cells**: Emitted via `write_formula_with_format`. In standard builds, each formula cell is pre-populated with its in-memory evaluated result (`set_result`). This ensures non-Excel viewers (Apple Numbers, macOS Quick Look, Google Drive preview, pandas, LibreOffice) display valid numbers immediately without an Excel recalculation pass.
    - **Values-only freezing**: When compiled with `--values-only`, formula cells are emitted as pure literals, producing frozen workbooks suitable for M&A data rooms and audit baselines.

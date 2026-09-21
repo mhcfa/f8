@@ -7,7 +7,7 @@ use finx::model::id::TableId;
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{ColumnSpec, RowSpec, TableSpec};
 
-use super::{RowBuilder, build_measure_col_label, build_primary_descriptor_col};
+use super::{RowBuilder, build_descriptor_col, build_measure_col_label};
 
 /// Constructs the canonical 4-table Three-Statement financial model.
 #[must_use]
@@ -16,7 +16,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Shared Timeline Columns & Multi-Tier Headers
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
-        build_primary_descriptor_col("line_item", "Line Item"),
+        build_descriptor_col("line_item", "Line Item"),
         ColumnSpec::new("y2023a").with_headers(["Historical Actuals", "2023A"]),
         ColumnSpec::new("y2024e").with_headers(["Forecast Projections", "2024E"]),
         ColumnSpec::new("y2025e").with_headers(["Forecast Projections", "2025E"]),
@@ -33,7 +33,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_primary_descriptor_col("line_item", "Parameter"),
+            build_descriptor_col("line_item", "Parameter"),
             build_measure_col_label("val", "Value"),
         ],
         rows: vec![

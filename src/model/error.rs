@@ -80,20 +80,12 @@ pub enum ModelError {
     },
 
     #[error(
-        "Table '{table}': multiple primary descriptor columns declared ('{first}' and '{second}')"
+        "Table '{table}': cell at row '{row}', column '{column}' specifies indent ({indent}), but column is a measure axis"
     )]
-    DuplicatePrimaryDescriptor {
+    InvalidIndentOnMeasureCell {
         table: TableId,
-        first: ColId,
-        second: ColId,
-    },
-
-    #[error(
-        "Table '{table}': row specifies indent ({indent}) but table has no PrimaryDescriptor column"
-    )]
-    IndentWithoutPrimaryDescriptor {
-        table: TableId,
-        row: Option<RowId>,
+        row: RowId,
+        column: ColId,
         indent: u8,
     },
 

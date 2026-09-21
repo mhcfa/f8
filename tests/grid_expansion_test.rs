@@ -728,6 +728,7 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
             note: None,
             source: None,
             currency: None,
+            indent: None,
         }),
     );
 
@@ -775,6 +776,7 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
             note: None,
             source: None,
             currency: None,
+            indent: None,
         }),
     );
 
@@ -857,6 +859,7 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
             note: None,
             source: None,
             currency: None,
+            indent: None,
         }),
     );
 
@@ -1177,4 +1180,144 @@ fn test_scenario_10_descriptor_axis_isolation_suppresses_currency_and_conflicts(
     let cells = expand_table(&symbols_desc, &table_desc_only).unwrap();
     assert_eq!(cells.len(), 1);
     assert_eq!(cells[0].currency, None);
+}
+
+#[test]
+fn test_scenario_11_cell_level_indentation_expansion_and_defaults() {
+    let table = TableSpec {
+        id: TableId::from("IndentedTable"),
+        title: "Indented Table".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![
+            ColumnSpec::descriptor("line_item", "Line Item"),
+            ColumnSpec::new("val"),
+        ],
+        rows: vec![
+            RowSpec::new("r1").with_cells({
+                let mut map = IndexMap::new();
+                map.insert(
+                    ColId::from("line_item"),
+                    CellInput::Detailed(DetailedCellInput {
+                        value: Some(ValueLiteral::String("Salaries".into())),
+                        indent: Some(2),
+                        ..Default::default()
+                    }),
+                );
+                map.insert(ColId::from("val"), CellInput::number(100.0));
+                map
+            }),
+            RowSpec::new("r2").with_cells({
+                let mut map = IndexMap::new();
+                map.insert(ColId::from("line_item"), CellInput::string("Revenue"));
+                map.insert(ColId::from("val"), CellInput::number(200.0));
+                map
+            }),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 4);
+
+    // r1 line_item: indent 2
+    let r1_item = cells
+        .iter()
+        .find(|c| c.id.row.as_str() == "r1" && c.id.col.as_str() == "line_item")
+        .unwrap();
+    assert_eq!(r1_item.indent, 2);
+    assert_eq!(
+        r1_item.payload.as_literal(),
+        Some(&ValueLiteral::String("Salaries".into()))
+    );
+
+    // r1 val: indent 0
+    let r1_val = cells
+        .iter()
+        .find(|c| c.id.row.as_str() == "r1" && c.id.col.as_str() == "val")
+        .unwrap();
+    assert_eq!(r1_val.indent, 0);
+
+    // r2 line_item: unindented literal defaults to 0
+    let r2_item = cells
+        .iter()
+        .find(|c| c.id.row.as_str() == "r2" && c.id.col.as_str() == "line_item")
+        .unwrap();
+    assert_eq!(r2_item.indent, 0);
+    assert_eq!(
+        r2_item.payload.as_literal(),
+        Some(&ValueLiteral::String("Revenue".into()))
+    );
+
+    // r2 val: indent 0
+    let r2_val = cells
+        .iter()
+        .find(|c| c.id.row.as_str() == "r2" && c.id.col.as_str() == "val")
+        .unwrap();
+    assert_eq!(r2_val.indent, 0);
+}
+
+#[test]
+fn test_scenario_12_independent_indentation_across_multiple_descriptor_columns() {
+    let table = TableSpec {
+        id: TableId::from("MultiDescTable"),
+        title: "Multi Descriptor Table".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![
+            ColumnSpec::descriptor("category", "Category"),
+            ColumnSpec::descriptor("item", "Item"),
+            ColumnSpec::new("amount"),
+        ],
+        rows: vec![RowSpec::new("r1").with_cells({
+            let mut map = IndexMap::new();
+            map.insert(
+                ColId::from("category"),
+                CellInput::Detailed(DetailedCellInput {
+                    value: Some(ValueLiteral::String("Opex".into())),
+                    indent: Some(1),
+                    ..Default::default()
+                }),
+            );
+            map.insert(
+                ColId::from("item"),
+                CellInput::Detailed(DetailedCellInput {
+                    value: Some(ValueLiteral::String("Rent".into())),
+                    indent: Some(2),
+                    ..Default::default()
+                }),
+            );
+            map.insert(ColId::from("amount"), CellInput::number(500.0));
+            map
+        })],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+
+    let cells = expand_table(&symbols, &table).unwrap();
+    assert_eq!(cells.len(), 3);
+
+    let cat_cell = cells
+        .iter()
+        .find(|c| c.id.col.as_str() == "category")
+        .unwrap();
+    assert_eq!(cat_cell.indent, 1);
+
+    let item_cell = cells.iter().find(|c| c.id.col.as_str() == "item").unwrap();
+    assert_eq!(item_cell.indent, 2);
+
+    let amount_cell = cells
+        .iter()
+        .find(|c| c.id.col.as_str() == "amount")
+        .unwrap();
+    assert_eq!(amount_cell.indent, 0);
 }

@@ -75,7 +75,7 @@ flowchart TD
 ```
 
 1. **Step 1 (cell override)**: Check if `row.cells` explicitly defines an entry for column $c$. If present, use this payload (literal, formula, or explicit `null`).
-2. **Step 2 (descriptor boundary check)**: If column $c$ is a descriptor (`role: "descriptor"` or `"primary_descriptor"`), vector rules do not broadcast across it. If no explicit entry exists in `row.cells`, halt compilation with `UnassignedCellError`.
+2. **Step 2 (descriptor boundary check)**: If column $c$ is a descriptor (`role: "descriptor"`), vector rules do not broadcast across it. If no explicit entry exists in `row.cells`, halt compilation with `UnassignedCellError`.
 3. **Step 3 (ambiguity check)**: For measure columns, check if row $r$ defines `row.expr` **AND** column $c$ defines `col.expr`. If both exist without an explicit cell override, halt compilation with `AmbiguousExpressionConflict`.
 4. **Step 4 (row vector rule)**: If only `row.expr` is defined, assign `row.expr` to cell $(r, c)$.
 5. **Step 5 (column vector rule)**: If only `col.expr` is defined, assign `col.expr` to cell $(r, c)$.

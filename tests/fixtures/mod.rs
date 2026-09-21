@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 
 use finx::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use finx::model::id::ColId;
-use finx::model::table::{CellInput, ColumnSpec, RowSpec};
+use finx::model::table::{CellInput, ColumnSpec, DetailedCellInput, RowSpec};
 
 /// Builds a measure column with default ID label.
 pub fn build_measure_col(id: &str) -> ColumnSpec {
@@ -27,15 +27,11 @@ pub fn build_descriptor_col(id: &str, label: &str) -> ColumnSpec {
     ColumnSpec::descriptor(id, label)
 }
 
-/// Builds a primary descriptor column.
-pub fn build_primary_descriptor_col(id: &str, label: &str) -> ColumnSpec {
-    ColumnSpec::primary_descriptor(id, label)
-}
-
 /// Fluent builder for constructing fully styled, labeled `RowSpec` definitions.
 #[derive(Debug, Clone)]
 pub struct RowBuilder {
     spec: RowSpec,
+    desc_col: Option<ColId>,
 }
 
 impl RowBuilder {
@@ -43,13 +39,18 @@ impl RowBuilder {
     pub fn new(id: &str) -> Self {
         Self {
             spec: RowSpec::new(id),
+            desc_col: None,
         }
     }
 
     /// Creates a new row specification with a descriptor column display label.
     pub fn descriptor(id: &str, desc_col: &str, label: &str) -> Self {
-        let row = RowSpec::new(id).with_cell(desc_col, CellInput::string(label));
-        Self { spec: row }
+        let col_id = ColId::new(desc_col);
+        let row = RowSpec::new(id).with_cell(col_id.clone(), CellInput::string(label));
+        Self {
+            spec: row,
+            desc_col: Some(col_id),
+        }
     }
 
     /// Convenience constructor attaching a display label to the standard `"line_item"` descriptor column.
@@ -59,8 +60,40 @@ impl RowBuilder {
 
     /// Sets the typographic indentation level.
     pub fn indent(mut self, indent: u8) -> Self {
-        self.spec = self.spec.with_indent(Some(indent));
+        let col = self
+            .desc_col
+            .clone()
+            .unwrap_or_else(|| ColId::from("line_item"));
+        Self::apply_indent_to_cell(&mut self.spec, &col, indent);
         self
+    }
+
+    fn apply_indent_to_cell(spec: &mut RowSpec, col: &ColId, indent: u8) {
+        if let RowSpec::Data(d) = spec {
+            if let Some(current) = d.cells.get_mut(col) {
+                let updated = match current {
+                    CellInput::Literal(lit) => CellInput::Detailed(DetailedCellInput {
+                        value: Some(lit.clone()),
+                        indent: Some(indent),
+                        ..Default::default()
+                    }),
+                    CellInput::Detailed(detailed) => {
+                        detailed.indent = Some(indent);
+                        return;
+                    }
+                };
+                *current = updated;
+            } else {
+                d.cells.insert(
+                    col.clone(),
+                    CellInput::Detailed(DetailedCellInput {
+                        value: Some(finx::model::table::ValueLiteral::String(String::new())),
+                        indent: Some(indent),
+                        ..Default::default()
+                    }),
+                );
+            }
+        }
     }
 
     /// Sets the format preset.

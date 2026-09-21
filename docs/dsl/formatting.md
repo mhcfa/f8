@@ -109,7 +109,7 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 
 ### 5.1. Number format resolution
 1. **Cell format override (Tier 1)**: An explicit `format` declared on `CellInput` always wins.
-2. **Descriptor boundary**: Descriptor columns (`role: "descriptor"` or `"primary_descriptor"`) isolate text formatting. Measure formats (`currency`, `percentage`, etc.) never broadcast to descriptor columns.
+2. **Descriptor boundary**: Descriptor columns (`role: "descriptor"`) isolate text formatting. Measure formats (`currency`, `percentage`, etc.) never broadcast to descriptor columns.
 3. **Measure vector conflict**: If measure column $c$ and row $r$ specify differing format presets (e.g. `row.format: "currency"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
 4. **Single vector format**: If only the row or only the column specifies a format preset, that preset applies across the measure cells.
 5. **Default fallback**: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.

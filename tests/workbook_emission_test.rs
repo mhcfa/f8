@@ -11,7 +11,8 @@ use finx::compiler::{Compiler, ir};
 use finx::model::id::{SheetId, TableId};
 use finx::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use finx::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
+    ValueLiteral,
 };
 use finx::model::theme::Theme;
 
@@ -457,7 +458,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
     let mut table = TableSpec::new("OutlineTable", "Operating Expenses");
     table
         .columns
-        .push(ColumnSpec::primary_descriptor("line_item", "Expense Item"));
+        .push(ColumnSpec::descriptor("line_item", "Expense Item"));
     table
         .columns
         .push(ColumnSpec::new("amount").with_header("Amount"));
@@ -465,17 +466,43 @@ fn test_scenario_8_collapsible_row_group_outlining() {
     table
         .rows
         .push(RowSpec::section_header("Operating Expenses"));
-    table
-        .rows
-        .push(RowSpec::new("salaries").with_indent(Some(1)));
-    table
-        .rows
-        .push(RowSpec::section_header("Marketing & Growth").with_indent(Some(1)));
-    table
-        .rows
-        .push(RowSpec::new("digital_ads").with_indent(Some(2)));
-    table.rows.push(RowSpec::new("events").with_indent(Some(2)));
-    table.rows.push(RowSpec::new("rent").with_indent(Some(1)));
+    table.rows.push(RowSpec::new("salaries").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("salaries".into())),
+            indent: Some(1),
+            ..Default::default()
+        },
+    ));
+    table.rows.push(
+        SectionHeaderRowSpec::new("Marketing & Growth")
+            .with_indent(Some(1))
+            .into(),
+    );
+    table.rows.push(RowSpec::new("digital_ads").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("digital_ads".into())),
+            indent: Some(2),
+            ..Default::default()
+        },
+    ));
+    table.rows.push(RowSpec::new("events").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("events".into())),
+            indent: Some(2),
+            ..Default::default()
+        },
+    ));
+    table.rows.push(RowSpec::new("rent").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("rent".into())),
+            indent: Some(1),
+            ..Default::default()
+        },
+    ));
     populate_table_cells(&mut table);
 
     let manifest = ProjectManifest {

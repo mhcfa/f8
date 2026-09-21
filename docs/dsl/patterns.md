@@ -22,7 +22,7 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
   "id": "IncomeStatement",
   "title": "Income Statement",
   "columns": [
-    { "kind": "data", "id": "line_item", "role": "primary_descriptor", "headers": ["Line Item"] },
+    { "kind": "data", "id": "line_item", "role": "descriptor", "headers": ["Line Item"] },
     { "kind": "data", "id": "unit", "role": "descriptor", "headers": ["Unit"] },
     { "kind": "data", "id": "2021A", "headers": ["Historical Actuals", "2021A"] },
     { "kind": "data", "id": "2022A", "headers": ["Historical Actuals", "2022A"] },
@@ -82,7 +82,7 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
 ### Key behaviors
 - **Historical overrides vs forecast rules**: In `revenue`, `expr` defines forecast growth while historical years are supplied as explicit cell overrides (`"2021A": 85000`).
 - **Active column tracking**: In `cogs` and `gross_profit`, the formula references the evaluating column using `@col`.
-- **Descriptor isolation**: Because `line_item` and `unit` are declared as descriptor roles (`primary_descriptor` and `descriptor`), row vector formulas and currency formats never broadcast to them.
+- **Descriptor isolation**: Because `line_item` and `unit` are declared with `role: "descriptor"`, row vector formulas and currency formats never broadcast to them.
 
 ---
 
@@ -95,7 +95,7 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
   "id": "CapTable",
   "title": "Capitalization Table",
   "columns": [
-    { "kind": "data", "id": "investor", "role": "primary_descriptor", "headers": ["Investor Name"] },
+    { "kind": "data", "id": "investor", "role": "descriptor", "headers": ["Investor Name"] },
     { "kind": "data", "id": "share_class", "role": "descriptor", "headers": ["Share Class"] },
     { "kind": "data", "id": "shares", "headers": ["Shares Held"], "format": "number" },
     { "kind": "data", "id": "share_price", "headers": ["Issue Price"], "format": "currency", "decimals": 2 },
@@ -208,7 +208,7 @@ In a transposed peer comparison table, entities are columns and metrics are rows
   "id": "PeerComps",
   "title": "Public Comps",
   "columns": [
-    { "kind": "data", "id": "metric", "role": "primary_descriptor", "headers": ["Metric"] },
+    { "kind": "data", "id": "metric", "role": "descriptor", "headers": ["Metric"] },
     { "kind": "data", "id": "AAPL", "headers": ["Apple Inc."] },
     { "kind": "data", "id": "MSFT", "headers": ["Microsoft Corp."] },
     { "kind": "data", "id": "GOOG", "headers": ["Alphabet Inc."] }
@@ -250,7 +250,7 @@ For vertical amortization schedules where rows represent time periods and column
   "id": "DebtSchedule",
   "title": "Senior Debt Amortization",
   "columns": [
-    { "kind": "data", "id": "period", "role": "primary_descriptor", "headers": ["Period"] },
+    { "kind": "data", "id": "period", "role": "descriptor", "headers": ["Period"] },
     {
       "kind": "data",
       "id": "beg_balance",

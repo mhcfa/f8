@@ -94,6 +94,7 @@ pub fn expand_table(
                 let cell_format = cell_input.format();
                 let cell_decimals = cell_input.decimals();
                 let cell_currency = cell_input.currency();
+                let cell_indent = cell_input.indent().unwrap_or(0);
                 let cell_note = cell_input.note();
                 let cell_source = cell_input.source().cloned();
 
@@ -157,6 +158,7 @@ pub fn expand_table(
                         .with_currency(effective_currency)
                         .with_style(horizontal, vertical)
                         .with_highlight(is_highlight)
+                        .with_indent(cell_indent)
                         .with_note(effective_note)
                         .with_source(effective_source),
                 );

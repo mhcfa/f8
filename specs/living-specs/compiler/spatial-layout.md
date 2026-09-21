@@ -75,7 +75,7 @@ Each table allocates header rows in strict sequence:
 Tables place rows in exact declared sequence using `RowSpec`:
 1. **Section Headers (`RowSpec::SectionHeader`)**: Consumes 1 physical row, allocating no calculation `CellId` nodes. Formatted as continuous section banners across the table columns without merged cells.
 2. **Gutter Rows (`RowSpec::Gutter`)**: Consumes 1 physical row sized to `theme.metrics.gutter_row_height` (9.0 pt) with zero calculation cells.
-3. **Data Rows (`RowSpec::Data`)**: Consumes 1 physical row containing calculations and literals. Its optional `indent` level is attached to descriptor cells.
+3. **Data Rows (`RowSpec::Data`)**: Consumes 1 physical row containing calculations and literals. Typographic indentation is declared per-cell on descriptor columns via `DetailedCellInput`.
 4. **Width Arbitration with Indent**: Column width arbitration for descriptor columns incorporates indentation padding (`indent * 2` characters) into character length calculations.
 
 #### Scenarios
@@ -87,8 +87,8 @@ Tables place rows in exact declared sequence using `RowSpec`:
   - **When** a table declares `RowSpec::Gutter`
   - **Then** a 9pt blank gutter row is emitted at that exact position.
 - **Descriptor indentation**:
-  - **When** a row declares `indent: 1` or `indent: 2`
-  - **Then** its primary descriptor cell carries `indent: 1` or `indent: 2`, while measure cells carry `indent: 0`.
+  - **When** a descriptor cell declares `indent: 1` or `indent: 2`
+  - **Then** its physical coordinate carries `indent: 1` or `indent: 2`, while unindented cells carry `indent: 0`.
 
 ### 5. Sheet-Wide Column Width Arbitration
 

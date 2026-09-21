@@ -10,12 +10,11 @@ use finx::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use finx::model::id::TableId;
 use finx::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use finx::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
+    ValueLiteral,
 };
 
-use super::{
-    RowBuilder, build_descriptor_col, build_measure_col_label, build_primary_descriptor_col,
-};
+use super::{RowBuilder, build_descriptor_col, build_measure_col_label};
 
 /// Builds the complete styling and formatting showcase workbook model.
 ///
@@ -29,7 +28,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 1: Institutional Accounting Borders & Semantic Styles
     // =========================================================================
     let t1_cols = vec![
-        build_primary_descriptor_col("line_item", "Financial Metric / Line Item"),
+        build_descriptor_col("line_item", "Financial Metric / Line Item"),
         ColumnSpec::new("actual").with_headers(["Operating Performance", "2025A Actual"]),
         ColumnSpec::new("budget").with_headers(["Operating Performance", "2026B Budget"]),
         ColumnSpec::new("variance").with_headers(["Operating Performance", "Variance ($)"]),
@@ -209,7 +208,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 2: Hierarchical Sections & Collapsible Outlines
     // =========================================================================
     let t2_cols = vec![
-        build_primary_descriptor_col("line_item", "Division / Department"),
+        build_descriptor_col("line_item", "Division / Department"),
         ColumnSpec::new("q1_act").with_headers(["Quarterly Performance", "Q1 Actual"]),
         ColumnSpec::new("q2_act").with_headers(["Quarterly Performance", "Q2 Actual"]),
         ColumnSpec::new("q3_act").with_headers(["Quarterly Performance", "Q3 Actual"]),
@@ -223,7 +222,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
 
     let t2_rows = vec![
         RowSpec::section_header("Commercial Operations"),
-        RowSpec::section_header("North America Division").with_indent(Some(1)),
+        SectionHeaderRowSpec::new("North America Division").with_indent(Some(1)).into(),
         // North America Division
         RowBuilder::line_item("na_direct", "Direct Enterprise Accounts")
             .indent(2)
@@ -277,7 +276,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"na_subtotal\", \"q1_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q2_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q3_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q4_act\"]",
             )
             .build(),
-        RowSpec::section_header("International Operations").with_indent(Some(1)),
+        SectionHeaderRowSpec::new("International Operations").with_indent(Some(1)).into(),
         // International Operations
         RowBuilder::line_item("intl_emea", "EMEA Corporate Accounts")
             .indent(2)
@@ -440,7 +439,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 3: Number Format Presets & Precision Matrix
     // =========================================================================
     let t3_cols = vec![
-        build_primary_descriptor_col("line_item", "Format Preset & Precision Tier"),
+        build_descriptor_col("line_item", "Format Preset & Precision Tier"),
         build_measure_col_label("pos_val", "Positive Value"),
         build_measure_col_label("neg_val", "Negative (Parens)"),
         build_measure_col_label("zero_val", "Zero Balance (Dash)"),
@@ -623,7 +622,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 4: Multi-Currency Global Denominations
     // =========================================================================
     let t4_cols = vec![
-        build_primary_descriptor_col("line_item", "Currency Code & Regional Entity"),
+        build_descriptor_col("line_item", "Currency Code & Regional Entity"),
         build_descriptor_col("symbol_type", "Symbol Code & Quoting"),
         build_measure_col_label("pos_val", "Positive Balance"),
         build_measure_col_label("neg_val", "Deficit Balance (Parens)"),
@@ -768,7 +767,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 5: Cell Payloads, Typographic Styles & Audit Annotations
     // =========================================================================
     let t5_cols = vec![
-        build_primary_descriptor_col("line_item", "Feature / Presentation Rule"),
+        build_descriptor_col("line_item", "Feature / Presentation Rule"),
         build_measure_col_label("sample_val", "Sample Value"),
         build_descriptor_col("eval_type", "AST Payload Type"),
         build_descriptor_col("style_rule", "Applied Color & Format Rule"),
@@ -879,7 +878,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 6: Freeze Panes & Operational Matrix (Sheet 2)
     // =========================================================================
     let t6_cols = vec![
-        build_primary_descriptor_col("line_item", "Operating Metric / Month"),
+        build_descriptor_col("line_item", "Operating Metric / Month"),
         build_measure_col_label("m01", "Month 01"),
         build_measure_col_label("m02", "Month 02"),
         build_measure_col_label("m03", "Month 03"),

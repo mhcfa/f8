@@ -10,7 +10,10 @@ use finx::compiler::{Compiler, ir};
 use finx::model::format::SemanticStyle;
 use finx::model::id::{ColId, SheetId, TableId};
 use finx::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
-use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
+use finx::model::table::{
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
+    ValueLiteral,
+};
 use finx::model::theme::Theme;
 
 fn create_test_theme() -> Theme {
@@ -235,9 +238,7 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
 #[test]
 fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
     let mut table = TableSpec::new("HierarchyTable", "Hierarchy");
-    table
-        .columns
-        .push(ColumnSpec::primary_descriptor("item", "Item"));
+    table.columns.push(ColumnSpec::descriptor("item", "Item"));
     table
         .columns
         .push(ColumnSpec::new("val").with_header("Value"));
@@ -246,9 +247,11 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
         .rows
         .push(RowSpec::section_header("Operating Expenses"));
     table.rows.push(RowSpec::new("r_and_d"));
-    table
-        .rows
-        .push(RowSpec::section_header("Sales & Marketing").with_indent(Some(1)));
+    table.rows.push(
+        SectionHeaderRowSpec::new("Sales & Marketing")
+            .with_indent(Some(1))
+            .into(),
+    );
     table.rows.push(RowSpec::new("ad_spend"));
     table.rows.push(RowSpec::new("direct_sales"));
     table.rows.push(RowSpec::new("g_and_a"));
@@ -664,19 +667,27 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
 #[test]
 fn test_scenario_12_descriptor_indentation_tiers() {
     let mut table = TableSpec::new("NestedHierarchyTable", "Nested");
-    table
-        .columns
-        .push(ColumnSpec::primary_descriptor("item", "Item"));
+    table.columns.push(ColumnSpec::descriptor("item", "Item"));
     table
         .columns
         .push(ColumnSpec::new("val").with_header("Value"));
 
-    table
-        .rows
-        .push(RowSpec::new("ad_spend").with_indent(Some(2)));
-    table
-        .rows
-        .push(RowSpec::new("direct_sales").with_indent(Some(1)));
+    table.rows.push(RowSpec::new("ad_spend").with_cell(
+        "item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("ad_spend".into())),
+            indent: Some(2),
+            ..Default::default()
+        },
+    ));
+    table.rows.push(RowSpec::new("direct_sales").with_cell(
+        "item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("direct_sales".into())),
+            indent: Some(1),
+            ..Default::default()
+        },
+    ));
     table.rows.push(RowSpec::new("g_and_a"));
     populate_table_cells(&mut table);
 
@@ -739,7 +750,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
     let mut table = TableSpec::new("GutterTable", "Financial Statement");
     table
         .columns
-        .push(ColumnSpec::primary_descriptor("line_item", "Line Item"));
+        .push(ColumnSpec::descriptor("line_item", "Line Item"));
     table.columns.push(ColumnSpec::gutter());
     table
         .columns
@@ -750,10 +761,22 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
     table
         .rows
         .push(RowSpec::section_header("Operating Expenses"));
-    table
-        .rows
-        .push(RowSpec::new("salaries").with_indent(Some(1)));
-    table.rows.push(RowSpec::new("ads").with_indent(Some(2)));
+    table.rows.push(RowSpec::new("salaries").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("salaries".into())),
+            indent: Some(1),
+            ..Default::default()
+        },
+    ));
+    table.rows.push(RowSpec::new("ads").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("ads".into())),
+            indent: Some(2),
+            ..Default::default()
+        },
+    ));
     table
         .rows
         .push(RowSpec::new("total_opex").with_style(Some(SemanticStyle::Subtotal)));
@@ -761,9 +784,14 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
     table
         .rows
         .push(RowSpec::section_header("Capital Expenditures"));
-    table
-        .rows
-        .push(RowSpec::new("equipment").with_indent(Some(1)));
+    table.rows.push(RowSpec::new("equipment").with_cell(
+        "line_item",
+        DetailedCellInput {
+            value: Some(ValueLiteral::String("equipment".into())),
+            indent: Some(1),
+            ..Default::default()
+        },
+    ));
     populate_table_cells(&mut table);
 
     let manifest = ProjectManifest {

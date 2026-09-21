@@ -10,7 +10,7 @@ Columns are declared in `table.columns` as either calculable data columns or spa
 
 Data columns define calculation vectors or descriptor labels:
 
-- **Axis roles**: `measure` (default calculation vector), `descriptor` (metadata label), or `primary_descriptor` (primary entity label receiving row indentation).
+- **Axis roles**: `measure` (default calculation vector) or `descriptor` (metadata label).
 - **Multi-tier headers**: Declared via `headers: ["Tier 1", "Tier 2", ...]`. Contiguous columns sharing identical upper-tier labels visually center across the span without cell merging.
 - **Zero-header tables**: When all columns omit `headers`, zero physical header rows are allocated.
 
@@ -20,7 +20,7 @@ Data columns define calculation vectors or descriptor labels:
     {
       "kind": "data",
       "id": "line_item",
-      "role": "primary_descriptor",
+      "role": "descriptor",
       "headers": ["Line Item"]
     },
     {
@@ -69,7 +69,9 @@ Rows are declared in `table.rows` in their exact vertical display order.
     {
       "kind": "data",
       "id": "r_and_d",
-      "indent": 1,
+      "cells": {
+        "line_item": { "value": "Research & Development", "indent": 1 }
+      },
       "expr": "..."
     },
     {
@@ -81,7 +83,7 @@ Rows are declared in `table.rows` in their exact vertical display order.
 
 ### 2.2. Typographic Indentation
 
-Data rows and section headers accept an optional `indent` level (e.g. `indent: 1`, `indent: 2`). Indentation applies exclusively to the table's `primary_descriptor` column as typographic cell indent. It has zero effect on row height, calculation graphs, or secondary descriptor columns.
+Descriptor cells and section headers accept an optional `indent` level (e.g. `indent: 1`, `indent: 2`). Indentation applies directly to individual descriptor cells as a typographic cell indent. It has zero effect on row height, calculation graphs, or measure columns.
 
 ---
 

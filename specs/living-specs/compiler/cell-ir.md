@@ -13,7 +13,7 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
 
 - **Modules & components**:
   - `finx::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
-  - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
+  - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, typographic indent level, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
   - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
   - `finx::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
   - `finx::compiler::ir::error`: Structured domain errors (`IrError`).
@@ -125,4 +125,7 @@ $$\text{Cell Override (0D Point)} > (\text{Row Rule } \mathbf{XOR} \text{ Column
   - **Then** compilation halts with `IrError::CurrencyConflict`.
   - **When** cell $(r, c)$ resolves with a non-currency format preset or is on a descriptor axis
   - **Then** its resolved currency is strictly `None`, and vector currency declarations on intersecting axes do not trigger currency conflicts.
+- **Typographic Indentation Propagation**:
+  - **When** cell $(r, c)$ specifies `indent: Some(n)` on `DetailedCellInput`
+  - **Then** the generated `CellNode` has `indent == n`; otherwise `indent == 0`.
 

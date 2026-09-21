@@ -7,7 +7,7 @@ use finx::model::id::TableId;
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{ColumnSpec, RowSpec, TableSpec};
 
-use super::{RowBuilder, build_measure_col_label, build_primary_descriptor_col};
+use super::{RowBuilder, build_descriptor_col, build_measure_col_label};
 
 /// Assembles the complete 7-table, 2-sheet institutional LBO model specification.
 #[must_use]
@@ -16,7 +16,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // Shared Timeline Columns & Multi-Tier Headers (Sheet: Model)
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
-        build_primary_descriptor_col("line_item", "Line Item"),
+        build_descriptor_col("line_item", "Line Item"),
         ColumnSpec::new("y0").with_headers(["Transaction Close", "Close (Y0)"]),
         ColumnSpec::new("y1").with_headers(["5-Year Investment Horizon", "2025 (Y1)"]),
         ColumnSpec::new("y2").with_headers(["5-Year Investment Horizon", "2026 (Y2)"]),
@@ -35,7 +35,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_primary_descriptor_col("scenario_name", "Scenario Case"),
+            build_descriptor_col("scenario_name", "Scenario Case"),
             build_measure_col_label("case_id", "Case ID"),
             build_measure_col_label("rev_growth", "Rev Growth"),
             build_measure_col_label("ebitda_margin", "EBITDA Margin"),
@@ -79,7 +79,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_primary_descriptor_col("line_item", "Transaction Parameter"),
+            build_descriptor_col("line_item", "Transaction Parameter"),
             build_measure_col_label("val", "Value"),
         ],
         rows: vec![
@@ -218,7 +218,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_primary_descriptor_col("line_item", "Investment Return Metric"),
+            build_descriptor_col("line_item", "Investment Return Metric"),
             build_measure_col_label("val", "Metric Value"),
         ],
         rows: vec![

@@ -20,7 +20,7 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
-  2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification (unique IDs, primary descriptor validity, cell payload validity, numeric precision applicability) $\rightarrow$ `Ok(())` or `Err(ModelError)`.
+  2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification (unique IDs, cell payload and indentation validity, numeric precision applicability) $\rightarrow$ `Ok(())` or `Err(ModelError)`.
   3. Validated models are ready for 2D grid expansion and dependency analysis.
 - **Dependencies**:
   - `serde`, `serde_json`: JSON serialization and deserialization with internally/externally tagged specs and untagged cell inputs.
@@ -31,7 +31,7 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 
 ### 1. Orthogonal 2D Matrix Schema
 
-Every table defines an orthogonal 2D matrix with explicit `columns` (`ColumnSpec`) and `rows` (`RowSpec`). Each data column explicitly declares an `AxisRole`: `measure` (default), `descriptor`, or `primary_descriptor`. Each data row defines an optional `indent` level. Multi-tier column headers are explicitly declared as `headers: Vec<String>` on data columns.
+Every table defines an orthogonal 2D matrix with explicit `columns` (`ColumnSpec`) and `rows` (`RowSpec`). Each data column explicitly declares an `AxisRole`: `measure` (default) or `descriptor`. Multi-tier column headers are explicitly declared as `headers: Vec<String>` on data columns.
 
 #### Scenarios
 
@@ -47,7 +47,7 @@ Every table defines an orthogonal 2D matrix with explicit `columns` (`ColumnSpec
 
 ### 2. Cell Input Invariants
 
-Every key in `data_row.cells` must refer to a declared data column ID in `table.columns`. A detailed cell override cannot specify both `value` and `expr`, nor can it specify neither.
+Every key in `data_row.cells` must refer to a declared data column ID in `table.columns`. A detailed cell override cannot specify both `value` and `expr`, nor can it specify neither. In addition, typographic indentation (`indent > 0`) is valid only on columns with `role: "descriptor"`.
 
 #### Scenarios
 
@@ -63,19 +63,16 @@ Every key in `data_row.cells` must refer to a declared data column ID in `table.
 - **Empty cell payload**:
   - **When** a detailed cell override defines neither `value` nor `expr`
   - **Then** validation returns `ModelError::EmptyCellPayload`.
+- **Invalid indent on measure cell**:
+  - **When** a detailed cell override specifies `indent > 0` on a column whose role is `measure`
+  - **Then** validation returns `ModelError::InvalidIndentOnMeasureCell`.
 
-### 3. Explicit Grid Elements & Primary Descriptor Invariants
+### 3. Explicit Grid Elements & Structural Rows
 
-Tables represent layout directly through tagged `RowSpec` (`Data`, `SectionHeader`, `Gutter`) and `ColumnSpec` (`Data`, `Gutter`) enums. Row indentation (`indent > 0`) requires exactly one primary descriptor column to be designated.
+Tables represent layout directly through tagged `RowSpec` (`Data`, `SectionHeader`, `Gutter`) and `ColumnSpec` (`Data`, `Gutter`) enums. SectionHeader rows support an optional `indent` level. Calculation cells declare indentation individually via `DetailedCellInput`, which is restricted strictly to descriptor columns.
 
 #### Scenarios
 
-- **Duplicate primary descriptor rejected**:
-  - **When** a table declares more than one column with `role: "primary_descriptor"`
-  - **Then** validation returns `ModelError::DuplicatePrimaryDescriptor`.
-- **Indent without primary descriptor rejected**:
-  - **When** any row specifies `indent > 0` but the table has no column with `role: "primary_descriptor"`
-  - **Then** validation returns `ModelError::IndentWithoutPrimaryDescriptor`.
 - **Explicit gutters and section headers**:
   - **When** rows contain `SectionHeader` or `Gutter` and columns contain `Gutter`
   - **Then** validation succeeds and they participate in physical layout while being excluded from calculation grids.

@@ -325,25 +325,27 @@ impl LayoutPlanner {
                                 );
                                 let a1 = coordinate_to_a1(physical_col, current_row)?;
 
-                                let style_role = if let Some(node) = grid.get(&cell_id) {
-                                    StyleRole {
-                                        horizontal: node.horizontal,
-                                        vertical: node.vertical,
-                                        is_highlight: node.is_highlight,
-                                    }
+                                let (style_role, indent) = if let Some(node) = grid.get(&cell_id) {
+                                    (
+                                        StyleRole {
+                                            horizontal: node.horizontal,
+                                            vertical: node.vertical,
+                                            is_highlight: node.is_highlight,
+                                        },
+                                        node.indent,
+                                    )
                                 } else {
-                                    StyleRole {
-                                        horizontal: data_row.style.unwrap_or(SemanticStyle::Data),
-                                        vertical: data_col.style.unwrap_or(SemanticStyle::Data),
-                                        is_highlight: data_row.highlight.unwrap_or(false)
-                                            || data_col.highlight.unwrap_or(false),
-                                    }
-                                };
-
-                                let indent = if data_col.role.is_primary_descriptor() {
-                                    data_row.indent.unwrap_or(0)
-                                } else {
-                                    0
+                                    (
+                                        StyleRole {
+                                            horizontal: data_row
+                                                .style
+                                                .unwrap_or(SemanticStyle::Data),
+                                            vertical: data_col.style.unwrap_or(SemanticStyle::Data),
+                                            is_highlight: data_row.highlight.unwrap_or(false)
+                                                || data_col.highlight.unwrap_or(false),
+                                        },
+                                        0,
+                                    )
                                 };
 
                                 layout_cells.insert(

@@ -91,7 +91,7 @@ A multi-period forecast statement demonstrating multi-tier column headers, forwa
   "id": "IncomeStatement",
   "title": "Income Statement",
   "columns": [
-    { "kind": "data", "id": "line_item", "role": "primary_descriptor", "headers": ["Line Item"] },
+    { "kind": "data", "id": "line_item", "role": "descriptor", "headers": ["Line Item"] },
     { "kind": "data", "id": "2023A", "headers": ["Historical Actuals", "2023A"] },
     { "kind": "data", "id": "2024E", "headers": ["Forecast Projections", "2024E"] },
     { "kind": "data", "id": "2025E", "headers": ["Forecast Projections", "2025E"] },
