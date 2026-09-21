@@ -12,16 +12,16 @@ The `compiler::emission::format` subsystem translates Finx model themes and sema
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::emission::format`: Core structures (`FormatCache`, `CellFormatKey`), hex color parser (`parse_hex_color`), border style translator (`translate_border_style`), and header format generators.
+  - `finx::compiler::emission::format`: Core structures (`FormatCache`, `CellFormatKey`), hex color parser (`parse_hex_color`), fill color parser (`parse_fill_color`), border style translator (`translate_border_style`), and header format generators.
   - `finx::compiler::emission::error`: Diagnostic domain errors (`EmissionError`).
-  - `finx::compiler::emission::mod`: Module declarations and public API re-exports.
+  - `finx::compiler::emission::mod`: Module declarations and public API re-exports (`parse_hex_color`, `parse_fill_color`).
   - `finx::compiler::mod`: Compiler facade re-exports (`CellFormatKey`, `FormatCache`, `EmissionError`).
 - **Data flow & interfaces**:
   1. Input: Active `Theme` passed to `FormatCache::new(&theme)`.
-  2. Validation & pre-parsing: Upfront validation of all palette colors into `rust_xlsxwriter::Color::RGB(0x00RRGGBB)`, pre-generating structural header formats.
+  2. Validation & pre-parsing: Upfront validation of palette fills into `Option<Color>` (with `"none"` and `"transparent"` parsing to `None`) and text/border colors into `Color::RGB(...)`, pre-generating structural header formats.
   3. Query: Pass 6b queries `cache.get_cell_format(&key)` with `CellFormatKey { role, preset, decimals, currency, is_input, is_descriptor }`.
   4. Cache lookup: If matching key exists in `IndexMap<CellFormatKey, Format>`, returns cloned format.
-  5. Synthesis: If cache miss, constructs `Format` with typography, bolding, fills, text colors, borders, alignments, and synthesized number format mask via `theme.resolve_number_format`, then inserts into cache.
+  5. Synthesis: If cache miss, constructs `Format` with typography, bolding, conditional fills (omitted when `None` to preserve transparent sheet gridlines), text colors, borders, alignments, and synthesized number format mask via `theme.resolve_number_format`, then inserts into cache.
 - **Dependencies**:
   - `rust_xlsxwriter`: OpenXML formatting primitives (`Format`, `Color`, `FormatAlign`, `FormatBorder`).
   - `indexmap`: Preserves deterministic insertion order for XML format tables.
@@ -29,16 +29,19 @@ The `compiler::emission::format` subsystem translates Finx model themes and sema
 
 ## Requirements & Invariants
 
-### 1. Hex Color Parsing and Upfront Validation
+### 1. Hex Color and Fill Parsing
 
-Hex colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA`) are strictly validated and parsed into 24-bit `rust_xlsxwriter::Color::RGB(0x00RRGGBB)` during `FormatCache::new`.
+Hex colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA`) are strictly validated and parsed into 24-bit `rust_xlsxwriter::Color::RGB(0x00RRGGBB)` during `FormatCache::new`. Fill attributes additionally accept `"none"` and `"transparent"` (case-insensitive), resolving to `None` so that no background fill is emitted, preserving native worksheet gridlines in Excel.
 
 #### Scenarios
 
 - **Valid hex color string**:
   - **When** parsing `#1B365D`, `#123`, or `#1B365DFF`
   - **Then** resolves to the corresponding RGB 24-bit integer color.
-- **Invalid hex color string**:
+- **Transparent fill keywords**:
+  - **When** parsing `"none"` or `"transparent"` with `parse_fill_color`
+  - **Then** returns `Ok(None)` without error.
+- **Invalid color string**:
   - **When** parsing a malformed or non-hex string during `FormatCache::new`
   - **Then** returns `EmissionError::InvalidColor` without panicking.
 

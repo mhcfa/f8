@@ -48,6 +48,18 @@ pub fn parse_hex_color(field: &str, s: &str) -> Result<Color, EmissionError> {
     Ok(Color::RGB(rgb_u32))
 }
 
+/// Parses a fill color string into `Option<rust_xlsxwriter::Color>`.
+///
+/// Accepts `"none"` and `"transparent"` (case-insensitive) as transparent (`Ok(None)`),
+/// or standard hexadecimal colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA`) as `Ok(Some(Color))`.
+pub fn parse_fill_color(field: &str, s: &str) -> Result<Option<Color>, EmissionError> {
+    if s.eq_ignore_ascii_case("none") || s.eq_ignore_ascii_case("transparent") {
+        Ok(None)
+    } else {
+        parse_hex_color(field, s).map(Some)
+    }
+}
+
 /// Translates Finx model border style into `rust_xlsxwriter::FormatBorder`.
 #[must_use]
 pub const fn translate_border_style(style: BorderStyle) -> FormatBorder {
@@ -65,25 +77,25 @@ pub const fn translate_border_style(style: BorderStyle) -> FormatBorder {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ParsedPalette {
-    table_title_fill: Color,
+    table_title_fill: Option<Color>,
     table_title_text: Color,
     table_subtitle_text: Color,
-    super_header_fill: Color,
+    super_header_fill: Option<Color>,
     super_header_text: Color,
-    col_header_fill: Color,
+    col_header_fill: Option<Color>,
     col_header_text: Color,
-    section_header_fill: Color,
+    section_header_fill: Option<Color>,
     section_header_text: Color,
-    data_fill: Color,
+    data_fill: Option<Color>,
     data_text: Color,
-    subtotal_fill: Color,
+    subtotal_fill: Option<Color>,
     subtotal_text: Color,
-    total_fill: Color,
+    total_fill: Option<Color>,
     total_text: Color,
     input_text: Color,
     formula_text: Color,
-    zebra_fill: Color,
-    highlight_fill: Color,
+    zebra_fill: Option<Color>,
+    highlight_fill: Option<Color>,
     highlight_text: Color,
     gridline_color: Color,
     border_color: Color,
@@ -93,25 +105,25 @@ struct ParsedPalette {
 impl ParsedPalette {
     fn from_config(p: &PaletteConfig) -> Result<Self, EmissionError> {
         Ok(Self {
-            table_title_fill: parse_hex_color("table_title_fill", &p.table_title_fill)?,
+            table_title_fill: parse_fill_color("table_title_fill", &p.table_title_fill)?,
             table_title_text: parse_hex_color("table_title_text", &p.table_title_text)?,
             table_subtitle_text: parse_hex_color("table_subtitle_text", &p.table_subtitle_text)?,
-            super_header_fill: parse_hex_color("super_header_fill", &p.super_header_fill)?,
+            super_header_fill: parse_fill_color("super_header_fill", &p.super_header_fill)?,
             super_header_text: parse_hex_color("super_header_text", &p.super_header_text)?,
-            col_header_fill: parse_hex_color("col_header_fill", &p.col_header_fill)?,
+            col_header_fill: parse_fill_color("col_header_fill", &p.col_header_fill)?,
             col_header_text: parse_hex_color("col_header_text", &p.col_header_text)?,
-            section_header_fill: parse_hex_color("section_header_fill", &p.section_header_fill)?,
+            section_header_fill: parse_fill_color("section_header_fill", &p.section_header_fill)?,
             section_header_text: parse_hex_color("section_header_text", &p.section_header_text)?,
-            data_fill: parse_hex_color("data_fill", &p.data_fill)?,
+            data_fill: parse_fill_color("data_fill", &p.data_fill)?,
             data_text: parse_hex_color("data_text", &p.data_text)?,
-            subtotal_fill: parse_hex_color("subtotal_fill", &p.subtotal_fill)?,
+            subtotal_fill: parse_fill_color("subtotal_fill", &p.subtotal_fill)?,
             subtotal_text: parse_hex_color("subtotal_text", &p.subtotal_text)?,
-            total_fill: parse_hex_color("total_fill", &p.total_fill)?,
+            total_fill: parse_fill_color("total_fill", &p.total_fill)?,
             total_text: parse_hex_color("total_text", &p.total_text)?,
             input_text: parse_hex_color("input_text", &p.input_text)?,
             formula_text: parse_hex_color("formula_text", &p.formula_text)?,
-            zebra_fill: parse_hex_color("zebra_fill", &p.zebra_fill)?,
-            highlight_fill: parse_hex_color("highlight_fill", &p.highlight_fill)?,
+            zebra_fill: parse_fill_color("zebra_fill", &p.zebra_fill)?,
+            highlight_fill: parse_fill_color("highlight_fill", &p.highlight_fill)?,
             highlight_text: parse_hex_color("highlight_text", &p.highlight_text)?,
             gridline_color: parse_hex_color("gridline_color", &p.gridline_color)?,
             border_color: parse_hex_color("border_color", &p.border_color)?,
@@ -185,8 +197,10 @@ impl FormatCache {
             .set_font_size(theme.typography.title_size)
             .set_bold()
             .set_font_color(palette.table_title_text)
-            .set_background_color(palette.table_title_fill)
             .set_align(FormatAlign::Left);
+        if let Some(fill) = palette.table_title_fill {
+            title_format = title_format.set_background_color(fill);
+        }
         if theme.borders.table_title_border_bottom != BorderStyle::None {
             title_format = title_format
                 .set_border_bottom(translate_border_style(
@@ -208,8 +222,10 @@ impl FormatCache {
             .set_font_size(theme.typography.super_header_size)
             .set_bold()
             .set_font_color(palette.super_header_text)
-            .set_background_color(palette.super_header_fill)
             .set_align(FormatAlign::CenterAcross);
+        if let Some(fill) = palette.super_header_fill {
+            super_header_format = super_header_format.set_background_color(fill);
+        }
         if theme.borders.super_header_border_bottom != BorderStyle::None {
             super_header_format = super_header_format
                 .set_border_bottom(translate_border_style(
@@ -224,8 +240,10 @@ impl FormatCache {
             .set_font_size(theme.typography.col_header_size)
             .set_bold()
             .set_font_color(palette.col_header_text)
-            .set_background_color(palette.col_header_fill)
             .set_align(FormatAlign::Left);
+        if let Some(fill) = palette.col_header_fill {
+            col_header_descriptor_format = col_header_descriptor_format.set_background_color(fill);
+        }
         if theme.borders.header_border_bottom != BorderStyle::None {
             col_header_descriptor_format = col_header_descriptor_format
                 .set_border_bottom(translate_border_style(theme.borders.header_border_bottom))
@@ -238,8 +256,10 @@ impl FormatCache {
             .set_font_size(theme.typography.col_header_size)
             .set_bold()
             .set_font_color(palette.col_header_text)
-            .set_background_color(palette.col_header_fill)
             .set_align(FormatAlign::Right);
+        if let Some(fill) = palette.col_header_fill {
+            col_header_measure_format = col_header_measure_format.set_background_color(fill);
+        }
         if theme.borders.header_border_bottom != BorderStyle::None {
             col_header_measure_format = col_header_measure_format
                 .set_border_bottom(translate_border_style(theme.borders.header_border_bottom))
@@ -247,13 +267,15 @@ impl FormatCache {
         }
 
         // 6. Section Header
-        let section_header_format = Format::new()
+        let mut section_header_format = Format::new()
             .set_font_name(&theme.typography.font_family)
             .set_font_size(theme.typography.section_header_size)
             .set_bold()
             .set_font_color(palette.section_header_text)
-            .set_background_color(palette.section_header_fill)
             .set_align(FormatAlign::Left);
+        if let Some(fill) = palette.section_header_fill {
+            section_header_format = section_header_format.set_background_color(fill);
+        }
 
         Ok(Self {
             theme: theme.clone(),
@@ -296,15 +318,18 @@ impl FormatCache {
 
         // 3. Background Fill Precedence:
         // is_highlight > total > subtotal > data
-        format = if key.role.is_highlight {
-            format.set_background_color(self.palette.highlight_fill)
+        let fill = if key.role.is_highlight {
+            self.palette.highlight_fill
         } else if key.role.horizontal.is_total() || key.role.vertical.is_total() {
-            format.set_background_color(self.palette.total_fill)
+            self.palette.total_fill
         } else if key.role.horizontal.is_subtotal() || key.role.vertical.is_subtotal() {
-            format.set_background_color(self.palette.subtotal_fill)
+            self.palette.subtotal_fill
         } else {
-            format.set_background_color(self.palette.data_fill)
+            self.palette.data_fill
         };
+        if let Some(fill_color) = fill {
+            format = format.set_background_color(fill_color);
+        }
 
         // 4. Text Color Precedence:
         // is_highlight > total > subtotal > (input measure ? input_text : data/formula)

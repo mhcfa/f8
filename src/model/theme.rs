@@ -209,6 +209,10 @@ fn is_valid_hex_color(s: &str) -> bool {
         && hex.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+fn is_valid_fill_color(s: &str) -> bool {
+    s.eq_ignore_ascii_case("none") || s.eq_ignore_ascii_case("transparent") || is_valid_hex_color(s)
+}
+
 fn validate_metric(metric: &str, value: f64) -> Result<(), ModelError> {
     if !value.is_finite() || value <= 0.0 {
         Err(ModelError::InvalidThemeMetric {
@@ -250,33 +254,45 @@ impl MetricsConfig {
 
 impl PaletteConfig {
     pub fn validate(&self) -> Result<(), ModelError> {
-        let fields = [
+        let fill_fields = [
             ("table_title_fill", &self.table_title_fill),
+            ("super_header_fill", &self.super_header_fill),
+            ("col_header_fill", &self.col_header_fill),
+            ("section_header_fill", &self.section_header_fill),
+            ("data_fill", &self.data_fill),
+            ("subtotal_fill", &self.subtotal_fill),
+            ("total_fill", &self.total_fill),
+            ("zebra_fill", &self.zebra_fill),
+            ("highlight_fill", &self.highlight_fill),
+        ];
+
+        for (field, color) in fill_fields {
+            if !is_valid_fill_color(color) {
+                return Err(ModelError::InvalidThemeColor {
+                    field: field.to_string(),
+                    color: color.clone(),
+                });
+            }
+        }
+
+        let color_fields = [
             ("table_title_text", &self.table_title_text),
             ("table_subtitle_text", &self.table_subtitle_text),
-            ("super_header_fill", &self.super_header_fill),
             ("super_header_text", &self.super_header_text),
-            ("col_header_fill", &self.col_header_fill),
             ("col_header_text", &self.col_header_text),
-            ("section_header_fill", &self.section_header_fill),
             ("section_header_text", &self.section_header_text),
-            ("data_fill", &self.data_fill),
             ("data_text", &self.data_text),
-            ("subtotal_fill", &self.subtotal_fill),
             ("subtotal_text", &self.subtotal_text),
-            ("total_fill", &self.total_fill),
             ("total_text", &self.total_text),
             ("input_text", &self.input_text),
             ("formula_text", &self.formula_text),
-            ("zebra_fill", &self.zebra_fill),
-            ("highlight_fill", &self.highlight_fill),
             ("highlight_text", &self.highlight_text),
             ("gridline_color", &self.gridline_color),
             ("border_color", &self.border_color),
             ("total_border_color", &self.total_border_color),
         ];
 
-        for (field, color) in fields {
+        for (field, color) in color_fields {
             if !is_valid_hex_color(color) {
                 return Err(ModelError::InvalidThemeColor {
                     field: field.to_string(),

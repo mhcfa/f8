@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use finx::compiler::emission::{
-    CellFormatKey, EmissionError, FormatCache, parse_hex_color, translate_border_style,
+    CellFormatKey, EmissionError, FormatCache, parse_fill_color, parse_hex_color,
+    translate_border_style,
 };
 use finx::compiler::layout::StyleRole;
 use finx::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
@@ -413,4 +414,112 @@ fn test_orthogonal_2d_total_box_borders() {
     assert!(debug.contains("bottom_color: RGB(1783389)"));
     assert!(debug.contains("left_color: RGB(1783389)"));
     assert!(debug.contains("right_color: RGB(1783389)"));
+}
+
+#[test]
+fn test_parse_fill_color() {
+    // Transparent keywords
+    assert_eq!(parse_fill_color("test", "none").unwrap(), None);
+    assert_eq!(parse_fill_color("test", "None").unwrap(), None);
+    assert_eq!(parse_fill_color("test", "NONE").unwrap(), None);
+    assert_eq!(parse_fill_color("test", "transparent").unwrap(), None);
+    assert_eq!(parse_fill_color("test", "Transparent").unwrap(), None);
+    assert_eq!(parse_fill_color("test", "TRANSPARENT").unwrap(), None);
+
+    // Standard hex colors
+    assert_eq!(
+        parse_fill_color("test", "#1B365D").unwrap(),
+        Some(Color::RGB(0x1B365D))
+    );
+    assert_eq!(
+        parse_fill_color("test", "#FFFFFF").unwrap(),
+        Some(Color::RGB(0xFFFFFF))
+    );
+
+    // Invalid colors
+    assert!(parse_fill_color("test", "not_valid").is_err());
+    assert!(parse_fill_color("test", "#12").is_err());
+}
+
+#[test]
+fn test_transparent_cell_format() {
+    // Default theme has data_fill = "#FFFFFF"
+    let default_theme = Theme::corporate_navy();
+    let mut default_cache = FormatCache::new(&default_theme).expect("valid theme");
+    let key = CellFormatKey::new(StyleRole::data(), None, None, None, false, false);
+    let default_format = default_cache.get_cell_format(&key).expect("ok");
+    let default_debug = format!("{default_format:?}");
+    assert!(
+        default_debug.contains("background_color: RGB(16777215)"),
+        "Default theme must set white background_color for data cells: {default_debug}"
+    );
+
+    // Theme with data_fill = "none"
+    let mut transparent_theme = Theme::corporate_navy();
+    transparent_theme.palette.data_fill = "none".to_string();
+    let mut trans_cache = FormatCache::new(&transparent_theme).expect("valid theme");
+    let trans_format = trans_cache.get_cell_format(&key).expect("ok");
+    let trans_debug = format!("{trans_format:?}");
+    assert!(
+        trans_debug.contains("background_color: Default"),
+        "Transparent data_fill must leave background_color as Default: {trans_debug}"
+    );
+}
+
+#[test]
+fn test_transparent_summary_and_headers() {
+    let mut theme = Theme::corporate_navy();
+    theme.palette.table_title_fill = "none".to_string();
+    theme.palette.super_header_fill = "transparent".to_string();
+    theme.palette.col_header_fill = "none".to_string();
+    theme.palette.section_header_fill = "transparent".to_string();
+    theme.palette.total_fill = "none".to_string();
+
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    // Title format has bold and font size 14, but no custom fill
+    let title_fmt = cache.title_format();
+    let title_debug = format!("{title_fmt:?}");
+    assert!(title_debug.contains("background_color: Default"));
+    assert!(title_debug.contains("bold: true"));
+
+    // Super-header format has CenterAcross, but no custom fill
+    let super_fmt = cache.super_header_format();
+    let super_debug = format!("{super_fmt:?}");
+    assert!(super_debug.contains("background_color: Default"));
+    assert!(super_debug.contains("CenterAcross"));
+
+    // Column header formats have bold, but no custom fill
+    let col_desc = cache.col_header_format(true);
+    let col_desc_debug = format!("{col_desc:?}");
+    assert!(col_desc_debug.contains("background_color: Default"));
+
+    let col_meas = cache.col_header_format(false);
+    let col_meas_debug = format!("{col_meas:?}");
+    assert!(col_meas_debug.contains("background_color: Default"));
+
+    // Section header format has bold, but no custom fill
+    let sec_fmt = cache.section_header_format();
+    let sec_debug = format!("{sec_fmt:?}");
+    assert!(sec_debug.contains("background_color: Default"));
+
+    // Total format retains accounting borders and bold, but no custom fill
+    let total_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+    );
+    let total_fmt = cache.get_cell_format(&total_key).expect("ok");
+    let total_debug = format!("{total_fmt:?}");
+    assert!(total_debug.contains("background_color: Default"));
+    assert!(total_debug.contains("bold: true"));
+    assert!(total_debug.contains("top_style: Thin"));
+    assert!(total_debug.contains("bottom_style: Double"));
 }

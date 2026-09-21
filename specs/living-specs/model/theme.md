@@ -64,7 +64,8 @@ Format masks dynamically expand decimal precision and currency symbols from sing
 
 ### 3. Metric and Color Validation
 
-Themes enforce strict metric positivity and hexadecimal color formatting:
-- **Palette colors**: Must start with `#` and contain 3, 6, or 8 hexadecimal digits (`#RGB`, `#RRGGBB`, `#RRGGBBAA`). Invalid colors return `ModelError::InvalidThemeColor`.
+Themes enforce strict metric positivity, fill transparency keywords, and hexadecimal color formatting:
+- **Palette fills**: Must be `"none"` or `"transparent"` (case-insensitive) for transparent backgrounds, or start with `#` and contain 3, 6, or 8 hexadecimal digits (`#RGB`, `#RRGGBB`, `#RRGGBBAA`). Invalid fill colors return `ModelError::InvalidThemeColor`.
+- **Palette text and border colors**: Must start with `#` and contain 3, 6, or 8 hexadecimal digits (`#RGB`, `#RRGGBB`, `#RRGGBBAA`). Keywords `"none"` and `"transparent"` are rejected for text and border colors (`ModelError::InvalidThemeColor`).
 - **Metrics & typography**: All font sizes, row heights, column metrics, gutters, and character padding must be finite and strictly positive ($> 0.0$). Non-positive or non-finite values return `ModelError::InvalidThemeMetric`.
 - **Template placeholders**: Numeric templates must contain `{dec}`; currency templates must contain both `{dec}` and `{sym}`. Missing placeholders return `ModelError::MissingDecimalPlaceholder` or `ModelError::MissingCurrencySymbolPlaceholder`.

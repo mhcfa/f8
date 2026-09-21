@@ -345,3 +345,46 @@ fn test_scenario_9_manifest_theme_default_fallback() {
         .expect("failed to resolve empty theme from manifest");
     assert_eq!(resolved_empty.name, "corporate_navy");
 }
+
+#[test]
+fn test_scenario_10_transparent_fill_validation() {
+    let mut theme = Theme::corporate_navy();
+
+    // 1. Fill fields accept "none" and "transparent" in various casings
+    theme.palette.data_fill = "none".to_string();
+    theme.palette.subtotal_fill = "transparent".to_string();
+    theme.palette.total_fill = "None".to_string();
+    theme.palette.col_header_fill = "TRANSPARENT".to_string();
+    theme.palette.section_header_fill = "none".to_string();
+    theme.palette.super_header_fill = "none".to_string();
+    theme.palette.table_title_fill = "none".to_string();
+    theme.palette.zebra_fill = "transparent".to_string();
+    theme.palette.highlight_fill = "none".to_string();
+    theme.validate().expect("transparent fills should be valid");
+
+    // 2. Text and border fields reject "none" and "transparent"
+    let mut invalid_text_theme = Theme::corporate_navy();
+    invalid_text_theme.palette.data_text = "none".to_string();
+    assert!(matches!(
+        invalid_text_theme.validate().unwrap_err(),
+        ModelError::InvalidThemeColor { field, color }
+            if field == "data_text" && color == "none"
+    ));
+
+    let mut invalid_border_theme = Theme::corporate_navy();
+    invalid_border_theme.palette.border_color = "transparent".to_string();
+    assert!(matches!(
+        invalid_border_theme.validate().unwrap_err(),
+        ModelError::InvalidThemeColor { field, color }
+            if field == "border_color" && color == "transparent"
+    ));
+
+    // 3. Fill fields reject invalid non-hex strings
+    let mut invalid_fill_theme = Theme::corporate_navy();
+    invalid_fill_theme.palette.data_fill = "blurry_blue".to_string();
+    assert!(matches!(
+        invalid_fill_theme.validate().unwrap_err(),
+        ModelError::InvalidThemeColor { field, color }
+            if field == "data_fill" && color == "blurry_blue"
+    ));
+}
