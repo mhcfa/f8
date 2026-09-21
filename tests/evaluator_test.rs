@@ -18,8 +18,6 @@ fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec 
         currency: None,
         collapsible: false,
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows,
     }
 }

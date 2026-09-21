@@ -2,35 +2,13 @@
 
 use finx::compiler::graph::{ResolveError, resolve_cell_dependencies, resolve_table_ref};
 use finx::compiler::ir::{CellGrid, CellId, SymbolTable, expand_table};
-use finx::expr::ast::{ColSelector, RowSelector, SpecialCol, SpecialRow, TableRef};
-use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
-use finx::model::table::{
-    CellInput, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec,
-};
+use finx::expr::ast::{ColSelector, RelativeOffset, RowSelector, TableRef};
+use finx::model::id::{ColId, RowId, SheetId, TableId};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use indexmap::IndexMap;
 
 fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
     let mut symbols = SymbolTable::new();
-
-    // Table 1: IncomeStatement with forecast group
-    let forecast_group = ColumnGroup {
-        id: ColGroupId::from("forecast"),
-        label: "Forecast".into(),
-        columns: vec![
-            ColId::from("2024E"),
-            ColId::from("2025E"),
-            ColId::from("2026E"),
-        ],
-    };
-
-    let expenses_group = RowGroup {
-        id: RowGroupId::from("expenses"),
-        label: "Expenses".into(),
-        children: vec![
-            RowGroupChild::Row(RowId::from("cogs")),
-            RowGroupChild::Row(RowId::from("sga")),
-        ],
-    };
 
     let table1 = TableSpec {
         id: TableId::from("IncomeStatement"),
@@ -39,14 +17,13 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         currency: None,
         collapsible: false,
         columns: vec![
+            ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),
             ColumnSpec::new("2025E"),
             ColumnSpec::new("2026E"),
             ColumnSpec::new("2027E"),
         ],
-        column_groups: vec![forecast_group],
-        row_groups: vec![expenses_group],
         rows: vec![
             RowSpec::new("rev"),
             RowSpec::new("cogs"),
@@ -67,8 +44,6 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
             ColumnSpec::new("rate"),
             ColumnSpec::new("value"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![RowSpec::new("tax"), RowSpec::new("inflation")],
     };
 
@@ -123,8 +98,6 @@ fn test_scenario_2_resolving_active_column_reference() {
             ColumnSpec::new("2026E"),
             ColumnSpec::new("2027E"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("rev").with_cells(row_cells.clone()),
             RowSpec::new("cogs").with_cells(row_cells.clone()),
@@ -169,11 +142,11 @@ fn test_scenario_3_cross_table_active_column_mismatch_rejected() {
 fn test_scenario_4_resolving_relative_temporal_predecessor_offset() {
     let (symbols, _, _) = build_test_symbols();
 
-    let origin = CellId::new("IncomeStatement", "rev", "2025E"); // index 2
+    let origin = CellId::new("IncomeStatement", "rev", "2025E"); // index 2 of measures
     let table_ref = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::Prev(1)),
+        ColSelector::Offset(RelativeOffset::Prev(1)),
     );
 
     let resolved = resolve_table_ref(&origin, &table_ref, &symbols).expect("resolves ok");
@@ -185,12 +158,12 @@ fn test_scenario_4_resolving_relative_temporal_predecessor_offset() {
 fn test_scenario_5_temporal_offset_out_of_bounds_rejected() {
     let (symbols, _, _) = build_test_symbols();
 
-    // 2023A is at index 0
+    // 2023A is at index 0 of measure columns; col.prev(1) stops at descriptor boundary
     let origin = CellId::new("IncomeStatement", "rev", "2023A");
     let table_ref = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::Prev(1)),
+        ColSelector::Offset(RelativeOffset::Prev(1)),
     );
 
     let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
@@ -199,12 +172,12 @@ fn test_scenario_5_temporal_offset_out_of_bounds_rejected() {
         ResolveError::temporal_offset_out_of_bounds(&origin, -1)
     );
 
-    // Also test forward offset out of bounds at last column (2027E, index 4)
+    // Also test forward offset out of bounds at last column (2027E, index 4 of measures)
     let origin_last = CellId::new("IncomeStatement", "rev", "2027E");
     let table_ref_next = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::Next(1)),
+        ColSelector::Offset(RelativeOffset::Next(1)),
     );
 
     let err_next = resolve_table_ref(&origin_last, &table_ref_next, &symbols).unwrap_err();
@@ -263,53 +236,29 @@ fn test_scenario_7_inverted_range_slice_rejected() {
 }
 
 #[test]
-fn test_scenario_8_resolving_column_group_and_milestone_selectors() {
+fn test_scenario_8_resolving_relative_offsets_multi_step() {
     let (symbols, _, _) = build_test_symbols();
-    let origin = CellId::new("IncomeStatement", "ebit", "2027E");
+    let origin = CellId::new("IncomeStatement", "ebit", "2026E");
 
-    // cols.forecast
-    let ref_group = TableRef::new(
+    // col.prev(2) from 2026E -> 2024E
+    let ref_prev2 = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::Group(ColGroupId::from("forecast"))),
+        ColSelector::Offset(RelativeOffset::Prev(2)),
     );
-    let resolved_group = resolve_table_ref(&origin, &ref_group, &symbols).expect("resolves group");
-    assert_eq!(resolved_group.len(), 3);
-    assert_eq!(resolved_group[0].col, ColId::from("2024E"));
-    assert_eq!(resolved_group[1].col, ColId::from("2025E"));
-    assert_eq!(resolved_group[2].col, ColId::from("2026E"));
+    let resolved_prev2 = resolve_table_ref(&origin, &ref_prev2, &symbols).expect("resolves prev 2");
+    assert_eq!(resolved_prev2.len(), 1);
+    assert_eq!(resolved_prev2[0].col, ColId::from("2024E"));
 
-    // cols.forecast.first
-    let ref_first = TableRef::new(
+    // col.next(1) from 2026E -> 2027E
+    let ref_next1 = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::GroupFirst(ColGroupId::from("forecast"))),
+        ColSelector::Offset(RelativeOffset::Next(1)),
     );
-    let resolved_first = resolve_table_ref(&origin, &ref_first, &symbols).expect("resolves first");
-    assert_eq!(resolved_first.len(), 1);
-    assert_eq!(resolved_first[0].col, ColId::from("2024E"));
-
-    // cols.forecast.last
-    let ref_last = TableRef::new(
-        "IncomeStatement",
-        RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::GroupLast(ColGroupId::from("forecast"))),
-    );
-    let resolved_last = resolve_table_ref(&origin, &ref_last, &symbols).expect("resolves last");
-    assert_eq!(resolved_last.len(), 1);
-    assert_eq!(resolved_last[0].col, ColId::from("2026E"));
-
-    // rows.expenses
-    let ref_rows = TableRef::new(
-        "IncomeStatement",
-        RowSelector::Special(SpecialRow::Group(RowGroupId::from("expenses"))),
-        ColSelector::Key(ColId::from("2024E")),
-    );
-    let resolved_rows =
-        resolve_table_ref(&origin, &ref_rows, &symbols).expect("resolves row group");
-    assert_eq!(resolved_rows.len(), 2);
-    assert_eq!(resolved_rows[0].row, RowId::from("cogs"));
-    assert_eq!(resolved_rows[1].row, RowId::from("sga"));
+    let resolved_next1 = resolve_table_ref(&origin, &ref_next1, &symbols).expect("resolves next 1");
+    assert_eq!(resolved_next1.len(), 1);
+    assert_eq!(resolved_next1[0].col, ColId::from("2027E"));
 }
 
 #[test]
@@ -320,8 +269,8 @@ fn test_scenario_9_resolving_2d_block_range() {
     // 2 rows (cogs, sga) x 3 columns (2024E, 2025E, 2026E) = 6 cells
     let ref_2d = TableRef::new(
         "IncomeStatement",
-        RowSelector::Special(SpecialRow::Group(RowGroupId::from("expenses"))),
-        ColSelector::Special(SpecialCol::Group(ColGroupId::from("forecast"))),
+        RowSelector::Range(RowId::from("cogs"), RowId::from("sga")),
+        ColSelector::Range(ColId::from("2024E"), ColId::from("2026E")),
     );
 
     let resolved = resolve_table_ref(&origin, &ref_2d, &symbols).expect("resolves 2d block");
@@ -375,28 +324,6 @@ fn test_scenario_10_rejecting_unknown_entities() {
         resolve_table_ref(&origin, &ref_unknown_col, &symbols).unwrap_err(),
         ResolveError::unknown_column(&origin, "IncomeStatement", "non_existent_col")
     );
-
-    // Unknown column group
-    let ref_unknown_col_group = TableRef::new(
-        "IncomeStatement",
-        RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::Group(ColGroupId::from("ghost_group"))),
-    );
-    assert_eq!(
-        resolve_table_ref(&origin, &ref_unknown_col_group, &symbols).unwrap_err(),
-        ResolveError::unknown_column_group(&origin, "IncomeStatement", "ghost_group")
-    );
-
-    // Unknown row group
-    let ref_unknown_row_group = TableRef::new(
-        "IncomeStatement",
-        RowSelector::Special(SpecialRow::Group(RowGroupId::from("ghost_group"))),
-        ColSelector::Key(ColId::from("2024E")),
-    );
-    assert_eq!(
-        resolve_table_ref(&origin, &ref_unknown_row_group, &symbols).unwrap_err(),
-        ResolveError::unknown_row_group(&origin, "IncomeStatement", "ghost_group")
-    );
 }
 
 #[test]
@@ -438,7 +365,7 @@ fn test_scenario_vertical_temporal_offsets_and_bounds() {
     // row.prev(1) -> "cogs" (index 1)
     let ref_prev = TableRef::new(
         "IncomeStatement",
-        RowSelector::Special(SpecialRow::Prev(1)),
+        RowSelector::Offset(RelativeOffset::Prev(1)),
         ColSelector::Key(ColId::from("2024E")),
     );
     let resolved_prev = resolve_table_ref(&origin, &ref_prev, &symbols).expect("resolves row.prev");
@@ -451,7 +378,7 @@ fn test_scenario_vertical_temporal_offsets_and_bounds() {
     // row.next(1) -> "ebit" (index 3)
     let ref_next = TableRef::new(
         "IncomeStatement",
-        RowSelector::Special(SpecialRow::Next(1)),
+        RowSelector::Offset(RelativeOffset::Next(1)),
         ColSelector::Key(ColId::from("2024E")),
     );
     let resolved_next = resolve_table_ref(&origin, &ref_next, &symbols).expect("resolves row.next");
@@ -479,29 +406,9 @@ fn test_scenario_vertical_temporal_offsets_and_bounds() {
 }
 
 #[test]
-fn test_scenario_row_milestones_and_happy_path_ranges() {
+fn test_scenario_row_ranges_and_col_next_happy_path() {
     let (symbols, _, _) = build_test_symbols();
     let origin = CellId::new("IncomeStatement", "ebit", "2024E");
-
-    // rows.expenses.first -> "cogs"
-    let ref_first = TableRef::new(
-        "IncomeStatement",
-        RowSelector::Special(SpecialRow::GroupFirst(RowGroupId::from("expenses"))),
-        ColSelector::Key(ColId::from("2024E")),
-    );
-    let resolved_first = resolve_table_ref(&origin, &ref_first, &symbols).expect("resolves first");
-    assert_eq!(resolved_first.len(), 1);
-    assert_eq!(resolved_first[0].row, RowId::from("cogs"));
-
-    // rows.expenses.last -> "sga"
-    let ref_last = TableRef::new(
-        "IncomeStatement",
-        RowSelector::Special(SpecialRow::GroupLast(RowGroupId::from("expenses"))),
-        ColSelector::Key(ColId::from("2024E")),
-    );
-    let resolved_last = resolve_table_ref(&origin, &ref_last, &symbols).expect("resolves last");
-    assert_eq!(resolved_last.len(), 1);
-    assert_eq!(resolved_last[0].row, RowId::from("sga"));
 
     // Row range "cogs".."ebit" -> ["cogs", "sga", "ebit"]
     let ref_range = TableRef::new(
@@ -516,11 +423,11 @@ fn test_scenario_row_milestones_and_happy_path_ranges() {
     assert_eq!(resolved_range[1].row, RowId::from("sga"));
     assert_eq!(resolved_range[2].row, RowId::from("ebit"));
 
-    // SpecialCol::Next happy path
+    // ColSelector::Offset(RelativeOffset::Next(1)) happy path
     let ref_col_next = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Special(SpecialCol::Next(1)),
+        ColSelector::Offset(RelativeOffset::Next(1)),
     );
     let resolved_col_next =
         resolve_table_ref(&origin, &ref_col_next, &symbols).expect("resolves col.next");

@@ -5,33 +5,22 @@ use std::path::PathBuf;
 use finx::model::format::{FormatPreset, SemanticStyle};
 use finx::model::id::TableId;
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::TableSpec;
+use finx::model::table::{ColumnSpec, RowSpec, TableSpec};
 
-use super::{
-    RowBuilder, build_column_group, build_descriptor_col, build_measure_col_label, build_row_group,
-};
+use super::{RowBuilder, build_measure_col_label, build_primary_descriptor_col};
 
 /// Constructs the canonical 4-table Three-Statement financial model.
 #[must_use]
 pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
-    // Shared Timeline Columns & Super-Header Groups
+    // Shared Timeline Columns & Multi-Tier Headers
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
-        build_descriptor_col("line_item", "Line Item"),
-        build_measure_col_label("y2023a", "2023A"),
-        build_measure_col_label("y2024e", "2024E"),
-        build_measure_col_label("y2025e", "2025E"),
-        build_measure_col_label("y2026e", "2026E"),
-    ];
-
-    let timeline_groups = vec![
-        build_column_group("historical", "Historical Actuals", &["y2023a"]),
-        build_column_group(
-            "forecast",
-            "Forecast Projections",
-            &["y2024e", "y2025e", "y2026e"],
-        ),
+        build_primary_descriptor_col("line_item", "Line Item"),
+        ColumnSpec::new("y2023a").with_headers(["Historical Actuals", "2023A"]),
+        ColumnSpec::new("y2024e").with_headers(["Forecast Projections", "2024E"]),
+        ColumnSpec::new("y2025e").with_headers(["Forecast Projections", "2025E"]),
+        ColumnSpec::new("y2026e").with_headers(["Forecast Projections", "2026E"]),
     ];
 
     // -------------------------------------------------------------------------
@@ -44,11 +33,9 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_descriptor_col("line_item", "Parameter"),
+            build_primary_descriptor_col("line_item", "Parameter"),
             build_measure_col_label("val", "Value"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowBuilder::line_item("tax_rate", "Corporate Tax Rate")
                 .format(FormatPreset::Percentage)
@@ -98,12 +85,6 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols.clone(),
-        column_groups: timeline_groups.clone(),
-        row_groups: vec![build_row_group(
-            "operating_expenses",
-            "Operating Expenses",
-            &["opex", "depreciation"],
-        )],
         rows: vec![
             RowBuilder::line_item("revenue", "Revenue")
                 .format(FormatPreset::Currency)
@@ -122,6 +103,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .style(SemanticStyle::Subtotal)
                 .expr("IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]")
                 .build(),
+            RowSpec::section_header("Operating Expenses"),
             RowBuilder::line_item("opex", "Salaries & SG&A Overhead")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -163,16 +145,8 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols.clone(),
-        column_groups: timeline_groups.clone(),
-        row_groups: vec![
-            build_row_group(
-                "cfo",
-                "Operating Activities",
-                &["net_income", "depreciation", "change_in_wc", "operating_cf"],
-            ),
-            build_row_group("cfi", "Investing Activities", &["capex", "investing_cf"]),
-        ],
         rows: vec![
+            RowSpec::section_header("Operating Activities"),
             RowBuilder::line_item("net_income", "Net Income")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -195,6 +169,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .style(SemanticStyle::Subtotal)
                 .expr("CashFlow[\"net_income\", @col] + CashFlow[\"depreciation\", @col] - CashFlow[\"change_in_wc\", @col]")
                 .build(),
+            RowSpec::section_header("Investing Activities"),
             RowBuilder::line_item("capex", "Capital Expenditures")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -233,26 +208,9 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols,
-        column_groups: timeline_groups,
-        row_groups: vec![
-            build_row_group(
-                "assets",
-                "Assets",
-                &["cash", "working_capital", "ppe", "total_assets"],
-            ),
-            build_row_group(
-                "liabilities_equity",
-                "Liabilities & Stockholders' Equity",
-                &[
-                    "debt",
-                    "equity_capital",
-                    "retained_earnings",
-                    "total_liabilities_and_equity",
-                ],
-            ),
-        ],
         rows: vec![
             // Assets
+            RowSpec::section_header("Assets"),
             RowBuilder::line_item("cash", "Cash & Cash Equivalents")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -277,6 +235,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("BalanceSheet[\"cash\", @col] + BalanceSheet[\"working_capital\", @col] + BalanceSheet[\"ppe\", @col]")
                 .build(),
             // Liabilities & Equity
+            RowSpec::section_header("Liabilities & Stockholders' Equity"),
             RowBuilder::line_item("debt", "Total Outstanding Debt")
                 .format(FormatPreset::Currency)
                 .decimals(1)

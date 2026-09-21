@@ -8,11 +8,10 @@ use finx::compiler::ir::id::CellId;
 use finx::compiler::layout::LayoutPlanner;
 use finx::compiler::lowering::FormulaLowerer;
 use finx::compiler::{Compiler, ir};
-use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
+use finx::model::id::{SheetId, TableId};
 use finx::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use finx::model::table::{
-    CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowGroup, RowGroupChild, RowSpec,
-    TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
 };
 use finx::model::theme::Theme;
 
@@ -28,13 +27,17 @@ fn read_zip_entry(buffer: &[u8], name: &str) -> String {
 
 fn populate_table_cells(table: &mut TableSpec) {
     for row in &mut table.rows {
-        for col in &table.columns {
-            if !row.cells.contains_key(&col.id) {
-                if col.role.is_descriptor() {
-                    row.cells
-                        .insert(col.id.clone(), CellInput::string(row.id.as_str()));
-                } else {
-                    row.cells.insert(col.id.clone(), CellInput::number(100.0));
+        if let RowSpec::Data(d) = row {
+            for col in &table.columns {
+                if let ColumnSpec::Data(c) = col
+                    && !d.cells.contains_key(&c.id)
+                {
+                    if c.role.is_descriptor() {
+                        d.cells
+                            .insert(c.id.clone(), CellInput::string(d.id.as_str()));
+                    } else {
+                        d.cells.insert(c.id.clone(), CellInput::number(100.0));
+                    }
                 }
             }
         }
@@ -168,19 +171,15 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table.columns.push(ColumnSpec::new("2024E"));
-    table.columns.push(ColumnSpec::new("2025E"));
-    table.columns.push(ColumnSpec::new("2026E"));
-
-    table.column_groups.push(ColumnGroup {
-        id: ColGroupId::from("forecast_years"),
-        label: "Forecast Horizon".to_string(),
-        columns: vec![
-            ColId::from("2024E"),
-            ColId::from("2025E"),
-            ColId::from("2026E"),
-        ],
-    });
+    table
+        .columns
+        .push(ColumnSpec::new("2024E").with_headers(["Forecast Horizon", "2024E"]));
+    table
+        .columns
+        .push(ColumnSpec::new("2025E").with_headers(["Forecast Horizon", "2025E"]));
+    table
+        .columns
+        .push(ColumnSpec::new("2026E").with_headers(["Forecast Horizon", "2026E"]));
 
     table.rows.push(RowSpec::new("revenue"));
     populate_table_cells(&mut table);
@@ -245,15 +244,12 @@ fn test_scenario_4_single_cell_super_header_safety() {
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table.columns.push(ColumnSpec::new("2023A"));
-    table.columns.push(ColumnSpec::new("2024E"));
-
-    // Column group spanning exactly one column (2024E)
-    table.column_groups.push(ColumnGroup {
-        id: ColGroupId::from("single_col_group"),
-        label: "Single Column Tier".to_string(),
-        columns: vec![ColId::from("2024E")],
-    });
+    table
+        .columns
+        .push(ColumnSpec::new("2023A").with_header("2023A"));
+    table
+        .columns
+        .push(ColumnSpec::new("2024E").with_headers(["Single Column Tier", "2024E"]));
 
     table.rows.push(RowSpec::new("revenue"));
     populate_table_cells(&mut table);
@@ -304,22 +300,13 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
     table.columns.push(ColumnSpec::new("val"));
 
-    let mut row_rev = RowSpec::new("rev");
-    row_rev
-        .cells
-        .insert(ColId::from("val"), CellInput::number(500.0));
-    row_rev
-        .cells
-        .insert(ColId::from("line_item"), CellInput::string("Revenue"));
+    let row_rev = RowSpec::new("rev")
+        .with_cell("val", 500.0)
+        .with_cell("line_item", "Revenue");
 
-    let mut row_gp = RowSpec::new("gp");
-    row_gp.cells.insert(
-        ColId::from("val"),
-        CellInput::formula("FormulaTable[\"rev\", @col] * 2"),
-    );
-    row_gp
-        .cells
-        .insert(ColId::from("line_item"), CellInput::string("Gross Profit"));
+    let row_gp = RowSpec::new("gp")
+        .with_cell("val", CellInput::formula("FormulaTable[\"rev\", @col] * 2"))
+        .with_cell("line_item", "Gross Profit");
 
     table.rows.push(row_rev);
     table.rows.push(row_gp);
@@ -368,23 +355,13 @@ fn test_scenario_6_values_only_freezing_mode() {
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
     table.columns.push(ColumnSpec::new("val"));
 
-    let mut row_rev = RowSpec::new("rev");
-    row_rev
-        .cells
-        .insert(ColId::from("val"), CellInput::number(250.0));
-    row_rev
-        .cells
-        .insert(ColId::from("line_item"), CellInput::string("Revenue"));
+    let row_rev = RowSpec::new("rev")
+        .with_cell("val", 250.0)
+        .with_cell("line_item", "Revenue");
 
-    let mut row_margin = RowSpec::new("double_rev");
-    row_margin.cells.insert(
-        ColId::from("val"),
-        CellInput::formula("FreezeTable[\"rev\", @col] * 2"),
-    );
-    row_margin.cells.insert(
-        ColId::from("line_item"),
-        CellInput::string("Double Revenue"),
-    );
+    let row_margin = RowSpec::new("double_rev")
+        .with_cell("val", CellInput::formula("FreezeTable[\"rev\", @col] * 2"))
+        .with_cell("line_item", "Double Revenue");
 
     table.rows.push(row_rev);
     table.rows.push(row_margin);
@@ -480,38 +457,26 @@ fn test_scenario_8_collapsible_row_group_outlining() {
     let mut table = TableSpec::new("OutlineTable", "Operating Expenses");
     table
         .columns
-        .push(ColumnSpec::descriptor("line_item", "Expense Item"));
-    table.columns.push(ColumnSpec::new("amount"));
+        .push(ColumnSpec::primary_descriptor("line_item", "Expense Item"));
+    table
+        .columns
+        .push(ColumnSpec::new("amount").with_header("Amount"));
 
-    table.rows.push(RowSpec::new("salaries"));
-    table.rows.push(RowSpec::new("digital_ads"));
-    table.rows.push(RowSpec::new("events"));
-    table.rows.push(RowSpec::new("rent"));
+    table
+        .rows
+        .push(RowSpec::section_header("Operating Expenses"));
+    table
+        .rows
+        .push(RowSpec::new("salaries").with_indent(Some(1)));
+    table
+        .rows
+        .push(RowSpec::section_header("Marketing & Growth").with_indent(Some(1)));
+    table
+        .rows
+        .push(RowSpec::new("digital_ads").with_indent(Some(2)));
+    table.rows.push(RowSpec::new("events").with_indent(Some(2)));
+    table.rows.push(RowSpec::new("rent").with_indent(Some(1)));
     populate_table_cells(&mut table);
-
-    // Hierarchical groups:
-    // opex (parent)
-    //   salaries
-    //   marketing (child)
-    //     digital_ads
-    //     events
-    //   rent
-    table.row_groups.push(RowGroup {
-        id: RowGroupId::from("opex"),
-        label: "Operating Expenses".to_string(),
-        children: vec![
-            RowGroupChild::Row(RowId::from("salaries")),
-            RowGroupChild::Group(RowGroup {
-                id: RowGroupId::from("marketing"),
-                label: "Marketing & Growth".to_string(),
-                children: vec![
-                    RowGroupChild::Row(RowId::from("digital_ads")),
-                    RowGroupChild::Row(RowId::from("events")),
-                ],
-            }),
-            RowGroupChild::Row(RowId::from("rent")),
-        ],
-    });
 
     let manifest = ProjectManifest {
         model_name: "OutlineModel".to_string(),
@@ -724,9 +689,8 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
 fn test_scenario_11_audit_note_attachment() {
     let mut table = TableSpec::new("NoteTable", "Audit Note Showcase");
     table.columns.push(ColumnSpec::new("c1"));
-    let mut r1 = RowSpec::new("r1");
-    r1.cells.insert(
-        ColId::from("c1"),
+    let r1 = RowSpec::new("r1").with_cell(
+        "c1",
         CellInput::Detailed(DetailedCellInput {
             value: Some(ValueLiteral::Number(100.0)),
             note: Some("Audit checked by Senior Associate".to_string()),

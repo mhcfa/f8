@@ -8,7 +8,7 @@ use super::symbol::SymbolTable;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
-use crate::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
+use crate::model::table::{CellInput, ColumnSpec, DataColumnSpec, DataRowSpec, RowSpec, TableSpec};
 
 /// Expands a single table specification into an ordered vector of discrete cell calculation nodes.
 ///
@@ -34,43 +34,61 @@ pub fn expand_table(
     // Pre-parse row vector formulas once per row
     let mut parsed_row_exprs: IndexMap<&RowId, crate::expr::ast::Expr> = IndexMap::new();
     for row in &table.rows {
-        if let Some(expr_str) = &row.expr {
+        let data_row = match row {
+            RowSpec::Data(d) => d,
+            RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
+        };
+        if let Some(expr_str) = &data_row.expr {
             let expr = crate::expr::ast::Expr::parse(expr_str).map_err(|source| {
                 IrError::FormulaParse {
                     table: table.id.clone(),
-                    row: Some(row.id.clone()),
+                    row: Some(data_row.id.clone()),
                     column: None,
                     source,
                 }
             })?;
-            parsed_row_exprs.insert(&row.id, expr);
+            parsed_row_exprs.insert(&data_row.id, expr);
         }
     }
 
     // Pre-parse column vector formulas once per column
     let mut parsed_col_exprs: IndexMap<&ColId, crate::expr::ast::Expr> = IndexMap::new();
     for col in &table.columns {
-        if let Some(expr_str) = &col.expr {
+        let data_col = match col {
+            ColumnSpec::Data(d) => d,
+            ColumnSpec::Gutter => continue,
+        };
+        if let Some(expr_str) = &data_col.expr {
             let expr = crate::expr::ast::Expr::parse(expr_str).map_err(|source| {
                 IrError::FormulaParse {
                     table: table.id.clone(),
                     row: None,
-                    column: Some(col.id.clone()),
+                    column: Some(data_col.id.clone()),
                     source,
                 }
             })?;
-            parsed_col_exprs.insert(&col.id, expr);
+            parsed_col_exprs.insert(&data_col.id, expr);
         }
     }
 
     let mut cells = Vec::with_capacity(table.rows.len() * table.columns.len());
 
     for row in &table.rows {
+        let row_data = match row {
+            RowSpec::Data(d) => d,
+            RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
+        };
+
         for col in &table.columns {
-            let cell_id = CellId::new(table.id.clone(), row.id.clone(), col.id.clone());
+            let col_data = match col {
+                ColumnSpec::Data(d) => d,
+                ColumnSpec::Gutter => continue,
+            };
+
+            let cell_id = CellId::new(table.id.clone(), row_data.id.clone(), col_data.id.clone());
 
             // Tier 1: Cell Override (0D Point)
-            if let Some(cell_input) = row.cells.get(&col.id) {
+            if let Some(cell_input) = row_data.cells.get(&col_data.id) {
                 let cell_style = cell_input.style();
                 let cell_highlight = cell_input.highlight();
                 let cell_format = cell_input.format();
@@ -89,8 +107,8 @@ pub fn expand_table(
                                 crate::expr::ast::Expr::parse(expr_str).map_err(|source| {
                                     IrError::FormulaParse {
                                         table: table.id.clone(),
-                                        row: Some(row.id.clone()),
-                                        column: Some(col.id.clone()),
+                                        row: Some(row_data.id.clone()),
+                                        column: Some(col_data.id.clone()),
                                         source,
                                     }
                                 })?;
@@ -103,27 +121,34 @@ pub fn expand_table(
                     }
                 };
 
-                let effective_format = resolve_format(cell_format, row, col, &table.id)?;
-                let effective_decimals =
-                    resolve_decimals(cell_decimals, effective_format, row, col, &table.id)?;
+                let effective_format = resolve_format(cell_format, row_data, col_data, &table.id)?;
+                let effective_decimals = resolve_decimals(
+                    cell_decimals,
+                    effective_format,
+                    row_data,
+                    col_data,
+                    &table.id,
+                )?;
                 let effective_currency = resolve_currency(
                     cell_currency,
                     effective_format,
-                    row,
-                    col,
+                    row_data,
+                    col_data,
                     table.currency,
                     &table.id,
                 )?;
-                let (horizontal, vertical) = resolve_style(cell_style, row.style, col.style);
-                let is_highlight = resolve_highlight(cell_highlight, row.highlight, col.highlight);
+                let (horizontal, vertical) =
+                    resolve_style(cell_style, row_data.style, col_data.style);
+                let is_highlight =
+                    resolve_highlight(cell_highlight, row_data.highlight, col_data.highlight);
 
                 let effective_note = cell_note
                     .map(String::from)
-                    .or_else(|| row.note.clone())
-                    .or_else(|| col.note.clone());
+                    .or_else(|| row_data.note.clone())
+                    .or_else(|| col_data.note.clone());
                 let effective_source = cell_source
-                    .or_else(|| row.source.clone())
-                    .or_else(|| col.source.clone());
+                    .or_else(|| row_data.source.clone())
+                    .or_else(|| col_data.source.clone());
 
                 cells.push(
                     CellNode::new(cell_id, sheet_id.clone(), payload)
@@ -139,47 +164,54 @@ pub fn expand_table(
             }
 
             // Tier 2: Descriptor boundary check (formulas never broadcast across descriptor axes)
-            if row.role.is_descriptor() || col.role.is_descriptor() {
+            if col_data.role.is_descriptor() {
                 return Err(IrError::UnassignedCell {
                     table: table.id.clone(),
-                    row: row.id.clone(),
-                    column: col.id.clone(),
+                    row: row_data.id.clone(),
+                    column: col_data.id.clone(),
                 });
             }
 
             // Tier 3: Measure-on-measure vector rules
-            let row_has_expr = parsed_row_exprs.contains_key(&row.id);
-            let col_has_expr = parsed_col_exprs.contains_key(&col.id);
+            let row_has_expr = parsed_row_exprs.contains_key(&row_data.id);
+            let col_has_expr = parsed_col_exprs.contains_key(&col_data.id);
 
             if row_has_expr && col_has_expr {
                 return Err(IrError::AmbiguousExpressionConflict {
                     table: table.id.clone(),
-                    row: row.id.clone(),
-                    column: col.id.clone(),
+                    row: row_data.id.clone(),
+                    column: col_data.id.clone(),
                 });
             }
 
-            let payload = if let Some(expr) = parsed_row_exprs.get(&row.id) {
+            let payload = if let Some(expr) = parsed_row_exprs.get(&row_data.id) {
                 CellPayload::Formula(expr.clone())
-            } else if let Some(expr) = parsed_col_exprs.get(&col.id) {
+            } else if let Some(expr) = parsed_col_exprs.get(&col_data.id) {
                 CellPayload::Formula(expr.clone())
             } else {
                 return Err(IrError::UnassignedCell {
                     table: table.id.clone(),
-                    row: row.id.clone(),
-                    column: col.id.clone(),
+                    row: row_data.id.clone(),
+                    column: col_data.id.clone(),
                 });
             };
 
-            let effective_format = resolve_format(None, row, col, &table.id)?;
-            let effective_decimals = resolve_decimals(None, effective_format, row, col, &table.id)?;
-            let effective_currency =
-                resolve_currency(None, effective_format, row, col, table.currency, &table.id)?;
-            let (horizontal, vertical) = resolve_style(None, row.style, col.style);
-            let is_highlight = resolve_highlight(None, row.highlight, col.highlight);
+            let effective_format = resolve_format(None, row_data, col_data, &table.id)?;
+            let effective_decimals =
+                resolve_decimals(None, effective_format, row_data, col_data, &table.id)?;
+            let effective_currency = resolve_currency(
+                None,
+                effective_format,
+                row_data,
+                col_data,
+                table.currency,
+                &table.id,
+            )?;
+            let (horizontal, vertical) = resolve_style(None, row_data.style, col_data.style);
+            let is_highlight = resolve_highlight(None, row_data.highlight, col_data.highlight);
 
-            let effective_note = row.note.clone().or_else(|| col.note.clone());
-            let effective_source = row.source.clone().or_else(|| col.source.clone());
+            let effective_note = row_data.note.clone().or_else(|| col_data.note.clone());
+            let effective_source = row_data.source.clone().or_else(|| col_data.source.clone());
 
             cells.push(
                 CellNode::new(cell_id, sheet_id.clone(), payload)
@@ -200,18 +232,14 @@ pub fn expand_table(
 /// Resolves the effective format preset according to the 3-Tier Specificity Lattice.
 fn resolve_format(
     cell_format: Option<FormatPreset>,
-    row: &RowSpec,
-    col: &ColumnSpec,
+    row: &DataRowSpec,
+    col: &DataColumnSpec,
     table_id: &TableId,
 ) -> Result<Option<FormatPreset>, IrError> {
     if cell_format.is_some() {
         Ok(cell_format)
-    } else if col.role.is_descriptor() && row.role.is_descriptor() {
-        Ok(col.format.or(row.format))
     } else if col.role.is_descriptor() {
         Ok(col.format)
-    } else if row.role.is_descriptor() {
-        Ok(row.format)
     } else {
         match (row.format, col.format) {
             (Some(rf), Some(cf)) if rf != cf => Err(IrError::FormatConflict {
@@ -232,8 +260,8 @@ fn resolve_format(
 fn resolve_decimals(
     cell_decimals: Option<u32>,
     effective_format: Option<FormatPreset>,
-    row: &RowSpec,
-    col: &ColumnSpec,
+    row: &DataRowSpec,
+    col: &DataColumnSpec,
     table_id: &TableId,
 ) -> Result<Option<u32>, IrError> {
     // Non-numeric presets have no precision concept and always resolve to None
@@ -245,12 +273,8 @@ fn resolve_decimals(
 
     if cell_decimals.is_some() {
         Ok(cell_decimals)
-    } else if col.role.is_descriptor() && row.role.is_descriptor() {
-        Ok(col.decimals.or(row.decimals))
     } else if col.role.is_descriptor() {
         Ok(col.decimals)
-    } else if row.role.is_descriptor() {
-        Ok(row.decimals)
     } else {
         match (row.decimals, col.decimals) {
             (Some(rd), Some(cd)) if rd != cd => Err(IrError::DecimalsConflict {
@@ -271,8 +295,8 @@ fn resolve_decimals(
 fn resolve_currency(
     cell_currency: Option<CurrencyCode>,
     effective_format: Option<FormatPreset>,
-    row: &RowSpec,
-    col: &ColumnSpec,
+    row: &DataRowSpec,
+    col: &DataColumnSpec,
     table_currency: Option<CurrencyCode>,
     table_id: &TableId,
 ) -> Result<Option<CurrencyCode>, IrError> {
@@ -282,7 +306,7 @@ fn resolve_currency(
     }
 
     // Descriptor axis isolates currency and prevents vector conflicts
-    if col.role.is_descriptor() || row.role.is_descriptor() {
+    if col.role.is_descriptor() {
         return Ok(None);
     }
 
@@ -437,8 +461,6 @@ mod tests {
                 ColumnSpec::descriptor("param", "Parameter"),
                 ColumnSpec::new("val"),
             ],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![
                 RowSpec::new("tax_rate")
                     .with_format(Some(FormatPreset::Percentage))
@@ -499,8 +521,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![ColumnSpec::new("c1")],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1").with_expr("1")],
         };
 
@@ -520,8 +540,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![ColumnSpec::new("c1")],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1").with_expr("1 + * 2")],
         };
 
@@ -539,8 +557,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![ColumnSpec::new("c1")],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1").with_expr("10")],
         };
 
@@ -553,8 +569,7 @@ mod tests {
 
     #[test]
     fn test_ambiguous_expression_conflict_rejected() {
-        let mut col = ColumnSpec::new("c1");
-        col.expr = Some("100".to_string());
+        let col = ColumnSpec::new("c1").with_expr("100");
 
         let table = TableSpec {
             id: TableId::new("ConflictTable"),
@@ -563,8 +578,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![col],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1").with_expr("200")],
         };
 
@@ -579,8 +592,7 @@ mod tests {
 
     #[test]
     fn test_cell_override_resolves_ambiguity() {
-        let mut col = ColumnSpec::new("c1");
-        col.expr = Some("100".to_string());
+        let col = ColumnSpec::new("c1").with_expr("100");
 
         let mut cells = IndexMap::new();
         cells.insert("c1".into(), CellInput::number(999.0));
@@ -592,8 +604,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![col],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1").with_expr("200").with_cells(cells)],
         };
 
@@ -615,8 +625,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![ColumnSpec::new("c1")],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1")],
         };
 
@@ -631,8 +639,7 @@ mod tests {
 
     #[test]
     fn test_format_conflict_rejected() {
-        let mut col = ColumnSpec::new("c1");
-        col.format = Some(FormatPreset::Percentage);
+        let col = ColumnSpec::new("c1").with_format(Some(FormatPreset::Percentage));
 
         let table = TableSpec {
             id: TableId::new("FmtConflict"),
@@ -641,8 +648,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![col],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![
                 RowSpec::new("r1")
                     .with_format(Some(FormatPreset::Currency))
@@ -664,8 +669,7 @@ mod tests {
 
     #[test]
     fn test_cell_format_override_resolves_format_conflict() {
-        let mut col = ColumnSpec::new("c1");
-        col.format = Some(FormatPreset::Percentage);
+        let col = ColumnSpec::new("c1").with_format(Some(FormatPreset::Percentage));
 
         let mut cells = IndexMap::new();
         cells.insert(
@@ -684,8 +688,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![col],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![
                 RowSpec::new("r1")
                     .with_format(Some(FormatPreset::Currency))

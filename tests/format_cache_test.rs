@@ -379,7 +379,7 @@ fn test_scenario_6_structural_header_formats_and_alignments() {
         "Measure header must match borders.header_border_bottom: {col_meas_debug}"
     );
 
-    let sec_fmt = cache.section_header_format(1);
+    let sec_fmt = cache.section_header_format(None);
     let sec_debug = format!("{sec_fmt:?}");
     assert!(sec_debug.contains("horizontal: Left"));
     assert!(sec_debug.contains("bold: true"));
@@ -578,7 +578,7 @@ fn test_transparent_summary_and_headers() {
     assert!(col_meas_debug.contains("background_color: Default"));
 
     // Section header format has bold, but no custom fill
-    let sec_fmt = cache.section_header_format(1);
+    let sec_fmt = cache.section_header_format(None);
     let sec_debug = format!("{sec_fmt:?}");
     assert!(sec_debug.contains("background_color: Default"));
 
@@ -833,10 +833,10 @@ fn test_scenario_13_row_group_and_section_header_indentation() {
         "measure indent 0 expected: {measure_debug}"
     );
 
-    // 3. Section headers: level 1 is unindented (indent 0), level 2 has indent 1, level 3 has indent 2
-    let section_l1 = cache.section_header_format(1);
-    let section_l2 = cache.section_header_format(2);
-    let section_l3 = cache.section_header_format(3);
+    // 3. Section headers: None is unindented (indent 0), Some(1) has indent 1, Some(2) has indent 2
+    let section_l1 = cache.section_header_format(None);
+    let section_l2 = cache.section_header_format(Some(1));
+    let section_l3 = cache.section_header_format(Some(2));
 
     let debug_s1 = format!("{section_l1:?}");
     let debug_s2 = format!("{section_l2:?}");

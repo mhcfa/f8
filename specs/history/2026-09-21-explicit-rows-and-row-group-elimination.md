@@ -1,7 +1,7 @@
 ---
 title: Explicit Rows & Elimination of Row Groups
 date: 2026-09-21
-status: draft
+status: completed
 target-living-spec:
   - specs/living-specs/model/spec-ast.md
   - specs/living-specs/expr/formula-parser.md

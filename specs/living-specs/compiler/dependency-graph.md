@@ -57,7 +57,7 @@ The active coordinate tokens (`@col` and `@row`) resolve to the evaluating cell'
 
 ### 3. Relative Temporal Offsets & Axis Bounds
 
-Relative temporal predecessor and successor offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`) calculate relative position steps ($idx \pm k$) along the origin table's column or row axis, resolving to the corresponding coordinate identifier.
+Relative temporal predecessor and successor offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`) calculate relative position steps along the origin table's measure columns or data rows (strictly protecting descriptor column boundaries and skipping gutters), resolving to the corresponding coordinate identifier.
 
 #### Scenarios
 
@@ -71,9 +71,9 @@ Relative temporal predecessor and successor offsets (`col.prev(k)`, `col.next(k)
   - **When** evaluating cell `BS["cash", "2024E"]` (column index 0) referencing `BS["cash", col.prev]`
   - **Then** compilation halts with `ResolveError::TemporalOffsetOutOfBounds { offset: -1 }`.
 
-### 4. Range Interval Slices & Group Expansions
+### 4. Range Interval Slices
 
-Closed intervals (`"2024E".."2026E"`) and group selectors (`cols.<group>`, `rows.<group>`) expand into ordered sequences of coordinates based on axis declaration order.
+Closed intervals (`"2024E".."2026E"`) expand into ordered sequences of coordinates based on axis declaration order.
 
 #### Scenarios
 
@@ -84,7 +84,7 @@ Closed intervals (`"2024E".."2026E"`) and group selectors (`cols.<group>`, `rows
   - **When** a slice specifies $start\_idx > end\_idx$ (e.g. `"2026E".."2024E"`)
   - **Then** compilation halts with `ResolveError::InvertedRange`.
 - **2D Block Range**:
-  - **When** a reference spans both a row group/range and a column group/range ($R \times C$)
+  - **When** a reference spans both a row range and a column range ($R \times C$)
   - **Then** resolves to all Cartesian product `CellId` nodes in row-major declaration order.
 
 ### 5. Zero Circularity & Tarjan SCC Firewall

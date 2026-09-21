@@ -1,8 +1,8 @@
 use crate::expr::ast::{
-    BinaryOp, ColSelector, Expr, Literal, RowSelector, SpecialCol, SpecialRow, TableRef, UnaryOp,
+    BinaryOp, ColSelector, Expr, Literal, RelativeOffset, RowSelector, TableRef, UnaryOp,
 };
 use crate::expr::error::ParseError;
-use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId};
+use crate::model::id::{ColId, RowId};
 use std::fmt;
 
 /// Lexical token recognized by the formula tokenizer.
@@ -863,65 +863,14 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
                 let _ = stream.expect(&Token::RParen, expected_rparen)?;
 
                 if is_prev {
-                    Ok(RowSelector::Special(SpecialRow::Prev(k)))
+                    Ok(RowSelector::Offset(RelativeOffset::Prev(k)))
                 } else {
-                    Ok(RowSelector::Special(SpecialRow::Next(k)))
+                    Ok(RowSelector::Offset(RelativeOffset::Next(k)))
                 }
             } else if is_prev {
-                Ok(RowSelector::Special(SpecialRow::Prev(1)))
+                Ok(RowSelector::Offset(RelativeOffset::Prev(1)))
             } else {
-                Ok(RowSelector::Special(SpecialRow::Next(1)))
-            }
-        }
-        Token::Ident("rows") => {
-            stream.advance();
-            // Expect '.'
-            let _ = stream.expect(&Token::Dot, "'.' after 'rows'")?;
-
-            // Expect group identifier
-            let group_id = match stream.consume() {
-                Some(next_st) => match next_st.token {
-                    Token::Ident(id) => id,
-                    ref other => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "row group identifier after 'rows.'",
-                            found: other.to_string(),
-                            offset: next_st.offset,
-                        });
-                    }
-                },
-                None => {
-                    return Err(ParseError::UnexpectedEof {
-                        expected: "row group identifier after 'rows.'",
-                    });
-                }
-            };
-
-            // Check for optional .first or .last
-            if stream.peek_token() == Some(&Token::Dot) {
-                stream.advance();
-                match stream.consume() {
-                    Some(milestone_st) => match milestone_st.token {
-                        Token::Ident("first") => Ok(RowSelector::Special(SpecialRow::GroupFirst(
-                            RowGroupId::new(group_id),
-                        ))),
-                        Token::Ident("last") => Ok(RowSelector::Special(SpecialRow::GroupLast(
-                            RowGroupId::new(group_id),
-                        ))),
-                        ref other => Err(ParseError::UnexpectedToken {
-                            expected: "'first' or 'last'",
-                            found: other.to_string(),
-                            offset: milestone_st.offset,
-                        }),
-                    },
-                    None => Err(ParseError::UnexpectedEof {
-                        expected: "'first' or 'last'",
-                    }),
-                }
-            } else {
-                Ok(RowSelector::Special(SpecialRow::Group(RowGroupId::new(
-                    group_id,
-                ))))
+                Ok(RowSelector::Offset(RelativeOffset::Next(1)))
             }
         }
         Token::String(key1) => {
@@ -1040,65 +989,14 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
                 let _ = stream.expect(&Token::RParen, expected_rparen)?;
 
                 if is_prev {
-                    Ok(ColSelector::Special(SpecialCol::Prev(k)))
+                    Ok(ColSelector::Offset(RelativeOffset::Prev(k)))
                 } else {
-                    Ok(ColSelector::Special(SpecialCol::Next(k)))
+                    Ok(ColSelector::Offset(RelativeOffset::Next(k)))
                 }
             } else if is_prev {
-                Ok(ColSelector::Special(SpecialCol::Prev(1)))
+                Ok(ColSelector::Offset(RelativeOffset::Prev(1)))
             } else {
-                Ok(ColSelector::Special(SpecialCol::Next(1)))
-            }
-        }
-        Token::Ident("cols") => {
-            stream.advance();
-            // Expect '.'
-            let _ = stream.expect(&Token::Dot, "'.' after 'cols'")?;
-
-            // Expect group identifier
-            let group_id = match stream.consume() {
-                Some(next_st) => match next_st.token {
-                    Token::Ident(id) => id,
-                    ref other => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "column group identifier after 'cols.'",
-                            found: other.to_string(),
-                            offset: next_st.offset,
-                        });
-                    }
-                },
-                None => {
-                    return Err(ParseError::UnexpectedEof {
-                        expected: "column group identifier after 'cols.'",
-                    });
-                }
-            };
-
-            // Check for optional .first or .last
-            if stream.peek_token() == Some(&Token::Dot) {
-                stream.advance();
-                match stream.consume() {
-                    Some(milestone_st) => match milestone_st.token {
-                        Token::Ident("first") => Ok(ColSelector::Special(SpecialCol::GroupFirst(
-                            ColGroupId::new(group_id),
-                        ))),
-                        Token::Ident("last") => Ok(ColSelector::Special(SpecialCol::GroupLast(
-                            ColGroupId::new(group_id),
-                        ))),
-                        ref other => Err(ParseError::UnexpectedToken {
-                            expected: "'first' or 'last'",
-                            found: other.to_string(),
-                            offset: milestone_st.offset,
-                        }),
-                    },
-                    None => Err(ParseError::UnexpectedEof {
-                        expected: "'first' or 'last'",
-                    }),
-                }
-            } else {
-                Ok(ColSelector::Special(SpecialCol::Group(ColGroupId::new(
-                    group_id,
-                ))))
+                Ok(ColSelector::Offset(RelativeOffset::Next(1)))
             }
         }
         Token::String(key1) => {
@@ -1150,7 +1048,7 @@ fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseErro
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+    use crate::model::id::{ColId, RowId, TableId};
 
     #[test]
     fn test_arithmetic_precedence_and_associativity() {
@@ -1368,7 +1266,7 @@ mod tests {
             Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Key(RowId::new("cash")),
-                ColSelector::Special(SpecialCol::Prev(1)),
+                ColSelector::Offset(RelativeOffset::Prev(1)),
             ))
         );
 
@@ -1379,7 +1277,7 @@ mod tests {
             Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Key(RowId::new("cash")),
-                ColSelector::Special(SpecialCol::Prev(2)),
+                ColSelector::Offset(RelativeOffset::Prev(2)),
             ))
         );
 
@@ -1390,7 +1288,7 @@ mod tests {
             Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Key(RowId::new("cash")),
-                ColSelector::Special(SpecialCol::Next(3)),
+                ColSelector::Offset(RelativeOffset::Next(3)),
             ))
         );
 
@@ -1400,7 +1298,7 @@ mod tests {
             row_prev1,
             Expr::Reference(TableRef::new(
                 TableId::new("DebtSchedule"),
-                RowSelector::Special(SpecialRow::Prev(1)),
+                RowSelector::Offset(RelativeOffset::Prev(1)),
                 ColSelector::Key(ColId::new("balance")),
             ))
         );
@@ -1411,30 +1309,8 @@ mod tests {
             row_next2,
             Expr::Reference(TableRef::new(
                 TableId::new("DebtSchedule"),
-                RowSelector::Special(SpecialRow::Next(2)),
+                RowSelector::Offset(RelativeOffset::Next(2)),
                 ColSelector::Key(ColId::new("balance")),
-            ))
-        );
-
-        // cols.historical.last
-        let hist_last = parse_expr_str("DebtSchedule[\"balance\", cols.historical.last]").unwrap();
-        assert_eq!(
-            hist_last,
-            Expr::Reference(TableRef::new(
-                TableId::new("DebtSchedule"),
-                RowSelector::Key(RowId::new("balance")),
-                ColSelector::Special(SpecialCol::GroupLast(ColGroupId::new("historical"))),
-            ))
-        );
-
-        // cols.forecast.first
-        let fc_first = parse_expr_str("DebtSchedule[\"balance\", cols.forecast.first]").unwrap();
-        assert_eq!(
-            fc_first,
-            Expr::Reference(TableRef::new(
-                TableId::new("DebtSchedule"),
-                RowSelector::Key(RowId::new("balance")),
-                ColSelector::Special(SpecialCol::GroupFirst(ColGroupId::new("forecast"))),
             ))
         );
 
@@ -1464,39 +1340,6 @@ mod tests {
             ))
         );
 
-        // Row group active column: BalanceSheet[rows.current_assets, @col]
-        let rg_active = parse_expr_str("BalanceSheet[rows.current_assets, @col]").unwrap();
-        assert_eq!(
-            rg_active,
-            Expr::Reference(TableRef::new(
-                TableId::new("BalanceSheet"),
-                RowSelector::Special(SpecialRow::Group(RowGroupId::new("current_assets"))),
-                ColSelector::Active,
-            ))
-        );
-
-        // Row group specific column: BalanceSheet[rows.current_assets, "2024E"]
-        let rg_specific = parse_expr_str("BalanceSheet[rows.current_assets, \"2024E\"]").unwrap();
-        assert_eq!(
-            rg_specific,
-            Expr::Reference(TableRef::new(
-                TableId::new("BalanceSheet"),
-                RowSelector::Special(SpecialRow::Group(RowGroupId::new("current_assets"))),
-                ColSelector::Key(ColId::new("2024E")),
-            ))
-        );
-
-        // Row group milestone: BalanceSheet[rows.current_assets.first, @col]
-        let rg_first = parse_expr_str("BalanceSheet[rows.current_assets.first, @col]").unwrap();
-        assert_eq!(
-            rg_first,
-            Expr::Reference(TableRef::new(
-                TableId::new("BalanceSheet"),
-                RowSelector::Special(SpecialRow::GroupFirst(RowGroupId::new("current_assets"))),
-                ColSelector::Active,
-            ))
-        );
-
         // Single row key specific column: BalanceSheet["cash", "2024E"]
         let single_row = parse_expr_str("BalanceSheet[\"cash\", \"2024E\"]").unwrap();
         assert_eq!(
@@ -1517,18 +1360,6 @@ mod tests {
                 TableId::new("Opex"),
                 RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
                 ColSelector::Range(ColId::new("2024E"), ColId::new("2028E")),
-            ))
-        );
-
-        // 2D groups: BalanceSheet[rows.current_assets, cols.forecast]
-        let block_groups =
-            parse_expr_str("BalanceSheet[rows.current_assets, cols.forecast]").unwrap();
-        assert_eq!(
-            block_groups,
-            Expr::Reference(TableRef::new(
-                TableId::new("BalanceSheet"),
-                RowSelector::Special(SpecialRow::Group(RowGroupId::new("current_assets"))),
-                ColSelector::Special(SpecialCol::Group(ColGroupId::new("forecast"))),
             ))
         );
     }
@@ -1606,8 +1437,8 @@ mod tests {
             other => panic!("Expected unexpected token error, got {other:?}"),
         }
 
-        // rows.group.firstly should not parse as rows.group.first
-        let err = parse_expr_str("Table[rows.group.firstly, @col]").unwrap_err();
+        // col.nextly should not parse as col.next
+        let err = parse_expr_str("Table[\"row\", col.nextly]").unwrap_err();
         match err {
             ParseError::UnexpectedToken { .. } => {}
             other => panic!("Expected unexpected token error, got {other:?}"),
@@ -1633,25 +1464,9 @@ mod tests {
             ParseError::UnexpectedEof { expected: "']'" }
         );
         assert_eq!(
-            parse_expr_str("Table[rows.opex, @col").unwrap_err(),
-            ParseError::UnexpectedEof { expected: "']'" }
-        );
-        assert_eq!(
             parse_expr_str("SUM(1, 2").unwrap_err(),
             ParseError::UnexpectedEof {
                 expected: "',' or ')'"
-            }
-        );
-        assert_eq!(
-            parse_expr_str("Table[rows").unwrap_err(),
-            ParseError::UnexpectedEof {
-                expected: "'.' after 'rows'"
-            }
-        );
-        assert_eq!(
-            parse_expr_str("Table[\"row\", cols").unwrap_err(),
-            ParseError::UnexpectedEof {
-                expected: "'.' after 'cols'"
             }
         );
         assert_eq!(
@@ -1683,14 +1498,11 @@ mod tests {
             "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
             "SUM(IncomeStatement[\"revenue\", \"2024E\"..\"2028E\"])",
             "Opex[\"r_and_d\"..\"g_and_a\", @col]",
-            "BalanceSheet[rows.current_assets, cols.forecast]",
             "BalanceSheet[\"cash\", col.prev]",
             "BalanceSheet[\"cash\", col.prev(2)]",
-            "DebtSchedule[\"balance\", cols.historical.last]",
             "(2 ^ 3) ^ 4",
             "2 ^ (3 ^ 4)",
             "BalanceSheet[\"cash\", @col]",
-            "BalanceSheet[rows.current_assets.first, @col]",
             "CapTable[@row, \"shares\"]",
             "DebtSchedule[row.prev, \"balance\"]",
             "DebtSchedule[row.next(2), \"balance\"]",

@@ -29,8 +29,6 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
             ColumnSpec::new("active"),
             ColumnSpec::new("val"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("tax"),
             RowSpec::new("flag"),
@@ -52,8 +50,6 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
             ColumnSpec::new("2024E"),
             ColumnSpec::new("2025E"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("rev"),
             RowSpec::new("cogs"),

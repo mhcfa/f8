@@ -1,20 +1,18 @@
 use indexmap::{IndexMap, IndexSet};
 
 use super::error::IrError;
-use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
-use crate::model::table::{AxisRole, ColumnSpec, RowGroup, RowGroupChild, TableSpec};
+use crate::model::id::{ColId, RowId, SheetId, TableId};
+use crate::model::table::{AxisRole, ColumnSpec, DataColumnSpec, RowSpec, TableSpec};
 
 /// Catalog metadata registered for a table within the symbol table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableMetadata {
     pub table_id: TableId,
     pub sheet_id: SheetId,
-    pub columns: Vec<ColumnSpec>,
+    pub columns: Vec<DataColumnSpec>,
     pub column_index: IndexMap<ColId, usize>,
+    pub measure_columns: Vec<ColId>,
     pub rows: IndexSet<RowId>,
-    pub row_roles: IndexMap<RowId, AxisRole>,
-    pub column_groups: IndexMap<ColGroupId, Vec<ColId>>,
-    pub row_groups: IndexMap<RowGroupId, Vec<RowId>>,
 }
 
 impl TableMetadata {
@@ -26,79 +24,46 @@ impl TableMetadata {
             });
         }
 
-        let mut column_index = IndexMap::with_capacity(table.columns.len());
-        for (idx, col) in table.columns.iter().enumerate() {
-            column_index.insert(col.id.clone(), idx);
+        let mut columns = Vec::new();
+        let mut column_index = IndexMap::new();
+        let mut measure_columns = Vec::new();
+
+        for col in &table.columns {
+            if let ColumnSpec::Data(d) = col {
+                let idx = columns.len();
+                column_index.insert(d.id.clone(), idx);
+                if d.role.is_measure() {
+                    measure_columns.push(d.id.clone());
+                }
+                columns.push(d.clone());
+            }
         }
 
-        let mut rows = IndexSet::with_capacity(table.rows.len());
-        let mut row_roles = IndexMap::with_capacity(table.rows.len());
+        let mut rows = IndexSet::new();
         for row in &table.rows {
-            rows.insert(row.id.clone());
-            row_roles.insert(row.id.clone(), row.role);
-        }
-
-        let mut column_groups = IndexMap::new();
-        for cg in &table.column_groups {
-            column_groups.insert(cg.id.clone(), cg.columns.clone());
-        }
-
-        let mut row_groups = IndexMap::new();
-        for rg in &table.row_groups {
-            Self::collect_row_group(rg, &mut row_groups);
+            if let RowSpec::Data(d) = row {
+                rows.insert(d.id.clone());
+            }
         }
 
         Ok(Self {
             table_id: table.id.clone(),
             sheet_id,
-            columns: table.columns.clone(),
+            columns,
             column_index,
+            measure_columns,
             rows,
-            row_roles,
-            column_groups,
-            row_groups,
         })
     }
 
     /// Returns the column specification for a given column identifier.
-    pub fn col_spec(&self, col: &ColId) -> Option<&ColumnSpec> {
+    pub fn col_spec(&self, col: &ColId) -> Option<&DataColumnSpec> {
         self.column_index.get(col).map(|&idx| &self.columns[idx])
     }
 
     /// Returns the axis role of a column.
     pub fn col_role(&self, col: &ColId) -> Option<AxisRole> {
         self.col_spec(col).map(|c| c.role)
-    }
-
-    /// Returns the axis role of a row.
-    pub fn row_role(&self, row: &RowId) -> Option<AxisRole> {
-        self.row_roles.get(row).copied()
-    }
-
-    fn collect_row_group(group: &RowGroup, out: &mut IndexMap<RowGroupId, Vec<RowId>>) {
-        let mut row_ids = Vec::new();
-        Self::collect_row_children(&group.children, &mut row_ids, out);
-        out.insert(group.id.clone(), row_ids);
-    }
-
-    fn collect_row_children(
-        children: &[RowGroupChild],
-        row_ids: &mut Vec<RowId>,
-        out: &mut IndexMap<RowGroupId, Vec<RowId>>,
-    ) {
-        for child in children {
-            match child {
-                RowGroupChild::Row(id) => {
-                    row_ids.push(id.clone());
-                }
-                RowGroupChild::Group(nested) => {
-                    Self::collect_row_group(nested, out);
-                    if let Some(nested_rows) = out.get(&nested.id) {
-                        row_ids.extend(nested_rows.iter().cloned());
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -110,17 +75,13 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
-    /// Creates a new, empty symbol table.
+    /// Creates an empty symbol table.
+    #[must_use]
     pub fn new() -> Self {
-        Self {
-            tables: IndexMap::new(),
-            sheet_tables: IndexMap::new(),
-        }
+        Self::default()
     }
 
-    /// Registers a table specification under the given sheet.
-    ///
-    /// Returns `IrError::DuplicateTable` if `table.id` is already registered on any sheet.
+    /// Registers a table and assigns it to a sheet.
     pub fn register_table(&mut self, sheet_id: SheetId, table: &TableSpec) -> Result<(), IrError> {
         if let Some(existing) = self.tables.get(&table.id) {
             return Err(IrError::DuplicateTable {
@@ -129,51 +90,61 @@ impl SymbolTable {
                 second_sheet: sheet_id,
             });
         }
-
-        let metadata = TableMetadata::from_table_spec(sheet_id.clone(), table)?;
-        self.tables.insert(table.id.clone(), metadata);
+        let meta = TableMetadata::from_table_spec(sheet_id.clone(), table)?;
+        let table_id = table.id.clone();
+        self.tables.insert(table_id.clone(), meta);
         self.sheet_tables
             .entry(sheet_id)
             .or_default()
-            .push(table.id.clone());
+            .push(table_id);
         Ok(())
     }
 
-    /// Returns the sheet ID where the table is placed, if registered.
-    pub fn get_sheet(&self, table: &TableId) -> Option<&SheetId> {
-        self.tables.get(table).map(|m| &m.sheet_id)
+    /// Returns the number of registered tables.
+    pub fn len(&self) -> usize {
+        self.tables.len()
     }
 
-    /// Returns the registered metadata for a table, if present.
-    pub fn get_table(&self, table: &TableId) -> Option<&TableMetadata> {
-        self.tables.get(table)
+    /// Returns `true` if the symbol table contains no registered tables.
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
     }
 
-    /// Returns true if the table is registered.
+    /// Returns `true` if a table with the given ID has been registered.
     pub fn contains_table(&self, table: &TableId) -> bool {
         self.tables.contains_key(table)
     }
 
-    /// Returns true if the column exists in the registered table.
+    /// Returns `true` if a table exists and contains the given column.
     pub fn contains_col(&self, table: &TableId, col: &ColId) -> bool {
         self.tables
             .get(table)
             .is_some_and(|m| m.column_index.contains_key(col))
     }
 
-    /// Returns true if the row exists in the registered table.
+    /// Returns `true` if a table exists and contains the given row.
     pub fn contains_row(&self, table: &TableId, row: &RowId) -> bool {
         self.tables.get(table).is_some_and(|m| m.rows.contains(row))
     }
 
-    /// Returns the 0-based column index of a column within a table.
+    /// Returns metadata for a table if registered.
+    pub fn get_table(&self, table: &TableId) -> Option<&TableMetadata> {
+        self.tables.get(table)
+    }
+
+    /// Returns the sheet ID where a table is placed.
+    pub fn get_sheet(&self, table: &TableId) -> Option<&SheetId> {
+        self.tables.get(table).map(|m| &m.sheet_id)
+    }
+
+    /// Returns the 0-based column index within the table if present.
     pub fn col_index(&self, table: &TableId, col: &ColId) -> Option<usize> {
         self.tables
             .get(table)
             .and_then(|m| m.column_index.get(col).copied())
     }
 
-    /// Returns the 0-based row index of a row within a table.
+    /// Returns the 0-based row index within the table if present.
     pub fn row_index(&self, table: &TableId, row: &RowId) -> Option<usize> {
         self.tables
             .get(table)
@@ -181,32 +152,13 @@ impl SymbolTable {
     }
 
     /// Returns the column specification for a column in a registered table.
-    pub fn col_spec(&self, table: &TableId, col: &ColId) -> Option<&ColumnSpec> {
+    pub fn col_spec(&self, table: &TableId, col: &ColId) -> Option<&DataColumnSpec> {
         self.tables.get(table).and_then(|m| m.col_spec(col))
     }
 
     /// Returns the axis role of a column in a registered table.
     pub fn col_role(&self, table: &TableId, col: &ColId) -> Option<AxisRole> {
         self.tables.get(table).and_then(|m| m.col_role(col))
-    }
-
-    /// Returns the axis role of a row in a registered table.
-    pub fn row_role(&self, table: &TableId, row: &RowId) -> Option<AxisRole> {
-        self.tables.get(table).and_then(|m| m.row_role(row))
-    }
-
-    /// Returns the column IDs belonging to a column group in a table.
-    pub fn cols_in_group(&self, table: &TableId, group: &ColGroupId) -> Option<&[ColId]> {
-        self.tables
-            .get(table)
-            .and_then(|m| m.column_groups.get(group).map(|v| v.as_slice()))
-    }
-
-    /// Returns the row IDs belonging to a row group in a table.
-    pub fn rows_in_group(&self, table: &TableId, group: &RowGroupId) -> Option<&[RowId]> {
-        self.tables
-            .get(table)
-            .and_then(|m| m.row_groups.get(group).map(|v| v.as_slice()))
     }
 
     /// Returns the slice of table IDs placed on a specific sheet.
@@ -226,26 +178,15 @@ impl SymbolTable {
     pub fn sheet_ids(&self) -> impl Iterator<Item = &SheetId> {
         self.sheet_tables.keys()
     }
-
-    /// Returns the total number of registered tables.
-    pub fn len(&self) -> usize {
-        self.tables.len()
-    }
-
-    /// Returns true if no tables are registered.
-    pub fn is_empty(&self) -> bool {
-        self.tables.is_empty()
-    }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::model::table::{ColumnSpec, RowSpec};
 
     #[test]
-    fn test_symbol_table_registration_and_lookups() {
+    fn test_symbol_table_registration() {
         let mut symbols = SymbolTable::new();
         assert!(symbols.is_empty());
 
@@ -260,8 +201,6 @@ mod tests {
                 ColumnSpec::new("2023A"),
                 ColumnSpec::new("2024E"),
             ],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![
                 RowSpec::new("revenue").with_expr("100"),
                 RowSpec::new("cogs").with_expr("50"),

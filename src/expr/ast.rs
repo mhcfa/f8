@@ -1,4 +1,4 @@
-use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+use crate::model::id::{ColId, RowId, TableId};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -192,6 +192,15 @@ impl fmt::Display for TableRef {
     }
 }
 
+/// Relative temporal offset on an axis: predecessor (`prev`) or successor (`next`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RelativeOffset {
+    /// Temporal predecessor offset: `prev` (1) or `prev(k)`.
+    Prev(u32),
+    /// Temporal successor offset: `next` (1) or `next(k)`.
+    Next(u32),
+}
+
 /// Row coordinate selector within a table reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RowSelector {
@@ -201,8 +210,8 @@ pub enum RowSelector {
     Key(RowId),
     /// Explicit row range slice: `["r_and_d".."g_and_a"]`.
     Range(RowId, RowId),
-    /// Semantic row group milestone or hierarchy: `rows.current_assets`.
-    Special(SpecialRow),
+    /// Relative row offset: `row.prev`, `row.next(2)`.
+    Offset(RelativeOffset),
 }
 
 impl fmt::Display for RowSelector {
@@ -211,7 +220,10 @@ impl fmt::Display for RowSelector {
             Self::Active => write!(f, "@row"),
             Self::Key(k) => write!(f, "\"{k}\""),
             Self::Range(a, b) => write!(f, "\"{a}\"..\"{b}\""),
-            Self::Special(s) => write!(f, "{s}"),
+            Self::Offset(RelativeOffset::Prev(1)) => write!(f, "row.prev"),
+            Self::Offset(RelativeOffset::Prev(k)) => write!(f, "row.prev({k})"),
+            Self::Offset(RelativeOffset::Next(1)) => write!(f, "row.next"),
+            Self::Offset(RelativeOffset::Next(k)) => write!(f, "row.next({k})"),
         }
     }
 }
@@ -225,8 +237,8 @@ pub enum ColSelector {
     Key(ColId),
     /// Explicit column range slice: `["2024E".."2028E"]`.
     Range(ColId, ColId),
-    /// Semantic column offset or group: `col.prev`, `cols.forecast`.
-    Special(SpecialCol),
+    /// Relative column offset: `col.prev`, `col.next(2)`.
+    Offset(RelativeOffset),
 }
 
 impl fmt::Display for ColSelector {
@@ -235,65 +247,10 @@ impl fmt::Display for ColSelector {
             Self::Active => write!(f, "@col"),
             Self::Key(k) => write!(f, "\"{k}\""),
             Self::Range(a, b) => write!(f, "\"{a}\"..\"{b}\""),
-            Self::Special(s) => write!(f, "{s}"),
-        }
-    }
-}
-
-/// Semantic row milestone, group, or temporal offset selector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SpecialRow {
-    /// Temporal predecessor offset: `row.prev` (offset 1) or `row.prev(k)`.
-    Prev(u32),
-    /// Temporal successor offset: `row.next` (offset 1) or `row.next(k)`.
-    Next(u32),
-    /// All descendant rows in a group: `rows.<group>`.
-    Group(RowGroupId),
-    /// First row in a group: `rows.<group>.first`.
-    GroupFirst(RowGroupId),
-    /// Last row in a group: `rows.<group>.last`.
-    GroupLast(RowGroupId),
-}
-
-impl fmt::Display for SpecialRow {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Prev(1) => write!(f, "row.prev"),
-            Self::Prev(k) => write!(f, "row.prev({k})"),
-            Self::Next(1) => write!(f, "row.next"),
-            Self::Next(k) => write!(f, "row.next({k})"),
-            Self::Group(g) => write!(f, "rows.{g}"),
-            Self::GroupFirst(g) => write!(f, "rows.{g}.first"),
-            Self::GroupLast(g) => write!(f, "rows.{g}.last"),
-        }
-    }
-}
-
-/// Semantic column milestone, group, or temporal offset selector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SpecialCol {
-    /// Temporal predecessor offset: `col.prev` (offset 1) or `col.prev(k)`.
-    Prev(u32),
-    /// Temporal successor offset: `col.next` (offset 1) or `col.next(k)`.
-    Next(u32),
-    /// All columns in a group: `cols.<group>`.
-    Group(ColGroupId),
-    /// First column in a group: `cols.<group>.first`.
-    GroupFirst(ColGroupId),
-    /// Last column in a group: `cols.<group>.last`.
-    GroupLast(ColGroupId),
-}
-
-impl fmt::Display for SpecialCol {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Prev(1) => write!(f, "col.prev"),
-            Self::Prev(k) => write!(f, "col.prev({k})"),
-            Self::Next(1) => write!(f, "col.next"),
-            Self::Next(k) => write!(f, "col.next({k})"),
-            Self::Group(g) => write!(f, "cols.{g}"),
-            Self::GroupFirst(g) => write!(f, "cols.{g}.first"),
-            Self::GroupLast(g) => write!(f, "cols.{g}.last"),
+            Self::Offset(RelativeOffset::Prev(1)) => write!(f, "col.prev"),
+            Self::Offset(RelativeOffset::Prev(k)) => write!(f, "col.prev({k})"),
+            Self::Offset(RelativeOffset::Next(1)) => write!(f, "col.next"),
+            Self::Offset(RelativeOffset::Next(k)) => write!(f, "col.next({k})"),
         }
     }
 }

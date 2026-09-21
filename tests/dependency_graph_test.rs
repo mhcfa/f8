@@ -40,8 +40,6 @@ fn create_table(
         currency: None,
         collapsible: false,
         columns,
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows: row_specs,
     }
 }
@@ -294,8 +292,6 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("value")],
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows: vec![assumptions_row_tax, assumptions_row_base],
     };
 
@@ -324,8 +320,6 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("2023A"), ColumnSpec::new("2024E")],
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows: vec![forecast_row_rev, forecast_row_tax],
     };
 

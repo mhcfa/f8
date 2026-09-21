@@ -147,7 +147,7 @@ pub struct CellFormatKey {
     pub is_input: bool,
     /// Whether the cell resides in a descriptor column/axis.
     pub is_descriptor: bool,
-    /// Descriptor indentation level (0..=7).
+    /// Descriptor indentation level.
     pub indent: u8,
 }
 
@@ -460,17 +460,22 @@ impl FormatCache {
         }
     }
 
-    /// Returns the section header format for the given outline nesting level (1..=7).
-    ///
-    /// Top-level headers (level 1) are unindented (indent 0).
-    /// Nested sub-headers (level > 1) indent by `level - 1`.
+    /// Returns the section header format with optional indentation level.
     #[must_use]
-    pub fn section_header_format(&self, group_level: u8) -> Format {
+    pub fn section_header_format(&self, indent: Option<u8>) -> Format {
         let mut fmt = self.section_header_format.clone();
-        if group_level > 1 {
-            fmt = fmt.set_indent(group_level - 1);
+        if let Some(indent) = indent
+            && indent > 0
+        {
+            fmt = fmt.set_indent(indent);
         }
         fmt
+    }
+
+    /// Returns true if the theme defines a background fill for section headers.
+    #[must_use]
+    pub fn has_section_header_fill(&self) -> bool {
+        self.palette.section_header_fill.is_some()
     }
 
     /// Returns the number of cached data cell formats.

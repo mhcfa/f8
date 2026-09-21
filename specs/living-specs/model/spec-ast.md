@@ -12,18 +12,18 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `ColGroupId`, `RowGroupId`).
+  - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `SheetId`).
   - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`), structural style enum (`SemanticStyle`), and canonical ISO currency codes (`CurrencyCode`).
   - `finx::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
-  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `ColumnSpec`, `RowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata, default table `currency`, and an opt-in `collapsible` boolean (default: `false`).
+  - `finx::model::table`: 2D table definitions (`TableSpec`), tagged column specifications (`ColumnSpec::Data`, `ColumnSpec::Gutter`), tagged row specifications (`RowSpec::Data`, `RowSpec::SectionHeader`, `RowSpec::Gutter`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `DataColumnSpec`, `DataRowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata, default table `currency`, and an opt-in `collapsible` boolean (default: `false`).
   - `finx::model::error`: Diagnostic error types (`ModelError`).
 
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
-  2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification (unique IDs, contiguous groups, cell payload validity, numeric precision applicability) $\rightarrow$ `Ok(())` or `Err(ModelError)`.
+  2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification (unique IDs, primary descriptor validity, cell payload validity, numeric precision applicability) $\rightarrow$ `Ok(())` or `Err(ModelError)`.
   3. Validated models are ready for 2D grid expansion and dependency analysis.
 - **Dependencies**:
-  - `serde`, `serde_json`: JSON serialization and deserialization with untagged cell inputs.
+  - `serde`, `serde_json`: JSON serialization and deserialization with internally/externally tagged specs and untagged cell inputs.
   - `indexmap`: Preserves deterministic insertion and file ordering for keys, rows, and columns.
   - `thiserror`: Structured domain and compiler diagnostic errors.
 
@@ -31,54 +31,54 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 
 ### 1. Orthogonal 2D Matrix Schema
 
-Every table defines an orthogonal 2D matrix with explicit `columns` (`ColumnSpec`) and `rows` (`RowSpec`). Each axis explicitly declares an `AxisRole`: `measure` (default) or `descriptor`.
+Every table defines an orthogonal 2D matrix with explicit `columns` (`ColumnSpec`) and `rows` (`RowSpec`). Each data column explicitly declares an `AxisRole`: `measure` (default), `descriptor`, or `primary_descriptor`. Each data row defines an optional `indent` level. Multi-tier column headers are explicitly declared as `headers: Vec<String>` on data columns.
 
 #### Scenarios
 
-- **Valid 2D Table**:
+- **Valid 2D table**:
   - **When** a table defines columns with IDs and roles, rows with vector formulas, and 0D cell overrides in `row.cells`
   - **Then** validation succeeds.
-- **Non-Empty Axes**:
+- **Non-empty axes**:
   - **When** a table specifies empty `columns` or empty `rows`
   - **Then** validation returns `ModelError::EmptyColumns` or `ModelError::EmptyRows`.
-- **Unique Identifiers**:
-  - **When** duplicate column IDs or row IDs are declared
+- **Unique identifiers**:
+  - **When** duplicate data column IDs or data row IDs are declared
   - **Then** validation returns `ModelError::DuplicateColumnId` or `ModelError::DuplicateRowId`.
 
 ### 2. Cell Input Invariants
 
-Every key in `row.cells` must refer to a declared column ID in `table.columns`. A detailed cell override cannot specify both `value` and `expr`, nor can it specify neither.
+Every key in `data_row.cells` must refer to a declared data column ID in `table.columns`. A detailed cell override cannot specify both `value` and `expr`, nor can it specify neither.
 
 #### Scenarios
 
-- **Valid Cell Override**:
+- **Valid cell override**:
   - **When** `row.cells` specifies literal values, formula objects (`{ "expr": "..." }`), or detailed inputs for declared columns
   - **Then** validation succeeds.
-- **Unknown Cell Column**:
+- **Unknown cell column**:
   - **When** a row defines a cell override for a column not declared in `table.columns`
   - **Then** validation returns `ModelError::UnknownCellColumn`.
-- **Mutually Exclusive Cell Payload**:
+- **Mutually exclusive cell payload**:
   - **When** a detailed cell override defines both `value` and `expr`
   - **Then** validation returns `ModelError::MutuallyExclusiveCellPayload`.
-- **Empty Cell Payload**:
+- **Empty cell payload**:
   - **When** a detailed cell override defines neither `value` nor `expr`
   - **Then** validation returns `ModelError::EmptyCellPayload`.
 
-### 3. Contiguous & Disjoint Hierarchies
+### 3. Explicit Grid Elements & Primary Descriptor Invariants
 
-Column groups and row groups must form contiguous sub-slices of their respective dimension arrays, with no overlapping memberships.
+Tables represent layout directly through tagged `RowSpec` (`Data`, `SectionHeader`, `Gutter`) and `ColumnSpec` (`Data`, `Gutter`) enums. Row indentation (`indent > 0`) requires exactly one primary descriptor column to be designated.
 
 #### Scenarios
 
-- **Contiguous Groups**:
-  - **When** group members appear sequentially in `columns` or `rows`
-  - **Then** validation succeeds.
-- **Non-Contiguous Groups**:
-  - **When** group items are separated by intervening non-member items
-  - **Then** validation returns `ModelError::NonContiguousColumnGroup` or `ModelError::NonContiguousRowGroup`.
-- **Cyclic Group Hierarchy**:
-  - **When** a nested row group references an ancestor group ID
-  - **Then** validation returns `ModelError::CyclicRowGroup`.
+- **Duplicate primary descriptor rejected**:
+  - **When** a table declares more than one column with `role: "primary_descriptor"`
+  - **Then** validation returns `ModelError::DuplicatePrimaryDescriptor`.
+- **Indent without primary descriptor rejected**:
+  - **When** any row specifies `indent > 0` but the table has no column with `role: "primary_descriptor"`
+  - **Then** validation returns `ModelError::IndentWithoutPrimaryDescriptor`.
+- **Explicit gutters and section headers**:
+  - **When** rows contain `SectionHeader` or `Gutter` and columns contain `Gutter`
+  - **Then** validation succeeds and they participate in physical layout while being excluded from calculation grids.
 
 ### 4. Numeric Precision Applicability
 

@@ -6,33 +6,21 @@ use finx::compiler::ir::id::CellId;
 use finx::compiler::layout::LayoutPlanner;
 use finx::compiler::lowering::{FormulaLowerer, LoweringError};
 use finx::compiler::{Compiler, ir};
-use finx::expr::ast::{ColSelector, Expr, Literal, RowSelector, SpecialCol, TableRef};
-use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+use finx::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef};
+use finx::model::id::{ColId, RowId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::{
-    CellInput, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec,
-};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use finx::model::theme::Theme;
 
 fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     // 1. IncomeStatement table
     let is_cols = vec![
-        ColumnSpec::new("2023A"),
-        ColumnSpec::new("2024E"),
-        ColumnSpec::new("2025E"),
-        ColumnSpec::new("2026E"),
-        ColumnSpec::new("2027E"),
+        ColumnSpec::new("2023A").with_headers(["Historical", "2023A"]),
+        ColumnSpec::new("2024E").with_headers(["Forecast", "2024E"]),
+        ColumnSpec::new("2025E").with_headers(["Forecast", "2025E"]),
+        ColumnSpec::new("2026E").with_headers(["Forecast", "2026E"]),
+        ColumnSpec::new("2027E").with_headers(["Forecast", "2027E"]),
     ];
-    let is_col_groups = vec![ColumnGroup {
-        id: ColGroupId::from("forecast"),
-        label: "Forecast".to_string(),
-        columns: vec![
-            ColId::from("2024E"),
-            ColId::from("2025E"),
-            ColId::from("2026E"),
-            ColId::from("2027E"),
-        ],
-    }];
     let mut is_rows = vec![
         RowSpec::new("revenue"),
         RowSpec::new("cogs"),
@@ -44,17 +32,23 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Populate default cell values
     for row in &mut is_rows {
         for col in &is_cols {
-            row.cells.insert(col.id.clone(), CellInput::number(100.0));
+            if let RowSpec::Data(d) = row
+                && let Some(col_id) = col.id()
+            {
+                d.cells.insert(col_id.clone(), CellInput::number(100.0));
+            }
         }
     }
     // gross_profit = revenue - cogs
-    for col in &["2024E", "2025E", "2026E", "2027E"] {
-        is_rows[2].cells.insert(
-            ColId::from(*col),
-            CellInput::formula(
-                "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
-            ),
-        );
+    if let RowSpec::Data(d) = &mut is_rows[2] {
+        for col in &["2024E", "2025E", "2026E", "2027E"] {
+            d.cells.insert(
+                ColId::from(*col),
+                CellInput::formula(
+                    "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
+                ),
+            );
+        }
     }
     let income_statement = TableSpec {
         id: TableId::from("IncomeStatement"),
@@ -63,28 +57,32 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: is_cols,
-        column_groups: is_col_groups,
-        row_groups: vec![],
         rows: is_rows,
     };
 
     // 2. CapTable table
     let cap_cols = vec![
-        ColumnSpec::new("shares"),
-        ColumnSpec::new("share_price"),
-        ColumnSpec::new("invested_capital"),
+        ColumnSpec::new("shares").with_header("shares"),
+        ColumnSpec::new("share_price").with_header("share_price"),
+        ColumnSpec::new("invested_capital").with_header("invested_capital"),
     ];
     let mut cap_rows = vec![RowSpec::new("seed"), RowSpec::new("series_a")];
     for row in &mut cap_rows {
         for col in &cap_cols {
-            row.cells.insert(col.id.clone(), CellInput::number(10.0));
+            if let RowSpec::Data(d) = row
+                && let Some(col_id) = col.id()
+            {
+                d.cells.insert(col_id.clone(), CellInput::number(10.0));
+            }
         }
     }
     // series_a invested = shares * share_price
-    cap_rows[1].cells.insert(
-        ColId::from("invested_capital"),
-        CellInput::formula("CapTable[@row, \"shares\"] * CapTable[@row, \"share_price\"]"),
-    );
+    if let RowSpec::Data(d) = &mut cap_rows[1] {
+        d.cells.insert(
+            ColId::from("invested_capital"),
+            CellInput::formula("CapTable[@row, \"shares\"] * CapTable[@row, \"share_price\"]"),
+        );
+    }
     let cap_table = TableSpec {
         id: TableId::from("CapTable"),
         title: "Cap Table".to_string(),
@@ -92,27 +90,17 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: cap_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: cap_rows,
     };
 
     // 3. BalanceSheet table
     let bs_cols = vec![
-        ColumnSpec::new("2023A"),
-        ColumnSpec::new("2024E"),
-        ColumnSpec::new("2025E"),
+        ColumnSpec::new("2023A").with_header("2023A"),
+        ColumnSpec::new("2024E").with_header("2024E"),
+        ColumnSpec::new("2025E").with_header("2025E"),
     ];
-    let bs_row_groups = vec![RowGroup {
-        id: RowGroupId::from("current_assets"),
-        label: "Current Assets".to_string(),
-        children: vec![
-            RowGroupChild::Row(RowId::from("cash")),
-            RowGroupChild::Row(RowId::from("ar")),
-            RowGroupChild::Row(RowId::from("inventory")),
-        ],
-    }];
     let mut bs_rows = vec![
+        RowSpec::section_header("Current Assets"),
         RowSpec::new("cash"),
         RowSpec::new("ar"),
         RowSpec::new("inventory"),
@@ -120,7 +108,11 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     ];
     for row in &mut bs_rows {
         for col in &bs_cols {
-            row.cells.insert(col.id.clone(), CellInput::number(50.0));
+            if let RowSpec::Data(d) = row
+                && let Some(col_id) = col.id()
+            {
+                d.cells.insert(col_id.clone(), CellInput::number(50.0));
+            }
         }
     }
     let balance_sheet = TableSpec {
@@ -130,22 +122,22 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: bs_cols,
-        column_groups: vec![],
-        row_groups: bs_row_groups,
         rows: bs_rows,
     };
 
     // 4. CashFlow table
     let cf_cols = vec![
-        ColumnSpec::new("2023A"),
-        ColumnSpec::new("2024E"),
-        ColumnSpec::new("2025E"),
+        ColumnSpec::new("2023A").with_header("2023A"),
+        ColumnSpec::new("2024E").with_header("2024E"),
+        ColumnSpec::new("2025E").with_header("2025E"),
     ];
     let mut cf_rows = vec![RowSpec::new("net_change")];
     for col in &cf_cols {
-        cf_rows[0]
-            .cells
-            .insert(col.id.clone(), CellInput::number(25.0));
+        if let RowSpec::Data(d) = &mut cf_rows[0]
+            && let Some(col_id) = col.id()
+        {
+            d.cells.insert(col_id.clone(), CellInput::number(25.0));
+        }
     }
     let cash_flow = TableSpec {
         id: TableId::from("CashFlow"),
@@ -154,29 +146,26 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: cf_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: cf_rows,
     };
 
     // 5. DebtSchedule table
     let ds_cols = vec![
-        ColumnSpec::new("2023A"),
-        ColumnSpec::new("2024E"),
-        ColumnSpec::new("2025E"),
+        ColumnSpec::new("2023A").with_headers(["Historical", "2023A"]),
+        ColumnSpec::new("2024E").with_headers(["Forecast", "2024E"]),
+        ColumnSpec::new("2025E").with_headers(["Forecast", "2025E"]),
     ];
-    let ds_col_groups = vec![ColumnGroup {
-        id: ColGroupId::from("historical"),
-        label: "Historical".to_string(),
-        columns: vec![ColId::from("2023A")],
-    }];
     let mut ds_rows = vec![
         RowSpec::new("beginning_balance"),
         RowSpec::new("end_balance"),
     ];
     for row in &mut ds_rows {
         for col in &ds_cols {
-            row.cells.insert(col.id.clone(), CellInput::number(200.0));
+            if let RowSpec::Data(d) = row
+                && let Some(col_id) = col.id()
+            {
+                d.cells.insert(col_id.clone(), CellInput::number(200.0));
+            }
         }
     }
     let debt_schedule = TableSpec {
@@ -186,20 +175,20 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: ds_cols,
-        column_groups: ds_col_groups,
-        row_groups: vec![],
         rows: ds_rows,
     };
 
     // 6. Assumptions table on separate sheet
-    let assump_cols = vec![ColumnSpec::new("value")];
+    let assump_cols = vec![ColumnSpec::new("value").with_header("value")];
     let mut assump_rows = vec![RowSpec::new("tax_rate"), RowSpec::new("discount_rate")];
-    assump_rows[0]
-        .cells
-        .insert(ColId::from("value"), CellInput::number(0.21));
-    assump_rows[1]
-        .cells
-        .insert(ColId::from("value"), CellInput::number(0.10));
+    if let RowSpec::Data(d) = &mut assump_rows[0] {
+        d.cells
+            .insert(ColId::from("value"), CellInput::number(0.21));
+    }
+    if let RowSpec::Data(d) = &mut assump_rows[1] {
+        d.cells
+            .insert(ColId::from("value"), CellInput::number(0.10));
+    }
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Model Assumptions".to_string(),
@@ -207,8 +196,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: assump_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: assump_rows,
     };
 
@@ -346,11 +333,11 @@ fn test_scenario_6_group_milestone_anchor_reference() {
     let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
 
     let origin = CellId::new("DebtSchedule", "beginning_balance", "2024E");
-    let expr = Expr::parse("DebtSchedule[\"beginning_balance\", cols.historical.last]").unwrap();
+    let expr = Expr::parse("DebtSchedule[\"beginning_balance\", \"2023A\"]").unwrap();
 
     let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map).unwrap();
 
-    // cols.historical.last resolves to 2023A (col B, row 41), which is absolute ($B$41)
+    // 2023A resolves to col B, row 41, which is absolute ($B$41)
     assert_eq!(lowered, "=$B$41");
 }
 
@@ -362,11 +349,11 @@ fn test_scenario_7_horizontal_range_row_slice() {
     let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
 
     let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
-    let expr = Expr::parse("SUM(IncomeStatement[\"revenue\", cols.forecast])").unwrap();
+    let expr = Expr::parse("SUM(IncomeStatement[\"revenue\", \"2024E\"..\"2027E\"])").unwrap();
 
     let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map).unwrap();
 
-    // cols.forecast covers 2024E..2027E (cols C..F at revenue row 6).
+    // 2024E..2027E covers cols C..F at revenue row 6.
     // Neither dimension is dynamic, so bounds are pinned ($C$6:$F$6).
     assert_eq!(lowered, "=SUM($C$6:$F$6)");
 }
@@ -396,11 +383,11 @@ fn test_scenario_9_vertical_range_column_slice_with_active_column() {
     let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
 
     let origin = CellId::new("BalanceSheet", "total_current_assets", "2024E");
-    let expr = Expr::parse("SUM(BalanceSheet[rows.current_assets, @col])").unwrap();
+    let expr = Expr::parse("SUM(BalanceSheet[\"cash\"..\"inventory\", @col])").unwrap();
 
     let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map).unwrap();
 
-    // rows.current_assets contains cash, ar, inventory (rows 25..27).
+    // cash..inventory rows are rows 25..27.
     // @col is 2024E (col C).
     // Relative col, pinned row bounds: C$25:C$27.
     assert_eq!(lowered, "=SUM(C$25:C$27)");
@@ -414,11 +401,11 @@ fn test_scenario_10_vertical_range_column_slice_with_specific_column() {
     let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
 
     let origin = CellId::new("BalanceSheet", "total_current_assets", "2025E");
-    let expr = Expr::parse("SUM(BalanceSheet[rows.current_assets, \"2024E\"])").unwrap();
+    let expr = Expr::parse("SUM(BalanceSheet[\"cash\"..\"inventory\", \"2024E\"])").unwrap();
 
     let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map).unwrap();
 
-    // Specific column 2024E (col C) with rows.current_assets (rows 25..27).
+    // Specific column 2024E (col C) with cash..inventory (rows 25..27).
     // Absolute column and row bounds: $C$25:$C$27.
     assert_eq!(lowered, "=SUM($C$25:$C$27)");
 }
@@ -431,12 +418,12 @@ fn test_scenario_11_2d_block_range() {
     let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
 
     let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
-    let expr =
-        Expr::parse("SUM(IncomeStatement[\"r_and_d\"..\"s_and_m\", cols.forecast])").unwrap();
+    let expr = Expr::parse("SUM(IncomeStatement[\"r_and_d\"..\"s_and_m\", \"2024E\"..\"2027E\"])")
+        .unwrap();
 
     let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map).unwrap();
 
-    // Rows r_and_d..s_and_m are rows 9..10. cols.forecast are cols C..F.
+    // Rows r_and_d..s_and_m are rows 9..10. cols 2024E..2027E are cols C..F.
     // 2D block range with absolute bounds: $C$9:$F$10.
     assert_eq!(lowered, "=SUM($C$9:$F$10)");
 }
@@ -477,12 +464,12 @@ fn test_scenario_13_function_calls_with_omitted_positional_arguments() {
             Expr::Reference(TableRef {
                 table: TableId::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("revenue")),
-                col: ColSelector::Special(SpecialCol::Group(ColGroupId::from("forecast"))),
+                col: ColSelector::Range(ColId::from("2024E"), ColId::from("2027E")),
             }),
             Expr::Reference(TableRef {
                 table: TableId::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("cogs")),
-                col: ColSelector::Special(SpecialCol::Group(ColGroupId::from("forecast"))),
+                col: ColSelector::Range(ColId::from("2024E"), ColId::from("2027E")),
             }),
             Expr::Omitted,
             Expr::Literal(Literal::Number(0.0)),

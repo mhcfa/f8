@@ -73,17 +73,17 @@ References where both row and column are static keys, group milestone anchors, o
 ### 4. Slice Range Lowering
 
 Range slices format as `TopLeft:BottomRight`:
-- **Vertical range with active column** (`Table[rows.current_assets, @col]`): Relative column, pinned row bounds (e.g. `C$25:C$27`).
-- **Horizontal range with active row** (`Table[@row, "a".."b"]`): Relative row bounds, relative columns (e.g. `B18:C18`).
+- **Vertical range with active column** (`Table["cash".."inventory", @col]`): Relative column, pinned row bounds (e.g. `C$25:C$27`).
+- **Horizontal range with active row** (`Table[@row, "2024E".."2026E"]`): Relative row bounds, relative columns (e.g. `B18:C18`).
 - **Fixed ranges & 2D blocks**: Fully absolute bounds (e.g. `=$C$6:$F$6`, `=$C$9:$F$10`).
 
 #### Scenarios
 
 - **Column slice aggregation**:
-  - **When** lowering `SUM(Table[rows.current_assets, @col])`
+  - **When** lowering `SUM(Table["cash".."inventory", @col])`
   - **Then** emits `=SUM(C$25:C$27)`.
 - **2D block aggregation**:
-  - **When** lowering `SUM(Table[rows.group, cols.group])`
+  - **When** lowering `SUM(Table["r_and_d".."s_and_m", "2024E".."2027E"])`
   - **Then** emits `=SUM($C$9:$F$10)`.
 
 ### 5. Operator Precedence and Associativity

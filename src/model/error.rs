@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use super::format::{CurrencyCode, FormatPreset};
-use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+use super::id::{ColId, RowId, TableId};
 
 /// Structured diagnostic errors for Finx specifications and model validation.
 #[derive(Debug, Error)]
@@ -80,49 +80,28 @@ pub enum ModelError {
     },
 
     #[error(
-        "Table '{table}': column group '{group}' columns are not a contiguous sub-slice of table columns"
+        "Table '{table}': multiple primary descriptor columns declared ('{first}' and '{second}')"
     )]
-    NonContiguousColumnGroup { table: TableId, group: ColGroupId },
-
-    #[error(
-        "Table '{table}': column '{column}' belongs to multiple column groups ('{first_group}' and '{second_group}')"
-    )]
-    OverlappingColumnGroup {
+    DuplicatePrimaryDescriptor {
         table: TableId,
-        column: ColId,
-        first_group: ColGroupId,
-        second_group: ColGroupId,
+        first: ColId,
+        second: ColId,
     },
 
     #[error(
-        "Table '{table}': row group '{group}' descendant rows are not a contiguous sub-slice of table rows"
+        "Table '{table}': row specifies indent ({indent}) but table has no PrimaryDescriptor column"
     )]
-    NonContiguousRowGroup { table: TableId, group: RowGroupId },
-
-    #[error(
-        "Table '{table}': row '{row}' belongs to multiple row groups ('{first_group}' and '{second_group}')"
-    )]
-    OverlappingRowGroup {
+    IndentWithoutPrimaryDescriptor {
         table: TableId,
-        row: RowId,
-        first_group: RowGroupId,
-        second_group: RowGroupId,
+        row: Option<RowId>,
+        indent: u8,
     },
-
-    #[error("Table '{table}': cyclic row group hierarchy detected at group '{group}'")]
-    CyclicRowGroup { table: TableId, group: RowGroupId },
 
     #[error("Table '{table}': duplicate row id '{row}'")]
     DuplicateRowId { table: TableId, row: RowId },
 
     #[error("Table '{table}': duplicate column id '{column}'")]
     DuplicateColumnId { table: TableId, column: ColId },
-
-    #[error("Table '{table}': duplicate column group id '{group}'")]
-    DuplicateColumnGroupId { table: TableId, group: ColGroupId },
-
-    #[error("Table '{table}': duplicate row group id '{group}'")]
-    DuplicateRowGroupId { table: TableId, group: RowGroupId },
 
     #[error("Table '{table}': duplicate table id '{table}' across project")]
     DuplicateTableId { table: TableId },

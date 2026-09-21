@@ -19,7 +19,7 @@ use crate::compiler::layout::LayoutMap;
 use crate::compiler::lowering::LoweredFormulaMap;
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
-use crate::model::table::{TableSpec, ValueLiteral};
+use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
 use crate::value::CellValue;
 
@@ -243,35 +243,98 @@ impl WorkbookEmitter {
                     )?;
                 }
 
-                // Super-Headers: Center Across Selection without merging cells (FAST standard)
-                for sh in &placement.super_header_rows {
-                    worksheet.write_string_with_format(
-                        sh.row,
-                        sh.start_col as u16,
-                        &sh.label,
-                        &format_cache.super_header_format(),
-                    )?;
-                    for col in (sh.start_col + 1)..=sh.end_col {
-                        worksheet.write_blank(
-                            sh.row,
-                            col as u16,
-                            &format_cache.super_header_format(),
-                        )?;
-                    }
-                }
+                // Multi-Tier Column Headers
+                if let Some((header_start_row, header_end_row)) = placement.header_row_range {
+                    let total_tiers = (header_end_row - header_start_row + 1) as usize;
+                    for t in 0..total_tiers {
+                        let tier_row = header_start_row + t as u32;
+                        let is_bottom_tier = t == total_tiers - 1;
 
-                // Column Key Headers
-                for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                    let col_idx = (placement.start_col + c_idx as u32) as u16;
-                    let label = col_spec.label.as_deref().unwrap_or(col_spec.id.as_str());
-                    let is_desc = col_spec.role.is_descriptor();
-                    let fmt = format_cache.col_header_format(is_desc);
-                    worksheet.write_string_with_format(
-                        placement.col_header_row,
-                        col_idx,
-                        label,
-                        &fmt,
-                    )?;
+                        if is_bottom_tier {
+                            // Bottom tier: emit cell-by-cell
+                            for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                                let col_idx = (placement.start_col + c_idx as u32) as u16;
+                                match col_spec {
+                                    ColumnSpec::Gutter => {
+                                        // Gutter column: blank unstyled cell across all header tiers
+                                    }
+                                    ColumnSpec::Data(d) => {
+                                        if let Some(label) = d.bottom_header() {
+                                            let is_desc = d.role.is_descriptor();
+                                            let fmt = format_cache.col_header_format(is_desc);
+                                            worksheet.write_string_with_format(
+                                                tier_row, col_idx, label, &fmt,
+                                            )?;
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Super-header tier: CenterAcross contiguous identical runs
+                            let mut col_idx = 0;
+                            while col_idx < table.columns.len() {
+                                let col_spec = &table.columns[col_idx];
+                                let label_opt = match col_spec {
+                                    ColumnSpec::Gutter => None,
+                                    ColumnSpec::Data(d) => {
+                                        let k_len = d.headers.len();
+                                        if t >= total_tiers - k_len {
+                                            let k = t - (total_tiers - k_len);
+                                            Some(&d.headers[k])
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                };
+
+                                if let Some(label) = label_opt {
+                                    let start_c = col_idx;
+                                    let mut end_c = col_idx;
+                                    while end_c + 1 < table.columns.len() {
+                                        let next_spec = &table.columns[end_c + 1];
+                                        let next_label_opt = match next_spec {
+                                            ColumnSpec::Gutter => None,
+                                            ColumnSpec::Data(d) => {
+                                                let k_len = d.headers.len();
+                                                if t >= total_tiers - k_len {
+                                                    let k = t - (total_tiers - k_len);
+                                                    Some(&d.headers[k])
+                                                } else {
+                                                    None
+                                                }
+                                            }
+                                        };
+                                        if next_label_opt == Some(label) {
+                                            end_c += 1;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+
+                                    let first_phys_col =
+                                        (placement.start_col + start_c as u32) as u16;
+                                    worksheet.write_string_with_format(
+                                        tier_row,
+                                        first_phys_col,
+                                        label,
+                                        &format_cache.super_header_format(),
+                                    )?;
+                                    for c in (start_c + 1)..=end_c {
+                                        let phys_col = (placement.start_col + c as u32) as u16;
+                                        worksheet.write_blank(
+                                            tier_row,
+                                            phys_col,
+                                            &format_cache.super_header_format(),
+                                        )?;
+                                    }
+
+                                    col_idx = end_c + 1;
+                                } else {
+                                    col_idx += 1;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Opt-In Table-Level Collapsing
@@ -283,122 +346,166 @@ impl WorkbookEmitter {
                     worksheet.group_rows(placement.start_row + 1, placement.end_row)?;
                 }
 
-                // Stream Data Cells
-                for row_spec in &table.rows {
-                    for col_spec in &table.columns {
-                        let cell_id =
-                            CellId::new(table.id.clone(), row_spec.id.clone(), col_spec.id.clone());
-                        let coord = layout_map.get_cell(&cell_id).ok_or_else(|| {
-                            EmissionError::MissingCell {
-                                cell: cell_id.clone(),
-                            }
-                        })?;
+                // Stream Table Body Rows
+                for (r_idx, row_spec) in table.rows.iter().enumerate() {
+                    let current_phys_row = placement.body_row_range.0 + r_idx as u32;
 
-                        let node = grid.get(&cell_id);
-                        let is_input = node.is_some_and(|n| n.payload.is_literal());
-                        let is_descriptor = col_spec.role.is_descriptor();
+                    match row_spec {
+                        RowSpec::Gutter => {
+                            // Gutter row: row height set in layout, cells remain blank without borders
+                        }
+                        RowSpec::SectionHeader(sh) => {
+                            worksheet.write_string_with_format(
+                                current_phys_row,
+                                placement.start_col as u16,
+                                &sh.title,
+                                &format_cache.section_header_format(sh.indent),
+                            )?;
 
-                        let format_key = CellFormatKey::new(
-                            coord.style_role,
-                            node.and_then(|n| n.format),
-                            node.and_then(|n| n.decimals),
-                            node.and_then(|n| n.currency),
-                            is_input,
-                            is_descriptor,
-                            coord.indent,
-                        );
-                        let cell_format = format_cache.get_cell_format(&format_key)?;
-
-                        if options.values_only {
-                            // Values-only freezing: write evaluated result as literal
-                            if let Some(val) = evaluated.and_then(|e| e.get_cell(&cell_id)) {
-                                emit_cell_value(
-                                    worksheet,
-                                    coord.row,
-                                    coord.col as u16,
-                                    val,
-                                    &cell_format,
+                            if let Some(ref note) = sh.note {
+                                worksheet.insert_note(
+                                    current_phys_row,
+                                    placement.start_col as u16,
+                                    &rust_xlsxwriter::Note::new(note),
                                 )?;
-                            } else if let Some(node) = node {
-                                match &node.payload {
-                                    CellPayload::Literal(lit) => {
-                                        emit_value_literal(
-                                            worksheet,
-                                            coord.row,
-                                            coord.col as u16,
-                                            lit,
-                                            &cell_format,
-                                        )?;
-                                    }
-                                    CellPayload::Formula(_) => {
-                                        worksheet.write_blank(
-                                            coord.row,
-                                            coord.col as u16,
-                                            &cell_format,
-                                        )?;
-                                    }
-                                }
-                            } else {
-                                worksheet.write_blank(coord.row, coord.col as u16, &cell_format)?;
                             }
-                        } else {
-                            // Live formulas mode
-                            if let Some(formula_str) = lowered_formulas.get(&cell_id) {
-                                let mut formula = Formula::new(formula_str);
-                                if let Some(val) = evaluated.and_then(|e| e.get_cell(&cell_id)) {
-                                    formula = formula.set_result(val.to_string());
+
+                            if format_cache.has_section_header_fill() {
+                                let band_fmt = format_cache.section_header_format(None);
+                                for col in (placement.start_col + 1)..=placement.end_col {
+                                    worksheet.write_blank(
+                                        current_phys_row,
+                                        col as u16,
+                                        &band_fmt,
+                                    )?;
                                 }
-                                worksheet.write_formula_with_format(
-                                    coord.row,
-                                    coord.col as u16,
-                                    formula,
-                                    &cell_format,
-                                )?;
-                            } else if let Some(node) = node {
-                                match &node.payload {
-                                    CellPayload::Literal(lit) => {
-                                        emit_value_literal(
-                                            worksheet,
-                                            coord.row,
-                                            coord.col as u16,
-                                            lit,
-                                            &cell_format,
-                                        )?;
-                                    }
-                                    CellPayload::Formula(_) => {
-                                        worksheet.write_blank(
-                                            coord.row,
-                                            coord.col as u16,
-                                            &cell_format,
-                                        )?;
-                                    }
-                                }
-                            } else {
-                                worksheet.write_blank(coord.row, coord.col as u16, &cell_format)?;
                             }
                         }
+                        RowSpec::Data(row_data) => {
+                            for col_spec in &table.columns {
+                                let ColumnSpec::Data(col_data) = col_spec else {
+                                    // Column gutter: remains blank without borders
+                                    continue;
+                                };
 
-                        // Attach audit note if present
-                        if let Some(note) = node.and_then(|n| n.note.as_deref()) {
-                            worksheet.insert_note(
-                                coord.row,
-                                coord.col as u16,
-                                &rust_xlsxwriter::Note::new(note),
-                            )?;
+                                let cell_id = CellId::new(
+                                    table.id.clone(),
+                                    row_data.id.clone(),
+                                    col_data.id.clone(),
+                                );
+                                let coord = layout_map.get_cell(&cell_id).ok_or_else(|| {
+                                    EmissionError::MissingCell {
+                                        cell: cell_id.clone(),
+                                    }
+                                })?;
+
+                                let node = grid.get(&cell_id);
+                                let is_input = node.is_some_and(|n| n.payload.is_literal());
+                                let is_descriptor = col_data.role.is_descriptor();
+
+                                let format_key = CellFormatKey::new(
+                                    coord.style_role,
+                                    node.and_then(|n| n.format),
+                                    node.and_then(|n| n.decimals),
+                                    node.and_then(|n| n.currency),
+                                    is_input,
+                                    is_descriptor,
+                                    coord.indent,
+                                );
+                                let cell_format = format_cache.get_cell_format(&format_key)?;
+
+                                if options.values_only {
+                                    // Values-only freezing: write evaluated result as literal
+                                    if let Some(val) = evaluated.and_then(|e| e.get_cell(&cell_id))
+                                    {
+                                        emit_cell_value(
+                                            worksheet,
+                                            coord.row,
+                                            coord.col as u16,
+                                            val,
+                                            &cell_format,
+                                        )?;
+                                    } else if let Some(node) = node {
+                                        match &node.payload {
+                                            CellPayload::Literal(lit) => {
+                                                emit_value_literal(
+                                                    worksheet,
+                                                    coord.row,
+                                                    coord.col as u16,
+                                                    lit,
+                                                    &cell_format,
+                                                )?;
+                                            }
+                                            CellPayload::Formula(_) => {
+                                                worksheet.write_blank(
+                                                    coord.row,
+                                                    coord.col as u16,
+                                                    &cell_format,
+                                                )?;
+                                            }
+                                        }
+                                    } else {
+                                        worksheet.write_blank(
+                                            coord.row,
+                                            coord.col as u16,
+                                            &cell_format,
+                                        )?;
+                                    }
+                                } else {
+                                    // Live formulas mode
+                                    if let Some(formula_str) = lowered_formulas.get(&cell_id) {
+                                        let mut formula = Formula::new(formula_str);
+                                        if let Some(val) =
+                                            evaluated.and_then(|e| e.get_cell(&cell_id))
+                                        {
+                                            formula = formula.set_result(val.to_string());
+                                        }
+                                        worksheet.write_formula_with_format(
+                                            coord.row,
+                                            coord.col as u16,
+                                            formula,
+                                            &cell_format,
+                                        )?;
+                                    } else if let Some(node) = node {
+                                        match &node.payload {
+                                            CellPayload::Literal(lit) => {
+                                                emit_value_literal(
+                                                    worksheet,
+                                                    coord.row,
+                                                    coord.col as u16,
+                                                    lit,
+                                                    &cell_format,
+                                                )?;
+                                            }
+                                            CellPayload::Formula(_) => {
+                                                worksheet.write_blank(
+                                                    coord.row,
+                                                    coord.col as u16,
+                                                    &cell_format,
+                                                )?;
+                                            }
+                                        }
+                                    } else {
+                                        worksheet.write_blank(
+                                            coord.row,
+                                            coord.col as u16,
+                                            &cell_format,
+                                        )?;
+                                    }
+                                }
+
+                                // Attach audit note if present
+                                if let Some(note) = node.and_then(|n| n.note.as_deref()) {
+                                    worksheet.insert_note(
+                                        coord.row,
+                                        coord.col as u16,
+                                        &rust_xlsxwriter::Note::new(note),
+                                    )?;
+                                }
+                            }
                         }
                     }
                 }
-            }
-
-            // 5. Interleaved Section Headers
-            for sec in &sheet_layout.section_header_rows {
-                let fmt = format_cache.section_header_format(sec.group_level);
-                worksheet.write_string_with_format(
-                    sec.row,
-                    sec.descriptor_col as u16,
-                    &sec.label,
-                    &fmt,
-                )?;
             }
         }
 

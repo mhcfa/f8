@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::compiler::ir::id::CellId;
-use crate::model::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+use crate::model::id::{ColId, RowId, TableId};
 
 /// Errors encountered during formula reference resolution against table axes and the symbol table.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -26,24 +26,6 @@ pub enum ResolveError {
         origin: Box<CellId>,
         target_table: TableId,
         column: ColId,
-    },
-
-    #[error(
-        "Formula in cell '{origin}' references unknown row group '{group}' in table '{target_table}'"
-    )]
-    UnknownRowGroup {
-        origin: Box<CellId>,
-        target_table: TableId,
-        group: RowGroupId,
-    },
-
-    #[error(
-        "Formula in cell '{origin}' references unknown column group '{group}' in table '{target_table}'"
-    )]
-    UnknownColumnGroup {
-        origin: Box<CellId>,
-        target_table: TableId,
-        group: ColGroupId,
     },
 
     #[error(
@@ -115,32 +97,6 @@ impl ResolveError {
             origin: Box::new(origin.clone()),
             target_table: target_table.into(),
             column: column.into(),
-        }
-    }
-
-    /// Creates an `UnknownRowGroup` error.
-    pub fn unknown_row_group(
-        origin: &CellId,
-        target_table: impl Into<TableId>,
-        group: impl Into<RowGroupId>,
-    ) -> Self {
-        Self::UnknownRowGroup {
-            origin: Box::new(origin.clone()),
-            target_table: target_table.into(),
-            group: group.into(),
-        }
-    }
-
-    /// Creates an `UnknownColumnGroup` error.
-    pub fn unknown_column_group(
-        origin: &CellId,
-        target_table: impl Into<TableId>,
-        group: impl Into<ColGroupId>,
-    ) -> Self {
-        Self::UnknownColumnGroup {
-            origin: Box::new(origin.clone()),
-            target_table: target_table.into(),
-            group: group.into(),
         }
     }
 

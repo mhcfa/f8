@@ -12,7 +12,7 @@ The `expr` subsystem provides the Abstract Syntax Tree (AST), structured diagnos
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RowSelector`, `ColSelector`, `SpecialRow`, `SpecialCol`) and `Display` implementations.
+  - `finx::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RowSelector`, `ColSelector`, `RelativeOffset`) and `Display` implementations.
   - `finx::expr::error`: Diagnostic domain errors (`ParseError`).
   - `finx::expr::parser`: Two-stage parsing pipeline:
     - Lexer: `tokenize` parses `&str` into `Vec<SpannedToken>` using the borrowed `Token` enum with zero external dependencies.
@@ -71,15 +71,18 @@ Every table reference must specify both a row selector and a column selector sep
   - **When** encountering bare `@` (e.g. `Table["row", @]`)
   - **Then** returns `ParseError::RetiredBareAt` directing caller to `@col` or `@row`.
 
-### 3. Strictly Quoted Coordinate Keys
+### 3. Strictly Quoted Coordinate Keys & Relative Offsets
 
-All coordinate row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @col]`, `["tax_rate", "value"]`, `["revenue", "2024E".."2028E"]`). Bare identifiers are prohibited unless they match recognized semantic prefixes (`rows.`, `cols.`, `col.prev`, `col.next`, `row.prev`, `row.next`).
+All coordinate row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @col]`, `["tax_rate", "value"]`, `["revenue", "2024E".."2028E"]`). Bare identifiers are prohibited unless they match recognized temporal navigation syntax (`col.prev`, `col.next`, `row.prev`, `row.next` with optional `(N)` step count).
 
 #### Scenarios
 
 - **Quoted Key Coordinate**:
   - **When** referencing `IncomeStatement["revenue", "2024E"]`
   - **Then** parses into `RowSelector::Key("revenue")` and `ColSelector::Key("2024E")`.
+- **Relative Temporal Offset**:
+  - **When** referencing `IncomeStatement[@row, col.prev]` or `IncomeStatement[@row, col.prev(2)]`
+  - **Then** parses into `ColSelector::Offset(RelativeOffset::Prev(1))` or `ColSelector::Offset(RelativeOffset::Prev(2))`.
 - **Unquoted Key Rejection**:
   - **When** encountering `IncomeStatement["revenue", 2024E]` or `Opex[r_and_d, @col]`
   - **Then** returns `ParseError::UnquotedCoordinateKey`.

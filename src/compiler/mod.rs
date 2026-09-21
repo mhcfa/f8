@@ -18,8 +18,8 @@ pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, W
 pub use error::CompilerError;
 pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
-    LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SectionHeaderRow, SheetLayout,
-    StyleRole, SuperHeaderPlacement, TablePlacement,
+    LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SheetLayout, StyleRole,
+    TablePlacement,
 };
 pub use lowering::{FormulaLowerer, LoweredFormulaMap, LoweringError};
 

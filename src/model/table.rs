@@ -4,7 +4,7 @@ use std::fmt;
 
 use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset, SemanticStyle};
-use super::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+use super::id::{ColId, RowId, TableId};
 
 /// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -13,6 +13,7 @@ pub enum AxisRole {
     #[default]
     Measure,
     Descriptor,
+    PrimaryDescriptor,
 }
 
 impl AxisRole {
@@ -21,20 +22,173 @@ impl AxisRole {
         matches!(self, Self::Measure)
     }
 
-    /// Returns true if this axis is a descriptor.
+    /// Returns true if this axis is a descriptor (primary or secondary).
     pub fn is_descriptor(&self) -> bool {
-        matches!(self, Self::Descriptor)
+        matches!(self, Self::Descriptor | Self::PrimaryDescriptor)
+    }
+
+    /// Returns true if this axis is the primary descriptor.
+    pub fn is_primary_descriptor(&self) -> bool {
+        matches!(self, Self::PrimaryDescriptor)
     }
 }
 
-/// Column definition within a table specification.
+/// Column definition within a table specification: either a calculable data column or a blank spacing gutter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ColumnSpec {
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ColumnSpec {
+    Data(DataColumnSpec),
+    Gutter,
+}
+
+impl ColumnSpec {
+    /// Creates a measure column specification with default attributes.
+    pub fn new(id: impl Into<ColId>) -> Self {
+        Self::Data(DataColumnSpec::new(id))
+    }
+
+    /// Creates a descriptor column specification with an explicit display label.
+    pub fn descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
+        Self::Data(DataColumnSpec::descriptor(id, label))
+    }
+
+    /// Creates a primary descriptor column specification.
+    pub fn primary_descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
+        Self::Data(DataColumnSpec::primary_descriptor(id, label))
+    }
+
+    /// Creates a spacing gutter column specification.
+    pub fn gutter() -> Self {
+        Self::Gutter
+    }
+
+    /// Returns the column identifier if this is a data column.
+    pub fn id(&self) -> Option<&ColId> {
+        match self {
+            Self::Data(d) => Some(&d.id),
+            Self::Gutter => None,
+        }
+    }
+
+    /// Returns the axis role if this is a data column.
+    pub fn role(&self) -> Option<AxisRole> {
+        match self {
+            Self::Data(d) => Some(d.role),
+            Self::Gutter => None,
+        }
+    }
+
+    /// Returns the declared header hierarchy if this is a data column.
+    pub fn headers(&self) -> Option<&[String]> {
+        match self {
+            Self::Data(d) => Some(&d.headers),
+            Self::Gutter => None,
+        }
+    }
+
+    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
+    pub fn bottom_header(&self) -> Option<&str> {
+        match self {
+            Self::Data(d) => d.bottom_header(),
+            Self::Gutter => None,
+        }
+    }
+
+    /// Builder method attaching a single header label.
+    pub fn with_header(mut self, header: impl Into<String>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.headers.push(header.into());
+        }
+        self
+    }
+
+    /// Builder method attaching multi-tier header labels.
+    pub fn with_headers(mut self, headers: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.headers = headers.into_iter().map(Into::into).collect();
+        }
+        self
+    }
+
+    /// Builder method attaching a formatting preset.
+    pub fn with_format(mut self, format: Option<FormatPreset>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.format = format;
+        }
+        self
+    }
+
+    /// Builder method attaching a structural style.
+    pub fn with_style(mut self, style: Option<SemanticStyle>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.style = style;
+        }
+        self
+    }
+
+    /// Builder method attaching visual highlight emphasis.
+    pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.highlight = highlight;
+        }
+        self
+    }
+
+    /// Builder method attaching display precision.
+    pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.decimals = decimals;
+        }
+        self
+    }
+
+    /// Builder method attaching a currency denomination.
+    pub fn with_currency(mut self, currency: Option<CurrencyCode>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.currency = currency;
+        }
+        self
+    }
+
+    /// Builder method attaching a formula expression.
+    pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.expr = Some(expr.into());
+        }
+        self
+    }
+
+    /// Builder method attaching an audit note.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.note = Some(note.into());
+        }
+        self
+    }
+
+    /// Builder method attaching provenance source metadata.
+    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.source = source;
+        }
+        self
+    }
+}
+
+impl From<DataColumnSpec> for ColumnSpec {
+    fn from(d: DataColumnSpec) -> Self {
+        Self::Data(d)
+    }
+}
+
+/// Calculable data column definition within a table specification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DataColumnSpec {
     pub id: ColId,
     #[serde(default)]
     pub role: AxisRole,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<SemanticStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,13 +207,13 @@ pub struct ColumnSpec {
     pub source: Option<serde_json::Value>,
 }
 
-impl ColumnSpec {
-    /// Creates a measure column specification with default attributes.
+impl DataColumnSpec {
+    /// Creates a measure column specification with default attributes and empty headers.
     pub fn new(id: impl Into<ColId>) -> Self {
         Self {
             id: id.into(),
             role: AxisRole::Measure,
-            label: None,
+            headers: Vec::new(),
             style: None,
             highlight: None,
             format: None,
@@ -76,7 +230,7 @@ impl ColumnSpec {
         Self {
             id: id.into(),
             role: AxisRole::Descriptor,
-            label: Some(label.into()),
+            headers: vec![label.into()],
             style: None,
             highlight: None,
             format: None,
@@ -86,6 +240,46 @@ impl ColumnSpec {
             note: None,
             source: None,
         }
+    }
+
+    /// Creates a primary descriptor column specification.
+    pub fn primary_descriptor(id: impl Into<ColId>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            role: AxisRole::PrimaryDescriptor,
+            headers: vec![label.into()],
+            style: None,
+            highlight: None,
+            format: None,
+            decimals: None,
+            currency: None,
+            expr: None,
+            note: None,
+            source: None,
+        }
+    }
+
+    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
+    pub fn bottom_header(&self) -> Option<&str> {
+        self.headers.last().map(|s| s.as_str())
+    }
+
+    /// Builder method attaching a single header label.
+    pub fn with_header(mut self, header: impl Into<String>) -> Self {
+        self.headers.push(header.into());
+        self
+    }
+
+    /// Builder method attaching multi-tier header labels.
+    pub fn with_headers(mut self, headers: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.headers = headers.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Builder method setting the axis role.
+    pub fn with_role(mut self, role: AxisRole) -> Self {
+        self.role = role;
+        self
     }
 
     /// Builder method attaching a formatting preset.
@@ -135,41 +329,6 @@ impl ColumnSpec {
         self.source = source;
         self
     }
-
-    /// Returns the effective display label, falling back to the column ID string.
-    pub fn display_label(&self) -> &str {
-        self.label.as_deref().unwrap_or(self.id.as_str())
-    }
-}
-
-impl Default for ColumnSpec {
-    fn default() -> Self {
-        Self::new("")
-    }
-}
-
-/// Contiguous column group definition.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ColumnGroup {
-    pub id: ColGroupId,
-    pub label: String,
-    pub columns: Vec<ColId>,
-}
-
-/// Child node in a hierarchical row group: either a direct row ID or a nested sub-group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RowGroupChild {
-    Row(RowId),
-    Group(RowGroup),
-}
-
-/// Hierarchical row section definition.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RowGroup {
-    pub id: RowGroupId,
-    pub label: String,
-    pub children: Vec<RowGroupChild>,
 }
 
 /// Explicit literal cell value: number, string, boolean, or null.
@@ -427,12 +586,159 @@ impl From<bool> for CellInput {
     }
 }
 
-/// Row definition within a table specification.
+/// Row definition within a table specification: calculable data row, visual section header, or blank spacing gutter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RowSpec {
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RowSpec {
+    Data(DataRowSpec),
+    SectionHeader(SectionHeaderRowSpec),
+    Gutter,
+}
+
+impl RowSpec {
+    /// Constructs a calculable data row specification.
+    pub fn new(id: impl Into<RowId>) -> Self {
+        Self::Data(DataRowSpec::new(id))
+    }
+
+    /// Constructs a visual section header row specification.
+    pub fn section_header(title: impl Into<String>) -> Self {
+        Self::SectionHeader(SectionHeaderRowSpec::new(title))
+    }
+
+    /// Constructs a spacing gutter row specification.
+    pub fn gutter() -> Self {
+        Self::Gutter
+    }
+
+    /// Returns the row identifier if this is a data row.
+    pub fn id(&self) -> Option<&RowId> {
+        match self {
+            Self::Data(d) => Some(&d.id),
+            Self::SectionHeader(_) | Self::Gutter => None,
+        }
+    }
+
+    /// Returns the typographic cell indentation if specified.
+    pub fn indent(&self) -> Option<u8> {
+        match self {
+            Self::Data(d) => d.indent,
+            Self::SectionHeader(h) => h.indent,
+            Self::Gutter => None,
+        }
+    }
+
+    /// Builder method attaching indentation.
+    pub fn with_indent(mut self, indent: Option<u8>) -> Self {
+        match &mut self {
+            Self::Data(d) => d.indent = indent,
+            Self::SectionHeader(h) => h.indent = indent,
+            Self::Gutter => {}
+        }
+        self
+    }
+
+    /// Builder method attaching a formatting preset.
+    pub fn with_format(mut self, format: Option<FormatPreset>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.format = format;
+        }
+        self
+    }
+
+    /// Builder method attaching a structural style.
+    pub fn with_style(mut self, style: Option<SemanticStyle>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.style = style;
+        }
+        self
+    }
+
+    /// Builder method attaching visual highlight emphasis.
+    pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.highlight = highlight;
+        }
+        self
+    }
+
+    /// Builder method attaching display precision.
+    pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.decimals = decimals;
+        }
+        self
+    }
+
+    /// Builder method attaching a currency denomination.
+    pub fn with_currency(mut self, currency: Option<CurrencyCode>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.currency = currency;
+        }
+        self
+    }
+
+    /// Builder method attaching a formula expression.
+    pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.expr = Some(expr.into());
+        }
+        self
+    }
+
+    /// Builder method attaching an audit note.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        match &mut self {
+            Self::Data(d) => d.note = Some(note.into()),
+            Self::SectionHeader(h) => h.note = Some(note.into()),
+            Self::Gutter => {}
+        }
+        self
+    }
+
+    /// Builder method attaching cell inputs.
+    pub fn with_cells(mut self, cells: IndexMap<ColId, CellInput>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.cells = cells;
+        }
+        self
+    }
+
+    /// Builder method attaching a single cell input.
+    pub fn with_cell(mut self, col: impl Into<ColId>, cell: impl Into<CellInput>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.cells.insert(col.into(), cell.into());
+        }
+        self
+    }
+
+    /// Builder method attaching provenance source metadata.
+    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.source = source;
+        }
+        self
+    }
+}
+
+impl From<DataRowSpec> for RowSpec {
+    fn from(d: DataRowSpec) -> Self {
+        Self::Data(d)
+    }
+}
+
+impl From<SectionHeaderRowSpec> for RowSpec {
+    fn from(h: SectionHeaderRowSpec) -> Self {
+        Self::SectionHeader(h)
+    }
+}
+
+/// Calculable data row definition within a table specification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DataRowSpec {
     pub id: RowId,
-    #[serde(default)]
-    pub role: AxisRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<SemanticStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -453,12 +759,12 @@ pub struct RowSpec {
     pub cells: IndexMap<ColId, CellInput>,
 }
 
-impl RowSpec {
-    /// Creates a measure row specification with default attributes.
+impl DataRowSpec {
+    /// Creates a data row specification with default attributes.
     pub fn new(id: impl Into<RowId>) -> Self {
         Self {
             id: id.into(),
-            role: AxisRole::Measure,
+            indent: None,
             style: None,
             highlight: None,
             format: None,
@@ -471,21 +777,10 @@ impl RowSpec {
         }
     }
 
-    /// Creates a descriptor row specification.
-    pub fn descriptor(id: impl Into<RowId>) -> Self {
-        Self {
-            id: id.into(),
-            role: AxisRole::Descriptor,
-            style: None,
-            highlight: None,
-            format: None,
-            decimals: None,
-            currency: None,
-            expr: None,
-            note: None,
-            source: None,
-            cells: IndexMap::new(),
-        }
+    /// Builder method attaching typographic indentation.
+    pub fn with_indent(mut self, indent: Option<u8>) -> Self {
+        self.indent = indent;
+        self
     }
 
     /// Builder method attaching a formatting preset.
@@ -536,6 +831,12 @@ impl RowSpec {
         self
     }
 
+    /// Builder method attaching a single cell input.
+    pub fn with_cell(mut self, col: impl Into<ColId>, cell: impl Into<CellInput>) -> Self {
+        self.cells.insert(col.into(), cell.into());
+        self
+    }
+
     /// Builder method attaching provenance source metadata.
     pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
         self.source = source;
@@ -543,9 +844,36 @@ impl RowSpec {
     }
 }
 
-impl Default for RowSpec {
-    fn default() -> Self {
-        Self::new("")
+/// Visual section header row specification without calculable cells.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SectionHeaderRowSpec {
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl SectionHeaderRowSpec {
+    /// Creates a new section header row specification.
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            indent: None,
+            note: None,
+        }
+    }
+
+    /// Builder method attaching typographic indentation.
+    pub fn with_indent(mut self, indent: Option<u8>) -> Self {
+        self.indent = indent;
+        self
+    }
+
+    /// Builder method attaching an audit note.
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(note.into());
+        self
     }
 }
 
@@ -567,10 +895,6 @@ pub struct TableSpec {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collapsible: bool,
     pub columns: Vec<ColumnSpec>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub column_groups: Vec<ColumnGroup>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub row_groups: Vec<RowGroup>,
     pub rows: Vec<RowSpec>,
 }
 
@@ -584,8 +908,6 @@ impl TableSpec {
             currency: None,
             collapsible: false,
             columns: Vec::new(),
-            column_groups: Vec::new(),
-            row_groups: Vec::new(),
             rows: Vec::new(),
         }
     }
@@ -608,34 +930,40 @@ impl TableSpec {
         self
     }
 
-    /// Returns an iterator over all declared column IDs.
+    /// Returns an iterator over all declared data column IDs.
     pub fn col_ids(&self) -> impl Iterator<Item = &ColId> {
-        self.columns.iter().map(|c| &c.id)
+        self.columns.iter().filter_map(|c| c.id())
     }
 
-    /// Returns an iterator over all declared row IDs.
+    /// Returns an iterator over all declared data row IDs.
     pub fn row_ids(&self) -> impl Iterator<Item = &RowId> {
-        self.rows.iter().map(|r| &r.id)
+        self.rows.iter().filter_map(|r| r.id())
     }
 
-    /// Returns true if the table contains a column with the given identifier.
+    /// Returns true if the table contains a data column with the given identifier.
     pub fn contains_col(&self, id: &ColId) -> bool {
-        self.columns.iter().any(|c| &c.id == id)
+        self.columns.iter().any(|c| c.id() == Some(id))
     }
 
-    /// Returns true if the table contains a row with the given identifier.
+    /// Returns true if the table contains a data row with the given identifier.
     pub fn contains_row(&self, id: &RowId) -> bool {
-        self.rows.iter().any(|r| &r.id == id)
+        self.rows.iter().any(|r| r.id() == Some(id))
     }
 
     /// Returns the column specification for a column ID if found.
-    pub fn get_column(&self, id: &ColId) -> Option<&ColumnSpec> {
-        self.columns.iter().find(|c| &c.id == id)
+    pub fn get_column(&self, id: &ColId) -> Option<&DataColumnSpec> {
+        self.columns.iter().find_map(|c| match c {
+            ColumnSpec::Data(d) if &d.id == id => Some(d),
+            _ => None,
+        })
     }
 
     /// Returns the row specification for a row ID if found.
-    pub fn get_row(&self, id: &RowId) -> Option<&RowSpec> {
-        self.rows.iter().find(|r| &r.id == id)
+    pub fn get_row(&self, id: &RowId) -> Option<&DataRowSpec> {
+        self.rows.iter().find_map(|r| match r {
+            RowSpec::Data(d) if &d.id == id => Some(d),
+            _ => None,
+        })
     }
 
     /// Validates all table-level domain invariants.
@@ -649,9 +977,7 @@ impl TableSpec {
         }
 
         self.validate_columns()?;
-        self.validate_column_groups()?;
         self.validate_rows()?;
-        self.validate_row_groups()?;
         self.validate_cells()?;
         Ok(())
     }
@@ -664,101 +990,63 @@ impl TableSpec {
         }
 
         let mut seen_cols = IndexSet::new();
+        let mut primary_desc: Option<&ColId> = None;
+
         for col in &self.columns {
-            if !seen_cols.insert(&col.id) {
+            let data_col = match col {
+                ColumnSpec::Data(d) => d,
+                ColumnSpec::Gutter => continue,
+            };
+
+            if !seen_cols.insert(&data_col.id) {
                 return Err(ModelError::DuplicateColumnId {
                     table: self.id.clone(),
-                    column: col.id.clone(),
+                    column: data_col.id.clone(),
                 });
             }
 
-            if let Some(decimals) = col.decimals
+            if data_col.role.is_primary_descriptor() {
+                if let Some(first) = primary_desc {
+                    return Err(ModelError::DuplicatePrimaryDescriptor {
+                        table: self.id.clone(),
+                        first: first.clone(),
+                        second: data_col.id.clone(),
+                    });
+                }
+                primary_desc = Some(&data_col.id);
+            }
+
+            if let Some(decimals) = data_col.decimals
                 && decimals > 14
             {
                 return Err(ModelError::PrecisionOutOfBounds {
                     table: self.id.clone(),
-                    context: format!("column '{}'", col.id),
+                    context: format!("column '{}'", data_col.id),
                     decimals,
                     max: 14,
                 });
             }
 
-            if let (Some(format), Some(currency)) = (col.format, col.currency)
+            if let (Some(format), Some(currency)) = (data_col.format, data_col.currency)
                 && format != FormatPreset::Currency
             {
                 return Err(ModelError::InvalidCurrencyForPreset {
                     table: self.id.clone(),
-                    context: format!("column '{}'", col.id),
+                    context: format!("column '{}'", data_col.id),
                     preset: format,
                     currency,
                 });
             }
 
-            if let (Some(format), Some(decimals)) = (col.format, col.decimals)
+            if let (Some(format), Some(decimals)) = (data_col.format, data_col.decimals)
                 && !format.is_numeric()
             {
                 return Err(ModelError::InvalidPrecisionForPreset {
                     table: self.id.clone(),
-                    context: format!("column '{}'", col.id),
+                    context: format!("column '{}'", data_col.id),
                     preset: format,
                     decimals,
                 });
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_column_groups(&self) -> Result<(), ModelError> {
-        let mut seen_groups = IndexSet::new();
-        let mut assigned_columns: IndexMap<&ColId, &ColGroupId> = IndexMap::new();
-
-        for group in &self.column_groups {
-            if !seen_groups.insert(&group.id) {
-                return Err(ModelError::DuplicateColumnGroupId {
-                    table: self.id.clone(),
-                    group: group.id.clone(),
-                });
-            }
-
-            if group.columns.is_empty() {
-                return Err(ModelError::NonContiguousColumnGroup {
-                    table: self.id.clone(),
-                    group: group.id.clone(),
-                });
-            }
-
-            // Verify contiguity within table.columns
-            let mut prev_table_idx: Option<usize> = None;
-            for col in &group.columns {
-                let table_idx =
-                    self.columns
-                        .iter()
-                        .position(|c| &c.id == col)
-                        .ok_or_else(|| ModelError::UnknownColumn {
-                            table: self.id.clone(),
-                            column: col.clone(),
-                            context: format!("column group '{}'", group.id),
-                        })?;
-
-                if let Some(prev) = prev_table_idx
-                    && table_idx != prev + 1
-                {
-                    return Err(ModelError::NonContiguousColumnGroup {
-                        table: self.id.clone(),
-                        group: group.id.clone(),
-                    });
-                }
-                prev_table_idx = Some(table_idx);
-
-                // Verify disjointness
-                if let Some(existing_group) = assigned_columns.insert(col, &group.id) {
-                    return Err(ModelError::OverlappingColumnGroup {
-                        table: self.id.clone(),
-                        column: col.clone(),
-                        first_group: (*existing_group).clone(),
-                        second_group: group.id.clone(),
-                    });
-                }
             }
         }
         Ok(())
@@ -771,43 +1059,64 @@ impl TableSpec {
             });
         }
 
+        let has_primary_desc = self
+            .columns
+            .iter()
+            .any(|c| c.role().is_some_and(|r| r.is_primary_descriptor()));
+
         let mut seen_rows = IndexSet::new();
         for row in &self.rows {
-            if !seen_rows.insert(&row.id) {
-                return Err(ModelError::DuplicateRowId {
+            if let Some(indent) = row.indent()
+                && indent > 0
+                && !has_primary_desc
+            {
+                return Err(ModelError::IndentWithoutPrimaryDescriptor {
                     table: self.id.clone(),
-                    row: row.id.clone(),
+                    row: row.id().cloned(),
+                    indent,
                 });
             }
 
-            if let Some(decimals) = row.decimals
+            let data_row = match row {
+                RowSpec::Data(d) => d,
+                RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
+            };
+
+            if !seen_rows.insert(&data_row.id) {
+                return Err(ModelError::DuplicateRowId {
+                    table: self.id.clone(),
+                    row: data_row.id.clone(),
+                });
+            }
+
+            if let Some(decimals) = data_row.decimals
                 && decimals > 14
             {
                 return Err(ModelError::PrecisionOutOfBounds {
                     table: self.id.clone(),
-                    context: format!("row '{}'", row.id),
+                    context: format!("row '{}'", data_row.id),
                     decimals,
                     max: 14,
                 });
             }
 
-            if let (Some(format), Some(currency)) = (row.format, row.currency)
+            if let (Some(format), Some(currency)) = (data_row.format, data_row.currency)
                 && format != FormatPreset::Currency
             {
                 return Err(ModelError::InvalidCurrencyForPreset {
                     table: self.id.clone(),
-                    context: format!("row '{}'", row.id),
+                    context: format!("row '{}'", data_row.id),
                     preset: format,
                     currency,
                 });
             }
 
-            if let (Some(format), Some(decimals)) = (row.format, row.decimals)
+            if let (Some(format), Some(decimals)) = (data_row.format, data_row.decimals)
                 && !format.is_numeric()
             {
                 return Err(ModelError::InvalidPrecisionForPreset {
                     table: self.id.clone(),
-                    context: format!("row '{}'", row.id),
+                    context: format!("row '{}'", data_row.id),
                     preset: format,
                     decimals,
                 });
@@ -816,147 +1125,18 @@ impl TableSpec {
         Ok(())
     }
 
-    fn validate_row_groups(&self) -> Result<(), ModelError> {
-        let mut seen_group_ids = IndexSet::new();
-        let mut assigned_rows: IndexMap<RowId, RowGroupId> = IndexMap::new();
-
-        let row_indices: IndexMap<&RowId, usize> = self
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(idx, r)| (&r.id, idx))
-            .collect();
-
-        for root_group in &self.row_groups {
-            self.validate_row_group_recursive(
-                root_group,
-                &mut seen_group_ids,
-                &mut assigned_rows,
-                &row_indices,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    fn validate_row_group_recursive(
-        &self,
-        group: &RowGroup,
-        seen_group_ids: &mut IndexSet<RowGroupId>,
-        assigned_rows: &mut IndexMap<RowId, RowGroupId>,
-        row_indices: &IndexMap<&RowId, usize>,
-    ) -> Result<(), ModelError> {
-        if !seen_group_ids.insert(group.id.clone()) {
-            return Err(ModelError::DuplicateRowGroupId {
-                table: self.id.clone(),
-                group: group.id.clone(),
-            });
-        }
-
-        let mut descendant_rows = Vec::new();
-        let mut cycle_tracker = IndexSet::new();
-        Self::collect_descendant_rows(group, &self.id, &mut cycle_tracker, &mut descendant_rows)?;
-
-        if descendant_rows.is_empty() {
-            return Err(ModelError::NonContiguousRowGroup {
-                table: self.id.clone(),
-                group: group.id.clone(),
-            });
-        }
-
-        // Verify descendant row contiguity
-        let first_row = &descendant_rows[0];
-        let start_idx =
-            row_indices
-                .get(first_row)
-                .copied()
-                .ok_or_else(|| ModelError::UnknownRow {
-                    table: self.id.clone(),
-                    row: first_row.clone(),
-                    context: format!("row group '{}'", group.id),
-                })?;
-
-        for (offset, row_id) in descendant_rows.iter().enumerate() {
-            let actual_idx =
-                row_indices
-                    .get(row_id)
-                    .copied()
-                    .ok_or_else(|| ModelError::UnknownRow {
-                        table: self.id.clone(),
-                        row: row_id.clone(),
-                        context: format!("row group '{}'", group.id),
-                    })?;
-
-            if actual_idx != start_idx + offset {
-                return Err(ModelError::NonContiguousRowGroup {
-                    table: self.id.clone(),
-                    group: group.id.clone(),
-                });
-            }
-        }
-
-        // For direct children that are rows, register membership and check overlap
-        for child in &group.children {
-            match child {
-                RowGroupChild::Row(row_id) => {
-                    if let Some(existing_group) =
-                        assigned_rows.insert(row_id.clone(), group.id.clone())
-                    {
-                        return Err(ModelError::OverlappingRowGroup {
-                            table: self.id.clone(),
-                            row: row_id.clone(),
-                            first_group: existing_group,
-                            second_group: group.id.clone(),
-                        });
-                    }
-                }
-                RowGroupChild::Group(subgroup) => {
-                    self.validate_row_group_recursive(
-                        subgroup,
-                        seen_group_ids,
-                        assigned_rows,
-                        row_indices,
-                    )?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn collect_descendant_rows<'a>(
-        group: &'a RowGroup,
-        table_id: &TableId,
-        cycle_tracker: &mut IndexSet<&'a RowGroupId>,
-        out: &mut Vec<RowId>,
-    ) -> Result<(), ModelError> {
-        if !cycle_tracker.insert(&group.id) {
-            return Err(ModelError::CyclicRowGroup {
-                table: table_id.clone(),
-                group: group.id.clone(),
-            });
-        }
-
-        for child in &group.children {
-            match child {
-                RowGroupChild::Row(row_id) => out.push(row_id.clone()),
-                RowGroupChild::Group(subgroup) => {
-                    Self::collect_descendant_rows(subgroup, table_id, cycle_tracker, out)?;
-                }
-            }
-        }
-
-        cycle_tracker.shift_remove(&group.id);
-        Ok(())
-    }
-
     fn validate_cells(&self) -> Result<(), ModelError> {
         for row in &self.rows {
-            for (col_id, cell_input) in &row.cells {
+            let data_row = match row {
+                RowSpec::Data(d) => d,
+                RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
+            };
+
+            for (col_id, cell_input) in &data_row.cells {
                 if !self.contains_col(col_id) {
                     return Err(ModelError::UnknownCellColumn {
                         table: self.id.clone(),
-                        row: row.id.clone(),
+                        row: data_row.id.clone(),
                         column: col_id.clone(),
                     });
                 }
@@ -967,14 +1147,14 @@ impl TableSpec {
                     if has_value && has_expr {
                         return Err(ModelError::MutuallyExclusiveCellPayload {
                             table: self.id.clone(),
-                            row: row.id.clone(),
+                            row: data_row.id.clone(),
                             column: col_id.clone(),
                         });
                     }
                     if !has_value && !has_expr {
                         return Err(ModelError::EmptyCellPayload {
                             table: self.id.clone(),
-                            row: row.id.clone(),
+                            row: data_row.id.clone(),
                             column: col_id.clone(),
                         });
                     }
@@ -983,7 +1163,7 @@ impl TableSpec {
                     {
                         return Err(ModelError::PrecisionOutOfBounds {
                             table: self.id.clone(),
-                            context: format!("row '{}', column '{}' cell", row.id, col_id),
+                            context: format!("row '{}', column '{}' cell", data_row.id, col_id),
                             decimals,
                             max: 14,
                         });
@@ -993,7 +1173,7 @@ impl TableSpec {
                     {
                         return Err(ModelError::InvalidCurrencyForPreset {
                             table: self.id.clone(),
-                            context: format!("row '{}', column '{}' cell", row.id, col_id),
+                            context: format!("row '{}', column '{}' cell", data_row.id, col_id),
                             preset: format,
                             currency,
                         });
@@ -1003,7 +1183,7 @@ impl TableSpec {
                     {
                         return Err(ModelError::InvalidPrecisionForPreset {
                             table: self.id.clone(),
-                            context: format!("row '{}', column '{}' cell", row.id, col_id),
+                            context: format!("row '{}', column '{}' cell", data_row.id, col_id),
                             preset: format,
                             decimals,
                         });

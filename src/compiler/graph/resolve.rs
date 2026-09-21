@@ -4,7 +4,7 @@ use super::error::ResolveError;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::{SymbolTable, TableMetadata};
-use crate::expr::ast::{ColSelector, Expr, RowSelector, SpecialCol, SpecialRow, TableRef};
+use crate::expr::ast::{ColSelector, Expr, RelativeOffset, RowSelector, TableRef};
 use crate::model::id::{ColId, RowId};
 
 /// Recursively collects all table references present within a formula expression AST.
@@ -82,8 +82,8 @@ pub(crate) fn resolve_row_selector(
                 .cloned()
                 .collect())
         }
-        RowSelector::Special(special) => match special {
-            SpecialRow::Prev(k) => {
+        RowSelector::Offset(offset) => match offset {
+            RelativeOffset::Prev(k) => {
                 let origin_idx = origin_table.rows.get_index_of(&origin.row).ok_or_else(|| {
                     ResolveError::unknown_row(
                         origin,
@@ -113,7 +113,7 @@ pub(crate) fn resolve_row_selector(
 
                 Ok(vec![target_row_id])
             }
-            SpecialRow::Next(k) => {
+            RelativeOffset::Next(k) => {
                 let origin_idx = origin_table.rows.get_index_of(&origin.row).ok_or_else(|| {
                     ResolveError::unknown_row(
                         origin,
@@ -143,50 +143,6 @@ pub(crate) fn resolve_row_selector(
                 }
 
                 Ok(vec![target_row_id])
-            }
-            SpecialRow::Group(group_id) => {
-                let rows = target_table.row_groups.get(group_id).ok_or_else(|| {
-                    ResolveError::unknown_row_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                Ok(rows.clone())
-            }
-            SpecialRow::GroupFirst(group_id) => {
-                let rows = target_table.row_groups.get(group_id).ok_or_else(|| {
-                    ResolveError::unknown_row_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                let first = rows.first().ok_or_else(|| {
-                    ResolveError::unknown_row_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                Ok(vec![first.clone()])
-            }
-            SpecialRow::GroupLast(group_id) => {
-                let rows = target_table.row_groups.get(group_id).ok_or_else(|| {
-                    ResolveError::unknown_row_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                let last = rows.last().ok_or_else(|| {
-                    ResolveError::unknown_row_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                Ok(vec![last.clone()])
             }
         },
     }
@@ -251,30 +207,26 @@ pub(crate) fn resolve_col_selector(
                 .collect();
             Ok(cols)
         }
-        ColSelector::Special(special) => match special {
-            SpecialCol::Prev(k) => {
-                let origin_idx = origin_table
-                    .column_index
-                    .get(&origin.col)
-                    .copied()
+        ColSelector::Offset(offset) => match offset {
+            RelativeOffset::Prev(k) => {
+                let origin_measure_idx = origin_table
+                    .measure_columns
+                    .iter()
+                    .position(|c| c == &origin.col)
                     .ok_or_else(|| {
-                        ResolveError::unknown_column(
-                            origin,
-                            origin_table.table_id.clone(),
-                            origin.col.clone(),
-                        )
+                        ResolveError::temporal_offset_out_of_bounds(origin, -(*k as i32))
                     })?;
 
                 let k_usize = *k as usize;
-                if origin_idx < k_usize {
+                if origin_measure_idx < k_usize {
                     return Err(ResolveError::temporal_offset_out_of_bounds(
                         origin,
                         -(*k as i32),
                     ));
                 }
 
-                let target_idx = origin_idx - k_usize;
-                let target_col_id = origin_table.columns[target_idx].id.clone();
+                let target_measure_idx = origin_measure_idx - k_usize;
+                let target_col_id = origin_table.measure_columns[target_measure_idx].clone();
 
                 if !target_table.column_index.contains_key(&target_col_id) {
                     return Err(ResolveError::unknown_column(
@@ -286,22 +238,18 @@ pub(crate) fn resolve_col_selector(
 
                 Ok(vec![target_col_id])
             }
-            SpecialCol::Next(k) => {
-                let origin_idx = origin_table
-                    .column_index
-                    .get(&origin.col)
-                    .copied()
+            RelativeOffset::Next(k) => {
+                let origin_measure_idx = origin_table
+                    .measure_columns
+                    .iter()
+                    .position(|c| c == &origin.col)
                     .ok_or_else(|| {
-                        ResolveError::unknown_column(
-                            origin,
-                            origin_table.table_id.clone(),
-                            origin.col.clone(),
-                        )
+                        ResolveError::temporal_offset_out_of_bounds(origin, *k as i32)
                     })?;
 
                 let k_usize = *k as usize;
-                let target_idx = match origin_idx.checked_add(k_usize) {
-                    Some(idx) if idx < origin_table.columns.len() => idx,
+                let target_measure_idx = match origin_measure_idx.checked_add(k_usize) {
+                    Some(idx) if idx < origin_table.measure_columns.len() => idx,
                     _ => {
                         return Err(ResolveError::temporal_offset_out_of_bounds(
                             origin, *k as i32,
@@ -309,7 +257,7 @@ pub(crate) fn resolve_col_selector(
                     }
                 };
 
-                let target_col_id = origin_table.columns[target_idx].id.clone();
+                let target_col_id = origin_table.measure_columns[target_measure_idx].clone();
 
                 if !target_table.column_index.contains_key(&target_col_id) {
                     return Err(ResolveError::unknown_column(
@@ -320,50 +268,6 @@ pub(crate) fn resolve_col_selector(
                 }
 
                 Ok(vec![target_col_id])
-            }
-            SpecialCol::Group(group_id) => {
-                let cols = target_table.column_groups.get(group_id).ok_or_else(|| {
-                    ResolveError::unknown_column_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                Ok(cols.clone())
-            }
-            SpecialCol::GroupFirst(group_id) => {
-                let cols = target_table.column_groups.get(group_id).ok_or_else(|| {
-                    ResolveError::unknown_column_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                let first = cols.first().ok_or_else(|| {
-                    ResolveError::unknown_column_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                Ok(vec![first.clone()])
-            }
-            SpecialCol::GroupLast(group_id) => {
-                let cols = target_table.column_groups.get(group_id).ok_or_else(|| {
-                    ResolveError::unknown_column_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                let last = cols.last().ok_or_else(|| {
-                    ResolveError::unknown_column_group(
-                        origin,
-                        target_table.table_id.clone(),
-                        group_id.clone(),
-                    )
-                })?;
-                Ok(vec![last.clone()])
             }
         },
     }
@@ -522,8 +426,6 @@ mod tests {
             currency: None,
             collapsible: false,
             columns: vec![ColumnSpec::new("2024E")],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("rev")],
         };
         symbols

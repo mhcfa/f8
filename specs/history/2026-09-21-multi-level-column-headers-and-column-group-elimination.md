@@ -1,7 +1,7 @@
 ---
 title: Multi-Level Column Headers, Column Gutters & Elimination of Column Groups
 date: 2026-09-21
-status: draft
+status: completed
 target-living-spec:
   - specs/living-specs/model/spec-ast.md
   - specs/living-specs/expr/formula-parser.md

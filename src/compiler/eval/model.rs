@@ -149,8 +149,6 @@ mod tests {
                 ColumnSpec::new("c2"),
                 ColumnSpec::new("c3"),
             ],
-            column_groups: vec![],
-            row_groups: vec![],
             rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
         };
         symbols

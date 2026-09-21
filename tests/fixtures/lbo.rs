@@ -5,35 +5,24 @@ use std::path::PathBuf;
 use finx::model::format::{FormatPreset, SemanticStyle};
 use finx::model::id::TableId;
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::TableSpec;
+use finx::model::table::{ColumnSpec, RowSpec, TableSpec};
 
-use super::{
-    RowBuilder, build_column_group, build_descriptor_col, build_measure_col_label, build_row_group,
-};
+use super::{RowBuilder, build_measure_col_label, build_primary_descriptor_col};
 
 /// Assembles the complete 7-table, 2-sheet institutional LBO model specification.
 #[must_use]
 pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
-    // Shared Timeline Columns & Super-Header Groups (Sheet: Model)
+    // Shared Timeline Columns & Multi-Tier Headers (Sheet: Model)
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
-        build_descriptor_col("line_item", "Line Item"),
-        build_measure_col_label("y0", "Close (Y0)"),
-        build_measure_col_label("y1", "2025 (Y1)"),
-        build_measure_col_label("y2", "2026 (Y2)"),
-        build_measure_col_label("y3", "2027 (Y3)"),
-        build_measure_col_label("y4", "2028 (Y4)"),
-        build_measure_col_label("y5", "2029 (Y5)"),
-    ];
-
-    let timeline_groups = vec![
-        build_column_group("closing", "Transaction Close", &["y0"]),
-        build_column_group(
-            "holding_period",
-            "5-Year Investment Horizon",
-            &["y1", "y2", "y3", "y4", "y5"],
-        ),
+        build_primary_descriptor_col("line_item", "Line Item"),
+        ColumnSpec::new("y0").with_headers(["Transaction Close", "Close (Y0)"]),
+        ColumnSpec::new("y1").with_headers(["5-Year Investment Horizon", "2025 (Y1)"]),
+        ColumnSpec::new("y2").with_headers(["5-Year Investment Horizon", "2026 (Y2)"]),
+        ColumnSpec::new("y3").with_headers(["5-Year Investment Horizon", "2027 (Y3)"]),
+        ColumnSpec::new("y4").with_headers(["5-Year Investment Horizon", "2028 (Y4)"]),
+        ColumnSpec::new("y5").with_headers(["5-Year Investment Horizon", "2029 (Y5)"]),
     ];
 
     // -------------------------------------------------------------------------
@@ -46,14 +35,12 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_descriptor_col("scenario_name", "Scenario Case"),
+            build_primary_descriptor_col("scenario_name", "Scenario Case"),
             build_measure_col_label("case_id", "Case ID"),
             build_measure_col_label("rev_growth", "Rev Growth"),
             build_measure_col_label("ebitda_margin", "EBITDA Margin"),
             build_measure_col_label("exit_multiple", "Exit Multiple"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowBuilder::descriptor("base", "scenario_name", "Base Case (Management Plan)")
                 .format(FormatPreset::Percentage)
@@ -92,45 +79,12 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_descriptor_col("line_item", "Transaction Parameter"),
+            build_primary_descriptor_col("line_item", "Transaction Parameter"),
             build_measure_col_label("val", "Value"),
-        ],
-        column_groups: vec![],
-        row_groups: vec![
-            build_row_group(
-                "scenario_selection",
-                "Scenario Case Selection",
-                &["active_case", "rev_growth", "ebitda_margin", "exit_multiple"],
-            ),
-            build_row_group(
-                "valuation_leverage",
-                "Valuation & Leverage Drivers",
-                &[
-                    "entry_ebitda",
-                    "entry_multiple",
-                    "senior_leverage",
-                    "sub_leverage",
-                    "senior_rate",
-                    "sub_rate",
-                    "tax_rate",
-                    "capex_pct",
-                    "discount_rate",
-                ],
-            ),
-            build_row_group(
-                "sources_uses",
-                "Sources & Uses of Funds",
-                &[
-                    "entry_ev",
-                    "senior_debt_entry",
-                    "sub_debt_entry",
-                    "total_debt_entry",
-                    "sponsor_equity_entry",
-                ],
-            ),
         ],
         rows: vec![
             // Scenario Selection
+            RowSpec::section_header("Scenario Case Selection"),
             RowBuilder::line_item("active_case", "Active Scenario Case")
                 .cell_str("val", active_case)
                 .build(),
@@ -159,6 +113,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 )
                 .build(),
             // Valuation & Leverage Drivers
+            RowSpec::section_header("Valuation & Leverage Drivers"),
             RowBuilder::line_item("entry_ebitda", "LTM Entry EBITDA ($M)")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -205,6 +160,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .cell_num("val", 0.10)
                 .build(),
             // Sources & Uses Calculations
+            RowSpec::section_header("Sources & Uses of Funds"),
             RowBuilder::line_item("entry_ev", "Target Enterprise Value ($M)")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -262,30 +218,11 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: vec![
-            build_descriptor_col("line_item", "Investment Return Metric"),
+            build_primary_descriptor_col("line_item", "Investment Return Metric"),
             build_measure_col_label("val", "Metric Value"),
         ],
-        column_groups: vec![],
-        row_groups: vec![
-            build_row_group(
-                "exit_valuation",
-                "Exit Valuation",
-                &[
-                    "exit_year",
-                    "exit_multiple",
-                    "exit_ebitda",
-                    "exit_ev",
-                    "exit_net_debt",
-                    "exit_equity_proceeds",
-                ],
-            ),
-            build_row_group(
-                "sponsor_returns",
-                "Sponsor Investment Returns",
-                &["initial_equity", "moic", "irr", "npv"],
-            ),
-        ],
         rows: vec![
+            RowSpec::section_header("Exit Valuation"),
             RowBuilder::line_item("exit_year", "Exit Fiscal Year")
                 .format(FormatPreset::Number)
                 .decimals(0)
@@ -324,6 +261,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                     "ReturnsSummary[\"exit_ev\", \"val\"] - ReturnsSummary[\"exit_net_debt\", \"val\"]",
                 )
                 .build(),
+            RowSpec::section_header("Sponsor Investment Returns"),
             RowBuilder::line_item("initial_equity", "Initial Sponsor Equity Invested ($M)")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -371,8 +309,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols.clone(),
-        column_groups: timeline_groups.clone(),
-        row_groups: vec![],
         rows: vec![
             RowBuilder::line_item("date", "Period End Date")
                 .format(FormatPreset::Date)
@@ -409,25 +345,8 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols.clone(),
-        column_groups: timeline_groups.clone(),
-        row_groups: vec![
-            build_row_group(
-                "operating_forecast",
-                "Operating Forecast",
-                &["revenue", "ebitda", "depreciation", "ebit"],
-            ),
-            build_row_group(
-                "earnings_taxes",
-                "Earnings & Taxes",
-                &["interest_expense", "ebt", "tax", "net_income"],
-            ),
-            build_row_group(
-                "cash_generation",
-                "Cash Conversion",
-                &["capex", "fcf_pre_debt"],
-            ),
-        ],
         rows: vec![
+            RowSpec::section_header("Operating Forecast"),
             RowBuilder::line_item("revenue", "Revenue")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -453,6 +372,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .style(SemanticStyle::Subtotal)
                 .expr("Operations[\"ebitda\", @col] - Operations[\"depreciation\", @col]")
                 .build(),
+            RowSpec::section_header("Earnings & Taxes"),
             RowBuilder::line_item("interest_expense", "Debt Interest Expense")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -476,6 +396,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .style(SemanticStyle::Subtotal)
                 .expr("Operations[\"ebt\", @col] - Operations[\"tax\", @col]")
                 .build(),
+            RowSpec::section_header("Cash Conversion"),
             RowBuilder::line_item("capex", "Capital Expenditures")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -503,30 +424,8 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols.clone(),
-        column_groups: timeline_groups.clone(),
-        row_groups: vec![
-            build_row_group(
-                "senior_debt",
-                "Senior Tranche (8.0% Rate)",
-                &["senior_begin", "senior_interest"],
-            ),
-            build_row_group(
-                "sub_debt",
-                "Subordinated Tranche (12.0% Rate)",
-                &["sub_begin", "sub_interest"],
-            ),
-            build_row_group(
-                "debt_sweep",
-                "Debt Service & Sweep Mechanics",
-                &["total_interest", "senior_mandatory", "cash_available_sweep", "senior_sweep"],
-            ),
-            build_row_group(
-                "debt_balances",
-                "Outstanding Debt Balances",
-                &["senior_end", "sub_end", "total_debt_end"],
-            ),
-        ],
         rows: vec![
+            RowSpec::section_header("Senior Tranche (8.0% Rate)"),
             RowBuilder::line_item("senior_begin", "Senior Debt - Beginning")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -539,6 +438,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("DebtSchedule[\"senior_begin\", @col] * DealAssumptions[\"senior_rate\", \"val\"] * Timeline[\"year_frac\", @col]")
                 .cell_num("y0", 0.0)
                 .build(),
+            RowSpec::section_header("Subordinated Tranche (12.0% Rate)"),
             RowBuilder::line_item("sub_begin", "Subordinated Debt - Beginning")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -551,6 +451,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("DebtSchedule[\"sub_begin\", @col] * DealAssumptions[\"sub_rate\", \"val\"] * Timeline[\"year_frac\", @col]")
                 .cell_num("y0", 0.0)
                 .build(),
+            RowSpec::section_header("Debt Service & Sweep Mechanics"),
             RowBuilder::line_item("total_interest", "Total Debt Interest")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -576,6 +477,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("MIN(DebtSchedule[\"cash_available_sweep\", @col], DebtSchedule[\"senior_begin\", @col] - DebtSchedule[\"senior_mandatory\", @col])")
                 .cell_num("y0", 0.0)
                 .build(),
+            RowSpec::section_header("Outstanding Debt Balances"),
             RowBuilder::line_item("senior_end", "Senior Debt - Ending Balance")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -610,8 +512,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: timeline_cols,
-        column_groups: timeline_groups,
-        row_groups: vec![],
         rows: vec![
             RowBuilder::line_item("sponsor_cf", "Sponsor Net Equity Cash Flow")
                 .format(FormatPreset::Currency)

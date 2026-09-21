@@ -698,8 +698,6 @@ fn test_end_to_end_date_formula_evaluation() {
             ColumnSpec::new("c2"),
             ColumnSpec::new("c3"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![RowSpec::new("dates"), RowSpec::new("fractions")],
     };
     symbols

@@ -7,7 +7,7 @@ status: active
 
 ## Purpose
 
-The `compiler::layout` subsystem provides Pass 5 of the Finx compilation pipeline, mapping high-level tables, hierarchical row groups, column groups, title/subtitle banners, and gutters onto physical 2D worksheet grid coordinates `(sheet, col, row, a1)`. It arbitrates sheet-wide column widths and row heights using active `Theme` metrics and produces the deterministic `LayoutMap` contract required for Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission).
+The `compiler::layout` subsystem provides Pass 5 of the Finx compilation pipeline, mapping high-level tables, explicit row specifications (`RowSpec`), multi-tier column headers, title/subtitle banners, and explicit gutters onto physical 2D worksheet grid coordinates `(sheet, col, row, a1)`. It arbitrates sheet-wide column widths and row heights using active `Theme` metrics and produces the deterministic `LayoutMap` contract required for Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission).
 
 ## Architecture & Boundaries
 
@@ -18,8 +18,8 @@ The `compiler::layout` subsystem provides Pass 5 of the Finx compilation pipelin
   - `finx::compiler::mod`: Compiler orchestration entry point (`Compiler::plan_layout`).
 - **Data flow & interfaces**:
   1. Input: `ProjectManifest`, `&[TableSpec]`, `CellGrid`, `Theme`, and optional `&EvaluatedModel`.
-  2. Geometry planning: Computes top/left gutters (Row 0, Col 0), primary table origin at `B2` (`col: 1, row: 1`), inter-table gutters (2 blank rows), title/subtitle blocks, title buffer gutters, super-headers, and column headers.
-  3. Row hierarchy: Interleaves visual section headers before each group's first descendant row, tracks outline levels (`1..=7`), inserts section gutter rows above top-level section headers, and records descriptor indentation.
+  2. Geometry planning: Computes top/left gutters (Row 0, Col 0), primary table origin at `B2` (`col: 1, row: 1`), inter-table gutters (2 blank rows), title/subtitle blocks, title buffer gutters, multi-tier super-headers, and column headers.
+  3. Row layout: Maps explicit `RowSpec::Data`, `RowSpec::SectionHeader`, and `RowSpec::Gutter` in exact declared sequence, recording descriptor indentation and assigning section header spans.
   4. Cell mapping: Assigns physical `(col, row)` coordinates, canonical Excel `a1` addresses, indentation level (`indent`), and `StyleRole` presentation flags to every `CellId`.
   5. Sizing arbitration: Populates sheet row heights from theme metrics and arbitrates sheet-wide column widths across stacked tables sharing columns, accounting for descriptor indentation padding and enforcing `theme.metrics.min_col_width` (12.0) on measure columns.
   6. Output: Deterministic `LayoutMap` consumed by Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission).
@@ -53,44 +53,42 @@ When multiple tables are assigned to the same worksheet, they stack vertically i
   - **When** Table 1 ends at row $R$
   - **Then** rows $R+1$ and $R+2$ are allocated as blank gutter rows, and Table 2 starts at row $R+3$.
 
-### 3. Table Header Structure
+### 3. Table Header Structure & Multi-Tier Column Headers
 
 Each table allocates header rows in strict sequence:
 1. Title row (optional): 1 row displaying `table.title` with height `theme.metrics.title_row_height` (24.0 pt).
 2. Subtitle row (optional): 1 row displaying `table.subtitle` with height `theme.metrics.data_row_height` (15.0 pt).
 3. Title buffer gutter (optional): 1 blank row separating title/subtitle from column headers with height `theme.metrics.title_gutter_row_height` (8.0 pt). Allocated whenever title or subtitle is present.
-4. Super-header rows (optional): 1 row per `column_groups` tier with height `theme.metrics.header_row_height` (18.0 pt).
-5. Column header row: 1 row displaying column labels with height `theme.metrics.header_row_height` (18.0 pt).
+4. Multi-tier column header rows: $H = \max(\text{headers.len()})$ rows with height `theme.metrics.header_row_height` (18.0 pt). If $H > 0$, columns with fewer than $H$ headers are padded with blank super-headers at the top so that the metric label always aligns to the bottom tier. Contiguous identical header runs in super-header tiers are identified for `CenterAcross` emission.
 
 #### Scenarios
 
 - **Full header stack**:
-  - **When** a table declares title, subtitle, column groups, and columns
-  - **Then** title, subtitle, title gutter, super-header, and column header rows are placed in sequence before data rows.
+  - **When** a table declares title, subtitle, and multi-tier column headers
+  - **Then** title, subtitle, title gutter, super-header tiers, and column header rows are placed in sequence before data rows.
+- **Bottom-tier alignment**:
+  - **When** Column A has 2 headers `["Forecast", "2024E"]` and Column B has 1 header `["Total"]` ($H=2$)
+  - **Then** tier 0 displays `"Forecast"` above Column A and blank above Column B; tier 1 displays `"2024E"` at Column A and `"Total"` at Column B.
 
-### 4. Hierarchical Row Groups, Section Headers, Gutters & Indentation
+### 4. Explicit Rows, Section Headers, Gutters & Indentation
 
-Visual section header rows are interleaved in preorder before the first descendant row of each `RowGroup`. Section headers consume 1 physical row, assign `group_level: 1..=7`, and allocate no calculation `CellId` nodes.
-
-To visually distinguish sections cleanly without heuristics:
-1. **Section Gutters**: When a top-level section header (`group_level == 1`) occurs after preceding table data (`current_row > data_start_row`), a blank section gutter row sized to `theme.metrics.gutter_row_height` (9.0 pt) is inserted immediately above the section header. This ensures preceding line items and subtotals stay grouped together while clearly partitioning the next section.
-2. **Descriptor Indentation**: Each data row within a row group hierarchy computes its nesting depth (`0` for root/subtotal, `1` for top-level group items, `2` for sub-group items, etc.). The depth is recorded in `PhysicalCoordinate.indent` on descriptor cells. Descriptor cell formats apply this indentation (`format.set_indent(indent)`), and sub-headers apply `group_level - 1` indent. Measure columns remain strictly unindented.
-3. **Width Arbitration with Indent**: Column width arbitration for descriptor columns incorporates indentation padding (`row_depth * 2` characters) into character length calculations.
+Tables place rows in exact declared sequence using `RowSpec`:
+1. **Section Headers (`RowSpec::SectionHeader`)**: Consumes 1 physical row, allocating no calculation `CellId` nodes. Formatted as continuous section banners across the table columns without merged cells.
+2. **Gutter Rows (`RowSpec::Gutter`)**: Consumes 1 physical row sized to `theme.metrics.gutter_row_height` (9.0 pt) with zero calculation cells.
+3. **Data Rows (`RowSpec::Data`)**: Consumes 1 physical row containing calculations and literals. Its optional `indent` level is attached to descriptor cells.
+4. **Width Arbitration with Indent**: Column width arbitration for descriptor columns incorporates indentation padding (`indent * 2` characters) into character length calculations.
 
 #### Scenarios
 
-- **Section Header Placement**:
-  - **When** a table has row group `"opex"` containing row `"salaries"`
-  - **Then** a visual section header row for `"opex"` is placed immediately preceding row `"salaries"`.
-- **Section Gutter Insertion**:
-  - **When** a top-level row group begins after the first data row of a table
-  - **Then** a 9pt gutter row is inserted above its section header.
-- **Descriptor Indentation**:
-  - **When** rows belong to nested row groups
-  - **Then** descriptor cells carry `indent: 1` or `indent: 2` according to their hierarchy depth, while measure cells carry `indent: 0`.
-- **Outline Depth Limit**:
-  - **When** row group nesting exceeds depth 7
-  - **Then** layout planning returns `LayoutError::OutlineDepthExceeded`.
+- **Section header placement**:
+  - **When** a table declares `RowSpec::SectionHeader("Operating Expenses")`
+  - **Then** a visual section header row is placed at that exact position spanning the table's columns.
+- **Explicit gutter row**:
+  - **When** a table declares `RowSpec::Gutter`
+  - **Then** a 9pt blank gutter row is emitted at that exact position.
+- **Descriptor indentation**:
+  - **When** a row declares `indent: 1` or `indent: 2`
+  - **Then** its primary descriptor cell carries `indent: 1` or `indent: 2`, while measure cells carry `indent: 0`.
 
 ### 5. Sheet-Wide Column Width Arbitration
 

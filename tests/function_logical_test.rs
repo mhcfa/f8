@@ -512,8 +512,6 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("c1"), ColumnSpec::new("c2")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
     };
     symbols.register_table(sheet.clone(), &table).unwrap();

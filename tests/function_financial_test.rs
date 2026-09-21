@@ -620,8 +620,6 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("value")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("loan_amount"),
             RowSpec::new("interest_rate"),

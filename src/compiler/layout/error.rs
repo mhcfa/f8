@@ -15,16 +15,6 @@ pub enum LayoutError {
     #[error("table '{table}' referenced by sheet '{sheet}' was not found")]
     UnknownTable { table: TableId, sheet: SheetId },
 
-    /// Row group hierarchy exceeds Excel's maximum outline level limit of 7.
-    #[error(
-        "table '{table}' has row group '{group}' exceeding maximum Excel outline depth of 7 (depth: {depth})"
-    )]
-    OutlineDepthExceeded {
-        table: TableId,
-        group: String,
-        depth: usize,
-    },
-
     /// Layout placement exceeds physical Excel grid boundaries.
     #[error("layout placement exceeds Excel grid limit of {max} {dimension} (requested: {actual})")]
     GridLimitExceeded {

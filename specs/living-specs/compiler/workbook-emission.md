@@ -20,8 +20,8 @@ The `compiler::emission::workbook` subsystem implements Finx's OpenXML Workbook 
   1. Input: `ProjectManifest`, `TableSpec` slice, `CellGrid` (Pass 2 IR), `LayoutMap` (Pass 5), `LoweredFormulaMap` (Pass 6a), `Theme`, optional `EvaluatedModel` (Pass 4), and `EmissionOptions`.
   2. Package setup: Initializes `rust_xlsxwriter::Workbook` with deterministic `DocProperties` (fixed author or custom, fixed timestamp for bit-for-bit reproducibility).
   3. Sheet configuration: Sets sheet names, tab accent colors, gridline visibility, freeze panes, arbitrated column widths, and row heights from `SheetLayout`.
-  4. Header streaming: Writes table title banners, subtitles, gutters, super-headers (with 1-column single-cell guard), column key headers (descriptor left, measure right), and interleaved section headers.
-  5. Table-level collapsing (opt-in): If `table.collapsible` is true, configures symbols above (`group_symbols_above(true)`) and collapses the table body under the title banner (`worksheet.group_rows(start_row + 1, end_row)`). Row group outline buttons are omitted to eliminate UI clutter, relying instead on descriptor cell indentation and section gutters.
+  4. Header streaming: Writes table title banners, subtitles, gutters, multi-tier super-headers (with contiguous run `CenterAcross` emission), column key headers (descriptor left, measure right), and continuous section header rows.
+  5. Table-level collapsing (opt-in): If `table.collapsible` is true, configures symbols above (`group_symbols_above(true)`) and collapses the table body under the title banner (`worksheet.group_rows(start_row + 1, end_row)`). Outline buttons are omitted to eliminate UI clutter, relying instead on descriptor cell indentation and explicit gutters.
   6. Data cell streaming: Queries deduplicated formats from `FormatCache` with descriptor indentation applied directly. In standard mode, writes live formulas pre-populated with evaluation results (`set_result`) and literal values. In values-only mode, writes concrete evaluated numbers/text directly without formula definitions, preserving formula typography.
   7. Finalization: Serializes to in-memory byte buffer (`Vec<u8>`) or writes directly to disk.
 - **Dependencies**:
@@ -48,9 +48,9 @@ Worksheets and tables are emitted in the exact order declared in `manifest.sheet
 
 ### 2. Structural Headers & Super-Header Safety
 
-Table title banners, subtitles, super-headers, and column key headers are placed at exact physical row offsets determined in Pass 5.
+Table title banners, subtitles, multi-tier super-headers, and column key headers are placed at exact physical row offsets determined in Pass 5.
 - **Table title banner**: Written to `start_col` and filled across `(start_col + 1)..=end_col` with `title_format` blanks to create a seamless banner matching the exact table width.
-- **Super-headers (Center Across Selection)**: To conform with institutional financial modeling standards (FAST standard: zero merged cells), column groups are emitted using `FormatAlign::CenterAcross` across `start_col..=end_col` without any `<mergeCell>` tags.
+- **Super-headers (Center Across Selection)**: To conform with institutional financial modeling standards (FAST standard: zero merged cells), contiguous identical super-header runs across adjacent columns are emitted using `FormatAlign::CenterAcross` across `start_col..=end_col` without any `<mergeCell>` tags.
 - **Row heights**: Left automatic so Excel dynamically computes natural line heights based on font size metrics, maintaining unified row heights across data and gutters.
 
 #### Scenarios
@@ -59,10 +59,10 @@ Table title banners, subtitles, super-headers, and column key headers are placed
   - **When** table title is emitted
   - **Then** all columns across `start_col..=end_col` receive the title background fill and bottom border.
 - **Multi-column super-header without merge cells**:
-  - **When** column group covers multiple columns
+  - **When** a super-header label spans multiple adjacent columns
   - **Then** emitted with `FormatAlign::CenterAcross` across the range without any `<mergeCell>` elements.
 - **Single-column super-header**:
-  - **When** column group spans exactly one column
+  - **When** a super-header label spans exactly one column
   - **Then** emitted as a regular formatted cell with CenterAcross alignment.
 
 ### 3. Formula Evaluation Result Caching
@@ -90,19 +90,19 @@ When `options.values_only` is true:
   - **When** emitting the workbook
   - **Then** no `<f>` tags exist in sheet XML; all numbers and strings are emitted directly into `<v>` with standard presentation formatting.
 
-### 5. Table-Level Collapsing & Row Group Presentation
+### 5. Table-Level Collapsing & Row Presentation
 
 To keep financial models clean, legible, and unencumbered by Excel outline UI clutter:
-- **No Row Group Outline Buttons**: Nested row groups do not emit Excel outline buttons (`[+]`/`[-]`). Hierarchy is communicated visually via descriptor cell indentation (`format.set_indent(indent)`) and blank 9pt section gutters above subsequent top-level section headers.
-- **Opt-In Table Collapsing**: When `table.collapsible` is true, the emitter calls `worksheet.group_symbols_above(true)` and `worksheet.group_rows(placement.start_row + 1, placement.end_row)`. This creates a native Excel level 1 outline spanning the entire table body below the table title banner. When collapsed, the title banner remains visible while the headers, gutters, and data cells are hidden.
+- **No row outline buttons**: Intermediate rows do not emit Excel outline buttons (`[+]`/`[-]`). Hierarchy is communicated visually via descriptor cell indentation (`format.set_indent(indent)`), explicit section header rows, and explicit gutter rows.
+- **Opt-in table collapsing**: When `table.collapsible` is true, the emitter calls `worksheet.group_symbols_above(true)` and `worksheet.group_rows(placement.start_row + 1, placement.end_row)`. This creates a native Excel level 1 outline spanning the entire table body below the table title banner. When collapsed, the title banner remains visible while the headers, gutters, and data cells are hidden.
 
 #### Scenarios
 
-- **Default Presentation (No Outline Buttons)**:
-  - **Given** a table with nested row groups and `collapsible: false`
+- **Default presentation (no outline buttons)**:
+  - **Given** a table with indented rows and `collapsible: false`
   - **When** assembling the worksheet
   - **Then** sheet XML contains no row outline levels (`summaryBelow` and outline brackets are absent), and descriptor cells contain `indent="1"`, `indent="2"`.
-- **Opt-In Table-Level Collapsing**:
+- **Opt-in table-level collapsing**:
   - **Given** a table with `collapsible: true`
   - **When** assembling the worksheet
   - **Then** table rows from `start_row + 1` to `end_row` carry `outlineLevel="1"`, and `summaryBelow="0"` is set on `sheetPr/outlinePr`.

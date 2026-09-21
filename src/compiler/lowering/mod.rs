@@ -18,7 +18,7 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::LayoutMap;
 use crate::expr::ast::{
-    BinaryOp, ColSelector, Expr, Literal, RowSelector, SpecialCol, SpecialRow, TableRef, UnaryOp,
+    BinaryOp, ColSelector, Expr, Literal, RelativeOffset, RowSelector, TableRef, UnaryOp,
 };
 
 /// Deterministic map of lowered Excel formula strings indexed by [`CellId`].
@@ -101,8 +101,8 @@ fn is_col_dynamic(col_sel: &ColSelector) -> bool {
     matches!(
         col_sel,
         ColSelector::Active
-            | ColSelector::Special(SpecialCol::Prev(_))
-            | ColSelector::Special(SpecialCol::Next(_))
+            | ColSelector::Offset(RelativeOffset::Prev(_))
+            | ColSelector::Offset(RelativeOffset::Next(_))
     )
 }
 
@@ -111,8 +111,8 @@ fn is_row_dynamic(row_sel: &RowSelector) -> bool {
     matches!(
         row_sel,
         RowSelector::Active
-            | RowSelector::Special(SpecialRow::Prev(_))
-            | RowSelector::Special(SpecialRow::Next(_))
+            | RowSelector::Offset(RelativeOffset::Prev(_))
+            | RowSelector::Offset(RelativeOffset::Next(_))
     )
 }
 

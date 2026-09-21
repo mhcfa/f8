@@ -19,9 +19,9 @@ use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
 use crate::model::format::{FormatPreset, SemanticStyle};
-use crate::model::id::{RowId, SheetId, TableId};
+use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, ProjectManifest};
-use crate::model::table::{RowGroup, RowGroupChild, TableSpec, ValueLiteral};
+use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
 use crate::value::CellValue;
 
@@ -61,40 +61,8 @@ pub struct PhysicalCoordinate {
     pub a1: String,
     /// Semantic presentation style role.
     pub style_role: StyleRole,
-    /// Descriptor text indentation level (0..=7).
+    /// Descriptor text indentation level.
     pub indent: u8,
-}
-
-/// Placement and span of a super-header group tier.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SuperHeaderPlacement {
-    /// 0-indexed physical row index.
-    pub row: u32,
-    /// Identifier of the column group.
-    pub group_id: String,
-    /// Display label for the super-header.
-    pub label: String,
-    /// 0-indexed physical starting column index (inclusive).
-    pub start_col: u32,
-    /// 0-indexed physical ending column index (inclusive).
-    pub end_col: u32,
-}
-
-/// Visual section header row inserted before a hierarchical row group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SectionHeaderRow {
-    /// 0-indexed physical row index.
-    pub row: u32,
-    /// Parent table identifier.
-    pub table_id: TableId,
-    /// Row group identifier.
-    pub group_id: String,
-    /// Display label for the section header.
-    pub label: String,
-    /// Excel outline nesting level (1..=7).
-    pub group_level: u8,
-    /// 0-indexed physical column index displaying the descriptor text.
-    pub descriptor_col: u32,
 }
 
 /// Physical bounding box and structural row offsets for a table on a worksheet.
@@ -116,12 +84,10 @@ pub struct TablePlacement {
     pub subtitle_row: Option<u32>,
     /// Physical row index of the blank buffer gutter below title/subtitle if present.
     pub title_gutter_row: Option<u32>,
-    /// Placements of super-header tiers.
-    pub super_header_rows: Vec<SuperHeaderPlacement>,
-    /// Physical row index of the column key header row.
-    pub col_header_row: u32,
-    /// Physical row index range `(start_row, end_row)` of data calculation rows (inclusive).
-    pub data_row_range: (u32, u32),
+    /// Inclusive physical row range of header tiers, or None if the table has zero headers.
+    pub header_row_range: Option<(u32, u32)>,
+    /// Inclusive physical row range of table body rows (data, section headers, gutters): `(start_row, end_row)`.
+    pub body_row_range: (u32, u32),
 }
 
 /// Sheet-level physical layout metrics, widths, heights, and visual rows.
@@ -133,8 +99,6 @@ pub struct SheetLayout {
     pub col_widths: IndexMap<u32, f64>,
     /// Sheet-wide row heights (0-indexed row -> points).
     pub row_heights: IndexMap<u32, f64>,
-    /// Interleaved visual section header rows.
-    pub section_header_rows: Vec<SectionHeaderRow>,
     /// Frozen panes coordinate if configured.
     pub freeze_panes: Option<FreezePanes>,
     /// Gridline display visibility flag.
@@ -233,7 +197,6 @@ impl LayoutPlanner {
 
             let mut row_heights: IndexMap<u32, f64> = IndexMap::new();
             let mut col_widths: IndexMap<u32, f64> = IndexMap::new();
-            let mut section_header_rows: Vec<SectionHeaderRow> = Vec::new();
 
             // Default margins: Row 0 is top gutter, Column 0 is left gutter
             row_heights.insert(0, theme.metrics.gutter_row_height);
@@ -296,153 +259,113 @@ impl LayoutPlanner {
                     None
                 };
 
-                // Super-Header Rows
-                let mut super_header_rows = Vec::new();
-                if !table.column_groups.is_empty() {
-                    let super_row = current_row;
-                    row_heights.insert(super_row, theme.metrics.header_row_height);
-                    current_row += 1;
+                // Multi-tier Column Header Rows
+                let max_header_levels = table
+                    .columns
+                    .iter()
+                    .filter_map(|col| match col {
+                        ColumnSpec::Data(d) => Some(d.headers.len()),
+                        ColumnSpec::Gutter => None,
+                    })
+                    .max()
+                    .unwrap_or(0);
 
-                    for cg in &table.column_groups {
-                        let (Some(first_col_id), Some(last_col_id)) =
-                            (cg.columns.first(), cg.columns.last())
-                        else {
-                            continue;
-                        };
-
-                        let first_idx = table
-                            .columns
-                            .iter()
-                            .position(|c| &c.id == first_col_id)
-                            .unwrap_or(0) as u32;
-                        let last_idx = table
-                            .columns
-                            .iter()
-                            .position(|c| &c.id == last_col_id)
-                            .unwrap_or(0) as u32;
-
-                        super_header_rows.push(SuperHeaderPlacement {
-                            row: super_row,
-                            group_id: cg.id.to_string(),
-                            label: cg.label.clone(),
-                            start_col: start_col + first_idx,
-                            end_col: start_col + last_idx,
-                        });
+                let header_row_range = if max_header_levels > 0 {
+                    let header_start = current_row;
+                    for _ in 0..max_header_levels {
+                        if current_row >= MAX_EXCEL_ROWS {
+                            return Err(LayoutError::GridLimitExceeded {
+                                dimension: "rows",
+                                max: MAX_EXCEL_ROWS,
+                                actual: current_row,
+                            });
+                        }
+                        row_heights.insert(current_row, theme.metrics.header_row_height);
+                        current_row += 1;
                     }
-                }
+                    let header_end = current_row - 1;
+                    Some((header_start, header_end))
+                } else {
+                    None
+                };
 
-                // Column Key Header Row
-                let col_header_row = current_row;
-                row_heights.insert(col_header_row, theme.metrics.header_row_height);
-                current_row += 1;
-
-                // Build row group outline hierarchy and first-descendant lookup
-                let group_info = analyze_row_groups(&table.row_groups, &table.id)?;
-
-                let data_start_row = current_row;
+                let body_start_row = current_row;
 
                 for row_spec in &table.rows {
-                    // Check if one or more section headers must be interleaved before this row
-                    if let Some(groups_starting_here) = group_info.starts_at.get(&row_spec.id) {
-                        for (group_id, group_label, depth) in groups_starting_here {
-                            // Insert an intentional blank gutter row above subsequent top-level section headers
-                            if *depth == 1 && current_row > data_start_row {
-                                let gutter_row = current_row;
-                                if gutter_row >= MAX_EXCEL_ROWS {
-                                    return Err(LayoutError::GridLimitExceeded {
-                                        dimension: "rows",
-                                        max: MAX_EXCEL_ROWS,
-                                        actual: gutter_row,
-                                    });
-                                }
-                                row_heights.insert(gutter_row, theme.metrics.gutter_row_height);
-                                current_row += 1;
-                            }
-
-                            let sec_row = current_row;
-                            if sec_row >= MAX_EXCEL_ROWS {
-                                return Err(LayoutError::GridLimitExceeded {
-                                    dimension: "rows",
-                                    max: MAX_EXCEL_ROWS,
-                                    actual: sec_row,
-                                });
-                            }
-                            row_heights.insert(sec_row, theme.metrics.section_row_height);
-                            section_header_rows.push(SectionHeaderRow {
-                                row: sec_row,
-                                table_id: table.id.clone(),
-                                group_id: group_id.clone(),
-                                label: group_label.clone(),
-                                group_level: *depth as u8,
-                                descriptor_col: start_col,
-                            });
-                            current_row += 1;
-                        }
-                    }
-
-                    // Place the data calculation row
-                    let physical_row = current_row;
-                    if physical_row >= MAX_EXCEL_ROWS {
+                    if current_row >= MAX_EXCEL_ROWS {
                         return Err(LayoutError::GridLimitExceeded {
                             dimension: "rows",
                             max: MAX_EXCEL_ROWS,
-                            actual: physical_row,
+                            actual: current_row,
                         });
                     }
 
-                    row_heights.insert(physical_row, theme.metrics.data_row_height);
+                    match row_spec {
+                        RowSpec::Gutter => {
+                            row_heights.insert(current_row, theme.metrics.gutter_row_height);
+                            current_row += 1;
+                        }
+                        RowSpec::SectionHeader(_) => {
+                            row_heights.insert(current_row, theme.metrics.section_row_height);
+                            current_row += 1;
+                        }
+                        RowSpec::Data(data_row) => {
+                            row_heights.insert(current_row, theme.metrics.data_row_height);
 
-                    let row_depth = group_info
-                        .row_depths
-                        .get(&row_spec.id)
-                        .copied()
-                        .unwrap_or(0);
+                            for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                                let physical_col = start_col + (c_idx as u32);
+                                let ColumnSpec::Data(data_col) = col_spec else {
+                                    continue;
+                                };
 
-                    for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                        let physical_col = start_col + (c_idx as u32);
-                        let cell_id =
-                            CellId::new(table.id.clone(), row_spec.id.clone(), col_spec.id.clone());
-                        let a1 = coordinate_to_a1(physical_col, physical_row)?;
+                                let cell_id = CellId::new(
+                                    table.id.clone(),
+                                    data_row.id.clone(),
+                                    data_col.id.clone(),
+                                );
+                                let a1 = coordinate_to_a1(physical_col, current_row)?;
 
-                        let style_role = if let Some(node) = grid.get(&cell_id) {
-                            StyleRole {
-                                horizontal: node.horizontal,
-                                vertical: node.vertical,
-                                is_highlight: node.is_highlight,
+                                let style_role = if let Some(node) = grid.get(&cell_id) {
+                                    StyleRole {
+                                        horizontal: node.horizontal,
+                                        vertical: node.vertical,
+                                        is_highlight: node.is_highlight,
+                                    }
+                                } else {
+                                    StyleRole {
+                                        horizontal: data_row.style.unwrap_or(SemanticStyle::Data),
+                                        vertical: data_col.style.unwrap_or(SemanticStyle::Data),
+                                        is_highlight: data_row.highlight.unwrap_or(false)
+                                            || data_col.highlight.unwrap_or(false),
+                                    }
+                                };
+
+                                let indent = if data_col.role.is_primary_descriptor() {
+                                    data_row.indent.unwrap_or(0)
+                                } else {
+                                    0
+                                };
+
+                                layout_cells.insert(
+                                    cell_id,
+                                    PhysicalCoordinate {
+                                        sheet: sheet_id.clone(),
+                                        col: physical_col,
+                                        row: current_row,
+                                        a1,
+                                        style_role,
+                                        indent,
+                                    },
+                                );
                             }
-                        } else {
-                            StyleRole {
-                                horizontal: row_spec.style.unwrap_or(SemanticStyle::Data),
-                                vertical: col_spec.style.unwrap_or(SemanticStyle::Data),
-                                is_highlight: row_spec.highlight.unwrap_or(false)
-                                    || col_spec.highlight.unwrap_or(false),
-                            }
-                        };
 
-                        let indent = if col_spec.role.is_descriptor() {
-                            row_depth
-                        } else {
-                            0
-                        };
-
-                        layout_cells.insert(
-                            cell_id,
-                            PhysicalCoordinate {
-                                sheet: sheet_id.clone(),
-                                col: physical_col,
-                                row: physical_row,
-                                a1,
-                                style_role,
-                                indent,
-                            },
-                        );
+                            current_row += 1;
+                        }
                     }
-
-                    current_row += 1;
                 }
 
-                let data_end_row = current_row.saturating_sub(1);
-                let table_end_row = data_end_row;
+                let body_end_row = current_row.saturating_sub(1);
+                let table_end_row = body_end_row;
 
                 layout_tables.insert(
                     table.id.clone(),
@@ -455,9 +378,8 @@ impl LayoutPlanner {
                         title_row,
                         subtitle_row,
                         title_gutter_row,
-                        super_header_rows,
-                        col_header_row,
-                        data_row_range: (data_start_row, data_end_row),
+                        header_row_range,
+                        body_row_range: (body_start_row, body_end_row),
                     },
                 );
             }
@@ -469,7 +391,6 @@ impl LayoutPlanner {
                 layout_cells: &layout_cells,
                 theme,
                 evaluated,
-                section_headers: &section_header_rows,
             }
             .arbitrate(start_col, &mut col_widths);
 
@@ -479,7 +400,6 @@ impl LayoutPlanner {
                     sheet: sheet_id,
                     col_widths,
                     row_heights,
-                    section_header_rows,
                     freeze_panes: sheet_spec.freeze_panes,
                     show_gridlines: sheet_spec.show_gridlines,
                     tab_color: sheet_spec.tab_color.clone(),
@@ -495,84 +415,6 @@ impl LayoutPlanner {
     }
 }
 
-/// Analysis metadata for row groups.
-struct RowGroupAnalysis {
-    /// Maps each RowId that starts one or more groups to `Vec<(group_id, label, depth)>` in ascending depth order.
-    starts_at: IndexMap<RowId, Vec<(String, String, usize)>>,
-    /// Maps each member RowId to its group hierarchy nesting depth (1..=7).
-    row_depths: IndexMap<RowId, u8>,
-}
-
-/// Recursively analyzes hierarchical row groups, checking depth limits and determining section header insertion points.
-fn analyze_row_groups(
-    groups: &[RowGroup],
-    table_id: &TableId,
-) -> Result<RowGroupAnalysis, LayoutError> {
-    let mut starts_at: IndexMap<RowId, Vec<(String, String, usize)>> = IndexMap::new();
-    let mut row_depths: IndexMap<RowId, u8> = IndexMap::new();
-
-    for group in groups {
-        analyze_group_recursive(group, 1, table_id, &mut starts_at, &mut row_depths)?;
-    }
-
-    for list in starts_at.values_mut() {
-        list.sort_by_key(|(_, _, depth)| *depth);
-    }
-
-    Ok(RowGroupAnalysis {
-        starts_at,
-        row_depths,
-    })
-}
-
-fn analyze_group_recursive(
-    group: &RowGroup,
-    depth: usize,
-    table_id: &TableId,
-    starts_at: &mut IndexMap<RowId, Vec<(String, String, usize)>>,
-    row_depths: &mut IndexMap<RowId, u8>,
-) -> Result<RowId, LayoutError> {
-    if depth > MAX_OUTLINE_LEVEL {
-        return Err(LayoutError::OutlineDepthExceeded {
-            table: table_id.clone(),
-            group: group.id.to_string(),
-            depth,
-        });
-    }
-
-    let mut first_row: Option<RowId> = None;
-
-    for child in &group.children {
-        match child {
-            RowGroupChild::Row(r_id) => {
-                row_depths.insert(r_id.clone(), depth as u8);
-                if first_row.is_none() {
-                    first_row = Some(r_id.clone());
-                }
-            }
-            RowGroupChild::Group(sub_group) => {
-                let sub_first =
-                    analyze_group_recursive(sub_group, depth + 1, table_id, starts_at, row_depths)?;
-                if first_row.is_none() {
-                    first_row = Some(sub_first);
-                }
-            }
-        }
-    }
-
-    if let Some(first) = first_row {
-        starts_at.entry(first.clone()).or_default().push((
-            group.id.to_string(),
-            group.label.clone(),
-            depth,
-        ));
-        Ok(first)
-    } else {
-        // Empty group, shouldn't occur after validation
-        Ok(RowId::from(""))
-    }
-}
-
 /// Context and read-only inputs for arbitrating sheet-wide column widths across stacked tables.
 struct ColumnArbitrationContext<'a> {
     tables: &'a [&'a TableSpec],
@@ -580,13 +422,11 @@ struct ColumnArbitrationContext<'a> {
     layout_cells: &'a IndexMap<CellId, PhysicalCoordinate>,
     theme: &'a Theme,
     evaluated: Option<&'a EvaluatedModel>,
-    section_headers: &'a [SectionHeaderRow],
 }
 
 impl ColumnArbitrationContext<'_> {
     /// Arbitrates sheet-wide column widths across all stacked tables sharing worksheet columns.
     fn arbitrate(&self, start_col: u32, col_widths: &mut IndexMap<u32, f64>) {
-        // Find maximum column index used across all tables on this sheet
         let max_col_count = self
             .tables
             .iter()
@@ -596,40 +436,47 @@ impl ColumnArbitrationContext<'_> {
 
         for col_offset in 0..max_col_count {
             let physical_col = start_col + col_offset;
+
+            // Check if every table occupying this column is a Gutter column
+            let all_gutter = self
+                .tables
+                .iter()
+                .all(|t| match t.columns.get(col_offset as usize) {
+                    Some(ColumnSpec::Gutter) | None => true,
+                    Some(ColumnSpec::Data(_)) => false,
+                });
+
+            if all_gutter {
+                col_widths.insert(physical_col, self.theme.metrics.gutter_col_width);
+                continue;
+            }
+
             let mut max_chars_across_tables: usize = 0;
 
             for table in self.tables {
-                if (col_offset as usize) >= table.columns.len() {
+                let Some(col_spec) = table.columns.get(col_offset as usize) else {
                     continue;
-                }
+                };
+                let ColumnSpec::Data(data_col) = col_spec else {
+                    continue;
+                };
 
-                let col_spec = &table.columns[col_offset as usize];
                 let mut table_max_chars: usize = 0;
 
-                // 1. Column header text length
-                let header_len = col_spec
-                    .label
-                    .as_deref()
-                    .unwrap_or(col_spec.id.as_str())
-                    .chars()
-                    .count();
+                // 1. Column header text length (bottom tier only)
+                let header_len = data_col
+                    .bottom_header()
+                    .map(|s| s.chars().count())
+                    .unwrap_or(0);
                 table_max_chars = table_max_chars.max(header_len);
 
-                // 2. Section headers in descriptor column (col_offset == 0)
-                if col_offset == 0 {
-                    for sh in self.section_headers {
-                        if sh.table_id == table.id {
-                            let sec_len =
-                                sh.label.chars().count() + ((sh.group_level as usize) * 2);
-                            table_max_chars = table_max_chars.max(sec_len);
-                        }
-                    }
-                }
-
-                // 3. Row cells text length
+                // 2. Row cells text length
                 for row in &table.rows {
+                    let RowSpec::Data(data_row) = row else {
+                        continue;
+                    };
                     let cell_id =
-                        CellId::new(table.id.clone(), row.id.clone(), col_spec.id.clone());
+                        CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
                     let cell_node = self.grid.get(&cell_id);
                     let format = cell_node.and_then(|n| n.format);
 

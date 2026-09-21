@@ -7,10 +7,10 @@ use finx::compiler::ir::{
 };
 use finx::expr::ast::Expr;
 use finx::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
-use finx::model::id::{ColGroupId, ColId, RowId, SheetId, TableId};
+use finx::model::id::{ColId, RowId, SheetId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{
-    CellInput, ColumnGroup, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
 };
 use indexmap::IndexMap;
 
@@ -22,8 +22,6 @@ fn create_simple_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> Tab
         currency: None,
         collapsible: false,
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
-        column_groups: vec![],
-        row_groups: vec![],
         rows,
     }
 }
@@ -330,28 +328,22 @@ fn test_scenario_7_reject_table_not_in_symbol_table() {
 }
 
 #[test]
-fn test_expand_column_group_with_vector_rules() {
-    let mut table = create_simple_table(
-        "BalanceSheet",
-        &["2021A", "2022A", "2023A", "2024E", "2025E"],
-        vec![],
-    );
-    table.column_groups = vec![
-        ColumnGroup {
-            id: ColGroupId::from("historical"),
-            label: "Historical".to_string(),
-            columns: vec![
-                ColId::from("2021A"),
-                ColId::from("2022A"),
-                ColId::from("2023A"),
-            ],
-        },
-        ColumnGroup {
-            id: ColGroupId::from("forecast"),
-            label: "Forecast".to_string(),
-            columns: vec![ColId::from("2024E"), ColId::from("2025E")],
-        },
-    ];
+fn test_expand_multi_tier_column_with_vector_rules() {
+    let mut table = TableSpec {
+        id: TableId::from("BalanceSheet"),
+        title: "Balance Sheet".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![
+            ColumnSpec::new("2021A").with_headers(["Historical", "2021A"]),
+            ColumnSpec::new("2022A").with_headers(["Historical", "2022A"]),
+            ColumnSpec::new("2023A").with_headers(["Historical", "2023A"]),
+            ColumnSpec::new("2024E").with_headers(["Forecast", "2024E"]),
+            ColumnSpec::new("2025E").with_headers(["Forecast", "2025E"]),
+        ],
+        rows: vec![],
+    };
 
     let mut cells = IndexMap::new();
     cells.insert("2021A".into(), CellInput::number(50.0));
@@ -478,12 +470,10 @@ fn test_expand_grid_multi_table() {
 
 #[test]
 fn test_expand_column_vector_formula_broadcasts_downward() {
-    let mut actual_col = ColumnSpec::new("actual");
-    actual_col.format = Some(FormatPreset::Currency);
-
-    let mut forecast_col = ColumnSpec::new("forecast");
-    forecast_col.format = Some(FormatPreset::Currency);
-    forecast_col.expr = Some("IncomeStatement[\"revenue\", \"actual\"] * 1.1".to_string());
+    let actual_col = ColumnSpec::new("actual").with_format(Some(FormatPreset::Currency));
+    let forecast_col = ColumnSpec::new("forecast")
+        .with_format(Some(FormatPreset::Currency))
+        .with_expr("IncomeStatement[\"revenue\", \"actual\"] * 1.1");
 
     let mut rev_cells = IndexMap::new();
     rev_cells.insert("actual".into(), CellInput::number(100.0));
@@ -503,8 +493,6 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
         currency: None,
         collapsible: false,
         columns: vec![actual_col, forecast_col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("revenue").with_cells(rev_cells),
             RowSpec::new("cogs").with_cells(cogs_cells),
@@ -546,10 +534,14 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
     );
     assert!(cells[3].payload.is_formula());
 
-    // Opex: actual is literal, forecast has 0D cell override literal (35.0)
+    // Opex: actual is literal, forecast is point literal override
     assert_eq!(
         cells[4].id,
         CellId::new("IncomeStatement", "opex", "actual")
+    );
+    assert_eq!(
+        cells[4].payload,
+        CellPayload::Literal(ValueLiteral::Number(30.0))
     );
     assert_eq!(
         cells[5].id,
@@ -562,24 +554,19 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
 }
 
 #[test]
-fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
-    let mut col1 = ColumnSpec::new("c1");
-    col1.expr = Some("10".to_string());
+fn test_descriptor_column_isolates_formulas_and_enforces_assignment() {
+    let desc_col = ColumnSpec::descriptor("desc", "Description");
+    let col1 = ColumnSpec::new("c1");
 
-    let mut col2 = ColumnSpec::new("c2");
-    col2.expr = Some("20".to_string());
-
-    // Unassigned descriptor row halts with UnassignedCell
+    // Unassigned descriptor column halts with UnassignedCell even if row has expr
     let unassigned_table = TableSpec {
         id: TableId::from("T_Unassigned"),
         title: "Test".to_string(),
         subtitle: None,
         currency: None,
         collapsible: false,
-        columns: vec![col1.clone(), col2.clone()],
-        column_groups: vec![],
-        row_groups: vec![],
-        rows: vec![RowSpec::descriptor("header")],
+        columns: vec![desc_col.clone(), col1.clone()],
+        rows: vec![RowSpec::new("r1").with_expr("100")],
     };
 
     let mut symbols = SymbolTable::new();
@@ -591,13 +578,12 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
     assert!(matches!(
         err,
         IrError::UnassignedCell { table, row, column }
-            if table.as_str() == "T_Unassigned" && row.as_str() == "header" && column.as_str() == "c1"
+            if table.as_str() == "T_Unassigned" && row.as_str() == "r1" && column.as_str() == "desc"
     ));
 
-    // Assigned descriptor row emits literals and isolates column formulas
-    let mut header_cells = IndexMap::new();
-    header_cells.insert("c1".into(), CellInput::string("Header 1"));
-    header_cells.insert("c2".into(), CellInput::string("Header 2"));
+    // Assigned descriptor column emits literal and isolates row formula
+    let mut r1_cells = IndexMap::new();
+    r1_cells.insert("desc".into(), CellInput::string("Revenue Label"));
 
     let assigned_table = TableSpec {
         id: TableId::from("T_Assigned"),
@@ -605,13 +591,8 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
         subtitle: None,
         currency: None,
         collapsible: false,
-        columns: vec![col1, col2],
-        column_groups: vec![],
-        row_groups: vec![],
-        rows: vec![
-            RowSpec::descriptor("header").with_cells(header_cells),
-            RowSpec::new("data"),
-        ],
+        columns: vec![desc_col, col1],
+        rows: vec![RowSpec::new("r1").with_expr("100").with_cells(r1_cells)],
     };
 
     let mut symbols2 = SymbolTable::new();
@@ -620,27 +601,21 @@ fn test_descriptor_row_isolates_formulas_and_enforces_assignment() {
         .unwrap();
 
     let cells = expand_table(&symbols2, &assigned_table).unwrap();
-    assert_eq!(cells.len(), 4);
+    assert_eq!(cells.len(), 2);
 
-    // Header cells are string literals
+    // Descriptor cell is string literal
     assert_eq!(
         cells[0].payload,
-        CellPayload::Literal(ValueLiteral::String("Header 1".to_string()))
-    );
-    assert_eq!(
-        cells[1].payload,
-        CellPayload::Literal(ValueLiteral::String("Header 2".to_string()))
+        CellPayload::Literal(ValueLiteral::String("Revenue Label".to_string()))
     );
 
-    // Measure row receives column formula broadcasts
-    assert!(cells[2].payload.is_formula());
-    assert!(cells[3].payload.is_formula());
+    // Measure cell receives row formula broadcast
+    assert!(cells[1].payload.is_formula());
 }
 
 #[test]
 fn test_column_formula_parse_error_diagnostic() {
-    let mut bad_col = ColumnSpec::new("bad_col");
-    bad_col.expr = Some("1 + * 2".to_string());
+    let bad_col = ColumnSpec::new("bad_col").with_expr("1 + * 2");
 
     let table = TableSpec {
         id: TableId::from("BadColTable"),
@@ -649,8 +624,6 @@ fn test_column_formula_parse_error_diagnostic() {
         currency: None,
         collapsible: false,
         columns: vec![bad_col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![RowSpec::new("r1")],
     };
 
@@ -677,26 +650,24 @@ fn test_column_formula_parse_error_diagnostic() {
 }
 
 #[test]
-fn test_dual_descriptor_format_fallback() {
-    let mut desc_col = ColumnSpec::descriptor("d_col", "Desc Col");
-    desc_col.format = None;
+fn test_descriptor_column_format_isolation() {
+    let desc_col = ColumnSpec::descriptor("d_col", "Desc Col");
+    let mut row_cells = IndexMap::new();
+    row_cells.insert("d_col".into(), CellInput::string("Label"));
 
-    let mut desc_row = RowSpec::descriptor("d_row");
-    desc_row.format = Some(FormatPreset::Text);
-    desc_row
-        .cells
-        .insert("d_col".into(), CellInput::string("Label"));
+    let row = RowSpec::new("r1")
+        .with_format(Some(FormatPreset::Currency))
+        .with_decimals(Some(2))
+        .with_cells(row_cells);
 
     let table = TableSpec {
         id: TableId::from("DualDesc"),
-        title: "Dual Descriptor Table".to_string(),
+        title: "Descriptor Isolation Table".to_string(),
         subtitle: None,
         currency: None,
         collapsible: false,
         columns: vec![desc_col],
-        column_groups: vec![],
-        row_groups: vec![],
-        rows: vec![desc_row],
+        rows: vec![row],
     };
 
     let mut symbols = SymbolTable::new();
@@ -706,7 +677,9 @@ fn test_dual_descriptor_format_fallback() {
 
     let cells = expand_table(&symbols, &table).unwrap();
     assert_eq!(cells.len(), 1);
-    assert_eq!(cells[0].format, Some(FormatPreset::Text));
+    // Descriptor column must NOT inherit row's Currency format or decimals
+    assert_eq!(cells[0].format, None);
+    assert_eq!(cells[0].decimals, None);
 }
 
 #[test]
@@ -723,8 +696,6 @@ fn test_scenario_1_symmetrical_2d_border_composition_at_matrix_intersection() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -771,8 +742,6 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -820,8 +789,6 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -847,8 +814,6 @@ fn test_scenario_4_measure_vector_precision_conflict_rejected() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -906,8 +871,6 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -938,8 +901,6 @@ fn test_scenario_7_highlight_inheritance_from_row_or_column() {
         currency: None,
         collapsible: false,
         columns: vec![col_highlight, col_normal],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row_hi, row_norm],
     };
 
@@ -989,8 +950,6 @@ fn test_scenario_1_point_currency_override_wins_over_vectors_and_table() {
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1021,8 +980,6 @@ fn test_scenario_2_vector_currency_wins_over_table_default() {
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1054,8 +1011,6 @@ fn test_scenario_3_measure_vector_currency_conflict_rejected() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1093,8 +1048,6 @@ fn test_scenario_4_harmonious_measure_vector_currencies_accepted() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1123,8 +1076,6 @@ fn test_scenario_5_table_default_applies_when_vectors_omit_currency() {
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1153,8 +1104,6 @@ fn test_scenario_6_fallback_to_usd_when_omitted_across_all_tiers() {
         currency: None,
         collapsible: false,
         columns: vec![col],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1184,8 +1133,6 @@ fn test_scenario_7_non_currency_format_presets_resolve_none() {
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         columns: vec![col_num, col_pct, col_date, col_txt],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![row],
     };
 
@@ -1210,8 +1157,6 @@ fn test_scenario_10_descriptor_axis_isolation_suppresses_currency_and_conflicts(
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::descriptor("desc", "Description")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("r1")
                 .with_format(Some(FormatPreset::Currency))

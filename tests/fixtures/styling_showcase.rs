@@ -7,13 +7,15 @@
 use std::path::PathBuf;
 
 use finx::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
-use finx::model::id::{RowGroupId, RowId, TableId};
+use finx::model::id::TableId;
 use finx::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use finx::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, RowGroup, RowGroupChild, TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, TableSpec, ValueLiteral,
 };
 
-use super::{RowBuilder, build_column_group, build_descriptor_col, build_measure_col_label};
+use super::{
+    RowBuilder, build_descriptor_col, build_measure_col_label, build_primary_descriptor_col,
+};
 
 /// Builds the complete styling and formatting showcase workbook model.
 ///
@@ -27,35 +29,20 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 1: Institutional Accounting Borders & Semantic Styles
     // =========================================================================
     let t1_cols = vec![
-        build_descriptor_col("line_item", "Financial Metric / Line Item"),
-        build_measure_col_label("actual", "2025A Actual"),
-        build_measure_col_label("budget", "2026B Budget"),
-        build_measure_col_label("variance", "Variance ($)"),
+        build_primary_descriptor_col("line_item", "Financial Metric / Line Item"),
+        ColumnSpec::new("actual").with_headers(["Operating Performance", "2025A Actual"]),
+        ColumnSpec::new("budget").with_headers(["Operating Performance", "2026B Budget"]),
+        ColumnSpec::new("variance").with_headers(["Operating Performance", "Variance ($)"]),
         ColumnSpec::new("division_total")
+            .with_headers(["Consolidated Summary", "Division Total"])
             .with_style(Some(SemanticStyle::Subtotal))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
         ColumnSpec::new("consolidated_total")
+            .with_headers(["Consolidated Summary", "Consolidated Total"])
             .with_style(Some(SemanticStyle::Total))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
-    ];
-
-    let mut t1_cols = t1_cols;
-    t1_cols[4].label = Some("Division Total".to_string());
-    t1_cols[5].label = Some("Consolidated Total".to_string());
-
-    let t1_col_groups = vec![
-        build_column_group(
-            "operating_perf",
-            "Operating Performance",
-            &["actual", "budget", "variance"],
-        ),
-        build_column_group(
-            "reporting_summary",
-            "Consolidated Summary",
-            &["division_total", "consolidated_total"],
-        ),
     ];
 
     let t1_rows = vec![
@@ -215,8 +202,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
         columns: t1_cols,
-        column_groups: t1_col_groups,
-        row_groups: vec![],
         rows: t1_rows,
     };
 
@@ -224,69 +209,24 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 2: Hierarchical Sections & Collapsible Outlines
     // =========================================================================
     let t2_cols = vec![
-        build_descriptor_col("line_item", "Division / Department"),
-        build_measure_col_label("q1_act", "Q1 Actual"),
-        build_measure_col_label("q2_act", "Q2 Actual"),
-        build_measure_col_label("q3_act", "Q3 Actual"),
-        build_measure_col_label("q4_act", "Q4 Actual"),
+        build_primary_descriptor_col("line_item", "Division / Department"),
+        ColumnSpec::new("q1_act").with_headers(["Quarterly Performance", "Q1 Actual"]),
+        ColumnSpec::new("q2_act").with_headers(["Quarterly Performance", "Q2 Actual"]),
+        ColumnSpec::new("q3_act").with_headers(["Quarterly Performance", "Q3 Actual"]),
+        ColumnSpec::new("q4_act").with_headers(["Quarterly Performance", "Q4 Actual"]),
         ColumnSpec::new("fy_sum")
+            .with_headers(["Annual Reporting", "Full Year Total"])
             .with_style(Some(SemanticStyle::Total))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
     ];
-    let mut t2_cols = t2_cols;
-    t2_cols[5].label = Some("Full Year Total".to_string());
-
-    let t2_col_groups = vec![
-        build_column_group(
-            "quarterly",
-            "Quarterly Performance",
-            &["q1_act", "q2_act", "q3_act", "q4_act"],
-        ),
-        build_column_group("annual", "Annual Reporting", &["fy_sum"]),
-    ];
-
-    let t2_row_groups = vec![
-        RowGroup {
-            id: RowGroupId::from("commercial_ops"),
-            label: "Commercial Operations".to_string(),
-            children: vec![
-                RowGroupChild::Group(RowGroup {
-                    id: RowGroupId::from("na_division"),
-                    label: "North America Division".to_string(),
-                    children: vec![
-                        RowGroupChild::Row(RowId::from("na_direct")),
-                        RowGroupChild::Row(RowId::from("na_partners")),
-                        RowGroupChild::Row(RowId::from("na_subtotal")),
-                    ],
-                }),
-                RowGroupChild::Group(RowGroup {
-                    id: RowGroupId::from("intl_division"),
-                    label: "International Operations".to_string(),
-                    children: vec![
-                        RowGroupChild::Row(RowId::from("intl_emea")),
-                        RowGroupChild::Row(RowId::from("intl_apac")),
-                        RowGroupChild::Row(RowId::from("intl_subtotal")),
-                    ],
-                }),
-                RowGroupChild::Row(RowId::from("commercial_total")),
-            ],
-        },
-        RowGroup {
-            id: RowGroupId::from("operating_expenses"),
-            label: "Operating Expenses & Overhead".to_string(),
-            children: vec![
-                RowGroupChild::Row(RowId::from("opex_rnd")),
-                RowGroupChild::Row(RowId::from("opex_sales")),
-                RowGroupChild::Row(RowId::from("opex_admin")),
-                RowGroupChild::Row(RowId::from("opex_total")),
-            ],
-        },
-    ];
 
     let t2_rows = vec![
+        RowSpec::section_header("Commercial Operations"),
+        RowSpec::section_header("North America Division").with_indent(Some(1)),
         // North America Division
         RowBuilder::line_item("na_direct", "Direct Enterprise Accounts")
+            .indent(2)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 150_000.0)
@@ -299,6 +239,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
             )
             .build(),
         RowBuilder::line_item("na_partners", "Solution Partner Network")
+            .indent(2)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 50_000.0)
@@ -311,6 +252,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
             )
             .build(),
         RowBuilder::line_item("na_subtotal", "North America Subtotal")
+            .indent(1)
             .style(SemanticStyle::Subtotal)
             .format(FormatPreset::Currency)
             .decimals(0)
@@ -335,8 +277,10 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"na_subtotal\", \"q1_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q2_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q3_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q4_act\"]",
             )
             .build(),
+        RowSpec::section_header("International Operations").with_indent(Some(1)),
         // International Operations
         RowBuilder::line_item("intl_emea", "EMEA Corporate Accounts")
+            .indent(2)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 80_000.0)
@@ -349,6 +293,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
             )
             .build(),
         RowBuilder::line_item("intl_apac", "APAC Regional Growth")
+            .indent(2)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 40_000.0)
@@ -361,6 +306,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
             )
             .build(),
         RowBuilder::line_item("intl_subtotal", "International Subtotal")
+            .indent(1)
             .style(SemanticStyle::Subtotal)
             .format(FormatPreset::Currency)
             .decimals(0)
@@ -410,8 +356,10 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"commercial_total\", \"q1_act\"] + Hierarchical_Outlines[\"commercial_total\", \"q2_act\"] + Hierarchical_Outlines[\"commercial_total\", \"q3_act\"] + Hierarchical_Outlines[\"commercial_total\", \"q4_act\"]",
             )
             .build(),
+        RowSpec::section_header("Operating Expenses & Overhead"),
         // Operating Expenses
         RowBuilder::line_item("opex_rnd", "Product Engineering & R&D")
+            .indent(1)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 45_000.0)
@@ -424,6 +372,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
             )
             .build(),
         RowBuilder::line_item("opex_sales", "Sales Operations & Marketing")
+            .indent(1)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 30_000.0)
@@ -436,6 +385,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
             )
             .build(),
         RowBuilder::line_item("opex_admin", "General Administrative & Legal")
+            .indent(1)
             .format(FormatPreset::Currency)
             .decimals(0)
             .cell_num("q1_act", 15_000.0)
@@ -483,8 +433,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
         columns: t2_cols,
-        column_groups: t2_col_groups,
-        row_groups: t2_row_groups,
         rows: t2_rows,
     };
 
@@ -492,7 +440,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 3: Number Format Presets & Precision Matrix
     // =========================================================================
     let t3_cols = vec![
-        build_descriptor_col("line_item", "Format Preset & Precision Tier"),
+        build_primary_descriptor_col("line_item", "Format Preset & Precision Tier"),
         build_measure_col_label("pos_val", "Positive Value"),
         build_measure_col_label("neg_val", "Negative (Parens)"),
         build_measure_col_label("zero_val", "Zero Balance (Dash)"),
@@ -668,8 +616,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: t3_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: t3_rows,
     };
 
@@ -677,7 +623,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 4: Multi-Currency Global Denominations
     // =========================================================================
     let t4_cols = vec![
-        build_descriptor_col("line_item", "Currency Code & Regional Entity"),
+        build_primary_descriptor_col("line_item", "Currency Code & Regional Entity"),
         build_descriptor_col("symbol_type", "Symbol Code & Quoting"),
         build_measure_col_label("pos_val", "Positive Balance"),
         build_measure_col_label("neg_val", "Deficit Balance (Parens)"),
@@ -799,7 +745,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         row = row.cell_str("symbol_type", sym_type);
 
         // Custom currency per row
-        row.spec.currency = Some(code);
+        row = row.currency(code);
         row = row.cell_num("pos_val", amount);
         row = row.cell_num("neg_val", -amount);
         row = row.cell_num("zero_val", 0.0);
@@ -815,8 +761,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: t4_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: t4_rows,
     };
 
@@ -824,7 +768,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 5: Cell Payloads, Typographic Styles & Audit Annotations
     // =========================================================================
     let t5_cols = vec![
-        build_descriptor_col("line_item", "Feature / Presentation Rule"),
+        build_primary_descriptor_col("line_item", "Feature / Presentation Rule"),
         build_measure_col_label("sample_val", "Sample Value"),
         build_descriptor_col("eval_type", "AST Payload Type"),
         build_descriptor_col("style_rule", "Applied Color & Format Rule"),
@@ -928,8 +872,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: None,
         collapsible: false,
         columns: t5_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: t5_rows,
     };
 
@@ -937,17 +879,17 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // Table 6: Freeze Panes & Operational Matrix (Sheet 2)
     // =========================================================================
     let t6_cols = vec![
-        build_descriptor_col("line_item", "Operating Metric / Month"),
+        build_primary_descriptor_col("line_item", "Operating Metric / Month"),
         build_measure_col_label("m01", "Month 01"),
         build_measure_col_label("m02", "Month 02"),
         build_measure_col_label("m03", "Month 03"),
         build_measure_col_label("m04", "Month 04"),
         build_measure_col_label("m05", "Month 05"),
         build_measure_col_label("m06", "Month 06"),
-        ColumnSpec::new("h1_total").with_style(Some(SemanticStyle::Total)),
+        ColumnSpec::new("h1_total")
+            .with_header("H1 Total")
+            .with_style(Some(SemanticStyle::Total)),
     ];
-    let mut t6_cols = t6_cols;
-    t6_cols[7].label = Some("H1 Total".to_string());
 
     let t6_rows = vec![
         RowBuilder::line_item("subscribers", "Active Subscriber Base (k)")
@@ -1031,8 +973,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
         columns: t6_cols,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: t6_rows,
     };
 

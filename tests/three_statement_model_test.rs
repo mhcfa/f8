@@ -150,8 +150,6 @@ fn test_compiler_facade_error_propagation() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("c1")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("r1").with_expr("CyclicTable[\"r2\", @col]"),
             RowSpec::new("r2").with_expr("CyclicTable[\"r1\", @col]"),
@@ -185,8 +183,6 @@ fn test_compiler_facade_error_propagation() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("c1")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("r1").with_cells({
                 let mut cells = IndexMap::new();

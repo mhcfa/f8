@@ -1,18 +1,17 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::path::PathBuf;
+
 use finx::compiler::layout::{
-    LayoutError, LayoutPlanner, MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, SuperHeaderPlacement,
-    col_to_excel_col, coordinate_to_a1,
+    LayoutError, LayoutPlanner, MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, col_to_excel_col,
+    coordinate_to_a1,
 };
 use finx::compiler::{Compiler, ir};
 use finx::model::format::SemanticStyle;
-use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
+use finx::model::id::{ColId, SheetId, TableId};
 use finx::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
-use finx::model::table::{
-    CellInput, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec,
-};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use finx::model::theme::Theme;
-use std::path::PathBuf;
 
 fn create_test_theme() -> Theme {
     Theme::corporate_navy()
@@ -20,13 +19,17 @@ fn create_test_theme() -> Theme {
 
 fn populate_table_cells(table: &mut TableSpec) {
     for row in &mut table.rows {
-        for col in &table.columns {
-            if !row.cells.contains_key(&col.id) {
-                if col.role.is_descriptor() {
-                    row.cells
-                        .insert(col.id.clone(), CellInput::string(row.id.as_str()));
-                } else {
-                    row.cells.insert(col.id.clone(), CellInput::number(100.0));
+        if let RowSpec::Data(d) = row {
+            for col in &table.columns {
+                if let ColumnSpec::Data(c) = col
+                    && !d.cells.contains_key(&c.id)
+                {
+                    if c.role.is_descriptor() {
+                        d.cells
+                            .insert(c.id.clone(), CellInput::string(d.id.as_str()));
+                    } else {
+                        d.cells.insert(c.id.clone(), CellInput::number(100.0));
+                    }
                 }
             }
         }
@@ -36,7 +39,9 @@ fn populate_table_cells(table: &mut TableSpec) {
 #[test]
 fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
     let mut table = TableSpec::new("SimpleTable", "");
-    table.columns.push(ColumnSpec::new("col_1"));
+    table
+        .columns
+        .push(ColumnSpec::new("col_1").with_header("Col 1"));
     table.rows.push(RowSpec::new("row_1"));
     populate_table_cells(&mut table);
 
@@ -71,7 +76,7 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
     let cell_id = finx::compiler::ir::id::CellId::new("SimpleTable", "row_1", "col_1");
     let cell_coord = layout.get_cell(&cell_id).unwrap();
 
-    // Table has no title banner, but has col_header_row at row 1, data row at row 2
+    // Table has no title banner, but has header_row at row 1, data row at row 2
     assert_eq!(cell_coord.col, 1);
     assert_eq!(cell_coord.row, 2);
     assert_eq!(cell_coord.a1, "B3");
@@ -84,8 +89,12 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table.columns.push(ColumnSpec::new("2023A"));
-    table.columns.push(ColumnSpec::new("2024E"));
+    table
+        .columns
+        .push(ColumnSpec::new("2023A").with_header("2023A"));
+    table
+        .columns
+        .push(ColumnSpec::new("2024E").with_header("2024E"));
 
     table.rows.push(RowSpec::new("revenue"));
     table.rows.push(RowSpec::new("cogs"));
@@ -116,9 +125,9 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
     // Row 3: Title gutter
     assert_eq!(placement.title_gutter_row, Some(3));
     // Row 4: Column header
-    assert_eq!(placement.col_header_row, 4);
+    assert_eq!(placement.header_row_range, Some((4, 4)));
     // Data rows: Rows 5 and 6
-    assert_eq!(placement.data_row_range, (5, 6));
+    assert_eq!(placement.body_row_range, (5, 6));
 
     let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
     assert_eq!(
@@ -176,27 +185,21 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table.columns.push(ColumnSpec::new("2021A"));
-    table.columns.push(ColumnSpec::new("2022A"));
-    table.columns.push(ColumnSpec::new("2023A"));
-    table.columns.push(ColumnSpec::new("2024E"));
-    table.columns.push(ColumnSpec::new("2025E"));
-
-    table.column_groups.push(ColumnGroup {
-        id: ColGroupId::from("historical"),
-        label: "Historical Periods".to_string(),
-        columns: vec![
-            ColId::from("2021A"),
-            ColId::from("2022A"),
-            ColId::from("2023A"),
-        ],
-    });
-
-    table.column_groups.push(ColumnGroup {
-        id: ColGroupId::from("forecast"),
-        label: "Forecast Periods".to_string(),
-        columns: vec![ColId::from("2024E"), ColId::from("2025E")],
-    });
+    table
+        .columns
+        .push(ColumnSpec::new("2021A").with_headers(["Historical Periods", "2021A"]));
+    table
+        .columns
+        .push(ColumnSpec::new("2022A").with_headers(["Historical Periods", "2022A"]));
+    table
+        .columns
+        .push(ColumnSpec::new("2023A").with_headers(["Historical Periods", "2023A"]));
+    table
+        .columns
+        .push(ColumnSpec::new("2024E").with_headers(["Forecast Periods", "2024E"]));
+    table
+        .columns
+        .push(ColumnSpec::new("2025E").with_headers(["Forecast Periods", "2025E"]));
 
     table.rows.push(RowSpec::new("metric"));
     populate_table_cells(&mut table);
@@ -223,64 +226,33 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
     assert_eq!(placement.title_row, Some(1));
     // Row 2: Title Gutter
     assert_eq!(placement.title_gutter_row, Some(2));
-    // Row 3: Super-header
-    assert_eq!(placement.super_header_rows.len(), 2);
-    assert_eq!(
-        placement.super_header_rows[0],
-        SuperHeaderPlacement {
-            row: 3,
-            group_id: "historical".to_string(),
-            label: "Historical Periods".to_string(),
-            start_col: 2, // 2021A is at index 1 -> physical col 2
-            end_col: 4,   // 2023A is at index 3 -> physical col 4
-        }
-    );
-    assert_eq!(
-        placement.super_header_rows[1],
-        SuperHeaderPlacement {
-            row: 3,
-            group_id: "forecast".to_string(),
-            label: "Forecast Periods".to_string(),
-            start_col: 5, // 2024E is at index 4 -> physical col 5
-            end_col: 6,   // 2025E is at index 5 -> physical col 6
-        }
-    );
-    // Row 4: Column Header
-    assert_eq!(placement.col_header_row, 4);
+    // Rows 3..4: Multi-tier headers (Tier 0 super-header, Tier 1 metric header)
+    assert_eq!(placement.header_row_range, Some((3, 4)));
     // Row 5: Data Row
-    assert_eq!(placement.data_row_range, (5, 5));
+    assert_eq!(placement.body_row_range, (5, 5));
 }
 
 #[test]
 fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
     let mut table = TableSpec::new("HierarchyTable", "Hierarchy");
-    table.columns.push(ColumnSpec::descriptor("item", "Item"));
-    table.columns.push(ColumnSpec::new("val"));
+    table
+        .columns
+        .push(ColumnSpec::primary_descriptor("item", "Item"));
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
 
+    table
+        .rows
+        .push(RowSpec::section_header("Operating Expenses"));
     table.rows.push(RowSpec::new("r_and_d"));
+    table
+        .rows
+        .push(RowSpec::section_header("Sales & Marketing").with_indent(Some(1)));
     table.rows.push(RowSpec::new("ad_spend"));
     table.rows.push(RowSpec::new("direct_sales"));
     table.rows.push(RowSpec::new("g_and_a"));
     populate_table_cells(&mut table);
-
-    // Opex (depth 1) contains r_and_d, SalesMarketing sub-group, and g_and_a
-    // SalesMarketing (depth 2) contains ad_spend and direct_sales
-    table.row_groups.push(RowGroup {
-        id: RowGroupId::from("opex"),
-        label: "Operating Expenses".to_string(),
-        children: vec![
-            RowGroupChild::Row(RowId::from("r_and_d")),
-            RowGroupChild::Group(RowGroup {
-                id: RowGroupId::from("sales_marketing"),
-                label: "Sales & Marketing".to_string(),
-                children: vec![
-                    RowGroupChild::Row(RowId::from("ad_spend")),
-                    RowGroupChild::Row(RowId::from("direct_sales")),
-                ],
-            }),
-            RowGroupChild::Row(RowId::from("g_and_a")),
-        ],
-    });
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
@@ -299,18 +271,6 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
 
     let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
-    assert_eq!(sheet.section_header_rows.len(), 2);
-
-    // Section 1: opex starts at r_and_d
-    assert_eq!(sheet.section_header_rows[0].group_id, "opex");
-    assert_eq!(sheet.section_header_rows[0].label, "Operating Expenses");
-    assert_eq!(sheet.section_header_rows[0].group_level, 1);
-    assert_eq!(sheet.section_header_rows[0].descriptor_col, 1);
-
-    // Section 2: sales_marketing starts at ad_spend
-    assert_eq!(sheet.section_header_rows[1].group_id, "sales_marketing");
-    assert_eq!(sheet.section_header_rows[1].label, "Sales & Marketing");
-    assert_eq!(sheet.section_header_rows[1].group_level, 2);
 
     // Verify row sequencing:
     // Row 1: Title
@@ -322,8 +282,14 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
     // Row 7: Data Row "ad_spend"
     // Row 8: Data Row "direct_sales"
     // Row 9: Data Row "g_and_a"
-    assert_eq!(sheet.section_header_rows[0].row, 4);
-    assert_eq!(sheet.section_header_rows[1].row, 6);
+    assert_eq!(
+        sheet.row_heights.get(&4),
+        Some(&theme.metrics.section_row_height)
+    );
+    assert_eq!(
+        sheet.row_heights.get(&6),
+        Some(&theme.metrics.section_row_height)
+    );
 
     let rd_cell = layout
         .get_cell(&finx::compiler::ir::id::CellId::new(
@@ -365,12 +331,12 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
 #[test]
 fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
     let mut table1 = TableSpec::new("Table1", "First Table");
-    table1.columns.push(ColumnSpec::new("c1"));
+    table1.columns.push(ColumnSpec::new("c1").with_header("C1"));
     table1.rows.push(RowSpec::new("r1"));
     table1.rows.push(RowSpec::new("r2"));
 
     let mut table2 = TableSpec::new("Table2", "Second Table");
-    table2.columns.push(ColumnSpec::new("c1"));
+    table2.columns.push(ColumnSpec::new("c1").with_header("C1"));
     table2.rows.push(RowSpec::new("r1"));
 
     let manifest = ProjectManifest {
@@ -431,20 +397,28 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
 fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let mut table1 = TableSpec::new("Table1", "T1");
     table1.columns.push(ColumnSpec::descriptor("desc", "Desc"));
-    table1.columns.push(ColumnSpec::new("amount"));
+    table1
+        .columns
+        .push(ColumnSpec::new("amount").with_header("Amount"));
     let mut row1 = RowSpec::new("long_desc_row");
-    row1.cells.insert(
-        ColId::from("desc"),
-        CellInput::string("Very Long Descriptive Account Name Exceeding Normal Width"),
-    );
+    if let RowSpec::Data(d) = &mut row1 {
+        d.cells.insert(
+            ColId::from("desc"),
+            CellInput::string("Very Long Descriptive Account Name Exceeding Normal Width"),
+        );
+    }
     table1.rows.push(row1);
 
     let mut table2 = TableSpec::new("Table2", "T2");
     table2.columns.push(ColumnSpec::descriptor("desc", "Desc"));
-    table2.columns.push(ColumnSpec::new("amount"));
+    table2
+        .columns
+        .push(ColumnSpec::new("amount").with_header("Amount"));
     let mut row2 = RowSpec::new("short_row");
-    row2.cells
-        .insert(ColId::from("desc"), CellInput::string("Short"));
+    if let RowSpec::Data(d) = &mut row2 {
+        d.cells
+            .insert(ColId::from("desc"), CellInput::string("Short"));
+    }
     table2.rows.push(row2);
 
     let manifest = ProjectManifest {
@@ -483,15 +457,17 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
 #[test]
 fn test_scenario_7_full_style_role_propagation_to_physical_coordinates() {
     let mut table = TableSpec::new("SummaryTable", "Summary");
-    table.columns.push(ColumnSpec::new("metric"));
+    table
+        .columns
+        .push(ColumnSpec::new("metric").with_header("Metric"));
     table.columns.push(
         ColumnSpec::new("col_total")
+            .with_header("Total")
             .with_style(Some(SemanticStyle::Total))
             .with_highlight(Some(true)),
     );
 
-    let mut row = RowSpec::new("row_total");
-    row.style = Some(SemanticStyle::Total);
+    let row = RowSpec::new("row_total").with_style(Some(SemanticStyle::Total));
     table.rows.push(row);
     populate_table_cells(&mut table);
 
@@ -560,59 +536,65 @@ fn test_scenario_8_exact_excel_a1_coordinate_bijection_and_boundary_checks() {
 }
 
 #[test]
-fn test_scenario_9_rejection_of_outline_levels_exceeding_maximum_depth_of_7() {
-    let mut table = TableSpec::new("DeepTable", "Deep");
-    table.columns.push(ColumnSpec::new("c"));
-    table.rows.push(RowSpec::new("r"));
-
-    // Build 8-level deeply nested row groups
-    let mut current_group = RowGroup {
-        id: RowGroupId::from("g8"),
-        label: "L8".to_string(),
-        children: vec![RowGroupChild::Row(RowId::from("r"))],
-    };
-
-    for i in (1..=7).rev() {
-        current_group = RowGroup {
-            id: RowGroupId::from(format!("g{i}")),
-            label: format!("L{i}"),
-            children: vec![RowGroupChild::Group(current_group)],
-        };
-    }
-
-    table.row_groups.push(current_group);
+fn test_scenario_9_multi_tier_column_header_row_height_allocation() {
+    let mut table = TableSpec::new("MultiTierTable", "Multi Tier");
+    table
+        .columns
+        .push(ColumnSpec::new("c1").with_headers(["Tier1"]));
+    table
+        .columns
+        .push(ColumnSpec::new("c2").with_headers(["Tier1", "Tier2"]));
+    table
+        .columns
+        .push(ColumnSpec::new("c3").with_headers(["Top", "Mid", "Tier3"]));
+    table.rows.push(RowSpec::new("r1"));
     populate_table_cells(&mut table);
 
     let manifest = ProjectManifest {
-        model_name: "DeepModel".to_string(),
+        model_name: "MultiTierModel".to_string(),
         theme: "corporate_navy".to_string(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/DeepTable.json")],
+            tables: vec![PathBuf::from("tables/MultiTierTable.json")],
         }],
     };
 
     let theme = create_test_theme();
     let (_sym, grid) = ir::expand_workbook(&manifest, &[table.clone()]).unwrap();
-    let err = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap_err();
+    let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
 
-    assert!(matches!(
-        err,
-        LayoutError::OutlineDepthExceeded { depth: 8, .. }
-    ));
+    let placement = layout.get_table(&TableId::from("MultiTierTable")).unwrap();
+
+    // Title at row 1, gutter at row 2, 3 header rows at rows 3, 4, 5
+    assert_eq!(placement.header_row_range, Some((3, 5)));
+    assert_eq!(placement.body_row_range, (6, 6));
+
+    let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
+    assert_eq!(
+        sheet.row_heights.get(&3),
+        Some(&theme.metrics.header_row_height)
+    );
+    assert_eq!(
+        sheet.row_heights.get(&4),
+        Some(&theme.metrics.header_row_height)
+    );
+    assert_eq!(
+        sheet.row_heights.get(&5),
+        Some(&theme.metrics.header_row_height)
+    );
 }
 
 #[test]
 fn test_scenario_10_rejection_of_unassigned_tables() {
     let mut table1 = TableSpec::new("AssignedTable", "A");
-    table1.columns.push(ColumnSpec::new("c"));
+    table1.columns.push(ColumnSpec::new("c").with_header("C"));
     table1.rows.push(RowSpec::new("r"));
 
     let mut table2 = TableSpec::new("UnassignedTable", "U");
-    table2.columns.push(ColumnSpec::new("c"));
+    table2.columns.push(ColumnSpec::new("c").with_header("C"));
     table2.rows.push(RowSpec::new("r"));
 
     let manifest = ProjectManifest {
@@ -646,8 +628,12 @@ fn test_scenario_10_rejection_of_unassigned_tables() {
 #[test]
 fn test_scenario_11_end_to_end_compiler_facade_integration() {
     let mut table = TableSpec::new("FacadeTable", "Facade");
-    table.columns.push(ColumnSpec::new("col_a"));
-    table.columns.push(ColumnSpec::new("col_b"));
+    table
+        .columns
+        .push(ColumnSpec::new("col_a").with_header("A"));
+    table
+        .columns
+        .push(ColumnSpec::new("col_b").with_header("B"));
     table.rows.push(RowSpec::new("row_1"));
     populate_table_cells(&mut table);
 
@@ -676,32 +662,23 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
 }
 
 #[test]
-fn test_scenario_12_nested_row_group_section_header_ascending_depth_order() {
+fn test_scenario_12_descriptor_indentation_tiers() {
     let mut table = TableSpec::new("NestedHierarchyTable", "Nested");
-    table.columns.push(ColumnSpec::descriptor("item", "Item"));
-    table.columns.push(ColumnSpec::new("val"));
+    table
+        .columns
+        .push(ColumnSpec::primary_descriptor("item", "Item"));
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
 
-    table.rows.push(RowSpec::new("ad_spend"));
-    table.rows.push(RowSpec::new("direct_sales"));
+    table
+        .rows
+        .push(RowSpec::new("ad_spend").with_indent(Some(2)));
+    table
+        .rows
+        .push(RowSpec::new("direct_sales").with_indent(Some(1)));
     table.rows.push(RowSpec::new("g_and_a"));
     populate_table_cells(&mut table);
-
-    // Parent group "opex" (depth 1) whose first child is subgroup "sales_marketing" (depth 2)
-    table.row_groups.push(RowGroup {
-        id: RowGroupId::from("opex"),
-        label: "Operating Expenses".to_string(),
-        children: vec![
-            RowGroupChild::Group(RowGroup {
-                id: RowGroupId::from("sales_marketing"),
-                label: "Sales & Marketing".to_string(),
-                children: vec![
-                    RowGroupChild::Row(RowId::from("ad_spend")),
-                    RowGroupChild::Row(RowId::from("direct_sales")),
-                ],
-            }),
-            RowGroupChild::Row(RowId::from("g_and_a")),
-        ],
-    });
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
@@ -719,68 +696,75 @@ fn test_scenario_12_nested_row_group_section_header_ascending_depth_order() {
     let (_sym, grid) = ir::expand_workbook(&manifest, &[table.clone()]).unwrap();
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
 
-    let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
-    assert_eq!(sheet.section_header_rows.len(), 2);
-
-    // opex (depth 1) MUST come before sales_marketing (depth 2)
-    assert_eq!(sheet.section_header_rows[0].group_id, "opex");
-    assert_eq!(sheet.section_header_rows[0].label, "Operating Expenses");
-    assert_eq!(sheet.section_header_rows[0].group_level, 1);
-    assert_eq!(sheet.section_header_rows[0].row, 4);
-
-    assert_eq!(sheet.section_header_rows[1].group_id, "sales_marketing");
-    assert_eq!(sheet.section_header_rows[1].label, "Sales & Marketing");
-    assert_eq!(sheet.section_header_rows[1].group_level, 2);
-    assert_eq!(sheet.section_header_rows[1].row, 5);
-
-    // First data row (ad_spend) must follow at row 6
     let ad_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "NestedHierarchyTable",
+            "ad_spend",
+            "item",
+        ))
+        .unwrap();
+    assert_eq!(ad_cell.indent, 2);
+
+    let ds_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "NestedHierarchyTable",
+            "direct_sales",
+            "item",
+        ))
+        .unwrap();
+    assert_eq!(ds_cell.indent, 1);
+
+    let ga_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "NestedHierarchyTable",
+            "g_and_a",
+            "item",
+        ))
+        .unwrap();
+    assert_eq!(ga_cell.indent, 0);
+
+    // Measure cells are never indented
+    let ad_val = layout
         .get_cell(&finx::compiler::ir::id::CellId::new(
             "NestedHierarchyTable",
             "ad_spend",
             "val",
         ))
         .unwrap();
-    assert_eq!(ad_cell.row, 6);
+    assert_eq!(ad_val.indent, 0);
 }
 
 #[test]
-fn test_scenario_13_section_gutter_and_descriptor_indentation() {
+fn test_scenario_13_explicit_gutters_and_section_headers() {
     let mut table = TableSpec::new("GutterTable", "Financial Statement");
     table
         .columns
-        .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table.columns.push(ColumnSpec::new("val"));
+        .push(ColumnSpec::primary_descriptor("line_item", "Line Item"));
+    table.columns.push(ColumnSpec::gutter());
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
 
     table.rows.push(RowSpec::new("rev"));
-    table.rows.push(RowSpec::new("salaries"));
-    table.rows.push(RowSpec::new("ads"));
+    table.rows.push(RowSpec::gutter());
+    table
+        .rows
+        .push(RowSpec::section_header("Operating Expenses"));
+    table
+        .rows
+        .push(RowSpec::new("salaries").with_indent(Some(1)));
+    table.rows.push(RowSpec::new("ads").with_indent(Some(2)));
     table
         .rows
         .push(RowSpec::new("total_opex").with_style(Some(SemanticStyle::Subtotal)));
-    table.rows.push(RowSpec::new("equipment"));
+    table.rows.push(RowSpec::gutter());
+    table
+        .rows
+        .push(RowSpec::section_header("Capital Expenditures"));
+    table
+        .rows
+        .push(RowSpec::new("equipment").with_indent(Some(1)));
     populate_table_cells(&mut table);
-
-    // Group 1: opex (depth 1) containing salaries and nested marketing (depth 2) containing ads
-    table.row_groups.push(RowGroup {
-        id: RowGroupId::from("opex"),
-        label: "Operating Expenses".to_string(),
-        children: vec![
-            RowGroupChild::Row(RowId::from("salaries")),
-            RowGroupChild::Group(RowGroup {
-                id: RowGroupId::from("marketing"),
-                label: "Marketing".to_string(),
-                children: vec![RowGroupChild::Row(RowId::from("ads"))],
-            }),
-        ],
-    });
-
-    // Group 2: capex (depth 1) containing equipment
-    table.row_groups.push(RowGroup {
-        id: RowGroupId::from("capex"),
-        label: "Capital Expenditures".to_string(),
-        children: vec![RowGroupChild::Row(RowId::from("equipment"))],
-    });
 
     let manifest = ProjectManifest {
         model_name: "GutterModel".to_string(),
@@ -799,20 +783,25 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
     let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
 
+    // Column 2 is ColumnSpec::Gutter -> width should be gutter_col_width (3.0 chars)
+    assert_eq!(
+        sheet.col_widths.get(&2),
+        Some(&theme.metrics.gutter_col_width)
+    );
+
     // Row sequence:
     // Row 1: Title
     // Row 2: Title Gutter (8pt)
-    // Row 3: Col Header
-    // Row 4: Data row "rev" (data_start_row = 4)
-    // Row 5: Section Gutter (9pt) inserted before opex because current_row > data_start_row
-    // Row 6: Section Header "Operating Expenses" (depth 1)
+    // Row 3: Col Header (Tier 0)
+    // Row 4: Data row "rev"
+    // Row 5: Explicit RowSpec::Gutter (9pt)
+    // Row 6: Section Header "Operating Expenses" (20pt)
     // Row 7: Data row "salaries"
-    // Row 8: Section Header "Marketing" (depth 2, NO gutter because depth > 1)
-    // Row 9: Data row "ads"
-    // Row 10: Data row "total_opex" (subtotal)
-    // Row 11: Section Gutter (9pt) inserted before capex because current_row > data_start_row
-    // Row 12: Section Header "Capital Expenditures" (depth 1)
-    // Row 13: Data row "equipment"
+    // Row 8: Data row "ads"
+    // Row 9: Data row "total_opex" (subtotal)
+    // Row 10: Explicit RowSpec::Gutter (9pt)
+    // Row 11: Section Header "Capital Expenditures" (20pt)
+    // Row 12: Data row "equipment"
 
     // Verify gutter rows
     assert_eq!(
@@ -820,18 +809,19 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
         Some(&theme.metrics.gutter_row_height)
     );
     assert_eq!(
-        sheet.row_heights.get(&11),
+        sheet.row_heights.get(&10),
         Some(&theme.metrics.gutter_row_height)
     );
 
-    // Verify section header rows
-    assert_eq!(sheet.section_header_rows.len(), 3);
-    assert_eq!(sheet.section_header_rows[0].group_id, "opex");
-    assert_eq!(sheet.section_header_rows[0].row, 6);
-    assert_eq!(sheet.section_header_rows[1].group_id, "marketing");
-    assert_eq!(sheet.section_header_rows[1].row, 8);
-    assert_eq!(sheet.section_header_rows[2].group_id, "capex");
-    assert_eq!(sheet.section_header_rows[2].row, 12);
+    // Verify section header row heights
+    assert_eq!(
+        sheet.row_heights.get(&6),
+        Some(&theme.metrics.section_row_height)
+    );
+    assert_eq!(
+        sheet.row_heights.get(&11),
+        Some(&theme.metrics.section_row_height)
+    );
 
     // Verify physical rows
     let rev_cell = layout
@@ -842,7 +832,7 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
         ))
         .unwrap();
     assert_eq!(rev_cell.row, 4);
-    assert_eq!(rev_cell.indent, 0); // Root row: indent 0
+    assert_eq!(rev_cell.indent, 0);
 
     let salaries_cell = layout
         .get_cell(&finx::compiler::ir::id::CellId::new(
@@ -852,7 +842,7 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
         ))
         .unwrap();
     assert_eq!(salaries_cell.row, 7);
-    assert_eq!(salaries_cell.indent, 1); // Depth 1: indent 1
+    assert_eq!(salaries_cell.indent, 1);
 
     let ads_cell = layout
         .get_cell(&finx::compiler::ir::id::CellId::new(
@@ -861,8 +851,8 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
             "line_item",
         ))
         .unwrap();
-    assert_eq!(ads_cell.row, 9);
-    assert_eq!(ads_cell.indent, 2); // Depth 2: indent 2
+    assert_eq!(ads_cell.row, 8);
+    assert_eq!(ads_cell.indent, 2);
 
     let total_cell = layout
         .get_cell(&finx::compiler::ir::id::CellId::new(
@@ -871,8 +861,8 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
             "line_item",
         ))
         .unwrap();
-    assert_eq!(total_cell.row, 10);
-    assert_eq!(total_cell.indent, 0); // Subtotal outside group: indent 0
+    assert_eq!(total_cell.row, 9);
+    assert_eq!(total_cell.indent, 0);
 
     let equip_cell = layout
         .get_cell(&finx::compiler::ir::id::CellId::new(
@@ -881,8 +871,8 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
             "line_item",
         ))
         .unwrap();
-    assert_eq!(equip_cell.row, 13);
-    assert_eq!(equip_cell.indent, 1); // Depth 1: indent 1
+    assert_eq!(equip_cell.row, 12);
+    assert_eq!(equip_cell.indent, 1);
 
     // Verify measure cells are NEVER indented
     let salaries_val = layout
@@ -893,12 +883,4 @@ fn test_scenario_13_section_gutter_and_descriptor_indentation() {
         ))
         .unwrap();
     assert_eq!(salaries_val.indent, 0);
-    let ads_val = layout
-        .get_cell(&finx::compiler::ir::id::CellId::new(
-            "GutterTable",
-            "ads",
-            "val",
-        ))
-        .unwrap();
-    assert_eq!(ads_val.indent, 0);
 }

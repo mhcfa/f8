@@ -13,36 +13,18 @@ use finx::value::CellValue;
 
 #[test]
 fn test_orthogonal_column_based_cap_table_and_waterfall() {
-    // 1. CapTable: Rows are shareholder entities, Columns are calculation measures
-    let mut shares_col = ColumnSpec::new("shares");
-    shares_col.format = Some(FormatPreset::Number);
-
-    let mut pps_col = ColumnSpec::new("pps");
-    pps_col.format = Some(FormatPreset::Currency);
-
-    let mut capital_col = ColumnSpec::new("capital");
-    capital_col.format = Some(FormatPreset::Currency);
-    // Column vector rule: Invested Capital = shares * price per share
-    capital_col.expr = Some("CapTable[@row, \"shares\"] * CapTable[@row, \"pps\"]".to_string());
-
-    let mut ownership_col = ColumnSpec::new("ownership_pct");
-    ownership_col.format = Some(FormatPreset::Percentage);
-    // Column vector rule: Ownership % = shares / total shares
-    ownership_col.expr =
-        Some("CapTable[@row, \"shares\"] / CapTable[\"total\", \"shares\"]".to_string());
-
-    let mut exit_proceeds_col = ColumnSpec::new("exit_proceeds");
-    exit_proceeds_col.format = Some(FormatPreset::Currency);
-    // Column vector rule: Exit Proceeds = shares * exit share price from Valuation table
-    exit_proceeds_col.expr =
-        Some("CapTable[@row, \"shares\"] * Valuation[\"exit_share_price\", \"val\"]".to_string());
-
     let columns = vec![
-        shares_col,
-        pps_col,
-        capital_col,
-        ownership_col,
-        exit_proceeds_col,
+        ColumnSpec::new("shares").with_format(Some(FormatPreset::Number)),
+        ColumnSpec::new("pps").with_format(Some(FormatPreset::Currency)),
+        ColumnSpec::new("capital")
+            .with_format(Some(FormatPreset::Currency))
+            .with_expr("CapTable[@row, \"shares\"] * CapTable[@row, \"pps\"]"),
+        ColumnSpec::new("ownership_pct")
+            .with_format(Some(FormatPreset::Percentage))
+            .with_expr("CapTable[@row, \"shares\"] / CapTable[\"total\", \"shares\"]"),
+        ColumnSpec::new("exit_proceeds")
+            .with_format(Some(FormatPreset::Currency))
+            .with_expr("CapTable[@row, \"shares\"] * Valuation[\"exit_share_price\", \"val\"]"),
     ];
 
     // Entity rows with point literals for shares and initial PPS
@@ -79,8 +61,6 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         currency: None,
         collapsible: false,
         columns,
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             make_shareholder_row("founders", 4_000_000.0, 0.001),
             make_shareholder_row("seed", 1_000_000.0, 1.00),
@@ -101,8 +81,6 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         currency: None,
         collapsible: false,
         columns: vec![ColumnSpec::new("val")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("exit_valuation")
                 .with_format(Some(FormatPreset::Currency))
