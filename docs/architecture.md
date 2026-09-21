@@ -143,6 +143,7 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **System & Codebase**:
   - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
+  - [Model Authoring Guide](dsl/authoring-guide.md): Comprehensive end-to-end guide to authoring raw Finx models from scratch.
   - [Specification Format](dsl/spec-format.md): Multi-file JSON schemas, table structure, axis roles, and invariants.
   - [Grid Architecture](dsl/grid.md): Explicit 2D grid model, multi-tier headers, section dividers, gutters, and table collapsing.
   - [Semantic Formatting & Themes](dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.

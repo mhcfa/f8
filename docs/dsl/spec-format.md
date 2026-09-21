@@ -148,6 +148,7 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 
 ## 5. Related Documentation
 
+- [Model Authoring Guide](authoring-guide.md): Comprehensive end-to-end guide to authoring raw Finx models.
 - [Grid Architecture](grid.md): Multi-tier column headers, section headers, gutters, and table collapsing.
 - [Semantic Formatting & Themes](formatting.md): Format preset catalog, conflict resolution, and workbook themes.
 - [Modeling Patterns & Archetypes](patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
