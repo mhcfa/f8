@@ -840,7 +840,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 }),
             )
             .cell_str("eval_type", "f64 Numeric Literal")
-            .cell_str("style_rule", "Font Color: Input Blue (#002060)")
+            .cell_str("style_rule", "Font Color: Input Blue (#0000FF)")
             .cell_str("notes", "Direct numeric input entered by financial modeler")
             .build(),
         RowBuilder::line_item("formula_black", "Calculated Formula Result")

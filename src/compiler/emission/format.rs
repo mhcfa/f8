@@ -332,15 +332,16 @@ impl FormatCache {
         }
 
         // 4. Text Color Precedence:
-        // is_highlight > total > subtotal > (input measure ? input_text : data/formula)
-        format = if key.role.is_highlight {
+        // Input measure literal overrides everything (highlight, total, subtotal, formula/data)
+        // Then: is_highlight > total > subtotal > (descriptor ? data : formula)
+        format = if key.is_input && !key.is_descriptor {
+            format.set_font_color(self.palette.input_text)
+        } else if key.role.is_highlight {
             format.set_font_color(self.palette.highlight_text)
         } else if key.role.horizontal.is_total() || key.role.vertical.is_total() {
             format.set_font_color(self.palette.total_text)
         } else if key.role.horizontal.is_subtotal() || key.role.vertical.is_subtotal() {
             format.set_font_color(self.palette.subtotal_text)
-        } else if key.is_input && !key.is_descriptor {
-            format.set_font_color(self.palette.input_text)
         } else if key.is_descriptor {
             format.set_font_color(self.palette.data_text)
         } else {

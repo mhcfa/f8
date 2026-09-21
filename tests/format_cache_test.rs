@@ -122,15 +122,24 @@ fn test_scenario_2_hardcode_input_vs_formula_text_color() {
     let input_debug = format!("{input_format:?}");
     let formula_debug = format!("{formula_format:?}");
 
-    // theme.palette.input_text is "#002060" -> 0x002060 = 8288
-    assert!(
-        input_debug.contains("color: RGB(8288)"),
-        "Input cell should use input_text (#002060): {input_debug}"
+    let expected_input_color = format!(
+        "{:?}",
+        parse_hex_color("input_text", &theme.palette.input_text).unwrap()
     );
-    // theme.palette.formula_text is "#000000" -> 0x000000 = 0
+    let expected_formula_color = format!(
+        "{:?}",
+        parse_hex_color("formula_text", &theme.palette.formula_text).unwrap()
+    );
+
     assert!(
-        formula_debug.contains("color: RGB(0)"),
-        "Formula cell should use formula_text (#000000): {formula_debug}"
+        input_debug.contains(&format!("color: {expected_input_color}")),
+        "Input cell should use input_text ({}): {input_debug}",
+        theme.palette.input_text
+    );
+    assert!(
+        formula_debug.contains(&format!("color: {expected_formula_color}")),
+        "Formula cell should use formula_text ({}): {formula_debug}",
+        theme.palette.formula_text
     );
 }
 
@@ -151,10 +160,22 @@ fn test_scenario_3_descriptor_labels_suppress_input_blue_text() {
     let format = cache.get_cell_format(&descriptor_key).expect("format ok");
     let debug = format!("{format:?}");
 
-    // theme.palette.data_text is "#1F2937" -> 0x1F2937 = 2042167
+    let expected_data_color = format!(
+        "{:?}",
+        parse_hex_color("data_text", &theme.palette.data_text).unwrap()
+    );
+    let expected_input_color = format!(
+        "{:?}",
+        parse_hex_color("input_text", &theme.palette.input_text).unwrap()
+    );
+
     assert!(
-        debug.contains("color: RGB(2042167)"),
-        "Descriptor cell must use data_text, never input_text: {debug}"
+        debug.contains(&format!("color: {expected_data_color}")),
+        "Descriptor cell must use data_text: {debug}"
+    );
+    assert!(
+        !debug.contains(&format!("color: {expected_input_color}")),
+        "Descriptor cell must never use input_text: {debug}"
     );
     assert!(
         debug.contains("horizontal: Left"),
@@ -201,13 +222,33 @@ fn test_scenario_4_subtotal_and_total_accounting_borders_and_colors() {
     let subtotal_debug = format!("{subtotal_fmt:?}");
     let total_debug = format!("{total_fmt:?}");
 
-    // Subtotal: top_style Thin, border_color #D1D5DB = 13751771, bold: true
+    let border_color = format!(
+        "{:?}",
+        parse_hex_color("border_color", &theme.palette.border_color).unwrap()
+    );
+    let total_border_color = format!(
+        "{:?}",
+        parse_hex_color("total_border_color", &theme.palette.total_border_color).unwrap()
+    );
+    let subtotal_border_style = format!(
+        "{:?}",
+        translate_border_style(theme.borders.subtotal_border_top)
+    );
+    let total_top_style = format!(
+        "{:?}",
+        translate_border_style(theme.borders.total_border_top)
+    );
+    let total_bottom_style = format!(
+        "{:?}",
+        translate_border_style(theme.borders.total_border_bottom)
+    );
+
     assert!(
-        subtotal_debug.contains("top_style: Thin"),
-        "Subtotal must have thin top border: {subtotal_debug}"
+        subtotal_debug.contains(&format!("top_style: {subtotal_border_style}")),
+        "Subtotal must have configured top border: {subtotal_debug}"
     );
     assert!(
-        subtotal_debug.contains("top_color: RGB(13751771)"),
+        subtotal_debug.contains(&format!("top_color: {border_color}")),
         "Subtotal top border color must match palette.border_color: {subtotal_debug}"
     );
     assert!(
@@ -215,21 +256,20 @@ fn test_scenario_4_subtotal_and_total_accounting_borders_and_colors() {
         "Subtotal must be bold: {subtotal_debug}"
     );
 
-    // Total: top_style Thin, bottom_style Double, total_border_color #1B365D = 1783389, bold: true
     assert!(
-        total_debug.contains("top_style: Thin"),
-        "Total must have thin top border: {total_debug}"
+        total_debug.contains(&format!("top_style: {total_top_style}")),
+        "Total must have configured top border: {total_debug}"
     );
     assert!(
-        total_debug.contains("bottom_style: Double"),
-        "Total must have double bottom border: {total_debug}"
+        total_debug.contains(&format!("bottom_style: {total_bottom_style}")),
+        "Total must have configured bottom border: {total_debug}"
     );
     assert!(
-        total_debug.contains("top_color: RGB(1783389)"),
+        total_debug.contains(&format!("top_color: {total_border_color}")),
         "Total top border must match palette.total_border_color: {total_debug}"
     );
     assert!(
-        total_debug.contains("bottom_color: RGB(1783389)"),
+        total_debug.contains(&format!("bottom_color: {total_border_color}")),
         "Total bottom border must match palette.total_border_color: {total_debug}"
     );
     assert!(
@@ -260,14 +300,21 @@ fn test_scenario_5_highlight_style_role_emphasis() {
     let format = cache.get_cell_format(&key).expect("format ok");
     let debug = format!("{format:?}");
 
-    // palette.highlight_fill is "#FEF3C7" -> 0xFEF3C7 = 16708551
-    // palette.highlight_text is "#92400E" -> 0x92400E = 9584654
+    let expected_fill = format!(
+        "{:?}",
+        parse_hex_color("highlight_fill", &theme.palette.highlight_fill).unwrap()
+    );
+    let expected_text = format!(
+        "{:?}",
+        parse_hex_color("highlight_text", &theme.palette.highlight_text).unwrap()
+    );
+
     assert!(
-        debug.contains("background_color: RGB(16708551)"),
+        debug.contains(&format!("background_color: {expected_fill}")),
         "Highlight cell must have highlight_fill: {debug}"
     );
     assert!(
-        debug.contains("color: RGB(9584654)"),
+        debug.contains(&format!("color: {expected_text}")),
         "Highlight cell must have highlight_text: {debug}"
     );
 }
@@ -294,19 +341,36 @@ fn test_scenario_6_structural_header_formats_and_alignments() {
     assert!(super_debug.contains(r#"size: "10""#));
     assert!(super_debug.contains("bold: true"));
     assert!(super_debug.contains("horizontal: Center"));
-    assert!(super_debug.contains("bottom_style: Thin"));
+    let super_border = format!(
+        "{:?}",
+        translate_border_style(theme.borders.super_header_border_bottom)
+    );
+    assert!(
+        super_debug.contains(&format!("bottom_style: {super_border}")),
+        "Super header must match borders.super_header_border_bottom: {super_debug}"
+    );
 
     let col_desc_fmt = cache.col_header_format(true);
     let col_desc_debug = format!("{col_desc_fmt:?}");
     assert!(col_desc_debug.contains("horizontal: Left"));
     assert!(col_desc_debug.contains("bold: true"));
-    assert!(col_desc_debug.contains("bottom_style: Thin"));
+    let header_border = format!(
+        "{:?}",
+        translate_border_style(theme.borders.header_border_bottom)
+    );
+    assert!(
+        col_desc_debug.contains(&format!("bottom_style: {header_border}")),
+        "Descriptor header must match borders.header_border_bottom: {col_desc_debug}"
+    );
 
     let col_meas_fmt = cache.col_header_format(false);
     let col_meas_debug = format!("{col_meas_fmt:?}");
     assert!(col_meas_debug.contains("horizontal: Right"));
     assert!(col_meas_debug.contains("bold: true"));
-    assert!(col_meas_debug.contains("bottom_style: Thin"));
+    assert!(
+        col_meas_debug.contains(&format!("bottom_style: {header_border}")),
+        "Measure header must match borders.header_border_bottom: {col_meas_debug}"
+    );
 
     let sec_fmt = cache.section_header_format();
     let sec_debug = format!("{sec_fmt:?}");
@@ -406,14 +470,18 @@ fn test_orthogonal_2d_total_box_borders() {
     let format = cache.get_cell_format(&key).expect("ok");
     let debug = format!("{format:?}");
 
+    let total_border_color = format!(
+        "{:?}",
+        parse_hex_color("total_border_color", &theme.palette.total_border_color).unwrap()
+    );
     assert!(debug.contains("top_style: Thin"));
     assert!(debug.contains("bottom_style: Double"));
     assert!(debug.contains("left_style: Thin"));
     assert!(debug.contains("right_style: Double"));
-    assert!(debug.contains("top_color: RGB(1783389)"));
-    assert!(debug.contains("bottom_color: RGB(1783389)"));
-    assert!(debug.contains("left_color: RGB(1783389)"));
-    assert!(debug.contains("right_color: RGB(1783389)"));
+    assert!(debug.contains(&format!("top_color: {total_border_color}")));
+    assert!(debug.contains(&format!("bottom_color: {total_border_color}")));
+    assert!(debug.contains(&format!("left_color: {total_border_color}")));
+    assert!(debug.contains(&format!("right_color: {total_border_color}")));
 }
 
 #[test]
@@ -443,18 +511,19 @@ fn test_parse_fill_color() {
 
 #[test]
 fn test_transparent_cell_format() {
-    // Default theme has data_fill = "#FFFFFF"
-    let default_theme = Theme::corporate_navy();
-    let mut default_cache = FormatCache::new(&default_theme).expect("valid theme");
+    // 1. Theme with explicit solid fill has background color set
+    let mut filled_theme = Theme::corporate_navy();
+    filled_theme.palette.data_fill = "#FFFFFF".to_string();
+    let mut filled_cache = FormatCache::new(&filled_theme).expect("valid theme");
     let key = CellFormatKey::new(StyleRole::data(), None, None, None, false, false);
-    let default_format = default_cache.get_cell_format(&key).expect("ok");
-    let default_debug = format!("{default_format:?}");
+    let filled_format = filled_cache.get_cell_format(&key).expect("ok");
+    let filled_debug = format!("{filled_format:?}");
     assert!(
-        default_debug.contains("background_color: RGB(16777215)"),
-        "Default theme must set white background_color for data cells: {default_debug}"
+        filled_debug.contains("background_color: RGB(16777215)"),
+        "Theme with solid data_fill must set background_color: {filled_debug}"
     );
 
-    // Theme with data_fill = "none"
+    // 2. Theme with data_fill = "none" leaves background color as Default (transparent)
     let mut transparent_theme = Theme::corporate_navy();
     transparent_theme.palette.data_fill = "none".to_string();
     let mut trans_cache = FormatCache::new(&transparent_theme).expect("valid theme");
@@ -522,4 +591,156 @@ fn test_transparent_summary_and_headers() {
     assert!(total_debug.contains("bold: true"));
     assert!(total_debug.contains("top_style: Thin"));
     assert!(total_debug.contains("bottom_style: Double"));
+}
+
+#[test]
+fn test_input_text_color_overrides_everything() {
+    let theme = Theme::corporate_navy();
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+    let input_color = format!(
+        "{:?}",
+        parse_hex_color("input_text", &theme.palette.input_text).unwrap()
+    );
+    let highlight_fill = format!(
+        "{:?}",
+        parse_hex_color("highlight_fill", &theme.palette.highlight_fill).unwrap()
+    );
+    let total_text = format!(
+        "{:?}",
+        parse_hex_color("total_text", &theme.palette.total_text).unwrap()
+    );
+    let highlight_text = format!(
+        "{:?}",
+        parse_hex_color("highlight_text", &theme.palette.highlight_text).unwrap()
+    );
+
+    // 1. Input measure in a Total row -> input_text overrides total_text, retains accounting borders and bold
+    let total_top_style = format!(
+        "{:?}",
+        translate_border_style(theme.borders.total_border_top)
+    );
+    let total_bottom_style = format!(
+        "{:?}",
+        translate_border_style(theme.borders.total_border_bottom)
+    );
+    let input_total_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+        },
+        Some(FormatPreset::Currency),
+        Some(0),
+        Some(CurrencyCode::Usd),
+        true,  // is_input
+        false, // is_descriptor
+    );
+    let fmt = cache.get_cell_format(&input_total_key).expect("ok");
+    let debug = format!("{fmt:?}");
+    assert!(
+        debug.contains(&format!("color: {input_color}")),
+        "Input in total row must use input_text: {debug}"
+    );
+    assert!(
+        debug.contains("bold: true"),
+        "Input in total row must be bold: {debug}"
+    );
+    assert!(
+        debug.contains(&format!("top_style: {total_top_style}")),
+        "Input in total row must have total top border: {debug}"
+    );
+    assert!(
+        debug.contains(&format!("bottom_style: {total_bottom_style}")),
+        "Input in total row must have total bottom border: {debug}"
+    );
+
+    // 2. Formula in a Total row -> uses total_text
+    let formula_total_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+        },
+        Some(FormatPreset::Currency),
+        Some(0),
+        Some(CurrencyCode::Usd),
+        false, // is_input
+        false, // is_descriptor
+    );
+    let fmt = cache.get_cell_format(&formula_total_key).expect("ok");
+    let debug = format!("{fmt:?}");
+    assert!(
+        debug.contains(&format!("color: {total_text}")),
+        "Formula in total row must use total_text: {debug}"
+    );
+
+    // 3. Input measure with Highlight -> input_text overrides highlight_text, retains highlight_fill
+    let input_highlight_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Data,
+            is_highlight: true,
+        },
+        Some(FormatPreset::Number),
+        Some(2),
+        None,
+        true,  // is_input
+        false, // is_descriptor
+    );
+    let fmt = cache.get_cell_format(&input_highlight_key).expect("ok");
+    let debug = format!("{fmt:?}");
+    assert!(
+        debug.contains(&format!("color: {input_color}")),
+        "Input with highlight must use input_text: {debug}"
+    );
+    assert!(
+        debug.contains(&format!("background_color: {highlight_fill}")),
+        "Input with highlight must retain highlight_fill: {debug}"
+    );
+
+    // 4. Formula with Highlight -> uses highlight_text
+    let formula_highlight_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Data,
+            is_highlight: true,
+        },
+        Some(FormatPreset::Number),
+        Some(2),
+        None,
+        false, // is_input
+        false, // is_descriptor
+    );
+    let fmt = cache.get_cell_format(&formula_highlight_key).expect("ok");
+    let debug = format!("{fmt:?}");
+    assert!(
+        debug.contains(&format!("color: {highlight_text}")),
+        "Formula with highlight must use highlight_text: {debug}"
+    );
+
+    // 5. Descriptor with Highlight -> uses highlight_text, NEVER input_text
+    let descriptor_highlight_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Data,
+            is_highlight: true,
+        },
+        Some(FormatPreset::Text),
+        None,
+        None,
+        true, // is_input (literal)
+        true, // is_descriptor
+    );
+    let fmt = cache
+        .get_cell_format(&descriptor_highlight_key)
+        .expect("ok");
+    let debug = format!("{fmt:?}");
+    assert!(
+        debug.contains(&format!("color: {highlight_text}")),
+        "Descriptor with highlight must use highlight_text: {debug}"
+    );
+    assert!(
+        !debug.contains(&format!("color: {input_color}")),
+        "Descriptor must never use input_text: {debug}"
+    );
 }

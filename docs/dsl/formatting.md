@@ -169,7 +169,7 @@ $$\text{is\_bold} = (\text{horizontal} == \text{SemanticStyle::Total}) \lor (\te
 
 #### 5.4.4. Fill, text color, and border orthogonality
 - **Summary vs data shading**: Standard data cells apply `theme.palette.data_fill` and `data_text`. Subtotals apply `subtotal_fill` and `subtotal_text`. Totals apply `total_fill` and `total_text`.
-- **Financial hardcode color coding**: In standard data cells, literal cell inputs (`ValueLiteral`) apply `theme.palette.input_text` (institutional blue, e.g. `#002060`), while calculated formula cells apply `theme.palette.formula_text` (standard black, e.g. `#000000`).
+- **Financial hardcode color coding**: In standard data cells, literal cell inputs (`ValueLiteral`) apply `theme.palette.input_text` (institutional blue, e.g. `#0000FF`), while calculated formula cells apply `theme.palette.formula_text` (standard black, e.g. `#000000`).
 - **Visual emphasis (`highlight`)**: Declaring `highlight: true` overrides cell fills and text colors with `highlight_fill` and `highlight_text`.
 Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `horizontal: Total` and `highlight: true` (e.g. an acquisition IRR punchline cell), rendering both the accent highlight background fill and the accounting double underline without schema collision.
 
@@ -252,24 +252,24 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "col_header_text": "#1B365D",
     "section_header_fill": "#F7F9FC",
     "section_header_text": "#1B365D",
-    "data_fill": "#FFFFFF",
+    "data_fill": "none",
     "data_text": "#1F2937",
     "subtotal_fill": "#F7F9FC",
-    "subtotal_text": "#1B365D",
-    "total_fill": "#F0F4F8",
-    "total_text": "#1B365D",
-    "input_text": "#002060",
+    "subtotal_text": "#000000",
+    "total_fill": "none",
+    "total_text": "#000000",
+    "input_text": "#0000FF",
     "formula_text": "#000000",
     "zebra_fill": "#FAFBFC",
     "highlight_fill": "#FEF3C7",
-    "highlight_text": "#92400E",
+    "highlight_text": "#000000",
     "gridline_color": "#E5E7EB",
-    "border_color": "#D1D5DB",
+    "border_color": "#000000",
     "total_border_color": "#1B365D"
   },
   "borders": {
     "table_title_border_bottom": "none",
-    "super_header_border_bottom": "thin",
+    "super_header_border_bottom": "thick",
     "header_border_bottom": "thin",
     "descriptor_border_right": "none",
     "subtotal_border_top": "thin",

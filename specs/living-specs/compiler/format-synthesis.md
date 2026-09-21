@@ -61,19 +61,22 @@ Data cell number format strings are dynamically generated via `theme.resolve_num
 ### 3. Financial Modeling Color Coding Rules
 
 Model presentation strictly enforces financial modeling conventions:
-- Measure literal inputs (`is_input: true && !is_descriptor`) use `palette.input_text` (classic blue `#002060`).
-- Formula cells (`!is_input`) use `palette.formula_text` (black `#000000`).
-- Descriptor cells (`is_descriptor: true`) always use neutral text (`palette.data_text`), never input blue.
-- Highlights (`role.is_highlight: true`) take precedence, applying `palette.highlight_fill` and `palette.highlight_text`.
+- Measure literal inputs (`is_input: true && !is_descriptor`) take top precedence for font color (`palette.input_text`), overriding highlights, totals, and subtotals to ensure hardcoded assumptions are always visually distinct.
+- Formula cells (`!is_input`) use `palette.formula_text` (or `palette.highlight_text` / `palette.total_text` / `palette.subtotal_text` when styled).
+- Descriptor cells (`is_descriptor: true`) always use neutral text (`palette.data_text` or styled header/summary text), never input blue.
+- Highlights (`role.is_highlight: true`) always apply `palette.highlight_fill` as background fill; font color uses `palette.input_text` for measure inputs, and `palette.highlight_text` otherwise.
 
 #### Scenarios
 
 - **Measure input literal vs formula text color**:
   - **When** querying format for measure input vs formula
   - **Then** input cell uses blue `input_text` and formula cell uses black `formula_text`.
+- **Input text color precedence over totals and highlights**:
+  - **When** querying format for a measure literal input in a Total row or highlighted cell
+  - **Then** font color is `palette.input_text`, preserving accounting borders/bolding or highlight background fill.
 - **Descriptor label protection**:
   - **When** querying format for a string literal cell in a descriptor column
-  - **Then** text color remains `palette.data_text` and alignment is left.
+  - **Then** text color remains `palette.data_text` (or semantic header color) and never `input_text`.
 
 ### 4. Orthogonal 2D Summary Accounting Borders and Emphasis
 

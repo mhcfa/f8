@@ -30,7 +30,6 @@ Support transparent (no-fill) cell backgrounds across Finx themes and format syn
 
 - **Out-of-scope**:
   - Transparent text or border colors (text requires readable color; border omission is governed by `BorderStyle::None`).
-  - Modifying the default palette values of `Theme::corporate_navy` (`#FFFFFF` remains default; transparent is opt-in via theme configuration or custom themes).
 
 ### What Changes
 
