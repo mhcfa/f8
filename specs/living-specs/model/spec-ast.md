@@ -1,6 +1,6 @@
 ---
 title: Specification AST & Schema Ingestion
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 domain: model
 status: active
 ---
@@ -15,8 +15,9 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
   - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `ColGroupId`, `RowGroupId`).
   - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`), structural style enum (`SemanticStyle`), and canonical ISO currency codes (`CurrencyCode`).
   - `finx::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
-  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `ColumnSpec`, `RowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata and default table `currency`.
+  - `finx::model::table`: 2D table definitions (`TableSpec`), column specifications (`ColumnSpec`), row specifications (`RowSpec`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), column and row groups (`ColumnGroup`, `RowGroup`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `ColumnSpec`, `RowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata, default table `currency`, and an opt-in `collapsible` boolean (default: `false`).
   - `finx::model::error`: Diagnostic error types (`ModelError`).
+
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
   2. `TableSpec::validate` / `ProjectManifest::validate` $\rightarrow$ Invariant verification (unique IDs, contiguous groups, cell payload validity, numeric precision applicability) $\rightarrow$ `Ok(())` or `Err(ModelError)`.
@@ -107,5 +108,19 @@ Tables accept optional `subtitle` metadata and an optional default table `curren
 - **Currency on Non-Currency Preset Rejected**:
   - **When** a column, row, or cell override specifies `currency` with any format preset other than `currency` (e.g. `number`, `percentage`, `date`, `text`)
   - **Then** validation returns `ModelError::InvalidCurrencyForPreset`.
+
+### 6. Opt-In Table-Level Collapsing
+
+Tables accept an optional `collapsible: bool` property (default: `false`, omitted from JSON serialization when false). When enabled, the table's data and header rows are grouped beneath its title banner in Excel workbooks.
+
+#### Scenarios
+
+- **Default Collapsing State**:
+  - **When** a table is instantiated without `collapsible`
+  - **Then** `table.collapsible` defaults to `false`.
+- **Opt-In Collapsing**:
+  - **When** a table is created with `table.collapsible = true` or deserialized from `{ "collapsible": true }`
+  - **Then** `table.collapsible` is `true`.
+
 
 

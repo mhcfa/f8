@@ -395,6 +395,7 @@ fn sample_table() -> TableSpec {
         title: "Test Table".to_string(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("col_1"), ColumnSpec::new("col_2")],
         column_groups: Vec::new(),
         row_groups: Vec::new(),
@@ -888,4 +889,36 @@ fn test_scenario_12_reject_precision_exceeding_max_bounds() {
             ..
         }
     ));
+}
+
+#[test]
+fn test_scenario_13_table_collapsible_serde() {
+    // 1. Default table has collapsible == false and omits field from JSON
+    let table = TableSpec::new("T1", "Table 1");
+    assert!(!table.collapsible);
+
+    let serialized = serde_json::to_string(&table).unwrap();
+    assert!(
+        !serialized.contains("collapsible"),
+        "collapsible: false should be skipped during serialization"
+    );
+
+    // 2. Deserializing JSON without collapsible defaults to false
+    let deserialized: TableSpec = serde_json::from_str(&serialized).unwrap();
+    assert!(!deserialized.collapsible);
+
+    // 3. Builder method with_collapsible(true) sets field
+    let collapsible_table = table.with_collapsible(true);
+    assert!(collapsible_table.collapsible);
+
+    // 4. Serializing collapsible: true includes the field
+    let coll_json = serde_json::to_string(&collapsible_table).unwrap();
+    assert!(
+        coll_json.contains(r#""collapsible":true"#),
+        "collapsible: true must be present in JSON"
+    );
+
+    // 5. Deserializing JSON with "collapsible": true yields collapsible == true
+    let deserialized_coll: TableSpec = serde_json::from_str(&coll_json).unwrap();
+    assert!(deserialized_coll.collapsible);
 }

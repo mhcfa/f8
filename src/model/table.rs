@@ -564,6 +564,8 @@ pub struct TableSpec {
     pub subtitle: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<CurrencyCode>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub collapsible: bool,
     pub columns: Vec<ColumnSpec>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub column_groups: Vec<ColumnGroup>,
@@ -580,6 +582,7 @@ impl TableSpec {
             title: title.into(),
             subtitle: None,
             currency: None,
+            collapsible: false,
             columns: Vec::new(),
             column_groups: Vec::new(),
             row_groups: Vec::new(),
@@ -590,6 +593,12 @@ impl TableSpec {
     /// Builder method attaching a subtitle banner.
     pub fn with_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    /// Builder method setting whether the table is collapsible into its title banner.
+    pub fn with_collapsible(mut self, collapsible: bool) -> Self {
+        self.collapsible = collapsible;
         self
     }
 

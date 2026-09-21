@@ -1,6 +1,6 @@
 ---
 title: Spatial Layout Planning & 2D Grid Coordinate Assignment
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 domain: compiler
 status: active
 ---
@@ -19,9 +19,9 @@ The `compiler::layout` subsystem provides Pass 5 of the Finx compilation pipelin
 - **Data flow & interfaces**:
   1. Input: `ProjectManifest`, `&[TableSpec]`, `CellGrid`, `Theme`, and optional `&EvaluatedModel`.
   2. Geometry planning: Computes top/left gutters (Row 0, Col 0), primary table origin at `B2` (`col: 1, row: 1`), inter-table gutters (2 blank rows), title/subtitle blocks, title buffer gutters, super-headers, and column headers.
-  3. Row hierarchy: Interleaves visual section headers before each group's first descendant row, tracks outline levels (`1..=7`), and records descriptor indentation.
-  4. Cell mapping: Assigns physical `(col, row)` coordinates, canonical Excel `a1` addresses, and `StyleRole` presentation flags to every `CellId`.
-  5. Sizing arbitration: Populates sheet row heights from theme metrics and arbitrates sheet-wide column widths across stacked tables sharing columns, enforcing `theme.metrics.min_col_width` (12.0) on measure columns.
+  3. Row hierarchy: Interleaves visual section headers before each group's first descendant row, tracks outline levels (`1..=7`), inserts section gutter rows above top-level section headers, and records descriptor indentation.
+  4. Cell mapping: Assigns physical `(col, row)` coordinates, canonical Excel `a1` addresses, indentation level (`indent`), and `StyleRole` presentation flags to every `CellId`.
+  5. Sizing arbitration: Populates sheet row heights from theme metrics and arbitrates sheet-wide column widths across stacked tables sharing columns, accounting for descriptor indentation padding and enforcing `theme.metrics.min_col_width` (12.0) on measure columns.
   6. Output: Deterministic `LayoutMap` consumed by Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission).
 - **Dependencies**:
   - `indexmap`: Guarantees deterministic iteration ordering for coordinate mappings.
@@ -68,16 +68,27 @@ Each table allocates header rows in strict sequence:
   - **When** a table declares title, subtitle, column groups, and columns
   - **Then** title, subtitle, title gutter, super-header, and column header rows are placed in sequence before data rows.
 
-### 4. Hierarchical Row Groups & Section Headers
+### 4. Hierarchical Row Groups, Section Headers, Gutters & Indentation
 
 Visual section header rows are interleaved in preorder before the first descendant row of each `RowGroup`. Section headers consume 1 physical row, assign `group_level: 1..=7`, and allocate no calculation `CellId` nodes.
 
+To visually distinguish sections cleanly without heuristics:
+1. **Section Gutters**: When a top-level section header (`group_level == 1`) occurs after preceding table data (`current_row > data_start_row`), a blank section gutter row sized to `theme.metrics.gutter_row_height` (9.0 pt) is inserted immediately above the section header. This ensures preceding line items and subtotals stay grouped together while clearly partitioning the next section.
+2. **Descriptor Indentation**: Each data row within a row group hierarchy computes its nesting depth (`0` for root/subtotal, `1` for top-level group items, `2` for sub-group items, etc.). The depth is recorded in `PhysicalCoordinate.indent` on descriptor cells. Descriptor cell formats apply this indentation (`format.set_indent(indent)`), and sub-headers apply `group_level - 1` indent. Measure columns remain strictly unindented.
+3. **Width Arbitration with Indent**: Column width arbitration for descriptor columns incorporates indentation padding (`row_depth * 2` characters) into character length calculations.
+
 #### Scenarios
 
-- **Section header placement**:
+- **Section Header Placement**:
   - **When** a table has row group `"opex"` containing row `"salaries"`
   - **Then** a visual section header row for `"opex"` is placed immediately preceding row `"salaries"`.
-- **Outline depth limit**:
+- **Section Gutter Insertion**:
+  - **When** a top-level row group begins after the first data row of a table
+  - **Then** a 9pt gutter row is inserted above its section header.
+- **Descriptor Indentation**:
+  - **When** rows belong to nested row groups
+  - **Then** descriptor cells carry `indent: 1` or `indent: 2` according to their hierarchy depth, while measure cells carry `indent: 0`.
+- **Outline Depth Limit**:
   - **When** row group nesting exceeds depth 7
   - **Then** layout planning returns `LayoutError::OutlineDepthExceeded`.
 
@@ -99,10 +110,11 @@ $$\text{RequiredWidth}(T, c) = \max(\text{max\_chars} \times \text{char\_width\_
 
 ### 6. Physical Coordinate Mapping & StyleRole Attachment
 
-Every `CellId` in the expanded grid maps 1:1 to a `PhysicalCoordinate` containing `(sheet, col, row, a1)` and `StyleRole` (`horizontal`, `vertical`, `is_highlight`) derived from the IR `CellNode`.
+Every `CellId` in the expanded grid maps 1:1 to a `PhysicalCoordinate` containing `(sheet, col, row, a1)`, `indent`, and `StyleRole` (`horizontal`, `vertical`, `is_highlight`) derived from the IR `CellNode`.
 
 #### Scenarios
 
 - **Complete cell coordinate resolution**:
   - **When** querying any `CellId` from `layout_map.cells`
-  - **Then** returns its exact physical worksheet, 0-indexed column, 0-indexed row, Excel A1 string, and semantic style role.
+  - **Then** returns its exact physical worksheet, 0-indexed column, 0-indexed row, Excel A1 string, indentation level, and semantic style role.
+

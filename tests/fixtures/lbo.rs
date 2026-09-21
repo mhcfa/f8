@@ -44,6 +44,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         title: "Operating & Exit Scenarios".to_string(),
         subtitle: Some("Management Case Sensitivity Matrix".to_string()),
         currency: None,
+        collapsible: false,
         columns: vec![
             build_descriptor_col("scenario_name", "Scenario Case"),
             build_measure_col_label("case_id", "Case ID"),
@@ -89,6 +90,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         title: "Transaction & Financing Assumptions".to_string(),
         subtitle: Some("Capital Structure, Debt Terms & Purchase Price".to_string()),
         currency: None,
+        collapsible: false,
         columns: vec![
             build_descriptor_col("line_item", "Transaction Parameter"),
             build_measure_col_label("val", "Value"),
@@ -258,6 +260,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         title: "Exit Valuation & Sponsor Returns".to_string(),
         subtitle: Some("5-Year Exit Multiples, IRR & Waterfall Proceeds".to_string()),
         currency: None,
+        collapsible: false,
         columns: vec![
             build_descriptor_col("line_item", "Investment Return Metric"),
             build_measure_col_label("val", "Metric Value"),
@@ -366,6 +369,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         title: "Investment Timeline".to_string(),
         subtitle: Some("Annual Financial Calendar & Year Fractions".to_string()),
         currency: None,
+        collapsible: false,
         columns: timeline_cols.clone(),
         column_groups: timeline_groups.clone(),
         row_groups: vec![],
@@ -403,6 +407,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         title: "Operating Forecast & Cash Flows".to_string(),
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
+        collapsible: false,
         columns: timeline_cols.clone(),
         column_groups: timeline_groups.clone(),
         row_groups: vec![
@@ -496,6 +501,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         title: "Debt Schedule & Cash Sweep".to_string(),
         subtitle: Some("($ in Millions) - Senior Debt 5% Mandatory Amortization & 100% Cash Sweep".to_string()),
         currency: None,
+        collapsible: false,
         columns: timeline_cols.clone(),
         column_groups: timeline_groups.clone(),
         row_groups: vec![
@@ -602,6 +608,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
             "($ in Millions) - Initial Equity Investment & Exit Equity Proceeds".to_string(),
         ),
         currency: None,
+        collapsible: false,
         columns: timeline_cols,
         column_groups: timeline_groups,
         row_groups: vec![],

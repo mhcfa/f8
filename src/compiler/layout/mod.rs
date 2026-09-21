@@ -61,6 +61,8 @@ pub struct PhysicalCoordinate {
     pub a1: String,
     /// Semantic presentation style role.
     pub style_role: StyleRole,
+    /// Descriptor text indentation level (0..=7).
+    pub indent: u8,
 }
 
 /// Placement and span of a super-header group tier.
@@ -343,7 +345,28 @@ impl LayoutPlanner {
                     // Check if one or more section headers must be interleaved before this row
                     if let Some(groups_starting_here) = group_info.starts_at.get(&row_spec.id) {
                         for (group_id, group_label, depth) in groups_starting_here {
+                            // Insert an intentional blank gutter row above subsequent top-level section headers
+                            if *depth == 1 && current_row > data_start_row {
+                                let gutter_row = current_row;
+                                if gutter_row >= MAX_EXCEL_ROWS {
+                                    return Err(LayoutError::GridLimitExceeded {
+                                        dimension: "rows",
+                                        max: MAX_EXCEL_ROWS,
+                                        actual: gutter_row,
+                                    });
+                                }
+                                row_heights.insert(gutter_row, theme.metrics.gutter_row_height);
+                                current_row += 1;
+                            }
+
                             let sec_row = current_row;
+                            if sec_row >= MAX_EXCEL_ROWS {
+                                return Err(LayoutError::GridLimitExceeded {
+                                    dimension: "rows",
+                                    max: MAX_EXCEL_ROWS,
+                                    actual: sec_row,
+                                });
+                            }
                             row_heights.insert(sec_row, theme.metrics.section_row_height);
                             section_header_rows.push(SectionHeaderRow {
                                 row: sec_row,
@@ -369,6 +392,12 @@ impl LayoutPlanner {
 
                     row_heights.insert(physical_row, theme.metrics.data_row_height);
 
+                    let row_depth = group_info
+                        .row_depths
+                        .get(&row_spec.id)
+                        .copied()
+                        .unwrap_or(0);
+
                     for (c_idx, col_spec) in table.columns.iter().enumerate() {
                         let physical_col = start_col + (c_idx as u32);
                         let cell_id =
@@ -390,6 +419,12 @@ impl LayoutPlanner {
                             }
                         };
 
+                        let indent = if col_spec.role.is_descriptor() {
+                            row_depth
+                        } else {
+                            0
+                        };
+
                         layout_cells.insert(
                             cell_id,
                             PhysicalCoordinate {
@@ -398,6 +433,7 @@ impl LayoutPlanner {
                                 row: physical_row,
                                 a1,
                                 style_role,
+                                indent,
                             },
                         );
                     }
@@ -427,15 +463,15 @@ impl LayoutPlanner {
             }
 
             // 3. Sheet-wide column width arbitration across stacked tables
-            arbitrate_sheet_column_widths(
-                &sheet_tables,
+            ColumnArbitrationContext {
+                tables: &sheet_tables,
                 grid,
-                start_col,
+                layout_cells: &layout_cells,
                 theme,
                 evaluated,
-                &section_header_rows,
-                &mut col_widths,
-            );
+                section_headers: &section_header_rows,
+            }
+            .arbitrate(start_col, &mut col_widths);
 
             layout_sheets.insert(
                 sheet_id.clone(),
@@ -463,6 +499,8 @@ impl LayoutPlanner {
 struct RowGroupAnalysis {
     /// Maps each RowId that starts one or more groups to `Vec<(group_id, label, depth)>` in ascending depth order.
     starts_at: IndexMap<RowId, Vec<(String, String, usize)>>,
+    /// Maps each member RowId to its group hierarchy nesting depth (1..=7).
+    row_depths: IndexMap<RowId, u8>,
 }
 
 /// Recursively analyzes hierarchical row groups, checking depth limits and determining section header insertion points.
@@ -471,16 +509,20 @@ fn analyze_row_groups(
     table_id: &TableId,
 ) -> Result<RowGroupAnalysis, LayoutError> {
     let mut starts_at: IndexMap<RowId, Vec<(String, String, usize)>> = IndexMap::new();
+    let mut row_depths: IndexMap<RowId, u8> = IndexMap::new();
 
     for group in groups {
-        analyze_group_recursive(group, 1, table_id, &mut starts_at)?;
+        analyze_group_recursive(group, 1, table_id, &mut starts_at, &mut row_depths)?;
     }
 
     for list in starts_at.values_mut() {
         list.sort_by_key(|(_, _, depth)| *depth);
     }
 
-    Ok(RowGroupAnalysis { starts_at })
+    Ok(RowGroupAnalysis {
+        starts_at,
+        row_depths,
+    })
 }
 
 fn analyze_group_recursive(
@@ -488,6 +530,7 @@ fn analyze_group_recursive(
     depth: usize,
     table_id: &TableId,
     starts_at: &mut IndexMap<RowId, Vec<(String, String, usize)>>,
+    row_depths: &mut IndexMap<RowId, u8>,
 ) -> Result<RowId, LayoutError> {
     if depth > MAX_OUTLINE_LEVEL {
         return Err(LayoutError::OutlineDepthExceeded {
@@ -502,12 +545,14 @@ fn analyze_group_recursive(
     for child in &group.children {
         match child {
             RowGroupChild::Row(r_id) => {
+                row_depths.insert(r_id.clone(), depth as u8);
                 if first_row.is_none() {
                     first_row = Some(r_id.clone());
                 }
             }
             RowGroupChild::Group(sub_group) => {
-                let sub_first = analyze_group_recursive(sub_group, depth + 1, table_id, starts_at)?;
+                let sub_first =
+                    analyze_group_recursive(sub_group, depth + 1, table_id, starts_at, row_depths)?;
                 if first_row.is_none() {
                     first_row = Some(sub_first);
                 }
@@ -528,83 +573,98 @@ fn analyze_group_recursive(
     }
 }
 
-/// Arbitrates sheet-wide column widths across all stacked tables sharing worksheet columns.
-fn arbitrate_sheet_column_widths(
-    tables: &[&TableSpec],
-    grid: &CellGrid,
-    start_col: u32,
-    theme: &Theme,
-    evaluated: Option<&EvaluatedModel>,
-    section_headers: &[SectionHeaderRow],
-    col_widths: &mut IndexMap<u32, f64>,
-) {
-    // Find maximum column index used across all tables on this sheet
-    let max_col_count = tables
-        .iter()
-        .map(|t| t.columns.len() as u32)
-        .max()
-        .unwrap_or(0);
+/// Context and read-only inputs for arbitrating sheet-wide column widths across stacked tables.
+struct ColumnArbitrationContext<'a> {
+    tables: &'a [&'a TableSpec],
+    grid: &'a CellGrid,
+    layout_cells: &'a IndexMap<CellId, PhysicalCoordinate>,
+    theme: &'a Theme,
+    evaluated: Option<&'a EvaluatedModel>,
+    section_headers: &'a [SectionHeaderRow],
+}
 
-    for col_offset in 0..max_col_count {
-        let physical_col = start_col + col_offset;
-        let mut max_chars_across_tables: usize = 0;
+impl ColumnArbitrationContext<'_> {
+    /// Arbitrates sheet-wide column widths across all stacked tables sharing worksheet columns.
+    fn arbitrate(&self, start_col: u32, col_widths: &mut IndexMap<u32, f64>) {
+        // Find maximum column index used across all tables on this sheet
+        let max_col_count = self
+            .tables
+            .iter()
+            .map(|t| t.columns.len() as u32)
+            .max()
+            .unwrap_or(0);
 
-        for table in tables {
-            if (col_offset as usize) >= table.columns.len() {
-                continue;
-            }
+        for col_offset in 0..max_col_count {
+            let physical_col = start_col + col_offset;
+            let mut max_chars_across_tables: usize = 0;
 
-            let col_spec = &table.columns[col_offset as usize];
-            let mut table_max_chars: usize = 0;
+            for table in self.tables {
+                if (col_offset as usize) >= table.columns.len() {
+                    continue;
+                }
 
-            // 1. Column header text length
-            let header_len = col_spec
-                .label
-                .as_deref()
-                .unwrap_or(col_spec.id.as_str())
-                .chars()
-                .count();
-            table_max_chars = table_max_chars.max(header_len);
+                let col_spec = &table.columns[col_offset as usize];
+                let mut table_max_chars: usize = 0;
 
-            // 2. Section headers in descriptor column (col_offset == 0)
-            if col_offset == 0 {
-                for sh in section_headers {
-                    if sh.table_id == table.id {
-                        let sec_len = sh.label.chars().count() + ((sh.group_level as usize) * 2);
-                        table_max_chars = table_max_chars.max(sec_len);
+                // 1. Column header text length
+                let header_len = col_spec
+                    .label
+                    .as_deref()
+                    .unwrap_or(col_spec.id.as_str())
+                    .chars()
+                    .count();
+                table_max_chars = table_max_chars.max(header_len);
+
+                // 2. Section headers in descriptor column (col_offset == 0)
+                if col_offset == 0 {
+                    for sh in self.section_headers {
+                        if sh.table_id == table.id {
+                            let sec_len =
+                                sh.label.chars().count() + ((sh.group_level as usize) * 2);
+                            table_max_chars = table_max_chars.max(sec_len);
+                        }
                     }
                 }
+
+                // 3. Row cells text length
+                for row in &table.rows {
+                    let cell_id =
+                        CellId::new(table.id.clone(), row.id.clone(), col_spec.id.clone());
+                    let cell_node = self.grid.get(&cell_id);
+                    let format = cell_node.and_then(|n| n.format);
+
+                    let mut char_len =
+                        match (self.evaluated.and_then(|e| e.get_cell(&cell_id)), cell_node) {
+                            (Some(val), _) => cell_value_string_length(val, format),
+                            (None, Some(node)) => match &node.payload {
+                                CellPayload::Literal(lit) => literal_value_length(lit, format),
+                                CellPayload::Formula(_) => 0,
+                            },
+                            (None, None) => 0,
+                        };
+
+                    if let Some(coord) = self.layout_cells.get(&cell_id)
+                        && coord.indent > 0
+                    {
+                        char_len += (coord.indent as usize) * 2;
+                    }
+
+                    table_max_chars = table_max_chars.max(char_len);
+                }
+
+                max_chars_across_tables = max_chars_across_tables.max(table_max_chars);
             }
 
-            // 3. Row cells text length
-            for row in &table.rows {
-                let cell_id = CellId::new(table.id.clone(), row.id.clone(), col_spec.id.clone());
-                let cell_node = grid.get(&cell_id);
-                let format = cell_node.and_then(|n| n.format);
+            // Apply theme font multiplier and padding, enforcing min_col_width
+            let computed_width = (max_chars_across_tables as f64
+                * self.theme.metrics.char_width_multiplier
+                + self.theme.metrics.col_padding)
+                .max(self.theme.metrics.min_col_width);
 
-                let char_len = match (evaluated.and_then(|e| e.get_cell(&cell_id)), cell_node) {
-                    (Some(val), _) => cell_value_string_length(val, format),
-                    (None, Some(node)) => match &node.payload {
-                        CellPayload::Literal(lit) => literal_value_length(lit, format),
-                        CellPayload::Formula(_) => 0,
-                    },
-                    (None, None) => 0,
-                };
-
-                table_max_chars = table_max_chars.max(char_len);
-            }
-
-            max_chars_across_tables = max_chars_across_tables.max(table_max_chars);
+            let final_width = (computed_width * 100.0).round() / 100.0;
+            let existing = col_widths.get(&physical_col).copied().unwrap_or(0.0);
+            col_widths.insert(physical_col, existing.max(final_width));
         }
-
-        // Apply theme font multiplier and padding, enforcing min_col_width
-        let computed_width = (max_chars_across_tables as f64 * theme.metrics.char_width_multiplier
-            + theme.metrics.col_padding)
-            .max(theme.metrics.min_col_width);
-
-        let final_width = (computed_width * 100.0).round() / 100.0;
-        let existing = col_widths.get(&physical_col).copied().unwrap_or(0.0);
-        col_widths.insert(physical_col, existing.max(final_width));
     }
 }
 

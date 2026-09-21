@@ -455,17 +455,17 @@ fn test_scenario_7_input_blue_vs_formula_black_color_coding() {
 
     // Measure input cell (is_input: true, is_descriptor: false)
     let input_key =
-        finx::compiler::emission::CellFormatKey::new(role, None, None, None, true, false);
+        finx::compiler::emission::CellFormatKey::new(role, None, None, None, true, false, 0);
     let _input_fmt = format_cache.get_cell_format(&input_key).unwrap();
 
     // Formula cell (is_input: false, is_descriptor: false)
     let formula_key =
-        finx::compiler::emission::CellFormatKey::new(role, None, None, None, false, false);
+        finx::compiler::emission::CellFormatKey::new(role, None, None, None, false, false, 0);
     let _formula_fmt = format_cache.get_cell_format(&formula_key).unwrap();
 
     // Descriptor cell (is_descriptor: true)
     let desc_key =
-        finx::compiler::emission::CellFormatKey::new(role, None, None, None, false, true);
+        finx::compiler::emission::CellFormatKey::new(role, None, None, None, false, true, 0);
     let _desc_fmt = format_cache.get_cell_format(&desc_key).unwrap();
 
     // Verify format cache distinguishes input vs formula styles
@@ -528,7 +528,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
     let theme = Theme::corporate_navy();
     let buffer = Compiler::emit_workbook(
         &manifest,
-        &[table],
+        &[table.clone()],
         &theme,
         None,
         &EmissionOptions::default(),
@@ -537,14 +537,36 @@ fn test_scenario_8_collapsible_row_group_outlining() {
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
     let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
 
     // Interleaved section headers are written
     assert!(shared_strings.contains("Operating Expenses"));
     assert!(shared_strings.contains("Marketing &amp; Growth"));
 
-    // Excel outline levels are applied to rows
-    assert!(sheet_xml.contains("outlineLevel=\"1\""));
-    assert!(sheet_xml.contains("outlineLevel=\"2\""));
+    // Default table has collapsible: false -> no outline brackets on rows
+    assert!(!sheet_xml.contains("outlineLevel="));
+
+    // OpenXML styles define indentation levels for descriptor cells and sub-headers
+    assert!(styles_xml.contains("indent=\"1\""));
+    assert!(styles_xml.contains("indent=\"2\""));
+
+    // Now emit with opt-in table-level collapsing enabled
+    let mut collapsible_table = table;
+    collapsible_table.collapsible = true;
+    let collapsible_buffer = Compiler::emit_workbook(
+        &manifest,
+        &[collapsible_table],
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+
+    let coll_sheet_xml = read_zip_entry(&collapsible_buffer, "xl/worksheets/sheet1.xml");
+    // Table body rows are grouped into level 1 under the title banner
+    assert!(coll_sheet_xml.contains("outlineLevel=\"1\""));
+    // Outline symbols are positioned above the range (summaryBelow="0")
+    assert!(coll_sheet_xml.contains("summaryBelow=\"0\""));
 }
 
 // ----------------------------------------------------------------------------

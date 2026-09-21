@@ -37,6 +37,7 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         title: "Income Statement".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),
@@ -60,6 +61,7 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         title: "Key Assumptions".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("metric"),
             ColumnSpec::new("rate"),
@@ -113,6 +115,7 @@ fn test_scenario_2_resolving_active_column_reference() {
         title: "IS".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),

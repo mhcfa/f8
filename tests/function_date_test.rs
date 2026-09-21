@@ -692,6 +692,7 @@ fn test_end_to_end_date_formula_evaluation() {
         title: "Timeline".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),

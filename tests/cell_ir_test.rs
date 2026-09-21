@@ -147,6 +147,7 @@ fn test_scenario_5_symbol_table_table_registration() {
         title: "Income Statement".to_string(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),
@@ -217,6 +218,7 @@ fn test_scenario_6_symbol_table_duplicate_table_rejection() {
         title: "Cash Flow".to_string(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("2024E")],
         column_groups: vec![],
         row_groups: vec![],
@@ -269,6 +271,7 @@ fn test_scenario_7_symbol_table_nested_row_groups_flattening() {
         title: "Balance Sheet".to_string(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
         column_groups: vec![],
         row_groups: vec![RowGroup {
@@ -332,6 +335,7 @@ fn test_scenario_8_symbol_table_empty_table_rejection() {
         title: "Empty Table".to_string(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![],
         column_groups: vec![],
         row_groups: vec![],

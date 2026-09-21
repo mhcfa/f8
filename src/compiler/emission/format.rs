@@ -147,6 +147,8 @@ pub struct CellFormatKey {
     pub is_input: bool,
     /// Whether the cell resides in a descriptor column/axis.
     pub is_descriptor: bool,
+    /// Descriptor indentation level (0..=7).
+    pub indent: u8,
 }
 
 impl CellFormatKey {
@@ -159,6 +161,7 @@ impl CellFormatKey {
         currency: Option<CurrencyCode>,
         is_input: bool,
         is_descriptor: bool,
+        indent: u8,
     ) -> Self {
         Self {
             role,
@@ -167,6 +170,7 @@ impl CellFormatKey {
             currency,
             is_input,
             is_descriptor,
+            indent,
         }
     }
 }
@@ -309,9 +313,13 @@ impl FormatCache {
             format = format.set_bold();
         }
 
-        // 2. Alignment (Descriptor Left, Measure Right)
+        // 2. Alignment & Indentation (Descriptor Left with optional indent, Measure Right)
         format = if key.is_descriptor {
-            format.set_align(FormatAlign::Left)
+            let mut fmt = format.set_align(FormatAlign::Left);
+            if key.indent > 0 {
+                fmt = fmt.set_indent(key.indent);
+            }
+            fmt
         } else {
             format.set_align(FormatAlign::Right)
         };
@@ -452,10 +460,17 @@ impl FormatCache {
         }
     }
 
-    /// Returns the section header format.
+    /// Returns the section header format for the given outline nesting level (1..=7).
+    ///
+    /// Top-level headers (level 1) are unindented (indent 0).
+    /// Nested sub-headers (level > 1) indent by `level - 1`.
     #[must_use]
-    pub fn section_header_format(&self) -> Format {
-        self.section_header_format.clone()
+    pub fn section_header_format(&self, group_level: u8) -> Format {
+        let mut fmt = self.section_header_format.clone();
+        if group_level > 1 {
+            fmt = fmt.set_indent(group_level - 1);
+        }
+        fmt
     }
 
     /// Returns the number of cached data cell formats.

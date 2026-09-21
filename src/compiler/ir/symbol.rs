@@ -254,6 +254,7 @@ mod tests {
             title: "Income Statement".to_string(),
             subtitle: None,
             currency: None,
+            collapsible: false,
             columns: vec![
                 ColumnSpec::descriptor("line_item", "Line Item"),
                 ColumnSpec::new("2023A"),

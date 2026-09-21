@@ -520,6 +520,7 @@ mod tests {
             title: "Target".into(),
             subtitle: None,
             currency: None,
+            collapsible: false,
             columns: vec![ColumnSpec::new("2024E")],
             column_groups: vec![],
             row_groups: vec![],

@@ -743,3 +743,162 @@ fn test_scenario_12_nested_row_group_section_header_ascending_depth_order() {
         .unwrap();
     assert_eq!(ad_cell.row, 6);
 }
+
+#[test]
+fn test_scenario_13_section_gutter_and_descriptor_indentation() {
+    let mut table = TableSpec::new("GutterTable", "Financial Statement");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("line_item", "Line Item"));
+    table.columns.push(ColumnSpec::new("val"));
+
+    table.rows.push(RowSpec::new("rev"));
+    table.rows.push(RowSpec::new("salaries"));
+    table.rows.push(RowSpec::new("ads"));
+    table
+        .rows
+        .push(RowSpec::new("total_opex").with_style(Some(SemanticStyle::Subtotal)));
+    table.rows.push(RowSpec::new("equipment"));
+    populate_table_cells(&mut table);
+
+    // Group 1: opex (depth 1) containing salaries and nested marketing (depth 2) containing ads
+    table.row_groups.push(RowGroup {
+        id: RowGroupId::from("opex"),
+        label: "Operating Expenses".to_string(),
+        children: vec![
+            RowGroupChild::Row(RowId::from("salaries")),
+            RowGroupChild::Group(RowGroup {
+                id: RowGroupId::from("marketing"),
+                label: "Marketing".to_string(),
+                children: vec![RowGroupChild::Row(RowId::from("ads"))],
+            }),
+        ],
+    });
+
+    // Group 2: capex (depth 1) containing equipment
+    table.row_groups.push(RowGroup {
+        id: RowGroupId::from("capex"),
+        label: "Capital Expenditures".to_string(),
+        children: vec![RowGroupChild::Row(RowId::from("equipment"))],
+    });
+
+    let manifest = ProjectManifest {
+        model_name: "GutterModel".to_string(),
+        theme: "corporate_navy".to_string(),
+        sheets: vec![SheetSpec {
+            name: "Model".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![PathBuf::from("tables/GutterTable.json")],
+        }],
+    };
+
+    let theme = create_test_theme();
+    let (_sym, grid) = ir::expand_workbook(&manifest, &[table.clone()]).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
+    let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
+
+    // Row sequence:
+    // Row 1: Title
+    // Row 2: Title Gutter (8pt)
+    // Row 3: Col Header
+    // Row 4: Data row "rev" (data_start_row = 4)
+    // Row 5: Section Gutter (9pt) inserted before opex because current_row > data_start_row
+    // Row 6: Section Header "Operating Expenses" (depth 1)
+    // Row 7: Data row "salaries"
+    // Row 8: Section Header "Marketing" (depth 2, NO gutter because depth > 1)
+    // Row 9: Data row "ads"
+    // Row 10: Data row "total_opex" (subtotal)
+    // Row 11: Section Gutter (9pt) inserted before capex because current_row > data_start_row
+    // Row 12: Section Header "Capital Expenditures" (depth 1)
+    // Row 13: Data row "equipment"
+
+    // Verify gutter rows
+    assert_eq!(
+        sheet.row_heights.get(&5),
+        Some(&theme.metrics.gutter_row_height)
+    );
+    assert_eq!(
+        sheet.row_heights.get(&11),
+        Some(&theme.metrics.gutter_row_height)
+    );
+
+    // Verify section header rows
+    assert_eq!(sheet.section_header_rows.len(), 3);
+    assert_eq!(sheet.section_header_rows[0].group_id, "opex");
+    assert_eq!(sheet.section_header_rows[0].row, 6);
+    assert_eq!(sheet.section_header_rows[1].group_id, "marketing");
+    assert_eq!(sheet.section_header_rows[1].row, 8);
+    assert_eq!(sheet.section_header_rows[2].group_id, "capex");
+    assert_eq!(sheet.section_header_rows[2].row, 12);
+
+    // Verify physical rows
+    let rev_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "rev",
+            "line_item",
+        ))
+        .unwrap();
+    assert_eq!(rev_cell.row, 4);
+    assert_eq!(rev_cell.indent, 0); // Root row: indent 0
+
+    let salaries_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "salaries",
+            "line_item",
+        ))
+        .unwrap();
+    assert_eq!(salaries_cell.row, 7);
+    assert_eq!(salaries_cell.indent, 1); // Depth 1: indent 1
+
+    let ads_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "ads",
+            "line_item",
+        ))
+        .unwrap();
+    assert_eq!(ads_cell.row, 9);
+    assert_eq!(ads_cell.indent, 2); // Depth 2: indent 2
+
+    let total_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "total_opex",
+            "line_item",
+        ))
+        .unwrap();
+    assert_eq!(total_cell.row, 10);
+    assert_eq!(total_cell.indent, 0); // Subtotal outside group: indent 0
+
+    let equip_cell = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "equipment",
+            "line_item",
+        ))
+        .unwrap();
+    assert_eq!(equip_cell.row, 13);
+    assert_eq!(equip_cell.indent, 1); // Depth 1: indent 1
+
+    // Verify measure cells are NEVER indented
+    let salaries_val = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "salaries",
+            "val",
+        ))
+        .unwrap();
+    assert_eq!(salaries_val.indent, 0);
+    let ads_val = layout
+        .get_cell(&finx::compiler::ir::id::CellId::new(
+            "GutterTable",
+            "ads",
+            "val",
+        ))
+        .unwrap();
+    assert_eq!(ads_val.indent, 0);
+}

@@ -42,6 +42,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         title: "Model Assumptions".to_string(),
         subtitle: Some("Key Operating Drivers & Macro Parameters".to_string()),
         currency: None,
+        collapsible: false,
         columns: vec![
             build_descriptor_col("line_item", "Parameter"),
             build_measure_col_label("val", "Value"),
@@ -95,6 +96,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         title: "Income Statement".to_string(),
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
+        collapsible: false,
         columns: timeline_cols.clone(),
         column_groups: timeline_groups.clone(),
         row_groups: vec![build_row_group(
@@ -159,6 +161,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         title: "Cash Flow Statement".to_string(),
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
+        collapsible: false,
         columns: timeline_cols.clone(),
         column_groups: timeline_groups.clone(),
         row_groups: vec![
@@ -228,6 +231,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         title: "Balance Sheet".to_string(),
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
+        collapsible: false,
         columns: timeline_cols,
         column_groups: timeline_groups,
         row_groups: vec![

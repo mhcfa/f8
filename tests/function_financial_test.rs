@@ -618,6 +618,7 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         title: "DebtService".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("value")],
         column_groups: vec![],
         row_groups: vec![],

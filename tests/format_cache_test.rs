@@ -84,6 +84,7 @@ fn test_scenario_1_dynamic_number_format_mask_synthesis() {
         Some(CurrencyCode::Usd),
         false,
         false,
+        0,
     );
     let format = cache.get_cell_format(&key).expect("format ok");
     let debug = format!("{format:?}");
@@ -106,6 +107,7 @@ fn test_scenario_2_hardcode_input_vs_formula_text_color() {
         None,
         true,  // is_input
         false, // is_descriptor
+        0,
     );
     let formula_key = CellFormatKey::new(
         StyleRole::data(),
@@ -114,6 +116,7 @@ fn test_scenario_2_hardcode_input_vs_formula_text_color() {
         None,
         false, // is_input
         false, // is_descriptor
+        0,
     );
 
     let input_format = cache.get_cell_format(&input_key).expect("input ok");
@@ -155,6 +158,7 @@ fn test_scenario_3_descriptor_labels_suppress_input_blue_text() {
         None,
         true, // is_input (literal row title)
         true, // is_descriptor
+        0,
     );
 
     let format = cache.get_cell_format(&descriptor_key).expect("format ok");
@@ -206,6 +210,7 @@ fn test_scenario_4_subtotal_and_total_accounting_borders_and_colors() {
         Some(CurrencyCode::Usd),
         false,
         false,
+        0,
     );
     let total_key = CellFormatKey::new(
         total_role,
@@ -214,6 +219,7 @@ fn test_scenario_4_subtotal_and_total_accounting_borders_and_colors() {
         Some(CurrencyCode::Usd),
         false,
         false,
+        0,
     );
 
     let subtotal_fmt = cache.get_cell_format(&subtotal_key).expect("subtotal ok");
@@ -295,6 +301,7 @@ fn test_scenario_5_highlight_style_role_emphasis() {
         None,
         false,
         false,
+        0,
     );
 
     let format = cache.get_cell_format(&key).expect("format ok");
@@ -372,7 +379,7 @@ fn test_scenario_6_structural_header_formats_and_alignments() {
         "Measure header must match borders.header_border_bottom: {col_meas_debug}"
     );
 
-    let sec_fmt = cache.section_header_format();
+    let sec_fmt = cache.section_header_format(1);
     let sec_debug = format!("{sec_fmt:?}");
     assert!(sec_debug.contains("horizontal: Left"));
     assert!(sec_debug.contains("bold: true"));
@@ -390,6 +397,7 @@ fn test_scenario_7_format_deduplication_cache_hits() {
         None,
         false,
         false,
+        0,
     );
 
     assert_eq!(cache.len(), 0);
@@ -418,6 +426,7 @@ fn test_scenario_8_unformatted_general_preset_handling() {
         None,
         false,
         false,
+        0,
     );
 
     let format = cache.get_cell_format(&key).expect("ok");
@@ -465,6 +474,7 @@ fn test_orthogonal_2d_total_box_borders() {
         Some(CurrencyCode::Usd),
         false,
         false,
+        0,
     );
 
     let format = cache.get_cell_format(&key).expect("ok");
@@ -515,7 +525,7 @@ fn test_transparent_cell_format() {
     let mut filled_theme = Theme::corporate_navy();
     filled_theme.palette.data_fill = "#FFFFFF".to_string();
     let mut filled_cache = FormatCache::new(&filled_theme).expect("valid theme");
-    let key = CellFormatKey::new(StyleRole::data(), None, None, None, false, false);
+    let key = CellFormatKey::new(StyleRole::data(), None, None, None, false, false, 0);
     let filled_format = filled_cache.get_cell_format(&key).expect("ok");
     let filled_debug = format!("{filled_format:?}");
     assert!(
@@ -568,7 +578,7 @@ fn test_transparent_summary_and_headers() {
     assert!(col_meas_debug.contains("background_color: Default"));
 
     // Section header format has bold, but no custom fill
-    let sec_fmt = cache.section_header_format();
+    let sec_fmt = cache.section_header_format(1);
     let sec_debug = format!("{sec_fmt:?}");
     assert!(sec_debug.contains("background_color: Default"));
 
@@ -584,6 +594,7 @@ fn test_transparent_summary_and_headers() {
         None,
         false,
         false,
+        0,
     );
     let total_fmt = cache.get_cell_format(&total_key).expect("ok");
     let total_debug = format!("{total_fmt:?}");
@@ -634,6 +645,7 @@ fn test_input_text_color_overrides_everything() {
         Some(CurrencyCode::Usd),
         true,  // is_input
         false, // is_descriptor
+        0,
     );
     let fmt = cache.get_cell_format(&input_total_key).expect("ok");
     let debug = format!("{fmt:?}");
@@ -666,6 +678,7 @@ fn test_input_text_color_overrides_everything() {
         Some(CurrencyCode::Usd),
         false, // is_input
         false, // is_descriptor
+        0,
     );
     let fmt = cache.get_cell_format(&formula_total_key).expect("ok");
     let debug = format!("{fmt:?}");
@@ -686,6 +699,7 @@ fn test_input_text_color_overrides_everything() {
         None,
         true,  // is_input
         false, // is_descriptor
+        0,
     );
     let fmt = cache.get_cell_format(&input_highlight_key).expect("ok");
     let debug = format!("{fmt:?}");
@@ -710,6 +724,7 @@ fn test_input_text_color_overrides_everything() {
         None,
         false, // is_input
         false, // is_descriptor
+        0,
     );
     let fmt = cache.get_cell_format(&formula_highlight_key).expect("ok");
     let debug = format!("{fmt:?}");
@@ -730,6 +745,7 @@ fn test_input_text_color_overrides_everything() {
         None,
         true, // is_input (literal)
         true, // is_descriptor
+        0,
     );
     let fmt = cache
         .get_cell_format(&descriptor_highlight_key)
@@ -742,5 +758,100 @@ fn test_input_text_color_overrides_everything() {
     assert!(
         !debug.contains(&format!("color: {input_color}")),
         "Descriptor must never use input_text: {debug}"
+    );
+}
+
+#[test]
+fn test_scenario_13_row_group_and_section_header_indentation() {
+    let theme = Theme::corporate_navy();
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    // 1. Descriptor cells with different indentation levels
+    let desc_indent_0 = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Text),
+        None,
+        None,
+        false, // is_input
+        true,  // is_descriptor
+        0,     // indent
+    );
+    let desc_indent_1 = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Text),
+        None,
+        None,
+        false, // is_input
+        true,  // is_descriptor
+        1,     // indent
+    );
+    let desc_indent_2 = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Text),
+        None,
+        None,
+        false, // is_input
+        true,  // is_descriptor
+        2,     // indent
+    );
+
+    let fmt_0 = cache.get_cell_format(&desc_indent_0).expect("ok");
+    let fmt_1 = cache.get_cell_format(&desc_indent_1).expect("ok");
+    let fmt_2 = cache.get_cell_format(&desc_indent_2).expect("ok");
+
+    let debug_0 = format!("{fmt_0:?}");
+    let debug_1 = format!("{fmt_1:?}");
+    let debug_2 = format!("{fmt_2:?}");
+
+    assert!(
+        debug_0.contains("indent: 0"),
+        "indent 0 expected: {debug_0}"
+    );
+    assert!(
+        debug_1.contains("indent: 1"),
+        "indent 1 expected: {debug_1}"
+    );
+    assert!(
+        debug_2.contains("indent: 2"),
+        "indent 2 expected: {debug_2}"
+    );
+
+    // 2. Measure cells must NEVER be indented even if key has indent: 0
+    let measure_key = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Number),
+        Some(2),
+        None,
+        false, // is_input
+        false, // is_descriptor
+        0,     // indent
+    );
+    let measure_fmt = cache.get_cell_format(&measure_key).expect("ok");
+    let measure_debug = format!("{measure_fmt:?}");
+    assert!(
+        measure_debug.contains("indent: 0"),
+        "measure indent 0 expected: {measure_debug}"
+    );
+
+    // 3. Section headers: level 1 is unindented (indent 0), level 2 has indent 1, level 3 has indent 2
+    let section_l1 = cache.section_header_format(1);
+    let section_l2 = cache.section_header_format(2);
+    let section_l3 = cache.section_header_format(3);
+
+    let debug_s1 = format!("{section_l1:?}");
+    let debug_s2 = format!("{section_l2:?}");
+    let debug_s3 = format!("{section_l3:?}");
+
+    assert!(
+        debug_s1.contains("indent: 0"),
+        "section level 1 must have indent 0: {debug_s1}"
+    );
+    assert!(
+        debug_s2.contains("indent: 1"),
+        "section level 2 must have indent 1: {debug_s2}"
+    );
+    assert!(
+        debug_s3.contains("indent: 2"),
+        "section level 3 must have indent 2: {debug_s3}"
     );
 }

@@ -510,6 +510,7 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         title: "Data".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("c1"), ColumnSpec::new("c2")],
         column_groups: vec![],
         row_groups: vec![],

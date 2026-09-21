@@ -23,6 +23,7 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
         title: "Assumptions".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("rate"),
             ColumnSpec::new("active"),
@@ -45,6 +46,7 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
         title: "Income Statement".into(),
         subtitle: None,
         currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),

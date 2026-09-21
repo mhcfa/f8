@@ -15,11 +15,11 @@ use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
-use crate::compiler::layout::{LayoutMap, SectionHeaderRow};
+use crate::compiler::layout::LayoutMap;
 use crate::compiler::lowering::LoweredFormulaMap;
-use crate::model::id::{RowId, SheetId, TableId};
+use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
-use crate::model::table::{RowGroup, RowGroupChild, TableSpec, ValueLiteral};
+use crate::model::table::{TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
 use crate::value::CellValue;
 
@@ -274,15 +274,13 @@ impl WorkbookEmitter {
                     )?;
                 }
 
-                // Collapsible Row Group Outlining
-                for group in &table.row_groups {
-                    apply_row_group_outlines(
-                        group,
-                        table,
-                        layout_map,
-                        &sheet_layout.section_header_rows,
-                        worksheet,
-                    )?;
+                // Opt-In Table-Level Collapsing
+                if table.collapsible
+                    && let Some(placement) = layout_map.get_table(&table.id)
+                    && placement.end_row > placement.start_row
+                {
+                    worksheet.group_symbols_above(true);
+                    worksheet.group_rows(placement.start_row + 1, placement.end_row)?;
                 }
 
                 // Stream Data Cells
@@ -307,6 +305,7 @@ impl WorkbookEmitter {
                             node.and_then(|n| n.currency),
                             is_input,
                             is_descriptor,
+                            coord.indent,
                         );
                         let cell_format = format_cache.get_cell_format(&format_key)?;
 
@@ -393,100 +392,18 @@ impl WorkbookEmitter {
 
             // 5. Interleaved Section Headers
             for sec in &sheet_layout.section_header_rows {
+                let fmt = format_cache.section_header_format(sec.group_level);
                 worksheet.write_string_with_format(
                     sec.row,
                     sec.descriptor_col as u16,
                     &sec.label,
-                    &format_cache.section_header_format(),
+                    &fmt,
                 )?;
             }
         }
 
         Ok(workbook)
     }
-}
-
-/// Recursively applies row group outline levels to the worksheet.
-fn apply_row_group_outlines(
-    group: &RowGroup,
-    table: &TableSpec,
-    layout_map: &LayoutMap,
-    section_headers: &[SectionHeaderRow],
-    worksheet: &mut Worksheet,
-) -> Result<(), EmissionError> {
-    let (first_row_id, last_row_id) = find_first_and_last_row_ids(group);
-
-    if let (Some(first_id), Some(last_id)) = (first_row_id, last_row_id) {
-        let first_col_id =
-            table
-                .columns
-                .first()
-                .map(|c| &c.id)
-                .ok_or_else(|| EmissionError::MissingTable {
-                    table: table.id.clone(),
-                })?;
-
-        // 1. Determine start row: section header row if present, else first child row
-        let start_row = if let Some(sh) = section_headers
-            .iter()
-            .find(|sh| sh.table_id == table.id && sh.group_id == group.id.as_str())
-        {
-            sh.row
-        } else {
-            let first_cell_id =
-                CellId::new(table.id.clone(), first_id.clone(), first_col_id.clone());
-            let first_coord =
-                layout_map
-                    .get_cell(&first_cell_id)
-                    .ok_or(EmissionError::MissingCell {
-                        cell: first_cell_id,
-                    })?;
-            first_coord.row
-        };
-
-        // 2. Determine end row: physical row of last child data row
-        let last_cell_id = CellId::new(table.id.clone(), last_id.clone(), first_col_id.clone());
-        let last_coord = layout_map
-            .get_cell(&last_cell_id)
-            .ok_or(EmissionError::MissingCell { cell: last_cell_id })?;
-        let end_row = last_coord.row;
-
-        if start_row <= end_row {
-            worksheet.group_rows(start_row, end_row)?;
-        }
-    }
-
-    // 3. Recurse into nested sub-groups
-    for child in &group.children {
-        if let RowGroupChild::Group(sub_group) = child {
-            apply_row_group_outlines(sub_group, table, layout_map, section_headers, worksheet)?;
-        }
-    }
-
-    Ok(())
-}
-
-/// Finds references to the first and last `RowId`s contained within a hierarchical `RowGroup`.
-fn find_first_and_last_row_ids(group: &RowGroup) -> (Option<&RowId>, Option<&RowId>) {
-    let mut first = None;
-    let mut last = None;
-    fn walk<'a>(g: &'a RowGroup, first: &mut Option<&'a RowId>, last: &mut Option<&'a RowId>) {
-        for child in &g.children {
-            match child {
-                RowGroupChild::Row(r) => {
-                    if first.is_none() {
-                        *first = Some(r);
-                    }
-                    *last = Some(r);
-                }
-                RowGroupChild::Group(sub) => {
-                    walk(sub, first, last);
-                }
-            }
-        }
-    }
-    walk(group, &mut first, &mut last);
-    (first, last)
 }
 
 /// Emits an evaluated `CellValue` with format.

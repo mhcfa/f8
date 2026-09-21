@@ -1,6 +1,6 @@
 ---
 title: Workbook Assembly & OpenXML Binary Emission
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 domain: compiler
 status: active
 ---
@@ -12,7 +12,7 @@ The `compiler::emission::workbook` subsystem implements Finx's OpenXML Workbook 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::emission::workbook`: Core structures (`EmissionOptions`, `WorkbookEmitter`), worksheet streamer, structural header assembler, row outline aggregator, and cell writer.
+  - `finx::compiler::emission::workbook`: Core structures (`EmissionOptions`, `WorkbookEmitter`), worksheet streamer, structural header assembler, table-level collapsing manager, and cell writer.
   - `finx::compiler::emission::error`: Diagnostic domain errors (`EmissionError::MissingSheet`, `MissingTable`, `MissingCell`, `Xlsx`, `InvalidColor`, `Model`).
   - `finx::compiler::emission::mod`: Module declarations and public API re-exports.
   - `finx::compiler::mod`: High-level compiler driver facade (`Compiler::emit_workbook`, `Compiler::save_workbook`).
@@ -21,8 +21,8 @@ The `compiler::emission::workbook` subsystem implements Finx's OpenXML Workbook 
   2. Package setup: Initializes `rust_xlsxwriter::Workbook` with deterministic `DocProperties` (fixed author or custom, fixed timestamp for bit-for-bit reproducibility).
   3. Sheet configuration: Sets sheet names, tab accent colors, gridline visibility, freeze panes, arbitrated column widths, and row heights from `SheetLayout`.
   4. Header streaming: Writes table title banners, subtitles, gutters, super-headers (with 1-column single-cell guard), column key headers (descriptor left, measure right), and interleaved section headers.
-  5. Row outline grouping: Recursively determines hierarchical row ranges and applies native Excel outline levels (`worksheet.group_rows`).
-  6. Data cell streaming: Queries deduplicated formats from `FormatCache`. In standard mode, writes live formulas pre-populated with evaluation results (`set_result`) and literal values. In values-only mode, writes concrete evaluated numbers/text directly without formula definitions, preserving formula typography.
+  5. Table-level collapsing (opt-in): If `table.collapsible` is true, configures symbols above (`group_symbols_above(true)`) and collapses the table body under the title banner (`worksheet.group_rows(start_row + 1, end_row)`). Row group outline buttons are omitted to eliminate UI clutter, relying instead on descriptor cell indentation and section gutters.
+  6. Data cell streaming: Queries deduplicated formats from `FormatCache` with descriptor indentation applied directly. In standard mode, writes live formulas pre-populated with evaluation results (`set_result`) and literal values. In values-only mode, writes concrete evaluated numbers/text directly without formula definitions, preserving formula typography.
   7. Finalization: Serializes to in-memory byte buffer (`Vec<u8>`) or writes directly to disk.
 - **Dependencies**:
   - `rust_xlsxwriter`: High-performance OpenXML writer.
@@ -90,16 +90,23 @@ When `options.values_only` is true:
   - **When** emitting the workbook
   - **Then** no `<f>` tags exist in sheet XML; all numbers and strings are emitted directly into `<v>` with standard presentation formatting.
 
-### 5. Collapsible Row Group Outlining
+### 5. Table-Level Collapsing & Row Group Presentation
 
-Hierarchical row groups are outlined using native Excel row grouping (`worksheet.group_rows(start_row, end_row)`), spanning from the section header down through the last child data row.
+To keep financial models clean, legible, and unencumbered by Excel outline UI clutter:
+- **No Row Group Outline Buttons**: Nested row groups do not emit Excel outline buttons (`[+]`/`[-]`). Hierarchy is communicated visually via descriptor cell indentation (`format.set_indent(indent)`) and blank 9pt section gutters above subsequent top-level section headers.
+- **Opt-In Table Collapsing**: When `table.collapsible` is true, the emitter calls `worksheet.group_symbols_above(true)` and `worksheet.group_rows(placement.start_row + 1, placement.end_row)`. This creates a native Excel level 1 outline spanning the entire table body below the table title banner. When collapsed, the title banner remains visible while the headers, gutters, and data cells are hidden.
 
 #### Scenarios
 
-- **Hierarchical outline levels**:
-  - **Given** a table with nested row groups
+- **Default Presentation (No Outline Buttons)**:
+  - **Given** a table with nested row groups and `collapsible: false`
   - **When** assembling the worksheet
-  - **Then** rows carry `outlineLevel="1"`, `outlineLevel="2"`, etc., in worksheet XML.
+  - **Then** sheet XML contains no row outline levels (`summaryBelow` and outline brackets are absent), and descriptor cells contain `indent="1"`, `indent="2"`.
+- **Opt-In Table-Level Collapsing**:
+  - **Given** a table with `collapsible: true`
+  - **When** assembling the worksheet
+  - **Then** table rows from `start_row + 1` to `end_row` carry `outlineLevel="1"`, and `summaryBelow="0"` is set on `sheetPr/outlinePr`.
+
 
 ### 6. Deterministic Package Properties
 

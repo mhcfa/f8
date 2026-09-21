@@ -143,6 +143,7 @@ mod tests {
             title: "T".into(),
             subtitle: None,
             currency: None,
+            collapsible: false,
             columns: vec![
                 ColumnSpec::new("c1"),
                 ColumnSpec::new("c2"),
