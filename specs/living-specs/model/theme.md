@@ -1,18 +1,18 @@
 ---
 title: Pluggable Themes & Dynamic Format Masks
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 domain: model
 status: active
 ---
 
 ## Purpose
 
-The `theme` subsystem decouples workbook presentation styling, visual palette, typography, spatial metrics, and accounting number formats from calculation logic and table definitions. It provides strongly typed configuration schemas, dynamic `{dec}` and `{sym}` Excel format mask synthesis, institutional built-in theme presets, external theme resolution, and strict semantic validation.
+The `theme` subsystem decouples workbook presentation styling, visual palette, typography, spatial metrics, and accounting number formats from calculation logic and table definitions. It provides strongly typed configuration schemas, dynamic `{dec}` and `{sym}` Excel format mask synthesis, the institutional built-in theme (`corporate_navy`), external theme resolution, and strict semantic validation.
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::model::theme`: Core structures (`Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, `FormatDefaults`), validation rules, built-in themes catalog, and format mask generator.
+  - `finx::model::theme`: Core structures (`Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, `FormatDefaults`), validation rules, built-in theme lookup, and format mask generator.
   - `finx::model::manifest`: Root manifest theme resolution (`ProjectManifest::resolve_theme`) with default fallback to `"corporate_navy"`.
   - `finx::model::error`: Diagnostic errors (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeIoError`, `ThemeParseError`, `ThemePrecisionOutOfBounds`).
 - **Data flow & interfaces**:
@@ -33,9 +33,12 @@ A `Theme` contains complete specifications for `typography`, `metrics`, `palette
 
 #### Scenarios
 
-- **Valid built-in themes**:
-  - **When** `Theme::resolve` is invoked for `"corporate_navy"`, `"classic_green"`, `"modern_slate"`, or `"minimal_monochrome"`
-  - **Then** the corresponding built-in theme is loaded and passes validation.
+- **Valid built-in theme**:
+  - **When** `Theme::resolve` is invoked for `"corporate_navy"`
+  - **Then** the built-in theme is loaded and passes validation.
+- **Removed preset themes**:
+  - **When** `Theme::resolve` is invoked for removed presets (e.g. `"classic_green"`, `"modern_slate"`, or `"minimal_monochrome"`) without a corresponding file
+  - **Then** `ModelError::ThemeNotFound` is returned.
 - **Manifest fallback**:
   - **When** a `ProjectManifest` omits `theme` or specifies an empty string
   - **Then** `manifest.resolve_theme` cleanly resolves to `"corporate_navy"`.

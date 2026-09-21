@@ -41,7 +41,6 @@ fn has_zip_entry(buffer: &[u8], name: &str) -> bool {
 #[test]
 fn test_models_emit_in_memory() {
     let theme_navy = Theme::corporate_navy();
-    let theme_green = Theme::classic_green();
 
     // 1. Three-Statement Financial Model
     let (ts_manifest, ts_tables) = fixtures::three_statement::build_three_statement_model();
@@ -97,7 +96,7 @@ fn test_models_emit_in_memory() {
     let ts_frozen = Compiler::emit_workbook(
         &ts_manifest,
         &ts_tables,
-        &theme_green,
+        &theme_navy,
         Some(&ts_evaluated),
         &freeze_options,
     )

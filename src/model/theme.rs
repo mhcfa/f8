@@ -423,7 +423,7 @@ impl Theme {
         Ok(expanded)
     }
 
-    /// Resolves a theme by built-in identifier (e.g. "corporate_navy") or relative file path to a theme JSON.
+    /// Resolves a theme by built-in identifier ("corporate_navy") or relative file path to a theme JSON.
     pub fn resolve(name_or_path: &str, base_dir: Option<&Path>) -> Result<Self, ModelError> {
         if let Some(built_in) = Self::built_in(name_or_path) {
             return Ok(built_in);
@@ -461,9 +461,6 @@ impl Theme {
     pub fn built_in(name: &str) -> Option<Self> {
         match name {
             Self::DEFAULT_NAME => Some(Self::corporate_navy()),
-            "classic_green" => Some(Self::classic_green()),
-            "modern_slate" => Some(Self::modern_slate()),
-            "minimal_monochrome" => Some(Self::minimal_monochrome()),
             _ => None,
         }
     }
@@ -499,117 +496,6 @@ impl Theme {
                 gridline_color: "#E5E7EB".to_string(),
                 border_color: "#000000".to_string(),
                 total_border_color: "#1B365D".to_string(),
-            },
-            borders: BordersConfig::default(),
-            number_formats: NumberFormatsConfig::default(),
-        }
-    }
-
-    /// Traditional financial modeling and corporate finance theme.
-    pub fn classic_green() -> Self {
-        Self {
-            schema: None,
-            name: "classic_green".to_string(),
-            typography: TypographyConfig::default(),
-            metrics: MetricsConfig::default(),
-            palette: PaletteConfig {
-                table_title_fill: "#1B4D3E".to_string(),
-                table_title_text: "#FFFFFF".to_string(),
-                table_subtitle_text: "#4B5563".to_string(),
-                super_header_fill: "#2E6B56".to_string(),
-                super_header_text: "#FFFFFF".to_string(),
-                col_header_fill: "#F0F7F4".to_string(),
-                col_header_text: "#1B4D3E".to_string(),
-                section_header_fill: "#F5FAF7".to_string(),
-                section_header_text: "#1B4D3E".to_string(),
-                data_fill: "none".to_string(),
-                data_text: "#1F2937".to_string(),
-                subtotal_fill: "#F5FAF7".to_string(),
-                subtotal_text: "#1B4D3E".to_string(),
-                total_fill: "#F0F7F4".to_string(),
-                total_text: "#1B4D3E".to_string(),
-                input_text: "#0000FF".to_string(),
-                formula_text: "#000000".to_string(),
-                zebra_fill: "#F9FCFA".to_string(),
-                highlight_fill: "#FEF3C7".to_string(),
-                highlight_text: "#92400E".to_string(),
-                gridline_color: "#E5E7EB".to_string(),
-                border_color: "#D1D5DB".to_string(),
-                total_border_color: "#1B4D3E".to_string(),
-            },
-            borders: BordersConfig::default(),
-            number_formats: NumberFormatsConfig::default(),
-        }
-    }
-
-    /// Modern tech, startup, and venture capital slate theme.
-    pub fn modern_slate() -> Self {
-        Self {
-            schema: None,
-            name: "modern_slate".to_string(),
-            typography: TypographyConfig::default(),
-            metrics: MetricsConfig::default(),
-            palette: PaletteConfig {
-                table_title_fill: "#334155".to_string(),
-                table_title_text: "#FFFFFF".to_string(),
-                table_subtitle_text: "#64748B".to_string(),
-                super_header_fill: "#475569".to_string(),
-                super_header_text: "#FFFFFF".to_string(),
-                col_header_fill: "#F1F5F9".to_string(),
-                col_header_text: "#0F172A".to_string(),
-                section_header_fill: "#F8FAFC".to_string(),
-                section_header_text: "#0F172A".to_string(),
-                data_fill: "none".to_string(),
-                data_text: "#0F172A".to_string(),
-                subtotal_fill: "#F8FAFC".to_string(),
-                subtotal_text: "#0F172A".to_string(),
-                total_fill: "#F1F5F9".to_string(),
-                total_text: "#0F172A".to_string(),
-                input_text: "#0000FF".to_string(),
-                formula_text: "#000000".to_string(),
-                zebra_fill: "#F8FAFC".to_string(),
-                highlight_fill: "#FEF3C7".to_string(),
-                highlight_text: "#92400E".to_string(),
-                gridline_color: "#E2E8F0".to_string(),
-                border_color: "#CBD5E1".to_string(),
-                total_border_color: "#334155".to_string(),
-            },
-            borders: BordersConfig::default(),
-            number_formats: NumberFormatsConfig::default(),
-        }
-    }
-
-    /// High-contrast black & white audit and print-ready theme.
-    pub fn minimal_monochrome() -> Self {
-        Self {
-            schema: None,
-            name: "minimal_monochrome".to_string(),
-            typography: TypographyConfig::default(),
-            metrics: MetricsConfig::default(),
-            palette: PaletteConfig {
-                table_title_fill: "#000000".to_string(),
-                table_title_text: "#FFFFFF".to_string(),
-                table_subtitle_text: "#666666".to_string(),
-                super_header_fill: "#333333".to_string(),
-                super_header_text: "#FFFFFF".to_string(),
-                col_header_fill: "#FFFFFF".to_string(),
-                col_header_text: "#000000".to_string(),
-                section_header_fill: "#FFFFFF".to_string(),
-                section_header_text: "#000000".to_string(),
-                data_fill: "none".to_string(),
-                data_text: "#000000".to_string(),
-                subtotal_fill: "#FFFFFF".to_string(),
-                subtotal_text: "#000000".to_string(),
-                total_fill: "#FFFFFF".to_string(),
-                total_text: "#000000".to_string(),
-                input_text: "#000000".to_string(),
-                formula_text: "#000000".to_string(),
-                zebra_fill: "#FFFFFF".to_string(),
-                highlight_fill: "#EEEEEE".to_string(),
-                highlight_text: "#000000".to_string(),
-                gridline_color: "#D0D0D0".to_string(),
-                border_color: "#000000".to_string(),
-                total_border_color: "#000000".to_string(),
             },
             borders: BordersConfig::default(),
             number_formats: NumberFormatsConfig::default(),

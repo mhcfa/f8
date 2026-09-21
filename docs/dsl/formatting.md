@@ -205,13 +205,12 @@ Or pointing to an external custom theme file:
 }
 ```
 
-### 6.2. Built-in theme catalog
+### 6.2. Built-in theme
 
-Finx packages institutional built-in themes out of the box:
+Finx provides `corporate_navy` as its built-in institutional theme:
 - **`corporate_navy`**: Institutional private equity and investment banking style with deep navy headers, subtle blue section fills, crisp thin borders, and classic blue inputs.
-- **`classic_green`**: Traditional financial modeling style with hunter green headers and muted mint accents.
-- **`modern_slate`**: Tech and venture capital style with slate/charcoal headers and cool gray section dividers.
-- **`minimal_monochrome`**: High-contrast black and white styling with zero colored fills, optimized for black-and-white printing and audit packages.
+
+Additional or custom themes can be loaded via external JSON theme files (see below).
 
 ### 6.3. Theme JSON configuration schema
 

@@ -7,34 +7,41 @@ use finx::model::{BorderStyle, CurrencyCode, FormatPreset, ModelError, ProjectMa
 
 #[test]
 fn test_scenario_1_builtin_theme_catalog_resolution() {
-    let theme_names = [
-        "corporate_navy",
-        "classic_green",
-        "modern_slate",
-        "minimal_monochrome",
-    ];
+    let theme = Theme::resolve("corporate_navy", None).expect("failed to resolve built-in theme");
+    assert_eq!(theme.name, "corporate_navy");
 
-    for name in theme_names {
-        let theme = Theme::resolve(name, None).expect("failed to resolve built-in theme");
-        assert_eq!(theme.name, name);
+    // Validate theme passes all internal validation
+    theme.validate().expect("built-in theme should be valid");
 
-        // Validate theme passes all internal validation
-        theme.validate().expect("built-in theme should be valid");
+    // Verify typography and subtitle_size
+    assert_eq!(theme.typography.subtitle_size, 9.0);
+    assert!(theme.typography.title_size > theme.typography.data_size);
 
-        // Verify typography and subtitle_size
-        assert_eq!(theme.typography.subtitle_size, 9.0);
-        assert!(theme.typography.title_size > theme.typography.data_size);
+    // Verify metrics
+    assert!(theme.metrics.gutter_row_height > 0.0);
+    assert!(theme.metrics.gutter_col_width > 0.0);
+    assert!(theme.metrics.title_gutter_row_height > 0.0);
+    assert!(theme.metrics.col_padding > 0.0);
+    assert!(theme.metrics.min_col_width > 0.0);
 
-        // Verify metrics
-        assert!(theme.metrics.gutter_row_height > 0.0);
-        assert!(theme.metrics.gutter_col_width > 0.0);
-        assert!(theme.metrics.title_gutter_row_height > 0.0);
-        assert!(theme.metrics.col_padding > 0.0);
-        assert!(theme.metrics.min_col_width > 0.0);
+    // Verify borders
+    assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
+    assert_eq!(theme.borders.col_total_border_right, BorderStyle::Double);
 
-        // Verify borders
-        assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
-        assert_eq!(theme.borders.col_total_border_right, BorderStyle::Double);
+    // Verify Theme::built_in only recognizes corporate_navy
+    assert!(Theme::built_in("corporate_navy").is_some());
+    assert!(Theme::built_in("classic_green").is_none());
+    assert!(Theme::built_in("modern_slate").is_none());
+    assert!(Theme::built_in("minimal_monochrome").is_none());
+
+    // Verify removed preset themes are rejected when resolved without external file
+    let removed_themes = ["classic_green", "modern_slate", "minimal_monochrome"];
+    for name in removed_themes {
+        let err = Theme::resolve(name, None).unwrap_err();
+        assert!(matches!(
+            err,
+            ModelError::ThemeNotFound { name: ref n, ref path } if n == name && path == Path::new(name)
+        ));
     }
 }
 
