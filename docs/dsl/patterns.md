@@ -22,20 +22,17 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
   "id": "IncomeStatement",
   "title": "Income Statement",
   "columns": [
-    { "id": "line_item", "role": "descriptor", "label": "Line Item" },
-    { "id": "unit", "role": "descriptor", "label": "Unit" },
-    { "id": "2021A", "label": "2021A" },
-    { "id": "2022A", "label": "2022A" },
-    { "id": "2023A", "label": "2023A" },
-    { "id": "2024E", "label": "2024E" },
-    { "id": "2025E", "label": "2025E" }
-  ],
-  "column_groups": [
-    { "id": "historical", "label": "Historical Actuals", "columns": ["2021A", "2022A", "2023A"] },
-    { "id": "forecast", "label": "Forecast Projections", "columns": ["2024E", "2025E"] }
+    { "kind": "data", "id": "line_item", "role": "primary_descriptor", "headers": ["Line Item"] },
+    { "kind": "data", "id": "unit", "role": "descriptor", "headers": ["Unit"] },
+    { "kind": "data", "id": "2021A", "headers": ["Historical Actuals", "2021A"] },
+    { "kind": "data", "id": "2022A", "headers": ["Historical Actuals", "2022A"] },
+    { "kind": "data", "id": "2023A", "headers": ["Historical Actuals", "2023A"] },
+    { "kind": "data", "id": "2024E", "headers": ["Forecast Projections", "2024E"] },
+    { "kind": "data", "id": "2025E", "headers": ["Forecast Projections", "2025E"] }
   ],
   "rows": [
     {
+      "kind": "data",
       "id": "revenue",
       "format": "currency",
       "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08",
@@ -48,6 +45,7 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
       }
     },
     {
+      "kind": "data",
       "id": "cogs",
       "format": "currency",
       "expr": "IncomeStatement[\"revenue\", @col] * 0.45",
@@ -57,6 +55,7 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
       }
     },
     {
+      "kind": "data",
       "id": "gross_profit",
       "style": "subtotal",
       "format": "currency",
@@ -67,6 +66,7 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
       }
     },
     {
+      "kind": "data",
       "id": "gross_margin",
       "format": "percentage",
       "expr": "IncomeStatement[\"gross_profit\", @col] / IncomeStatement[\"revenue\", @col]",
@@ -82,7 +82,7 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
 ### Key behaviors
 - **Historical overrides vs forecast rules**: In `revenue`, `expr` defines forecast growth while historical years are supplied as explicit cell overrides (`"2021A": 85000`).
 - **Active column tracking**: In `cogs` and `gross_profit`, the formula references the evaluating column using `@col`.
-- **Descriptor isolation**: Because `line_item` and `unit` are marked `role: "descriptor"`, row vector formulas and currency formats never broadcast to them.
+- **Descriptor isolation**: Because `line_item` and `unit` are declared as descriptor roles (`primary_descriptor` and `descriptor`), row vector formulas and currency formats never broadcast to them.
 
 ---
 
@@ -95,25 +95,28 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
   "id": "CapTable",
   "title": "Capitalization Table",
   "columns": [
-    { "id": "investor", "role": "descriptor", "label": "Investor Name" },
-    { "id": "share_class", "role": "descriptor", "label": "Share Class" },
-    { "id": "shares", "label": "Shares Held", "format": "number" },
-    { "id": "share_price", "label": "Issue Price", "format": "currency", "decimals": 2 },
+    { "kind": "data", "id": "investor", "role": "primary_descriptor", "headers": ["Investor Name"] },
+    { "kind": "data", "id": "share_class", "role": "descriptor", "headers": ["Share Class"] },
+    { "kind": "data", "id": "shares", "headers": ["Shares Held"], "format": "number" },
+    { "kind": "data", "id": "share_price", "headers": ["Issue Price"], "format": "currency", "decimals": 2 },
     {
+      "kind": "data",
       "id": "invested_capital",
-      "label": "Invested Capital",
+      "headers": ["Invested Capital"],
       "format": "currency",
       "expr": "CapTable[@row, \"shares\"] * CapTable[@row, \"share_price\"]"
     },
     {
+      "kind": "data",
       "id": "ownership_pct",
-      "label": "Ownership %",
+      "headers": ["Ownership %"],
       "format": "percentage",
       "expr": "CapTable[@row, \"shares\"] / CapTable[\"total\", \"shares\"]"
     }
   ],
   "rows": [
     {
+      "kind": "data",
       "id": "founders",
       "cells": {
         "investor": "Founding Team",
@@ -124,6 +127,7 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
       }
     },
     {
+      "kind": "data",
       "id": "series_seed",
       "cells": {
         "investor": "First Step Capital",
@@ -133,6 +137,7 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
       }
     },
     {
+      "kind": "data",
       "id": "series_a",
       "cells": {
         "investor": "Acme Ventures",
@@ -142,6 +147,7 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
       }
     },
     {
+      "kind": "data",
       "id": "total",
       "style": "total",
       "cells": {
@@ -170,14 +176,15 @@ When a summary row intersects a summary column, both vector rules collide. An ex
 {
   "id": "Matrix",
   "columns": [
-    { "id": "q1" },
-    { "id": "q2" },
-    { "id": "total", "expr": "SUM(Matrix[@row, \"q1\"..\"q2\"])" }
+    { "kind": "data", "id": "q1" },
+    { "kind": "data", "id": "q2" },
+    { "kind": "data", "id": "total", "expr": "SUM(Matrix[@row, \"q1\"..\"q2\"])" }
   ],
   "rows": [
-    { "id": "a", "cells": { "q1": 10, "q2": 20 } },
-    { "id": "b", "cells": { "q1": 30, "q2": 40 } },
+    { "kind": "data", "id": "a", "cells": { "q1": 10, "q2": 20 } },
+    { "kind": "data", "id": "b", "cells": { "q1": 30, "q2": 40 } },
     {
+      "kind": "data",
       "id": "sum_ab",
       "expr": "Matrix[\"a\", @col] + Matrix[\"b\", @col]",
       "cells": {
@@ -201,15 +208,15 @@ In a transposed peer comparison table, entities are columns and metrics are rows
   "id": "PeerComps",
   "title": "Public Comps",
   "columns": [
-    { "id": "metric", "role": "descriptor", "label": "Metric" },
-    { "id": "AAPL", "label": "Apple Inc." },
-    { "id": "MSFT", "label": "Microsoft Corp." },
-    { "id": "GOOG", "label": "Alphabet Inc." }
+    { "kind": "data", "id": "metric", "role": "primary_descriptor", "headers": ["Metric"] },
+    { "kind": "data", "id": "AAPL", "headers": ["Apple Inc."] },
+    { "kind": "data", "id": "MSFT", "headers": ["Microsoft Corp."] },
+    { "kind": "data", "id": "GOOG", "headers": ["Alphabet Inc."] }
   ],
   "rows": [
     {
+      "kind": "data",
       "id": "ticker",
-      "role": "descriptor",
       "cells": {
         "metric": "Ticker Symbol",
         "AAPL": "AAPL",
@@ -218,6 +225,7 @@ In a transposed peer comparison table, entities are columns and metrics are rows
       }
     },
     {
+      "kind": "data",
       "id": "share_price",
       "format": "currency",
       "cells": {
@@ -242,29 +250,33 @@ For vertical amortization schedules where rows represent time periods and column
   "id": "DebtSchedule",
   "title": "Senior Debt Amortization",
   "columns": [
-    { "id": "period", "role": "descriptor", "label": "Period" },
+    { "kind": "data", "id": "period", "role": "primary_descriptor", "headers": ["Period"] },
     {
+      "kind": "data",
       "id": "beg_balance",
-      "label": "Beginning Balance",
+      "headers": ["Beginning Balance"],
       "format": "currency",
       "expr": "DebtSchedule[row.prev, \"end_balance\"]"
     },
     {
+      "kind": "data",
       "id": "interest",
-      "label": "Interest Expense",
+      "headers": ["Interest Expense"],
       "format": "currency",
       "expr": "DebtSchedule[@row, \"beg_balance\"] * (Assumptions[\"interest_rate\", \"value\"] / 12)"
     },
-    { "id": "repayment", "label": "Principal Repayment", "format": "currency" },
+    { "kind": "data", "id": "repayment", "headers": ["Principal Repayment"], "format": "currency" },
     {
+      "kind": "data",
       "id": "end_balance",
-      "label": "Ending Balance",
+      "headers": ["Ending Balance"],
       "format": "currency",
       "expr": "DebtSchedule[@row, \"beg_balance\"] - DebtSchedule[@row, \"repayment\"]"
     }
   ],
   "rows": [
     {
+      "kind": "data",
       "id": "period_1",
       "cells": {
         "period": "Month 1",
@@ -273,6 +285,7 @@ For vertical amortization schedules where rows represent time periods and column
       }
     },
     {
+      "kind": "data",
       "id": "period_2",
       "cells": {
         "period": "Month 2",

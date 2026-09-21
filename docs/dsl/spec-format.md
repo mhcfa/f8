@@ -58,48 +58,53 @@ When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler
 
 ## 3. Table Specification Schema (`tables/<id>.json`)
 
-Each table file defines an orthogonal 2D matrix with symmetrical row and column axes:
+Each table file defines an orthogonal 2D calculation matrix with explicit columns and rows:
 
 ```json
 {
   "id": "string",
   "title": "string",
+  "subtitle": "string (optional)",
+  "currency": "CurrencyCode (optional default, e.g. USD)",
+  "collapsible": "boolean (optional, default: false)",
   "columns": [
     {
+      "kind": "data",
       "id": "string",
-      "role": "measure | descriptor (optional, default: measure)",
+      "role": "measure | descriptor | primary_descriptor (optional, default: measure)",
+      "headers": ["string (multi-tier header labels, optional)"],
       "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
       "highlight": "boolean (optional, default: false)",
-      "label": "string (optional, defaults to id)",
       "format": "FormatPreset (optional)",
       "decimals": "integer (optional, fractional display precision)",
+      "currency": "CurrencyCode (optional)",
       "expr": "string (optional, column-wide vector formula)",
       "note": "string (optional)",
       "source": "string or object (optional)"
-    }
-  ],
-  "column_groups": [
+    },
     {
-      "id": "string",
-      "label": "string",
-      "columns": ["string"]
-    }
-  ],
-  "row_groups": [
-    {
-      "id": "string",
-      "label": "string",
-      "children": ["string | RowGroup (row ID or nested RowGroup)"]
+      "kind": "gutter"
     }
   ],
   "rows": [
     {
+      "kind": "section_header",
+      "title": "string",
+      "indent": "integer (optional, typographic indent on primary descriptor)",
+      "note": "string (optional)"
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
       "id": "string",
-      "role": "measure | descriptor (optional, default: measure)",
+      "indent": "integer (optional, typographic indent on primary descriptor)",
       "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
       "highlight": "boolean (optional, default: false)",
       "format": "FormatPreset (optional)",
       "decimals": "integer (optional, fractional display precision)",
+      "currency": "CurrencyCode (optional)",
       "expr": "string (optional, row-wide vector formula)",
       "note": "string (optional)",
       "source": "string or object (optional)",
@@ -112,42 +117,43 @@ Each table file defines an orthogonal 2D matrix with symmetrical row and column 
 ```
 
 ### 3.1. Axis Roles (`role`)
-Both columns and rows explicitly declare their calculation role:
+Data columns explicitly declare their calculation role:
 - **`measure` (default)**: Numerical quantities, time periods, and calculation outputs. Vector formulas broadcast across opposing measure axes.
-- **`descriptor`**: Line-item names, categorical labels, units, tickers, and presentation stubs. Vector formulas and measure formats never broadcast into or across descriptor axes.
+- **`descriptor`**: Categorical labels, metadata, units, and secondary stub information. Excluded from vector broadcasting and temporal navigation.
+- **`primary_descriptor`**: Primary row-entity label column (e.g. line item names). Sole recipient of row-level `indent`. At most one per table.
 
 ### 3.2. Semantic Styles (`style`), Highlights (`highlight`), & Precision (`decimals`)
-Columns and rows can declare structural presentation styles (`data`, `subtotal`, `total`), visual emphasis (`highlight: true`), and numeric display precision (`decimals: integer`), completely decoupled from number format masks. See [Semantic Formatting & Themes](formatting.md#3-structural-semantic-styles-semanticstyle).
+Columns and rows declare structural presentation styles (`data`, `subtotal`, `total`), visual emphasis (`highlight: true`), and numeric display precision (`decimals: integer`), completely decoupled from number format masks. See [Semantic Formatting & Themes](formatting.md#3-structural-semantic-styles-semanticstyle).
 
 ### 3.3. Cell Input Syntax (`cells`)
-Every key under `row.cells` is strictly a discrete column identifier (`ColId`). Each entry represents strictly one 0D coordinate point:
+Every key under `data_row.cells` refers strictly to a declared data column identifier (`ColId`). Each entry represents one 0D coordinate point:
 - **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
 - **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
-- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency", "decimals": 2, "style": "total", "highlight": true }`. Cell overrides can declare any format preset, precision override, structural style (`data`, `subtotal`, `total`), or highlight flag. An explicit `style: "data"` suppresses inherited row/column total borders.
+- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency", "decimals": 2, "style": "total", "highlight": true }`. An explicit `style: "data"` suppresses inherited row/column total borders.
 
 ---
 
 ## 4. Core Validation Invariants
 
-1. **Every column is explicit**: Every physical column rendered on a worksheet maps 1:1 to an explicit column declaration in `columns`. Implicit, unaddressed stub columns are never created.
+1. **Every coordinate is explicit**: Physical cells map 1:1 to explicit table declarations. The compiler never synthesizes phantom rows or unaddressed stub columns.
 2. **Single source of truth**:
    - `id`: Immutable programmatic identifier used in formulas and ASTs.
-   - `label` / descriptor cell: Display text rendered in headers and row stubs.
-   - Physical coordinates: Computed automatically by the layout engine.
+   - `headers` / descriptor cell: Display text rendered in headers and row stubs.
+   - Physical coordinates: Computed deterministically by the layout engine.
 3. **Three-tier specificity lattice**:
    $$\text{Cell Override (0D Point)} > \text{Vector Rule (1D Row or Column)} > \text{Explicit Null}$$
-4. **Zero silent precedence**: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, the compiler halts with `AmbiguousExpressionConflict`.
-5. **Zero silent blanks**: Every measure cell must resolve to a value, formula, or an explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`. Silent fallback to Excel zeros is strictly prohibited.
-6. **Formula isolation**: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing `measure` axes and never evaluate across `descriptor` axes.
+4. **Zero silent precedence**: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, compilation halts with `AmbiguousExpressionConflict`.
+5. **Zero silent blanks**: Every measure cell must resolve to a value, formula, or explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`.
+6. **Formula isolation**: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing data rows and measure columns, and never evaluate across descriptor columns.
 
 ---
 
 ## 5. Related Documentation
 
-- [Column & Row Groups](groups.md): Structured super-headers and hierarchical row sections.
+- [Grid Architecture](grid.md): Multi-tier column headers, section headers, gutters, and table collapsing.
 - [Semantic Formatting & Themes](formatting.md): Format preset catalog, conflict resolution, and workbook themes.
 - [Modeling Patterns & Archetypes](patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
-- [End-to-End Project Example](project-example.md): Complete working 3-file reference model.
+- [End-to-End Project Example](project-example.md): Complete working reference model.
 - [Addressing Syntax](addressing.md): Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
 - [Formula Grammar](grammar.md): Formal EBNF expression grammar and operator precedence.
 - [Intermediate Representation (IR)](../compiler/ir.md): 2D Specificity Resolution Lattice flowchart and expansion pass.

@@ -90,7 +90,7 @@ The architecture strictly decouples semantic identity, visual presentation, and 
 | Tier                          | Table Axis                  | Row Axis                                            | Column Axis                | Responsibility                               | Mutability                                 |
 | :---------------------------- | :-------------------------- | :-------------------------------------------------- | :------------------------- | :------------------------------------------- | :----------------------------------------- |
 | **1. Identity (`id`)**        | `id: "IncomeStatement"`     | `id: "revenue"`                                     | `id: "2024E"`              | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
-| **2. Presentation**           | `title: "Income Statement"` | Descriptor cell (`line_item: "Total Net Revenue"`) | `label: "2024 (Forecast)"` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
+| **2. Presentation**           | `title: "Income Statement"` | Descriptor cell (`line_item: "Total Net Revenue"`) | `headers: ["2024 (Forecast)"]` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
 | **3. Physical Grid**          | Sheet assignment            | Row offset                                          | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
 
 Modifying presentation labels, formatting rules, or table placement never invalidates logic or dependencies.
@@ -142,7 +142,7 @@ Detailed specifications and engine designs are organized into dedicated topics:
   - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
   - [Specification Format](dsl/spec-format.md): Multi-file JSON schemas, table structure, axis roles, and invariants.
-  - [Column & Row Groups](dsl/groups.md): Structured super-headers, timeline groupings, and hierarchical row outlines.
+  - [Grid Architecture](dsl/grid.md): Explicit 2D grid model, multi-tier headers, section dividers, gutters, and table collapsing.
   - [Semantic Formatting & Themes](dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.
   - [Addressing Syntax](dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets, and slicing.
   - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.

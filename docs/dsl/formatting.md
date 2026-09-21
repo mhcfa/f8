@@ -74,27 +74,27 @@ Numeric precision is an orthogonal property decoupled from the format preset:
 - **Numeric applicability**: `decimals` applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) ignore `decimals` or trigger a validation error (`InvalidPrecisionForPresetError`) if explicitly configured.
 
 ### 4.1. Symmetrical Usage in Specifications
-The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](spec-format.md#3-table-specification-schema), [`RowSpec`](spec-format.md#3-table-specification-schema), and point-level [`DetailedCellInput`](spec-format.md#33-cell-input-syntax-cells):
+The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](spec-format.md#3-table-specification-schema-tablesidjson), [`RowSpec`](spec-format.md#3-table-specification-schema-tablesidjson), and point-level [`DetailedCellInput`](spec-format.md#33-cell-input-syntax-cells):
 
 ```json
 {
   "columns": [
-    { "id": "q1" },
-    { "id": "q2" },
-    { "id": "q3" },
-    { "id": "q4" },
-    { "id": "fy", "style": "total" }
+    { "kind": "data", "id": "q1" },
+    { "kind": "data", "id": "q2" },
+    { "kind": "data", "id": "q3" },
+    { "kind": "data", "id": "q4" },
+    { "kind": "data", "id": "fy", "style": "total" }
   ],
   "rows": [
-    { "id": "revenue", "format": "currency" },
-    { "id": "cogs", "format": "currency" },
-    { "id": "gross_profit", "style": "subtotal", "format": "currency" },
-    { "id": "gross_margin", "format": "percentage", "decimals": 1 },
-    { "id": "diluted_eps", "format": "currency", "decimals": 2 },
-    { "id": "shares_out", "format": "number", "decimals": 0 },
-    { "id": "net_income", "style": "total", "format": "currency" },
-    { "id": "irr", "highlight": true, "format": "percentage", "decimals": 2 },
-    { "id": "ev_ebitda", "format": "multiple", "decimals": 1 }
+    { "kind": "data", "id": "revenue", "format": "currency" },
+    { "kind": "data", "id": "cogs", "format": "currency" },
+    { "kind": "data", "id": "gross_profit", "style": "subtotal", "format": "currency" },
+    { "kind": "data", "id": "gross_margin", "format": "percentage", "decimals": 1 },
+    { "kind": "data", "id": "diluted_eps", "format": "currency", "decimals": 2 },
+    { "kind": "data", "id": "shares_out", "format": "number", "decimals": 0 },
+    { "kind": "data", "id": "net_income", "style": "total", "format": "currency" },
+    { "kind": "data", "id": "irr", "highlight": true, "format": "percentage", "decimals": 2 },
+    { "kind": "data", "id": "ev_ebitda", "format": "multiple", "decimals": 1 }
   ]
 }
 ```
@@ -109,15 +109,15 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 
 ### 5.1. Number format resolution
 1. **Cell format override (Tier 1)**: An explicit `format` declared on `CellInput` always wins.
-2. **Descriptor boundary**: Descriptor coordinates (`role: "descriptor"`) isolate text formatting. Measure formats (`currency`, `percentage`, etc.) never broadcast to descriptor columns or rows.
-3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing format presets (e.g. `row.format: "currency"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
+2. **Descriptor boundary**: Descriptor columns (`role: "descriptor"` or `"primary_descriptor"`) isolate text formatting. Measure formats (`currency`, `percentage`, etc.) never broadcast to descriptor columns.
+3. **Measure vector conflict**: If measure column $c$ and row $r$ specify differing format presets (e.g. `row.format: "currency"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
 4. **Single vector format**: If only the row or only the column specifies a format preset, that preset applies across the measure cells.
 5. **Default fallback**: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.
 
 ### 5.2. Precision (`decimals`) resolution
 1. **Numeric applicability**: `decimals` resolution applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) have no precision concept and always resolve `decimals: None`. Supported fractional precision is bounded to $0 \le N \le 14$ (exceeding 14 raises `PrecisionOutOfBounds`).
 2. **Cell decimals override (Tier 1)**: An explicit `decimals` declared on `CellInput` always wins.
-3. **Measure vector conflict**: If row $r$ and column $c$ are both measures and specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
+3. **Measure vector conflict**: If measure column $c$ and row $r$ specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
 4. **Single vector decimals**: If only the row or only the column specifies `decimals`, that precision applies.
 5. **Theme default fallback**: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
 
@@ -129,7 +129,7 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 2. **Vector rule (Tier 2)**: Declaring `currency` on a `ColumnSpec` or `RowSpec` applies across measure cells (e.g. an FX conversion table with an `eur_amount` column). If a measure row and measure column declare differing currencies without a cell override, compilation halts with a currency conflict error.
 3. **Table default (Tier 3)**: Declaring `currency` on `TableSpec` sets the default currency for all currency cells within that table (e.g. a European subsidiary cash flow statement). If omitted, the table defaults to `"usd"`.
 4. **Preset isolation**: Only cells resolving `format == Some(FormatPreset::Currency)` receive a resolved currency. All other presets (`number`, `percentage`, `multiple`, `basis_points`, `date`, `text`) resolve `currency: None`.
-5. **Descriptor boundary**: Descriptor rows and columns isolate calculation axes, resolve `currency: None`, and never trigger vector currency conflicts.
+5. **Descriptor boundary**: Descriptor columns isolate calculation axes, resolve `currency: None`, and never trigger vector currency conflicts.
 
 ### 5.4. Style resolution & symmetrical 2D border composition
 

@@ -20,16 +20,15 @@ flowchart LR
 | :--- | :--- | :--- | :--- | :--- |
 | **Active Column (`@col`)** | `IncomeStatement["revenue", @col]` | Same sheet | `=C10` | Relative column (tracks evaluation column) |
 | **Active Row (`@row`)** | `CapTable[@row, "shares"]` | Same sheet | `=C5` | Relative row (tracks evaluation row) |
-| **Temporal Column Offset** | `BalanceSheet["cash", col.prev]` | Same sheet | `=C10` (at D10) | Relative column offset ($t \pm k$) |
-| **Temporal Row Offset** | `DebtSchedule[row.prev, "end_balance"]` | Same sheet | `=E9` (at row 10) | Relative row offset ($r \pm k$) |
-| **Specific Column** | `Assumptions["tax_rate", "value"]` | Different sheet (`Summary`) | `='Summary'!$B$4` | Absolute coordinate (fixed key) |
-| **Specific Column** | `DebtSchedule["balance", "2023A"]` | Same sheet | `=$C$10` | Absolute coordinate (fixed key) |
-| **Group Milestone Anchor** | `DebtSchedule["balance", cols.historical.last]` | Same sheet | `=$C$10` | Absolute coordinate (statically resolved key) |
-| **Horizontal Range** | `IncomeStatement["revenue", cols.forecast]` | Same sheet | `=SUM($C$10:$G$10)` | Absolute column bounds (fixed group range) |
+| **Column Offset** | `BalanceSheet["cash", col.prev]` | Same sheet | `=C10` (at D10) | Relative column offset ($t \pm k$) |
+| **Row Offset** | `DebtSchedule[row.prev, "end_balance"]` | Same sheet | `=E9` (at row 10) | Relative row offset ($r \pm k$) |
+| **Specific Cell** | `Assumptions["tax_rate", "value"]` | Different sheet (`Summary`) | `='Summary'!$B$4` | Absolute coordinate (fixed key) |
+| **Specific Cell** | `DebtSchedule["balance", "2023A"]` | Same sheet | `=$C$10` | Absolute coordinate (fixed key) |
+| **Horizontal Range** | `IncomeStatement["revenue", "2024E".."2028E"]` | Same sheet | `=SUM($C$10:$G$10)` | Absolute column bounds |
 | **Horizontal Range (Active)** | `CapTable[@row, "shares".."invested_capital"]` | Same sheet | `=SUM(C5:E5)` | Relative row, absolute column bounds |
-| **Vertical Range (Active)** | `BalanceSheet[rows.current_assets, @col]` | Same sheet | `=SUM(C$14:C$18)` | Relative column, absolute row bounds |
-| **Vertical Range (Specific)** | `BalanceSheet[rows.current_assets, "2024E"]` | Same sheet | `=SUM($C$14:$C$18)` | Absolute column, absolute row bounds |
-| **2D Block Range** | `BalanceSheet[rows.current_assets, cols.forecast]` | Same sheet | `=SUM($C$14:$G$18)` | Absolute 2D matrix bounds |
+| **Vertical Range (Active)** | `IncomeStatement["r_and_d".."g_and_a", @col]` | Same sheet | `=SUM(C$14:C$18)` | Relative column, absolute row bounds |
+| **Vertical Range (Specific)** | `IncomeStatement["r_and_d".."g_and_a", "2024E"]` | Same sheet | `=SUM($C$14:$C$18)` | Absolute column, absolute row bounds |
+| **2D Block Range** | `IncomeStatement["r_and_d".."g_and_a", "2024E".."2028E"]` | Same sheet | `=SUM($C$14:$G$18)` | Absolute 2D matrix bounds |
 
 ### 1.2. AST Serialization
 - Function names map to canonical uppercase names (`SUM`, `IF`, `XLOOKUP`).
@@ -49,11 +48,17 @@ The binary emitter streams the spatial layout, styling, and lowered formulas int
 3. **Deterministic metadata & reproducible compilation**:
    - Workbook package properties (`docProps/core.xml`) are populated deterministically.
    - Dynamic wall-clock timestamps are omitted to ensure bit-for-bit reproducible binary outputs across identical Git commits (respecting `SOURCE_DATE_EPOCH`).
-4. **Cell streaming**:
+4. **Header & structure streaming**:
+   - **Table title banners**: Emitted at `start_col` and styled across `start_col..=end_col` with title fill and borders.
+   - **Super-headers (Center Across Selection)**: Emits contiguous identical multi-tier header runs using `FormatAlign::CenterAcross` across adjacent columns without `<mergeCell>` tags (conforming to FAST financial modeling standards).
+   - **Section headers & gutters**: Emitted at explicit physical coordinates without calculation node overhead.
+   - **Table collapsing (opt-in)**: When `table.collapsible: true`, groups body rows below the title banner (`worksheet.group_rows`) with `group_symbols_above(true)`.
+5. **Cell streaming**:
+   - **Descriptor indentation**: Applies `format.set_indent(indent)` exclusively to the table's `primary_descriptor` column.
    - **Literal cells**: Emitted via `write_number_with_format`, `write_string_with_format`, or `write_boolean_with_format`.
    - **Formula cells**: Emitted via `write_formula_with_format`. In standard builds, each formula cell is pre-populated with its in-memory evaluated result (`set_result`). This ensures non-Excel viewers (Apple Numbers, macOS Quick Look, Google Drive preview, pandas, LibreOffice) display valid numbers immediately without an Excel recalculation pass.
    - **Values-only freezing**: When compiled with `--values-only`, formula cells are emitted as pure literals, producing frozen workbooks suitable for M&A data rooms and audit baselines.
-5. **Finalization**: Compresses and saves the OpenXML package.
+6. **Finalization**: Compresses and saves the OpenXML package.
 
 ---
 

@@ -17,9 +17,9 @@ The dependency analysis subsystem provides semantic reference resolution, coordi
   - `finx::compiler::graph::cycle`: Pluggable `CycleHandler` trait and `StrictDagHandler` implementation.
   - `finx::compiler::graph::error`: Structured `ResolveError` and `GraphError` domain diagnostics.
 - **Data flow & interfaces**:
-  - Ingests: [`CellGrid`](src/compiler/ir/cell.rs) and [`SymbolTable`](src/compiler/ir/symbol.rs).
+  - Ingests: [`CellGrid`](../../../src/compiler/ir/cell.rs) and [`SymbolTable`](../../../src/compiler/ir/symbol.rs).
   - Emits: Verified `DependencyGraph` with deterministic topological evaluation order `&[CellId]` consumed by downstream in-memory evaluation (Pass 4) and layout planning (Pass 5).
-- **Dependencies**: `petgraph::graph::DiGraph`, `petgraph::algo::tarjan_scc`, native Rust data structures (`indexmap::IndexMap`, `indexmap::IndexSet`), [`finx::expr::ast`](src/expr/ast.rs), and [`finx::compiler::ir`](src/compiler/ir/mod.rs).
+- **Dependencies**: `petgraph::graph::DiGraph`, `petgraph::algo::tarjan_scc`, native Rust data structures (`indexmap::IndexMap`, `indexmap::IndexSet`), [`finx::expr::ast`](../../../src/expr/ast.rs), and [`finx::compiler::ir`](../../../src/compiler/ir/mod.rs).
 
 ## Requirements & Invariants
 

@@ -21,24 +21,18 @@ TableRef           = Identifier "[" RowSpec "," ColSpec "]" ;
 RowSpec            = "@row"
                    | Key ".." Key
                    | Key
-                   | SpecialRow ;
+                   | RowOffset ;
 
 ColSpec            = "@col"
                    | Key ".." Key
                    | Key
-                   | SpecialCol ;
+                   | ColOffset ;
 
-SpecialRow         = "row.prev" [ "(" Integer ")" ]
-                   | "row.next" [ "(" Integer ")" ]
-                   | "rows." Identifier
-                   | "rows." Identifier ".last"
-                   | "rows." Identifier ".first" ;
+RowOffset          = "row.prev" [ "(" Integer ")" ]
+                   | "row.next" [ "(" Integer ")" ] ;
 
-SpecialCol         = "col.prev" [ "(" Integer ")" ]
-                   | "col.next" [ "(" Integer ")" ]
-                   | "cols." Identifier
-                   | "cols." Identifier ".last"
-                   | "cols." Identifier ".first" ;
+ColOffset          = "col.prev" [ "(" Integer ")" ]
+                   | "col.next" [ "(" Integer ")" ] ;
 
 Key                = String ;
 BinaryOp           = "+" | "-" | "*" | "/" | "^" | "=" | "<>" | "<" | "<=" | ">" | ">=" ;

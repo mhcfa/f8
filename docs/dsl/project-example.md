@@ -53,11 +53,12 @@ A 2-column parameter lookup table demonstrating descriptor line items and measur
   "id": "Assumptions",
   "title": "Model Assumptions",
   "columns": [
-    { "id": "parameter", "role": "descriptor", "label": "Parameter" },
-    { "id": "value", "role": "measure", "label": "Value" }
+    { "kind": "data", "id": "parameter", "role": "descriptor", "headers": ["Parameter"] },
+    { "kind": "data", "id": "value", "role": "measure", "headers": ["Value"] }
   ],
   "rows": [
     {
+      "kind": "data",
       "id": "tax_rate",
       "format": "percentage",
       "note": "Federal + blended state rate",
@@ -67,6 +68,7 @@ A 2-column parameter lookup table demonstrating descriptor line items and measur
       }
     },
     {
+      "kind": "data",
       "id": "exit_multiple",
       "format": "multiple",
       "cells": {
@@ -82,34 +84,23 @@ A 2-column parameter lookup table demonstrating descriptor line items and measur
 
 ## 4. Income Statement Table (`tables/income_statement.json`)
 
-A multi-period forecast statement demonstrating column groups, forward growth vector rules, cross-table assumptions references, and subtotal formats:
+A multi-period forecast statement demonstrating multi-tier column headers, forward growth vector rules, cross-table assumptions references, and subtotal formats:
 
 ```json
 {
   "id": "IncomeStatement",
   "title": "Income Statement",
   "columns": [
-    { "id": "line_item", "role": "descriptor", "label": "Line Item" },
-    { "id": "2023A", "label": "2023A" },
-    { "id": "2024E", "label": "2024E" },
-    { "id": "2025E", "label": "2025E" },
-    { "id": "2026E", "label": "2026E" },
-    { "id": "2027E", "label": "2027E" }
-  ],
-  "column_groups": [
-    {
-      "id": "historical",
-      "label": "Historical Actuals",
-      "columns": ["2023A"]
-    },
-    {
-      "id": "forecast",
-      "label": "Forecast Projections",
-      "columns": ["2024E", "2025E", "2026E", "2027E"]
-    }
+    { "kind": "data", "id": "line_item", "role": "primary_descriptor", "headers": ["Line Item"] },
+    { "kind": "data", "id": "2023A", "headers": ["Historical Actuals", "2023A"] },
+    { "kind": "data", "id": "2024E", "headers": ["Forecast Projections", "2024E"] },
+    { "kind": "data", "id": "2025E", "headers": ["Forecast Projections", "2025E"] },
+    { "kind": "data", "id": "2026E", "headers": ["Forecast Projections", "2026E"] },
+    { "kind": "data", "id": "2027E", "headers": ["Forecast Projections", "2027E"] }
   ],
   "rows": [
     {
+      "kind": "data",
       "id": "revenue",
       "format": "currency",
       "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth",
@@ -120,6 +111,7 @@ A multi-period forecast statement demonstrating column groups, forward growth ve
       }
     },
     {
+      "kind": "data",
       "id": "cogs",
       "format": "currency",
       "expr": "IncomeStatement[\"revenue\", @col] * 0.45",
@@ -128,6 +120,7 @@ A multi-period forecast statement demonstrating column groups, forward growth ve
       }
     },
     {
+      "kind": "data",
       "id": "gross_profit",
       "style": "subtotal",
       "format": "currency",
@@ -137,6 +130,7 @@ A multi-period forecast statement demonstrating column groups, forward growth ve
       }
     },
     {
+      "kind": "data",
       "id": "tax_expense",
       "format": "currency",
       "expr": "IncomeStatement[\"gross_profit\", @col] * Assumptions[\"tax_rate\", \"value\"]",
@@ -150,4 +144,4 @@ A multi-period forecast statement demonstrating column groups, forward growth ve
 
 ---
 
-See [Specification Format](spec-format.md) for schema details, [Column & Row Groups](groups.md) for super-headers, and [Modeling Patterns](patterns.md) for other schedule archetypes.
+See [Specification Format](spec-format.md) for schema details, [Grid Architecture](grid.md) for multi-tier headers and layout, and [Modeling Patterns](patterns.md) for other schedule archetypes.
