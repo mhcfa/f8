@@ -23,25 +23,30 @@ target-living-spec:
    ```
    - Only `DataColumnSpec` possesses a `ColId` and participates in `CellGrid` calculations.
    - `ColumnSpec::Gutter` is a unit variant with zero fields and no `ColId`. It emits zero `CellNode`s into `CellGrid`.
-3. **Explicit multi-level column headers**:
-   - `DataColumnSpec.headers: Vec<String>` supports arbitrary explicit descriptor header tiers (e.g. `["Historical Actuals", "2023A"]`). Empty headers (`headers.is_empty()`) default to `[col.id.as_str()]` at tier $N-1$ to preserve default display labeling.
-   - Add builder methods on `DataColumnSpec` and `ColumnSpec` (`.header(&str)`, `.headers(iter)`, `.display_label()`).
-4. **Descriptor axis duality**:
-   - Maintain `pub role: AxisRole` (`Measure` vs `Descriptor`) strictly on `DataColumnSpec` (purged from rows).
-   - Rows describe themselves horizontally via descriptor columns on the left (`AxisRole::Descriptor`).
+3. **Explicit multi-level column headers & zero-header tables**:
+   - `DataColumnSpec.headers: Vec<String>` explicitly defines descriptor header tiers (e.g. `["Historical Actuals", "2023A"]`). Empty `headers` (`headers.is_empty()`) explicitly denotes a column with zero header tiers. The compiler core has zero magical fallback to `col.id`.
+   - When all columns specify empty `headers` (e.g. simple row-major assumptions blocks or KPI cards), the table allocates zero physical header rows.
+   - Add builder methods on `DataColumnSpec` and `ColumnSpec` (`.header(&str)`, `.headers(iter)`, `.bottom_header()`).
+4. **Descriptor axis duality & explicit `PrimaryDescriptor`**:
+   - Maintain `pub role: AxisRole` (`Measure`, `Descriptor`, `PrimaryDescriptor`) strictly on `DataColumnSpec` (purged from rows).
+   - `AxisRole::PrimaryDescriptor` designates the table's primary entity label column that receives `row.indent`. `AxisRole::Descriptor` denotes secondary metadata columns (e.g. `Code`, `Units`, `Notes`) that remain unindented (`indent: 0`). `AxisRole::Measure` denotes calculation columns.
+   - Rows describe themselves horizontally via descriptor columns on the left (`AxisRole::Descriptor` / `AxisRole::PrimaryDescriptor`).
    - Columns describe themselves vertically via descriptor headers at the top (`headers: Vec<String>`).
+   - Tables with zero descriptor columns (all `Measure`) are 100% valid.
 5. **Multi-tier spatial header layout & bottom alignment**:
-   - Compute `max_header_levels` across all `Data` columns ($N = \max(1, \max_{c \in \text{Data}}(\text{headers.len()}))$.
-   - Allocate $N$ physical header rows above the table body region.
-   - For `Data` column $c$ with $K = c.\text{headers.len()}$:
-     - If $K = 0$, falls back to `[col.id]` placed at tier $N-1$.
-     - If $K > 0$, header item $k$ ($0 \le k < K$) is placed at tier index $\text{tier}(k) = (N - K) + k$.
-     - Any tier $t < N - K$ is an unfilled upper tier (emitted blank with no header fill or borders).
-   - For `Gutter` columns: all $N$ header rows remain completely blank with no fill or borders.
+   - Compute `max_header_levels` across all `Data` columns ($N = \max_{c \in \text{Data}}(\text{headers.len()})$).
+   - If $N == 0$: zero physical header rows are allocated, and `header_row_range` is `None`. The table body data starts immediately at `start_row` (or directly below the title banner).
+   - If $N > 0$: allocate $N$ physical header rows above the table body region, each assigned uniform height `theme.metrics.header_row_height` in `SheetLayout.row_heights`.
+     - For `Data` column $c$ with $K = c.\text{headers.len()}$:
+       - If $K == 0$, all $N$ tiers above this column remain unfilled blank cells with no header fill or borders.
+       - If $K > 0$, header item $k$ ($0 \le k < K$) is placed at tier index $\text{tier}(k) = (N - K) + k$.
+       - Any tier $t < N - K$ is an unfilled upper tier (emitted blank with no header fill or borders).
+     - For `Gutter` columns: all $N$ header rows remain completely blank with no fill or borders.
 6. **1:1 Spatial column mapping & explicit column gutters**:
    - `LayoutPlanner` maps `table.columns` strictly 1:1 to physical grid columns ($col_{\text{phys}} = col_{\text{start}} + \text{index}$).
    - `ColumnSpec::Gutter` columns receive `theme.metrics.gutter_col_width` (3.0 chars) uniformly, with blank content across all header tiers and body rows.
    - `DataColumnSpec` columns receive their configured width (`min_col_width`, descriptor width, or metric width).
+   - Header width arbitration for individual columns measures strictly the bottom-tier metric header (`headers.last()`, or 0 chars if empty), ignoring super-headers ($t < N - 1$) that visually span multiple columns via `CenterAcross`.
    - Phantom column synthesis is completely eliminated.
 7. **Visual `CenterAcross` multi-tier header emission**:
    - In the core data model, `DataColumnSpec.headers` explicitly defines the full path of headers for each column (e.g. `["Forecast", "2024E"]` and `["Forecast", "2025E"]`).
@@ -51,7 +56,7 @@ target-living-spec:
 8. **Unified axis offset navigation & descriptor boundary protection**:
    - Eliminate `SpecialCol` and `SpecialRow`, unifying relative axis navigation into a single `RelativeOffset` enum (`Prev(u32)`, `Next(u32)`) in `RowSelector::Offset` and `ColSelector::Offset`. Group selectors (`cols.<group>`, `rows.<group>`) are removed.
    - Temporal column offsets (`col.prev`, `col.next`) navigate strictly across calculable measure columns (`AxisRole::Measure`), bypassing `ColumnSpec::Gutter` and preventing relative navigation from crossing the descriptor boundary into non-measure label columns (e.g. `col.prev(1)` on the first measure column returns `ResolveError::TemporalOffsetOutOfBounds`).
-9. **Minimal table placement bounding box**: Replace `col_header_row` and `super_header_rows` in `TablePlacement` with `pub header_row_range: (u32, u32)` and rename `data_row_range` to `pub body_row_range: (u32, u32)`, both representing `(start_row, end_row)` **inclusive**.
+9. **Minimal table placement bounding box**: Replace `col_header_row` and `super_header_rows` in `TablePlacement` with `pub header_row_range: Option<(u32, u32)>` (representing inclusive `(start_row, end_row)`, or `None` if $N = 0$) and rename `data_row_range` to `pub body_row_range: (u32, u32)` (inclusive `(start_row, end_row)`).
 
 ### Why
 
@@ -117,22 +122,35 @@ target-living-spec:
 ### Goals
 
 1. **Orthogonal column schema**: Keep `table.columns` as the sole source of column geometric and header truth.
-2. **Deterministic layout offsets**: Table header height is deterministic ($N$ header rows where $N = \max(1, \max_{c \in \text{Data}}(\text{headers.len()}))$.
+2. **Deterministic layout offsets**: Table header height is deterministic ($N$ header rows where $N = \max_{c \in \text{Data}}(\text{headers.len()})$, or $N=0$ for tables without column headers).
 3. **Data purity**: Every header cell explicitly contains its display label; zero phantom blank cells or merge traps.
 4. **Canonical axis navigation**: Unified representation for relative offsets on both axes.
 
 ### Invariants
 
-- **Bottom alignment indexing**: For a table with $N = \max(1, \max_{c \in \text{Data}}(\text{col.headers.len()}))$, `Data` column $c$ with $K = c.\text{headers.len()}$ maps header $k$ ($0 \le k < K$) to physical tier $(N - K) + k$. Any tier $t < N - K$ is an unfilled upper tier.
-- **Empty headers fallback**: A `Data` column with `headers.is_empty()` defaults to a single bottom tier ($K = 1$) displaying `col.id.as_str()` at tier $N-1$, preserving default header naming.
+- **Bottom alignment indexing**: For a table with $N = \max_{c \in \text{Data}}(\text{col.headers.len()}) > 0$, `Data` column $c$ with $K = c.\text{headers.len()}$ maps header $k$ ($0 \le k < K$) to physical tier $(N - K) + k$. Any tier $t < N - K$ is an unfilled upper tier.
+- **Zero-header tables**: When $N = 0$ (all columns have empty `headers`), zero physical header rows are allocated, `TablePlacement.header_row_range` is `None`, and the table body data starts immediately at `start_row` (or directly below the title banner). The compiler core contains zero magical fallback to `col.id`.
+- **Primary column header vs super-headers**: In multi-tier headers ($N > 0$), the bottom tier ($t = N - 1$, corresponding to `headers.last()`) is the primary column header and is always emitted cell-by-cell without `CenterAcross`. Super-header tiers ($t < N - 1$) visually center across contiguous identical labels using `CenterAcross`.
+- **Header tier row heights**: When $N > 0$, all $N$ physical header rows are allocated with uniform height `theme.metrics.header_row_height` in `SheetLayout.row_heights`.
 - **Column gutter dimensions and blank emission**: A `ColumnSpec::Gutter` is planned and emitted with `theme.metrics.gutter_col_width` (3.0 chars), emits zero `CellNode`s into `CellGrid`, and produces blank unstyled cells across all header tiers and body rows without borders or fills.
 - **Column gutter formula exclusion**: `ColumnSpec::Gutter` has no `ColId`. Relative offsets (`col.prev`, `col.next`) bypass column gutters completely. Slice ranges (`"start".."end"`) require valid `ColId`s, while the lowered Excel range physically encloses any intervening column gutters.
 - **Visual CenterAcross super-header emission**: For super-header tiers ($t < N - 1$), contiguous columns sharing identical labels are emitted with `CenterAcross` alignment (label written at first column of the run, followed by blank cells with matching header formatting). Bottom-tier metric headers ($t = N - 1$) are emitted cell-by-cell. Contiguous runs break at `ColumnSpec::Gutter` columns.
-- **Measure-axis temporal boundary**: `ColSelector::Offset(RelativeOffset::Prev(k))` and `Next(k)` navigate strictly across the ordered sequence of measure columns (`AxisRole::Measure`), matching how `row.prev` navigates only `DataRowSpec` IDs. Crossing the descriptor boundary or indexing before the first measure column produces `ResolveError::TemporalOffsetOutOfBounds`.
-- **Inclusive header and body row ranges**: `TablePlacement.header_row_range` is `(start_row, end_row)` inclusive for header tiers, and `TablePlacement.body_row_range` is `(start_row, end_row)` inclusive for all table body rows (`Data`, `SectionHeader`, `Gutter`).
+- **Measure-axis temporal boundary & explicit roles**: `AxisRole` has three variants: `Measure`, `Descriptor`, and `PrimaryDescriptor`. `ColSelector::Offset(RelativeOffset::Prev(k))` and `Next(k)` navigate strictly across the ordered sequence of measure columns (`AxisRole::Measure`), matching how `row.prev` navigates only `DataRowSpec` IDs. Crossing the descriptor boundary (`PrimaryDescriptor` or `Descriptor`) produces `ResolveError::TemporalOffsetOutOfBounds`. `TableSpec::validate()` enforces at most one `PrimaryDescriptor` column per table (`ModelError::DuplicatePrimaryDescriptor`).
+- **Inclusive header and body row ranges**: `TablePlacement.header_row_range` is `Option<(u32, u32)>` representing inclusive `(start_row, end_row)` when $N > 0$, or `None` when $N = 0$. `TablePlacement.body_row_range` is `(start_row, end_row)` inclusive for all table body rows (`Data`, `SectionHeader`, `Gutter`).
 - **Unstyled blank tiers**: Unfilled upper tiers above descriptor or short columns are emitted blank with no header fill or borders.
+- **Bottom-tier column width arbitration**: In `LayoutPlanner` column width arbitration, a column's header text length is determined exclusively by its bottom-tier header (`headers.last()`, or 0 if `headers.is_empty()`). Super-header tiers ($t < N - 1$) visually span across multiple columns using `CenterAcross` and are excluded from single-column width calculations, preventing wide super-header labels from distorting or over-widening individual columns. `ColumnSpec::Gutter` is assigned fixed width `theme.metrics.gutter_col_width` (3.0 chars) without text arbitration.
 
 ### Decisions
+
+- **Explicit `PrimaryDescriptor` in `AxisRole` (Zero Heuristics)**:
+  - *Choice*: Add `AxisRole::PrimaryDescriptor` alongside `Descriptor` and `Measure`.
+  - *Rationale*: Symmetrically mirrors the role of the primary line-item descriptor. The primary descriptor column is explicitly designated rather than guessed via positional heuristics, and is the sole recipient of `row.indent`. Secondary descriptor columns (`Descriptor`) remain unindented. Validated to at most 1 per table. Tables with zero descriptor columns (pure numerical matrices) are 100% valid.
+  - *Alternatives considered*: Positional first-descriptor heuristic (rejected for core explicitness); boolean `is_primary` flag on column (redundant with role).
+
+- **Zero-Header Tables (Explicit Omission over Magic Defaults)**:
+  - *Choice*: Empty `headers` explicitly specifies zero header tiers ($N = 0$), yielding `header_row_range: None` and allocating zero header rows.
+  - *Rationale*: Eliminates magical defaulting to `col.id` in compiler core. If an author or DSL wants default column ID headers, frontend builders (`ColumnSpec::new`) initialize `headers: vec![id]`. The core layout engine simply plans what is explicitly provided.
+  - *Alternatives considered*: Mandatory headers (rejected because simple key-value tables and assumption blocks often have no column headers); magical fallback to `col.id` in core (rejected for core purity).
 
 - **Visual `CenterAcross` Emission for Super-Headers (Zero Merged Cells, Explicit Core IR)**:
   - *Choice*: In the core IR, each column explicitly declares its full header vector (`headers: Vec<String>`). During OpenXML workbook emission, identical contiguous super-header labels are rendered via `CenterAcross` (horizontal alignment across selection).
@@ -140,7 +158,7 @@ target-living-spec:
   - *Alternatives considered*: Literal string repetition in every Excel cell (rejected for presentation because adjacent identical labels clutter visual review in Excel); hard merged cells `<mergeCells>` (rejected because it breaks Excel keyboard navigation and formula drag-copy).
 
 - **Descriptor Boundary Protection for Column Offsets**:
-  - *Choice*: `col.prev` and `col.next` navigate the sequence of measure columns (`AxisRole::Measure`), ignoring descriptor columns.
+  - *Choice*: `col.prev` and `col.next` navigate the sequence of measure columns (`AxisRole::Measure`), ignoring descriptor columns (`PrimaryDescriptor`, `Descriptor`).
   - *Rationale*: In financial modeling, relative column navigation (`col.prev`) is temporal (prior month/quarter/year). Descriptor columns contain string metadata (e.g. account name, code), not numerical calculation vectors. Attempting to navigate into a descriptor column is an out-of-bounds domain error, not a valid cell reference.
   - *Alternatives considered*: Navigating all columns including descriptors. Rejected because it produces invalid dependencies and runtime type/evaluation failures when a formula attempts to calculate against text labels.
 
@@ -149,9 +167,9 @@ target-living-spec:
   - *Rationale*: Symmetrically mirrors `RowSpec::Gutter`. Provides clean, explicit horizontal spacing between period blocks (e.g. between historical actuals and forecast periods, or quarterly schedules and full-year totals) without dummy IDs (e.g. `col_gutter_1`) or sparse missing cells in `CellGrid`. Emits zero nodes into the computation graph.
   - *Alternatives considered*: Flat struct with `AxisRole::Gutter` (rejected because it forces dummy ColIds on spacing columns and pollutes the identifier namespace); hardcoding layout heuristics (rejected because spacing must be explicitly author-controlled).
 
-- **Inclusive Bounds for `TablePlacement`**:
-  - *Choice*: `header_row_range: (u32, u32)` and `body_row_range: (u32, u32)` are inclusive `(start_row, end_row)`.
-  - *Rationale*: Uniformity and consistency across header tiers and table body rows.
+- **Inclusive Bounds & Option for `TablePlacement`**:
+  - *Choice*: `header_row_range: Option<(u32, u32)>` (inclusive `(start_row, end_row)` or `None`) and `body_row_range: (u32, u32)` (inclusive `(start_row, end_row)`).
+  - *Rationale*: Uniformity and consistency across header tiers and table body rows, with `None` cleanly representing zero-header tables.
 
 - **Local `headers: Vec<String>` Representation**:
   - *Choice*: Add `pub headers: Vec<String>` directly to `DataColumnSpec`.
@@ -161,7 +179,38 @@ target-living-spec:
   - *Choice*: Replace `SpecialRow` and `SpecialCol` with `RelativeOffset::Prev(u32)` and `Next(u32)`.
   - *Rationale*: Relative axis navigation is identical across horizontal and vertical dimensions.
 
+- **Bottom-tier header column width arbitration**:
+  - *Choice*: Arbitrate individual column width using `headers.last()` (bottom tier, or 0 if `headers.is_empty()`), ignoring super-headers ($t < N - 1$).
+  - *Rationale*: Super-headers visually center across contiguous runs of columns using `CenterAcross`. The combined physical span of the grouped columns already provides ample horizontal clearance for the super-header text. Measuring super-headers on individual columns would artificially stretch the first column or every column in the group.
+  - *Alternatives considered*: Measuring all header tiers on each column (rejected because it forces individual columns to be as wide as multi-column super-headers); dividing super-header text length evenly across span (unnecessary complexity for compiler core).
+
 ### Data Contracts
+
+#### Updated `AxisRole`
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AxisRole {
+    #[default]
+    Measure,
+    Descriptor,
+    PrimaryDescriptor,
+}
+
+impl AxisRole {
+    pub fn is_measure(&self) -> bool {
+        matches!(self, Self::Measure)
+    }
+
+    pub fn is_descriptor(&self) -> bool {
+        matches!(self, Self::Descriptor | Self::PrimaryDescriptor)
+    }
+
+    pub fn is_primary_descriptor(&self) -> bool {
+        matches!(self, Self::PrimaryDescriptor)
+    }
+}
+```
 
 #### Updated `ColumnSpec` and `DataColumnSpec`
 ```rust
@@ -183,6 +232,13 @@ impl ColumnSpec {
     pub fn role(&self) -> Option<AxisRole> {
         match self {
             Self::Data(d) => Some(d.role),
+            Self::Gutter => None,
+        }
+    }
+
+    pub fn bottom_header(&self) -> Option<&str> {
+        match self {
+            Self::Data(d) => d.bottom_header(),
             Self::Gutter => None,
         }
     }
@@ -214,8 +270,9 @@ pub struct DataColumnSpec {
 }
 
 impl DataColumnSpec {
-    pub fn display_label(&self) -> &str {
-        self.headers.last().map(|s| s.as_str()).unwrap_or(self.id.as_str())
+    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
+    pub fn bottom_header(&self) -> Option<&str> {
+        self.headers.last().map(|s| s.as_str())
     }
 }
 ```
@@ -254,8 +311,8 @@ pub struct TablePlacement {
     pub title_row: Option<u32>,
     pub subtitle_row: Option<u32>,
     pub title_gutter_row: Option<u32>,
-    /// Inclusive physical row range of header tiers: `(start_row, end_row)`.
-    pub header_row_range: (u32, u32),
+    /// Inclusive physical row range of header tiers, or None if the table has zero headers.
+    pub header_row_range: Option<(u32, u32)>,
     /// Inclusive physical row range of table body rows (data, section headers, gutters): `(start_row, end_row)`.
     pub body_row_range: (u32, u32),
 }
@@ -285,28 +342,40 @@ pub struct TablePlacement {
   - **When** formula parsing, dependency resolution, and lowering execute
   - **Then** the range resolves cleanly without reference to any `ColGroupId`.
 
-- [ ] **Scenario 5: Default column ID header fallback**
-  - **Given** a `Data` column with `headers: []` (e.g. constructed via `ColumnSpec::new("2023")`) in a table with $N=2$ header tiers
+- [ ] **Scenario 5: Table with zero column headers (`header_row_range: None`)**
+  - **Given** a table with columns specifying `headers: []` (or omitted)
   - **When** spatial layout and workbook emission execute
-  - **Then** the column displays `"2023"` at tier 1 (immediately above data rows) with tier 0 left blank and unstyled.
+  - **Then** $N = 0$, `TablePlacement.header_row_range` is `None`, zero physical header rows are allocated on the worksheet, data rows begin immediately at `start_row`, and workbook emission emits zero header rows.
 
 - [ ] **Scenario 6: Explicit column gutter & formula bypass**
   - **Given** columns `Data("2023")`, `Gutter`, and `Data("2024")` with expression `col.prev` on `2024`
   - **When** grid expansion, spatial layout, dependency resolution, and emission execute
   - **Then** zero calculation cells are emitted for the gutter column into `CellGrid`; the physical gutter column is sized to `theme.metrics.gutter_col_width` (3.0 chars); header cells and data cells on that column remain completely blank without borders; `col.prev` on `2024` resolves directly to `2023` (bypassing the gutter column).
 
+- [ ] **Scenario 7: Explicit PrimaryDescriptor validation and indentation**
+  - **Given** a table with columns `PrimaryDescriptor("item")`, `Descriptor("notes")`, and `Measure("y2024")`, and row `indent: Some(1)`
+  - **When** table validation, spatial layout, and emission execute
+  - **Then** only `item` receives `indent: 1`, while `notes` and `y2024` receive `indent: 0`. If a second column is declared as `PrimaryDescriptor`, validation returns `ModelError::DuplicatePrimaryDescriptor`.
+
+- [ ] **Scenario 8: Column width arbitration with multi-tier headers and gutters**
+  - **Given** columns with super-header `"Historical Actuals"` (18 chars) and bottom-tier headers `"2023"` (4 chars) and `"2024"` (4 chars), and a `ColumnSpec::Gutter` column
+  - **When** column width arbitration executes
+  - **Then** the data columns' widths are arbitrated against bottom-tier character length 4 (plus padding / min width) rather than 18, and the gutter column is fixed to `theme.metrics.gutter_col_width` (3.0 chars).
+
 ---
 
 ## Tasks
 
 ### Phase 1: Model & AST updates
+- [ ] Define `AxisRole` with `Measure`, `Descriptor`, and `PrimaryDescriptor` variants in `src/model/table.rs`.
 - [ ] Define `ColumnSpec` enum (`Data(DataColumnSpec)`, `Gutter`) and `DataColumnSpec` struct in `src/model/table.rs`.
-- [ ] Ensure `AxisRole` is preserved on `DataColumnSpec`.
+- [ ] Validate at most one `PrimaryDescriptor` column per table (`ModelError::DuplicatePrimaryDescriptor`).
 - [ ] Remove `ColumnGroup` and `column_groups` from `TableSpec` in `src/model/table.rs`.
 - [ ] Remove `ColGroupId` from `src/model/id.rs`.
 - [ ] Remove column group validation methods and errors from `src/model/table.rs` and `src/model/error.rs`.
 - [ ] Unify `SpecialRow` and `SpecialCol` into `RelativeOffset` in `src/expr/ast.rs`.
 - [ ] Update `RowSelector` and `ColSelector` to use `Offset(RelativeOffset)`.
+- [ ] Note: Core model migration (`AxisRole::PrimaryDescriptor`, `RowSpec`, `ColumnSpec`, `RelativeOffset`) is executed in lockstep with the explicit rows spec.
 
 ### Phase 2: Expression parser & symbol resolution
 - [ ] Update formula parser in `src/expr/parser.rs` to parse `row.prev/next` and `col.prev/next` into `RelativeOffset`.
@@ -317,13 +386,16 @@ pub struct TablePlacement {
 - [ ] Update `src/compiler/graph/resolve.rs` to handle `RelativeOffset` for rows and columns, enforcing measure-column boundaries for column offsets, and remove group resolution branches.
 
 ### Phase 3: Spatial layout planner refactoring
-- [ ] Update `LayoutPlanner` to calculate `max_header_levels` ($N \ge 1$) from `Data` columns.
-- [ ] Allocate $N$ header rows for multi-tier column headers using the bottom-alignment indexing formula $\text{tier}(k) = (N - K) + k$.
+- [ ] Update `LayoutPlanner` to calculate `max_header_levels` ($N \ge 0$) from `Data` columns.
+- [ ] When $N == 0$: set `header_row_range: None` and allocate zero physical header rows.
+- [ ] When $N > 0$: set `header_row_range: Some((header_start, header_end))` and allocate $N$ header rows for multi-tier column headers using bottom-alignment indexing $\text{tier}(k) = (N - K) + k$, assigning `theme.metrics.header_row_height` to each allocated header row in `SheetLayout.row_heights`.
 - [ ] Assign `theme.metrics.gutter_col_width` (3.0 chars) to `ColumnSpec::Gutter` in `SheetLayout.col_widths`.
-- [ ] Remove `SuperHeaderPlacement` and replace `col_header_row` and `data_row_range` with inclusive `header_row_range: (u32, u32)` and `body_row_range: (u32, u32)` in `TablePlacement`.
+- [ ] In `ColumnArbitrationContext::arbitrate`, measure header text length using `col.headers.last()` (or 0 if `headers.is_empty()`), bypassing super-headers, and fix `ColumnSpec::Gutter` to `theme.metrics.gutter_col_width`.
+- [ ] Remove `SuperHeaderPlacement` and replace `col_header_row` and `data_row_range` with `header_row_range: Option<(u32, u32)>` and inclusive `body_row_range: (u32, u32)` in `TablePlacement`.
 
 ### Phase 4: Workbook emission & formatting
-- [ ] Update `WorkbookEmitter` to render super-header tiers with `CenterAcross` across contiguous runs of identical labels, render bottom-tier metric headers cell-by-cell, leave upper unfilled tiers unstyled, and stream gutter columns as blank cells without borders.
+- [ ] In `src/compiler/emission/workbook.rs`, skip column header emission entirely when `header_row_range` is `None`.
+- [ ] When headers exist ($N > 0$), render super-header tiers ($t < N - 1$) with `CenterAcross` across contiguous runs of identical labels, render bottom-tier metric headers ($t = N - 1$) cell-by-cell, leave upper unfilled tiers unstyled, and stream gutter columns as blank cells without borders.
 
 ### Phase 5: Test fixtures & verification
 - [ ] Update model fixtures (`tests/fixtures/three_statement.rs`, `lbo.rs`, `styling_showcase.rs`).

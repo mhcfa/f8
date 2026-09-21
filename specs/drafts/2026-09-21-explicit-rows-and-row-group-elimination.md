@@ -23,15 +23,15 @@ target-living-spec:
    }
    ```
 3. **Purge `AxisRole` from rows**: Remove `role: AxisRole` from rows completely. `AxisRole` belongs strictly on `ColumnSpec` to demarcate calculation vectors from descriptor labels.
-4. **Optional visual `indent: Option<u8>`**: Support `pub indent: Option<u8>` strictly as an optional cell-formatting attribute on both `DataRowSpec` and `SectionHeaderRowSpec`. It applies `format.set_indent(...)` directly to the descriptor cell. It does not alter row heights, does not simulate pseudo-group levels or outline folding, and has zero effect on the calculation graph.
+4. **Optional visual `indent: Option<u8>`**: Support `pub indent: Option<u8>` strictly as an optional cell-formatting attribute on both `DataRowSpec` and `SectionHeaderRowSpec`. It applies `format.set_indent(...)` directly to the table's `AxisRole::PrimaryDescriptor` cell. Secondary descriptor columns (`AxisRole::Descriptor`) and measure columns (`AxisRole::Measure`) receive `indent: 0`. It does not alter row heights, does not simulate pseudo-group levels or outline folding, and has zero effect on the calculation graph. In `TableSpec::validate()`, declaring `indent: Some(k)` where $k > 0$ on any row requires the table to declare a `PrimaryDescriptor` column (`ModelError::IndentWithoutPrimaryDescriptor`). Rows specifying `indent: None` or `indent: Some(0)` are valid on any table (including pure measure matrices without descriptor columns).
 5. **Pure accounting `SemanticStyle`**: Keep `SemanticStyle` strictly for accounting typography and border treatments (`Data`, `Subtotal`, `Total`). Calculation IR expansion never inspects visual styles.
 6. **Zero dummy IDs for gutters & section headers**: `RowSpec::Gutter` is a unit variant with zero fields. `SectionHeaderRowSpec` carries only visual title, optional indent, and note—it has no `RowId`. Only `DataRowSpec` possesses a `RowId`, ensuring `RowId` is 1:1 with calculable line items.
 7. **Calculation-only Pass 2 grid expansion**: In `expand_table`:
    - Structural rows (`Gutter` and `SectionHeader`) emit zero `CellNode`s into `CellGrid`. `CellGrid` remains strictly the IR for calculable data cells.
    - Structural rows never create partial-row missing-cell traps in `CellGrid`, `SymbolTable`, dependency analysis, or evaluation.
    - `Data` rows execute standard 3-tier specificity expansion across all columns.
-8. **1:1 Spatial layout mapping & natural text overflow**: `LayoutPlanner` maps `table.rows` strictly 1:1 to physical grid rows:
-   - `SectionHeader` rows receive `theme.metrics.section_row_height` (18.0 pt) uniformly. The section header title is emitted at physical column `start_col` (the table's primary descriptor column) with left-alignment and optional indent format; subsequent columns on that physical row remain empty, allowing the title text to naturally overflow without merged cells.
+8. **1:1 Spatial layout mapping & continuous section bands**: `LayoutPlanner` maps `table.rows` strictly 1:1 to physical grid rows:
+   - `SectionHeader` rows receive `theme.metrics.section_row_height` (18.0 pt) uniformly. The section header title is emitted at physical column `start_col` (the table's physical left margin) with left-alignment and optional indent format. If `theme.palette.section_header_fill` is present (not none/transparent), columns `start_col + 1 ..= end_col` are emitted as blank formatted cells using `section_header_format`, providing a continuous colored horizontal section band across the table while text naturally overflows without merged cells (`<mergeCells>`). If fill is transparent/none, subsequent columns on that row remain unwritten/empty.
    - `Gutter` rows receive `theme.metrics.gutter_row_height` (9.0 pt).
    - `Data` rows receive `theme.metrics.data_row_height` (15.0 pt).
    - Phantom row synthesis is completely eliminated ($row_{\text{phys}} = row_{\text{body\_start}} + \text{index}$).
@@ -109,11 +109,11 @@ target-living-spec:
 ### Invariants
 
 - **Row contiguity**: `table.rows` specifies the complete vertical sequence of the table body region.
-- **Descriptor indentation only**: `indent` applies exclusively to descriptor columns (`AxisRole::Descriptor`); measure columns ignore indentation.
+- **Primary descriptor indentation only**: `indent` applies exclusively to the table's `AxisRole::PrimaryDescriptor` column; secondary descriptor columns (`AxisRole::Descriptor`) and measure columns (`AxisRole::Measure`) receive `indent: 0`. If any row declares `indent: Some(k)` where $k > 0$ but the table does not declare a `PrimaryDescriptor` column, validation returns `ModelError::IndentWithoutPrimaryDescriptor`. Rows specifying `indent: None` or `indent: Some(0)` are valid on any table (including pure numerical matrices without descriptor columns).
 - **Structural calculation exclusion**: Neither `RowSpec::Gutter` nor `RowSpec::SectionHeader` emits `CellNode`s into `CellGrid`. Only `RowSpec::Data` produces calculation cells.
 - **RowId calculation bijection**: Every `RowId` in `TableMetadata.rows` belongs strictly to a `DataRowSpec` and possesses calculation cells for all columns.
 - **Gutter row height**: A `RowSpec::Gutter` is planned and emitted with `theme.metrics.gutter_row_height` (9.0 pt) and blank content across all columns.
-- **Section header row height & natural overflow**: A `RowSpec::SectionHeader` is planned and emitted with uniform `theme.metrics.section_row_height` (18.0 pt). Its `title` is written at physical column `start_col` (the table's primary descriptor column) with left-aligned format (and optional `indent`); all subsequent columns on that row are emitted as blank cells, allowing text to naturally overflow without cell merging (`<mergeCells>`).
+- **Section header row height & continuous banner emission**: A `RowSpec::SectionHeader` is planned and emitted with uniform `theme.metrics.section_row_height` (18.0 pt). Its `title` is written at physical column `start_col` (the table's physical left margin) with left-aligned format (and optional `indent`). If `theme.palette.section_header_fill` is set (not none/transparent), columns `start_col + 1 ..= end_col` are emitted as blank formatted cells using `section_header_format`, providing a continuous colored horizontal section band across the table while text naturally overflows without cell merging (`<mergeCells>`). If fill is transparent/none, subsequent columns remain unwritten/empty.
 - **Data-row temporal navigation**: Relative offsets (`row.prev`, `row.next`) navigate strictly across the ordered sequence of `DataRowSpec` IDs in `SymbolTable.rows`, bypassing intervening `Gutter` and `SectionHeader` rows. Formula lowering to Excel emits an A1 cell coordinate corresponding to the target data row's physical row.
 - **Slice range endpoints**: Slice ranges (`"start".."end"`) require valid `RowId`s and can only be anchored to `DataRowSpec` items. Intermediate structural rows within the range are ignored in Finx evaluation, while the lowered Excel range encloses the physical span.
 
@@ -129,14 +129,14 @@ target-living-spec:
   - *Rationale*: Assigning a `RowId` to a section header causes formula slice ranges (e.g. `"rev".."cogs"`) to include the header ID, leading to missing cell coordinates in measure columns and runtime evaluation failures in `eval_range`. Keeping `RowId` strictly on `DataRowSpec` ensures that every `RowId` is 100% calculable across all columns. Structural rows are emitted directly to OpenXML during worksheet row streaming.
   - *Alternatives considered*: Giving `SectionHeader` a `RowId` and emitting partial/empty descriptor cells into `CellGrid`. Rejected because it leaks visual-only rows into the calculation DAG, complicates dependency analysis, and creates non-existent cell references.
 
-- **Optional Visual `indent: Option<u8>` (Zero Pseudo-Hierarchy)**:
-  - *Choice*: Add `pub indent: Option<u8>` to both `DataRowSpec` and `SectionHeaderRowSpec` as an optional formatting attribute.
-  - *Rationale*: Cell indentation in financial modeling is a visual presentation choice. Decoupling it from row height prevents `indent` from simulating a group hierarchy, while avoiding brittle leading whitespace in string values that could break lookups.
-  - *Alternatives considered*: Leading whitespace in label strings (brittle for lookups); mandatory `indent: u8` driving row height (reintroduces group-like hierarchy into layout).
+- **Explicit `PrimaryDescriptor` Indentation (Zero Pseudo-Hierarchy)**:
+  - *Choice*: Add `pub indent: Option<u8>` to both `DataRowSpec` and `SectionHeaderRowSpec` as an optional formatting attribute, applied strictly to the column with `AxisRole::PrimaryDescriptor`.
+  - *Rationale*: Cell indentation in financial modeling is a visual presentation choice. Decoupling it from row height prevents `indent` from simulating a group hierarchy. Binding it explicitly to `PrimaryDescriptor` ensures that secondary descriptors (e.g. `Code`, `Units`, `Notes`) never receive unwanted indentation without relying on positional heuristics.
+  - *Alternatives considered*: Leading whitespace in label strings (brittle for lookups); mandatory `indent: u8` driving row height (reintroduces group-like hierarchy into layout); positional stub-column heuristic (implicit, rejected for core purity).
 
-- **Natural Section Header Overflow (Zero Merged Cells)**:
-  - *Choice*: Write section header title to `(row, start_col)` and leave subsequent cells blank.
-  - *Rationale*: The FAST financial modeling standard prohibits merged cells. Excel naturally spills left-aligned text across adjacent empty cells, preserving keyboard navigation and copy-paste.
+- **Continuous Section Header Banner Emission (Zero Merged Cells)**:
+  - *Choice*: Write section header title to `(row, start_col)` and format `start_col + 1 ..= end_col` with `section_header_format` when fill is present.
+  - *Rationale*: The FAST financial modeling standard prohibits merged cells (`<mergeCells>`). Excel naturally spills left-aligned text across adjacent empty cells (even when formatted with matching fill), preserving keyboard navigation, copy-paste, and a clean continuous visual band across the table.
 
 - **Data-Row Navigation for Temporal Offsets**:
   - *Choice*: `row.prev(k)` and `row.next(k)` navigate the sequence of `DataRowSpec` IDs in `SymbolTable.rows`, not physical rows.
@@ -225,15 +225,15 @@ pub enum SemanticStyle {
 
 ### Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Explicit row indentation**
-  - **Given** a `DataRowSpec` with `indent: Some(2)`
+- [ ] **Scenario 1: Explicit row indentation on PrimaryDescriptor**
+  - **Given** a `TableSpec` with a `PrimaryDescriptor` column and a `DataRowSpec` with `indent: Some(2)`
   - **When** spatial layout and workbook emission execute
-  - **Then** the primary descriptor cell receives `format.set_indent(2)`, while measure columns have `indent: 0`.
+  - **Then** the primary descriptor cell receives `format.set_indent(2)`, while secondary descriptor columns and measure columns receive `indent: 0`.
 
-- [ ] **Scenario 2: Section headers with natural text overflow**
+- [ ] **Scenario 2: Section headers with continuous band fill and natural text overflow**
   - **Given** a `SectionHeaderRowSpec` with `title: "Operating Expenses"` and `indent: Some(1)`
   - **When** layout and emission execute
-  - **Then** zero calculation cells are emitted into `CellGrid`; the header is planned with uniform 18.0 pt row height and bold styling; the title is written at `start_col` with `format.set_indent(1)`, and subsequent columns on that row remain blank, allowing natural text overflow without merged cells.
+  - **Then** zero calculation cells are emitted into `CellGrid`; the header is planned with uniform 18.0 pt row height and bold styling; the title is written at physical column `start_col` with `format.set_indent(1)`, and if `theme.palette.section_header_fill` is present, columns `start_col + 1 ..= end_col` are emitted as blank formatted cells using `section_header_format`, providing a continuous colored horizontal section band across the table while text naturally overflows without merged cells.
 
 - [ ] **Scenario 3: Explicit gutter row**
   - **Given** a `RowSpec::Gutter`
@@ -262,10 +262,12 @@ pub enum SemanticStyle {
 ### Phase 1: Model & AST updates
 - [ ] Define `RowSpec` enum (`Data(DataRowSpec)`, `SectionHeader(SectionHeaderRowSpec)`, `Gutter`) in `src/model/table.rs`. `SectionHeaderRowSpec` has no `RowId`.
 - [ ] Support `indent: Option<u8>` on `DataRowSpec` and `SectionHeaderRowSpec`.
+- [ ] Validate that if any row has `indent.is_some_and(|k| k > 0)`, the table declares a `PrimaryDescriptor` column (`ModelError::IndentWithoutPrimaryDescriptor`).
 - [ ] Remove `RowGroup`, `RowGroupChild`, and `row_groups` from `TableSpec` in `src/model/table.rs`.
 - [ ] Remove `RowGroupId` from `src/model/id.rs`.
 - [ ] Remove `role` from rows; keep `AxisRole` strictly on `ColumnSpec`.
 - [ ] Remove row group validation methods and errors from `src/model/table.rs` and `src/model/error.rs`.
+- [ ] Note: Core model migration (`AxisRole::PrimaryDescriptor`, `RowSpec`, `ColumnSpec`, `RelativeOffset`) is executed in lockstep with the multi-tier column headers spec.
 
 ### Phase 2: Expression parser, IR expansion & symbol resolution
 - [ ] Remove `SpecialRow::Group*` variants from `src/expr/ast.rs` and `src/expr/parser.rs`.
@@ -284,12 +286,12 @@ pub enum SemanticStyle {
   - `RowSpec::Gutter`: `theme.metrics.gutter_row_height` (9.0 pt).
   - `RowSpec::SectionHeader`: uniform `theme.metrics.section_row_height` (18.0 pt).
   - `RowSpec::Data`: `theme.metrics.data_row_height` (15.0 pt).
-- [ ] Pass `row.indent().unwrap_or(0)` directly to `PhysicalCoordinate.indent`.
+- [ ] Pass `row.indent().unwrap_or(0)` strictly to cells of `AxisRole::PrimaryDescriptor` in `PhysicalCoordinate.indent`.
 
 ### Phase 4: Emission & format cache
 - [ ] Update `FormatCache` with helper to format `SectionHeader` with optional `indent`.
 - [ ] Remove `SectionHeaderRow` from `SheetLayout` and remove the interleaved section header loop from `src/compiler/emission/workbook.rs`.
-- [ ] In `src/compiler/emission/workbook.rs`, stream structural rows (`SectionHeader` and `Gutter`) directly during row emission, setting explicit row heights, writing header text/note at `table.start_col` (primary descriptor column) with left-aligned indentation format, and leaving measure columns blank for natural text overflow without merged cells.
+- [ ] In `src/compiler/emission/workbook.rs`, stream structural rows (`SectionHeader` and `Gutter`) directly during row emission, setting explicit row heights, writing header text/note at `table.start_col` with left-aligned indentation format, and if `theme.palette.section_header_fill` is present, writing blank formatted cells across `start_col + 1 ..= end_col` for a continuous section band without merged cells.
 
 ### Phase 5: Test fixtures & verification
 - [ ] Update model fixtures (`tests/fixtures/three_statement.rs`, `lbo.rs`, `styling_showcase.rs`) to use the new `RowSpec` constructors.
