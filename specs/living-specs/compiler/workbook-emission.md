@@ -1,6 +1,6 @@
 ---
 title: Workbook Assembly & OpenXML Binary Emission
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 domain: compiler
 status: active
 ---
@@ -67,14 +67,18 @@ Table title banners, subtitles, multi-tier super-headers, and column key headers
 
 ### 3. Formula Evaluation Result Caching
 
-Formula cells are written with their in-memory calculation result pre-populated via `Formula::new(formula).set_result(result_str)`.
+Formula cells are written with their in-memory calculation result pre-populated via `Formula::new(formula).set_result(result_str)`. When `options.omit_formula_cache` is true, result tags (`<v>`) are omitted for formula cells, forcing external calculation engines (such as Microsoft Excel or Web Excel) to evaluate formulas independently upon opening.
 
 #### Scenarios
 
 - **Cross-tool formula preview**:
   - **Given** an evaluated model with formula cells
-  - **When** emitting the workbook
+  - **When** emitting the workbook with default options (`omit_formula_cache: false`)
   - **Then** formula cells contain both `<f>` (formula expression) and `<v>` (precalculated value).
+- **Uncached formula emission**:
+  - **Given** an evaluated model with formula cells and `EmissionOptions { omit_formula_cache: true, .. }`
+  - **When** emitting the workbook
+  - **Then** formula cells contain `<f>` (formula expression) and omit precalculated `<v>` tags.
 
 ### 4. Values-Only Freezing Mode
 
@@ -130,16 +134,17 @@ Missing coordinates or unassigned entities propagate structured diagnostics (`Em
 
 ### 8. End-to-End Integration Verification & Model Exports
 
-Complete financial models are verified end-to-end across all six compiler passes without polluting CI environments with physical disk artifacts:
-- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement, Institutional LBO, and Styling Showcase models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
-- On-demand disk export: `test_export_xlsx_to_disk` is marked with `#[ignore]` and executes only when explicitly requested (`cargo test --test export_integration_test -- --ignored`).
+Complete financial models and calculation verification suites are verified end-to-end across all six compiler passes without polluting CI environments with physical disk artifacts:
+- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement, Institutional LBO, Styling Showcase, and 43-function Excel Parity Verification models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
+- On-demand disk export: `test_export_xlsx_to_disk` is marked with `#[ignore]` and executes only when explicitly requested (`cargo test --test export_integration_test -- --ignored`). It produces disk workbooks including `target/test-output/excel_parity_verification.xlsx` (emitted uncached for visual verification in Microsoft Excel / Web Excel).
 - Standalone runners: `examples/export_models.rs` compiles and exports all models on demand (`cargo run --example export_models`), and `examples/export_styling_showcase.rs` exports the dedicated styling and formatting visual showcase (`cargo run --example export_styling_showcase`).
 
 ## Public Interfaces
 
 | Type / Method | Purpose | Signature |
 | :--- | :--- | :--- |
-| `EmissionOptions` | Emission configuration | `pub struct EmissionOptions { pub values_only: bool, pub title: Option<String>, pub author: Option<String> }` |
+| `EmissionOptions` | Emission configuration | `pub struct EmissionOptions { pub values_only: bool, pub omit_formula_cache: bool, pub title: Option<String>, pub author: Option<String> }` |
+| `EmissionOptions::with_omit_formula_cache` | Builder for uncached formulas | `pub const fn with_omit_formula_cache(mut self, omit_formula_cache: bool) -> Self` |
 | `WorkbookEmitter::emit_to_buffer` | Assemble workbook to byte buffer | `emit_to_buffer(...) -> Result<Vec<u8>, EmissionError>` |
 | `WorkbookEmitter::emit_to_file` | Assemble and write to file | `emit_to_file<P: AsRef<Path>>(...) -> Result<(), EmissionError>` |
 | `Compiler::emit_workbook` | Facade compiling model to buffer | `emit_workbook(...) -> Result<Vec<u8>, CompilerError>` |

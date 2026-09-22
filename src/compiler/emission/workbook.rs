@@ -28,6 +28,8 @@ use crate::value::CellValue;
 pub struct EmissionOptions {
     /// When true, emits evaluated values instead of formulas (frozen audit workbook).
     pub values_only: bool,
+    /// When true, emits formulas without cached evaluation result tags (<v>).
+    pub omit_formula_cache: bool,
     /// Document title metadata in docProps/core.xml.
     pub title: Option<String>,
     /// Document author metadata in docProps/core.xml.
@@ -45,6 +47,13 @@ impl EmissionOptions {
     #[must_use]
     pub const fn with_values_only(mut self, values_only: bool) -> Self {
         self.values_only = values_only;
+        self
+    }
+
+    /// Builder method enabling or disabling formula result caching.
+    #[must_use]
+    pub const fn with_omit_formula_cache(mut self, omit_formula_cache: bool) -> Self {
+        self.omit_formula_cache = omit_formula_cache;
         self
     }
 
@@ -455,8 +464,9 @@ impl WorkbookEmitter {
                                     // Live formulas mode
                                     if let Some(formula_str) = lowered_formulas.get(&cell_id) {
                                         let mut formula = Formula::new(formula_str);
-                                        if let Some(val) =
-                                            evaluated.and_then(|e| e.get_cell(&cell_id))
+                                        if !options.omit_formula_cache
+                                            && let Some(val) =
+                                                evaluated.and_then(|e| e.get_cell(&cell_id))
                                         {
                                             formula = formula.set_result(val.to_string());
                                         }

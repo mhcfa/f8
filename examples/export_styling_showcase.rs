@@ -53,6 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: Some("Finx Institutional Styling & Formatting Showcase".to_string()),
         author: Some("Finx Design System".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(

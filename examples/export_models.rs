@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: Some("Three-Statement Financial Model".to_string()),
         author: Some("Finx Institutional Engine".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(
@@ -87,6 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: Some("Three-Statement Financial Model (Frozen)".to_string()),
         author: Some("Finx Audit Freeze Engine".to_string()),
         values_only: true,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(
@@ -118,6 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: Some("Project Titan Institutional LBO Model".to_string()),
         author: Some("Sponsor Private Equity".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(
@@ -150,6 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: Some("Finx Institutional Styling & Formatting Showcase".to_string()),
         author: Some("Finx Design System".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(

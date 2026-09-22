@@ -51,6 +51,7 @@ fn test_models_emit_in_memory() {
         title: Some("Three-Statement Financial Model".to_string()),
         author: Some("Finx Institutional Engine".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     let ts_buffer = Compiler::emit_workbook(
@@ -96,6 +97,7 @@ fn test_models_emit_in_memory() {
         title: Some("Frozen Baseline".to_string()),
         author: Some("Audit Engine".to_string()),
         values_only: true,
+        omit_formula_cache: false,
     };
 
     let ts_frozen = Compiler::emit_workbook(
@@ -126,6 +128,7 @@ fn test_models_emit_in_memory() {
         title: Some("Project Titan LBO Model".to_string()),
         author: Some("Sponsor Private Equity".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     let lbo_buffer = Compiler::emit_workbook(
@@ -187,6 +190,7 @@ fn test_models_emit_in_memory() {
         title: Some("Finx Institutional Styling Showcase".to_string()),
         author: Some("Finx Design System".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     let showcase_buffer = Compiler::emit_workbook(
@@ -239,6 +243,87 @@ fn test_models_emit_in_memory() {
         sc_styles_xml.contains("style=\"thin\""),
         "Expected thin border in styles.xml"
     );
+
+    // 5. Excel Parity Verification Suite (All 43 Standard Functions)
+    let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
+    let parity_evaluated = Compiler::evaluate(&parity_manifest, &parity_tables)
+        .expect("Parity model must compile and evaluate cleanly");
+
+    let parity_errors = parity_evaluated.find_errors();
+    assert!(
+        parity_errors.is_empty(),
+        "Expected zero evaluation errors across all 43 functions in parity suite, found: {parity_errors:?}"
+    );
+
+    for table in &parity_tables[1..] {
+        for row in &table.rows {
+            if let finx::model::table::RowSpec::Data(d) = row {
+                let status = parity_evaluated.get_value(
+                    &table.id,
+                    &d.id,
+                    &finx::model::id::ColId::from("parity_status"),
+                );
+                assert_eq!(
+                    status,
+                    Some(&finx::value::CellValue::Text("PASS".to_string())),
+                    "Function '{}' in table '{}' failed parity check",
+                    d.id,
+                    table.id
+                );
+            }
+        }
+    }
+
+    // Verify uncached formula emission (<f> present, <v> omitted for formulas)
+    let uncached_options = EmissionOptions {
+        title: Some("Excel Parity Verification (Uncached)".to_string()),
+        author: Some("Finx Parity Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: true,
+    };
+
+    let uncached_buffer = Compiler::emit_workbook(
+        &parity_manifest,
+        &parity_tables,
+        &theme_navy,
+        Some(&parity_evaluated),
+        &uncached_options,
+    )
+    .expect("Uncached parity model must emit to OpenXML buffer");
+
+    assert_eq!(&uncached_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    let uncached_sheet_xml = read_zip_entry(&uncached_buffer, "xl/worksheets/sheet1.xml");
+    assert!(
+        uncached_sheet_xml.contains("<f>"),
+        "Formulas must be emitted in uncached mode"
+    );
+    assert!(
+        !uncached_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),
+        "Uncached mode must not write evaluated value into formula result tag"
+    );
+
+    // Verify cached formula emission (<f> present with cached <v> tag)
+    let cached_options = EmissionOptions {
+        title: Some("Excel Parity Verification (Cached)".to_string()),
+        author: Some("Finx Parity Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: false,
+    };
+
+    let cached_buffer = Compiler::emit_workbook(
+        &parity_manifest,
+        &parity_tables,
+        &theme_navy,
+        Some(&parity_evaluated),
+        &cached_options,
+    )
+    .expect("Cached parity model must emit to OpenXML buffer");
+
+    let cached_sheet_xml = read_zip_entry(&cached_buffer, "xl/worksheets/sheet1.xml");
+    assert!(
+        cached_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),
+        "Cached mode must write precalculated value in <v> tag following formula"
+    );
 }
 
 // ----------------------------------------------------------------------------
@@ -266,6 +351,7 @@ fn test_export_xlsx_to_disk() {
         title: Some("Three-Statement Financial Model".to_string()),
         author: Some("Finx Institutional Engine".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(
@@ -296,6 +382,7 @@ fn test_export_xlsx_to_disk() {
         title: Some("Project Titan LBO Model".to_string()),
         author: Some("Sponsor Private Equity".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(
@@ -335,6 +422,7 @@ fn test_export_xlsx_to_disk() {
         title: Some("Finx Institutional Styling Showcase".to_string()),
         author: Some("Finx Design System".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     Compiler::save_workbook(
@@ -354,8 +442,51 @@ fn test_export_xlsx_to_disk() {
     assert!(has_zip_entry(&sc_bytes, "xl/worksheets/sheet1.xml"));
     assert!(has_zip_entry(&sc_bytes, "xl/worksheets/sheet2.xml"));
 
+    // 4. Export Excel Parity Verification Model (Uncached for Web Excel Inspection)
+    let parity_file = output_dir.join("excel_parity_verification.xlsx");
+    let _ = std::fs::remove_file(&parity_file);
+
+    let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
+    let parity_options = EmissionOptions {
+        title: Some("Excel Parity Verification Suite (All 43 Functions)".to_string()),
+        author: Some("Finx Parity Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: true,
+    };
+
+    Compiler::save_workbook(
+        &parity_manifest,
+        &parity_tables,
+        &theme,
+        None, // Automatically evaluates during compilation
+        &parity_options,
+        &parity_file,
+    )
+    .expect("Failed to save Excel parity verification model to disk");
+
+    assert!(parity_file.exists());
+    let parity_bytes = std::fs::read(&parity_file).expect("Failed to read saved parity file");
+    assert!(parity_bytes.len() > 6000, "Expected non-trivial file size");
+    assert_eq!(&parity_bytes[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    assert!(has_zip_entry(&parity_bytes, "xl/workbook.xml"));
+    assert!(has_zip_entry(&parity_bytes, "xl/worksheets/sheet1.xml"));
+
+    let parity_sheet_xml = read_zip_entry(&parity_bytes, "xl/worksheets/sheet1.xml");
+    assert!(
+        parity_sheet_xml.contains("<f>"),
+        "Formulas must be emitted in parity export"
+    );
+    assert!(
+        !parity_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),
+        "Uncached mode must not cache formula results"
+    );
+
     println!("\nExported test workbooks successfully:");
     println!("  - Three-Statement Model: {}", ts_file.display());
     println!("  - Institutional LBO Model: {}", lbo_file.display());
     println!("  - Styling Showcase Model: {}", sc_file.display());
+    println!(
+        "  - Parity Verification Model (Uncached): {}",
+        parity_file.display()
+    );
 }

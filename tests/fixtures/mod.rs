@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub mod lbo;
+pub mod parity_suite;
 pub mod styling_showcase;
 pub mod three_statement;
 

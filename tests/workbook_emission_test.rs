@@ -92,6 +92,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
         title: Some("Corporate Financial Model".to_string()),
         author: Some("Acme Corp".to_string()),
         values_only: false,
+        omit_formula_cache: false,
     };
 
     let buffer =
@@ -384,6 +385,7 @@ fn test_scenario_6_values_only_freezing_mode() {
     // 1. Test with automatic fallback evaluation (evaluated: None)
     let options = EmissionOptions {
         values_only: true,
+        omit_formula_cache: false,
         title: None,
         author: None,
     };
