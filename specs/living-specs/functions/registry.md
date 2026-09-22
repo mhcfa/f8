@@ -27,7 +27,7 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
   - `finx::functions::registry`: Deterministic `IndexMap`-backed registry with uppercase lookup, static call validation, and argument binding (`bind_arguments`), including cyclical pair resolution for `VariadicRule::Pairs`.
   - `finx::functions::common`: Shared argument traversal and branch evaluation helpers (`NumericCollector`, `LogicalCollector`, `eval_branch_arg`, `count_numbers`, `count_non_empty`) and IEEE-754 decimal rounding routines.
   - `finx::functions::error`: Structured `FunctionError` diagnostic variants with 1-indexed argument positions.
-  - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`), conditional aggregation functions (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`), and criteria compilation engine (`Criterion`).
+  - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `MEDIAN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`), conditional aggregation functions (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`), and criteria compilation engine (`Criterion`).
   - `finx::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
   - `finx::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
   - `finx::functions::lookup`: Built-in modern lookup and reference functions (`XLOOKUP`, `XMATCH`, `INDEX`) and shared 1D search engine (`search.rs`).
@@ -70,7 +70,7 @@ Function dispatch is case-insensitive, thread-safe, and deterministic. Function 
   - **Then** resolves to `AbsFunction`.
 - **Deterministic iteration**:
   - **When** iterating through `FunctionRegistry::standard()`
-  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT", "XLOOKUP", "XMATCH", "INDEX", "DATE", "EDATE", "EOMONTH", "YEARFRAC", "YEAR", "MONTH", "DAY", "DAYS"]`).
+  - **Then** yields registered functions strictly in registration order (`["ABS", "SUM", "AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "MEDIAN", "ROUND", "ROUNDUP", "ROUNDDOWN", "SUMPRODUCT", "SUMIFS", "COUNTIFS", "AVERAGEIFS", "MINIFS", "MAXIFS", "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH", "NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT", "XLOOKUP", "XMATCH", "INDEX", "DATE", "EDATE", "EOMONTH", "YEARFRAC", "YEAR", "MONTH", "DAY", "DAYS"]`).
 - **Arity validation**:
   - **When** validating `ABS` with 0 or 2 arguments
   - **Then** rejects with `FunctionError::TooFewArguments` or `FunctionError::TooManyArguments`.

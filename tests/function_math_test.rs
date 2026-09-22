@@ -18,7 +18,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 43);
+    assert_eq!(registry.len(), 44);
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),
@@ -28,6 +28,7 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("COUNTA", FunctionCategory::Math),
         ("MAX", FunctionCategory::Math),
         ("MIN", FunctionCategory::Math),
+        ("MEDIAN", FunctionCategory::Math),
         ("ROUND", FunctionCategory::Math),
         ("ROUNDUP", FunctionCategory::Math),
         ("ROUNDDOWN", FunctionCategory::Math),
@@ -433,5 +434,102 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
     assert!(matches!(
         res_malformed,
         Err(FunctionError::EvaluationFailure { .. })
+    ));
+}
+
+#[test]
+fn test_scenario_11_median_odd_even_ranges_and_errors() {
+    let registry = FunctionRegistry::standard();
+    let median = registry.lookup("MEDIAN").unwrap();
+    let ctx = MockEvalContext;
+
+    // 1. Odd count of numbers: [10, 50, 20] -> sorted [10, 20, 50] -> median is 20
+    let odd_range = FunctionArg::Array {
+        rows: 3,
+        cols: 1,
+        values: vec![
+            CellValue::Number(10.0),
+            CellValue::Number(50.0),
+            CellValue::Number(20.0),
+        ],
+        is_range_ref: true,
+    };
+    let res = median.evaluate(&[odd_range], &ctx).unwrap();
+    assert_eq!(res, CellValue::Number(20.0));
+
+    // 2. Even count of numbers: [10, 40, 20, 30] -> sorted [10, 20, 30, 40] -> median is (20 + 30) / 2 = 25
+    let even_range = FunctionArg::Array {
+        rows: 4,
+        cols: 1,
+        values: vec![
+            CellValue::Number(10.0),
+            CellValue::Number(40.0),
+            CellValue::Number(20.0),
+            CellValue::Number(30.0),
+        ],
+        is_range_ref: true,
+    };
+    let res = median.evaluate(&[even_range], &ctx).unwrap();
+    assert_eq!(res, CellValue::Number(25.0));
+
+    // 3. Range with ignored non-numeric cells (text, booleans, empty)
+    let mixed_range = FunctionArg::Array {
+        rows: 6,
+        cols: 1,
+        values: vec![
+            CellValue::Number(100.0),
+            CellValue::Text("ignore me".into()),
+            CellValue::Boolean(true),
+            CellValue::Empty,
+            CellValue::Number(300.0),
+            CellValue::Number(200.0),
+        ],
+        is_range_ref: true,
+    };
+    let res = median.evaluate(&[mixed_range], &ctx).unwrap();
+    assert_eq!(res, CellValue::Number(200.0));
+
+    // 4. Empty range with no numbers returns #NUM! in Excel
+    let empty_range = FunctionArg::Array {
+        rows: 2,
+        cols: 1,
+        values: vec![CellValue::Empty, CellValue::Text("no numbers".into())],
+        is_range_ref: true,
+    };
+    let res = median.evaluate(&[empty_range], &ctx).unwrap();
+    assert_eq!(res, CellValue::Error(ExcelError::Num));
+
+    // 5. Direct scalars with boolean coercion: MEDIAN(10, TRUE, FALSE) -> sorted [0, 1, 10] -> median is 1
+    let scalar_args = [
+        FunctionArg::Scalar(CellValue::Number(10.0)),
+        FunctionArg::Scalar(CellValue::Boolean(true)),
+        FunctionArg::Scalar(CellValue::Boolean(false)),
+    ];
+    let res = median.evaluate(&scalar_args, &ctx).unwrap();
+    assert_eq!(res, CellValue::Number(1.0));
+
+    // 6. Direct scalar text returns #VALUE!
+    let scalar_text_args = [
+        FunctionArg::Scalar(CellValue::Number(10.0)),
+        FunctionArg::Scalar(CellValue::Text("invalid".into())),
+    ];
+    let res = median.evaluate(&scalar_text_args, &ctx).unwrap();
+    assert_eq!(res, CellValue::Error(ExcelError::Value));
+
+    // 7. Error in range bubbles immediately
+    let error_range = FunctionArg::Array {
+        rows: 2,
+        cols: 1,
+        values: vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
+        is_range_ref: true,
+    };
+    let res = median.evaluate(&[error_range], &ctx).unwrap();
+    assert_eq!(res, CellValue::Error(ExcelError::Ref));
+
+    // 8. Too few arguments (0 args)
+    let res_empty = median.evaluate(&[], &ctx);
+    assert!(matches!(
+        res_empty,
+        Err(FunctionError::TooFewArguments { .. })
     ));
 }

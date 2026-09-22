@@ -244,7 +244,7 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 43 Standard Functions)
+    // 5. Excel Parity Verification Suite (All 44 Standard Functions)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_evaluated = Compiler::evaluate(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
@@ -252,7 +252,7 @@ fn test_models_emit_in_memory() {
     let parity_errors = parity_evaluated.find_errors();
     assert!(
         parity_errors.is_empty(),
-        "Expected zero evaluation errors across all 43 functions in parity suite, found: {parity_errors:?}"
+        "Expected zero evaluation errors across all 44 functions in parity suite, found: {parity_errors:?}"
     );
 
     for table in &parity_tables[1..] {
@@ -448,7 +448,7 @@ fn test_export_xlsx_to_disk() {
 
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 43 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 44 Functions)".to_string()),
         author: Some("Finx Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,

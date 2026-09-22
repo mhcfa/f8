@@ -47,22 +47,18 @@ impl NumericCollector {
         });
     }
 
-    /// Collects numbers across arguments for arithmetic aggregators (`SUM`, `AVERAGE`, `MIN`, `MAX`).
-    ///
-    /// # Excel Parity Rules
-    /// - In range references (`is_range_ref: true`): text, booleans, and empty cells are ignored; cell errors bubble up immediately.
-    /// - In direct scalars: booleans convert to `1.0`/`0.0`, empty cells contribute `0.0`, text returns `ExcelError::Value`, and errors bubble immediately.
-    /// - In explicit array literals (`is_range_ref: false`): booleans and empty cells convert; text produces `ExcelError::Value`.
-    pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
-        let mut collector = Self::new();
-
+    /// Iterates over numeric observations across arguments following Excel parity rules.
+    fn for_each_numeric<F>(args: &[FunctionArg<'_>], mut f: F) -> Result<(), ExcelError>
+    where
+        F: FnMut(f64),
+    {
         for arg in args {
             match arg {
                 FunctionArg::Scalar(val) => match val {
-                    CellValue::Number(n) => collector.record(*n),
-                    CellValue::Boolean(true) => collector.record(1.0),
-                    CellValue::Boolean(false) => collector.record(0.0),
-                    CellValue::Empty => collector.record(0.0),
+                    CellValue::Number(n) => f(*n),
+                    CellValue::Boolean(true) => f(1.0),
+                    CellValue::Boolean(false) => f(0.0),
+                    CellValue::Empty => f(0.0),
                     CellValue::Error(e) => return Err(*e),
                     CellValue::Text(_) => return Err(ExcelError::Value),
                 },
@@ -74,7 +70,7 @@ impl NumericCollector {
                     if *is_range_ref {
                         for v in values {
                             match v {
-                                CellValue::Number(n) => collector.record(*n),
+                                CellValue::Number(n) => f(*n),
                                 CellValue::Error(e) => return Err(*e),
                                 CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {
                                     // Range references silently ignore text, booleans, and empty cells
@@ -84,10 +80,10 @@ impl NumericCollector {
                     } else {
                         for v in values {
                             match v {
-                                CellValue::Number(n) => collector.record(*n),
-                                CellValue::Boolean(true) => collector.record(1.0),
-                                CellValue::Boolean(false) => collector.record(0.0),
-                                CellValue::Empty => collector.record(0.0),
+                                CellValue::Number(n) => f(*n),
+                                CellValue::Boolean(true) => f(1.0),
+                                CellValue::Boolean(false) => f(0.0),
+                                CellValue::Empty => f(0.0),
                                 CellValue::Error(e) => return Err(*e),
                                 CellValue::Text(_) => return Err(ExcelError::Value),
                             }
@@ -99,7 +95,18 @@ impl NumericCollector {
                 }
             }
         }
+        Ok(())
+    }
 
+    /// Collects numbers across arguments for arithmetic aggregators (`SUM`, `AVERAGE`, `MIN`, `MAX`).
+    ///
+    /// # Excel Parity Rules
+    /// - In range references (`is_range_ref: true`): text, booleans, and empty cells are ignored; cell errors bubble up immediately.
+    /// - In direct scalars: booleans convert to `1.0`/`0.0`, empty cells contribute `0.0`, text returns `ExcelError::Value`, and errors bubble immediately.
+    /// - In explicit array literals (`is_range_ref: false`): booleans and empty cells convert; text produces `ExcelError::Value`.
+    pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
+        let mut collector = Self::new();
+        Self::for_each_numeric(args, |n| collector.record(n))?;
         collector.sum = normalize_zero(collector.sum);
         Ok(collector)
     }
@@ -114,6 +121,13 @@ impl NumericCollector {
     #[must_use]
     pub fn max_or_zero(&self) -> f64 {
         normalize_zero(self.max.unwrap_or(0.0))
+    }
+
+    /// Collects all numeric observations across arguments into a vector following Excel parity rules.
+    pub fn collect_values(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, ExcelError> {
+        let mut values = Vec::new();
+        Self::for_each_numeric(args, |n| values.push(n))?;
+        Ok(values)
     }
 }
 

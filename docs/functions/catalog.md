@@ -12,6 +12,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 | `COUNTA` | 1 | Unlimited | `Single` | Count of non-empty cells (numbers, text, booleans, errors) |
 | `MAX` | 1 | Unlimited | `Single` | Maximum numeric value |
 | `MIN` | 1 | Unlimited | `Single` | Minimum numeric value |
+| `MEDIAN` | 1 | Unlimited | `Single` | Statistical median (middle value) across scalars and ranges; ignores text in ranges |
 | `ROUND` | 2 | 2 | `None` | Rounds number to specified decimal places |
 | `ROUNDUP` | 2 | 2 | `None` | Rounds number upward, away from zero |
 | `ROUNDDOWN` | 2 | 2 | `None` | Rounds number downward, toward zero |

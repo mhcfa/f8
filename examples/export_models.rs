@@ -175,15 +175,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // -------------------------------------------------------------------------
-    // 5. Excel Parity Verification Suite (All 43 Functions, Uncached)
+    // 5. Excel Parity Verification Suite (All 44 Functions, Uncached)
     // -------------------------------------------------------------------------
-    println!("\n▶ Compiling Excel Parity Verification Model (All 43 Functions, Uncached)...");
+    println!("\n▶ Compiling Excel Parity Verification Model (All 44 Functions, Uncached)...");
     let parity_start = Instant::now();
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_file = canonical_out.join("excel_parity_verification.xlsx");
 
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 43 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 44 Functions)".to_string()),
         author: Some("Finx Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,

@@ -1,8 +1,8 @@
-//! Canonical Excel calculation parity test fixture covering all 43 registered standard functions.
+//! Canonical Excel calculation parity test fixture covering all 44 registered standard functions.
 //!
 //! Organizes tests into 6 vertical tables on a single worksheet:
 //! 1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows) for ranges and lookups.
-//! 2. `MathParity`: 16 standard math and aggregation functions.
+//! 2. `MathParity`: 17 standard math and aggregation functions.
 //! 3. `LogicalParity`: 9 logical, branching, and error-handling functions.
 //! 4. `FinancialParity`: 7 discounting, return, and loan amortization functions.
 //! 5. `LookupParity`: 3 modern lookup and index functions.
@@ -26,7 +26,7 @@ struct ParityCase {
     is_boolean: bool,
 }
 
-/// Constructs the complete 43-function Excel parity verification model.
+/// Constructs the complete 44-function Excel parity verification model.
 #[must_use]
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let manifest = ProjectManifest {
@@ -102,7 +102,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     };
 
     // -------------------------------------------------------------------------
-    // 2. Parity Cases Definition (All 43 Standard Functions)
+    // 2. Parity Cases Definition (All 44 Standard Functions)
     // -------------------------------------------------------------------------
     let math_cases = [
         ParityCase {
@@ -145,6 +145,12 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             id: "min",
             label: "MIN(num_a)",
             formula: "MIN(SeedData[\"r1\"..\"r4\", \"num_a\"])",
+            is_boolean: false,
+        },
+        ParityCase {
+            id: "median",
+            label: "MEDIAN(num_a)",
+            formula: "MEDIAN(SeedData[\"r1\"..\"r4\", \"num_a\"])",
             is_boolean: false,
         },
         ParityCase {
@@ -423,8 +429,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
 
     let math_table = build_category_table(
         "MathParity",
-        "Math & Aggregation Functions (16)",
-        "ABS, SUM, AVERAGE, COUNT, COUNTA, MAX, MIN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT, *IFS",
+        "Math & Aggregation Functions (17)",
+        "ABS, SUM, AVERAGE, COUNT, COUNTA, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT, *IFS",
         &math_cases,
     );
     let logical_table = build_category_table(
