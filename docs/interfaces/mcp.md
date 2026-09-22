@@ -22,7 +22,7 @@ flowchart TD
 
     subgraph Server ["f8 MCP Server (f8-mcp)"]
         B -->|"Tool JSON Arguments"| C["MCP Tool Handler"]
-        C -->|"Scaffold Request"| T["Template Ingest\n(templates/)"]
+        C -->|"Scaffold Request"| T["Embedded Archetypes\n(include_str!)"]
         C -->|"Canonical Spec Ingest"| D["TableSpec Validation\n(f8-core::model)"]
     end
 
@@ -47,7 +47,7 @@ f8 strictly avoids imperative micro-mutation tools (`insert_row`, `update_cell`,
 
 ### 2.1. Institutional Template Scaffolding (`f8_scaffold_template`)
 
-When building standard financial models, the agent invokes `f8_scaffold_template` to generate a complete institutional skeleton:
+When building standard financial models, the agent invokes `f8_scaffold_template` to generate a complete institutional skeleton from embedded archetypes:
 
 ```json
 // Tool Call
@@ -57,7 +57,7 @@ When building standard financial models, the agent invokes `f8_scaffold_template
 }
 ```
 
-The scaffolding engine drops battle-tested canonical JSON files directly into the project (`tables/income_statement.json`, `tables/balance_sheet.json`, `tables/cash_flow.json`, `tables/assumptions.json`):
+The scaffolding engine unpacks battle-tested canonical JSON files from embedded binary assets directly into the project (`tables/income_statement.json`, `tables/balance_sheet.json`, `tables/cash_flow.json`, `tables/assumptions.json`):
 - **Pre-wired formulas**: Net Income links to Retained Earnings and Operating Cash Flow; Cash Flow ending cash balances the Balance Sheet; subtotal slices (`SUM(cogs..sga)`) are established.
 - **Institutional styling**: Accounting double-underlines, currency formatting, percentage precision, and section groupings are pre-applied.
 - **Unpopulated driver inputs**: Historical actuals and projection assumptions are omitted or left without values.

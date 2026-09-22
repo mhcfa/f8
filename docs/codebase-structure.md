@@ -6,7 +6,7 @@ This document outlines the directory layout, module boundaries, and dependency h
 
 ## 1. Directory Layout
 
-The codebase is organized as a Cargo Workspace separating the mathematical compiler core from outer interface binaries and institutional templates:
+The codebase is organized as a Cargo Workspace separating the mathematical compiler core from outer interface binaries and embedded institutional templates:
 
 ```text
 f8/
@@ -26,17 +26,16 @@ f8/
 │   │
 │   ├── f8-cli/               # Command-line interface binary (clap)
 │   │   ├── src/                # CLI subcommands (init, scaffold, compile, inspect)
+│   │   ├── templates/          # Institutional model archetypes (embedded via include_str!)
+│   │   │   ├── three-statement/# Linked IS, BS, CF, and driver assumptions
+│   │   │   ├── lbo/            # Transaction assumptions, debt schedules, returns
+│   │   │   ├── trading-comps/  # Public SaaS trading comps and valuation multiples
+│   │   │   └── cap-table/      # Pre-/post-money ownership and dilution schedule
 │   │   └── tests/              # CLI integration tests, argument parsing, & exit code assertions
 │   │
 │   └── f8-mcp/               # Model Context Protocol server binary
 │       ├── src/                # Stdio JSON-RPC tools and prompts for AI agents
 │       └── tests/              # MCP protocol serialization & tool contract tests
-│
-├── templates/                  # Institutional model archetypes (canonical JSON skeletons)
-│   ├── three-statement/        # Linked IS, BS, CF, and driver assumptions
-│   ├── lbo/                    # Transaction assumptions, debt schedules, returns
-│   ├── trading-comps/          # Public SaaS trading comps and valuation multiples
-│   └── cap-table/              # Pre-/post-money ownership and dilution schedule
 │
 ├── docs/                       # High-level strategic architecture & subsystem documentation
 └── specs/                      # Spec-driven development (living specs & draft specs)
@@ -72,10 +71,11 @@ Sequential pipeline transforming validated input specs into evaluated matrices a
 - **Pass 6b (`compiler::emission`)**: Streams spatial layouts, styles, precalculated cell caches, and formulas into in-memory `.xlsx` byte buffers via `rust_xlsxwriter::Workbook::save_to_buffer()`, or serializes headless outputs (JSON/CSV).
 - **Inspection Facade (`compiler::CompiledModel`)**: Unified compiler artifact combining `EvaluatedModel`, `DependencyGraph`, `CellGrid`, and `LayoutMap` to answer `inspect cell`, `inspect dependents`, and `inspect table` queries without re-running passes.
 
-### 2.4. Layer 4: Institutional Templates & Scaffolding (`templates/`)
+### 2.4. Layer 4: Institutional Templates & Scaffolding (Embedded Assets)
 
-Curated canonical JSON skeletons demonstrating institutional financial modeling best practices:
+Curated canonical JSON skeletons demonstrating institutional financial modeling best practices, embedded directly into binary artifacts (via `include_str!`):
 
+- **Embedded factory archetypes**: Bundled directly into outer interface binaries (`f8-cli`, `f8-mcp`) to eliminate external directory dependencies, runtime path-lookup failures, and installation asset fragmentation.
 - **Institutional layout & formula wiring**: Pre-configured with exact typographic indentation, section groupings, subtotal formatting, and inter-statement formula linkages (e.g. Net Income flowing to Retained Earnings and Cash Flow).
 - **"Scaffold-and-Fill" workflow**: Driver cells and historical actuals are omitted or marked as required inputs. The compiler fails fast reporting missing inputs, creating an automated deterministic checklist for agents to populate.
 
@@ -113,6 +113,7 @@ flowchart TD
 
 - **Acyclic hierarchy**: `f8-core` is strictly leaf-level. It never depends on outer interface crates (`f8-cli`, `f8-mcp`, `f8-wasm`).
 - **I/O-agnostic pure core**: `f8-core` performs pure in-memory computations with zero direct filesystem I/O (`std::fs`). Manifest and theme loading from disk, directory discovery, and workbook file saving are strictly performed by outer adapters (`f8-cli`, `f8-mcp`).
+- **Embedded archetype assets**: Built-in institutional templates are compiled directly into outer interface binaries as static assets (`include_str!`), ensuring single-binary portability and eliminating runtime path-discovery failures.
 - **Pass isolation**: Core compiler passes depend on shared domain types (`model`, `expr`, `value`, `functions`), but do not depend backwards on each other.
 - **Direct interface integration**: Outer interfaces (`f8-cli`, `f8-mcp`, `f8-wasm`) depend directly on `f8-core` for validation, topological evaluation, and compilation.
 - **Linear data flow**: Each compiler pass consumes the output of the prior pass as pure, explicit data structures.

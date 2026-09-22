@@ -12,7 +12,6 @@ pub mod layout;
 pub mod lowering;
 
 use std::borrow::Cow;
-use std::path::Path;
 
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 pub use error::CompilerError;
@@ -181,38 +180,5 @@ impl Compiler {
         )?;
 
         Ok(buffer)
-    }
-
-    /// Compiles a model specification and theme and saves the `.xlsx` workbook to a file path.
-    ///
-    /// If `evaluated` is `None`, this method automatically evaluates the model to pre-populate
-    /// formula calculation result caches `<v>` or freeze concrete values.
-    ///
-    /// # Errors
-    /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
-    /// formula lowering, binary emission, or file I/O fails.
-    pub fn save_workbook<P: AsRef<Path>>(
-        manifest: &ProjectManifest,
-        tables: &[TableSpec],
-        theme: &Theme,
-        evaluated: Option<&EvaluatedModel>,
-        options: &EmissionOptions,
-        path: P,
-    ) -> Result<(), CompilerError> {
-        let ctx = Self::prepare_emission_context(manifest, tables, theme, evaluated)?;
-
-        emission::WorkbookEmitter::emit_to_file(
-            manifest,
-            tables,
-            &ctx.grid,
-            &ctx.layout_map,
-            &ctx.lowered_map,
-            theme,
-            Some(&ctx.effective_evaluated),
-            options,
-            path,
-        )?;
-
-        Ok(())
     }
 }

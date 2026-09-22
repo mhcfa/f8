@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 
 use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset};
@@ -423,38 +422,26 @@ impl Theme {
         Ok(expanded)
     }
 
-    /// Resolves a theme by built-in identifier ("corporate_navy") or relative file path to a theme JSON.
-    pub fn resolve(name_or_path: &str, base_dir: Option<&Path>) -> Result<Self, ModelError> {
-        if let Some(built_in) = Self::built_in(name_or_path) {
-            return Ok(built_in);
-        }
-
-        let path = match base_dir {
-            Some(base) => base.join(name_or_path),
-            None => PathBuf::from(name_or_path),
-        };
-
-        if !path.exists() {
-            return Err(ModelError::ThemeNotFound {
-                name: name_or_path.to_string(),
-                path,
-            });
-        }
-
-        let content =
-            std::fs::read_to_string(&path).map_err(|source| ModelError::ThemeIoError {
-                path: path.clone(),
-                source,
-            })?;
-
+    /// Parses a theme from a JSON string and validates its internal invariants.
+    ///
+    /// # Errors
+    /// Returns [`ModelError::ThemeParseError`] if deserialization fails, or validation errors
+    /// if colors, metrics, or format templates are invalid.
+    pub fn from_json_str(s: &str) -> Result<Self, ModelError> {
         let theme: Theme =
-            serde_json::from_str(&content).map_err(|source| ModelError::ThemeParseError {
-                path: path.clone(),
-                source,
-            })?;
-
+            serde_json::from_str(s).map_err(|source| ModelError::ThemeParseError { source })?;
         theme.validate()?;
         Ok(theme)
+    }
+
+    /// Resolves a built-in theme by name ("corporate_navy").
+    ///
+    /// # Errors
+    /// Returns [`ModelError::ThemeNotFound`] if the theme name does not match any built-in theme.
+    pub fn resolve_builtin(name: &str) -> Result<Self, ModelError> {
+        Self::built_in(name).ok_or_else(|| ModelError::ThemeNotFound {
+            name: name.to_string(),
+        })
     }
 
     /// Looks up a statically embedded built-in theme by name.

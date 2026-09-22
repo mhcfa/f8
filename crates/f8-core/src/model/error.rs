@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use thiserror::Error;
 
 use super::format::{CurrencyCode, FormatPreset};
@@ -107,8 +106,8 @@ pub enum ModelError {
     #[error("Duplicate sheet name '{sheet}' in project manifest")]
     DuplicateSheetName { sheet: String },
 
-    #[error("Theme '{name}' not found in built-in catalog and file does not exist: {path}")]
-    ThemeNotFound { name: String, path: PathBuf },
+    #[error("Theme '{name}' not found in built-in catalog")]
+    ThemeNotFound { name: String },
 
     #[error("Invalid hex color code '{color}' in theme palette for field '{field}'")]
     InvalidThemeColor { field: String, color: String },
@@ -122,16 +121,8 @@ pub enum ModelError {
     #[error("Theme format template for 'currency' must contain '{{sym}}' placeholder")]
     MissingCurrencySymbolPlaceholder,
 
-    #[error("Failed to read theme file '{path}': {source}")]
-    ThemeIoError {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
-
-    #[error("Failed to parse theme file '{path}': {source}")]
+    #[error("Failed to parse theme: {source}")]
     ThemeParseError {
-        path: PathBuf,
         #[source]
         source: serde_json::Error,
     },

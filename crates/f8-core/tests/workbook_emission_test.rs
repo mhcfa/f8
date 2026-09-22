@@ -594,16 +594,16 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
         let _ = std::fs::remove_file(&target_file);
     }
 
-    let save_result = Compiler::save_workbook(
+    let buffer = Compiler::emit_workbook(
         &manifest,
         &[table],
         &theme,
         None,
         &EmissionOptions::default(),
-        &target_file,
-    );
+    )
+    .expect("failed to emit workbook");
 
-    assert!(save_result.is_ok());
+    std::fs::write(&target_file, &buffer).expect("failed to write workbook to disk");
     assert!(target_file.exists());
 
     let file_bytes = std::fs::read(&target_file).unwrap();

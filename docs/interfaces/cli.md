@@ -12,15 +12,16 @@ The command-line interface (`f8-cli`) provides a direct terminal entrypoint for 
 - **Zero protocol overhead**: Provides instant, native execution without requiring MCP clients or JSON-RPC process management.
 - **Dual human & agent access**: Shell-enabled AI agents execute CLI commands directly in terminal tools, enabling agentic modeling workflows from day one.
 - **Pure compiler delegation**: The CLI delegates directly to:
-  - **`templates/`**: Bundled institutional model archetypes scaffolded directly into the project as canonical JSON.
-  - **`f8-core`**: For specification validation, DAG acyclicity proofs, topological evaluation, and `.xlsx` emission.
+  - **Embedded Archetypes**: Bundled institutional model templates compiled directly into the binary (`include_str!`) and scaffolded onto disk as canonical JSON.
+  - **`f8-core`**: For specification validation, DAG acyclicity proofs, topological evaluation, and in-memory `.xlsx` buffer emission.
 
 ```mermaid
 flowchart LR
     A["CLI Command\n(f8 scaffold / compile)"] --> B["Command Parser\n(clap)"]
-    B --> C["Canonical JSON on Disk\n(f8.json + tables/*.json)"]
+    T["Embedded Archetypes\n(include_str!)"] -.->|"f8 scaffold"| C["Canonical JSON on Disk\n(f8.json + tables/*.json)"]
+    B --> C
     C --> D["f8-core Compiler\n(Evaluation & Emission)"]
-    D --> E["Terminal Output\n(Status, Tables, or .xlsx)"]
+    D --> E["Terminal Output or Disk File\n(Status, Tables, or .xlsx)"]
 ```
 
 ---
@@ -48,7 +49,7 @@ f8 sheet add Financials --freeze-row 6 --freeze-col 2 --tab-color "#1B365D"
 ### 2.2. Model Scaffolding & Ingest (`f8 scaffold`, `f8 table`)
 
 #### `f8 scaffold <archetype> [options]`
-Scaffolds pre-configured institutional templates directly onto disk as canonical JSON files (`f8.json` + `tables/*.json`):
+Scaffolds pre-configured institutional templates directly onto disk as canonical JSON files (`f8.json` + `tables/*.json`) from embedded binary assets:
 ```bash
 f8 scaffold three-statement --sheet Financials
 ```

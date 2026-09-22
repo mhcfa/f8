@@ -1,6 +1,6 @@
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::error::ModelError;
 use super::theme::Theme;
@@ -32,14 +32,17 @@ impl ProjectManifest {
         Ok(())
     }
 
-    /// Resolves the workbook theme, falling back to corporate navy if empty or omitted.
-    pub fn resolve_theme(&self, base_dir: Option<&Path>) -> Result<Theme, ModelError> {
+    /// Resolves the workbook theme from the built-in catalog, falling back to corporate navy if empty or omitted.
+    ///
+    /// # Errors
+    /// Returns [`ModelError::ThemeNotFound`] if the configured theme is not a known built-in theme.
+    pub fn resolve_theme(&self) -> Result<Theme, ModelError> {
         let theme_name = if self.theme.trim().is_empty() {
             Theme::DEFAULT_NAME
         } else {
             self.theme.trim()
         };
-        Theme::resolve(theme_name, base_dir)
+        Theme::resolve_builtin(theme_name)
     }
 }
 

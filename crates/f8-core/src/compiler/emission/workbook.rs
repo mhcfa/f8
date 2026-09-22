@@ -4,8 +4,6 @@
 //! applying sheet settings, layout dimensions, deduplicated format caches,
 //! structural headers, hierarchical row outlines, formula caching, and values-only freezing.
 
-use std::path::Path;
-
 use rust_xlsxwriter::{DocProperties, ExcelDateTime, Format, Formula, Workbook, Worksheet};
 use serde::{Deserialize, Serialize};
 
@@ -105,36 +103,6 @@ impl WorkbookEmitter {
         )?;
         let buffer = workbook.save_to_buffer()?;
         Ok(buffer)
-    }
-
-    /// Compiles a model and writes the `.xlsx` workbook to a destination path on disk.
-    ///
-    /// # Errors
-    /// Returns [`EmissionError`] if any compilation or emission error occurs, or if disk I/O fails.
-    #[allow(clippy::too_many_arguments)]
-    pub fn emit_to_file<P: AsRef<Path>>(
-        manifest: &ProjectManifest,
-        tables: &[TableSpec],
-        grid: &CellGrid,
-        layout_map: &LayoutMap,
-        lowered_formulas: &LoweredFormulaMap,
-        theme: &Theme,
-        evaluated: Option<&EvaluatedModel>,
-        options: &EmissionOptions,
-        path: P,
-    ) -> Result<(), EmissionError> {
-        let mut workbook = Self::assemble_workbook(
-            manifest,
-            tables,
-            grid,
-            layout_map,
-            lowered_formulas,
-            theme,
-            evaluated,
-            options,
-        )?;
-        workbook.save(path)?;
-        Ok(())
     }
 
     /// Assembles an OpenXML workbook with worksheets, formatting, outlines, and cells.

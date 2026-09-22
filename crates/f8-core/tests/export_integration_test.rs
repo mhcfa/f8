@@ -393,15 +393,15 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let ts_buf = Compiler::emit_workbook(
         &ts_manifest,
         &ts_tables,
         &theme,
         None, // Automatically evaluates during compilation
         &ts_options,
-        &ts_file,
     )
-    .expect("Failed to save Three-Statement model to disk");
+    .expect("Failed to emit Three-Statement model to buffer");
+    std::fs::write(&ts_file, ts_buf).expect("Failed to write Three-Statement model to disk");
 
     assert!(ts_file.exists());
     let ts_bytes = std::fs::read(&ts_file).expect("Failed to read saved Three-Statement file");
@@ -424,15 +424,15 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let lbo_buf = Compiler::emit_workbook(
         &lbo_manifest,
         &lbo_tables,
         &theme,
         None, // Automatically evaluates during compilation
         &lbo_options,
-        &lbo_file,
     )
-    .expect("Failed to save LBO model to disk");
+    .expect("Failed to emit LBO model to buffer");
+    std::fs::write(&lbo_file, lbo_buf).expect("Failed to write LBO model to disk");
 
     assert!(lbo_file.exists());
     let lbo_bytes = std::fs::read(&lbo_file).expect("Failed to read saved LBO file");
@@ -464,15 +464,15 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let sc_buf = Compiler::emit_workbook(
         &showcase_manifest,
         &showcase_tables,
         &theme,
         None, // Automatically evaluates during compilation
         &showcase_options,
-        &sc_file,
     )
-    .expect("Failed to save styling showcase model to disk");
+    .expect("Failed to emit styling showcase model to buffer");
+    std::fs::write(&sc_file, sc_buf).expect("Failed to write styling showcase model to disk");
 
     assert!(sc_file.exists());
     let sc_bytes = std::fs::read(&sc_file).expect("Failed to read saved showcase file");
@@ -493,15 +493,16 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: true,
     };
 
-    Compiler::save_workbook(
+    let parity_buf = Compiler::emit_workbook(
         &parity_manifest,
         &parity_tables,
         &theme,
         None, // Automatically evaluates during compilation
         &parity_options,
-        &parity_file,
     )
-    .expect("Failed to save Excel parity verification model to disk");
+    .expect("Failed to emit Excel parity verification model to buffer");
+    std::fs::write(&parity_file, parity_buf)
+        .expect("Failed to write Excel parity verification model to disk");
 
     assert!(parity_file.exists());
     let parity_bytes = std::fs::read(&parity_file).expect("Failed to read saved parity file");
@@ -532,15 +533,15 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let tc_buf = Compiler::emit_workbook(
         &tc_manifest,
         &tc_tables,
         &theme,
         None, // Automatically evaluates during compilation
         &tc_options,
-        &tc_file,
     )
-    .expect("Failed to save Trading Comps model to disk");
+    .expect("Failed to emit Trading Comps model to buffer");
+    std::fs::write(&tc_file, tc_buf).expect("Failed to write Trading Comps model to disk");
 
     assert!(tc_file.exists());
     let tc_bytes = std::fs::read(&tc_file).expect("Failed to read saved Trading Comps file");

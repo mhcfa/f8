@@ -15,7 +15,7 @@ The `compiler::emission::workbook` subsystem implements f8's OpenXML Workbook As
   - `f8_core::compiler::emission::workbook`: Core structures (`EmissionOptions`, `WorkbookEmitter`), worksheet streamer, structural header assembler, table-level collapsing manager, and cell writer.
   - `f8_core::compiler::emission::error`: Diagnostic domain errors (`EmissionError::MissingSheet`, `MissingTable`, `MissingCell`, `Xlsx`, `InvalidColor`, `Model`).
   - `f8_core::compiler::emission::mod`: Module declarations and public API re-exports.
-  - `f8_core::compiler::mod`: High-level compiler driver facade (`Compiler::emit_workbook`, `Compiler::save_workbook`).
+  - `f8_core::compiler::mod`: High-level compiler driver facade (`Compiler::emit_workbook`).
 - **Data flow & interfaces**:
   1. Input: `ProjectManifest`, `TableSpec` slice, `CellGrid` (Pass 2 IR), `LayoutMap` (Pass 5), `LoweredFormulaMap` (Pass 6a), `Theme`, optional `EvaluatedModel` (Pass 4), and `EmissionOptions`.
   2. Package setup: Initializes `rust_xlsxwriter::Workbook` with deterministic `DocProperties` (fixed author or custom, fixed timestamp for bit-for-bit reproducibility).
@@ -146,7 +146,5 @@ Complete financial models and calculation verification suites are verified end-t
 | `EmissionOptions` | Emission configuration | `pub struct EmissionOptions { pub values_only: bool, pub omit_formula_cache: bool, pub title: Option<String>, pub author: Option<String> }` |
 | `EmissionOptions::with_omit_formula_cache` | Builder for uncached formulas | `pub const fn with_omit_formula_cache(mut self, omit_formula_cache: bool) -> Self` |
 | `WorkbookEmitter::emit_to_buffer` | Assemble workbook to byte buffer | `emit_to_buffer(...) -> Result<Vec<u8>, EmissionError>` |
-| `WorkbookEmitter::emit_to_file` | Assemble and write to file | `emit_to_file<P: AsRef<Path>>(...) -> Result<(), EmissionError>` |
 | `Compiler::emit_workbook` | Facade compiling model to buffer | `emit_workbook(...) -> Result<Vec<u8>, CompilerError>` |
-| `Compiler::save_workbook` | Facade compiling and saving to disk | `save_workbook<P: AsRef<Path>>(...) -> Result<(), CompilerError>` |
 

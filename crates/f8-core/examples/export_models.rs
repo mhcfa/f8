@@ -60,14 +60,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let ts_buf = Compiler::emit_workbook(
         &ts_manifest,
         &ts_tables,
         &theme_navy,
         None, // Automatic DAG evaluation and formula caching
         &ts_options,
-        &ts_file,
     )?;
+    fs::write(&ts_file, ts_buf)?;
 
     let ts_meta = fs::metadata(&ts_file)?;
     println!(
@@ -91,14 +91,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
-        &ts_manifest,
-        &ts_tables,
-        &theme_navy,
-        None,
-        &freeze_options,
-        &ts_frozen_file,
-    )?;
+    let freeze_buf =
+        Compiler::emit_workbook(&ts_manifest, &ts_tables, &theme_navy, None, &freeze_options)?;
+    fs::write(&ts_frozen_file, freeze_buf)?;
 
     let freeze_meta = fs::metadata(&ts_frozen_file)?;
     println!(
@@ -123,14 +118,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let lbo_buf = Compiler::emit_workbook(
         &lbo_manifest,
         &lbo_tables,
         &theme_navy,
         None, // Automatic DAG evaluation and formula caching
         &lbo_options,
-        &lbo_file,
     )?;
+    fs::write(&lbo_file, lbo_buf)?;
 
     let lbo_meta = fs::metadata(&lbo_file)?;
     println!(
@@ -156,14 +151,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let sc_buf = Compiler::emit_workbook(
         &sc_manifest,
         &sc_tables,
         &theme_navy,
         None, // Automatic DAG evaluation and formula caching
         &sc_options,
-        &sc_file,
     )?;
+    fs::write(&sc_file, sc_buf)?;
 
     let sc_meta = fs::metadata(&sc_file)?;
     println!(
@@ -189,14 +184,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: true,
     };
 
-    Compiler::save_workbook(
+    let parity_buf = Compiler::emit_workbook(
         &parity_manifest,
         &parity_tables,
         &theme_navy,
         None,
         &parity_options,
-        &parity_file,
     )?;
+    fs::write(&parity_file, parity_buf)?;
 
     let parity_meta = fs::metadata(&parity_file)?;
     println!(
@@ -222,14 +217,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    Compiler::save_workbook(
+    let tc_buf = Compiler::emit_workbook(
         &tc_manifest,
         &tc_tables,
         &theme_navy,
         None, // Automatic DAG evaluation and formula caching
         &tc_options,
-        &tc_file,
     )?;
+    fs::write(&tc_file, tc_buf)?;
 
     let tc_meta = fs::metadata(&tc_file)?;
     println!(

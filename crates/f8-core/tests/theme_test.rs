@@ -1,13 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::fs;
-use std::path::Path;
-
 use f8_core::model::{BorderStyle, CurrencyCode, FormatPreset, ModelError, ProjectManifest, Theme};
 
 #[test]
 fn test_scenario_1_builtin_theme_catalog_resolution() {
-    let theme = Theme::resolve("corporate_navy", None).expect("failed to resolve built-in theme");
+    let theme = Theme::resolve_builtin("corporate_navy").expect("failed to resolve built-in theme");
     assert_eq!(theme.name, "corporate_navy");
 
     // Validate theme passes all internal validation
@@ -37,10 +34,10 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     // Verify removed preset themes are rejected when resolved without external file
     let removed_themes = ["classic_green", "modern_slate", "minimal_monochrome"];
     for name in removed_themes {
-        let err = Theme::resolve(name, None).unwrap_err();
+        let err = Theme::resolve_builtin(name).unwrap_err();
         assert!(matches!(
             err,
-            ModelError::ThemeNotFound { name: ref n, ref path } if n == name && path == Path::new(name)
+            ModelError::ThemeNotFound { name: ref n } if n == name
         ));
     }
 }
@@ -160,10 +157,7 @@ fn test_scenario_5_non_numeric_presets_ignore_decimals_and_currency() {
 }
 
 #[test]
-fn test_scenario_6_external_custom_theme_loading() {
-    let temp_dir = std::env::temp_dir().join(format!("f8_theme_test_{}", std::process::id()));
-    fs::create_dir_all(&temp_dir).expect("failed to create temp dir");
-
+fn test_scenario_6_custom_theme_json_parsing_and_validation() {
     let custom_theme_json = r##"{
         "$schema": "https://f8.dev/schemas/theme.json",
         "name": "firm_custom",
@@ -243,16 +237,10 @@ fn test_scenario_6_external_custom_theme_loading() {
         }
     }"##;
 
-    let theme_file = temp_dir.join("custom_theme.json");
-    fs::write(&theme_file, custom_theme_json).expect("failed to write custom theme file");
-
-    let loaded =
-        Theme::resolve("custom_theme.json", Some(&temp_dir)).expect("failed to load custom theme");
+    let loaded = Theme::from_json_str(custom_theme_json).expect("failed to load custom theme");
     assert_eq!(loaded.name, "firm_custom");
     assert_eq!(loaded.typography.font_family, "Calibri");
     assert_eq!(loaded.number_formats.defaults.currency_decimals, 2);
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
@@ -316,10 +304,10 @@ fn test_scenario_7_rejection_of_invalid_theme_configurations() {
 
 #[test]
 fn test_scenario_8_rejection_of_nonexistent_theme() {
-    let err = Theme::resolve("neon_cyberpunk", None).unwrap_err();
+    let err = Theme::resolve_builtin("neon_cyberpunk").unwrap_err();
     assert!(matches!(
         err,
-        ModelError::ThemeNotFound { name, path } if name == "neon_cyberpunk" && path == Path::new("neon_cyberpunk")
+        ModelError::ThemeNotFound { name } if name == "neon_cyberpunk"
     ));
 }
 
@@ -335,7 +323,7 @@ fn test_scenario_9_manifest_theme_default_fallback() {
     assert_eq!(manifest.theme, "corporate_navy");
 
     let resolved = manifest
-        .resolve_theme(None)
+        .resolve_theme()
         .expect("failed to resolve theme from manifest");
     assert_eq!(resolved.name, "corporate_navy");
 
@@ -348,7 +336,7 @@ fn test_scenario_9_manifest_theme_default_fallback() {
     let manifest_empty: ProjectManifest =
         serde_json::from_str(json_empty).expect("failed to deserialize manifest with empty theme");
     let resolved_empty = manifest_empty
-        .resolve_theme(None)
+        .resolve_theme()
         .expect("failed to resolve empty theme from manifest");
     assert_eq!(resolved_empty.name, "corporate_navy");
 }

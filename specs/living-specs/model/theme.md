@@ -14,15 +14,14 @@ The `theme` subsystem decouples workbook presentation styling, visual palette, t
 - **Modules & components**:
   - `f8_core::model::theme`: Core structures (`Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, `FormatDefaults`), validation rules, built-in theme lookup, and format mask generator.
   - `f8_core::model::manifest`: Root manifest theme resolution (`ProjectManifest::resolve_theme`) with default fallback to `"corporate_navy"`.
-  - `f8_core::model::error`: Diagnostic errors (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeIoError`, `ThemeParseError`, `ThemePrecisionOutOfBounds`).
+  - `f8_core::model::error`: Diagnostic errors (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeParseError`, `ThemePrecisionOutOfBounds`).
 - **Data flow & interfaces**:
-  1. Manifest / CLI / Config $\rightarrow$ `Theme::resolve(name_or_path, base_dir)` $\rightarrow$ Built-in lookup or JSON file deserialization + validation $\rightarrow$ `Theme`.
+  1. Manifest / Config $\rightarrow$ `Theme::resolve_builtin(name)` or `Theme::from_json_str(json)` $\rightarrow$ Built-in lookup or JSON string deserialization + validation $\rightarrow$ `Theme`.
   2. Grid expansion / Emitter $\rightarrow$ `theme.resolve_number_format(preset, decimals, currency)` $\rightarrow$ Synthesized Excel number format mask string.
   3. Pass 5 (Spatial Layout) $\rightarrow$ Consumes `theme.typography` and `theme.metrics` for row heights, column widths, gutters, and margins.
   4. Pass 6 (Excel Emission) $\rightarrow$ Consumes `theme.palette`, `theme.borders`, and synthesized format masks for OpenXML styling.
 - **Dependencies**:
   - `serde`, `serde_json`: Serialization and deserialization of theme configuration schemas.
-  - `std::path::{Path, PathBuf}`: Resolution of relative and absolute theme file paths.
   - `thiserror`: Structured diagnostics for theme loading and validation.
 
 ## Requirements & Invariants
@@ -34,10 +33,10 @@ A `Theme` contains complete specifications for `typography`, `metrics`, `palette
 #### Scenarios
 
 - **Valid built-in theme**:
-  - **When** `Theme::resolve` is invoked for `"corporate_navy"`
+  - **When** `Theme::resolve_builtin` is invoked for `"corporate_navy"`
   - **Then** the built-in theme is loaded and passes validation.
 - **Removed preset themes**:
-  - **When** `Theme::resolve` is invoked for removed presets (e.g. `"classic_green"`, `"modern_slate"`, or `"minimal_monochrome"`) without a corresponding file
+  - **When** `Theme::resolve_builtin` is invoked for removed presets (e.g. `"classic_green"`, `"modern_slate"`, or `"minimal_monochrome"`)
   - **Then** `ModelError::ThemeNotFound` is returned.
 - **Manifest fallback**:
   - **When** a `ProjectManifest` omits `theme` or specifies an empty string
