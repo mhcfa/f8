@@ -1,15 +1,15 @@
 # Architecture Overview
 
-Finx is a deterministic compiler for financial models that treats spreadsheets as compiled artifacts rather than source code.
+f8 is a deterministic compiler for financial models that treats spreadsheets as compiled artifacts rather than source code.
 
 ## 1. Core Philosophy
 
-Traditional financial modeling conflates business logic, multi-dimensional time series, and 2D spatial presentation inside Excel. Finx establishes a **"TypeScript for Spreadsheets"** paradigm:
+Traditional financial modeling conflates business logic, multi-dimensional time series, and 2D spatial presentation inside Excel. f8 establishes a **"TypeScript for Spreadsheets"** paradigm:
 
-- **Code is single source of truth**: Models are defined in structured, declarative JSON project specifications (`finx.json` + `tables/*.json`).
+- **Code is single source of truth**: Models are defined in structured, declarative JSON project specifications (`f8.json` + `tables/*.json`).
 - **Explicit, minimal core data structures**: The compiler core enforces strict predictability with only one canonical way to represent any concept. Core data structures contain zero implicit behavior, hidden defaults, or magic inferences. Authoring ergonomics and conveniences are strictly deferred to outer adapters and tooling layers.
 - **Agent-first intermediate representation (IR)**: The specification schema is an explicit, orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic compiler verification rather than human typing brevity. Ergonomics, domain scaffolding, and high-level abstractions reside in the **Adapter / Tooling Layer (CLI, MCP server, and Web/WASM adapters)**, keeping the core data model strictly orthogonal, uniform, and free of special-case syntactic magic.
-- **Universal, WASM-ready engine**: The calculation core (`finx-core`) is strictly decoupled from operating system I/O. It compiles to both native targets and WebAssembly (`wasm32-unknown-unknown`), powering local CLI terminal workflows, stdio/HTTP MCP agent servers, and client-side web applications with in-memory `.xlsx` generation. All filesystem I/O (manifest/theme disk loading and file writes) is strictly confined to outer adapter crates (`finx-cli`), keeping the core 100% in-memory.
+- **Universal, WASM-ready engine**: The calculation core (`f8-core`) is strictly decoupled from operating system I/O. It compiles to both native targets and WebAssembly (`wasm32-unknown-unknown`), powering local CLI terminal workflows, stdio/HTTP MCP agent servers, and client-side web applications with in-memory `.xlsx` generation. All filesystem I/O (manifest/theme disk loading and file writes) is strictly confined to outer adapter crates (`f8-cli`), keeping the core 100% in-memory.
 - **Orthogonal 2D matrix paradigm**: A table is a general $R \times C$ matrix. Columns are user-defined and can represent timelines, categories, units, assumptions, or multi-directional metrics (Cap Tables, Comps, Sensitivity matrices, Vertical waterfalls). Every cell $(row, col)$ is a full calculation citizen addressable via `Table[row, col]`.
 - **Excel is an uneditable compile artifact**: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - **Deterministic compilation**: A Rust engine validates schemas, constructs cell-level dependency graphs, proves acyclicity, plans 2D layouts, and lowers semantic formulas to concrete Excel grid coordinates.
@@ -22,9 +22,9 @@ Traditional financial modeling conflates business logic, multi-dimensional time 
 flowchart TD
     A["Agent Prompt / Goal"] --> B["AI Agent (LLM)"]
     B -->|"High-Level Actions"| T["Adapter / Tooling Layer\n(MCP Server & Scaffolding)"]
-    T -->|"Canonical Spec JSON"| C["Finx Compiler Entrypoint"]
+    T -->|"Canonical Spec JSON"| C["f8 Compiler Entrypoint"]
 
-    subgraph Compiler ["Finx Core Engine"]
+    subgraph Compiler ["f8 Core Engine"]
         C --> D["Deserializer & Spec AST"]
         D --> E["Grid Expansion (Cell IR)"]
         E --> F["Dependency Graph & Cycle Detector"]
@@ -62,7 +62,7 @@ The pipeline operates across six primary passes:
 
 ### Unified Inspection Facade (`CompiledModel`)
 
-To power fast headless introspection across outer interfaces (`finx-cli`, `finx-mcp`) without re-running compiler passes, `finx-core` exposes a unified `CompiledModel` artifact. It retains the evaluated values (`EvaluatedModel`), dependency graph with precedent/dependent queries (`DependencyGraph`), expanded cell metadata (`CellGrid`), and physical coordinates (`LayoutMap`).
+To power fast headless introspection across outer interfaces (`f8-cli`, `f8-mcp`) without re-running compiler passes, `f8-core` exposes a unified `CompiledModel` artifact. It retains the evaluated values (`EvaluatedModel`), dependency graph with precedent/dependent queries (`DependencyGraph`), expanded cell metadata (`CellGrid`), and physical coordinates (`LayoutMap`).
 
 ---
 
@@ -103,7 +103,7 @@ Modifying presentation labels, formatting rules, or table placement never invali
 
 ### Core Compiler vs. Adapter / Tooling Layer
 
-To preserve both mathematical purity in the compiler and high authoring speed for AI agents, Finx strictly partitions responsibilities:
+To preserve both mathematical purity in the compiler and high authoring speed for AI agents, f8 strictly partitions responsibilities:
 
 - **Core Compiler (Intermediate Representation)**:
   - Operates purely in-memory with zero filesystem access; emits byte buffers directly via `save_to_buffer()`.
@@ -152,7 +152,7 @@ Detailed specifications and engine designs are organized into dedicated topics:
 - **System & Codebase**:
   - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL & Authoring**:
-  - [Model Authoring Guide](dsl/authoring-guide.md): Comprehensive end-to-end guide to authoring raw Finx models from scratch.
+  - [Model Authoring Guide](dsl/authoring-guide.md): Comprehensive end-to-end guide to authoring raw f8 models from scratch.
   - [Specification Format](dsl/spec-format.md): Multi-file JSON schemas, table structure, axis roles, and invariants.
   - [Grid Architecture](dsl/grid.md): Explicit 2D grid model, multi-tier headers, section dividers, gutters, and table collapsing.
   - [Semantic Formatting & Themes](dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.

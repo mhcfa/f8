@@ -7,15 +7,15 @@ status: active
 
 ## Purpose
 
-The `compiler::emission::workbook` subsystem implements Finx's OpenXML Workbook Assembly and `.xlsx` Binary Emission Engine (Pass 6b). It transforms spatial layouts, theme format caches, lowered Excel formula expressions, and in-memory evaluated results into fully compliant, auditable, and aesthetically polished `.xlsx` OpenXML packages. It guarantees universal preview fidelity (Apple Numbers, Quick Look, Google Sheets, pandas), reproducible compilation, and values-only audit freezing.
+The `compiler::emission::workbook` subsystem implements f8's OpenXML Workbook Assembly and `.xlsx` Binary Emission Engine (Pass 6b). It transforms spatial layouts, theme format caches, lowered Excel formula expressions, and in-memory evaluated results into fully compliant, auditable, and aesthetically polished `.xlsx` OpenXML packages. It guarantees universal preview fidelity (Apple Numbers, Quick Look, Google Sheets, pandas), reproducible compilation, and values-only audit freezing.
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::emission::workbook`: Core structures (`EmissionOptions`, `WorkbookEmitter`), worksheet streamer, structural header assembler, table-level collapsing manager, and cell writer.
-  - `finx::compiler::emission::error`: Diagnostic domain errors (`EmissionError::MissingSheet`, `MissingTable`, `MissingCell`, `Xlsx`, `InvalidColor`, `Model`).
-  - `finx::compiler::emission::mod`: Module declarations and public API re-exports.
-  - `finx::compiler::mod`: High-level compiler driver facade (`Compiler::emit_workbook`, `Compiler::save_workbook`).
+  - `f8_core::compiler::emission::workbook`: Core structures (`EmissionOptions`, `WorkbookEmitter`), worksheet streamer, structural header assembler, table-level collapsing manager, and cell writer.
+  - `f8_core::compiler::emission::error`: Diagnostic domain errors (`EmissionError::MissingSheet`, `MissingTable`, `MissingCell`, `Xlsx`, `InvalidColor`, `Model`).
+  - `f8_core::compiler::emission::mod`: Module declarations and public API re-exports.
+  - `f8_core::compiler::mod`: High-level compiler driver facade (`Compiler::emit_workbook`, `Compiler::save_workbook`).
 - **Data flow & interfaces**:
   1. Input: `ProjectManifest`, `TableSpec` slice, `CellGrid` (Pass 2 IR), `LayoutMap` (Pass 5), `LoweredFormulaMap` (Pass 6a), `Theme`, optional `EvaluatedModel` (Pass 4), and `EmissionOptions`.
   2. Package setup: Initializes `rust_xlsxwriter::Workbook` with deterministic `DocProperties` (fixed author or custom, fixed timestamp for bit-for-bit reproducibility).

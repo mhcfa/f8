@@ -1,6 +1,6 @@
 # In-Memory Evaluation Engine
 
-This document specifies Finx's in-memory calculation engine, topological execution loop over the cell dependency DAG, and runtime state model.
+This document specifies f8's in-memory calculation engine, topological execution loop over the cell dependency DAG, and runtime state model.
 
 ## 1. Overview
 

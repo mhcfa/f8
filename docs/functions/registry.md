@@ -1,6 +1,6 @@
 # Function Registry Architecture
 
-This document specifies Finx's Excel function registry, parameter contracts, runtime dispatch types, and compiler lifecycle integration.
+This document specifies f8's Excel function registry, parameter contracts, runtime dispatch types, and compiler lifecycle integration.
 
 ## 1. Overview
 

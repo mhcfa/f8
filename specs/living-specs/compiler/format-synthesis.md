@@ -7,15 +7,15 @@ status: active
 
 ## Purpose
 
-The `compiler::emission::format` subsystem translates Finx model themes and semantic cell formatting tuples into fully configured `rust_xlsxwriter::Format` instances, providing Pass 6b of the compiler pipeline with deduplicated, deterministic, and institutional-grade OpenXML styling. It prevents OpenXML `<cellXfs>` style table explosion through an `IndexMap` deduplication cache and enforces Wall Street presentation standards (input blue, formula black, accounting underline/double underline, and currency alignment).
+The `compiler::emission::format` subsystem translates f8 model themes and semantic cell formatting tuples into fully configured `rust_xlsxwriter::Format` instances, providing Pass 6b of the compiler pipeline with deduplicated, deterministic, and institutional-grade OpenXML styling. It prevents OpenXML `<cellXfs>` style table explosion through an `IndexMap` deduplication cache and enforces Wall Street presentation standards (input blue, formula black, accounting underline/double underline, and currency alignment).
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::emission::format`: Core structures (`FormatCache`, `CellFormatKey`), hex color parser (`parse_hex_color`), fill color parser (`parse_fill_color`), border style translator (`translate_border_style`), and header format generators.
-  - `finx::compiler::emission::error`: Diagnostic domain errors (`EmissionError`).
-  - `finx::compiler::emission::mod`: Module declarations and public API re-exports (`parse_hex_color`, `parse_fill_color`).
-  - `finx::compiler::mod`: Compiler facade re-exports (`CellFormatKey`, `FormatCache`, `EmissionError`).
+  - `f8_core::compiler::emission::format`: Core structures (`FormatCache`, `CellFormatKey`), hex color parser (`parse_hex_color`), fill color parser (`parse_fill_color`), border style translator (`translate_border_style`), and header format generators.
+  - `f8_core::compiler::emission::error`: Diagnostic domain errors (`EmissionError`).
+  - `f8_core::compiler::emission::mod`: Module declarations and public API re-exports (`parse_hex_color`, `parse_fill_color`).
+  - `f8_core::compiler::mod`: Compiler facade re-exports (`CellFormatKey`, `FormatCache`, `EmissionError`).
 - **Data flow & interfaces**:
   1. Input: Active `Theme` passed to `FormatCache::new(&theme)`.
   2. Validation & pre-parsing: Upfront validation of palette fills into `Option<Color>` (with `"none"` and `"transparent"` parsing to `None`) and text/border colors into `Color::RGB(...)`, pre-generating structural header formats.

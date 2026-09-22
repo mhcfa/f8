@@ -1,6 +1,6 @@
 # Intermediate Representation (IR)
 
-This document specifies Finx's intermediate representations, focusing on cell-level granularity, the 2D grid expansion pass, and the deterministic property resolution lattice.
+This document specifies f8's intermediate representations, focusing on cell-level granularity, the 2D grid expansion pass, and the deterministic property resolution lattice.
 
 ## 1. Cell-Level IR Granularity
 

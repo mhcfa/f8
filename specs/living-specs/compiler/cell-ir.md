@@ -12,12 +12,12 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
-  - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, typographic indent level, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
-  - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
-  - `finx::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
-  - `finx::compiler::ir::error`: Structured domain errors (`IrError`).
-  - `finx::model::id`: Strongly typed identifier wrappers including `SheetId`.
+  - `f8_core::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
+  - `f8_core::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, typographic indent level, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
+  - `f8_core::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
+  - `f8_core::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
+  - `f8_core::compiler::ir::error`: Structured domain errors (`IrError`).
+  - `f8_core::model::id`: Strongly typed identifier wrappers including `SheetId`.
 - **Data flow & interfaces**:
   1. `TableSpec` $\rightarrow$ `SymbolTable::register_table(sheet_id, &table)` $\rightarrow$ Validates global table uniqueness, indexes column/row positions, and stores axis roles.
   2. `TableSpec` + `SymbolTable` $\rightarrow$ `expand_table(&symbol_table, &table)` $\rightarrow$ Evaluates the 3-Tier Specificity Lattice for each $(r, c)$ coordinate pair into `Vec<CellNode>`.

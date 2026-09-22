@@ -1,6 +1,6 @@
 # Excel Parity & Evaluation Semantics
 
-This document specifies Finx's calculation parity rules with Microsoft Excel, defining numeric precision, coercion mechanics, date arithmetic, and explicit scalar evaluation.
+This document specifies f8's calculation parity rules with Microsoft Excel, defining numeric precision, coercion mechanics, date arithmetic, and explicit scalar evaluation.
 
 ## 1. Numeric Precision & Representation
 
@@ -11,7 +11,7 @@ This document specifies Finx's calculation parity rules with Microsoft Excel, de
 
 ## 2. Coercion & Type Semantics
 
-Finx enforces strict static typing for formula literals while maintaining Excel's range aggregation semantics.
+f8 enforces strict static typing for formula literals while maintaining Excel's range aggregation semantics.
 
 ```mermaid
 flowchart TD
@@ -113,10 +113,10 @@ $$\text{Year Fraction}_i = \frac{d_i - d_1}{365.0}$$
 
 ## 5. Conditional Criteria & *IFS Evaluation Parity
 
-Finx provides 1:1 parity with Excel's criteria evaluation engine across the `*IFS` family (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`).
+f8 provides 1:1 parity with Excel's criteria evaluation engine across the `*IFS` family (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`).
 
 ### 5.1. Standardized Plural Signatures
-Finx standardizes exclusively on modern plural `*IFS` signatures where the primary target aggregation range is always positioned first:
+f8 standardizes exclusively on modern plural `*IFS` signatures where the primary target aggregation range is always positioned first:
 - `SUMIFS(sum_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
 - `COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
 - `AVERAGEIFS(average_range, criteria_range1, criteria1, [criteria_range2, criteria2, ...])`
@@ -140,14 +140,14 @@ The criteria argument accepts numbers, strings, cell references, or logical comp
 Every `criteria_range_k` must have identical row count and column count to the primary target range (`sum_range`, `average_range`, `min_range`, `max_range`, or the first `criteria_range1` for `COUNTIFS`). If dimensions differ, evaluation returns `ExcelError::Value` (`#VALUE!`).
 
 ### 5.4. No Formula Translation Surprise
-Finx evaluates criteria expressions natively during in-memory topological calculation and emits identical `=SUMIFS(...)` formulas during Excel binary emission. Finx does not invent bespoke syntax for `*IFS` in the DSL, ensuring complete alignment between the written model specification and the emitted Excel formula bar.
+f8 evaluates criteria expressions natively during in-memory topological calculation and emits identical `=SUMIFS(...)` formulas during Excel binary emission. f8 does not invent bespoke syntax for `*IFS` in the DSL, ensuring complete alignment between the written model specification and the emitted Excel formula bar.
 
 ### 5.5. Canonical Role Over SUMPRODUCT
 In Excel, modelers occasionally emulate conditional filtering in `SUMPRODUCT` via intermediate boolean array expressions (e.g. `-- (region = "US")`). However:
 - Per Excel standard semantics, `SUMPRODUCT` treats non-numeric cells (text strings, empty cells, booleans) directly as `0.0`.
-- Finx strictly prohibits intermediate array arithmetic (such as evaluating comparison operators over entire vector slices) to maintain zero dynamic spill, static DAG analysis, and compile-time determinism.
+- f8 strictly prohibits intermediate array arithmetic (such as evaluating comparison operators over entire vector slices) to maintain zero dynamic spill, static DAG analysis, and compile-time determinism.
 
-Consequently, the `*IFS` family and its criteria evaluation engine serve as the **single canonical mechanism** in Finx for multi-criteria range filtering across text labels, numeric thresholds, and dates.
+Consequently, the `*IFS` family and its criteria evaluation engine serve as the **single canonical mechanism** in f8 for multi-criteria range filtering across text labels, numeric thresholds, and dates.
 
 ---
 
@@ -161,7 +161,7 @@ Consequently, the `*IFS` family and its criteria evaluation engine serve as the 
 
 ## 7. Deterministic Purity (Zero Volatile Functions)
 
-- **Zero volatile functions**: Functions with runtime environmental dependencies (`TODAY`, `NOW`, `RAND`, `RANDBETWEEN`) are strictly excluded from Finx V1.
+- **Zero volatile functions**: Functions with runtime environmental dependencies (`TODAY`, `NOW`, `RAND`, `RANDBETWEEN`) are strictly excluded from f8 V1.
 - **Explicit assumption parameters**: All timeline dates and modeling milestones must be supplied via explicit static parameters (e.g. `Assumptions["as_of_date", "value"]` or `Assumptions["model_start_date", "value"]`). This guarantees that headless execution, CI/CD pipelines, and opened Excel workbooks remain bit-for-bit identical and never desynchronize over time.
 
 See [In-Memory Evaluator](./evaluator.md) for DAG execution, [Function Registry](../functions/registry.md) for registry traits, and [Standard Catalog](../functions/catalog.md) for catalog definitions.

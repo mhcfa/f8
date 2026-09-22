@@ -1,14 +1,14 @@
 # Model Authoring Guide
 
-This guide provides an end-to-end, comprehensive reference for authoring raw Finx financial models. It details how to construct multi-file JSON specifications, structure orthogonal 2D calculation tables, write semantic formulas, and apply institutional formatting.
+This guide provides an end-to-end, comprehensive reference for authoring raw f8 financial models. It details how to construct multi-file JSON specifications, structure orthogonal 2D calculation tables, write semantic formulas, and apply institutional formatting.
 
 ---
 
 ## 1. Core Modeling Paradigms
 
-Traditional spreadsheets conflate calculation logic, time-series vectors, and presentation layout. Finx decouples these concerns into an explicit, deterministic compilation pipeline:
+Traditional spreadsheets conflate calculation logic, time-series vectors, and presentation layout. f8 decouples these concerns into an explicit, deterministic compilation pipeline:
 
-- **Declarative source of truth**: Models are written as structured JSON specifications (`finx.json` + `tables/*.json`). Spreadsheets (`.xlsx`) are unedited, compiled artifacts.
+- **Declarative source of truth**: Models are written as structured JSON specifications (`f8.json` + `tables/*.json`). Spreadsheets (`.xlsx`) are unedited, compiled artifacts.
 - **Orthogonal 2D matrix**: Tables are general $R \times C$ matrices where rows and columns are symmetrical calculation axes. There are no specialized table types; table behavior is determined by axis roles and vector formula directions.
 - **Separation of concerns**:
   - *Identity*: Immutable programmatic identifiers (`TableId`, `RowId`, `ColId`) used in formulas and ASTs.
@@ -22,11 +22,11 @@ Traditional spreadsheets conflate calculation logic, time-series vectors, and pr
 
 ## 2. Project Directory Architecture
 
-A Finx model project is a directory separating workbook containers from standalone calculation tables:
+A f8 model project is a directory separating workbook containers from standalone calculation tables:
 
 ```text
 my_model/
-├── finx.json                  # Root manifest: metadata, theme, and sheet structure
+├── f8.json                  # Root manifest: metadata, theme, and sheet structure
 └── tables/                    # Standalone table calculation specifications
     ├── assumptions.json
     ├── revenue_schedule.json
@@ -35,14 +35,14 @@ my_model/
 
 ### Invariants
 - **One table per file**: Table specifications reside in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining**: Sheets in `finx.json` reference table relative file paths.
+- **No inlining**: Sheets in `f8.json` reference table relative file paths.
 - **Global table ID uniqueness**: Every table `id` must be unique across the entire project.
 - **Filename-to-ID correspondence**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores, e.g. `revenue_schedule.json` matches `RevenueSchedule`).
-- **Complete and singular sheet assignment**: Every table specification must be assigned to exactly one sheet in `finx.json`. Unassigned tables or duplicating a table across multiple sheets halts compilation.
+- **Complete and singular sheet assignment**: Every table specification must be assigned to exactly one sheet in `f8.json`. Unassigned tables or duplicating a table across multiple sheets halts compilation.
 
 ---
 
-## 3. Root Manifest (`finx.json`)
+## 3. Root Manifest (`f8.json`)
 
 The manifest defines workbook-level metadata, pluggable theme selection, and sheet tab configurations:
 
@@ -294,7 +294,7 @@ $$\text{Cell Override (0D)} > \text{Vector Rule (1D Row or Col)} > \text{Explici
 
 ## 8. Formula Syntax & Addressing
 
-Formulas in Finx are written as plain strings without a leading `=` sign.
+Formulas in f8 are written as plain strings without a leading `=` sign.
 
 ### 8.1. Coordinate References
 
@@ -335,14 +335,14 @@ Formulas in Finx are written as plain strings without a leading `=` sign.
 
 ### 8.3. Supported Excel Functions
 
-Finx includes a built-in topological formula evaluator with exact Excel parity across standard financial and numerical operations:
+f8 includes a built-in topological formula evaluator with exact Excel parity across standard financial and numerical operations:
 
 - **Math & aggregation**: `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MIN`, `MAX`, `MEDIAN`, `ABS`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`.
 - **Logical**: `IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`.
 - **Financial**: `NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`.
 - **Lookup & reference**: `XLOOKUP`, `XMATCH`, `INDEX`.
 - **Date & calendar**: `DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`, `DAYS`.
-- **Conditional aggregations**: `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`. Finx standardizes exclusively on modern plural `*IFS` signatures with paired trailing criteria arguments, eliminating the legacy singular `SUMIF`/`COUNTIF` signatures.
+- **Conditional aggregations**: `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`. f8 standardizes exclusively on modern plural `*IFS` signatures with paired trailing criteria arguments, eliminating the legacy singular `SUMIF`/`COUNTIF` signatures.
 
 #### 8.3.1. Conditional Criteria Syntax (`*IFS`)
 
@@ -351,7 +351,7 @@ Finx includes a built-in topological formula evaluator with exact Excel parity a
 
 Criteria parameters in `*IFS` functions support standard Excel criteria syntax:
 - **Exact scalar matches**: `"US"`, `42`, `TRUE` (case-insensitive for text).
-- **Relational comparisons**: `">10"`, `"<=5"`, `"<>"`, `"="`. Criteria can be literal strings or cell coordinates resolving to criteria strings (e.g. `Assumptions["growth_floor", "val"]`). (Note: string concatenation via `&` is not supported in Finx formula expressions).
+- **Relational comparisons**: `">10"`, `"<=5"`, `"<>"`, `"="`. Criteria can be literal strings or cell coordinates resolving to criteria strings (e.g. `Assumptions["growth_floor", "val"]`). (Note: string concatenation via `&` is not supported in f8 formula expressions).
 - **Wildcards**: `?` (matches any single character), `*` (matches zero or more characters), and `~` (escape prefix for literal `~?`, `~*`, `~~`).
 
 ### 8.4. Operators & Precedence
@@ -413,7 +413,7 @@ Model authors specify semantic intent rather than raw Excel format masks.
 
 ### 9.4. Specificity Lattice & Symmetrical 2D Resolution
 
-Finx enforces a deterministic 3-tier specificity lattice without silent magic or arbitrary axis favoritism:
+f8 enforces a deterministic 3-tier specificity lattice without silent magic or arbitrary axis favoritism:
 
 $$\text{Cell Override (0D)} \succ \text{Vector Rule (1D Row or Column)} \succ \text{Table Default} \succ \text{Theme Default}$$
 
@@ -441,7 +441,7 @@ Here is how to author a complete, realistic financial model from scratch.
 mkdir -p my_model/tables
 ```
 
-### Step 2: Write `my_model/finx.json`
+### Step 2: Write `my_model/f8.json`
 
 ```json
 {
@@ -625,9 +625,9 @@ A multi-period forecast table showing vector rules, initial period overrides, su
 
 Before compiling, verify that your model obeys these strict compiler rules:
 
-- [ ] **Unique identifiers**: Sheet names in `finx.json` and table IDs across the project are globally unique. Column IDs and row IDs are unique within their respective table.
+- [ ] **Unique identifiers**: Sheet names in `f8.json` and table IDs across the project are globally unique. Column IDs and row IDs are unique within their respective table.
 - [ ] **Non-empty tables**: Every table must declare at least one column (`EmptyColumns`) and at least one row (`EmptyRows`).
-- [ ] **Table file stem and sheet assignment**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores), and every table specification must be assigned to exactly one sheet in `finx.json`.
+- [ ] **Table file stem and sheet assignment**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores), and every table specification must be assigned to exactly one sheet in `f8.json`.
 - [ ] **Mandatory descriptor assignment**: Every data row must explicitly assign a cell value in `cells` for every descriptor column declared in the table. Vector formulas do not broadcast to descriptor columns.
 - [ ] **No silent unassigned cells**: Every measure column coordinate in a data row has a literal value, formula override, vector formula, or explicit `null`. Unassigned cells halt compilation with `IrError::UnassignedCell`.
 - [ ] **Initial roll-forward override**: Any row utilizing `col.prev` must provide an explicit literal or formula override in the first measure column (since `col.prev` does not exist for the initial measure column).
@@ -647,7 +647,7 @@ Before compiling, verify that your model obeys these strict compiler rules:
 - [ ] **Format-currency compatibility**: Do not declare `"currency"` unless `format` is `"currency"` or omitted (which defaults to currency).
 - [ ] **Format-precision compatibility**: Do not declare `"decimals"` on non-numeric formats (`"date"`, `"text"`). Precision cannot exceed 14 decimal places.
 - [ ] **Non-empty table subtitles**: Omit `"subtitle"` if not needed. Declaring an empty string or whitespace-only subtitle triggers `EmptyTableSubtitle`.
-- [ ] **Valid hex tab colors**: In `finx.json`, `tab_color` must be a valid hex color code starting with `#` (`#RGB`, `#RRGGBB`, `#RRGGBBAA`).
+- [ ] **Valid hex tab colors**: In `f8.json`, `tab_color` must be a valid hex color code starting with `#` (`#RGB`, `#RRGGBB`, `#RRGGBBAA`).
 - [ ] **Acyclic formula graph**: Ensure formula references do not contain circular dependencies (e.g. Row A depends on Row B, which depends on Row A). The compiler automatically performs Tarjan's SCC analysis and halts if any cycle is detected.
 
 ---

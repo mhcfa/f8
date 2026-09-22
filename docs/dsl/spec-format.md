@@ -1,14 +1,14 @@
 # Specification Format
 
-This document defines Finx's multi-file declarative JSON specification schemas, table structure, axis roles, cell input syntax, and validation invariants.
+This document defines f8's multi-file declarative JSON specification schemas, table structure, axis roles, cell input syntax, and validation invariants.
 
 ## 1. Project Directory Architecture
 
-A Finx financial model is structured as a modular project directory separating workbook containers from standalone calculation tables:
+A f8 financial model is structured as a modular project directory separating workbook containers from standalone calculation tables:
 
 ```text
 my_model/
-├── finx.json                  # Root manifest: metadata, theme, and sheet layout
+├── f8.json                  # Root manifest: metadata, theme, and sheet layout
 └── tables/                    # Standalone table calculation specifications
     ├── assumptions.json
     ├── income_statement.json
@@ -17,12 +17,12 @@ my_model/
 
 ### V1 Core Invariants
 - **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) must reside in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining in V1**: Sheets in `finx.json` reference table file paths. Inlining table objects directly into `finx.json` is prohibited.
+- **No inlining in V1**: Sheets in `f8.json` reference table file paths. Inlining table objects directly into `f8.json` is prohibited.
 - **Global table ID uniqueness**: Every table `id` must be globally unique across the entire workbook.
 
 ---
 
-## 2. Project Manifest Schema (`finx.json`)
+## 2. Project Manifest Schema (`f8.json`)
 
 The root manifest defines workbook-level metadata, pluggable theme selection, and physical sheet presentation containers:
 
@@ -148,7 +148,7 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 
 ## 5. Related Documentation
 
-- [Model Authoring Guide](authoring-guide.md): Comprehensive end-to-end guide to authoring raw Finx models.
+- [Model Authoring Guide](authoring-guide.md): Comprehensive end-to-end guide to authoring raw f8 models.
 - [Grid Architecture](grid.md): Multi-tier column headers, section headers, gutters, and table collapsing.
 - [Semantic Formatting & Themes](formatting.md): Format preset catalog, conflict resolution, and workbook themes.
 - [Modeling Patterns & Archetypes](patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).

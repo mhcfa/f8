@@ -1,6 +1,6 @@
 # Formula Grammar
 
-This document provides the formal grammar and parsing rules for Finx formula expressions.
+This document provides the formal grammar and parsing rules for f8 formula expressions.
 
 ## 1. Formal EBNF Grammar
 

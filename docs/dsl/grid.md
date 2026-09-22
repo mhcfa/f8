@@ -1,6 +1,6 @@
 # Grid Architecture
 
-Finx uses an explicit 2D grid model where declared rows and columns map 1:1 to physical spreadsheet coordinates. Tables define structural elements directly rather than through synthetic grouping abstractions.
+f8 uses an explicit 2D grid model where declared rows and columns map 1:1 to physical spreadsheet coordinates. Tables define structural elements directly rather than through synthetic grouping abstractions.
 
 ## 1. Column Structure
 

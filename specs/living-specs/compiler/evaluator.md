@@ -12,12 +12,12 @@ The `compiler::eval` subsystem provides formula expression evaluation with Excel
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::eval::expr`: Formula AST expression evaluator (`eval_expr`), IEEE 754 arithmetic normalization, Excel type-aware comparison ranking, and domain error bubbling.
-  - `finx::compiler::eval::context`: `CellEvalContext` bridging cell coordinates, memoized values, symbol table, and function registry to implement `EvalContext` for functions (`eval_expr`, `eval_range`).
-  - `finx::compiler::eval::model`: `EvaluatedModel` self-contained matrix combining computed `CellValue` entries with `SymbolTable`, providing symbol-integrated query APIs (`get_value`, `get_cell`, `get_row_values`, `find_errors`).
-  - `finx::compiler::eval::error`: Structured compiler and evaluation diagnostic hierarchy (`EvalError`).
-  - `finx::compiler::eval::Evaluator`: Topological model execution engine iterating [`DependencyGraph::topological_order`](./dependency-graph.md).
-  - `finx::compiler::graph::resolve::ResolvedSlice`: 2D slice metadata `(rows, cols, cells)` preserved during range reference resolution.
+  - `f8_core::compiler::eval::expr`: Formula AST expression evaluator (`eval_expr`), IEEE 754 arithmetic normalization, Excel type-aware comparison ranking, and domain error bubbling.
+  - `f8_core::compiler::eval::context`: `CellEvalContext` bridging cell coordinates, memoized values, symbol table, and function registry to implement `EvalContext` for functions (`eval_expr`, `eval_range`).
+  - `f8_core::compiler::eval::model`: `EvaluatedModel` self-contained matrix combining computed `CellValue` entries with `SymbolTable`, providing symbol-integrated query APIs (`get_value`, `get_cell`, `get_row_values`, `find_errors`).
+  - `f8_core::compiler::eval::error`: Structured compiler and evaluation diagnostic hierarchy (`EvalError`).
+  - `f8_core::compiler::eval::Evaluator`: Topological model execution engine iterating [`DependencyGraph::topological_order`](./dependency-graph.md).
+  - `f8_core::compiler::graph::resolve::ResolvedSlice`: 2D slice metadata `(rows, cols, cells)` preserved during range reference resolution.
 - **Data flow & interfaces**:
   1. `CellGrid` + `DependencyGraph` + `SymbolTable` + `FunctionRegistry` $\rightarrow$ `Evaluator::evaluate(&grid, &graph, &symbol_table, &registry)`.
   2. For each cell in `graph.topological_order()`:
@@ -28,8 +28,8 @@ The `compiler::eval` subsystem provides formula expression evaluation with Excel
 - **Dependencies**:
   - `indexmap`: Guarantees deterministic iteration ordering for reproducible compilation.
   - `thiserror`: Structured diagnostic error typing.
-  - `finx::value`: `CellValue` and `ExcelError` runtime representations.
-  - `finx::expr::ast`: AST expressions (`Expr`, `Literal`).
+  - `f8_core::value`: `CellValue` and `ExcelError` runtime representations.
+  - `f8_core::expr::ast`: AST expressions (`Expr`, `Literal`).
 
 ## Requirements & Invariants
 
@@ -129,7 +129,7 @@ Functions implementing `ExcelFunction` receive `EvalContext` implemented by `Cel
 
 ### 6. Unified Compiler Driver Facade (`Compiler`)
 
-The top-level `finx::Compiler` orchestrates Passes 1 through 4 into a single coherent call:
+The top-level `f8_core::Compiler` orchestrates Passes 1 through 4 into a single coherent call:
 - `Compiler::evaluate(manifest, tables)`: Validates manifest and table specifications, expands the cell grid, constructs the dependency DAG, verifies zero cycles, and evaluates all formulas topologically using `FunctionRegistry::standard()`.
 - `Compiler::evaluate_with_registry(manifest, tables, registry)`: Permits custom function registry injection.
 - Returns unified `CompilerError` wrapping `ModelError` (Pass 1), `IrError` (Pass 2), `GraphError` (Pass 3), and `EvalError` (Pass 4).

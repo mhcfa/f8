@@ -1,6 +1,6 @@
 # Codebase Structure
 
-This document outlines the directory layout, module boundaries, and dependency hierarchy of the Finx codebase.
+This document outlines the directory layout, module boundaries, and dependency hierarchy of the f8 codebase.
 
 ---
 
@@ -9,12 +9,12 @@ This document outlines the directory layout, module boundaries, and dependency h
 The codebase is organized as a Cargo Workspace separating the mathematical compiler core from outer interface binaries and institutional templates:
 
 ```text
-finx/
+f8/
 ├── Cargo.toml                  # Workspace root: shared dependencies and lints
 ├── Cargo.lock
 │
 ├── crates/
-│   ├── finx-core/              # Pure calculation compiler & Intermediate Representation (IR)
+│   ├── f8-core/              # Pure calculation compiler & Intermediate Representation (IR)
 │   │   ├── src/
 │   │   │   ├── lib.rs          # Core library entrypoint and exports
 │   │   │   ├── model/          # Specification AST, manifest I/O, & schema validation
@@ -24,11 +24,11 @@ finx/
 │   │   │   └── compiler/       # Core 6 passes (IR -> Graph -> Eval -> Layout -> Lowering -> Emission)
 │   │   └── tests/              # Core compiler pass tests, calculation parity, & model archetypes
 │   │
-│   ├── finx-cli/               # Command-line interface binary (clap)
+│   ├── f8-cli/               # Command-line interface binary (clap)
 │   │   ├── src/                # CLI subcommands (init, scaffold, compile, inspect)
 │   │   └── tests/              # CLI integration tests, argument parsing, & exit code assertions
 │   │
-│   └── finx-mcp/               # Model Context Protocol server binary
+│   └── f8-mcp/               # Model Context Protocol server binary
 │       ├── src/                # Stdio JSON-RPC tools and prompts for AI agents
 │       └── tests/              # MCP protocol serialization & tool contract tests
 │
@@ -46,13 +46,13 @@ finx/
 
 ## 2. Architectural Layers
 
-### 2.1. Layer 1: Foundational Domain Types & ASTs (`finx-core::model`, `value`, `expr`)
+### 2.1. Layer 1: Foundational Domain Types & ASTs (`f8-core::model`, `value`, `expr`)
 
-- **`model`**: Declarative project specifications (`finx.json` manifests and `tables/*.json` specs). Performs two-stage validation before compilation. Zero internal dependencies.
+- **`model`**: Declarative project specifications (`f8.json` manifests and `tables/*.json` specs). Performs two-stage validation before compilation. Zero internal dependencies.
 - **`expr`**: Pratt parser and AST nodes (`Expr`, `BinaryOp`, `Reference`) implementing [Formula Grammar](dsl/grammar.md).
 - **`value`**: Runtime cell value enum (`CellValue`), Excel domain errors (`ExcelError`), and arithmetic parity rules as defined in [Excel Parity](compiler/parity.md).
 
-### 2.2. Layer 2: Cross-Cutting Function Subsystem (`finx-core::functions`)
+### 2.2. Layer 2: Cross-Cutting Function Subsystem (`f8-core::functions`)
 
 - **`functions`**: Decouples Excel built-in functions from compiler internals:
   - Exposes parameter metadata (`ParameterDef`, arity, variadic rules) for parser validation.
@@ -60,7 +60,7 @@ finx/
   - Implements canonical Excel naming for formula lowering.
   - Re-exports standard catalog categories (math, logical, financial, lookup, datetime).
 
-### 2.3. Core Compiler Passes (`finx-core::compiler`)
+### 2.3. Core Compiler Passes (`f8-core::compiler`)
 
 Sequential pipeline transforming validated input specs into evaluated matrices and `.xlsx` binaries (following Pass 1 ingest and parse):
 
@@ -83,9 +83,9 @@ Curated canonical JSON skeletons demonstrating institutional financial modeling 
 
 Outer adapters providing access across diverse execution environments:
 
-- **`finx-cli` (Phase 1)**: Command-line interface powered by `clap` (`init`, `scaffold`, `compile`, `inspect`). Implemented first for local financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
-- **`finx-mcp` (Phase 2)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
-- **`finx-wasm` (Phase 3 Target)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
+- **`f8-cli` (Phase 1)**: Command-line interface powered by `clap` (`init`, `scaffold`, `compile`, `inspect`). Implemented first for local financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
+- **`f8-mcp` (Phase 2)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
+- **`f8-wasm` (Phase 3 Target)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
 
 ---
 
@@ -95,11 +95,11 @@ To prevent circular dependencies and maintain clean boundaries across workspace 
 
 ```mermaid
 flowchart TD
-    CLI["finx-cli (CLI Binary)"] --> Core["finx-core (Compiler & Evaluator)"]
-    MCP["finx-mcp (MCP Binary)"] --> Core
-    WASM["finx-wasm (WASM Bindings)"] -.-> Core
+    CLI["f8-cli (CLI Binary)"] --> Core["f8-core (Compiler & Evaluator)"]
+    MCP["f8-mcp (MCP Binary)"] --> Core
+    WASM["f8-wasm (WASM Bindings)"] -.-> Core
 
-    subgraph CoreInternals ["finx-core Internals (wasm32 & native compatible)"]
+    subgraph CoreInternals ["f8-core Internals (wasm32 & native compatible)"]
         CompilerPasses["compiler (Passes 2-6)"] --> Functions["functions (Registry & Catalog)"]
         CompilerPasses --> Expr["expr (Formula AST)"]
         CompilerPasses --> Model["model (Spec AST)"]
@@ -111,10 +111,10 @@ flowchart TD
     end
 ```
 
-- **Acyclic hierarchy**: `finx-core` is strictly leaf-level. It never depends on outer interface crates (`finx-cli`, `finx-mcp`, `finx-wasm`).
-- **I/O-agnostic pure core**: `finx-core` performs pure in-memory computations with zero direct filesystem I/O (`std::fs`). Manifest and theme loading from disk, directory discovery, and workbook file saving are strictly performed by outer adapters (`finx-cli`, `finx-mcp`).
+- **Acyclic hierarchy**: `f8-core` is strictly leaf-level. It never depends on outer interface crates (`f8-cli`, `f8-mcp`, `f8-wasm`).
+- **I/O-agnostic pure core**: `f8-core` performs pure in-memory computations with zero direct filesystem I/O (`std::fs`). Manifest and theme loading from disk, directory discovery, and workbook file saving are strictly performed by outer adapters (`f8-cli`, `f8-mcp`).
 - **Pass isolation**: Core compiler passes depend on shared domain types (`model`, `expr`, `value`, `functions`), but do not depend backwards on each other.
-- **Direct interface integration**: Outer interfaces (`finx-cli`, `finx-mcp`, `finx-wasm`) depend directly on `finx-core` for validation, topological evaluation, and compilation.
+- **Direct interface integration**: Outer interfaces (`f8-cli`, `f8-mcp`, `f8-wasm`) depend directly on `f8-core` for validation, topological evaluation, and compilation.
 - **Linear data flow**: Each compiler pass consumes the output of the prior pass as pure, explicit data structures.
 
 ---
@@ -130,13 +130,13 @@ The compiler core is designed from day one to support both native operating syst
 
 ### 4.2. Delivery Roadmap
 
-1. **Phase 1: Cargo Workspace & Local CLI (`finx-cli`)**:
-   - Split codebase into `crates/finx-core` and `crates/finx-cli`.
-   - Implement `finx scaffold`, `finx compile` (`--check`, `--out`), and `finx inspect` (`cell`, `table --view`, `dependents`).
+1. **Phase 1: Cargo Workspace & Local CLI (`f8-cli`)**:
+   - Split codebase into `crates/f8-core` and `crates/f8-cli`.
+   - Implement `f8 scaffold`, `f8 compile` (`--check`, `--out`), and `f8 inspect` (`cell`, `table --view`, `dependents`).
    - Dogfood on personal financial models (3-statement, LBO, comps) to refine authoring ergonomics.
-2. **Phase 2: Model Context Protocol Server (`finx-mcp`)**:
-   - Create `crates/finx-mcp` using JSON-RPC stdio / streamable HTTP.
+2. **Phase 2: Model Context Protocol Server (`f8-mcp`)**:
+   - Create `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.
    - Wrap core inspection, scaffolding, and validation routines as typed MCP tools for chat-only AI agents.
-3. **Phase 3: WebAssembly & Web Application (`finx-wasm`)**:
-   - Expose `finx-core` via `wasm-bindgen` for client-side evaluation.
+3. **Phase 3: WebAssembly & Web Application (`f8-wasm`)**:
+   - Expose `f8-core` via `wasm-bindgen` for client-side evaluation.
    - Build interactive web spreadsheet visualizers or SaaS integrations.

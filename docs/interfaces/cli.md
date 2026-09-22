@@ -1,25 +1,25 @@
 # Command-Line Interface (CLI)
 
-This document defines the architecture, command hierarchy, and workflows of Finx's command-line interface binary (`finx-cli`).
+This document defines the architecture, command hierarchy, and workflows of f8's command-line interface binary (`f8-cli`).
 
 ---
 
 ## 1. Overview & Role
 
-The command-line interface (`finx-cli`) provides a direct terminal entrypoint for financial analysts (CFA personal workflow) and autonomous coding agents operating with shell access (such as Antigravity, Claude Code, or Cursor Composer).
+The command-line interface (`f8-cli`) provides a direct terminal entrypoint for financial analysts (CFA personal workflow) and autonomous coding agents operating with shell access (such as Antigravity, Claude Code, or Cursor Composer).
 
-`finx-cli` is the foundational outer interface built on top of `finx-core`:
+`f8-cli` is the foundational outer interface built on top of `f8-core`:
 - **Zero protocol overhead**: Provides instant, native execution without requiring MCP clients or JSON-RPC process management.
 - **Dual human & agent access**: Shell-enabled AI agents execute CLI commands directly in terminal tools, enabling agentic modeling workflows from day one.
 - **Pure compiler delegation**: The CLI delegates directly to:
   - **`templates/`**: Bundled institutional model archetypes scaffolded directly into the project as canonical JSON.
-  - **`finx-core`**: For specification validation, DAG acyclicity proofs, topological evaluation, and `.xlsx` emission.
+  - **`f8-core`**: For specification validation, DAG acyclicity proofs, topological evaluation, and `.xlsx` emission.
 
 ```mermaid
 flowchart LR
-    A["CLI Command\n(finx scaffold / compile)"] --> B["Command Parser\n(clap)"]
-    B --> C["Canonical JSON on Disk\n(finx.json + tables/*.json)"]
-    C --> D["finx-core Compiler\n(Evaluation & Emission)"]
+    A["CLI Command\n(f8 scaffold / compile)"] --> B["Command Parser\n(clap)"]
+    B --> C["Canonical JSON on Disk\n(f8.json + tables/*.json)"]
+    C --> D["f8-core Compiler\n(Evaluation & Emission)"]
     D --> E["Terminal Output\n(Status, Tables, or .xlsx)"]
 ```
 
@@ -29,28 +29,28 @@ flowchart LR
 
 All CLI operations are grouped under clear, noun-first subcommands:
 
-### 2.1. Project & Workspace Management (`finx init`, `finx sheet`)
+### 2.1. Project & Workspace Management (`f8 init`, `f8 sheet`)
 
-#### `finx init <model_name> [options]`
-Initializes a new Finx model directory with root `finx.json` and standard subdirectories:
+#### `f8 init <model_name> [options]`
+Initializes a new f8 model directory with root `f8.json` and standard subdirectories:
 ```bash
-finx init LBO_Simple --theme corporate_navy
+f8 init LBO_Simple --theme corporate_navy
 ```
 
-#### `finx sheet add <sheet_name> [options]`
-Appends a worksheet tab to `finx.json`:
+#### `f8 sheet add <sheet_name> [options]`
+Appends a worksheet tab to `f8.json`:
 ```bash
-finx sheet add Financials --freeze-row 6 --freeze-col 2 --tab-color "#1B365D"
+f8 sheet add Financials --freeze-row 6 --freeze-col 2 --tab-color "#1B365D"
 ```
 
 ---
 
-### 2.2. Model Scaffolding & Ingest (`finx scaffold`, `finx table`)
+### 2.2. Model Scaffolding & Ingest (`f8 scaffold`, `f8 table`)
 
-#### `finx scaffold <archetype> [options]`
-Scaffolds pre-configured institutional templates directly onto disk as canonical JSON files (`finx.json` + `tables/*.json`):
+#### `f8 scaffold <archetype> [options]`
+Scaffolds pre-configured institutional templates directly onto disk as canonical JSON files (`f8.json` + `tables/*.json`):
 ```bash
-finx scaffold three-statement --sheet Financials
+f8 scaffold three-statement --sheet Financials
 ```
 Supported archetypes include:
 - `three-statement`: Integrated Income Statement, Balance Sheet, Cash Flow, and operating driver schedules.
@@ -60,14 +60,14 @@ Supported archetypes include:
 
 Scaffolded templates arrive with pre-wired financial formulas, typographic indentations, and semantic subtotal styles, but with historical inputs and driver assumptions left unpopulated.
 
-#### `finx table create <table_id> [options]`
+#### `f8 table create <table_id> [options]`
 Ingests a canonical table specification from a JSON file (or stdin), validates domain invariants, and mounts it into the specified worksheet:
 ```bash
 # Ingest canonical table JSON file
-finx table create IncomeStatement --from tables/income_statement.json --sheet Financials
+f8 table create IncomeStatement --from tables/income_statement.json --sheet Financials
 
 # Pipe directly from agent script / stdin
-cat << 'EOF' | finx table create IncomeStatement --from - --sheet Financials
+cat << 'EOF' | f8 table create IncomeStatement --from - --sheet Financials
 {
   "id": "IncomeStatement",
   "title": "Income Statement",
@@ -81,38 +81,38 @@ EOF
 
 ### 2.3. Model Authoring & Editing Workflow
 
-Finx strictly enforces **declarative specifications over imperative CLI flag mutations**. Finx deliberately omits fine-grained CLI commands for inserting rows, updating cells, or extending timelines.
+f8 strictly enforces **declarative specifications over imperative CLI flag mutations**. f8 deliberately omits fine-grained CLI commands for inserting rows, updating cells, or extending timelines.
 
 Instead, coding agents and human developers edit the canonical JSON specification files (`tables/*.json`) directly using standard text/JSON tools:
-1. **Scaffold or author**: Generate an initial model skeleton via `finx scaffold` or `finx table create`.
+1. **Scaffold or author**: Generate an initial model skeleton via `f8 scaffold` or `f8 table create`.
 2. **Direct JSON edit**: Add rows, update cell inputs, or tweak formulas directly in the target `tables/<id>.json` file.
-3. **Compile and verify**: Run `finx compile --check` to validate changes and inspect calculated results.
+3. **Compile and verify**: Run `f8 compile --check` to validate changes and inspect calculated results.
 
 ---
 
-### 2.4. Compilation & Verification (`finx compile`, `finx inspect`)
+### 2.4. Compilation & Verification (`f8 compile`, `f8 inspect`)
 
-#### `finx compile [options]`
+#### `f8 compile [options]`
 Executes the full compiler pipeline, evaluates DAG dependencies, and emits compiled `.xlsx` workbooks or headless data exports:
 ```bash
 # Compile and emit live workbook with precalculated cell cache
-finx compile --out output/model.xlsx
+f8 compile --out output/model.xlsx
 
 # Headless verification check without writing workbook
-finx compile --check
+f8 compile --check
 ```
 
-In the "Scaffold-and-Fill" workflow, `finx compile --check` scans the entire workbook and aggregates **all** unpopulated driver cells into a comprehensive diagnostic checklist (rather than failing fast on the first unassigned cell), enabling agents and analysts to populate all missing inputs in a single editing pass:
+In the "Scaffold-and-Fill" workflow, `f8 compile --check` scans the entire workbook and aggregates **all** unpopulated driver cells into a comprehensive diagnostic checklist (rather than failing fast on the first unassigned cell), enabling agents and analysts to populate all missing inputs in a single editing pass:
 ```text
 MissingRequiredInput: Assumptions["rev_growth", "2024E"] has no value or formula.
 MissingRequiredInput: Assumptions["rev_growth", "2025E"] has no value or formula.
 MissingRequiredInput: IncomeStatement["revenue", "2023A"] has no historical actual value.
 ```
 
-#### `finx inspect cell <table_id> <row_id> <col_id>`
-Evaluates and inspects an individual calculation cell via `finx-core`'s unified `CompiledModel` facade, printing calculated values, formula ASTs, upstream precedents, and downstream dependents:
+#### `f8 inspect cell <table_id> <row_id> <col_id>`
+Evaluates and inspects an individual calculation cell via `f8-core`'s unified `CompiledModel` facade, printing calculated values, formula ASTs, upstream precedents, and downstream dependents:
 ```bash
-finx inspect cell IncomeStatement total_opex 2028E
+f8 inspect cell IncomeStatement total_opex 2028E
 ```
 **Output:**
 ```text
@@ -125,14 +125,14 @@ Precedents:     [IncomeStatement["cogs", "2028E"], IncomeStatement["rd", "2028E"
 Dependents:     [IncomeStatement["ebit", "2028E"]]
 ```
 
-#### `finx inspect dependents <table_id> <row_id> <col_id> [options]`
+#### `f8 inspect dependents <table_id> <row_id> <col_id> [options]`
 Performs blast-radius impact analysis by querying outgoing DAG edges (`dependents_of`) from `DependencyGraph`:
 ```bash
 # Direct dependents of a driver cell
-finx inspect dependents Assumptions rev_growth 2024E
+f8 inspect dependents Assumptions rev_growth 2024E
 
 # Transitive blast radius across all tables and statements
-finx inspect dependents Assumptions rev_growth 2024E --recursive
+f8 inspect dependents Assumptions rev_growth 2024E --recursive
 ```
 **Output:**
 ```text
@@ -154,7 +154,7 @@ Key use cases for analysts and agents:
 - **Dynamic linkage verification**: Proves that financial statements are dynamically linked (e.g. confirming Cash Flow feeds Cash on the Balance Sheet).
 - **Orphan calculation detection**: Identifies calculation rows that have zero downstream dependents, flagging redundant or forgotten rows.
 
-#### `finx inspect table <table_id> [options]`
+#### `f8 inspect table <table_id> [options]`
 Renders the headless 2D cell matrix directly to stdout as an aligned table for immediate terminal verification.
 
 Options:
@@ -166,7 +166,7 @@ Options:
 
 ```bash
 # Formula auditing mode
-finx inspect table IncomeStatement --view formulas --format markdown
+f8 inspect table IncomeStatement --view formulas --format markdown
 ```
 **Output:**
 ```markdown
@@ -177,10 +177,10 @@ finx inspect table IncomeStatement --view formulas --format markdown
 | Gross Profit |  60.0  | IncomeStatement["revenue", @col] - IncomeStatement["cogs"...] | IncomeStatement["revenue", @col] - IncomeStatement["cogs"...] |
 ```
 
-#### `finx inspect cycle`
+#### `f8 inspect cycle`
 When cyclic dependencies are detected, outputs the full semantic cycle loop traced by Tarjan's Strongly Connected Components pass:
 ```bash
-finx inspect cycle
+f8 inspect cycle
 ```
 **Output:**
 ```text

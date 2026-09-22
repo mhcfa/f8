@@ -1,6 +1,6 @@
 # Standard Function Catalog (V1)
 
-This document catalogs the standard built-in Excel functions supported in Finx V1, detailing signatures, constraints, and calculation behaviors.
+This document catalogs the standard built-in Excel functions supported in f8 V1, detailing signatures, constraints, and calculation behaviors.
 
 ## 1. Mathematical & Aggregation Functions
 
@@ -23,7 +23,7 @@ This document catalogs the standard built-in Excel functions supported in Finx V
 
 ## 2. Conditional Aggregation Functions (*IFS)
 
-Finx standardizes exclusively on modern plural `*IFS` signatures with paired trailing criteria arguments, eliminating the inverted argument order of legacy singular `SUMIF`/`COUNTIF`.
+f8 standardizes exclusively on modern plural `*IFS` signatures with paired trailing criteria arguments, eliminating the inverted argument order of legacy singular `SUMIF`/`COUNTIF`.
 
 | Function | Min args | Max args | Variadic rule | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -39,7 +39,7 @@ Finx standardizes exclusively on modern plural `*IFS` signatures with paired tra
 - **Comparison prefixes**: String expressions with relational operators (`">10"`, `"<=" & ref`, `"<>"`, `"="`).
 - **Wildcards**: Text criteria support `?` (any single character), `*` (zero or more characters), and `~` (escape character for `~?`, `~*`, `~~`).
 - **Dimension matching**: Every `criteria_range_k` must have identical row and column counts to the primary range; mismatched dimensions return `#VALUE!`.
-- **Excel emission parity**: Finx compiles and evaluates standard `*IFS` expressions directly and emits identical `=SUMIFS(...)` formulas into `.xlsx` binaries without synthetic AST transformations.
+- **Excel emission parity**: f8 compiles and evaluates standard `*IFS` expressions directly and emits identical `=SUMIFS(...)` formulas into `.xlsx` binaries without synthetic AST transformations.
 
 ---
 
@@ -129,7 +129,7 @@ Finx standardizes exclusively on modern plural `*IFS` signatures with paired tra
 
 ## 6. Date & Time Functions
 
-Finx models dates as dedicated calculation rows (`format: "date"`), keeping column dimensions structural and coordinates static. Date math operates on numeric serial dates or explicit `DATE(year, month, day)` constructors, avoiding implicit string parsing.
+f8 models dates as dedicated calculation rows (`format: "date"`), keeping column dimensions structural and coordinates static. Date math operates on numeric serial dates or explicit `DATE(year, month, day)` constructors, avoiding implicit string parsing.
 
 | Function | Min args | Max args | Variadic rule | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -146,7 +146,7 @@ Finx models dates as dedicated calculation rows (`format: "date"`), keeping colu
 
 Excel represents dates as floating-point day counts where serial day `1.0` is `1900-01-01`.
 
-To guarantee bit-for-bit Excel calculation parity, Finx strictly reproduces the historical Lotus 1-2-3 / Excel leap year bug:
+To guarantee bit-for-bit Excel calculation parity, f8 strictly reproduces the historical Lotus 1-2-3 / Excel leap year bug:
 - **Serial day 60.0**: Treats `1900-02-29` as serial day `60.0`, even though 1900 was not a leap year in the Gregorian calendar.
 - **Offset on modern dates**: All serial dates on or after March 1, 1900 carry a $+1$ offset relative to true astronomical day counts, causing the Unix epoch (`1970-01-01`) to map to serial day `25569.0` rather than `25568.0`.
 - See [The 1900 Leap Year Bug (Lotus 1-2-3 Parity)](../compiler/parity.md#42-the-1900-leap-year-bug-lotus-1-2-3-parity) for details.

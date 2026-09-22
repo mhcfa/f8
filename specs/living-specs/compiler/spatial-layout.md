@@ -7,15 +7,15 @@ status: active
 
 ## Purpose
 
-The `compiler::layout` subsystem provides Pass 5 of the Finx compilation pipeline, mapping high-level tables, explicit row specifications (`RowSpec`), multi-tier column headers, title/subtitle banners, and explicit gutters onto physical 2D worksheet grid coordinates `(sheet, col, row, a1)`. It arbitrates sheet-wide column widths and row heights using active `Theme` metrics and produces the deterministic `LayoutMap` contract required for Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission).
+The `compiler::layout` subsystem provides Pass 5 of the f8 compilation pipeline, mapping high-level tables, explicit row specifications (`RowSpec`), multi-tier column headers, title/subtitle banners, and explicit gutters onto physical 2D worksheet grid coordinates `(sheet, col, row, a1)`. It arbitrates sheet-wide column widths and row heights using active `Theme` metrics and produces the deterministic `LayoutMap` contract required for Pass 6a (Formula Lowering) and Pass 6b (Workbook Emission).
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::layout::a1`: Bijection between 0-indexed column integers and Excel column strings (`col_to_excel_col`), A1 coordinate formatting (`coordinate_to_a1`), and physical grid boundary constants (`MAX_EXCEL_COLUMNS = 16_384`, `MAX_EXCEL_ROWS = 1_048_576`, `MAX_OUTLINE_LEVEL = 7`).
-  - `finx::compiler::layout::error`: Structured domain errors (`LayoutError`).
-  - `finx::compiler::layout::mod`: Data structures (`LayoutMap`, `PhysicalCoordinate`, `StyleRole`, `TablePlacement`, `SuperHeaderPlacement`, `SectionHeaderRow`, `SheetLayout`) and planning engine (`LayoutPlanner`).
-  - `finx::compiler::mod`: Compiler orchestration entry point (`Compiler::plan_layout`).
+  - `f8_core::compiler::layout::a1`: Bijection between 0-indexed column integers and Excel column strings (`col_to_excel_col`), A1 coordinate formatting (`coordinate_to_a1`), and physical grid boundary constants (`MAX_EXCEL_COLUMNS = 16_384`, `MAX_EXCEL_ROWS = 1_048_576`, `MAX_OUTLINE_LEVEL = 7`).
+  - `f8_core::compiler::layout::error`: Structured domain errors (`LayoutError`).
+  - `f8_core::compiler::layout::mod`: Data structures (`LayoutMap`, `PhysicalCoordinate`, `StyleRole`, `TablePlacement`, `SuperHeaderPlacement`, `SectionHeaderRow`, `SheetLayout`) and planning engine (`LayoutPlanner`).
+  - `f8_core::compiler::mod`: Compiler orchestration entry point (`Compiler::plan_layout`).
 - **Data flow & interfaces**:
   1. Input: `ProjectManifest`, `&[TableSpec]`, `CellGrid`, `Theme`, and optional `&EvaluatedModel`.
   2. Geometry planning: Computes top/left gutters (Row 0, Col 0), primary table origin at `B2` (`col: 1, row: 1`), inter-table gutters (2 blank rows), title/subtitle blocks, title buffer gutters, multi-tier super-headers, and column headers.

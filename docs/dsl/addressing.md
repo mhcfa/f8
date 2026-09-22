@@ -1,6 +1,6 @@
 # Addressing Syntax
 
-This document defines the reference addressing syntax used in Finx formulas and specification models.
+This document defines the reference addressing syntax used in f8 formulas and specification models.
 
 ## 1. Core Invariants
 

@@ -1,0 +1,17 @@
+[package]
+name = "f8-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "f8"
+path = "src/main.rs"
+
+[dependencies]
+f8-core.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

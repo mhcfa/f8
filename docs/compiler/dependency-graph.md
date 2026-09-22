@@ -1,6 +1,6 @@
 # Dependency Graph & Cycle Detection
 
-This document specifies Finx's dependency analysis, cycle detection mechanisms, and FAST Standard compliance.
+This document specifies f8's dependency analysis, cycle detection mechanisms, and FAST Standard compliance.
 
 ## 1. Graph Construction
 
@@ -14,7 +14,7 @@ Once grid expansion completes, the compiler constructs a directed graph of cell 
 
 ## 2. FAST Standard Compliance (Zero Circularity)
 
-Finx strictly complies with the **FAST Standard (Section 2.01)**:
+f8 strictly complies with the **FAST Standard (Section 2.01)**:
 
 - **No circular references**: Models must compile to a pure Directed Acyclic Graph (DAG).
 - **Disabled iterative calculation**: Emitted `.xlsx` files explicitly set `calcPr.iterate = false`, preventing Excel circular calculation warnings, sluggish recalculation, and `#DIV/0!` locking.
@@ -53,7 +53,7 @@ Cycle trace:
 
 Financial models historically introduced circular references for simultaneous equations (e.g. interest calculated on average debt balances, or circular tax calculations).
 
-Finx requires exact closed-form algebraic formulations. For example, a revolver cash sweep with average-balance interest:
+f8 requires exact closed-form algebraic formulations. For example, a revolver cash sweep with average-balance interest:
 
 $$\text{RevolverDraw} = \max\left(0, \frac{\text{Deficit}}{1 - \frac{\text{Rate}}{2}}\right)$$
 

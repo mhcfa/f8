@@ -12,9 +12,9 @@ The `theme` subsystem decouples workbook presentation styling, visual palette, t
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::model::theme`: Core structures (`Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, `FormatDefaults`), validation rules, built-in theme lookup, and format mask generator.
-  - `finx::model::manifest`: Root manifest theme resolution (`ProjectManifest::resolve_theme`) with default fallback to `"corporate_navy"`.
-  - `finx::model::error`: Diagnostic errors (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeIoError`, `ThemeParseError`, `ThemePrecisionOutOfBounds`).
+  - `f8_core::model::theme`: Core structures (`Theme`, `TypographyConfig`, `MetricsConfig`, `PaletteConfig`, `BordersConfig`, `BorderStyle`, `NumberFormatsConfig`, `FormatDefaults`), validation rules, built-in theme lookup, and format mask generator.
+  - `f8_core::model::manifest`: Root manifest theme resolution (`ProjectManifest::resolve_theme`) with default fallback to `"corporate_navy"`.
+  - `f8_core::model::error`: Diagnostic errors (`ThemeNotFound`, `InvalidThemeColor`, `InvalidThemeMetric`, `MissingDecimalPlaceholder`, `MissingCurrencySymbolPlaceholder`, `ThemeIoError`, `ThemeParseError`, `ThemePrecisionOutOfBounds`).
 - **Data flow & interfaces**:
   1. Manifest / CLI / Config $\rightarrow$ `Theme::resolve(name_or_path, base_dir)` $\rightarrow$ Built-in lookup or JSON file deserialization + validation $\rightarrow$ `Theme`.
   2. Grid expansion / Emitter $\rightarrow$ `theme.resolve_number_format(preset, decimals, currency)` $\rightarrow$ Synthesized Excel number format mask string.

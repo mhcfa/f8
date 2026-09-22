@@ -1,10 +1,10 @@
 # Modeling Patterns & Archetypes
 
-This document catalogs canonical financial modeling patterns in Finx, demonstrating how the unified 2D matrix model accommodates horizontal statements, vertical schedules, cross-footing matrices, and roll-forward corkscrews.
+This document catalogs canonical financial modeling patterns in f8, demonstrating how the unified 2D matrix model accommodates horizontal statements, vertical schedules, cross-footing matrices, and roll-forward corkscrews.
 
 ## 1. Overview
 
-Because Finx treats both rows and columns as symmetrical first-class calculation axes, financial models do not require special table types. The direction of vector formulas (`expr`), axis roles (`measure` vs `descriptor`), and active coordinate tokens (`@col`, `@row`) naturally define the schedule shape:
+Because f8 treats both rows and columns as symmetrical first-class calculation axes, financial models do not require special table types. The direction of vector formulas (`expr`), axis roles (`measure` vs `descriptor`), and active coordinate tokens (`@col`, `@row`) naturally define the schedule shape:
 
 - **Horizontal schedules**: Row-driven calculations across time columns using `@col` and `col.prev`.
 - **Vertical schedules**: Column-driven calculations across line-item rows using `@row` and `row.prev`.

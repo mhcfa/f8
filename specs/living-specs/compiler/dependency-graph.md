@@ -12,14 +12,14 @@ The dependency analysis subsystem provides semantic reference resolution, coordi
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::graph::resolve`: Formula AST traversal, coordinate selector resolution (`ColSelector`, `RowSelector`), range interval expansion, and dependency extraction.
-  - `finx::compiler::graph::dependency`: Directed cell dependency graph (`DependencyGraph`), edge construction, Tarjan SCC cycle detection, DFS cycle path extraction, and deterministic topological sorting.
-  - `finx::compiler::graph::cycle`: Pluggable `CycleHandler` trait and `StrictDagHandler` implementation.
-  - `finx::compiler::graph::error`: Structured `ResolveError` and `GraphError` domain diagnostics.
+  - `f8_core::compiler::graph::resolve`: Formula AST traversal, coordinate selector resolution (`ColSelector`, `RowSelector`), range interval expansion, and dependency extraction.
+  - `f8_core::compiler::graph::dependency`: Directed cell dependency graph (`DependencyGraph`), edge construction, Tarjan SCC cycle detection, DFS cycle path extraction, and deterministic topological sorting.
+  - `f8_core::compiler::graph::cycle`: Pluggable `CycleHandler` trait and `StrictDagHandler` implementation.
+  - `f8_core::compiler::graph::error`: Structured `ResolveError` and `GraphError` domain diagnostics.
 - **Data flow & interfaces**:
   - Ingests: [`CellGrid`](../../../src/compiler/ir/cell.rs) and [`SymbolTable`](../../../src/compiler/ir/symbol.rs).
   - Emits: Verified `DependencyGraph` with deterministic topological evaluation order `&[CellId]` consumed by downstream in-memory evaluation (Pass 4) and layout planning (Pass 5).
-- **Dependencies**: `petgraph::graph::DiGraph`, `petgraph::algo::tarjan_scc`, native Rust data structures (`indexmap::IndexMap`, `indexmap::IndexSet`), [`finx::expr::ast`](../../../src/expr/ast.rs), and [`finx::compiler::ir`](../../../src/compiler/ir/mod.rs).
+- **Dependencies**: `petgraph::graph::DiGraph`, `petgraph::algo::tarjan_scc`, native Rust data structures (`indexmap::IndexMap`, `indexmap::IndexSet`), [`f8_core::expr::ast`](../../../src/expr/ast.rs), and [`f8_core::compiler::ir`](../../../src/compiler/ir/mod.rs).
 
 ## Requirements & Invariants
 
@@ -89,7 +89,7 @@ Closed intervals (`"2024E".."2026E"`) expand into ordered sequences of coordinat
 
 ### 5. Zero Circularity & Tarjan SCC Firewall
 
-Directed edge convention represents precedence: an edge $A \to B$ signifies that cell $B$ references and depends on cell $A$ ($A$ is an input to $B$). Finx enforces Section 2.01 of the FAST Standard by detecting and rejecting all circular dependency cycles.
+Directed edge convention represents precedence: an edge $A \to B$ signifies that cell $B$ references and depends on cell $A$ ($A$ is an input to $B$). f8 enforces Section 2.01 of the FAST Standard by detecting and rejecting all circular dependency cycles.
 
 #### Scenarios
 

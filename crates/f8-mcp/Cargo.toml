@@ -1,0 +1,16 @@
+[package]
+name = "f8-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "f8-mcp"
+path = "src/main.rs"
+
+[dependencies]
+f8-core.workspace = true
+
+[lints]
+workspace = true

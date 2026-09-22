@@ -7,15 +7,15 @@ status: active
 
 ## Purpose
 
-The `compiler::lowering` subsystem provides Pass 6a of the Finx compilation pipeline, transforming high-level semantic AST expressions (`Expr`) into concrete Excel formula strings (e.g. `"=C10-C11"`, `"=SUM(C$14:C$18)"`, `"='Summary'!$B$4"`). It arbitrates coordinate referencing rules (`$`), sheet qualification, uppercase Excel function names, and operator precedence parenthesization using the deterministic `LayoutMap` produced by Pass 5.
+The `compiler::lowering` subsystem provides Pass 6a of the f8 compilation pipeline, transforming high-level semantic AST expressions (`Expr`) into concrete Excel formula strings (e.g. `"=C10-C11"`, `"=SUM(C$14:C$18)"`, `"='Summary'!$B$4"`). It arbitrates coordinate referencing rules (`$`), sheet qualification, uppercase Excel function names, and operator precedence parenthesization using the deterministic `LayoutMap` produced by Pass 5.
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::lowering::address`: Formats 0-indexed column/row coordinates into Excel A1 addresses with `$` pinning (`format_cell_address`), handles single-quoted worksheet qualifiers (`format_sheet_qualifier`), and constructs single-cell (`format_single_cell`) or range (`format_range`) address strings.
-  - `finx::compiler::lowering::error`: Structured domain errors (`LoweringError`).
-  - `finx::compiler::lowering::mod`: Public types (`LoweredFormulaMap`, `FormulaLowerer`) and AST-to-Excel serializer.
-  - `finx::compiler::mod`: High-level compiler driver facade (`Compiler::lower_formulas`).
+  - `f8_core::compiler::lowering::address`: Formats 0-indexed column/row coordinates into Excel A1 addresses with `$` pinning (`format_cell_address`), handles single-quoted worksheet qualifiers (`format_sheet_qualifier`), and constructs single-cell (`format_single_cell`) or range (`format_range`) address strings.
+  - `f8_core::compiler::lowering::error`: Structured domain errors (`LoweringError`).
+  - `f8_core::compiler::lowering::mod`: Public types (`LoweredFormulaMap`, `FormulaLowerer`) and AST-to-Excel serializer.
+  - `f8_core::compiler::mod`: High-level compiler driver facade (`Compiler::lower_formulas`).
 - **Data flow & interfaces**:
   1. Input: `CellGrid`, `SymbolTable`, and `LayoutMap`.
   2. Reference resolution: Resolves `TableRef` row and column selectors against `SymbolTable` to locate top-left and bottom-right `CellId` coordinates.

@@ -1,12 +1,12 @@
 # End-to-End Model Project Example
 
-This document provides a complete, working reference implementation of a multi-file Finx model project, illustrating how the root manifest and table files connect.
+This document provides a complete, working reference implementation of a multi-file f8 model project, illustrating how the root manifest and table files connect.
 
 ## 1. Project Directory Layout
 
 ```text
 my_lbo_model/
-├── finx.json                  # Root manifest: metadata, theme, and sheet layout
+├── f8.json                  # Root manifest: metadata, theme, and sheet layout
 └── tables/                    # Standalone table calculation specifications
     ├── assumptions.json
     └── income_statement.json
@@ -14,7 +14,7 @@ my_lbo_model/
 
 ---
 
-## 2. Root Manifest (`finx.json`)
+## 2. Root Manifest (`f8.json`)
 
 Defines workbook metadata, theme styling, and the placement of tables across worksheet tabs:
 
