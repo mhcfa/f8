@@ -333,8 +333,8 @@ fn test_models_emit_in_memory() {
 #[test]
 #[ignore = "Generates physical .xlsx files on disk. Run with: cargo test --test export_integration_test -- --ignored"]
 fn test_export_xlsx_to_disk() {
-    let output_dir = Path::new("target/test-output");
-    std::fs::create_dir_all(output_dir).expect("Failed to create target/test-output directory");
+    let output_dir = Path::new("output");
+    std::fs::create_dir_all(output_dir).expect("Failed to create output directory");
 
     let ts_file = output_dir.join("three_statement_model.xlsx");
     let lbo_file = output_dir.join("institutional_lbo_model.xlsx");

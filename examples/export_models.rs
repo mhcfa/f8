@@ -175,6 +175,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // -------------------------------------------------------------------------
+    // 5. Excel Parity Verification Suite (All 43 Functions, Uncached)
+    // -------------------------------------------------------------------------
+    println!("\n▶ Compiling Excel Parity Verification Model (All 43 Functions, Uncached)...");
+    let parity_start = Instant::now();
+    let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
+    let parity_file = canonical_out.join("excel_parity_verification.xlsx");
+
+    let parity_options = EmissionOptions {
+        title: Some("Excel Parity Verification Suite (All 43 Functions)".to_string()),
+        author: Some("Finx Parity Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: true,
+    };
+
+    Compiler::save_workbook(
+        &parity_manifest,
+        &parity_tables,
+        &theme_navy,
+        None,
+        &parity_options,
+        &parity_file,
+    )?;
+
+    let parity_meta = fs::metadata(&parity_file)?;
+    println!(
+        "  ✔ Saved to: {} ({}, {} tables, 1 sheet) in {:.2?}",
+        parity_file.display(),
+        format_bytes(parity_meta.len()),
+        parity_tables.len(),
+        parity_start.elapsed()
+    );
+
+    // -------------------------------------------------------------------------
     // Summary
     // -------------------------------------------------------------------------
     println!("\n────────────────────────────────────────────────────────────────────────");
@@ -187,6 +220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • file://{}", ts_frozen_file.display());
     println!("  • file://{}", lbo_file.display());
     println!("  • file://{}", sc_file.display());
+    println!("  • file://{}", parity_file.display());
     println!("────────────────────────────────────────────────────────────────────────\n");
 
     Ok(())
