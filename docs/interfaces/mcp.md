@@ -1,45 +1,233 @@
 # Model Context Protocol (MCP) Interface
 
-This document defines the architecture and role of Finx's Model Context Protocol (MCP) server.
+This document defines the architecture, interaction models, and tool catalog of Finx's Model Context Protocol (MCP) server (`finx-mcp`).
 
-## 1. Overview & Role
+---
 
-The Model Context Protocol (MCP) server provides the **Adapter / Tooling Layer** between autonomous AI agents and the Finx compiler core.
+## 1. Overview & Agent-First Role
+
+The Model Context Protocol (MCP) server establishes the **Adapter / Tooling Layer** between autonomous AI agents and the Finx compiler core. 
+
+Finx is architected with **AI agents as first-class citizens**:
+- Agents interact with Finx by invoking typed MCP tools with **structured JSON payloads**, rather than writing Rust code.
+- Scaffolding tools instantiate curated canonical specification files (`finx.json` and `tables/*.json`) directly on disk.
+- Agents verify model correctness instantly via headless in-memory evaluation and deterministic compiler diagnostics, creating an autonomous self-correction loop without requiring external spreadsheet runtimes.
 
 ```mermaid
 flowchart TD
-    A["AI Agent (LLM)"] -->|"High-Level Agent Tools"| B["Finx MCP Server (Adapter)"]
-    B -->|"Expands Boilerplate & Templates"| C["Canonical Specification Files\n(finx.json & tables/*.json)"]
-    C -->|"Strict Validation & Compilation"| D["Finx Core Engine"]
-    D -->|"DAG Evaluation & Diagnostics"| B
-    B -->|"Structured Results & Traces"| A
+    subgraph Agent ["AI Agent (LLM)"]
+        A["User Intent / Prompt"] --> B["Tool Call Selection"]
+        H["Self-Correction / Verification"] <-- B
+    end
+
+    subgraph Server ["Finx MCP Server (finx-mcp)"]
+        B -->|"Tool JSON Arguments"| C["MCP Tool Handler"]
+        C -->|"Scaffold Request"| T["Template Ingest\n(templates/)"]
+        C -->|"Canonical Spec Ingest"| D["TableSpec Validation\n(finx-core::model)"]
+    end
+
+    subgraph Workspace ["Project Workspace on Disk"]
+        T --> F["Canonical Specifications\n(finx.json + tables/*.json)"]
+        D --> F
+    end
+
+    subgraph Core ["Finx Core Compiler (finx-core)"]
+        F --> G["6-Pass Compilation\n(DAG -> In-Memory Eval -> Layout -> Lowering)"]
+        G -->|"Evaluated Cells & Diagnostics"| C
+    end
+
+    C -->|"Structured Tool Output\n(Values, ASTs, Cycle Traces)"| H
 ```
 
-## 2. Core Architectural Principles
+---
 
-- **Ergonomics in the adapter, purity in the core**: The underlying JSON specification format is an explicit, orthogonal 2D intermediate representation (IR). High-level domain conveniences (such as template scaffolding, timeline generation, and unit column partitioning) live entirely in the MCP tool layer.
-- **Domain scaffolding**: The MCP server translates concise agent requests into the rigorous, unambiguous JSON required by the compiler (e.g. automatically scaffolding financial statement schemas, axis roles, descriptor columns, and vector rules).
-- **Two-way feedback loop**: The MCP interface provides both write tools (authoring and modifying models) and read tools (inspecting evaluated cell values, dependency graphs, and compile-time cycle traces).
+## 2. Declarative Authoring & "Scaffold-and-Fill"
+
+Finx strictly avoids imperative micro-mutation tools (`insert_row`, `update_cell`, `extend_timeline`). Instead, agents interact through coarse-grained, declarative operations:
+
+### 2.1. Institutional Template Scaffolding (`finx_scaffold_template`)
+
+When building standard financial models, the agent invokes `finx_scaffold_template` to generate a complete institutional skeleton:
+
+```json
+// Tool Call
+{
+  "template": "three-statement",
+  "sheet": "Financials"
+}
+```
+
+The scaffolding engine drops battle-tested canonical JSON files directly into the project (`tables/income_statement.json`, `tables/balance_sheet.json`, `tables/cash_flow.json`, `tables/assumptions.json`):
+- **Pre-wired formulas**: Net Income links to Retained Earnings and Operating Cash Flow; Cash Flow ending cash balances the Balance Sheet; subtotal slices (`SUM(cogs..sga)`) are established.
+- **Institutional styling**: Accounting double-underlines, currency formatting, percentage precision, and section groupings are pre-applied.
+- **Unpopulated driver inputs**: Historical actuals and projection assumptions are omitted or left without values.
+
+### 2.2. Canonical Table I/O (`finx_save_table`, `finx_get_table`)
+
+When creating custom tables or modifying existing ones, agents work with canonical [`TableSpec`](../dsl/spec-format.md#3-table-specification-schema-tablesidjson) payloads:
+
+- **Filesystem-enabled agents** (Antigravity, Claude Code, Cursor): Edit `tables/*.json` directly using standard text/JSON tools.
+- **Chat-only MCP agents** (Claude Desktop): Retrieve the table via `finx_get_table`, edit the JSON in context, and persist via `finx_save_table`.
+
+```json
+// Example: finx_save_table tool invocation
+{
+  "sheet": "Financials",
+  "table": {
+    "id": "IncomeStatement",
+    "title": "Income Statement",
+    "subtitle": "($ in Millions)",
+    "currency": "USD",
+    "columns": [
+      { "kind": "data", "id": "line_item", "role": "descriptor", "headers": ["Line Item"] },
+      { "kind": "data", "id": "2023A", "headers": ["Historical Actuals", "2023A"] },
+      { "kind": "data", "id": "2024E", "headers": ["Forecast Projections", "2024E"] }
+    ],
+    "rows": [
+      { "kind": "section_header", "title": "Revenue" },
+      {
+        "kind": "data",
+        "id": "revenue",
+        "format": "currency",
+        "decimals": 1,
+        "cells": { "line_item": "Net Revenue", "2023A": 100.0 },
+        "expr": "IncomeStatement[\"revenue\", col.prev] * (1.0 + Assumptions[\"rev_growth\", @col])"
+      }
+    ]
+  }
+}
+```
 
 ---
 
-## 3. Tool Categories (Design Blueprint)
+## 3. Headless Verification & Self-Correction Loop
 
-### 3.1. Project & Sheet Management
-- `finx_init_project`: Initializes a standard model repository with `finx.json` and directory layout.
-- `finx_add_sheet`: Adds or configures a physical worksheet (freeze panes, tab colors, gridlines).
-- `finx_register_table`: Mounts a standalone table JSON file into a sheet's vertical stacking layout.
+Traditional spreadsheet development requires human visual verification in Excel. Finx provides agents with programmatic compiler introspection:
 
-### 3.2. Table & Model Authoring
-- `finx_create_statement`: Scaffolds standard financial statements (Income Statement, Balance Sheet, Cash Flow) given timeline bounds, unit configurations, and line items.
-- `finx_create_table`: Creates a generalized orthogonal 2D table (Cap Table, Comps, Sensitivity matrix, or Vertical waterfall).
-- `finx_add_row`: Inserts or modifies a calculation row, configuring row vector rules and point cell overrides.
+### 3.1. Fast Compilation & Missing Input Checklist (`finx_compile`)
 
-### 3.3. Compilation, Diagnostics & Inspection
-- `finx_compile`: Executes full compilation, topological DAG sorting, and `.xlsx` emission. Returns structured compilation status.
-- `finx_inspect_cell`: Evaluates and returns the calculated value, formula AST, and resolved dependencies for any `CellId` (`Table[row, col]`).
-- `finx_explain_cycle`: When circular references occur, returns the formatted semantic cycle trace emitted by Tarjan's SCC algorithm.
+During the "Scaffold-and-Fill" loop, calling `finx_compile` with unpopulated inputs scans all tables across the workbook, aggregates every unassigned cell, and returns a structured, complete checklist of missing values in a single turn (rather than halting on the first unassigned coordinate):
+
+```json
+// Structured Error Response from finx_compile
+{
+  "status": "error",
+  "error_type": "MissingRequiredInput",
+  "missing_inputs": [
+    { "table": "Assumptions", "row": "rev_growth", "col": "2024E" },
+    { "table": "Assumptions", "row": "rev_growth", "col": "2025E" },
+    { "table": "IncomeStatement", "row": "revenue", "col": "2023A" }
+  ]
+}
+```
+
+The agent consumes this diagnostic output as an automated task list, populates all missing values across the JSON specification files, and re-compiles in a single follow-up step.
+
+### 3.2. Immediate Value & Formula Inspection (`finx_inspect_cell`, `finx_inspect_table`)
+
+Powered by `finx-core`'s unified `CompiledModel` facade, agents query calculated values, underlying formula expressions, and dependency linkages directly without triggering redundant compiler passes:
+
+```json
+// Tool Call: finx_inspect_cell
+{ "table_id": "IncomeStatement", "row_id": "total_opex", "col_id": "2028E" }
+
+// Structured Response
+{
+  "evaluated_value": 74.2,
+  "formula_expr": "SUM(IncomeStatement[\"cogs\"..\"sga\", @col])",
+  "lowered_excel_formula": "=SUM(C14:C16)",
+  "format": "currency",
+  "decimals": 1,
+  "precedents": [
+    "IncomeStatement[\"cogs\", \"2028E\"]",
+    "IncomeStatement[\"rd\", \"2028E\"]",
+    "IncomeStatement[\"sga\", \"2028E\"]"
+  ],
+  "dependents": [
+    "IncomeStatement[\"ebit\", \"2028E\"]"
+  ]
+}
+```
+
+Agents can also query `finx_inspect_table` to receive the entire evaluated 2D matrix formatted as Markdown or JSON for spatial verification across rows and columns:
+
+```json
+// Tool Call: finx_inspect_table (Formula Auditing Mode)
+{
+  "table_id": "IncomeStatement",
+  "view": "formulas",
+  "format": "markdown"
+}
+```
+
+The response returns an aligned Markdown table displaying raw inputs for driver cells and semantic formulas for calculation cells, enabling the agent's spatial attention to verify horizontal vector consistency and temporal shifts in a single turn.
+
+### 3.3. Blast Radius & Dependent Tracing (`finx_inspect_dependents`)
+
+Before modifying driver assumptions or renaming line items, agents perform impact analysis by querying outgoing DAG edges from `finx-core`:
+
+```json
+// Tool Call: finx_inspect_dependents
+{
+  "table_id": "Assumptions",
+  "row_id": "rev_growth",
+  "col_id": "2024E",
+  "recursive": true
+}
+
+// Structured Response
+{
+  "coordinate": "Assumptions[\"rev_growth\", \"2024E\"]",
+  "direct_dependents": [
+    "IncomeStatement[\"revenue\", \"2024E\"]"
+  ],
+  "transitive_dependents": [
+    "IncomeStatement[\"revenue\", \"2024E\"]",
+    "IncomeStatement[\"gross_profit\", \"2024E\"]",
+    "IncomeStatement[\"ebit\", \"2024E\"]",
+    "IncomeStatement[\"net_income\", \"2024E\"]",
+    "BalanceSheet[\"retained_earnings\", \"2024E\"]",
+    "CashFlow[\"net_income\", \"2024E\"]"
+  ]
+}
+```
+
+Autonomous agent use cases:
+- **Refactoring & renaming safety**: Identifies every dependent formula before modifying or deleting an identifier.
+- **Dynamic statement linkage verification**: Proves that three-statement models are dynamically integrated (e.g. confirming Net Income flows into Retained Earnings and Operating Cash Flow).
+- **Orphan calculation detection**: Detects calculated rows that have zero downstream consumers.
+
+### 3.4. Deterministic Cycle Traces (`finx_explain_cycle`)
+
+When circular references occur, Tarjan's Strongly Connected Components (SCC) pass emits exact semantic cycle paths rather than generic `#REF!` errors:
+
+```text
+CyclicDependencyDetected:
+IncomeStatement["tax", "2024E"] ──► IncomeStatement["ebit", "2024E"] ──► IncomeStatement["tax", "2024E"]
+```
+
+The agent consumes this trace, identifies the erroneous reference, updates the formula in the JSON, and re-verifies in a single autonomous turn.
 
 ---
 
-See [Architecture Overview](../architecture.md) for core compiler pipeline details, [Specification Format](../dsl/spec-format.md) for JSON schema definitions, and [Modeling Patterns](../dsl/patterns.md) for schedule archetypes.
+## 4. MCP Tool Catalog
+
+### 4.1. Project & Sheet Management
+- `finx_init_project`: Initializes a standard model repository with root `finx.json` and directory layout.
+- `finx_add_sheet`: Appends or configures a physical worksheet tab (freeze panes, tab colors, gridlines).
+
+### 4.2. Scaffolding & Canonical Table I/O
+- `finx_scaffold_template`: Scaffolds full institutional model archetypes (`three-statement`, `lbo`, `trading-comps`, `cap-table`) into canonical JSON on disk.
+- `finx_save_table`: Ingests, validates, and persists a canonical `TableSpec` JSON payload into a sheet.
+- `finx_get_table`: Retrieves the canonical `TableSpec` JSON for a specified table.
+
+### 4.3. Compilation, Inspection & Diagnostics
+- `finx_compile`: Executes full 6-pass compilation, topological DAG evaluation, and optional `.xlsx` binary emission.
+- `finx_inspect_cell`: Evaluates and returns the calculated cell value, formula AST, upstream precedents, and downstream dependents.
+- `finx_inspect_dependents`: Traces downstream dependent calculations (blast radius) for a coordinate, supporting direct and recursive queries.
+- `finx_inspect_table`: Returns the evaluated headless 2D matrix (as JSON or Markdown table) across values, formulas, or dual auditing views.
+- `finx_explain_cycle`: Returns the formatted semantic cycle path when Tarjan SCC detects circular dependency graphs.
+
+---
+
+See [Specification Format](../dsl/spec-format.md) for canonical JSON schema definitions, [CLI Interface](cli.md) for command-line workflows, and [Architecture Overview](../architecture.md) for compiler passes.
