@@ -6,6 +6,7 @@ pub mod lbo;
 pub mod parity_suite;
 pub mod styling_showcase;
 pub mod three_statement;
+pub mod trading_comps;
 
 use indexmap::IndexMap;
 

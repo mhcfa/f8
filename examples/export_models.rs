@@ -208,6 +208,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // -------------------------------------------------------------------------
+    // 6. Public Trading Comparables Model
+    // -------------------------------------------------------------------------
+    println!("\n▶ Compiling Public Trading Comparables Model...");
+    let tc_start = Instant::now();
+    let (tc_manifest, tc_tables) = fixtures::trading_comps::build_trading_comps_model();
+    let tc_file = canonical_out.join("trading_comps_model.xlsx");
+
+    let tc_options = EmissionOptions {
+        title: Some("Public Trading Comparables Model".to_string()),
+        author: Some("Finx Valuation Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: false,
+    };
+
+    Compiler::save_workbook(
+        &tc_manifest,
+        &tc_tables,
+        &theme_navy,
+        None, // Automatic DAG evaluation and formula caching
+        &tc_options,
+        &tc_file,
+    )?;
+
+    let tc_meta = fs::metadata(&tc_file)?;
+    println!(
+        "  ✔ Saved to: {} ({}, {} tables, 1 sheet) in {:.2?}",
+        tc_file.display(),
+        format_bytes(tc_meta.len()),
+        tc_tables.len(),
+        tc_start.elapsed()
+    );
+
+    // -------------------------------------------------------------------------
     // Summary
     // -------------------------------------------------------------------------
     println!("\n────────────────────────────────────────────────────────────────────────");
@@ -221,6 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  • file://{}", lbo_file.display());
     println!("  • file://{}", sc_file.display());
     println!("  • file://{}", parity_file.display());
+    println!("  • file://{}", tc_file.display());
     println!("────────────────────────────────────────────────────────────────────────\n");
 
     Ok(())

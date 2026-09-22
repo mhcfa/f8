@@ -324,6 +324,45 @@ fn test_models_emit_in_memory() {
         cached_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),
         "Cached mode must write precalculated value in <v> tag following formula"
     );
+
+    // 6. Institutional Public Trading Comparables Model
+    let (tc_manifest, tc_tables) = fixtures::trading_comps::build_trading_comps_model();
+    let tc_evaluated = Compiler::evaluate(&tc_manifest, &tc_tables)
+        .expect("Trading comps model must evaluate cleanly");
+
+    let tc_options = EmissionOptions {
+        title: Some("Public Trading Comparables Model".to_string()),
+        author: Some("Finx Valuation Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: false,
+    };
+
+    let tc_buffer = Compiler::emit_workbook(
+        &tc_manifest,
+        &tc_tables,
+        &theme_navy,
+        Some(&tc_evaluated),
+        &tc_options,
+    )
+    .expect("Trading comps model must emit to OpenXML buffer");
+
+    assert_eq!(&tc_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    assert!(has_zip_entry(&tc_buffer, "xl/worksheets/sheet1.xml"));
+    assert!(has_zip_entry(&tc_buffer, "xl/sharedStrings.xml"));
+
+    let tc_workbook_xml = read_zip_entry(&tc_buffer, "xl/workbook.xml");
+    assert!(tc_workbook_xml.contains("name=\"Trading_Comps\""));
+
+    let tc_sheet_xml = read_zip_entry(&tc_buffer, "xl/worksheets/sheet1.xml");
+    // Verify lowered formulas with @row lowered coordinates and range functions
+    assert!(tc_sheet_xml.contains("<f>"));
+    assert!(tc_sheet_xml.contains("MEDIAN(") && tc_sheet_xml.contains("AVERAGE("));
+    assert!(tc_sheet_xml.contains("MAX(") && tc_sheet_xml.contains("MIN("));
+
+    let tc_shared_strings = read_zip_entry(&tc_buffer, "xl/sharedStrings.xml");
+    assert!(tc_shared_strings.contains("Public Trading Comparables"));
+    assert!(tc_shared_strings.contains("Target Valuation Benchmarking"));
+    assert!(tc_shared_strings.contains("Valuation Multiples"));
 }
 
 // ----------------------------------------------------------------------------
@@ -481,6 +520,45 @@ fn test_export_xlsx_to_disk() {
         "Uncached mode must not cache formula results"
     );
 
+    // 5. Export Public Trading Comparables Model
+    let tc_file = output_dir.join("trading_comps_model.xlsx");
+    let _ = std::fs::remove_file(&tc_file);
+
+    let (tc_manifest, tc_tables) = fixtures::trading_comps::build_trading_comps_model();
+    let tc_options = EmissionOptions {
+        title: Some("Public Trading Comparables Model".to_string()),
+        author: Some("Finx Valuation Engine".to_string()),
+        values_only: false,
+        omit_formula_cache: false,
+    };
+
+    Compiler::save_workbook(
+        &tc_manifest,
+        &tc_tables,
+        &theme,
+        None, // Automatically evaluates during compilation
+        &tc_options,
+        &tc_file,
+    )
+    .expect("Failed to save Trading Comps model to disk");
+
+    assert!(tc_file.exists());
+    let tc_bytes = std::fs::read(&tc_file).expect("Failed to read saved Trading Comps file");
+    assert!(tc_bytes.len() > 6000, "Expected non-trivial file size");
+    assert_eq!(&tc_bytes[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    assert!(has_zip_entry(&tc_bytes, "xl/workbook.xml"));
+    assert!(has_zip_entry(&tc_bytes, "xl/worksheets/sheet1.xml"));
+
+    let tc_sheet1_xml = read_zip_entry(&tc_bytes, "xl/worksheets/sheet1.xml");
+    assert!(
+        tc_sheet1_xml.contains("<f>"),
+        "Formulas must be emitted in trading comps export"
+    );
+    assert!(
+        tc_sheet1_xml.contains("MEDIAN("),
+        "MEDIAN formula must be emitted"
+    );
+
     println!("\nExported test workbooks successfully:");
     println!("  - Three-Statement Model: {}", ts_file.display());
     println!("  - Institutional LBO Model: {}", lbo_file.display());
@@ -489,4 +567,5 @@ fn test_export_xlsx_to_disk() {
         "  - Parity Verification Model (Uncached): {}",
         parity_file.display()
     );
+    println!("  - Trading Comps Model: {}", tc_file.display());
 }

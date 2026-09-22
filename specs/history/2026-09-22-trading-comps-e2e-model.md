@@ -1,7 +1,7 @@
 ---
 title: Public Trading Comps Model End-to-End Test Fixture
 date: 2026-09-22
-status: draft
+status: completed
 target-living-spec: specs/living-specs/compiler/workbook-emission.md
 ---
 
@@ -127,17 +127,17 @@ Implement a flagship institutional **Public Trading Comparables ("Trading Comps"
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Mathematical Accuracy of Vertical Formulas & Summary Rows**
+- [x] **Scenario 1: Mathematical Accuracy of Vertical Formulas & Summary Rows**
   - **Given** the trading comps model specification
   - **When** evaluated through `Compiler::evaluate`
   - **Then** all column formulas calculate exact market cap, EV, margins, and multiples; `mean`, `median`, `max`, and `min` rows evaluate accurately; and target implied equity value resolves without errors.
 
-- [ ] **Scenario 2: OpenXML Package Assembly & Emission**
+- [x] **Scenario 2: OpenXML Package Assembly & Emission**
   - **Given** the evaluated model
   - **When** emitted via `Compiler::emit_workbook`
   - **Then** produces a valid `.xlsx` buffer containing `<f>` tags for `@row` lowered formulas (e.g. `D6*E6`), 2-tier super-headers with `CenterAcross`, and `<f>` tags for vertical ranges (e.g. `MEDIAN(F$6:F$11)`).
 
-- [ ] **Scenario 3: Physical Disk Export & Integration Runner**
+- [x] **Scenario 3: Physical Disk Export & Integration Runner**
   - **Given** `export_models` runner and `export_integration_test`
   - **When** executed
   - **Then** exports `output/trading_comps_model.xlsx` with clean sheet-wide column width arbitration across descriptors, gutters, and measures.
@@ -147,15 +147,15 @@ Implement a flagship institutional **Public Trading Comparables ("Trading Comps"
 ## Tasks
 
 ### Phase 1: Fixture Implementation
-- [ ] Create `tests/fixtures/trading_comps.rs` with `build_trading_comps_model()`.
-- [ ] Re-export `trading_comps` in `tests/fixtures/mod.rs`.
-- [ ] Create dedicated evaluation test `tests/trading_comps_test.rs` validating mathematical precision.
+- [x] Create `tests/fixtures/trading_comps.rs` with `build_trading_comps_model()`.
+- [x] Re-export `trading_comps` in `tests/fixtures/mod.rs`.
+- [x] Create dedicated evaluation test `tests/trading_comps_test.rs` validating mathematical precision.
 
 ### Phase 2: Integration Test & Export Runner
-- [ ] Add `trading_comps` scenario to `tests/export_integration_test.rs` (in-memory buffer and disk export).
-- [ ] Register `trading_comps_model.xlsx` in `examples/export_models.rs`.
-- [ ] Run disk export to generate `output/trading_comps_model.xlsx`.
+- [x] Add `trading_comps` scenario to `tests/export_integration_test.rs` (in-memory buffer and disk export).
+- [x] Register `trading_comps_model.xlsx` in `examples/export_models.rs`.
+- [x] Run disk export to generate `output/trading_comps_model.xlsx`.
 
 ### Phase 3: Verification & Reconcile
-- [ ] Run full toolchain check: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
-- [ ] Update living spec `specs/living-specs/compiler/workbook-emission.md` and archive draft spec to `specs/history/`.
+- [x] Run full toolchain check: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- [x] Update living spec `specs/living-specs/compiler/workbook-emission.md` and archive draft spec to `specs/history/`.

@@ -135,9 +135,9 @@ Missing coordinates or unassigned entities propagate structured diagnostics (`Em
 ### 8. End-to-End Integration Verification & Model Exports
 
 Complete financial models and calculation verification suites are verified end-to-end across all six compiler passes without polluting CI environments with physical disk artifacts:
-- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement, Institutional LBO, Styling Showcase, and 44-function Excel Parity Verification models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
-- On-demand disk export: `test_export_xlsx_to_disk` is marked with `#[ignore]` and executes only when explicitly requested (`cargo test --test export_integration_test -- --ignored`). It produces disk workbooks in `output/` including `output/excel_parity_verification.xlsx` (emitted uncached for visual verification in Microsoft Excel / Web Excel).
-- Standalone runner: `examples/export_models.rs` compiles and exports all five models on demand (`cargo run --example export_models`) into `output/`.
+- In-memory verification: `tests/export_integration_test.rs` tests `Compiler::emit_workbook` against the Three-Statement, Institutional LBO, Styling Showcase, 44-function Excel Parity Verification, and Public Trading Comparables models in RAM, asserting OpenXML ZIP entries, lowered formulas (`<f>`), and cached values (`<v>`).
+- On-demand disk export: `test_export_xlsx_to_disk` is marked with `#[ignore]` and executes only when explicitly requested (`cargo test --test export_integration_test -- --ignored`). It produces disk workbooks in `output/` including `output/excel_parity_verification.xlsx` (emitted uncached for visual verification in Microsoft Excel / Web Excel) and `output/trading_comps_model.xlsx`.
+- Standalone runner: `examples/export_models.rs` compiles and exports all six models on demand (`cargo run --example export_models`) into `output/`.
 
 ## Public Interfaces
 
