@@ -4,6 +4,7 @@
 
 use thiserror::Error;
 
+use crate::compiler::emission::error::EmissionError;
 use crate::compiler::eval::error::EvalError;
 use crate::compiler::graph::error::GraphError;
 use crate::compiler::ir::error::IrError;
@@ -28,4 +29,16 @@ pub enum CompilerError {
     /// In-memory formula calculation error occurring during Pass 4.
     #[error("Evaluation error: {0}")]
     Eval(#[from] EvalError),
+
+    /// Spatial layout planning error occurring during Pass 5.
+    #[error("Spatial layout error: {0}")]
+    Layout(#[from] crate::compiler::layout::error::LayoutError),
+
+    /// Formula lowering error occurring during Pass 6a.
+    #[error("Formula lowering error: {0}")]
+    Lowering(#[from] crate::compiler::lowering::error::LoweringError),
+
+    /// OpenXML format synthesis and workbook emission error occurring during Pass 6b.
+    #[error("Emission error: {0}")]
+    Emission(#[from] EmissionError),
 }

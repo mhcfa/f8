@@ -1,13 +1,19 @@
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::error::ModelError;
+use super::theme::Theme;
+
+fn default_theme() -> String {
+    Theme::DEFAULT_NAME.to_string()
+}
 
 /// Root project manifest deserialized from `finx.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectManifest {
     pub model_name: String,
+    #[serde(default = "default_theme")]
     pub theme: String,
     pub sheets: Vec<SheetSpec>,
 }
@@ -24,6 +30,16 @@ impl ProjectManifest {
             }
         }
         Ok(())
+    }
+
+    /// Resolves the workbook theme, falling back to corporate navy if empty or omitted.
+    pub fn resolve_theme(&self, base_dir: Option<&Path>) -> Result<Theme, ModelError> {
+        let theme_name = if self.theme.trim().is_empty() {
+            Theme::DEFAULT_NAME
+        } else {
+            self.theme.trim()
+        };
+        Theme::resolve(theme_name, base_dir)
     }
 }
 

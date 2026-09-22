@@ -134,40 +134,22 @@ impl<'a> IntoIterator for &'a EvaluatedModel {
 mod tests {
     use super::*;
     use crate::model::id::SheetId;
-    use crate::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
+    use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
 
     fn make_test_symbol_table() -> SymbolTable {
         let mut symbols = SymbolTable::new();
         let table = TableSpec {
             id: TableId::from("T"),
             title: "T".into(),
+            subtitle: None,
+            currency: None,
+            collapsible: false,
             columns: vec![
                 ColumnSpec::new("c1"),
                 ColumnSpec::new("c2"),
                 ColumnSpec::new("c3"),
             ],
-            column_groups: vec![],
-            row_groups: vec![],
-            rows: vec![
-                RowSpec {
-                    id: RowId::from("r1"),
-                    role: AxisRole::Measure,
-                    format: None,
-                    note: None,
-                    source: None,
-                    expr: None,
-                    cells: IndexMap::new(),
-                },
-                RowSpec {
-                    id: RowId::from("r2"),
-                    role: AxisRole::Measure,
-                    format: None,
-                    note: None,
-                    source: None,
-                    expr: None,
-                    cells: IndexMap::new(),
-                },
-            ],
+            rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
         };
         symbols
             .register_table(SheetId::from("Sheet1"), &table)

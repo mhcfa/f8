@@ -1,6 +1,6 @@
 ---
 title: Cell Intermediate Representation & Symbol Table
-last_updated: 2026-09-17
+last_updated: 2026-09-20
 domain: compiler
 status: active
 ---
@@ -13,7 +13,7 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
 
 - **Modules & components**:
   - `finx::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
-  - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
+  - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, typographic indent level, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
   - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
   - `finx::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
   - `finx::compiler::ir::error`: Structured domain errors (`IrError`).
@@ -104,3 +104,28 @@ $$\text{Cell Override (0D Point)} > (\text{Row Rule } \mathbf{XOR} \text{ Column
 - **Format Conflict**:
   - **When** measure row $r$ and measure column $c$ specify conflicting format presets without a cell format override
   - **Then** compilation halts with `IrError::FormatConflict`.
+- **Symmetrical 2D Border Composition**:
+  - **When** row $r$ specifies `style: "total"` and column $c$ specifies `style: "total"`
+  - **Then** the cell at $(r, c)$ resolves `horizontal == SemanticStyle::Total` and `vertical == SemanticStyle::Total`, forming a complete accounting box (`is_bold == true`).
+- **Cell Style Reset**:
+  - **When** cell $(r, c)$ specifies `style: "data"`
+  - **Then** summary rules are unconditionally suppressed, resolving `(Data, Data)`.
+- **Decimal Precision Override & Vector Conflict**:
+  - **When** cell $(r, c)$ specifies `decimals: Some(d)`
+  - **Then** point precision takes precedence over row and column decimals.
+  - **When** measure row $r$ and measure column $c$ specify unequal decimals without a point override
+  - **Then** compilation halts with `IrError::DecimalsConflict`.
+- **Highlight Resolution & Inheritance**:
+  - **When** a row or column specifies `highlight: true`
+  - **Then** intersecting cells inherit `is_highlight == true`, unless explicitly overridden by `highlight: false` on the point override.
+- **Currency Code Resolution & Conflict Detection**:
+  - **When** cell $(r, c)$ resolves with format preset `currency`
+  - **Then** its currency code resolves via the 3-Tier Specificity Lattice: point cell override $>$ vector rule (row XOR column) $>$ table default (`table.currency` or `usd` if unspecified).
+  - **When** measure row $r$ and measure column $c$ specify unequal currency codes without a point cell override
+  - **Then** compilation halts with `IrError::CurrencyConflict`.
+  - **When** cell $(r, c)$ resolves with a non-currency format preset or is on a descriptor axis
+  - **Then** its resolved currency is strictly `None`, and vector currency declarations on intersecting axes do not trigger currency conflicts.
+- **Typographic Indentation Propagation**:
+  - **When** cell $(r, c)$ specifies `indent: Some(n)` on `DetailedCellInput`
+  - **Then** the generated `CellNode` has `indent == n`; otherwise `indent == 0`.
+

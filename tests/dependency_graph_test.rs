@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use finx::compiler::graph::{DependencyGraph, GraphError};
 use finx::compiler::ir::{CellId, SymbolTable, expand_grid, expand_workbook};
 use finx::model::format::FormatPreset;
-use finx::model::id::{ColId, RowId, SheetId, TableId};
+use finx::model::id::{ColId, SheetId, TableId};
 use finx::model::manifest::{ProjectManifest, SheetSpec};
-use finx::model::table::{AxisRole, CellInput, ColumnSpec, RowSpec, TableSpec};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use indexmap::IndexMap;
 
 fn create_table(
@@ -25,24 +25,21 @@ fn create_table(
                     cells.insert(ColId::from(col), CellInput::number(num));
                 }
             }
-            RowSpec {
-                id: RowId::from(row_id),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: expr_opt.map(|s| s.to_string()),
-                cells,
+            let mut row = RowSpec::new(row_id).with_cells(cells);
+            if let Some(expr) = expr_opt {
+                row = row.with_expr(expr);
             }
+            row
         })
         .collect();
 
     TableSpec {
         id: TableId::from(table_id),
         title: table_id.into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns,
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows: row_specs,
     }
 }
@@ -278,34 +275,23 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
 
     let mut assumptions_cells = IndexMap::new();
     assumptions_cells.insert(ColId::from("value"), CellInput::number(0.10));
-    let assumptions_row_tax = RowSpec {
-        id: RowId::from("tax_rate"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Percentage),
-        note: None,
-        source: None,
-        expr: None,
-        cells: assumptions_cells,
-    };
+    let assumptions_row_tax = RowSpec::new("tax_rate")
+        .with_format(Some(FormatPreset::Percentage))
+        .with_cells(assumptions_cells);
 
     let mut rev_base_cells = IndexMap::new();
     rev_base_cells.insert(ColId::from("value"), CellInput::number(1000.0));
-    let assumptions_row_base = RowSpec {
-        id: RowId::from("base_revenue"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: None,
-        source: None,
-        expr: None,
-        cells: rev_base_cells,
-    };
+    let assumptions_row_base = RowSpec::new("base_revenue")
+        .with_format(Some(FormatPreset::Currency))
+        .with_cells(rev_base_cells);
 
     let assumptions_table = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Key Assumptions".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("value")],
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows: vec![assumptions_row_tax, assumptions_row_base],
     };
 
@@ -319,32 +305,21 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         CellInput::formula("Forecast[\"revenue\", col.prev] * 1.1"),
     );
 
-    let forecast_row_rev = RowSpec {
-        id: RowId::from("revenue"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: None,
-        source: None,
-        expr: None,
-        cells: rev_cells,
-    };
+    let forecast_row_rev = RowSpec::new("revenue")
+        .with_format(Some(FormatPreset::Currency))
+        .with_cells(rev_cells);
 
-    let forecast_row_tax = RowSpec {
-        id: RowId::from("tax"),
-        role: AxisRole::Measure,
-        format: Some(FormatPreset::Currency),
-        note: None,
-        source: None,
-        expr: Some("Forecast[\"revenue\", @col] * Assumptions[\"tax_rate\", \"value\"]".into()),
-        cells: IndexMap::new(),
-    };
+    let forecast_row_tax = RowSpec::new("tax")
+        .with_format(Some(FormatPreset::Currency))
+        .with_expr("Forecast[\"revenue\", @col] * Assumptions[\"tax_rate\", \"value\"]");
 
     let forecast_table = TableSpec {
         id: TableId::from("Forecast"),
         title: "Three Year Forecast".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("2023A"), ColumnSpec::new("2024E")],
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows: vec![forecast_row_rev, forecast_row_tax],
     };
 

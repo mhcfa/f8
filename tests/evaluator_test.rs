@@ -7,16 +7,17 @@ use finx::compiler::graph::DependencyGraph;
 use finx::compiler::ir::{CellGrid, CellId, CellNode, CellPayload, SymbolTable, expand_grid};
 use finx::functions::registry::FunctionRegistry;
 use finx::model::id::{ColId, RowId, SheetId, TableId};
-use finx::model::table::{AxisRole, CellInput, ColumnSpec, RowSpec, TableSpec, ValueLiteral};
+use finx::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use finx::value::{CellValue, ExcelError};
 
 fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec {
     TableSpec {
         id: TableId::from(table_id),
         title: table_id.into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
-        column_groups: Vec::new(),
-        row_groups: Vec::new(),
         rows,
     }
 }
@@ -32,15 +33,7 @@ fn test_scenario_1_topological_evaluation_of_pure_literal_grid() {
     row1_cells.insert(ColId::from("c3"), CellInput::boolean(true));
     row1_cells.insert(ColId::from("c4"), CellInput::null());
 
-    let row1 = RowSpec {
-        id: RowId::from("r1"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: row1_cells,
-    };
+    let row1 = RowSpec::new("r1").with_cells(row1_cells);
 
     let table = create_table("LiteralTable", &["c1", "c2", "c3", "c4"], vec![row1]);
     symbols
@@ -86,27 +79,11 @@ fn test_scenario_2_multi_table_topological_evaluation_with_cross_references() {
     // Table 1: Assumptions
     let mut tax_cells = IndexMap::new();
     tax_cells.insert(ColId::from("val"), CellInput::number(0.20));
-    let tax_row = RowSpec {
-        id: RowId::from("tax_rate"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: tax_cells,
-    };
+    let tax_row = RowSpec::new("tax_rate").with_cells(tax_cells);
 
     let mut growth_cells = IndexMap::new();
     growth_cells.insert(ColId::from("val"), CellInput::number(0.10));
-    let growth_row = RowSpec {
-        id: RowId::from("growth_rate"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: growth_cells,
-    };
+    let growth_row = RowSpec::new("growth_rate").with_cells(growth_cells);
 
     let assumptions_table = create_table("Assumptions", &["val"], vec![tax_row, growth_row]);
     symbols
@@ -125,59 +102,18 @@ fn test_scenario_2_multi_table_topological_evaluation_with_cross_references() {
         CellInput::formula("IncomeStatement[\"revenue\", col.prev(1)] * (1 + Assumptions[\"growth_rate\", \"val\"])"),
     );
 
-    let rev_row = RowSpec {
-        id: RowId::from("revenue"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: rev_cells,
-    };
+    let rev_row = RowSpec::new("revenue").with_cells(rev_cells);
 
-    let cogs_row = RowSpec {
-        id: RowId::from("cogs"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("IncomeStatement[\"revenue\", @col] * 0.4".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let cogs_row = RowSpec::new("cogs").with_expr("IncomeStatement[\"revenue\", @col] * 0.4");
 
-    let gp_row = RowSpec {
-        id: RowId::from("gross_profit"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let gp_row = RowSpec::new("gross_profit")
+        .with_expr("IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]");
 
-    let tax_is_row = RowSpec {
-        id: RowId::from("tax"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some(
-            "IncomeStatement[\"gross_profit\", @col] * Assumptions[\"tax_rate\", \"val\"]".into(),
-        ),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let tax_is_row = RowSpec::new("tax")
+        .with_expr("IncomeStatement[\"gross_profit\", @col] * Assumptions[\"tax_rate\", \"val\"]");
 
-    let ni_row = RowSpec {
-        id: RowId::from("net_income"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some(
-            "IncomeStatement[\"gross_profit\", @col] - IncomeStatement[\"tax\", @col]".into(),
-        ),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let ni_row = RowSpec::new("net_income")
+        .with_expr("IncomeStatement[\"gross_profit\", @col] - IncomeStatement[\"tax\", @col]");
 
     let is_table = create_table(
         "IncomeStatement",
@@ -289,15 +225,7 @@ fn test_scenario_3_model_query_apis_and_column_ordering() {
     rev_cells.insert(ColId::from("2022A"), CellInput::number(200.0));
     rev_cells.insert(ColId::from("2023A"), CellInput::number(300.0));
 
-    let rev_row = RowSpec {
-        id: RowId::from("rev"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: rev_cells,
-    };
+    let rev_row = RowSpec::new("rev").with_cells(rev_cells);
 
     let table = create_table("Report", &["2021A", "2022A", "2023A"], vec![rev_row]);
     symbols
@@ -369,45 +297,10 @@ fn test_scenario_4_error_propagation_and_domain_error_isolation() {
     let mut symbols = SymbolTable::new();
     let sheet = SheetId::from("Sheet1");
 
-    let div_zero_row = RowSpec {
-        id: RowId::from("div_zero"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("10 / 0".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
-
-    let dependent_row = RowSpec {
-        id: RowId::from("dependent"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("ErrModel[\"div_zero\", @col] + 100".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
-
-    let value_err_row = RowSpec {
-        id: RowId::from("val_err"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("10 + \"not_a_num\"".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
-
-    let valid_row = RowSpec {
-        id: RowId::from("valid"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("50 * 2".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let div_zero_row = RowSpec::new("div_zero").with_expr("10 / 0");
+    let dependent_row = RowSpec::new("dependent").with_expr("ErrModel[\"div_zero\", @col] + 100");
+    let value_err_row = RowSpec::new("val_err").with_expr("10 + \"not_a_num\"");
+    let valid_row = RowSpec::new("valid").with_expr("50 * 2");
 
     let table = create_table(
         "ErrModel",
@@ -463,61 +356,21 @@ fn test_scenario_5_built_in_functions_in_model_context() {
     let mut row1_cells = IndexMap::new();
     row1_cells.insert(ColId::from("c1"), CellInput::number(10.0));
     row1_cells.insert(ColId::from("c2"), CellInput::number(20.0));
-    let r1 = RowSpec {
-        id: RowId::from("r1"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: row1_cells,
-    };
+    let r1 = RowSpec::new("r1").with_cells(row1_cells);
 
     let mut row2_cells = IndexMap::new();
     row2_cells.insert(ColId::from("c1"), CellInput::number(-30.0));
     row2_cells.insert(ColId::from("c2"), CellInput::number(-40.0));
-    let r2 = RowSpec {
-        id: RowId::from("r2"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: None,
-        note: None,
-        source: None,
-        cells: row2_cells,
-    };
+    let r2 = RowSpec::new("r2").with_cells(row2_cells);
 
     // Row using SUM across 2D range
-    let sum_row = RowSpec {
-        id: RowId::from("sum_row"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("SUM(FuncTable[\"r1\"..\"r2\", @col])".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let sum_row = RowSpec::new("sum_row").with_expr("SUM(FuncTable[\"r1\"..\"r2\", @col])");
 
     // Row using ABS
-    let abs_row = RowSpec {
-        id: RowId::from("abs_row"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("ABS(FuncTable[\"r2\", @col])".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let abs_row = RowSpec::new("abs_row").with_expr("ABS(FuncTable[\"r2\", @col])");
 
     // Row using IF with short-circuit lazy branch
-    let if_row = RowSpec {
-        id: RowId::from("if_row"),
-        role: AxisRole::Measure,
-        format: None,
-        expr: Some("IF(FuncTable[\"r1\", @col] > 15, 100, 1 / 0)".into()),
-        note: None,
-        source: None,
-        cells: IndexMap::new(),
-    };
+    let if_row = RowSpec::new("if_row").with_expr("IF(FuncTable[\"r1\", @col] > 15, 100, 1 / 0)");
 
     let table = create_table(
         "FuncTable",

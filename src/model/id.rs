@@ -64,14 +64,6 @@ define_id!(TableId, "Globally unique programmatic table identifier.");
 define_id!(RowId, "Programmatic row identifier within a table.");
 define_id!(ColId, "Programmatic column identifier within a table.");
 define_id!(
-    RowGroupId,
-    "Programmatic row group identifier within a table."
-);
-define_id!(
-    ColGroupId,
-    "Programmatic column group identifier within a table."
-);
-define_id!(
     SheetId,
     "Programmatic worksheet identifier within a workbook."
 );

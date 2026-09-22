@@ -1,9 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use finx::expr::{
-    BinaryOp, ColSelector, Expr, ParseError, RowSelector, SpecialCol, SpecialRow, TableRef,
-};
-use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, TableId};
+use finx::expr::{BinaryOp, ColSelector, Expr, ParseError, RelativeOffset, RowSelector, TableRef};
+use finx::model::id::{ColId, RowId, TableId};
 
 #[test]
 fn test_complex_formula_expression_parsing() {
@@ -114,7 +112,7 @@ fn test_temporal_offsets() {
             left: Box::new(Expr::Reference(TableRef::new(
                 TableId::new("BalanceSheet"),
                 RowSelector::Key(RowId::new("cash")),
-                ColSelector::Special(SpecialCol::Prev(1)),
+                ColSelector::Offset(RelativeOffset::Prev(1)),
             ))),
             right: Box::new(Expr::Reference(TableRef::new(
                 TableId::new("CashFlow"),
@@ -130,31 +128,19 @@ fn test_all_special_col_and_row_variants() {
     let formulas = [
         (
             "Table[\"row\", col.prev]",
-            ColSelector::Special(SpecialCol::Prev(1)),
+            ColSelector::Offset(RelativeOffset::Prev(1)),
         ),
         (
             "Table[\"row\", col.prev(5)]",
-            ColSelector::Special(SpecialCol::Prev(5)),
+            ColSelector::Offset(RelativeOffset::Prev(5)),
         ),
         (
             "Table[\"row\", col.next]",
-            ColSelector::Special(SpecialCol::Next(1)),
+            ColSelector::Offset(RelativeOffset::Next(1)),
         ),
         (
             "Table[\"row\", col.next(2)]",
-            ColSelector::Special(SpecialCol::Next(2)),
-        ),
-        (
-            "Table[\"row\", cols.forecast]",
-            ColSelector::Special(SpecialCol::Group(ColGroupId::new("forecast"))),
-        ),
-        (
-            "Table[\"row\", cols.forecast.first]",
-            ColSelector::Special(SpecialCol::GroupFirst(ColGroupId::new("forecast"))),
-        ),
-        (
-            "Table[\"row\", cols.forecast.last]",
-            ColSelector::Special(SpecialCol::GroupLast(ColGroupId::new("forecast"))),
+            ColSelector::Offset(RelativeOffset::Next(2)),
         ),
     ];
 
@@ -174,31 +160,19 @@ fn test_all_special_col_and_row_variants() {
         ("Table[@row, \"col\"]", RowSelector::Active),
         (
             "Table[row.prev, \"col\"]",
-            RowSelector::Special(SpecialRow::Prev(1)),
+            RowSelector::Offset(RelativeOffset::Prev(1)),
         ),
         (
             "Table[row.prev(5), \"col\"]",
-            RowSelector::Special(SpecialRow::Prev(5)),
+            RowSelector::Offset(RelativeOffset::Prev(5)),
         ),
         (
             "Table[row.next, \"col\"]",
-            RowSelector::Special(SpecialRow::Next(1)),
+            RowSelector::Offset(RelativeOffset::Next(1)),
         ),
         (
             "Table[row.next(2), \"col\"]",
-            RowSelector::Special(SpecialRow::Next(2)),
-        ),
-        (
-            "Table[rows.opex, \"col\"]",
-            RowSelector::Special(SpecialRow::Group(RowGroupId::new("opex"))),
-        ),
-        (
-            "Table[rows.opex.first, \"col\"]",
-            RowSelector::Special(SpecialRow::GroupFirst(RowGroupId::new("opex"))),
-        ),
-        (
-            "Table[rows.opex.last, \"col\"]",
-            RowSelector::Special(SpecialRow::GroupLast(RowGroupId::new("opex"))),
+            RowSelector::Offset(RelativeOffset::Next(2)),
         ),
     ];
 

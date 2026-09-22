@@ -296,3 +296,64 @@ impl ExcelFunction for MinFunction {
         }
     }
 }
+
+/// Positional parameter definitions for `MEDIAN`.
+static MEDIAN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
+    "number1",
+    "The first number, cell reference, or range for which you want the median.",
+    ParamKind::RangeOrArray,
+)];
+
+/// `MEDIAN(number1, [number2], ...)`: Returns the median (middle number) of the given numbers.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MedianFunction;
+
+impl ExcelFunction for MedianFunction {
+    fn name(&self) -> &'static str {
+        "MEDIAN"
+    }
+
+    fn category(&self) -> FunctionCategory {
+        FunctionCategory::Math
+    }
+
+    fn parameters(&self) -> &'static [ParameterDef] {
+        MEDIAN_PARAMS
+    }
+
+    fn variadic_rule(&self) -> VariadicRule {
+        VariadicRule::Single
+    }
+
+    fn evaluate(
+        &self,
+        args: &[FunctionArg<'_>],
+        _ctx: &dyn EvalContext,
+    ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
+
+        match NumericCollector::collect_values(args) {
+            Ok(mut values) => {
+                if values.is_empty() {
+                    Ok(CellValue::Error(ExcelError::Num))
+                } else {
+                    values.sort_by(|a, b| a.total_cmp(b));
+                    let n = values.len();
+                    let median = if n % 2 == 1 {
+                        values[n / 2]
+                    } else {
+                        (values[n / 2 - 1] + values[n / 2]) / 2.0
+                    };
+                    Ok(CellValue::Number(normalize_zero(median)))
+                }
+            }
+            Err(err) => Ok(CellValue::Error(err)),
+        }
+    }
+}

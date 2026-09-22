@@ -52,7 +52,7 @@ fn eval_str(
 #[test]
 fn test_date_functions_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 43);
+    assert_eq!(registry.len(), 44);
 
     let date_funcs = [
         ("DATE", 3, Some(3)),
@@ -690,13 +690,14 @@ fn test_end_to_end_date_formula_evaluation() {
     let dates_table = TableSpec {
         id: TableId::from("Timeline"),
         title: "Timeline".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),
             ColumnSpec::new("c3"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![RowSpec::new("dates"), RowSpec::new("fractions")],
     };
     symbols

@@ -904,13 +904,14 @@ fn test_end_to_end_formula_evaluation() {
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),
             ColumnSpec::new("c3"),
         ],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![RowSpec::new("headers"), RowSpec::new("values")],
     };
     symbols

@@ -37,7 +37,7 @@ impl EvalContext for MockContext {
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 43);
+    assert_eq!(registry.len(), 44);
 
     let financial_names = ["NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"];
     for name in financial_names {
@@ -616,9 +616,10 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
     let table = TableSpec {
         id: TableId::from("DebtService"),
         title: "DebtService".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("value")],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![
             RowSpec::new("loan_amount"),
             RowSpec::new("interest_rate"),

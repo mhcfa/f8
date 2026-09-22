@@ -5,7 +5,7 @@ This document specifies Finx's calculation parity rules with Microsoft Excel, de
 ## 1. Numeric Precision & Representation
 
 - **Floating-point standard**: All numeric calculations use IEEE 754 double-precision floats (`f64`), matching Excel's internal 64-bit float representation.
-- **Subnormal numbers and zeros**: Signed zeros (`-0.0`) normalize to `0.0`. `NaN` and infinite values map to appropriate [`ExcelError`](evaluator.md#excel-error-values-excelerror) domain errors (`ExcelError::Num` or `ExcelError::Div0`).
+- **Subnormal numbers and zeros**: Signed zeros (`-0.0`) normalize to `0.0`. `NaN` and infinite values map to appropriate [`ExcelError`](evaluator.md#31-excel-error-values-excelerror) domain errors (`ExcelError::Num` or `ExcelError::Div0`).
 
 ---
 
@@ -51,7 +51,7 @@ When cell coordinates are passed via range references to numeric aggregators (e.
 
 ### 3.1. Explicit Scalar Evaluation (Zero Dynamic Spill)
 To guarantee strict compliance with the FAST Standard and maintain full determinism:
-- Every cell formula evaluates to exactly one scalar [`CellValue`](evaluator.md#3-cell-value--error-representation).
+- Every cell formula evaluates to exactly one scalar [`CellValue`](evaluator.md#3-cell-value-error-representation).
 - Formulas never return dynamic arrays and never spill across neighboring cells.
 - Vector logic is handled explicitly during grid expansion (e.g. row-wide `"expr": "Sales[\"price\", @col] * Sales[\"volume\", @col]"` or column-wide `"expr": "CapTable[@row, \"shares\"] * CapTable[@row, \"share_price\"]"`), eliminating implicit matrix broadcasting.
 - Ranges and 2D arrays are strictly inputs to aggregating functions (`SUM`, `AVERAGE`, `XNPV`, `XLOOKUP`).
@@ -153,7 +153,7 @@ Consequently, the `*IFS` family and its criteria evaluation engine serve as the 
 
 ## 6. Range Slicing & Error Propagation
 
-- **Slices**: Range references (e.g. `Table["row", "2024E".."2028E"]` or `Table[rows.opex, @col]`) resolve to ordered vectors of `CellValue`.
+- **Slices**: Range references (e.g. `Table["row", "2024E".."2028E"]` or `Table["r_and_d".."g_and_a", @col]`) resolve to ordered vectors of `CellValue`.
 - **Multi-dimensional flattening**: Aggregators (`SUM`, `MAX`, `MIN`) flatten multi-dimensional slices before calculation.
 - **Error bubbling**: Domain errors (`#REF!`, `#VALUE!`, `#DIV/0!`, `#NUM!`, `#N/A`) propagate through strict scalar arithmetic operations to dependent cells.
 

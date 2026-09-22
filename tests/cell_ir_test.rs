@@ -3,11 +3,8 @@
 use finx::compiler::ir::{CellGrid, CellId, CellNode, CellPayload, IrError, SymbolTable};
 use finx::expr::Expr;
 use finx::model::format::FormatPreset;
-use finx::model::id::{ColGroupId, ColId, RowGroupId, RowId, SheetId, TableId};
-use finx::model::table::{
-    AxisRole, ColumnGroup, ColumnSpec, RowGroup, RowGroupChild, RowSpec, TableSpec, ValueLiteral,
-};
-use indexmap::IndexMap;
+use finx::model::id::{ColId, RowId, SheetId, TableId};
+use finx::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 
 #[test]
 fn test_scenario_1_cell_id_display_and_formatting() {
@@ -146,52 +143,18 @@ fn test_scenario_5_symbol_table_table_registration() {
     let table = TableSpec {
         id: TableId::new("IncomeStatement"),
         title: "Income Statement".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),
             ColumnSpec::new("2025E"),
         ],
-        column_groups: vec![ColumnGroup {
-            id: ColGroupId::new("forecast"),
-            label: "Forecast".to_string(),
-            columns: vec![ColId::new("2024E"), ColId::new("2025E")],
-        }],
-        row_groups: vec![RowGroup {
-            id: RowGroupId::new("opex"),
-            label: "Operating Expenses".to_string(),
-            children: vec![
-                RowGroupChild::Row(RowId::new("r_and_d")),
-                RowGroupChild::Row(RowId::new("s_and_m")),
-            ],
-        }],
         rows: vec![
-            RowSpec {
-                id: RowId::new("revenue"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("100".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("r_and_d"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("20".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("s_and_m"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("30".to_string()),
-                cells: IndexMap::new(),
-            },
+            RowSpec::new("revenue").with_expr("100"),
+            RowSpec::new("r_and_d").with_expr("20"),
+            RowSpec::new("s_and_m").with_expr("30"),
         ],
     };
 
@@ -204,31 +167,33 @@ fn test_scenario_5_symbol_table_table_registration() {
         Some(&SheetId::new("Financials"))
     );
     assert_eq!(
+        symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2023A")),
+        Some(0)
+    );
+    assert_eq!(
         symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2024E")),
         Some(1)
+    );
+    assert_eq!(
+        symbols.col_index(&TableId::new("IncomeStatement"), &ColId::new("2025E")),
+        Some(2)
+    );
+    assert_eq!(
+        symbols.row_index(&TableId::new("IncomeStatement"), &RowId::new("revenue")),
+        Some(0)
     );
     assert_eq!(
         symbols.row_index(&TableId::new("IncomeStatement"), &RowId::new("r_and_d")),
         Some(1)
     );
+    assert_eq!(
+        symbols.row_index(&TableId::new("IncomeStatement"), &RowId::new("s_and_m")),
+        Some(2)
+    );
 
     // Sheet IDs query
     let sheet_ids: Vec<_> = symbols.sheet_ids().collect();
     assert_eq!(sheet_ids, vec![&SheetId::new("Financials")]);
-
-    // Group queries
-    let forecast_cols = symbols
-        .cols_in_group(
-            &TableId::new("IncomeStatement"),
-            &ColGroupId::new("forecast"),
-        )
-        .expect("Forecast group should exist");
-    assert_eq!(forecast_cols, &[ColId::new("2024E"), ColId::new("2025E")]);
-
-    let opex_rows = symbols
-        .rows_in_group(&TableId::new("IncomeStatement"), &RowGroupId::new("opex"))
-        .expect("Opex group should exist");
-    assert_eq!(opex_rows, &[RowId::new("r_and_d"), RowId::new("s_and_m")]);
 }
 
 #[test]
@@ -238,18 +203,11 @@ fn test_scenario_6_symbol_table_duplicate_table_rejection() {
     let table = TableSpec {
         id: TableId::new("CashFlow"),
         title: "Cash Flow".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![ColumnSpec::new("2024E")],
-        column_groups: vec![],
-        row_groups: vec![],
-        rows: vec![RowSpec {
-            id: RowId::new("fcf"),
-            role: AxisRole::Measure,
-            format: None,
-            note: None,
-            source: None,
-            expr: Some("100".to_string()),
-            cells: IndexMap::new(),
-        }],
+        rows: vec![RowSpec::new("fcf").with_expr("100")],
     };
 
     symbols
@@ -290,67 +248,25 @@ fn test_cell_payload_formula_and_literal_inspection() {
 }
 
 #[test]
-fn test_scenario_7_symbol_table_nested_row_groups_flattening() {
+fn test_scenario_7_symbol_table_filters_gutters_and_section_headers() {
     let mut symbols = SymbolTable::new();
 
     let table = TableSpec {
         id: TableId::new("BalanceSheet"),
         title: "Balance Sheet".to_string(),
-        columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
-        column_groups: vec![],
-        row_groups: vec![RowGroup {
-            id: RowGroupId::new("assets"),
-            label: "Total Assets".to_string(),
-            children: vec![
-                RowGroupChild::Row(RowId::new("cash")),
-                RowGroupChild::Group(RowGroup {
-                    id: RowGroupId::new("current_assets"),
-                    label: "Other Current Assets".to_string(),
-                    children: vec![
-                        RowGroupChild::Row(RowId::new("ar")),
-                        RowGroupChild::Row(RowId::new("inventory")),
-                    ],
-                }),
-                RowGroupChild::Row(RowId::new("ppe")),
-            ],
-        }],
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![
+            ColumnSpec::new("2024E"),
+            ColumnSpec::gutter(),
+            ColumnSpec::new("2025E"),
+        ],
         rows: vec![
-            RowSpec {
-                id: RowId::new("cash"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("100".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("ar"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("50".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("inventory"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("30".to_string()),
-                cells: IndexMap::new(),
-            },
-            RowSpec {
-                id: RowId::new("ppe"),
-                role: AxisRole::Measure,
-                format: None,
-                note: None,
-                source: None,
-                expr: Some("200".to_string()),
-                cells: IndexMap::new(),
-            },
+            RowSpec::section_header("Current Assets"),
+            RowSpec::new("cash").with_expr("100"),
+            RowSpec::gutter(),
+            RowSpec::new("ar").with_expr("50"),
         ],
     };
 
@@ -358,27 +274,22 @@ fn test_scenario_7_symbol_table_nested_row_groups_flattening() {
         .register_table(SheetId::new("BS"), &table)
         .expect("Table should register successfully");
 
-    // Check nested child group
-    let current_assets = symbols
-        .rows_in_group(
-            &TableId::new("BalanceSheet"),
-            &RowGroupId::new("current_assets"),
-        )
-        .expect("Sub-group should exist");
-    assert_eq!(current_assets, &[RowId::new("ar"), RowId::new("inventory")]);
-
-    // Check parent group with flattened descendants in traversal order
-    let total_assets = symbols
-        .rows_in_group(&TableId::new("BalanceSheet"), &RowGroupId::new("assets"))
-        .expect("Parent group should exist");
+    // Only Data columns and Data rows should be indexed
     assert_eq!(
-        total_assets,
-        &[
-            RowId::new("cash"),
-            RowId::new("ar"),
-            RowId::new("inventory"),
-            RowId::new("ppe")
-        ]
+        symbols.col_index(&TableId::new("BalanceSheet"), &ColId::new("2024E")),
+        Some(0)
+    );
+    assert_eq!(
+        symbols.col_index(&TableId::new("BalanceSheet"), &ColId::new("2025E")),
+        Some(1)
+    );
+    assert_eq!(
+        symbols.row_index(&TableId::new("BalanceSheet"), &RowId::new("cash")),
+        Some(0)
+    );
+    assert_eq!(
+        symbols.row_index(&TableId::new("BalanceSheet"), &RowId::new("ar")),
+        Some(1)
     );
 }
 
@@ -389,9 +300,10 @@ fn test_scenario_8_symbol_table_empty_table_rejection() {
     let table = TableSpec {
         id: TableId::new("EmptyTable"),
         title: "Empty Table".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
         columns: vec![],
-        column_groups: vec![],
-        row_groups: vec![],
         rows: vec![],
     };
 
