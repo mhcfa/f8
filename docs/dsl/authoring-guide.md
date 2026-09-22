@@ -107,11 +107,11 @@ Each table JSON file defines a standalone 2D calculation matrix:
 ### Top-Level Table Fields
 - **`id`** (`string`, required): Immutable programmatic table identifier used in formula coordinates (e.g. `IncomeStatement`).
 - **`title`** (`string`, required): Display header rendered across the top of the table.
-- **`subtitle`** (`string`, optional): Display sub-banner (e.g. `"($ in Millions)"`, `"Preliminary Draft"`).
+- **`subtitle`** (`string`, optional): Display sub-banner (e.g. `"($ in Millions)"`, `"Preliminary Draft"`). Must not be empty or whitespace-only if declared (`EmptyTableSubtitle`).
 - **`currency`** (`CurrencyCode`, optional): Default ISO currency code for all currency cells in the table (e.g. `"usd"`, `"eur"`, `"gbp"`).
 - **`collapsible`** (`boolean`, optional, default `false`): When `true`, the layout engine wraps all table body rows in an Excel outline group, allowing the user to collapse the table into its title banner.
-- **`columns`** (`array`, required): Ordered column definitions (data columns and gutters).
-- **`rows`** (`array`, required): Ordered row definitions (data rows, section headers, and gutters).
+- **`columns`** (`array`, required): Ordered column definitions (data columns and gutters). Must declare at least one column (`EmptyColumns`).
+- **`rows`** (`array`, required): Ordered row definitions (data rows, section headers, and gutters). Must declare at least one row (`EmptyRows`).
 
 ---
 
@@ -264,10 +264,15 @@ Each key in `data_row.cells` must refer to a declared data column `ColId`.
        "decimals": 2,
        "highlight": true,
        "note": "Audited by PwC"
+     },
+     "2024E": {
+       "expr": "IncomeStatement[\"revenue\", col.prev] * 1.10",
+       "highlight": true,
+       "note": "Management upside case"
      }
    }
    ```
-   *Payload requirement*: A detailed cell override must specify **exactly one** of `"value"` or `"expr"`. Specifying both halts compilation with `MutuallyExclusiveCellPayload`; specifying neither halts with `EmptyCellPayload`.
+   *Payload requirement*: A detailed cell override must specify **exactly one** of `"value"` or `"expr"`. Specifying both halts compilation with `MutuallyExclusiveCellPayload`; specifying neither halts with `EmptyCellPayload`. Both literal values and formula overrides support detailed presentation attributes (`format`, `decimals`, `currency`, `style`, `highlight`, `indent`, `note`, `source`).
 
 4. **Style reset escape hatch**: Setting `"style": "data"` on an individual cell override suppresses inherited row or column summary borders, allowing clean descriptor labels or memo annotations on subtotal and total rows without unwanted underlines.
 
@@ -296,8 +301,8 @@ Formulas in Finx are written as plain strings without a leading `=` sign.
 | Syntax | Description | Example |
 | :--- | :--- | :--- |
 | `Table[row, col]` | Absolute 2D cell coordinate | `IncomeStatement["revenue", "2024E"]` |
-| `Table[row, @col]` | Current active column in another table | `Assumptions["inflation_rate", @col]` |
-| `Table[@row, col]` | Current active row in another table | `Summary[@row, "val"]` |
+| `Table[row, @col]` | Current active column (same table or cross-table) | `Assumptions["inflation_rate", @col]` |
+| `Table[@row, col]` | Current active row (same table or cross-table) | `Summary[@row, "val"]` |
 | `Table[row, col.prev]` | Previous adjacent measure column | `IncomeStatement["revenue", col.prev]` |
 | `Table[row, col.next]` | Next adjacent measure column | `IncomeStatement["revenue", col.next]` |
 | `Table[row, col.prev(k)]` | Predecessor column $k$ steps prior | `IncomeStatement["revenue", col.prev(2)]` |
@@ -325,13 +330,14 @@ Formulas in Finx are written as plain strings without a leading `=` sign.
 - **`row.prev` and `row.prev(k)`**: Refers to the previous data row (e.g. cumulative balance waterfalls).
 - **Gutter isolation**: Blank spacing gutters (`kind: "gutter"`) and descriptor columns are transparently skipped by `col.prev` and `col.next`. Similarly, `row.prev` and `row.next` step strictly across calculable data rows (`kind: "data"`), transparently skipping section headers (`kind: "section_header"`) and row gutters (`kind: "gutter"`).
 - **Boundary enforcement**: Stepping past timeline boundaries (`col.prev` before the first measure column, `col.next` beyond the last measure column, `row.prev` above row 0, `row.next` past the final data row) halts compilation with `TemporalOffsetOutOfBounds`.
-- **Coordinate quoting requirement**: Table coordinate keys in formulas **must** be double-quoted strings (e.g. `IncomeStatement["revenue", "2024E"]`). Unquoted identifiers (e.g. `IncomeStatement[revenue, 2024E]`) or single-quoted keys halt compilation with `ParseError::UnquotedCoordinateKey`.
+- **Retired bare `@`**: Bare `@` is retired. Always specify the active axis explicitly using `@col` or `@row`. Bare `@` halts compilation with `ParseError::RetiredBareAt`.
+- **Coordinate quoting requirement**: Table coordinate keys in formulas **must** be double-quoted strings (e.g. `IncomeStatement["revenue", "2024E"]`). Bare unquoted identifiers (e.g. `IncomeStatement[revenue, 2024E]`) or numbers halt compilation with `ParseError::UnquotedCoordinateKey`. Single quotes (`'`) are not recognized string delimiters and halt tokenization with `ParseError::UnexpectedToken`.
 
 ### 8.3. Supported Excel Functions
 
 Finx includes a built-in topological formula evaluator with exact Excel parity across standard financial and numerical operations:
 
-- **Math & aggregation**: `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MIN`, `MAX`, `ABS`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`.
+- **Math & aggregation**: `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MIN`, `MAX`, `MEDIAN`, `ABS`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`.
 - **Logical**: `IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`.
 - **Financial**: `NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`.
 - **Lookup & reference**: `XLOOKUP`, `XMATCH`, `INDEX`.
@@ -348,14 +354,29 @@ Criteria parameters in `*IFS` functions support standard Excel criteria syntax:
 - **Relational comparisons**: `">10"`, `"<=5"`, `"<>"`, `"="`. Criteria can be literal strings or cell coordinates resolving to criteria strings (e.g. `Assumptions["growth_floor", "val"]`). (Note: string concatenation via `&` is not supported in Finx formula expressions).
 - **Wildcards**: `?` (matches any single character), `*` (matches zero or more characters), and `~` (escape prefix for literal `~?`, `~*`, `~~`).
 
-### 8.4. Formula Syntax Rules & Conventions
+### 8.4. Operators & Precedence
+
+Formulas are parsed using standard Pratt operator precedence:
+
+| Precedence | Operator | Description | Associativity | Example |
+| :---: | :--- | :--- | :---: | :--- |
+| **5** | `^` | Exponentiation | Right | `(1.0 + Assumptions["discount_rate", "val"]) ^ 5` |
+| **4** | `+`, `-` | Unary positive and negation | Right | `-DebtSchedule["principal_repayment", @col]` |
+| **3** | `*`, `/` | Multiplication and division | Left | `Units[@row, @col] * Price[@row, "val"]` |
+| **2** | `+`, `-` | Addition and subtraction | Left | `Revenue[@row, @col] - COGS[@row, @col]` |
+| **1** | `=`, `<>`, `<`, `<=`, `>`, `>=` | Relational comparisons | Left | `IF(EBITDA[@row, @col] >= 0, 1, 0)` |
+
+Parentheses `( ... )` override default operator precedence. Note that `<>` denotes inequality (not equal).
+
+### 8.5. Formula Syntax Rules & Conventions
 
 - **Mandatory table identifier**: Every coordinate reference must include its target table identifier (e.g. `IncomeStatement["revenue", @col]`), even for references targeting the same table. Bare coordinates without a table name (e.g. `["revenue", @col]`) halt compilation with `ParseError::UnexpectedToken`.
 - **Uppercase function names**: Function names must be strictly uppercase (`SUM`, `IF`, `XLOOKUP`). Lowercase names (e.g. `sum(...)`) halt compilation with `ParseError::InvalidFunctionName`.
 - **Uppercase boolean literals**: Formulas require uppercase `TRUE` and `FALSE`. Lowercase `true` and `false` are rejected as bare identifiers in formulas (contrast with JSON literal cells where standard lowercase JSON `true`/`false` are valid).
 - **Omitted argument placeholder (`_`)**: When omitting an optional positional argument in function calls (e.g. `PMT` or `XLOOKUP`), use an explicit underscore `_` (e.g. `XLOOKUP(val, lookup_range, return_range, _, 0, 1)` or `PMT(r, n, pv, _, 1)`). Empty commas (`, ,`) halt compilation with `ParseError::UnexpectedToken`.
 - **No `null` in formulas**: While `null` is a valid literal in JSON data row `cells` (e.g. `"cells": { "discontinued": null }`), formula expressions strictly reject `null`.
-- **Homologous cross-table `@col` matching**: Using `Table[row, @col]` against another table requires that the target table shares the same column ID. Referencing a parameter table with a single value column must use explicit coordinates (e.g. `Assumptions["growth", "val"]`), not `@col` (which halts with `ResolveError::ActiveColumnMismatch`).
+- **Homologous cross-table `@col` / `@row` matching**: Using `Table[row, @col]` or `Table[@row, col]` against another table requires that the target table declares a matching column or row identifier. Referencing a parameter table with a single value column must use explicit coordinates (e.g. `Assumptions["growth", "val"]`), not `@col` (which halts with `ResolveError::ActiveColumnMismatch` or `ResolveError::ActiveRowMismatch`).
+- **Numeric literals in formulas**: Numbers in formulas support integer and standard decimal notation (`100`, `0.15`, `-5.2`). Scientific or exponential notation (e.g. `1e6`) is not supported by the formula tokenizer.
 - **Double-dot range slice (`..`)**: Range slices exclusively use `..` (`Table["r", "c1".."c2"]`). Excel colons (`:`) halt compilation with `ParseError::UnexpectedToken`.
 - **Forward range slice order**: Range slices (`col1..col2` and `row1..row2`) must follow declaration order. Inverted ranges (e.g. `"2027E".."2023A"`) halt compilation with `ResolveError::InvertedRange`.
 
@@ -605,6 +626,7 @@ A multi-period forecast table showing vector rules, initial period overrides, su
 Before compiling, verify that your model obeys these strict compiler rules:
 
 - [ ] **Unique identifiers**: Sheet names in `finx.json` and table IDs across the project are globally unique. Column IDs and row IDs are unique within their respective table.
+- [ ] **Non-empty tables**: Every table must declare at least one column (`EmptyColumns`) and at least one row (`EmptyRows`).
 - [ ] **Table file stem and sheet assignment**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores), and every table specification must be assigned to exactly one sheet in `finx.json`.
 - [ ] **Mandatory descriptor assignment**: Every data row must explicitly assign a cell value in `cells` for every descriptor column declared in the table. Vector formulas do not broadcast to descriptor columns.
 - [ ] **No silent unassigned cells**: Every measure column coordinate in a data row has a literal value, formula override, vector formula, or explicit `null`. Unassigned cells halt compilation with `IrError::UnassignedCell`.
@@ -613,7 +635,9 @@ Before compiling, verify that your model obeys these strict compiler rules:
 - [ ] **No ambiguous vector expressions**: Do not assign both `row.expr` and `col.expr` targeting the same cell coordinate unless an explicit cell override is defined at that point.
 - [ ] **Vector formatting harmony**: Do not assign conflicting `format`, `decimals`, or `currency` on opposing row and column vectors without an explicit cell override (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
 - [ ] **Mandatory table identifier**: Table identifiers must precede all formula coordinate brackets (e.g. `IncomeStatement["revenue", @col]`). Bare coordinates like `["revenue", @col]` without a table name trigger parse errors.
-- [ ] **Coordinate quoting requirement**: Table coordinates in formulas must double-quote row and column identifiers (`Table["row", "col"]`). Unquoted keys trigger `ParseError::UnquotedCoordinateKey`.
+- [ ] **Coordinate quoting requirement**: Table coordinates in formulas must double-quote row and column identifiers (`Table["row", "col"]`). Bare unquoted keys trigger `ParseError::UnquotedCoordinateKey`; single quotes trigger `ParseError::UnexpectedToken`.
+- [ ] **Retired bare `@`**: Active coordinates must be explicitly written as `@col` or `@row`. Bare `@` triggers `ParseError::RetiredBareAt`.
+- [ ] **Active coordinate matching**: Ensure target tables in `Table[row, @col]` and `Table[@row, col]` declare matching column or row identifiers (`ActiveColumnMismatch`, `ActiveRowMismatch`).
 - [ ] **Double-dot range delimiter**: Range slices in formulas must use `..` (`Table["r", "c1".."c2"]`). Never use colons `:`.
 - [ ] **Forward range order**: Coordinate ranges must declare endpoints in forward declaration order (`"c1".."c2"` and `"r1".."r2"`). Inverted ranges trigger `InvertedRange`.
 - [ ] **Uppercase function and boolean names**: All built-in Excel functions must be uppercase (`SUM`, `IF`, `XLOOKUP`), and boolean literals in formulas must be uppercase (`TRUE`, `FALSE`).
