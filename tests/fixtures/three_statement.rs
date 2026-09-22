@@ -7,13 +7,13 @@ use finx::model::id::TableId;
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{ColumnSpec, RowSpec, TableSpec};
 
-use super::{RowBuilder, build_descriptor_col, build_measure_col_label};
+use super::{RowBuilder, build_descriptor_col, build_gutter_row, build_measure_col_label};
 
 /// Constructs the canonical 4-table Three-Statement financial model.
 #[must_use]
 pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
-    // Shared Timeline Columns & Multi-Tier Headers
+    // Shared Timeline Columns & Multi-Tier Headers with Divider Gutter
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
         build_descriptor_col("line_item", "Line Item"),
@@ -93,6 +93,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .cell_num("y2023a", 100.0)
                 .build(),
             RowBuilder::line_item("cogs", "Cost of Goods Sold")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("IncomeStatement[\"revenue\", @col] * Assumptions[\"cogs_pct\", \"val\"]")
@@ -103,17 +104,21 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .style(SemanticStyle::Subtotal)
                 .expr("IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]")
                 .build(),
+            build_gutter_row(),
             RowSpec::section_header("Operating Expenses"),
             RowBuilder::line_item("opex", "Salaries & SG&A Overhead")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("Assumptions[\"opex_salaries\", \"val\"]")
                 .build(),
             RowBuilder::line_item("depreciation", "Depreciation Expense")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("Assumptions[\"depreciation\", \"val\"]")
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("operating_income", "Operating Income (EBIT)")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -121,10 +126,12 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("IncomeStatement[\"gross_profit\", @col] - IncomeStatement[\"opex\", @col] - IncomeStatement[\"depreciation\", @col]")
                 .build(),
             RowBuilder::line_item("tax", "Income Tax Provision")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("IncomeStatement[\"operating_income\", @col] * Assumptions[\"tax_rate\", \"val\"]")
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("net_income", "Net Income")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -148,45 +155,54 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         rows: vec![
             RowSpec::section_header("Operating Activities"),
             RowBuilder::line_item("net_income", "Net Income")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("IncomeStatement[\"net_income\", @col]")
                 .build(),
             RowBuilder::line_item("depreciation", "Depreciation Addback")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("Assumptions[\"depreciation\", \"val\"]")
                 .build(),
             RowBuilder::line_item("change_in_wc", "Change in Working Capital")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("(IncomeStatement[\"revenue\", @col] - IncomeStatement[\"revenue\", col.prev]) * Assumptions[\"wc_pct_rev\", \"val\"]")
                 .cell_num("y2023a", 0.0)
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("operating_cf", "Cash Flow from Operations")
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .style(SemanticStyle::Subtotal)
                 .expr("CashFlow[\"net_income\", @col] + CashFlow[\"depreciation\", @col] - CashFlow[\"change_in_wc\", @col]")
                 .build(),
+            build_gutter_row(),
             RowSpec::section_header("Investing Activities"),
             RowBuilder::line_item("capex", "Capital Expenditures")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("Assumptions[\"capex\", \"val\"]")
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("investing_cf", "Cash Flow from Investing")
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .style(SemanticStyle::Subtotal)
                 .expr("0.0 - CashFlow[\"capex\", @col]")
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("net_cash_flow", "Net Change in Cash")
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .style(SemanticStyle::Subtotal)
                 .expr("CashFlow[\"operating_cf\", @col] + CashFlow[\"investing_cf\", @col]")
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("ending_cash", "Ending Cash Balance")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -212,21 +228,25 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
             // Assets
             RowSpec::section_header("Assets"),
             RowBuilder::line_item("cash", "Cash & Cash Equivalents")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("CashFlow[\"ending_cash\", @col]")
                 .build(),
             RowBuilder::line_item("working_capital", "Operating Working Capital")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("IncomeStatement[\"revenue\", @col] * Assumptions[\"wc_pct_rev\", \"val\"]")
                 .build(),
             RowBuilder::line_item("ppe", "Property, Plant & Equipment (Net)")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("BalanceSheet[\"ppe\", col.prev] + Assumptions[\"capex\", \"val\"] - Assumptions[\"depreciation\", \"val\"]")
                 .cell_num("y2023a", 40.0)
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("total_assets", "Total Assets")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -234,25 +254,30 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .highlight(true)
                 .expr("BalanceSheet[\"cash\", @col] + BalanceSheet[\"working_capital\", @col] + BalanceSheet[\"ppe\", @col]")
                 .build(),
+            build_gutter_row(),
             // Liabilities & Equity
             RowSpec::section_header("Liabilities & Stockholders' Equity"),
             RowBuilder::line_item("debt", "Total Outstanding Debt")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("0.0")
                 .build(),
             RowBuilder::line_item("equity_capital", "Common Stock & Contributed Capital")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("BalanceSheet[\"equity_capital\", col.prev]")
                 .cell_num("y2023a", 76.0)
                 .build(),
             RowBuilder::line_item("retained_earnings", "Retained Earnings")
+                .indent(1)
                 .format(FormatPreset::Currency)
                 .decimals(1)
                 .expr("BalanceSheet[\"retained_earnings\", col.prev] + IncomeStatement[\"net_income\", @col]")
                 .cell_num("y2023a", 24.0)
                 .build(),
+            build_gutter_row(),
             RowBuilder::line_item("total_liabilities_and_equity", "Total Liabilities & Equity")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -260,6 +285,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
                 .highlight(true)
                 .expr("BalanceSheet[\"debt\", @col] + BalanceSheet[\"equity_capital\", @col] + BalanceSheet[\"retained_earnings\", @col]")
                 .build(),
+            build_gutter_row(),
             // Balance Check: Total Assets - (Total Liabilities + Equity) == 0.0
             RowBuilder::line_item("balance_check", "Balance Check (Assets - L&E)")
                 .format(FormatPreset::Currency)

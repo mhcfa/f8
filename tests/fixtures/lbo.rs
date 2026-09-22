@@ -7,9 +7,11 @@ use finx::model::id::TableId;
 use finx::model::manifest::{ProjectManifest, SheetSpec};
 use finx::model::table::{ColumnSpec, RowSpec, TableSpec};
 
-use super::{RowBuilder, build_descriptor_col, build_measure_col_label};
+use super::{
+    RowBuilder, build_descriptor_col, build_gutter_col, build_gutter_row, build_measure_col_label,
+};
 
-/// Assembles the complete 7-table, 2-sheet institutional LBO model specification.
+/// Assembles the complete 8-table, 2-sheet institutional LBO model specification.
 #[must_use]
 pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
@@ -17,12 +19,36 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
         build_descriptor_col("line_item", "Line Item"),
-        ColumnSpec::new("y0").with_headers(["Transaction Close", "Close (Y0)"]),
-        ColumnSpec::new("y1").with_headers(["5-Year Investment Horizon", "2025 (Y1)"]),
-        ColumnSpec::new("y2").with_headers(["5-Year Investment Horizon", "2026 (Y2)"]),
-        ColumnSpec::new("y3").with_headers(["5-Year Investment Horizon", "2027 (Y3)"]),
-        ColumnSpec::new("y4").with_headers(["5-Year Investment Horizon", "2028 (Y4)"]),
-        ColumnSpec::new("y5").with_headers(["5-Year Investment Horizon", "2029 (Y5)"]),
+        ColumnSpec::new("y0").with_headers([
+            "Project Titan LBO",
+            "Transaction Close",
+            "Close (Y0)",
+        ]),
+        ColumnSpec::new("y1").with_headers([
+            "Project Titan LBO",
+            "5-Year Investment Horizon",
+            "2025 (Y1)",
+        ]),
+        ColumnSpec::new("y2").with_headers([
+            "Project Titan LBO",
+            "5-Year Investment Horizon",
+            "2026 (Y2)",
+        ]),
+        ColumnSpec::new("y3").with_headers([
+            "Project Titan LBO",
+            "5-Year Investment Horizon",
+            "2027 (Y3)",
+        ]),
+        ColumnSpec::new("y4").with_headers([
+            "Project Titan LBO",
+            "5-Year Investment Horizon",
+            "2028 (Y4)",
+        ]),
+        ColumnSpec::new("y5").with_headers([
+            "Project Titan LBO",
+            "5-Year Investment Horizon",
+            "2029 (Y5)",
+        ]),
     ];
 
     // -------------------------------------------------------------------------
@@ -112,6 +138,15 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                     "XLOOKUP(DealAssumptions[\"active_case\", \"val\"], Scenarios[\"base\"..\"bear\", \"case_id\"], Scenarios[\"base\"..\"bear\", \"exit_multiple\"])",
                 )
                 .build(),
+            RowBuilder::line_item("sponsor_hurdle", "Sponsor Target Hurdle Rate (SWITCH)")
+                .format(FormatPreset::Percentage)
+                .decimals(1)
+                .cell_formula(
+                    "val",
+                    "SWITCH(DealAssumptions[\"active_case\", \"val\"], \"base\", 0.20, \"bull\", 0.25, \"bear\", 0.15, 0.20)",
+                )
+                .build(),
+            build_gutter_row(),
             // Valuation & Leverage Drivers
             RowSpec::section_header("Valuation & Leverage Drivers"),
             RowBuilder::line_item("entry_ebitda", "LTM Entry EBITDA ($M)")
@@ -159,6 +194,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .decimals(1)
                 .cell_num("val", 0.10)
                 .build(),
+            build_gutter_row(),
             // Sources & Uses Calculations
             RowSpec::section_header("Sources & Uses of Funds"),
             RowBuilder::line_item("entry_ev", "Target Enterprise Value ($M)")
@@ -209,7 +245,104 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     };
 
     // -------------------------------------------------------------------------
-    // 3. ReturnsSummary Table (Sheet: Summary)
+    // 3. SourcesAndUses Table (Sheet: Summary) - Irregular 7-Column Layout
+    // -------------------------------------------------------------------------
+    let sources_and_uses_cols = vec![
+        build_descriptor_col("source_item", "Sources of Financing"),
+        ColumnSpec::new("source_val")
+            .with_header("Sources ($M)")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+        ColumnSpec::new("source_pct")
+            .with_header("% Total")
+            .with_format(Some(FormatPreset::Percentage))
+            .with_decimals(Some(1)),
+        build_gutter_col(),
+        build_descriptor_col("use_item", "Uses of Capital"),
+        ColumnSpec::new("use_val")
+            .with_header("Uses ($M)")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+        ColumnSpec::new("use_pct")
+            .with_header("% Total")
+            .with_format(Some(FormatPreset::Percentage))
+            .with_decimals(Some(1)),
+    ];
+
+    let sources_and_uses_table = TableSpec {
+        id: TableId::from("SourcesAndUses"),
+        title: "Transaction Sources & Uses of Funds".to_string(),
+        subtitle: Some(
+            "7-Column Irregular Layout with Intra-Table Dividing Gutter".to_string(),
+        ),
+        currency: None,
+        collapsible: false,
+        columns: sources_and_uses_cols,
+        rows: vec![
+            RowBuilder::new("senior_debt")
+                .cell_str("source_item", "Senior Secured Term Loan")
+                .cell_formula("source_val", "DealAssumptions[\"senior_debt_entry\", \"val\"]")
+                .cell_formula(
+                    "source_pct",
+                    "SourcesAndUses[\"senior_debt\", \"source_val\"] / SourcesAndUses[\"total\", \"source_val\"]",
+                )
+                .cell_str("use_item", "Acquisition Target Enterprise Value")
+                .cell_formula("use_val", "DealAssumptions[\"entry_ev\", \"val\"]")
+                .cell_formula(
+                    "use_pct",
+                    "SourcesAndUses[\"senior_debt\", \"use_val\"] / SourcesAndUses[\"total\", \"use_val\"]",
+                )
+                .build(),
+            RowBuilder::new("sub_debt")
+                .cell_str("source_item", "Subordinated Mezzanine Notes")
+                .cell_formula("source_val", "DealAssumptions[\"sub_debt_entry\", \"val\"]")
+                .cell_formula(
+                    "source_pct",
+                    "SourcesAndUses[\"sub_debt\", \"source_val\"] / SourcesAndUses[\"total\", \"source_val\"]",
+                )
+                .cell_str("use_item", "Financing & Legal Advisory Fees")
+                .cell_num("use_val", 0.0)
+                .cell_num("use_pct", 0.0)
+                .build(),
+            RowBuilder::new("sponsor_equity")
+                .cell_str("source_item", "Sponsor Equity Capital")
+                .cell_formula("source_val", "DealAssumptions[\"sponsor_equity_entry\", \"val\"]")
+                .cell_formula(
+                    "source_pct",
+                    "SourcesAndUses[\"sponsor_equity\", \"source_val\"] / SourcesAndUses[\"total\", \"source_val\"]",
+                )
+                .cell_str("use_item", "Minimum Balance Sheet Cash Buffer")
+                .cell_num("use_val", 0.0)
+                .cell_num("use_pct", 0.0)
+                .build(),
+            build_gutter_row(),
+            RowBuilder::new("total")
+                .cell_str("source_item", "Total Sources of Financing")
+                .style(SemanticStyle::Total)
+                .highlight(true)
+                .cell_formula(
+                    "source_val",
+                    "SourcesAndUses[\"senior_debt\", \"source_val\"] + SourcesAndUses[\"sub_debt\", \"source_val\"] + SourcesAndUses[\"sponsor_equity\", \"source_val\"]",
+                )
+                .cell_formula(
+                    "source_pct",
+                    "SourcesAndUses[\"senior_debt\", \"source_pct\"] + SourcesAndUses[\"sub_debt\", \"source_pct\"] + SourcesAndUses[\"sponsor_equity\", \"source_pct\"]",
+                )
+                .cell_str("use_item", "Total Uses of Capital")
+                .cell_formula(
+                    "use_val",
+                    "SourcesAndUses[\"senior_debt\", \"use_val\"] + SourcesAndUses[\"sub_debt\", \"use_val\"] + SourcesAndUses[\"sponsor_equity\", \"use_val\"]",
+                )
+                .cell_formula(
+                    "use_pct",
+                    "SourcesAndUses[\"senior_debt\", \"use_pct\"] + SourcesAndUses[\"sub_debt\", \"use_pct\"] + SourcesAndUses[\"sponsor_equity\", \"use_pct\"]",
+                )
+                .build(),
+        ],
+    };
+
+    // -------------------------------------------------------------------------
+    // 4. ReturnsSummary Table (Sheet: Summary)
     // -------------------------------------------------------------------------
     let returns_summary_table = TableSpec {
         id: TableId::from("ReturnsSummary"),
@@ -438,6 +571,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("DebtSchedule[\"senior_begin\", @col] * DealAssumptions[\"senior_rate\", \"val\"] * Timeline[\"year_frac\", @col]")
                 .cell_num("y0", 0.0)
                 .build(),
+            build_gutter_row(),
             RowSpec::section_header("Subordinated Tranche (12.0% Rate)"),
             RowBuilder::line_item("sub_begin", "Subordinated Debt - Beginning")
                 .format(FormatPreset::Currency)
@@ -451,7 +585,14 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("DebtSchedule[\"sub_begin\", @col] * DealAssumptions[\"sub_rate\", \"val\"] * Timeline[\"year_frac\", @col]")
                 .cell_num("y0", 0.0)
                 .build(),
+            build_gutter_row(),
             RowSpec::section_header("Debt Service & Sweep Mechanics"),
+            RowBuilder::line_item("term_pmt_benchmark", "5-Year Full Amortization Benchmark (PMT)")
+                .format(FormatPreset::Currency)
+                .decimals(1)
+                .expr("PMT(DealAssumptions[\"senior_rate\", \"val\"], 5, -DealAssumptions[\"senior_debt_entry\", \"val\"])")
+                .cell_num("y0", 0.0)
+                .build(),
             RowBuilder::line_item("total_interest", "Total Debt Interest")
                 .format(FormatPreset::Currency)
                 .decimals(1)
@@ -477,6 +618,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .expr("MIN(DebtSchedule[\"cash_available_sweep\", @col], DebtSchedule[\"senior_begin\", @col] - DebtSchedule[\"senior_mandatory\", @col])")
                 .cell_num("y0", 0.0)
                 .build(),
+            build_gutter_row(),
             RowSpec::section_header("Outstanding Debt Balances"),
             RowBuilder::line_item("senior_end", "Senior Debt - Ending Balance")
                 .format(FormatPreset::Currency)
@@ -543,6 +685,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 tables: vec![
                     PathBuf::from("tables/scenarios.json"),
                     PathBuf::from("tables/deal_assumptions.json"),
+                    PathBuf::from("tables/sources_and_uses.json"),
                     PathBuf::from("tables/returns_summary.json"),
                 ],
             },
@@ -564,6 +707,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let tables = vec![
         scenarios_table,
         deal_assumptions_table,
+        sources_and_uses_table,
         returns_summary_table,
         timeline_table,
         operations_table,

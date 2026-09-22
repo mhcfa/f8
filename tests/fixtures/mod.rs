@@ -27,6 +27,16 @@ pub fn build_descriptor_col(id: &str, label: &str) -> ColumnSpec {
     ColumnSpec::descriptor(id, label)
 }
 
+/// Builds an explicit horizontal gutter column for visual spacing between column groups.
+pub fn build_gutter_col() -> ColumnSpec {
+    ColumnSpec::gutter()
+}
+
+/// Builds an explicit vertical gutter row for visual spacing between table sections.
+pub fn build_gutter_row() -> RowSpec {
+    RowSpec::gutter()
+}
+
 /// Fluent builder for constructing fully styled, labeled `RowSpec` definitions.
 #[derive(Debug, Clone)]
 pub struct RowBuilder {

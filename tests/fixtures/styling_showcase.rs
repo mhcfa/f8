@@ -14,7 +14,9 @@ use finx::model::table::{
     ValueLiteral,
 };
 
-use super::{RowBuilder, build_descriptor_col, build_measure_col_label};
+use super::{
+    RowBuilder, build_descriptor_col, build_gutter_col, build_gutter_row, build_measure_col_label,
+};
 
 /// Builds the complete styling and formatting showcase workbook model.
 ///
@@ -32,6 +34,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ColumnSpec::new("actual").with_headers(["Operating Performance", "2025A Actual"]),
         ColumnSpec::new("budget").with_headers(["Operating Performance", "2026B Budget"]),
         ColumnSpec::new("variance").with_headers(["Operating Performance", "Variance ($)"]),
+        build_gutter_col(),
         ColumnSpec::new("division_total")
             .with_headers(["Consolidated Summary", "Division Total"])
             .with_style(Some(SemanticStyle::Subtotal))
@@ -100,6 +103,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Styles_And_Borders[\"subtotal_revenue\", \"actual\"] + Styles_And_Borders[\"subtotal_revenue\", \"division_total\"]",
             )
             .build(),
+        build_gutter_row(),
         RowBuilder::line_item("cogs_materials", "Direct Raw Materials")
             .format(FormatPreset::Currency)
             .decimals(0)
@@ -155,6 +159,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Styles_And_Borders[\"total_margin\", \"actual\"] + Styles_And_Borders[\"total_margin\", \"division_total\"]",
             )
             .build(),
+        build_gutter_row(),
         RowBuilder::line_item("highlight_ebitda", "Operating EBITDA (Visual Highlight)")
             .highlight(true)
             .format(FormatPreset::Currency)
@@ -209,12 +214,29 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // =========================================================================
     let t2_cols = vec![
         build_descriptor_col("line_item", "Division / Department"),
-        ColumnSpec::new("q1_act").with_headers(["Quarterly Performance", "Q1 Actual"]),
-        ColumnSpec::new("q2_act").with_headers(["Quarterly Performance", "Q2 Actual"]),
-        ColumnSpec::new("q3_act").with_headers(["Quarterly Performance", "Q3 Actual"]),
-        ColumnSpec::new("q4_act").with_headers(["Quarterly Performance", "Q4 Actual"]),
+        ColumnSpec::new("q1_act").with_headers([
+            "Commercial Operations",
+            "Quarterly Performance",
+            "Q1 Actual",
+        ]),
+        ColumnSpec::new("q2_act").with_headers([
+            "Commercial Operations",
+            "Quarterly Performance",
+            "Q2 Actual",
+        ]),
+        ColumnSpec::new("q3_act").with_headers([
+            "Commercial Operations",
+            "Quarterly Performance",
+            "Q3 Actual",
+        ]),
+        ColumnSpec::new("q4_act").with_headers([
+            "Commercial Operations",
+            "Quarterly Performance",
+            "Q4 Actual",
+        ]),
+        build_gutter_col(),
         ColumnSpec::new("fy_sum")
-            .with_headers(["Annual Reporting", "Full Year Total"])
+            .with_headers(["Consolidated Reporting", "Full Year Total"])
             .with_style(Some(SemanticStyle::Total))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
@@ -222,20 +244,42 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
 
     let t2_rows = vec![
         RowSpec::section_header("Commercial Operations"),
-        SectionHeaderRowSpec::new("North America Division").with_indent(Some(1)).into(),
-        // North America Division
-        RowBuilder::line_item("na_direct", "Direct Enterprise Accounts")
-            .indent(2)
+        SectionHeaderRowSpec::new("North America Division")
+            .with_indent(Some(1))
+            .into(),
+        // North America Division - Tier 3 Deep Indentation Sub-Accounts
+        RowBuilder::line_item("na_strategic", "Strategic Enterprise Accounts")
+            .indent(3)
             .format(FormatPreset::Currency)
             .decimals(0)
-            .cell_num("q1_act", 150_000.0)
-            .cell_num("q2_act", 160_000.0)
-            .cell_num("q3_act", 175_000.0)
-            .cell_num("q4_act", 190_000.0)
+            .cell_num("q1_act", 100_000.0)
+            .cell_num("q2_act", 105_000.0)
+            .cell_num("q3_act", 115_000.0)
+            .cell_num("q4_act", 125_000.0)
             .cell_formula(
                 "fy_sum",
-                "Hierarchical_Outlines[\"na_direct\", \"q1_act\"] + Hierarchical_Outlines[\"na_direct\", \"q2_act\"] + Hierarchical_Outlines[\"na_direct\", \"q3_act\"] + Hierarchical_Outlines[\"na_direct\", \"q4_act\"]",
+                "Hierarchical_Outlines[\"na_strategic\", \"q1_act\"] + Hierarchical_Outlines[\"na_strategic\", \"q2_act\"] + Hierarchical_Outlines[\"na_strategic\", \"q3_act\"] + Hierarchical_Outlines[\"na_strategic\", \"q4_act\"]",
             )
+            .build(),
+        RowBuilder::line_item("na_midmarket", "Commercial Mid-Market Accounts")
+            .indent(3)
+            .format(FormatPreset::Currency)
+            .decimals(0)
+            .cell_num("q1_act", 50_000.0)
+            .cell_num("q2_act", 55_000.0)
+            .cell_num("q3_act", 60_000.0)
+            .cell_num("q4_act", 65_000.0)
+            .cell_formula(
+                "fy_sum",
+                "Hierarchical_Outlines[\"na_midmarket\", \"q1_act\"] + Hierarchical_Outlines[\"na_midmarket\", \"q2_act\"] + Hierarchical_Outlines[\"na_midmarket\", \"q3_act\"] + Hierarchical_Outlines[\"na_midmarket\", \"q4_act\"]",
+            )
+            .build(),
+        RowBuilder::line_item("na_direct", "Direct Accounts Sub-Rollup")
+            .indent(2)
+            .style(SemanticStyle::Subtotal)
+            .format(FormatPreset::Currency)
+            .decimals(0)
+            .expr("Hierarchical_Outlines[\"na_strategic\", @col] + Hierarchical_Outlines[\"na_midmarket\", @col]")
             .build(),
         RowBuilder::line_item("na_partners", "Solution Partner Network")
             .indent(2)
@@ -276,6 +320,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"na_subtotal\", \"q1_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q2_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q3_act\"] + Hierarchical_Outlines[\"na_subtotal\", \"q4_act\"]",
             )
             .build(),
+        build_gutter_row(),
         SectionHeaderRowSpec::new("International Operations").with_indent(Some(1)).into(),
         // International Operations
         RowBuilder::line_item("intl_emea", "EMEA Corporate Accounts")
@@ -330,6 +375,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"intl_subtotal\", \"q1_act\"] + Hierarchical_Outlines[\"intl_subtotal\", \"q2_act\"] + Hierarchical_Outlines[\"intl_subtotal\", \"q3_act\"] + Hierarchical_Outlines[\"intl_subtotal\", \"q4_act\"]",
             )
             .build(),
+        build_gutter_row(),
         RowBuilder::line_item("commercial_total", "Total Commercial Revenue")
             .style(SemanticStyle::Total)
             .format(FormatPreset::Currency)
@@ -355,6 +401,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"commercial_total\", \"q1_act\"] + Hierarchical_Outlines[\"commercial_total\", \"q2_act\"] + Hierarchical_Outlines[\"commercial_total\", \"q3_act\"] + Hierarchical_Outlines[\"commercial_total\", \"q4_act\"]",
             )
             .build(),
+        build_gutter_row(),
         RowSpec::section_header("Operating Expenses & Overhead"),
         // Operating Expenses
         RowBuilder::line_item("opex_rnd", "Product Engineering & R&D")
@@ -396,6 +443,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "Hierarchical_Outlines[\"opex_admin\", \"q1_act\"] + Hierarchical_Outlines[\"opex_admin\", \"q2_act\"] + Hierarchical_Outlines[\"opex_admin\", \"q3_act\"] + Hierarchical_Outlines[\"opex_admin\", \"q4_act\"]",
             )
             .build(),
+        build_gutter_row(),
         RowBuilder::line_item("opex_total", "Total Operating Expenses")
             .style(SemanticStyle::Total)
             .format(FormatPreset::Currency)
@@ -624,6 +672,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let t4_cols = vec![
         build_descriptor_col("line_item", "Currency Code & Regional Entity"),
         build_descriptor_col("symbol_type", "Symbol Code & Quoting"),
+        build_gutter_col(),
         build_measure_col_label("pos_val", "Positive Balance"),
         build_measure_col_label("neg_val", "Deficit Balance (Parens)"),
         build_measure_col_label("zero_val", "Zero Balance (Dash)"),
@@ -738,7 +787,10 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     ];
 
     let mut t4_rows = Vec::new();
-    for (id, label, sym_type, code, amount) in currencies {
+    for (idx, (id, label, sym_type, code, amount)) in currencies.into_iter().enumerate() {
+        if idx == 4 {
+            t4_rows.push(build_gutter_row());
+        }
         let mut row = RowBuilder::line_item(id, label);
         row = row.format(FormatPreset::Currency).decimals(0);
         row = row.cell_str("symbol_type", sym_type);

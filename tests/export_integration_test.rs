@@ -77,9 +77,14 @@ fn test_models_emit_in_memory() {
     assert!(ts_workbook_xml.contains("name=\"Model\""));
 
     let ts_sheet_xml = read_zip_entry(&ts_buffer, "xl/worksheets/sheet1.xml");
-    // Verify lowered formulas and cached evaluation results
+    // Verify lowered formulas, cached evaluation results, and explicit row gutters
     assert!(ts_sheet_xml.contains("<f>"));
     assert!(ts_sheet_xml.contains("<v>100</v>") || ts_sheet_xml.contains("<v>115</v>"));
+    // Explicit row gutters leave unstyled rows unpopulated in sheetData
+    assert!(
+        ts_sheet_xml.contains("r=\"3\"") && !ts_sheet_xml.contains("r=\"4\""),
+        "Expected blank gutter row between subtitle and table data"
+    );
 
     // Verify Core document properties metadata
     let ts_core_xml = read_zip_entry(&ts_buffer, "docProps/core.xml");
@@ -155,9 +160,21 @@ fn test_models_emit_in_memory() {
     );
     assert!(
         combined_sheets.contains("XLOOKUP")
-            || combined_sheets.contains("EDATE")
-            || combined_sheets.contains("XIRR"),
-        "Expected lowered financial functions in formula tags"
+            && combined_sheets.contains("SWITCH")
+            && combined_sheets.contains("PMT")
+            && combined_sheets.contains("XIRR"),
+        "Expected lowered financial and logical functions (XLOOKUP, SWITCH, PMT, XIRR) in formula tags"
+    );
+
+    let lbo_shared_strings = read_zip_entry(&lbo_buffer, "xl/sharedStrings.xml");
+    assert!(
+        lbo_shared_strings.contains("Sources of Financing")
+            || lbo_shared_strings.contains("Sources &amp; Uses"),
+        "Expected 7-column Sources & Uses table in shared strings"
+    );
+    assert!(
+        lbo_shared_strings.contains("Project Titan LBO"),
+        "Expected 3-tier super-header banner on Model sheet in shared strings"
     );
 
     // 4. Institutional Styling & Formatting Showcase Model
@@ -197,6 +214,30 @@ fn test_models_emit_in_memory() {
     assert!(
         sc_sheet1_xml.contains("<v>"),
         "Showcase cached values must be emitted"
+    );
+    let sc_shared_strings = read_zip_entry(&showcase_buffer, "xl/sharedStrings.xml");
+    assert!(
+        sc_shared_strings.contains("Commercial Operations"),
+        "Expected 3-tier super-header in styling showcase shared strings"
+    );
+    assert!(
+        sc_sheet1_xml.contains("width=\"3.71") && sc_sheet1_xml.contains("min=\"1\" max=\"1\""),
+        "Expected explicit margin column gutter in styling showcase"
+    );
+    // Explicit row gutters leave unstyled rows unpopulated in sheetData
+    assert!(
+        sc_sheet1_xml.contains("r=\"3\"") && !sc_sheet1_xml.contains("r=\"4\""),
+        "Expected blank gutter row between subtitle and table headers"
+    );
+
+    let sc_styles_xml = read_zip_entry(&showcase_buffer, "xl/styles.xml");
+    assert!(
+        sc_styles_xml.contains("style=\"double\""),
+        "Expected double border in styles.xml"
+    );
+    assert!(
+        sc_styles_xml.contains("style=\"thin\""),
+        "Expected thin border in styles.xml"
     );
 }
 
