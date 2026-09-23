@@ -24,18 +24,14 @@ f8/
 │   │   │   └── compiler/       # Core 6 passes (IR -> Graph -> Eval -> Layout -> Lowering -> Emission)
 │   │   └── tests/              # Core compiler pass tests, calculation parity, & model archetypes
 │   │
-│   ├── f8-cli/               # Command-line interface binary (clap)
-│   │   ├── src/                # CLI subcommands (init, check, compile, inspect)
-│   │   ├── templates/          # Institutional model archetypes (embedded via include_str!)
-│   │   │   ├── three-statement/# Linked IS, BS, CF, and driver assumptions
-│   │   │   ├── lbo/            # Transaction assumptions, debt schedules, returns
-│   │   │   ├── trading-comps/  # Public SaaS trading comps and valuation multiples
-│   │   │   └── cap-table/      # Pre-/post-money ownership and dilution schedule
-│   │   └── tests/              # CLI integration tests, argument parsing, & exit code assertions
-│   │
-│   └── f8-mcp/               # Model Context Protocol server binary
-│       ├── src/                # Stdio JSON-RPC tools and prompts for AI agents
-│       └── tests/              # MCP protocol serialization & tool contract tests
+│   └── f8-cli/               # Command-line interface binary (clap)
+│       ├── src/                # CLI subcommands (init, check, compile, inspect)
+│       ├── templates/          # Institutional model archetypes (embedded via include_str!)
+│       │   ├── three-statement/# Linked IS, BS, CF, and driver assumptions
+│       │   ├── lbo/            # Transaction assumptions, debt schedules, returns
+│       │   ├── trading-comps/  # Public SaaS trading comps and valuation multiples
+│       │   └── cap-table/      # Pre-/post-money ownership and dilution schedule
+│       └── tests/              # CLI integration tests, argument parsing, & exit code assertions
 │
 ├── docs/                       # High-level strategic architecture & subsystem documentation
 └── specs/                      # Spec-driven development (living specs & draft specs)
@@ -84,8 +80,8 @@ Curated canonical JSON skeletons demonstrating institutional financial modeling 
 Outer adapters providing access across diverse execution environments:
 
 - **`f8-cli` (Phase 2)**: Command-line interface powered by `clap` (`init`, `check`, `compile`, `inspect`). Provides direct terminal execution for financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
-- **`f8-mcp` (Phase 3)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
-- **`f8-wasm` (Phase 4 Target)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
+- **`f8-mcp` (Phase 3 Planned)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
+- **`f8-wasm` (Phase 4 Planned)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
 
 ---
 
@@ -96,7 +92,7 @@ To prevent circular dependencies and maintain clean boundaries across workspace 
 ```mermaid
 flowchart TD
     CLI["f8-cli (CLI Binary)"] --> Core["f8-core (Compiler & Evaluator)"]
-    MCP["f8-mcp (MCP Binary)"] --> Core
+    MCP["f8-mcp (Planned MCP Binary)"] -.-> Core
     WASM["f8-wasm (WASM Bindings)"] -.-> Core
 
     subgraph CoreInternals ["f8-core Internals (wasm32 & native compatible)"]
@@ -138,8 +134,8 @@ The compiler core is designed from day one to support both native operating syst
 2. **Phase 2: Local Command-Line Interface (`f8-cli`)**:
    - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`), and `f8 inspect` (`summary`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel`.
    - Dogfood on personal and institutional financial models (3-statement, LBO, comps) to refine authoring ergonomics.
-3. **Phase 3: Model Context Protocol Server (`f8-mcp`)**:
-   - Create `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.
+3. **Phase 3: Model Context Protocol Server (`f8-mcp`, Planned)**:
+   - Introduce `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.
    - Wrap core inspection, scaffolding, and validation routines as typed MCP tools for chat-only AI agents.
 4. **Phase 4: WebAssembly & Web Application (`f8-wasm`)**:
    - Expose `f8-core` via `wasm-bindgen` for client-side evaluation.

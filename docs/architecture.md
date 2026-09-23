@@ -151,7 +151,7 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
 | **Function catalog**     | Extensible registry pattern         | Single source of truth for Excel built-in functions                   |
 | **Workbook emitter**     | `rust_xlsxwriter`                   | Fast generation of native `.xlsx` files with live formulas and styles |
 | **CLI framework**        | `clap`                              | Command-line interface for human developers                           |
-| **Agent protocol**       | Stdio JSON-RPC (`rmcp`)             | Model Context Protocol server for AI agents                           |
+| **Agent protocol**       | Stdio JSON-RPC (`rmcp`) (Planned)   | Model Context Protocol server for AI agents                           |
 
 ---
 
@@ -182,4 +182,3 @@ Detailed specifications and engine designs are organized into dedicated topics:
   - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces & Scaffolding**:
   - [Command-Line Interface (CLI)](interfaces/cli.md): Terminal tool for human modeling, verification, and agent scripting.
-  - [Model Context Protocol (MCP)](interfaces/mcp.md): Agent-first JSON-RPC server with headless verification and cycle diagnostics.

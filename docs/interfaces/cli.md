@@ -368,4 +368,5 @@ crates/f8-cli/
         ├── table.rs            # Terminal & Markdown table rendering
         └── tree.rs             # Dependency tree and blast-radius rendering
 ```
-See [Model Context Protocol (MCP)](mcp.md) for JSON-RPC agent tool equivalents, and [Architecture Overview](../architecture.md) for compiler passes.
+
+See [Architecture Overview](../architecture.md) for compiler passes.

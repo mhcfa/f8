@@ -3,7 +3,6 @@ resolver = "3"
 members = [
     "crates/f8-core",
     "crates/f8-cli",
-    "crates/f8-mcp",
 ]
 
 [workspace.package]
