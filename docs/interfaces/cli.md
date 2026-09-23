@@ -310,7 +310,7 @@ Transitive Blast Radius (6 downstream calculations affected):
 
 ---
 
-## 4. Exit Codes & Error Diagnostics
+## 4. Exit Codes & Error Output
 
 The CLI enforces standard exit codes for deterministic scripting by humans and autonomous agents:
 
@@ -318,47 +318,24 @@ The CLI enforces standard exit codes for deterministic scripting by humans and a
 |---|---|---|
 | `0` | Success | Command completed cleanly with zero errors. |
 | `1` | Operational / CLI / I/O Error | CLI argument syntax error, `f8.json` not found on disk, unreadable table JSON, filesystem permission error. |
-| `2` | Compiler Error | One or more diagnostics accumulated in `DiagnosticBag` across Passes 1–6a (specification schema errors, duplicate IDs, formula parse failures, missing required inputs, unresolved coordinate references, circular calculation references, mathematical evaluation errors, spatial layout overflows, lowering errors). |
+| `2` | Compiler Error | Fail-fast compiler error across Passes 1–6a (specification schema errors, duplicate IDs, formula parse failures, unassigned driver inputs, unresolved coordinate references, circular calculation references, spatial layout overflows, lowering errors). |
 
-All compiler-level diagnostics—including circular references (`E0307`), missing inputs (`E0206`), and calculation faults (`E0401`–`E0403`)—are captured uniformly in `DiagnosticBag` and return exit code `2`. This eliminates ambiguous exit code precedence rules when multiple error categories coexist across passes. On compilation failure, the CLI emits the deterministic, structured JSON diagnostic schema directly to stderr.
+On compilation failure, the CLI emits the error message with exact cell coordinates directly to `stderr`.
 
-### Structured Diagnostic Schema (`--json` or Compiler Error Output)
-All compiler diagnostics emitted on failure follow the unified schema defined in [Compiler Diagnostics](../compiler/diagnostics.md):
+### Terminal Error Output
+```text
+Error: Formula in cell 'IncomeStatement["tax", "2024E"]' references unknown row 'ebit_adjusted' in table 'IncomeStatement'
+```
+
+### Structured Output (`--json`)
+When invoked with `--json`, failure information is formatted as a simple JSON object on `stderr`:
 ```json
 {
   "status": "error",
   "exit_code": 2,
-  "summary": {
-    "error_count": 2
-  },
-  "diagnostics": [
-    {
-      "code": "E0302",
-      "message": "Formula in cell 'IncomeStatement[\"tax\", \"2024E\"]' references unknown row 'ebit_adjusted' in table 'IncomeStatement'",
-      "origin": {
-        "sheet": "Financials",
-        "table": "IncomeStatement",
-        "row": "tax",
-        "col": "2024E"
-      },
-      "expression": "IncomeStatement[\"ebit_adjusted\", @col] * Assumptions[\"tax_rate\", \"val\"]"
-    },
-    {
-      "code": "E0206",
-      "message": "Model contains 1 unassigned driver input required for calculation",
-      "missing_inputs": [
-        {
-          "table": "Assumptions",
-          "row": "tax_rate",
-          "col": "val"
-        }
-      ]
-    }
-  ]
+  "error": "Formula in cell 'IncomeStatement[\"tax\", \"2024E\"]' references unknown row 'ebit_adjusted' in table 'IncomeStatement'"
 }
 ```
-
-See [Compiler Diagnostics](../compiler/diagnostics.md) for complete error code taxonomy and JSON diagnostic schemas.
 
 ---
 

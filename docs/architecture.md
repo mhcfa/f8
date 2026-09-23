@@ -51,12 +51,12 @@ flowchart TD
     L2 --> M[".xlsx Workbook\n(Live Formulas + Precalculated Cache)"]
 ```
 
-The pipeline operates across six primary passes with phase-gated diagnostic accumulation (see [Compiler Diagnostics](compiler/diagnostics.md)):
+The pipeline operates across six primary passes:
 
-1. **Ingest & Parse**: Deserializes specifications and validates sheet/table invariants. Accumulates duplicate sheet/table/axis names and invalid format options into `DiagnosticBag`, halting at the Pass 1 gate if fatal or structural errors exist.
-2. **Grid Expansion & Formula Parsing**: Expands table rows across defined columns into discrete cell intermediate representations (`CellId`) and parses formula expressions into AST nodes. Isolates parse errors to specific cells (`CellPayload::ParseError`), detects specificity lattice conflicts, and aggregates all unassigned driver coordinates into a single `MissingRequiredInputs` diagnostic checklist. Halts at the Pass 2 gate if errors exist.
-3. **Dependency Graph & SCC**: Resolves semantic table/row/col references across all valid ASTs (accumulating unresolved coordinates), constructs a directed dependency graph, and executes Tarjan's Strongly Connected Components (SCC) algorithm to detect all circular dependency loops simultaneously. Halts at the Pass 3 gate if errors exist.
-4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity. Mathematical calculation errors (`#DIV/0!`, `#VALUE!`, `#NUM!`) populate cells with `CellValue::Error` and accumulate directly as diagnostic errors (`E0401`–`E0403`) in `DiagnosticBag`, halting at the Pass 4 gate before spatial layout planning.
+1. **Ingest & Parse**: Deserializes specifications and validates sheet/table invariants. Fails fast on duplicate sheet/table/axis names, invalid format options, or malformed themes.
+2. **Grid Expansion & Formula Parsing**: Expands table rows across defined columns into discrete cell intermediate representations (`CellId`) and parses formula expressions into AST nodes. Validates specificity lattice conflicts and verifies required cell inputs.
+3. **Dependency Graph & SCC**: Resolves semantic table/row/col references across all formula ASTs, constructs a directed dependency graph, and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
+4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity (`CellValue::Error` on Excel formula errors).
 5. **Spatial Layout Planning**: Arranges tables onto sheets with margins, inter-table gutters, section headers, and freeze panes. Computes physical grid coordinates, arbitrates sheet-wide column widths and row heights using theme metrics, and generates a deterministic `LayoutMap` with semantic style roles.
 6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`), translates theme styles, and writes standard `.xlsx` files via `rust_xlsxwriter`. Formulas are emitted alongside precalculated in-memory results in the cell cache, enabling instant viewing in third-party tools (Apple Numbers, Quick Look, Google Drive, pandas) without waiting for Excel recalculation, with optional values-only freezing.
 
@@ -119,7 +119,7 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
   - Operates purely in-memory with zero filesystem access; emits byte buffers directly via `Compiler::emit_workbook`.
   - Treats tables strictly as orthogonal 2D matrices ($R \times C$) of addressable cells `Table[row, col]`.
   - Enforces explicit, unambiguous JSON schemas without implicit broadcasting or hidden layout side effects.
-  - Accumulates missing driver inputs into a single diagnostic checklist (`MissingRequiredInputs`) during IR expansion.
+  - Validates driver inputs during IR expansion, pinpointing any unassigned coordinates.
   - Exposes a unified inspection facade (`CompiledModel`) containing evaluated values, DAG dependencies, layout mappings, and lowered formulas.
   - Remains completely agnostic to table shapes (3-statement models, Cap Tables, Comps, Sensitivity matrices, and Vertical waterfalls share the exact same primitive data structures).
 - **Adapter / Tooling Layer (CLI & MCP Server)**:
@@ -177,7 +177,6 @@ Detailed specifications and engine designs are organized into dedicated topics:
   - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
   - [Spatial Layout Planning](compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
   - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
-  - [Compiler Diagnostics & Accumulation](compiler/diagnostics.md): Phase-level diagnostic accumulation, error taxonomy, and dual human/agent presentation.
 - **Function Subsystem**:
   - [Function Registry Architecture](./functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
   - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
