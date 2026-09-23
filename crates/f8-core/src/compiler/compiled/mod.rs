@@ -322,6 +322,9 @@ impl CompiledModel {
                         formula_expr,
                         excel_formula,
                         physical_a1: physical_coord.a1.clone(),
+                        format: cell_node.format,
+                        decimals: cell_node.decimals,
+                        currency: cell_node.currency,
                     },
                 );
             }

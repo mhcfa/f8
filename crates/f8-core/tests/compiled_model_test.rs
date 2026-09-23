@@ -2,6 +2,7 @@
 
 use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::ir::id::CellId;
+use f8_core::model::format::{CurrencyCode, FormatPreset};
 use f8_core::model::id::{ColId, RowId, TableId};
 use f8_core::model::theme::Theme;
 use f8_core::value::CellValue;
@@ -176,6 +177,9 @@ fn test_scenario_6_table_matrix_inspection() {
     assert!((cell_info.value.as_number().unwrap() - 115.0).abs() < 1e-6);
     assert!(cell_info.is_formula);
     assert!(cell_info.excel_formula.is_some());
+    assert_eq!(cell_info.format, Some(FormatPreset::Currency));
+    assert_eq!(cell_info.decimals, Some(1));
+    assert_eq!(cell_info.currency, Some(CurrencyCode::Usd));
 }
 
 #[test]

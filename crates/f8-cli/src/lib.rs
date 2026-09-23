@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod error;
 pub mod project;
+pub mod render;
 
 use clap::Parser;
 
@@ -52,5 +53,8 @@ fn dispatch(cli: &Cli) -> Result<(), CliError> {
             commands::compile::execute(args, cli.project.as_deref(), cli.json)
         }
         Command::Init(args) => commands::init::execute(args, cli.json),
+        Command::Inspect(args) => {
+            commands::inspect::execute(args, cli.project.as_deref(), cli.json)
+        }
     }
 }

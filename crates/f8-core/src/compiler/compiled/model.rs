@@ -110,7 +110,50 @@ pub struct TableInspection {
     /// Declared rows with line item descriptors and indentations.
     pub rows: Vec<RowInspection>,
     /// 2D cell records indexed by coordinate.
+    #[serde(
+        serialize_with = "serialize_cells_map",
+        deserialize_with = "deserialize_cells_map"
+    )]
     pub cells: IndexMap<CellId, TableCellInfo>,
+}
+
+fn serialize_cells_map<S>(
+    cells: &IndexMap<CellId, TableCellInfo>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(cells.len()))?;
+    for (k, v) in cells {
+        map.serialize_entry(&k.to_string(), v)?;
+    }
+    map.end()
+}
+
+fn deserialize_cells_map<'de, D>(
+    deserializer: D,
+) -> Result<IndexMap<CellId, TableCellInfo>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let string_map: IndexMap<String, TableCellInfo> = IndexMap::deserialize(deserializer)?;
+    let mut cells = IndexMap::with_capacity(string_map.len());
+    for (key, val) in string_map {
+        if let Some((table, rest)) = key.split_once("[\"")
+            && let Some((row, rest2)) = rest.split_once("\", \"")
+            && let Some((col, _)) = rest2.split_once("\"]")
+        {
+            let cell_id = CellId::new(table, row, col);
+            cells.insert(cell_id, val);
+            continue;
+        }
+        return Err(serde::de::Error::custom(format!(
+            "Invalid CellId key: {key}"
+        )));
+    }
+    Ok(cells)
 }
 
 /// Column inspection metadata.
@@ -152,6 +195,12 @@ pub struct TableCellInfo {
     pub excel_formula: Option<String>,
     /// Physical cell address on sheet (e.g. `"C14"`).
     pub physical_a1: String,
+    /// Formatting preset if assigned.
+    pub format: Option<FormatPreset>,
+    /// Display precision override if specified.
+    pub decimals: Option<u32>,
+    /// Currency code if assigned.
+    pub currency: Option<CurrencyCode>,
 }
 
 /// Hierarchical dependency or blast-radius calculation tree.

@@ -1,6 +1,8 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
+use crate::render::table::{TableFormat, ViewMode};
+
 /// Command-line interface definition for f8.
 #[derive(Debug, Parser)]
 #[command(
@@ -32,6 +34,9 @@ pub enum Command {
 
     /// Initialize a new financial model project or unpack an archetype template
     Init(InitArgs),
+
+    /// Inspect compiled model structure, tables, cells, or dependency trees
+    Inspect(InspectArgs),
 }
 
 /// Arguments for `f8 check`.
@@ -71,4 +76,89 @@ pub struct InitArgs {
     /// Visual theme preset for the project
     #[arg(long = "theme", default_value = "corporate_navy")]
     pub theme: String,
+}
+
+/// Arguments for `f8 inspect`.
+#[derive(Debug, Args, Default)]
+pub struct InspectArgs {
+    #[command(subcommand)]
+    pub command: Option<InspectSubcommand>,
+}
+
+/// Available inspection subcommands.
+#[derive(Debug, Subcommand)]
+pub enum InspectSubcommand {
+    /// Inspect a 2D table grid in terminal table, markdown, or JSON format
+    Table(InspectTableArgs),
+
+    /// Inspect an individual cell coordinate with formulas, values, and dependencies
+    Cell(InspectCellArgs),
+
+    /// Inspect upstream calculation precedents tree
+    Precedents(InspectPrecedentsArgs),
+
+    /// Inspect downstream blast-radius dependents tree
+    Dependents(InspectDependentsArgs),
+}
+
+/// Arguments for `f8 inspect table`.
+#[derive(Debug, Args)]
+pub struct InspectTableArgs {
+    /// Programmatic identifier of the table to inspect
+    pub table: String,
+
+    /// Cell display mode (values, formulas, both)
+    #[arg(long, default_value = "values")]
+    pub view: ViewMode,
+
+    /// Output presentation format (table, markdown, json)
+    #[arg(long, default_value = "table")]
+    pub format: TableFormat,
+}
+
+/// Arguments for `f8 inspect cell`.
+#[derive(Debug, Args)]
+pub struct InspectCellArgs {
+    /// Table programmatic identifier
+    pub table: String,
+
+    /// Row identifier
+    pub row: String,
+
+    /// Column identifier
+    pub col: String,
+}
+
+/// Arguments for `f8 inspect precedents`.
+#[derive(Debug, Args)]
+pub struct InspectPrecedentsArgs {
+    /// Table programmatic identifier
+    pub table: String,
+
+    /// Row identifier
+    pub row: String,
+
+    /// Column identifier
+    pub col: String,
+
+    /// Recursively traverse all transitive upstream calculation dependencies
+    #[arg(long)]
+    pub recursive: bool,
+}
+
+/// Arguments for `f8 inspect dependents`.
+#[derive(Debug, Args)]
+pub struct InspectDependentsArgs {
+    /// Table programmatic identifier
+    pub table: String,
+
+    /// Row identifier
+    pub row: String,
+
+    /// Column identifier
+    pub col: String,
+
+    /// Recursively traverse all transitive downstream affected calculations
+    #[arg(long)]
+    pub recursive: bool,
 }

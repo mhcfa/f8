@@ -1,7 +1,7 @@
 ---
 title: CLI Model Inspection and Terminal Formatting (f8 inspect)
 date: 2026-09-23
-status: draft
+status: reconciled
 target-living-spec:
   - specs/living-specs/interfaces/cli.md
   - specs/living-specs/compiler/compiled-model.md
@@ -137,39 +137,39 @@ f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Model summary inspection**
+- [x] **Scenario 1: Model summary inspection**
   - **Given** a compiled model
   - **When** running `f8 inspect`
   - **Then** human summary listing sheets, tables, cell counts, drivers, and formulas is output to `stdout`.
   - **When** running `f8 inspect --json`
   - **Then** `ModelSummary` JSON object is printed.
 
-- [ ] **Scenario 2: Table matrix inspection with accounting formatting**
+- [x] **Scenario 2: Table matrix inspection with accounting formatting**
   - **Given** a compiled table with currency numbers
   - **When** running `f8 inspect table IncomeStatement --view values`
   - **Then** cells are formatted with accounting symbols (e.g. `$ 100.0`, `(50.0)`, `15.0%`) in a clean Unicode table.
 
-- [ ] **Scenario 3: Table matrix formula view and markdown output**
+- [x] **Scenario 3: Table matrix formula view and markdown output**
   - **Given** a compiled table
   - **When** running `f8 inspect table IncomeStatement --view formulas --format markdown`
   - **Then** a GitHub Flavored Markdown table is output with formula expressions in calculation cells.
 
-- [ ] **Scenario 4: Cell inspection card**
+- [x] **Scenario 4: Cell inspection card**
   - **Given** a compiled model
   - **When** running `f8 inspect cell IncomeStatement total_opex 2028E`
   - **Then** coordinate, physical sheet address, evaluated value, formula AST, lowered Excel formula, precedents, and dependents are printed.
 
-- [ ] **Scenario 5: Precedent calculation tree**
+- [x] **Scenario 5: Precedent calculation tree**
   - **Given** a multi-tier calculation cell
   - **When** running `f8 inspect precedents IncomeStatement net_income 2024E --recursive`
   - **Then** hierarchical box-drawing tree of upstream calculation dependencies is printed.
 
-- [ ] **Scenario 6: Blast-radius calculation tree**
+- [x] **Scenario 6: Blast-radius calculation tree**
   - **Given** an operating driver cell
   - **When** running `f8 inspect dependents Assumptions rev_growth 2024E --recursive`
   - **Then** hierarchical box-drawing tree of downstream affected cells is printed.
 
-- [ ] **Scenario 7: Zero production panics**
+- [x] **Scenario 7: Zero production panics**
   - **Given** `crates/f8-cli`
   - **When** running `cargo clippy -p f8-cli --all-targets -- -D warnings`
   - **Then** zero warnings and zero unhandled panics (`unwrap`/`expect`) are found.
@@ -179,22 +179,22 @@ f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--
 ## Tasks
 
 ### Phase 1: Core Facade Enrichment
-- [ ] Add `format`, `decimals`, and `currency` fields to `TableCellInfo` in `crates/f8-core/src/compiler/compiled/model.rs`.
-- [ ] Populate fields in `inspect_table` in `crates/f8-core/src/compiler/compiled/mod.rs`.
-- [ ] Update unit tests in `crates/f8-core/tests/compiled_model_test.rs`.
+- [x] Add `format`, `decimals`, and `currency` fields to `TableCellInfo` in `crates/f8-core/src/compiler/compiled/model.rs`.
+- [x] Populate fields in `inspect_table` in `crates/f8-core/src/compiler/compiled/mod.rs`.
+- [x] Update unit tests in `crates/f8-core/tests/compiled_model_test.rs`.
 
 ### Phase 2: Terminal Formatters & Renderers
-- [ ] Implement `render/summary.rs` for model overview card.
-- [ ] Implement `render/table.rs` with accounting typography formatting, column width calculation, Unicode box-drawing, and markdown generator.
-- [ ] Implement `render/cell.rs` for cell audit card.
-- [ ] Implement `render/tree.rs` for recursive DAG branch rendering (`├──`, `└──`).
+- [x] Implement `render/summary.rs` for model overview card.
+- [x] Implement `render/table.rs` with accounting typography formatting, column width calculation, Unicode box-drawing, and markdown generator.
+- [x] Implement `render/cell.rs` for cell audit card.
+- [x] Implement `render/tree.rs` for recursive DAG branch rendering (`├──`, `└──`).
 
 ### Phase 3: Inspection Subcommands & Dispatcher
-- [ ] Implement `commands/inspect.rs` connecting `CompiledModel` methods to renderers.
-- [ ] Wire `InspectArgs` and nested subcommands into Clap in `cli.rs`.
-- [ ] Implement `--json` serialization for all inspection subcommands.
+- [x] Implement `commands/inspect.rs` connecting `CompiledModel` methods to renderers.
+- [x] Wire `InspectArgs` and nested subcommands into Clap in `cli.rs`.
+- [x] Implement `--json` serialization for all inspection subcommands.
 
 ### Phase 4: Verification & Living Spec Reconciliation
-- [ ] Add integration tests in `crates/f8-cli/tests/inspect_test.rs`.
-- [ ] Reconcile `specs/living-specs/compiler/compiled-model.md` and `specs/living-specs/interfaces/cli.md`.
-- [ ] Verify `cargo check`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo fmt --check`.
+- [x] Add integration tests in `crates/f8-cli/tests/inspect_test.rs`.
+- [x] Reconcile `specs/living-specs/compiler/compiled-model.md` and `specs/living-specs/interfaces/cli.md`.
+- [x] Verify `cargo check`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo fmt --check`.

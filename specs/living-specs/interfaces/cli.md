@@ -19,6 +19,8 @@ The `f8` command-line executable (`crates/f8-cli`) provides a lightweight, headl
   - `f8_cli::commands::check`: Headless model verification executing Passes 1–6a via `f8_core::Compiler::compile`.
   - `f8_cli::commands::compile`: End-to-end OpenXML binary workbook compilation via `CompiledModel::emit_workbook`.
   - `f8_cli::commands::init`: Project initialization from blank starter or embedded archetype templates.
+  - `f8_cli::commands::inspect`: Interactive auditing dispatcher for model summaries, tables, cells, and DAG trees.
+  - `f8_cli::render`: Pure formatters for overview cards, accounting tables, markdown grids, cell cards, and DAG trees.
   - `f8_cli::error`: Structured `CliError` classifying I/O/syntax failures vs compiler diagnostics and resolving exit codes.
 - **Data flow & interfaces**:
   - Input: Discovers `f8.json` on disk by walking parent directories up to filesystem root or via explicit `-p, --project <path>`.
@@ -113,3 +115,32 @@ Scaffolds new projects or unpacks pre-wired institutional templates.
 - **Collision prevention**:
   - **When** initializing into a directory that already contains `f8.json`
   - **Then** aborts with exit code `1` without overwriting existing files.
+
+### 6. Interactive Auditing & Model Inspection (`f8 inspect`)
+
+Provides terminal auditing tools for model structures, 2D statement tables, cell audit cards, and dependency DAG trees.
+
+#### Scenarios
+
+- **Model overview summary**:
+  - **When** running `f8 inspect`
+  - **Then** renders summary listing sheets, tables, cell counts, driver inputs, formulas, and evaluation duration to `stdout`.
+- **Table matrix inspection with accounting formatting**:
+  - **When** running `f8 inspect table <table_id> --view values`
+  - **Then** renders aligned Unicode table with accounting typography (`$ 100.0`, `(50.0)`, `15.0%`).
+- **Formula auditing parity & markdown export**:
+  - **When** running `f8 inspect table <table_id> --view formulas --format markdown`
+  - **Then** outputs a GitHub Flavored Markdown table displaying live formula expressions.
+- **Dual stacked auditing view**:
+  - **When** running `f8 inspect table <table_id> --view both`
+  - **Then** displays stacked cells showing evaluated values and formula expressions simultaneously.
+- **Cell audit card**:
+  - **When** running `f8 inspect cell <table_id> <row_id> <col_id>`
+  - **Then** displays coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, precedents, and dependents.
+- **Precedent & blast-radius DAG trees**:
+  - **When** running `f8 inspect precedents <table_id> <row_id> <col_id>` or `f8 inspect dependents <table_id> <row_id> <col_id>`
+  - **Then** renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) when `--recursive` is supplied.
+- **Structured machine-readable JSON**:
+  - **When** passing `--json` to any inspect subcommand
+  - **Then** prints structured JSON to `stdout` on success, or structured error JSON to `stderr` with exit code `2` if a coordinate/table entity does not exist.
+

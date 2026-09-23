@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-use f8_core::compiler::CompilerError;
+use f8_core::compiler::{CompilerError, InspectionError};
 
 /// Structured CLI error type mapping cleanly to exit codes.
 #[derive(Debug, Error)]
@@ -36,6 +36,9 @@ pub enum CliError {
 
     #[error(transparent)]
     Compiler(#[from] CompilerError),
+
+    #[error(transparent)]
+    Inspection(#[from] InspectionError),
 }
 
 impl CliError {
@@ -44,7 +47,7 @@ impl CliError {
     /// - `2`: Compiler diagnostic (Passes 1–6a)
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::Compiler(_) => 2,
+            Self::Compiler(_) | Self::Inspection(_) => 2,
             _ => 1,
         }
     }
