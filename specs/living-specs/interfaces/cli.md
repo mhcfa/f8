@@ -130,10 +130,10 @@ Provides terminal auditing tools for model structures, 2D statement tables, cell
   - **Then** renders summary listing sheets, human-readable table titles alongside IDs (`Title [id]`), cell counts, driver inputs, formulas, and evaluation duration to `stdout`.
 - **Table matrix inspection with dual programmatic IDs and multi-tier headers**:
   - **When** running `f8 inspect table <table_id>`
-  - **Then** renders aligned Unicode or Markdown table with accounting typography, displaying multi-tier column headers stacked across hierarchical rows (bottom-aligned with inline IDs `Header [id]` on the lowest tier), row descriptors (`Title [id]`), and calendar years formatted without thousands commas (`2029`).
-- **Formula auditing parity & markdown export**:
-  - **When** running `f8 inspect table <table_id> --view formulas --format markdown`
-  - **Then** outputs a GitHub Flavored Markdown table displaying live formula expressions with multi-tier column headers and dual row descriptors.
+  - **Then** renders a GitHub Flavored Markdown table by default (or an aligned Unicode box-drawing table with `--format table`) with accounting typography, displaying multi-tier column headers stacked across hierarchical rows (bottom-aligned with inline IDs `Header [id]` on the lowest tier), row descriptors (`Title [id]`), and calendar years formatted without thousands commas (`2029`).
+- **Formula auditing parity & alternative formats**:
+  - **When** running `f8 inspect table <table_id> --view formulas`
+  - **Then** outputs a table displaying live formula expressions with multi-tier column headers and dual row descriptors.
 - **Dual stacked auditing view**:
   - **When** running `f8 inspect table <table_id> --view both`
   - **Then** displays stacked cells showing evaluated values and formula expressions simultaneously.

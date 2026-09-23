@@ -111,8 +111,8 @@ pub struct InspectTableArgs {
     #[arg(long, default_value = "values")]
     pub view: ViewMode,
 
-    /// Output presentation format (table, markdown, json)
-    #[arg(long, default_value = "table")]
+    /// Output presentation format (markdown, table, json)
+    #[arg(long, default_value = "markdown")]
     pub format: TableFormat,
 }
 

@@ -22,11 +22,11 @@ pub enum ViewMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TableFormat {
-    /// Aligned Unicode terminal box-drawing table.
-    #[default]
-    Table,
     /// GitHub Flavored Markdown table.
+    #[default]
     Markdown,
+    /// Aligned Unicode terminal box-drawing table.
+    Table,
     /// Machine-readable JSON representation.
     Json,
 }

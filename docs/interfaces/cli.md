@@ -53,7 +53,7 @@ f8 init [path] [--template <name>] [--theme <name>]
 f8 check [-p <path>] [--json]
 f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache]
 f8 inspect [-p <path>] [--json]
-f8 inspect table <table_id> [--view <values|formulas|both>] [--format <table|markdown|json>] [--json] [-p <path>]
+f8 inspect table <table_id> [--view <values|formulas|both>] [--format <markdown|table|json>] [--json] [-p <path>]
 f8 inspect cell <table_id> <row_id> <col_id> [-p <path>] [--json]
 f8 inspect precedents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
 f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
@@ -195,11 +195,14 @@ Status:    DAG acyclic (0 cycles), evaluated in 1.8ms
 Renders a 2D table cell matrix directly to stdout for immediate terminal auditing.
 
 ```bash
-# View evaluated values formatted with accounting typography
+# View evaluated values formatted in GitHub Flavored Markdown (default)
 f8 inspect table IncomeStatement
 
+# View aligned Unicode terminal table with box-drawing borders
+f8 inspect table IncomeStatement --format table
+
 # Formula auditing mode (Excel Ctrl + ~ parity)
-f8 inspect table IncomeStatement --view formulas --format markdown
+f8 inspect table IncomeStatement --view formulas
 
 # Dual auditing view (value + formula)
 f8 inspect table IncomeStatement --view both
@@ -210,9 +213,9 @@ f8 inspect table IncomeStatement --view both
   - `values` (default): Evaluated and formatted numbers with accounting typography according to each cell's format preset, decimal precision, and currency symbol.
   - `formulas`: Formula expressions for calculation cells; raw inputs for literal cells.
   - `both`: Stacked view displaying both evaluated value and formula expression per cell.
-- `--format <table|markdown|json>`:
-  - `table` (default): Aligned Unicode terminal table with clean box-drawing borders.
-  - `markdown`: GitHub Flavored Markdown table.
+- `--format <markdown|table|json>`:
+  - `markdown` (default): GitHub Flavored Markdown table.
+  - `table`: Aligned Unicode terminal table with clean box-drawing borders.
   - `json`: 2D array of cell objects.
 - `--json`: Convenience shortcut equivalent to `--format json`.
 

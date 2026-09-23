@@ -144,6 +144,7 @@ fn test_scenario_2_table_matrix_values_view_accounting_format() {
     let dir = tempdir().unwrap();
     setup_financial_model(dir.path());
 
+    // 1. Default format is Markdown
     Command::cargo_bin("f8")
         .unwrap()
         .args([
@@ -152,6 +153,31 @@ fn test_scenario_2_table_matrix_values_view_accounting_format() {
             "IncomeStatement",
             "--view",
             "values",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "| Line Item [line_item] | 2023A [y2023a] | 2024E [y2024e] |",
+        ))
+        .stdout(predicate::str::contains("| Cost of Goods Sold [cogs] |"))
+        .stdout(predicate::str::contains("$ 100.0"))
+        .stdout(predicate::str::contains("$ 115.0"))
+        .stdout(predicate::str::contains("(50.0)"))
+        .stdout(predicate::str::contains("| **Operating Expenses** |"));
+
+    // 2. Explicit --format table outputs Unicode box-drawing table
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "table",
+            "IncomeStatement",
+            "--view",
+            "values",
+            "--format",
+            "table",
             "-p",
             dir.path().to_str().unwrap(),
         ])
