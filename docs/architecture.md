@@ -51,18 +51,29 @@ flowchart TD
     L2 --> M[".xlsx Workbook\n(Live Formulas + Precalculated Cache)"]
 ```
 
-The pipeline operates across six primary passes:
+The pipeline operates across six primary passes with phase-gated diagnostic accumulation (see [Compiler Diagnostics](compiler/diagnostics.md)):
 
-1. **Ingest & Parse**: Deserializes specifications, verifies function signatures against the function registry, and parses formula expressions into AST nodes.
-2. **Grid Expansion**: Expands table rows across defined columns into discrete cell-level intermediate representation (`CellId`). Supports multi-cell diagnostic accumulation (`MissingRequiredInputs`) to emit full missing driver checklists in a single pass.
-3. **Dependency Graph & SCC**: Constructs a directed dependency graph and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
-4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity for agent inspection, compile-time validation (`#DIV/0!`, `#VALUE!`), and workbook caching.
+1. **Ingest & Parse**: Deserializes specifications and validates sheet/table invariants. Accumulates duplicate sheet/table/axis names and invalid format options into `DiagnosticBag`, halting at the Pass 1 gate if fatal or structural errors exist.
+2. **Grid Expansion & Formula Parsing**: Expands table rows across defined columns into discrete cell intermediate representations (`CellId`) and parses formula expressions into AST nodes. Isolates parse errors to specific cells (`CellPayload::ParseError`), detects specificity lattice conflicts, and aggregates all unassigned driver coordinates into a single `MissingRequiredInputs` diagnostic checklist. Halts at the Pass 2 gate if errors exist.
+3. **Dependency Graph & SCC**: Resolves semantic table/row/col references across all valid ASTs (accumulating unresolved coordinates with Levenshtein remediation hints), constructs a directed dependency graph, and executes Tarjan's Strongly Connected Components (SCC) algorithm to detect all circular dependency loops simultaneously. Halts at the Pass 3 gate if errors exist.
+4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity. Mathematical calculation errors (`#DIV/0!`, `#VALUE!`, `#NUM!`) populate cells with `CellValue::Error` and accumulate as diagnostic errors (`E0401`–`E0403`) in `DiagnosticBag`, halting at the Pass 4 gate before spatial layout planning.
 5. **Spatial Layout Planning**: Arranges tables onto sheets with margins, inter-table gutters, section headers, and freeze panes. Computes physical grid coordinates, arbitrates sheet-wide column widths and row heights using theme metrics, and generates a deterministic `LayoutMap` with semantic style roles.
 6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`), translates theme styles, and writes standard `.xlsx` files via `rust_xlsxwriter`. Formulas are emitted alongside precalculated in-memory results in the cell cache, enabling instant viewing in third-party tools (Apple Numbers, Quick Look, Google Drive, pandas) without waiting for Excel recalculation, with optional values-only freezing.
 
 ### Unified Inspection Facade (`CompiledModel`)
 
-To power fast headless introspection across outer interfaces (`f8-cli`, `f8-mcp`) without re-running compiler passes, `f8-core` exposes a unified `CompiledModel` artifact. It retains the evaluated values (`EvaluatedModel`), dependency graph with precedent/dependent queries (`DependencyGraph`), expanded cell metadata (`CellGrid`), and physical coordinates (`LayoutMap`).
+To power fast headless introspection across outer interfaces (`f8-cli`, `f8-mcp`) without re-running compiler passes, `f8-core` exposes a unified `CompiledModel` artifact. It consolidates all compilation pass artifacts into a single in-memory structure:
+- **Project & Theme**: The parsed `ProjectManifest`, `Vec<TableSpec>`, and resolved `Theme`.
+- **Symbols & Cells**: The expanded `SymbolTable` and `CellGrid` (retaining full cell metadata, formats, and ASTs).
+- **Graph & Values**: The validated `DependencyGraph` (providing topological order, incoming dependencies, and outgoing blast-radius dependents) and calculated `EvaluatedModel`.
+- **Layout & Formulas**: The physical 2D `LayoutMap` (sheet coordinates and column width metrics) and `LoweredFormulaMap` (Excel A1 formulas).
+
+`CompiledModel` exposes pure in-memory inspection and emission methods:
+- `emit_workbook(options)`: Directly generates standard `.xlsx` byte buffers (`Vec<u8>`).
+- `inspect_cell(table, row, col)` / `inspect_cell_by_address(sheet, a1)`: Returns cell values, formats, formula ASTs, lowered Excel formulas, physical addresses, and direct/transitive edges.
+- `find_cells(query)`: Searches across physical coordinates, semantic IDs, and presentation line-item labels.
+- `table_matrix(table)`: Emits 2D grids of evaluated values, formula expressions, or stacked auditing pairs.
+- `precedents_of(cell, recursive)` / `dependents_of(cell, recursive)`: Queries upstream dependencies and downstream blast radius.
 
 ---
 
@@ -106,17 +117,17 @@ Modifying presentation labels, formatting rules, or table placement never invali
 To preserve both mathematical purity in the compiler and high authoring speed for AI agents, f8 strictly partitions responsibilities:
 
 - **Core Compiler (Intermediate Representation)**:
-  - Operates purely in-memory with zero filesystem access; emits byte buffers directly via `save_to_buffer()`.
+  - Operates purely in-memory with zero filesystem access; emits byte buffers directly via `Compiler::emit_workbook`.
   - Treats tables strictly as orthogonal 2D matrices ($R \times C$) of addressable cells `Table[row, col]`.
   - Enforces explicit, unambiguous JSON schemas without implicit broadcasting or hidden layout side effects.
   - Accumulates missing driver inputs into a single diagnostic checklist (`MissingRequiredInputs`) during IR expansion.
-  - Exposes a unified inspection facade (`CompiledModel`) containing evaluated values, DAG dependencies, and layout mappings.
+  - Exposes a unified inspection facade (`CompiledModel`) containing evaluated values, DAG dependencies, layout mappings, and lowered formulas.
   - Remains completely agnostic to table shapes (3-statement models, Cap Tables, Comps, Sensitivity matrices, and Vertical waterfalls share the exact same primitive data structures).
 - **Adapter / Tooling Layer (CLI & MCP Server)**:
   - Acts as the ergonomic bridge between humans, AI agents, and the core compiler.
   - Handles all operating system and filesystem I/O (manifest/theme loading from disk, `.xlsx` file persistence).
-  - Exposes high-level tools and subcommands (e.g. template scaffolding, table creation, cell/table inspection, blast-radius queries).
-  - Absorbs repetitive scaffolding (such as statement line-item structures and timeline columns) without complicating compiler invariants.
+  - Exposes high-level commands and tools (e.g. project initialization, fast verification, cell/table inspection, blast-radius queries).
+  - Absorbs repetitive templates (such as statement line-item structures and timeline columns) without complicating compiler invariants.
 
 ---
 
@@ -167,9 +178,10 @@ Detailed specifications and engine designs are organized into dedicated topics:
   - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
   - [Spatial Layout Planning](compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
   - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
+  - [Compiler Diagnostics & Accumulation](compiler/diagnostics.md): Phase-level diagnostic accumulation, error taxonomy, and dual human/agent presentation.
 - **Function Subsystem**:
   - [Function Registry Architecture](./functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
   - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces & Scaffolding**:
-  - [Command-Line Interface (CLI)](interfaces/cli.md): Terminal tool for human modeling, project scaffolding, and agent scripting.
+  - [Command-Line Interface (CLI)](interfaces/cli.md): Terminal tool for human modeling, verification, and agent scripting.
   - [Model Context Protocol (MCP)](interfaces/mcp.md): Agent-first JSON-RPC server with headless verification and cycle diagnostics.

@@ -12,122 +12,311 @@ The command-line interface (`f8-cli`) provides a direct terminal entrypoint for 
 - **Zero protocol overhead**: Provides instant, native execution without requiring MCP clients or JSON-RPC process management.
 - **Dual human & agent access**: Shell-enabled AI agents execute CLI commands directly in terminal tools, enabling agentic modeling workflows from day one.
 - **Pure compiler delegation**: The CLI delegates directly to:
-  - **Embedded Archetypes**: Bundled institutional model templates compiled directly into the binary (`include_str!`) and scaffolded onto disk as canonical JSON.
-  - **`f8-core`**: For specification validation, DAG acyclicity proofs, topological evaluation, and in-memory `.xlsx` buffer emission.
+  - **Embedded Archetypes**: Bundled institutional model templates compiled directly into the binary (`include_str!`) and unpacked to disk by `f8 init --template`.
+  - **`f8-core`**: For specification validation, DAG acyclicity proofs, topological evaluation, spatial layout planning, formula lowering, and in-memory `.xlsx` buffer emission via the unified `CompiledModel` facade.
+- **Declarative file authoring**: f8 strictly enforces declarative specifications over imperative CLI flag mutations. Model authoring is performed by directly editing `f8.json` and `tables/*.json` using standard text/JSON tools.
 
 ```mermaid
 flowchart LR
-    A["CLI Command\n(f8 scaffold / compile)"] --> B["Command Parser\n(clap)"]
-    T["Embedded Archetypes\n(include_str!)"] -.->|"f8 scaffold"| C["Canonical JSON on Disk\n(f8.json + tables/*.json)"]
+    A["CLI Command\n(f8 init / check / compile / inspect)"] --> B["Command Parser\n(clap)"]
+    T["Embedded Archetypes\n(include_str!)"] -.->|"f8 init --template"| C["Canonical JSON on Disk\n(f8.json + tables/*.json)"]
     B --> C
-    C --> D["f8-core Compiler\n(Evaluation & Emission)"]
-    D --> E["Terminal Output or Disk File\n(Status, Tables, or .xlsx)"]
+    C --> D["Project Loader\n(Upward Traversal)"]
+    D --> E["f8-core Compiler\n(CompiledModel Facade)"]
+    E --> F["Terminal / JSON Output / .xlsx File"]
 ```
 
 ---
 
-## 2. Command Hierarchy
+## 2. Project Discovery & Loading
+
+The CLI discovers and loads projects deterministically across subdirectories:
+
+1. **Manifest discovery**:
+   - If `--project <path>` (or `-p <path>`) is specified, the CLI targets that file or directory directly.
+   - Otherwise, the CLI starts in the current working directory and traverses upward through parent directories until it locates `f8.json` (identical to `cargo` finding `Cargo.toml` or `git` finding `.git`).
+   - If no `f8.json` is found, the CLI returns exit code `1` with a descriptive error.
+2. **Table resolution**:
+   - File paths declared in `SheetSpec.tables` (e.g. `"tables/income_statement.json"`) are resolved relative to the directory containing `f8.json`.
+3. **Theme resolution**:
+   - Built-in themes (such as `"corporate_navy"`) resolve instantly via in-memory catalog.
+   - Custom theme paths are resolved relative to the project directory and validated via `Theme::from_json_str`.
+
+---
+
+## 3. Command Hierarchy
 
 All CLI operations are grouped under clear, noun-first subcommands:
 
-### 2.1. Project & Workspace Management (`f8 init`, `f8 sheet`)
-
-#### `f8 init <model_name> [options]`
-Initializes a new f8 model directory with root `f8.json` and standard subdirectories:
-```bash
-f8 init LBO_Simple --theme corporate_navy
-```
-
-#### `f8 sheet add <sheet_name> [options]`
-Appends a worksheet tab to `f8.json`:
-```bash
-f8 sheet add Financials --freeze-row 6 --freeze-col 2 --tab-color "#1B365D"
+```text
+f8 init [path] [--template <name>] [--theme <name>]
+f8 check [-p <path>] [--json]
+f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache] [--open]
+f8 inspect [-p <path>] [--json]
+f8 inspect table <table_id> [--view <values|formulas|both>] [--format <table|markdown|json>] [-p <path>]
+f8 inspect cell [table_id] [row_id] [col_id] [-a <A1>] [-p <path>] [--json]
+f8 inspect find <query> [-p <path>] [--json]
+f8 inspect precedents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
+f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
 ```
 
 ---
 
-### 2.2. Model Scaffolding & Ingest (`f8 scaffold`, `f8 table`)
+### 3.1. Project Initialization (`f8 init`)
 
-#### `f8 scaffold <archetype> [options]`
-Scaffolds pre-configured institutional templates directly onto disk as canonical JSON files (`f8.json` + `tables/*.json`) from embedded binary assets:
+#### `f8 init [path] [options]`
+Initializes a new f8 project directory with `f8.json` and a `tables/` directory.
+
 ```bash
-f8 scaffold three-statement --sheet Financials
+# Initialize a blank project in a new directory
+f8 init LBO_Model --theme corporate_navy
+
+# Initialize a blank project in the current directory
+f8 init .
+
+# Initialize from an institutional template archetype
+f8 init M_and_A_Comps --template trading-comps
 ```
-Supported archetypes include:
-- `three-statement`: Integrated Income Statement, Balance Sheet, Cash Flow, and operating driver schedules.
-- `lbo`: Transaction assumptions, sources & uses, debt amortization schedules, and cash sweep waterfalls.
-- `trading-comps`: Peer valuation matrix with metric columns, valuation multiples, and summary benchmark aggregations.
-- `cap-table`: Ownership capitalization table with pre-/post-money valuation schedules and dilution tracking.
 
-Scaffolded templates arrive with pre-wired financial formulas, typographic indentations, and semantic subtotal styles, but with historical inputs and driver assumptions left unpopulated.
+**Options**:
+- `--template <archetype>`, `-t <archetype>`: Institutional model template to unpack. Supported archetypes:
+  - `three-statement`: Integrated Income Statement, Balance Sheet, Cash Flow, and operating driver schedules.
+  - `lbo`: Transaction assumptions, sources & uses, debt amortization schedules, and cash sweep waterfalls.
+  - `trading-comps`: Peer valuation matrix with metric columns, valuation multiples, and summary benchmark aggregations.
+  - `cap-table`: Ownership capitalization table with pre-/post-money valuation schedules and dilution tracking.
+- `--theme <theme>`: Theme preset for the workbook (default: `corporate_navy`).
 
-#### `f8 table create <table_id> [options]`
-Ingests a canonical table specification from a JSON file (or stdin), validates domain invariants, and mounts it into the specified worksheet:
+Templates are stored as canonical, valid JSON projects in `crates/f8-cli/templates/<archetype>/` (`f8.json` + `tables/*.json`), verified by unit tests during CI, and unpacked into the target project path. Formulas, typographic indentations, and semantic subtotal styles are pre-wired, ready for direct editing.
+
+---
+
+### 3.2. Verification & Compilation (`f8 check`, `f8 compile`)
+
+#### `f8 check [options]`
+Executes fast, headless compiler verification through Passes 1–6a without generating an `.xlsx` archive:
+- Validates JSON schemas and AST domain invariants (Pass 1).
+- Expands cell IR grid and constructs symbol table (Pass 2).
+- Resolves all formula references and verifies DAG acyclicity (Pass 3).
+- Executes in-memory topological calculation (Pass 4).
+- Plans 2D spatial layout and boundary metrics (Pass 5).
+- Lowers all formula expressions into concrete Excel syntax (Pass 6a).
+
+Running all passes up to emission guarantees that if `f8 check` succeeds, subsequent `f8 compile` will never fail due to layout or lowering errors.
+
 ```bash
-# Ingest canonical table JSON file
-f8 table create IncomeStatement --from tables/income_statement.json --sheet Financials
+# Fast verification check
+f8 check
 
-# Pipe directly from agent script / stdin
-cat << 'EOF' | f8 table create IncomeStatement --from - --sheet Financials
+# Machine-readable output for AI agents
+f8 check --json
+```
+
+**Output (Human)**:
+```text
+✓ Validated 4 sheets, 6 tables, 142 cells
+✓ DAG acyclicity verified (0 cycles)
+✓ Evaluated 142 cells in 1.4ms
+✓ Planned spatial layouts and verified formula lowering across 4 sheets
+Status: OK
+```
+
+**Output (Agent / JSON)**:
+```json
 {
-  "id": "IncomeStatement",
-  "title": "Income Statement",
-  "columns": [ ... ],
-  "rows": [ ... ]
+  "status": "ok",
+  "summary": {
+    "sheets": 4,
+    "tables": 6,
+    "cells": 142,
+    "duration_ms": 1.4
+  }
 }
-EOF
 ```
-
----
-
-### 2.3. Model Authoring & Editing Workflow
-
-f8 strictly enforces **declarative specifications over imperative CLI flag mutations**. f8 deliberately omits fine-grained CLI commands for inserting rows, updating cells, or extending timelines.
-
-Instead, coding agents and human developers edit the canonical JSON specification files (`tables/*.json`) directly using standard text/JSON tools:
-1. **Scaffold or author**: Generate an initial model skeleton via `f8 scaffold` or `f8 table create`.
-2. **Direct JSON edit**: Add rows, update cell inputs, or tweak formulas directly in the target `tables/<id>.json` file.
-3. **Compile and verify**: Run `f8 compile --check` to validate changes and inspect calculated results.
-
----
-
-### 2.4. Compilation & Verification (`f8 compile`, `f8 inspect`)
 
 #### `f8 compile [options]`
-Executes the full compiler pipeline, evaluates DAG dependencies, and emits compiled `.xlsx` workbooks or headless data exports:
-```bash
-# Compile and emit live workbook with precalculated cell cache
-f8 compile --out output/model.xlsx
+Executes the full compiler pipeline (Passes 1–6b) and emits a compiled OpenXML `.xlsx` workbook:
 
-# Headless verification check without writing workbook
-f8 compile --check
+```bash
+# Compile and emit to default ./<model_name>.xlsx
+f8 compile
+
+# Compile and emit to explicit output path
+f8 compile -o output/final_model.xlsx
+
+# Compile with theme override
+f8 compile --theme classic_charcoal -o dist/model.xlsx
+
+# Compile and freeze formulas into values (for distribution)
+f8 compile --values-only -o dist/client_presentation.xlsx
+
+# Compile and immediately open in default spreadsheet application
+f8 compile --open
 ```
 
-In the "Scaffold-and-Fill" workflow, `f8 compile --check` scans the entire workbook and aggregates **all** unpopulated driver cells into a comprehensive diagnostic checklist (rather than failing fast on the first unassigned cell), enabling agents and analysts to populate all missing inputs in a single editing pass:
+**Options**:
+- `-o`, `--out <path>`: Destination path for the `.xlsx` workbook. Defaults to `./<model_name>.xlsx` using `model_name` from `f8.json`. Pass `-` for stdout streaming.
+- `-p`, `--project <path>`: Project directory or manifest file path (defaults to searching current and parent directories).
+- `--theme <name>`: Overrides the workbook theme configured in `f8.json`.
+- `--values-only`: Emits the workbook with calculated formulas frozen into static values, omitting live Excel formulas.
+- `--omit-cache`: Disables precalculated `<v>` calculation result caches in OpenXML cells.
+- `--open`: Automatically opens the generated workbook in the operating system's default spreadsheet viewer (`xdg-open` on Linux, `open` on macOS, `start` on Windows).
+
+---
+
+### 3.3. Auditing & Inspection (`f8 inspect`)
+
+All inspection subcommands query `f8-core`'s unified `CompiledModel` facade, operating purely in memory.
+
+#### `f8 inspect [options]`
+Renders a high-level summary overview of the workbook model, sheets, and tables:
+
+```bash
+f8 inspect
+```
+
+**Output (Human)**:
 ```text
-MissingRequiredInput: Assumptions["rev_growth", "2024E"] has no value or formula.
-MissingRequiredInput: Assumptions["rev_growth", "2025E"] has no value or formula.
-MissingRequiredInput: IncomeStatement["revenue", "2023A"] has no historical actual value.
+Model:     Corporate LBO Model
+Theme:     corporate_navy
+Sheets (3):
+  • Financials (2 tables, 120 cells)
+      - Assumptions [6 rows x 2 cols] (12 cells)
+      - IncomeStatement [18 rows x 6 cols] (108 cells)
+  • BalanceSheet (1 table, 72 cells)
+      - BalanceSheet [12 rows x 6 cols] (72 cells)
+  • CashFlow (1 table, 60 cells)
+      - CashFlow [10 rows x 6 cols] (60 cells)
+Total:     3 sheets, 4 tables, 252 cells (48 driver inputs, 204 formulas)
+Status:    DAG acyclic (0 cycles), evaluated in 1.8ms
 ```
 
-#### `f8 inspect cell <table_id> <row_id> <col_id>`
-Evaluates and inspects an individual calculation cell via `f8-core`'s unified `CompiledModel` facade, printing calculated values, formula ASTs, upstream precedents, and downstream dependents:
+**Options**:
+- `-p`, `--project <path>`: Project directory or manifest file path.
+- `--json`: Emits structured JSON summary of the model structure and metrics.
+
+---
+
+#### `f8 inspect table <table_id> [options]`
+Renders a 2D table cell matrix directly to stdout for immediate terminal auditing.
+
 ```bash
-f8 inspect cell IncomeStatement total_opex 2028E
+# View evaluated values formatted with accounting typography
+f8 inspect table IncomeStatement
+
+# Formula auditing mode (Excel Ctrl + ~ parity)
+f8 inspect table IncomeStatement --view formulas --format markdown
+
+# Dual auditing view (value + formula)
+f8 inspect table IncomeStatement --view both
 ```
-**Output:**
+
+**Options**:
+- `--view <values|formulas|both>`:
+  - `values` (default): Evaluated and formatted numbers with accounting typography.
+  - `formulas`: Formula expressions for calculation cells; raw inputs for literal cells.
+  - `both`: Stacked view displaying both evaluated value and formula expression per cell.
+- `--format <table|markdown|json>`:
+  - `table` (default): Aligned Unicode terminal table.
+  - `markdown`: GitHub Flavored Markdown table.
+  - `json`: 2D array of cell objects.
+
+---
+
+#### `f8 inspect cell [table_id] [row_id] [col_id] [options]`
+Inspects an individual calculation cell by explicit semantic coordinates or physical Excel sheet address, showing evaluated values, formatting, formula ASTs, lowered Excel formulas, physical addresses, precedents, and dependents:
+
+```bash
+# Inspect by semantic coordinates
+f8 inspect cell IncomeStatement total_opex 2028E
+
+# Inspect by Excel physical coordinate
+f8 inspect cell -a Financials!C18
+```
+
+**Output (Human)**:
 ```text
 Coordinate:     IncomeStatement["total_opex", "2028E"]
+Sheet Address:  Financials!C18
 Evaluated:      74.2 (Currency, 1 decimal)
 Formula Expr:   SUM(IncomeStatement["cogs".."sga", @col])
 Excel Formula:  =SUM(C14:C16)
 
-Precedents:     [IncomeStatement["cogs", "2028E"], IncomeStatement["rd", "2028E"], IncomeStatement["sga", "2028E"]]
-Dependents:     [IncomeStatement["ebit", "2028E"]]
+Precedents (3):
+  ├── IncomeStatement["cogs", "2028E"]
+  ├── IncomeStatement["rd", "2028E"]
+  └── IncomeStatement["sga", "2028E"]
+
+Dependents (1):
+  └── IncomeStatement["ebit", "2028E"]
 ```
 
+**Options**:
+- `-a`, `--address <sheet!A1>`: Inspect a cell directly by its physical Excel sheet coordinate (e.g. `--address Financials!C18` or `--address C18`).
+- `--json`: Emits structured JSON representation of the cell inspection record.
+
+---
+
+#### `f8 inspect find <query> [options]`
+Searches and locates cells across the entire model without needing to memorize exact table, row, or column identifiers:
+- **Physical Excel address**: e.g. `C18` or `Financials!C18`.
+- **Identifier substring**: e.g. `net_income`, `rev_growth`, `tax`.
+- **Presentation line-item label**: e.g. `"Net Income"`, `"Total Revenue"`, `"Salaries"`.
+
+```bash
+# Find cells matching a label
+f8 inspect find "Net Income"
+
+# Find cells by Excel physical coordinate
+f8 inspect find C18
+```
+
+**Output**:
+```text
+Matches (2 cells across 2 tables):
+  • IncomeStatement["net_income", "2024E"] (Financials!C24) = $24.5M  [Formula: =C22-C23]
+  • CashFlow["net_income", "2024E"]        (Financials!C38) = $24.5M  [Formula: =C24]
+```
+
+**Options**:
+- `-p`, `--project <path>`: Project directory or manifest file path.
+- `--json`: Emits matching cells as a JSON list.
+
+---
+
+#### `f8 inspect precedents <table_id> <row_id> <col_id> [options]`
+Performs upstream root-cause analysis by querying incoming DAG edges (`dependencies_of`):
+
+```bash
+# Direct precedents
+f8 inspect precedents IncomeStatement net_income 2024E
+
+# Transitive upstream calculation tree
+f8 inspect precedents IncomeStatement net_income 2024E --recursive
+```
+
+**Output**:
+```text
+Coordinate:     IncomeStatement["net_income", "2024E"]
+Direct Precedents (2):
+  ├── IncomeStatement["ebt", "2024E"]
+  └── IncomeStatement["tax", "2024E"]
+
+Transitive Precedent Tree (5 calculations):
+  ├── IncomeStatement["ebt", "2024E"]
+  │   ├── IncomeStatement["ebit", "2024E"]
+  │   │   ├── IncomeStatement["gross_profit", "2024E"]
+  │   │   │   ├── IncomeStatement["revenue", "2024E"]
+  │   │   │   └── IncomeStatement["cogs", "2024E"]
+  │   │   └── IncomeStatement["total_opex", "2024E"]
+  │   └── IncomeStatement["interest_expense", "2024E"]
+  └── IncomeStatement["tax", "2024E"]
+```
+
+---
+
 #### `f8 inspect dependents <table_id> <row_id> <col_id> [options]`
-Performs blast-radius impact analysis by querying outgoing DAG edges (`dependents_of`) from `DependencyGraph`:
+Performs blast-radius impact analysis by querying outgoing DAG edges (`dependents_of`):
+
 ```bash
 # Direct dependents of a driver cell
 f8 inspect dependents Assumptions rev_growth 2024E
@@ -135,7 +324,8 @@ f8 inspect dependents Assumptions rev_growth 2024E
 # Transitive blast radius across all tables and statements
 f8 inspect dependents Assumptions rev_growth 2024E --recursive
 ```
-**Output:**
+
+**Output**:
 ```text
 Coordinate:     Assumptions["rev_growth", "2024E"]
 Direct Dependents (1):
@@ -150,53 +340,101 @@ Transitive Blast Radius (6 downstream calculations affected):
       │       │   └── CashFlow["net_income", "2024E"]
 ```
 
-Key use cases for analysts and agents:
-- **Refactoring & renaming safety**: Predicts every formula that will break before modifying row or column IDs.
-- **Dynamic linkage verification**: Proves that financial statements are dynamically linked (e.g. confirming Cash Flow feeds Cash on the Balance Sheet).
-- **Orphan calculation detection**: Identifies calculation rows that have zero downstream dependents, flagging redundant or forgotten rows.
+---
 
-#### `f8 inspect table <table_id> [options]`
-Renders the headless 2D cell matrix directly to stdout as an aligned table for immediate terminal verification.
+## 4. Exit Codes & Error Diagnostics
 
-Options:
-- `--view <values|formulas|both>`:
-  - `values` (default): Evaluated and formatted numbers with accounting typography.
-  - `formulas`: Parity with Excel's Formula Auditing Mode (`Ctrl + ~`), showing formula expressions for calculation cells and raw inputs for literal cells.
-  - `both`: Dual-row auditing view displaying both evaluated value and formula.
-- `--format <table|markdown|json>`: Output rendering format.
+The CLI enforces standard exit codes for deterministic scripting by humans and autonomous agents:
 
-```bash
-# Formula auditing mode
-f8 inspect table IncomeStatement --view formulas --format markdown
-```
-**Output:**
-```markdown
-| Line Item    | 2023A  | 2024E                                                         | 2025E                                                         |
-|:-------------|-------:|:--------------------------------------------------------------|:--------------------------------------------------------------|
-| Net Revenue  | 100.0  | IncomeStatement["revenue", col.prev] * (1.0 + Assumptions...) | IncomeStatement["revenue", col.prev] * (1.0 + Assumptions...) |
-| COGS         |  40.0  | IncomeStatement["revenue", @col] * Assumptions["cogs_pct"...] | IncomeStatement["revenue", @col] * Assumptions["cogs_pct"...] |
-| Gross Profit |  60.0  | IncomeStatement["revenue", @col] - IncomeStatement["cogs"...] | IncomeStatement["revenue", @col] - IncomeStatement["cogs"...] |
+| Exit Code | Classification | Trigger Scenarios |
+|---|---|---|
+| `0` | Success | Command completed cleanly with zero errors. |
+| `1` | Operational / CLI / I/O Error | CLI argument syntax error, `f8.json` not found on disk, unreadable table JSON, filesystem permission error. |
+| `2` | Compiler Error | One or more diagnostics accumulated in `DiagnosticBag` across Passes 1–6a (specification schema errors, duplicate IDs, formula parse failures, missing required inputs, unresolved coordinate references, circular calculation references, mathematical evaluation errors, spatial layout overflows, lowering errors). |
+
+All compiler-level diagnostics—including circular references (`E0307`), missing inputs (`E0206`), and calculation faults (`E0401`–`E0403`)—are captured uniformly in `DiagnosticBag` and return exit code `2`. This eliminates ambiguous exit code precedence rules when multiple error categories coexist across passes. On compilation failure, the CLI emits the deterministic, structured JSON diagnostic schema directly to stderr.
+
+### Structured Diagnostic Schema (`--json` or Compiler Error Output)
+All compiler diagnostics emitted on failure follow the unified schema defined in [Compiler Diagnostics](../compiler/diagnostics.md):
+```json
+{
+  "status": "error",
+  "exit_code": 2,
+  "summary": {
+    "error_count": 2
+  },
+  "diagnostics": [
+    {
+      "level": "error",
+      "code": "E0302",
+      "kind": "UnresolvedRow",
+      "message": "Formula in cell 'IncomeStatement[\"tax\", \"2024E\"]' references unknown row 'ebit_adjusted' in table 'IncomeStatement'",
+      "origin": {
+        "sheet": "Financials",
+        "table": "IncomeStatement",
+        "row": "tax",
+        "col": "2024E"
+      },
+      "expression": "IncomeStatement[\"ebit_adjusted\", @col] * Assumptions[\"tax_rate\", \"val\"]",
+      "help": "Did you mean 'ebit'?"
+    },
+    {
+      "level": "error",
+      "code": "E0206",
+      "kind": "MissingRequiredInputs",
+      "message": "Model contains 1 unassigned driver input required for calculation",
+      "origin": null,
+      "missing_inputs": [
+        {
+          "table": "Assumptions",
+          "row": "tax_rate",
+          "col": "val",
+          "line_item": "Corporate Tax Rate",
+          "col_header": "Value",
+          "format": "percentage",
+          "decimals": 1,
+          "currency": null,
+          "note": "Effective corporate income tax rate"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-#### `f8 inspect cycle`
-When cyclic dependencies are detected, outputs the full semantic cycle loop traced by Tarjan's Strongly Connected Components pass:
-```bash
-f8 inspect cycle
-```
-**Output:**
-```text
-CyclicDependencyDetected:
-IncomeStatement["tax", "2024E"] ──► IncomeStatement["ebit", "2024E"] ──► IncomeStatement["tax", "2024E"]
-```
+See [Compiler Diagnostics](../compiler/diagnostics.md) for complete error code taxonomy and JSON diagnostic schemas.
 
 ---
 
-## 3. Exit Codes & Error Diagnostics
+## 5. Binary Architecture & Module Structure
 
-The CLI enforces standard exit codes for automated agent scripting:
-- `0`: Success.
-- `1`: Validation or command syntax error.
-- `2`: Compilation error (formula parse failure, unresolved coordinate, type mismatch, missing required input).
-- `3`: Cyclic dependency error (emits semantic Tarjan SCC cycle trace to stderr).
+```text
+crates/f8-cli/
+├── Cargo.toml
+├── templates/                  # Canonical, testable JSON template archetypes
+│   ├── three-statement/        # f8.json + tables/*.json
+│   ├── lbo/
+│   ├── trading-comps/
+│   └── cap-table/
+└── src/
+    ├── main.rs                 # Entrypoint, clap dispatch, top-level error mapping to exit codes
+    ├── cli.rs                  # Clap command definitions, subcommands, and flags
+    ├── project/
+    │   ├── loader.rs           # Upward directory traversal, f8.json loading, table reading
+    │   └── writer.rs           # Project initialization and canonical JSON writer
+    ├── archetypes/             # Embedded institutional templates (include_str! / rust-embed)
+    │   └── mod.rs              # Template extractor and catalog
+    ├── commands/
+    │   ├── check.rs            # Fast verification execution (Passes 1–6a) and summary
+    │   ├── compile.rs          # OpenXML emission, values-only freezing, and file writing
+    │   ├── find.rs             # Cell discovery and coordinate searching
+    │   ├── inspect.rs          # Summary, cell, table, precedents, and dependents inspection
+    │   └── init.rs             # Project creation and template unpacking
+    └── render/
+        ├── cell.rs             # Terminal card formatting for cell inspection
+        ├── summary.rs          # Workbook overview summary rendering
+        ├── table.rs            # Terminal & Markdown table rendering
+        └── tree.rs             # Dependency tree and blast-radius rendering
+```
 
 See [Model Context Protocol (MCP)](mcp.md) for JSON-RPC agent tool equivalents and [Architecture Overview](../architecture.md) for compiler passes.

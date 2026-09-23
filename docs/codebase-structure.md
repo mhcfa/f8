@@ -25,7 +25,7 @@ f8/
 │   │   └── tests/              # Core compiler pass tests, calculation parity, & model archetypes
 │   │
 │   ├── f8-cli/               # Command-line interface binary (clap)
-│   │   ├── src/                # CLI subcommands (init, scaffold, compile, inspect)
+│   │   ├── src/                # CLI subcommands (init, check, compile, inspect)
 │   │   ├── templates/          # Institutional model archetypes (embedded via include_str!)
 │   │   │   ├── three-statement/# Linked IS, BS, CF, and driver assumptions
 │   │   │   ├── lbo/            # Transaction assumptions, debt schedules, returns
@@ -69,7 +69,8 @@ Sequential pipeline transforming validated input specs into evaluated matrices a
 - **Pass 5 (`compiler::layout`)**: Plans physical 2D grid coordinates, table stacking, headers, gutters, and freeze panes into a `LayoutMap`.
 - **Pass 6a (`compiler::lowering`)**: Rewrites semantic AST references into concrete Excel formulas (`=C10-C11` or `='Summary'!$B$4`).
 - **Pass 6b (`compiler::emission`)**: Streams spatial layouts, styles, precalculated cell caches, and formulas into in-memory `.xlsx` byte buffers via `rust_xlsxwriter::Workbook::save_to_buffer()`, or serializes headless outputs (JSON/CSV).
-- **Inspection Facade (`compiler::CompiledModel`)**: Unified compiler artifact combining `EvaluatedModel`, `DependencyGraph`, `CellGrid`, and `LayoutMap` to answer `inspect cell`, `inspect dependents`, and `inspect table` queries without re-running passes.
+- **Inspection Facade (`compiler::CompiledModel`)**: Unified compiler artifact combining `SymbolTable`, `CellGrid`, `DependencyGraph`, `EvaluatedModel`, `LayoutMap`, and `LoweredFormulaMap` to answer `inspect cell`, `inspect find`, `inspect precedents`, `inspect dependents`, and `inspect table` queries without re-running passes.
+- **Diagnostic Subsystem (`compiler::diagnostic`)**: Centralized `DiagnosticBag` accumulating errors across passes (syntax errors, conflicts, missing inputs, unresolved coordinates, calculation faults) and emitting structured JSON for agents and tooling. See [Compiler Diagnostics](compiler/diagnostics.md).
 
 ### 2.4. Layer 4: Institutional Templates & Scaffolding (Embedded Assets)
 
@@ -77,15 +78,15 @@ Curated canonical JSON skeletons demonstrating institutional financial modeling 
 
 - **Embedded factory archetypes**: Bundled directly into outer interface binaries (`f8-cli`, `f8-mcp`) to eliminate external directory dependencies, runtime path-lookup failures, and installation asset fragmentation.
 - **Institutional layout & formula wiring**: Pre-configured with exact typographic indentation, section groupings, subtotal formatting, and inter-statement formula linkages (e.g. Net Income flowing to Retained Earnings and Cash Flow).
-- **"Scaffold-and-Fill" workflow**: Driver cells and historical actuals are omitted or marked as required inputs. The compiler fails fast reporting missing inputs, creating an automated deterministic checklist for agents to populate.
+- **"Scaffold-and-Fill" workflow**: Driver cells and historical actuals are omitted or marked as required inputs. The compiler accumulates all unassigned driver cells into a unified diagnostic checklist (`MissingRequiredInputs` / `E0206`), providing an automated deterministic inventory for agents and analysts to populate in a single editing pass.
 
 ### 2.5. Layer 5: Interfaces & Distribution Adapters
 
 Outer adapters providing access across diverse execution environments:
 
-- **`f8-cli` (Phase 1)**: Command-line interface powered by `clap` (`init`, `scaffold`, `compile`, `inspect`). Implemented first for local financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
-- **`f8-mcp` (Phase 2)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
-- **`f8-wasm` (Phase 3 Target)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
+- **`f8-cli` (Phase 2)**: Command-line interface powered by `clap` (`init`, `check`, `compile`, `inspect`). Provides direct terminal execution for financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
+- **`f8-mcp` (Phase 3)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
+- **`f8-wasm` (Phase 4 Target)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
 
 ---
 
@@ -131,13 +132,17 @@ The compiler core is designed from day one to support both native operating syst
 
 ### 4.2. Delivery Roadmap
 
-1. **Phase 1: Cargo Workspace & Local CLI (`f8-cli`)**:
-   - Split codebase into `crates/f8-core` and `crates/f8-cli`.
-   - Implement `f8 scaffold`, `f8 compile` (`--check`, `--out`), and `f8 inspect` (`cell`, `table --view`, `dependents`).
-   - Dogfood on personal financial models (3-statement, LBO, comps) to refine authoring ergonomics.
-2. **Phase 2: Model Context Protocol Server (`f8-mcp`)**:
+1. **Phase 1: Core Diagnostics Subsystem & CompiledModel Facade (`f8-core`)**:
+   - Implement `DiagnosticBag` and pass gates (Passes 1–4) for phase-level diagnostic accumulation.
+   - Consolidate all compilation pass artifacts into the unified `CompiledModel` facade (`SymbolTable`, `CellGrid`, `DependencyGraph`, `EvaluatedModel`, `LayoutMap`, `LoweredFormulaMap`).
+   - Implement pure in-memory query APIs (`inspect_cell`, `table_matrix`, `precedents_of`, `dependents_of`, `find_cells`).
+   - Deliver comprehensive unit tests for multi-error collection and deterministic diagnostic sorting.
+2. **Phase 2: Local Command-Line Interface (`f8-cli`)**:
+   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`, `--open`), and `f8 inspect` (`summary`, `table`, `cell`, `find`, `precedents`, `dependents`) on top of `CompiledModel` and `DiagnosticBag`.
+   - Dogfood on personal and institutional financial models (3-statement, LBO, comps) to refine authoring ergonomics.
+3. **Phase 3: Model Context Protocol Server (`f8-mcp`)**:
    - Create `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.
    - Wrap core inspection, scaffolding, and validation routines as typed MCP tools for chat-only AI agents.
-3. **Phase 3: WebAssembly & Web Application (`f8-wasm`)**:
+4. **Phase 4: WebAssembly & Web Application (`f8-wasm`)**:
    - Expose `f8-core` via `wasm-bindgen` for client-side evaluation.
    - Build interactive web spreadsheet visualizers or SaaS integrations.
