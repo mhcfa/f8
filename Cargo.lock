@@ -195,6 +195,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "f8-core",
+ "libc",
  "predicates",
  "serde",
  "serde_json",

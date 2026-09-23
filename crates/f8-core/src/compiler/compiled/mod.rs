@@ -367,6 +367,7 @@ impl CompiledModel {
                         sheet_address,
                         value,
                         excel_formula,
+                        is_pruned: false,
                         children: Vec::new(),
                     }
                 })
@@ -382,6 +383,7 @@ impl CompiledModel {
 
         let mut all_visited = HashSet::new();
         let mut visited_ancestors = HashSet::new();
+        let mut expanded = HashSet::new();
         visited_ancestors.insert(cell.clone());
 
         let mut nodes = Vec::with_capacity(direct_count);
@@ -389,6 +391,7 @@ impl CompiledModel {
             nodes.push(self.build_precedent_tree_node(
                 dep,
                 &mut visited_ancestors,
+                &mut expanded,
                 &mut all_visited,
             ));
         }
@@ -429,6 +432,7 @@ impl CompiledModel {
                         sheet_address,
                         value,
                         excel_formula,
+                        is_pruned: false,
                         children: Vec::new(),
                     }
                 })
@@ -444,6 +448,7 @@ impl CompiledModel {
 
         let mut all_visited = HashSet::new();
         let mut visited_ancestors = HashSet::new();
+        let mut expanded = HashSet::new();
         visited_ancestors.insert(cell.clone());
 
         let mut nodes = Vec::with_capacity(direct_count);
@@ -451,6 +456,7 @@ impl CompiledModel {
             nodes.push(self.build_dependent_tree_node(
                 dep,
                 &mut visited_ancestors,
+                &mut expanded,
                 &mut all_visited,
             ));
         }
@@ -469,26 +475,55 @@ impl CompiledModel {
         &self,
         cell_id: &CellId,
         visited_ancestors: &mut HashSet<CellId>,
+        expanded: &mut HashSet<CellId>,
         all_visited: &mut HashSet<CellId>,
     ) -> DependencyNode {
         all_visited.insert(cell_id.clone());
         let (sheet_address, value, excel_formula) = self.get_node_display_metadata(cell_id);
 
-        let mut children = Vec::new();
-        if !visited_ancestors.contains(cell_id) {
-            visited_ancestors.insert(cell_id.clone());
-            let deps = self.graph.dependencies_of(cell_id);
-            for dep in deps {
-                children.push(self.build_precedent_tree_node(dep, visited_ancestors, all_visited));
-            }
-            visited_ancestors.remove(cell_id);
+        let deps = self.graph.dependencies_of(cell_id);
+        if deps.is_empty() {
+            return DependencyNode {
+                cell_id: cell_id.clone(),
+                sheet_address,
+                value,
+                excel_formula,
+                is_pruned: false,
+                children: Vec::new(),
+            };
         }
+
+        if visited_ancestors.contains(cell_id) || expanded.contains(cell_id) {
+            return DependencyNode {
+                cell_id: cell_id.clone(),
+                sheet_address,
+                value,
+                excel_formula,
+                is_pruned: true,
+                children: Vec::new(),
+            };
+        }
+
+        visited_ancestors.insert(cell_id.clone());
+        expanded.insert(cell_id.clone());
+
+        let mut children = Vec::with_capacity(deps.len());
+        for dep in deps {
+            children.push(self.build_precedent_tree_node(
+                dep,
+                visited_ancestors,
+                expanded,
+                all_visited,
+            ));
+        }
+        visited_ancestors.remove(cell_id);
 
         DependencyNode {
             cell_id: cell_id.clone(),
             sheet_address,
             value,
             excel_formula,
+            is_pruned: false,
             children,
         }
     }
@@ -497,26 +532,55 @@ impl CompiledModel {
         &self,
         cell_id: &CellId,
         visited_ancestors: &mut HashSet<CellId>,
+        expanded: &mut HashSet<CellId>,
         all_visited: &mut HashSet<CellId>,
     ) -> DependencyNode {
         all_visited.insert(cell_id.clone());
         let (sheet_address, value, excel_formula) = self.get_node_display_metadata(cell_id);
 
-        let mut children = Vec::new();
-        if !visited_ancestors.contains(cell_id) {
-            visited_ancestors.insert(cell_id.clone());
-            let deps = self.graph.dependents_of(cell_id);
-            for dep in deps {
-                children.push(self.build_dependent_tree_node(dep, visited_ancestors, all_visited));
-            }
-            visited_ancestors.remove(cell_id);
+        let deps = self.graph.dependents_of(cell_id);
+        if deps.is_empty() {
+            return DependencyNode {
+                cell_id: cell_id.clone(),
+                sheet_address,
+                value,
+                excel_formula,
+                is_pruned: false,
+                children: Vec::new(),
+            };
         }
+
+        if visited_ancestors.contains(cell_id) || expanded.contains(cell_id) {
+            return DependencyNode {
+                cell_id: cell_id.clone(),
+                sheet_address,
+                value,
+                excel_formula,
+                is_pruned: true,
+                children: Vec::new(),
+            };
+        }
+
+        visited_ancestors.insert(cell_id.clone());
+        expanded.insert(cell_id.clone());
+
+        let mut children = Vec::with_capacity(deps.len());
+        for dep in deps {
+            children.push(self.build_dependent_tree_node(
+                dep,
+                visited_ancestors,
+                expanded,
+                all_visited,
+            ));
+        }
+        visited_ancestors.remove(cell_id);
 
         DependencyNode {
             cell_id: cell_id.clone(),
             sheet_address,
             value,
             excel_formula,
+            is_pruned: false,
             children,
         }
     }

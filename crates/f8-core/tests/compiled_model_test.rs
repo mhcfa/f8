@@ -317,3 +317,47 @@ fn test_scenario_10_missing_cell_precedents_and_dependents_error() {
         .expect_err("Missing cell dependents must fail");
     assert_eq!(err_dep, InspectionError::CellNotFound(bad_cell));
 }
+
+#[test]
+fn test_scenario_11_dag_pruning_on_reconvergent_paths() {
+    let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
+    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
+
+    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+
+    // Net income depends directly on revenue, cogs, opex, tax, etc.
+    // COGS also depends on revenue:
+    // NetIncome -> Revenue
+    // NetIncome -> COGS -> Revenue
+    let net_income_id = CellId::new(
+        TableId::from("IncomeStatement"),
+        RowId::from("net_income"),
+        ColId::from("y2024e"),
+    );
+
+    let tree = compiled
+        .precedents_of(&net_income_id, true)
+        .expect("Recursive precedents of net_income must succeed");
+
+    // Recursively count nodes and find pruned occurrences
+    fn find_pruned_nodes(nodes: &[f8_core::compiler::compiled::DependencyNode]) -> usize {
+        let mut count = 0;
+        for node in nodes {
+            if node.is_pruned {
+                count += 1;
+                assert!(
+                    node.children.is_empty(),
+                    "Pruned node must have empty children"
+                );
+            }
+            count += find_pruned_nodes(&node.children);
+        }
+        count
+    }
+
+    let pruned_count = find_pruned_nodes(&tree.nodes);
+    assert!(
+        pruned_count > 0,
+        "Reconvergent calculation DAG must prune duplicate subtree expansions"
+    );
+}

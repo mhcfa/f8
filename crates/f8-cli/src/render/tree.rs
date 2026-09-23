@@ -66,7 +66,14 @@ fn render_node_list(nodes: &[DependencyNode], prefix: &str, out: &mut String) {
         } else {
             format!("{prefix}│   ")
         };
-        out.push_str(&format!("{prefix}{branch}{}\n", node.cell_id));
+        if node.is_pruned {
+            out.push_str(&format!(
+                "{prefix}{branch}{} (already visited)\n",
+                node.cell_id
+            ));
+        } else {
+            out.push_str(&format!("{prefix}{branch}{}\n", node.cell_id));
+        }
         if !node.children.is_empty() {
             render_node_list(&node.children, &next_prefix, out);
         }

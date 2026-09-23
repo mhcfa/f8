@@ -98,6 +98,9 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 - **Recursive calculation tree**:
   - **When** calling `precedents_of(cell, true)` or `dependents_of(cell, true)`
   - **Then** returns `DependencyTree` with nested children and accurate `transitive_count` reflecting unique reached cells.
+- **Reconvergent DAG path pruning**:
+  - **When** traversing a calculation graph where a cell is reached through multiple paths
+  - **Then** expands children on first encounter and marks subsequent encounters as pruned (`is_pruned = true`, `children = []`), bounding tree expansion linearly while preserving exact `transitive_count`.
 
 ## Public Interfaces
 

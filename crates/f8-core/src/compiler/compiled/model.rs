@@ -227,6 +227,9 @@ pub struct DependencyNode {
     pub value: Option<CellValue>,
     /// Lowered Excel formula string if applicable.
     pub excel_formula: Option<String>,
+    /// `true` if this calculation subtree was already expanded earlier in traversal.
+    #[serde(default)]
+    pub is_pruned: bool,
     /// Nested child calculation nodes.
     pub children: Vec<DependencyNode>,
 }

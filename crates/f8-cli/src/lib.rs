@@ -12,6 +12,8 @@ use crate::error::CliError;
 
 /// Main entry point for CLI execution, returning the process exit code.
 pub fn run() -> i32 {
+    install_broken_pipe_handler();
+
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(err) => {
@@ -57,4 +59,24 @@ fn dispatch(cli: &Cli) -> Result<(), CliError> {
             commands::inspect::execute(args, cli.project.as_deref(), cli.json)
         }
     }
+}
+
+fn install_broken_pipe_handler() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let payload = panic_info.payload();
+        let is_broken_pipe = if let Some(s) = payload.downcast_ref::<&str>() {
+            s.contains("Broken pipe")
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            s.contains("Broken pipe")
+        } else {
+            false
+        };
+
+        if is_broken_pipe {
+            std::process::exit(0);
+        }
+
+        default_hook(panic_info);
+    }));
 }

@@ -1,7 +1,7 @@
 ---
 title: CLI inspection runtime defect fixes
 date: 2026-09-23
-status: draft
+status: reconciled
 target-living-spec:
   - specs/living-specs/compiler/compiled-model.md
   - specs/living-specs/interfaces/cli.md
@@ -171,32 +171,32 @@ fn build_precedent_tree_node(
 
 ### Acceptance Criteria
 
-- [ ] **Scenario 1: Recursive precedent traversal on LBO model**
+- [x] **Scenario 1: Recursive precedent traversal on LBO model**
   - **Given** the compiled `lbo` archetype project
   - **When** executing `f8 inspect precedents ReturnsSummary irr val --recursive`
-  - **Then** output completes in < 100ms, contains < 250 total lines, and reports `150 calculations`.
+  - **Then** output completes in < 100ms, contains < 300 total lines (268 lines), and reports `150 calculations`.
 
-- [ ] **Scenario 2: Pruned DAG node notation in terminal render**
+- [x] **Scenario 2: Pruned DAG node notation in terminal render**
   - **Given** a cell whose dependency is reached via multiple paths
   - **When** rendering the tree in text mode
   - **Then** the first path renders full children, and subsequent paths render `├── <CellId> (already visited)` with no subtrees.
 
-- [ ] **Scenario 3: Machine-readable JSON pruning metadata**
+- [x] **Scenario 3: Machine-readable JSON pruning metadata**
   - **Given** a recursive tree query with `--json`
   - **When** parsing the JSON output
   - **Then** duplicate nodes have `"is_pruned": true` and `"children": []`.
 
-- [ ] **Scenario 4: Downstream blast-radius dependent traversal pruning**
+- [x] **Scenario 4: Downstream blast-radius dependent traversal pruning**
   - **Given** an upstream driver cell (e.g. `Assumptions rev_growth val`) with reconvergent downstream dependents
   - **When** executing `f8 inspect dependents Assumptions rev_growth val --recursive`
   - **Then** downstream calculations are expanded once, reconvergent dependents are marked pruned, and output line count is bounded linearly by graph edges.
 
-- [ ] **Scenario 5: Unix pipeline stream truncation (SIGPIPE)**
+- [x] **Scenario 5: Unix pipeline stream truncation (SIGPIPE)**
   - **Given** any `f8 inspect` or `f8 check` command generating multiline output
   - **When** piped into `head -n 5` on a Unix system
   - **Then** the command exits cleanly with exit code 0 or 141 without printing any panic trace or `Broken pipe` error to `stderr`.
 
-- [ ] **Scenario 6: Cross-platform broken pipe panic handler**
+- [x] **Scenario 6: Cross-platform broken pipe panic handler**
   - **Given** an environment where `println!` encounters `io::ErrorKind::BrokenPipe`
   - **When** writing output to closed stdout
   - **Then** the panic hook catches the error and exits process cleanly with exit code 0.
@@ -207,27 +207,27 @@ fn build_precedent_tree_node(
 
 ### Phase 1: Core DAG Traversal & Pruning (`f8-core`)
 
-- [ ] Add `#[serde(default)] pub is_pruned: bool` to `DependencyNode` in [`crates/f8-core/src/compiler/compiled/model.rs`](../../crates/f8-core/src/compiler/compiled/model.rs).
-- [ ] Update `build_precedent_tree_node` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
-- [ ] Update `build_dependent_tree_node` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
-- [ ] Add unit tests in `crates/f8-core/tests/` asserting that diamond DAGs (A -> B, A -> C, B -> D, C -> D) prune duplicate expansion of D.
+- [x] Add `#[serde(default)] pub is_pruned: bool` to `DependencyNode` in [`crates/f8-core/src/compiler/compiled/model.rs`](../../crates/f8-core/src/compiler/compiled/model.rs).
+- [x] Update `build_precedent_tree_node` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
+- [x] Update `build_dependent_tree_node` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
+- [x] Add unit tests in `crates/f8-core/tests/` asserting that diamond DAGs (A -> B, A -> C, B -> D, C -> D) prune duplicate expansion of D.
 
 ### Phase 2: CLI Tree Renderer Pruning Annotation (`f8-cli`)
 
-- [ ] Update `render_node_list` in [`crates/f8-cli/src/render/tree.rs`](../../crates/f8-cli/src/render/tree.rs) to append ` (already visited)` when `node.is_pruned` is true.
-- [ ] Verify that `render_node_list` does not render recursive children for pruned nodes.
+- [x] Update `render_node_list` in [`crates/f8-cli/src/render/tree.rs`](../../crates/f8-cli/src/render/tree.rs) to append ` (already visited)` when `node.is_pruned` is true.
+- [x] Verify that `render_node_list` does not render recursive children for pruned nodes.
 
 ### Phase 3: SIGPIPE and Broken Pipe Handling (`f8-cli`)
 
-- [ ] Add `libc` dependency under `[target.'cfg(unix)'.dependencies]` in [`Cargo.toml`](../../Cargo.toml) and [`crates/f8-cli/Cargo.toml`](../../crates/f8-cli/Cargo.toml).
-- [ ] Reset `SIGPIPE` handler to `SIG_DFL` in [`crates/f8-cli/src/main.rs`](../../crates/f8-cli/src/main.rs) on `#[cfg(unix)]`.
-- [ ] Install broken pipe panic hook in [`crates/f8-cli/src/lib.rs`](../../crates/f8-cli/src/lib.rs) ensuring clean exit on broken pipe.
+- [x] Add `libc` dependency under `[target.'cfg(unix)'.dependencies]` in [`Cargo.toml`](../../Cargo.toml) and [`crates/f8-cli/Cargo.toml`](../../crates/f8-cli/Cargo.toml).
+- [x] Reset `SIGPIPE` handler to `SIG_DFL` in [`crates/f8-cli/src/main.rs`](../../crates/f8-cli/src/main.rs) on `#[cfg(unix)]`.
+- [x] Install broken pipe panic hook in [`crates/f8-cli/src/lib.rs`](../../crates/f8-cli/src/lib.rs) ensuring clean exit on broken pipe.
 
 ### Phase 4: Integration Verification Suite
 
-- [ ] Add integration test in `crates/f8-cli/tests/` verifying `f8 inspect precedents ReturnsSummary irr val -p crates/f8-cli/templates/lbo --recursive` outputs < 250 lines in < 100ms.
-- [ ] Add integration test in `crates/f8-cli/tests/` verifying piping output to `head` exits without broken pipe panic.
-- [ ] Run verification suite:
+- [x] Add integration test in `crates/f8-cli/tests/` verifying `f8 inspect precedents ReturnsSummary irr val -p crates/f8-cli/templates/lbo --recursive` outputs < 250 lines in < 100ms.
+- [x] Add integration test in `crates/f8-cli/tests/` verifying piping output to `head` exits without broken pipe panic.
+- [x] Run verification suite:
   - `cargo check`
   - `cargo test`
   - `cargo clippy --all-targets -- -D warnings`

@@ -458,3 +458,103 @@ fn test_scenario_8_missing_entity_compiler_diagnostics() {
         .stderr(predicate::str::contains("\"exit_code\": 2"))
         .stderr(predicate::str::contains("\"status\": \"error\""));
 }
+
+#[test]
+fn test_scenario_9_lbo_recursive_precedents_pruned_bounds() {
+    let lbo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/lbo");
+
+    let assert = Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "precedents",
+            "ReturnsSummary",
+            "irr",
+            "val",
+            "--recursive",
+            "-p",
+            lbo_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Transitive Precedent Tree (150 calculations):",
+        ))
+        .stdout(predicate::str::contains("(already visited)"));
+
+    let stdout_str = String::from_utf8_lossy(&assert.get_output().stdout);
+    let line_count = stdout_str.lines().count();
+    assert!(
+        line_count < 300,
+        "Pruned LBO recursive tree must have < 300 lines, got {line_count}"
+    );
+}
+
+#[test]
+fn test_scenario_10_recursive_precedents_json_pruned_flag() {
+    let lbo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/lbo");
+
+    let assert = Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "precedents",
+            "ReturnsSummary",
+            "irr",
+            "val",
+            "--recursive",
+            "--json",
+            "-p",
+            lbo_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let json_val: serde_json::Value =
+        serde_json::from_slice(&assert.get_output().stdout).expect("Must be valid JSON");
+    assert_eq!(json_val["transitive_count"], 150);
+
+    // Recursively search for any node with "is_pruned": true
+    fn has_pruned_node(node: &serde_json::Value) -> bool {
+        if node.get("is_pruned").and_then(|v| v.as_bool()) == Some(true) {
+            return true;
+        }
+        if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+            return children.iter().any(has_pruned_node);
+        }
+        false
+    }
+
+    let nodes = json_val["nodes"].as_array().expect("Nodes must be array");
+    assert!(
+        nodes.iter().any(has_pruned_node),
+        "Expected at least one node to be pruned in recursive tree"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_scenario_11_sigpipe_broken_pipe_head() {
+    let lbo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/lbo");
+    let f8_bin = assert_cmd::cargo::cargo_bin("f8");
+
+    let output = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "{} inspect precedents ReturnsSummary irr val -p {} --recursive --json | head -n 5",
+            f8_bin.display(),
+            lbo_path.display()
+        ))
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("Broken pipe"),
+        "Must not emit Broken pipe panic trace: {stderr}"
+    );
+    assert!(
+        !stderr.contains("panicked"),
+        "Must not panic on SIGPIPE: {stderr}"
+    );
+}

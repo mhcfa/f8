@@ -78,6 +78,9 @@ Outputs are strictly segregated: operational output and summaries go to `stdout`
 - **Machine-readable JSON output**:
   - **When** running `f8 check --json` or `f8 compile --json`
   - **Then** prints formatted JSON object with `"status": "ok"` and summary metrics to `stdout` on success, or `"status": "error"` and `"exit_code": <code>` to `stderr` on failure.
+- **Pipeline stream truncation (SIGPIPE)**:
+  - **When** piping CLI output to early-terminating Unix filters (`head`, `less`, `grep`)
+  - **Then** terminates cleanly via `SIGPIPE` disposition (`SIG_DFL`) or broken pipe handler without emitting panic traces to `stderr`.
 
 ### 4. OpenXML Workbook Compilation (`f8 compile`)
 
@@ -139,7 +142,7 @@ Provides terminal auditing tools for model structures, 2D statement tables, cell
   - **Then** displays coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, precedents, and dependents.
 - **Precedent & blast-radius DAG trees**:
   - **When** running `f8 inspect precedents <table_id> <row_id> <col_id>` or `f8 inspect dependents <table_id> <row_id> <col_id>`
-  - **Then** renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) when `--recursive` is supplied.
+  - **Then** renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) when `--recursive` is supplied, annotating pruned reconvergent paths with `(already visited)`.
 - **Structured machine-readable JSON**:
   - **When** passing `--json` to any inspect subcommand
   - **Then** prints structured JSON to `stdout` on success, or structured error JSON to `stderr` with exit code `2` if a coordinate/table entity does not exist.
