@@ -46,8 +46,8 @@ flowchart TD
 The compiler pipeline evaluates diagnostics against clear pass-boundary gates, distinguishing between **operational I/O errors** (handled by the CLI/loader layer) and **in-memory compiler errors** (accumulated within `f8-core`):
 
 ### Pass 1 Gate: Specification Ingestion & Validation
-- **Scope**: In-memory validation of deserialized `ProjectManifest` and `TableSpec` slice. (Filesystem I/O and raw JSON syntax errors are handled prior to compilation by the CLI/adapter loader, returning operational exit code `1`).
-- **Accumulable errors**: Iterates through all sheets and all table specifications. Collects all duplicate sheet names, duplicate table IDs, duplicate row/column keys, empty tables, and invalid format preset combinations into `DiagnosticBag`.
+- **Scope**: In-memory validation of deserialized `ProjectManifest`, `TableSpec` slice, and theme resolution. (Filesystem I/O and raw JSON syntax errors are handled prior to compilation by the CLI/adapter loader, returning operational exit code `1`).
+- **Accumulable errors**: Iterates through all sheets and all table specifications. Collects all duplicate sheet names, duplicate table IDs, duplicate row/column keys, empty tables, invalid format preset combinations, and unresolvable/invalid themes into `DiagnosticBag`.
 - **Gate**: If any Pass 1 errors exist in the bag, compilation halts before IR expansion.
 
 ### Pass 2 Gate: IR Grid Expansion & Formula Parsing
@@ -62,14 +62,13 @@ The compiler pipeline evaluates diagnostics against clear pass-boundary gates, d
 ### Pass 3 Gate: Reference Resolution & DAG Acyclicity
 - **Scope**: Coordinate resolution (`Table[Row, Col]`), relative temporal offsets (`col.prev`), range slicing, and cycle detection.
 - **Accumulable errors**:
-  - Validates every coordinate reference in every parsed formula AST across the entire workbook. Collects all unknown table references, unknown row identifiers, unknown column identifiers, out-of-bounds temporal offsets, and cross-table `@col` active coordinate mismatches.
-  - Computes Levenshtein distance against registered symbol names to generate automated remediation hints (`"Did you mean 'ebitda'?"`).
+  - Validates every coordinate reference in every parsed formula AST across the entire workbook. Collects all unknown table references, unknown row identifiers, unknown column identifiers, out-of-bounds temporal offsets, and cross-table `@col` active coordinate mismatches, reporting precise coordinate origins and target identifiers.
   - Tarjan's Strongly Connected Components (SCC) algorithm identifies all circular dependency loops simultaneously in a single graph traversal.
 - **Gate**: If broken references or cycles exist in the bag, compilation halts before topological evaluation.
 
 ### Pass 4 Gate: Topological DAG Evaluation
 - **Scope**: In-memory calculation of cell values across the DAG.
-- **Accumulable errors**: Mathematical runtime errors (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`) do not panic. The evaluator populates target cells with `CellValue::Error(ExcelError)` and records diagnostic errors (`E0401`–`E0403`) in `DiagnosticBag`, allowing downstream independent formulas to continue evaluation. When diagnostics are sorted, upstream root-cause cells appear first, allowing agents and analysts to trace calculations upstream via standard dependency inspection (`f8 inspect precedents`).
+- **Accumulable errors**: Mathematical runtime errors (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`) do not panic. Following topological dependency order, when a formula evaluates to `CellValue::Error(ExcelError)`, the cell is populated with the error and a diagnostic (`E0401`–`E0403`) is directly added to `DiagnosticBag`. Independent formulas continue evaluation to catch as many distinct calculation errors as possible in a single run.
 - **Gate**: If any mathematical evaluation errors exist in the bag, compilation halts before spatial layout planning.
 
 ### Pass 5 Gate: Spatial Layout Planning
@@ -88,7 +87,7 @@ The compiler pipeline evaluates diagnostics against clear pass-boundary gates, d
 
 ### Pass 6b: Binary Workbook Emission (`.xlsx`)
 - **Scope**: OpenXML package synthesis, style catalog generation, and `.xlsx` byte buffer compression.
-- **Behavior**: At this stage, all models, formulas, values, and layouts have been verified clean. Emission failures are physical or I/O constraints (e.g. invalid theme color hex strings or memory/buffer write limits). Theme color errors are recorded as `E0610` diagnostics; catastrophic zip/stream failures return an operational `EmissionError`.
+- **Behavior**: At this stage, all models, formulas, values, and layouts have been verified clean. Catastrophic zip/stream failures return an operational `EmissionError`.
 
 ---
 
@@ -98,16 +97,7 @@ Diagnostic data types are centralized in `f8-core::compiler::diagnostic`:
 
 ```rust
 use serde::{Deserialize, Serialize};
-use crate::model::format::{CurrencyCode, FormatPreset};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
-
-/// Diagnostic severity level (all compiler diagnostics are errors).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum DiagnosticLevel {
-    #[default]
-    Error,
-}
 
 /// Precise cell coordinate origin of a diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -119,25 +109,17 @@ pub struct CellOrigin {
 }
 
 /// Unassigned driver input cell required for model calculation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MissingInput {
     pub table: TableId,
     pub row: RowId,
     pub col: ColId,
-    pub line_item: Option<String>,
-    pub col_header: Option<String>,
-    pub format: Option<FormatPreset>,
-    pub decimals: Option<u32>,
-    pub currency: Option<CurrencyCode>,
-    pub note: Option<String>,
 }
 
 /// Unified diagnostic record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
-    pub level: DiagnosticLevel,
     pub code: &'static str,
-    pub kind: &'static str,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origin: Option<CellOrigin>,
@@ -277,38 +259,38 @@ When Tarjan's SCC pass detects a circular reference loop, the `E0307` diagnostic
 
 All diagnostic codes represent fatal compiler errors (`E`) categorized by pass:
 
-| Code | Severity | Classification | Description |
-|---|---|---|---|
-| **E0101** | Error | DuplicateSheetName | Multiple sheets declare the same visual name. |
-| **E0102** | Error | DuplicateTableId | Table identifier is declared more than once in the workbook. |
-| **E0103** | Error | DuplicateRowId | Row identifier is duplicated within a single table. |
-| **E0104** | Error | DuplicateColumnId | Column identifier is duplicated within a single table. |
-| **E0105** | Error | EmptyTable | Table contains zero rows or zero columns. |
-| **E0106** | Error | InvalidFormatOption | Decimals or currency declared on non-numeric format preset. |
-| **E0201** | Error | FormulaParseError | Pratt parser encountered unexpected token or unclosed parenthesis. |
-| **E0202** | Error | AmbiguousExpression | Both row and column define vector expressions without a point override. |
-| **E0203** | Error | FormatConflict | Row format preset is incompatible with column format preset. |
-| **E0204** | Error | DecimalsConflict | Row precision conflicts with column precision without cell override. |
-| **E0205** | Error | CurrencyConflict | Row currency code conflicts with column currency code. |
-| **E0206** | Error | MissingRequiredInputs | One or more data cells have no formula, literal value, or explicit null. |
-| **E0301** | Error | UnresolvedTable | Formula references a table identifier not present in symbol table. |
-| **E0302** | Error | UnresolvedRow | Formula references a row key that does not exist in target table. |
-| **E0303** | Error | UnresolvedColumn | Formula references a column key that does not exist in target table. |
-| **E0304** | Error | InvertedRange | Formula range slice specifies start coordinate after end coordinate. |
-| **E0305** | Error | TemporalOffsetOutOfBounds | Relative offset (`col.prev` / `col.next`) extends past timeline bounds. |
-| **E0306** | Error | ActiveCoordinateMismatch | Formula uses `@col` or `@row` across tables with non-homologous axes. |
-| **E0307** | Error | CyclicDependency | Circular calculation reference detected via Tarjan SCC. |
-| **E0401** | Error | DivisionByZero | Evaluated formula cell calculated `#DIV/0!`. |
-| **E0402** | Error | ValueCalculationError | Evaluated formula cell calculated `#VALUE!`. |
-| **E0403** | Error | NumberCalculationError | Evaluated formula cell calculated `#NUM!`. |
-| **E0501** | Error | GridLimitExceeded | Table placement exceeds Excel 1M row or 16K column limit. |
-| **E0502** | Error | UnassignedTable | Table specification is defined but not mounted on any worksheet. |
-| **E0503** | Error | UnknownTable | Worksheet references a table specification not provided. |
-| **E0504** | Error | OverlappingTables | Multiple tables occupy overlapping physical coordinates. |
-| **E0601** | Error | EmptyRange | Formula range slice resolves to an empty coordinate span. |
-| **E0602** | Error | MissingCellCoordinate | Referenced cell coordinate is missing from spatial layout map. |
-| **E0603** | Error | LoweringSyntaxError | Formula construct cannot be lowered to valid Excel syntax. |
-| **E0610** | Error | InvalidThemeColor | Hex color string in theme cannot be parsed into valid RGB. |
+| Code | Classification | Description |
+|---|---|---|
+| **E0101** | DuplicateSheetName | Multiple sheets declare the same visual name. |
+| **E0102** | DuplicateTableId | Table identifier is declared more than once in the workbook. |
+| **E0103** | DuplicateRowId | Row identifier is duplicated within a single table. |
+| **E0104** | DuplicateColumnId | Column identifier is duplicated within a single table. |
+| **E0105** | EmptyTable | Table contains zero rows or zero columns. |
+| **E0106** | InvalidFormatOption | Decimals or currency declared on non-numeric format preset. |
+| **E0107** | ThemeNotFound | Configured theme preset is not found in built-in catalog. |
+| **E0108** | InvalidThemeColor | Hex color string in theme palette cannot be parsed into valid RGB. |
+| **E0201** | FormulaParseError | Pratt parser encountered unexpected token or unclosed parenthesis. |
+| **E0202** | AmbiguousExpression | Both row and column define vector expressions without a point override. |
+| **E0203** | FormatConflict | Row format preset is incompatible with column format preset. |
+| **E0204** | DecimalsConflict | Row precision conflicts with column precision without cell override. |
+| **E0205** | CurrencyConflict | Row currency code conflicts with column currency code. |
+| **E0206** | MissingRequiredInputs | One or more data cells have no formula, literal value, or explicit null. |
+| **E0301** | UnresolvedTable | Formula references a table identifier not present in symbol table. |
+| **E0302** | UnresolvedRow | Formula references a row key that does not exist in target table. |
+| **E0303** | UnresolvedColumn | Formula references a column key that does not exist in target table. |
+| **E0304** | InvertedRange | Formula range slice specifies start coordinate after end coordinate. |
+| **E0305** | TemporalOffsetOutOfBounds | Relative offset (`col.prev` / `col.next`) extends past timeline bounds. |
+| **E0306** | ActiveCoordinateMismatch | Formula uses `@col` or `@row` across tables with non-homologous axes. |
+| **E0307** | CyclicDependency | Circular calculation reference detected via Tarjan SCC. |
+| **E0401** | DivisionByZero | Evaluated formula cell calculated `#DIV/0!`. |
+| **E0402** | ValueCalculationError | Evaluated formula cell calculated `#VALUE!`. |
+| **E0403** | NumberCalculationError | Evaluated formula cell calculated `#NUM!`. |
+| **E0501** | GridLimitExceeded | Table placement exceeds Excel 1M row or 16K column limit. |
+| **E0502** | UnassignedTable | Table specification is defined but not mounted on any worksheet. |
+| **E0503** | UnknownTable | Worksheet references a table specification not provided. |
+| **E0504** | OverlappingTables | Multiple tables occupy overlapping physical coordinates. |
+| **E0601** | EmptyRange | Formula range slice resolves to an empty coordinate span. |
+| **E0602** | LoweringSyntaxError | Formula construct cannot be lowered to valid Excel syntax. |
 
 ---
 
@@ -321,13 +303,11 @@ All diagnostics emitted by the compiler (via `f8 check --json` or stderr on buil
   "status": "error",
   "exit_code": 2,
   "summary": {
-    "error_count": 4
+    "error_count": 5
   },
   "diagnostics": [
     {
-      "level": "error",
       "code": "E0302",
-      "kind": "UnresolvedRow",
       "message": "Formula references unknown row 'ebitda_adj' in table 'IncomeStatement'",
       "origin": {
         "sheet": "Financials",
@@ -335,13 +315,10 @@ All diagnostics emitted by the compiler (via `f8 check --json` or stderr on buil
         "row": "ebit",
         "col": "2024E"
       },
-      "expression": "IncomeStatement[\"ebitda_adj\", @col] - IncomeStatement[\"depr\", @col]",
-      "help": "Did you mean 'ebitda'?"
+      "expression": "IncomeStatement[\"ebitda_adj\", @col] - IncomeStatement[\"depr\", @col]"
     },
     {
-      "level": "error",
       "code": "E0307",
-      "kind": "CyclicDependency",
       "message": "Circular dependency loop detected across 2 formulas",
       "origin": {
         "sheet": "Financials",
@@ -372,9 +349,7 @@ All diagnostics emitted by the compiler (via `f8 check --json` or stderr on buil
       ]
     },
     {
-      "level": "error",
       "code": "E0201",
-      "kind": "FormulaParseError",
       "message": "Unexpected end of input, expected closing parenthesis ')'",
       "origin": {
         "sheet": "Financials",
@@ -386,9 +361,7 @@ All diagnostics emitted by the compiler (via `f8 check --json` or stderr on buil
       "help": "Ensure all opened parentheses are properly closed."
     },
     {
-      "level": "error",
       "code": "E0401",
-      "kind": "DivisionByZero",
       "message": "Evaluation resulted in division by zero (#DIV/0!)",
       "origin": {
         "sheet": "Financials",
@@ -396,8 +369,18 @@ All diagnostics emitted by the compiler (via `f8 check --json` or stderr on buil
         "row": "debt_to_ebitda",
         "col": "2023A"
       },
-      "expression": "BalanceSheet[\"total_debt\", @col] / IncomeStatement[\"ebitda\", @col]",
-      "help": "Target denominator evaluates to zero. Consider wrapping with IFERROR or IF."
+      "expression": "BalanceSheet[\"total_debt\", @col] / IncomeStatement[\"ebitda\", @col]"
+    },
+    {
+      "code": "E0206",
+      "message": "Model contains 1 unassigned driver input required for calculation",
+      "missing_inputs": [
+        {
+          "table": "Assumptions",
+          "row": "tax_rate",
+          "col": "val"
+        }
+      ]
     }
   ]
 }

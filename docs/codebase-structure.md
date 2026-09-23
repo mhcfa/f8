@@ -69,7 +69,7 @@ Sequential pipeline transforming validated input specs into evaluated matrices a
 - **Pass 5 (`compiler::layout`)**: Plans physical 2D grid coordinates, table stacking, headers, gutters, and freeze panes into a `LayoutMap`.
 - **Pass 6a (`compiler::lowering`)**: Rewrites semantic AST references into concrete Excel formulas (`=C10-C11` or `='Summary'!$B$4`).
 - **Pass 6b (`compiler::emission`)**: Streams spatial layouts, styles, precalculated cell caches, and formulas into in-memory `.xlsx` byte buffers via `rust_xlsxwriter::Workbook::save_to_buffer()`, or serializes headless outputs (JSON/CSV).
-- **Inspection Facade (`compiler::CompiledModel`)**: Unified compiler artifact combining `SymbolTable`, `CellGrid`, `DependencyGraph`, `EvaluatedModel`, `LayoutMap`, and `LoweredFormulaMap` to answer `inspect cell`, `inspect find`, `inspect precedents`, `inspect dependents`, and `inspect table` queries without re-running passes.
+- **Inspection Facade (`compiler::CompiledModel`)**: Unified compiler artifact combining `SymbolTable`, `CellGrid`, `DependencyGraph`, `EvaluatedModel`, `LayoutMap`, and `LoweredFormulaMap` to answer `inspect cell`, `inspect precedents`, `inspect dependents`, and `inspect table` queries without re-running passes.
 - **Diagnostic Subsystem (`compiler::diagnostic`)**: Centralized `DiagnosticBag` accumulating errors across passes (syntax errors, conflicts, missing inputs, unresolved coordinates, calculation faults) and emitting structured JSON for agents and tooling. See [Compiler Diagnostics](compiler/diagnostics.md).
 
 ### 2.4. Layer 4: Institutional Templates & Scaffolding (Embedded Assets)
@@ -135,10 +135,10 @@ The compiler core is designed from day one to support both native operating syst
 1. **Phase 1: Core Diagnostics Subsystem & CompiledModel Facade (`f8-core`)**:
    - Implement `DiagnosticBag` and pass gates (Passes 1–4) for phase-level diagnostic accumulation.
    - Consolidate all compilation pass artifacts into the unified `CompiledModel` facade (`SymbolTable`, `CellGrid`, `DependencyGraph`, `EvaluatedModel`, `LayoutMap`, `LoweredFormulaMap`).
-   - Implement pure in-memory query APIs (`inspect_cell`, `table_matrix`, `precedents_of`, `dependents_of`, `find_cells`).
+   - Implement pure in-memory query APIs (`inspect_cell`, `table_matrix`, `precedents_of`, `dependents_of`).
    - Deliver comprehensive unit tests for multi-error collection and deterministic diagnostic sorting.
 2. **Phase 2: Local Command-Line Interface (`f8-cli`)**:
-   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`, `--open`), and `f8 inspect` (`summary`, `table`, `cell`, `find`, `precedents`, `dependents`) on top of `CompiledModel` and `DiagnosticBag`.
+   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`, `--open`), and `f8 inspect` (`summary`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel` and `DiagnosticBag`.
    - Dogfood on personal and institutional financial models (3-statement, LBO, comps) to refine authoring ergonomics.
 3. **Phase 3: Model Context Protocol Server (`f8-mcp`)**:
    - Create `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.

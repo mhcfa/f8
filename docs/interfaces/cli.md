@@ -54,8 +54,7 @@ f8 check [-p <path>] [--json]
 f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache] [--open]
 f8 inspect [-p <path>] [--json]
 f8 inspect table <table_id> [--view <values|formulas|both>] [--format <table|markdown|json>] [-p <path>]
-f8 inspect cell [table_id] [row_id] [col_id] [-a <A1>] [-p <path>] [--json]
-f8 inspect find <query> [-p <path>] [--json]
+f8 inspect cell <table_id> <row_id> <col_id> [-p <path>] [--json]
 f8 inspect precedents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
 f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
 ```
@@ -222,15 +221,11 @@ f8 inspect table IncomeStatement --view both
 
 ---
 
-#### `f8 inspect cell [table_id] [row_id] [col_id] [options]`
-Inspects an individual calculation cell by explicit semantic coordinates or physical Excel sheet address, showing evaluated values, formatting, formula ASTs, lowered Excel formulas, physical addresses, precedents, and dependents:
+#### `f8 inspect cell <table_id> <row_id> <col_id> [options]`
+Inspects an individual calculation cell by explicit semantic coordinates, showing evaluated values, formatting, formula ASTs, lowered Excel formulas, physical sheet addresses, precedents, and dependents:
 
 ```bash
-# Inspect by semantic coordinates
 f8 inspect cell IncomeStatement total_opex 2028E
-
-# Inspect by Excel physical coordinate
-f8 inspect cell -a Financials!C18
 ```
 
 **Output (Human)**:
@@ -251,35 +246,8 @@ Dependents (1):
 ```
 
 **Options**:
-- `-a`, `--address <sheet!A1>`: Inspect a cell directly by its physical Excel sheet coordinate (e.g. `--address Financials!C18` or `--address C18`).
-- `--json`: Emits structured JSON representation of the cell inspection record.
-
----
-
-#### `f8 inspect find <query> [options]`
-Searches and locates cells across the entire model without needing to memorize exact table, row, or column identifiers:
-- **Physical Excel address**: e.g. `C18` or `Financials!C18`.
-- **Identifier substring**: e.g. `net_income`, `rev_growth`, `tax`.
-- **Presentation line-item label**: e.g. `"Net Income"`, `"Total Revenue"`, `"Salaries"`.
-
-```bash
-# Find cells matching a label
-f8 inspect find "Net Income"
-
-# Find cells by Excel physical coordinate
-f8 inspect find C18
-```
-
-**Output**:
-```text
-Matches (2 cells across 2 tables):
-  • IncomeStatement["net_income", "2024E"] (Financials!C24) = $24.5M  [Formula: =C22-C23]
-  • CashFlow["net_income", "2024E"]        (Financials!C38) = $24.5M  [Formula: =C24]
-```
-
-**Options**:
 - `-p`, `--project <path>`: Project directory or manifest file path.
-- `--json`: Emits matching cells as a JSON list.
+- `--json`: Emits structured JSON representation of the cell inspection record.
 
 ---
 
@@ -365,9 +333,7 @@ All compiler diagnostics emitted on failure follow the unified schema defined in
   },
   "diagnostics": [
     {
-      "level": "error",
       "code": "E0302",
-      "kind": "UnresolvedRow",
       "message": "Formula in cell 'IncomeStatement[\"tax\", \"2024E\"]' references unknown row 'ebit_adjusted' in table 'IncomeStatement'",
       "origin": {
         "sheet": "Financials",
@@ -375,26 +341,16 @@ All compiler diagnostics emitted on failure follow the unified schema defined in
         "row": "tax",
         "col": "2024E"
       },
-      "expression": "IncomeStatement[\"ebit_adjusted\", @col] * Assumptions[\"tax_rate\", \"val\"]",
-      "help": "Did you mean 'ebit'?"
+      "expression": "IncomeStatement[\"ebit_adjusted\", @col] * Assumptions[\"tax_rate\", \"val\"]"
     },
     {
-      "level": "error",
       "code": "E0206",
-      "kind": "MissingRequiredInputs",
       "message": "Model contains 1 unassigned driver input required for calculation",
-      "origin": null,
       "missing_inputs": [
         {
           "table": "Assumptions",
           "row": "tax_rate",
-          "col": "val",
-          "line_item": "Corporate Tax Rate",
-          "col_header": "Value",
-          "format": "percentage",
-          "decimals": 1,
-          "currency": null,
-          "note": "Effective corporate income tax rate"
+          "col": "val"
         }
       ]
     }
@@ -427,7 +383,6 @@ crates/f8-cli/
     ├── commands/
     │   ├── check.rs            # Fast verification execution (Passes 1–6a) and summary
     │   ├── compile.rs          # OpenXML emission, values-only freezing, and file writing
-    │   ├── find.rs             # Cell discovery and coordinate searching
     │   ├── inspect.rs          # Summary, cell, table, precedents, and dependents inspection
     │   └── init.rs             # Project creation and template unpacking
     └── render/
