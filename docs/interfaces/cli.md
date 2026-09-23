@@ -366,4 +366,4 @@ crates/f8-cli/
         └── tree.rs             # Dependency tree and blast-radius rendering
 ```
 
-See [Model Context Protocol (MCP)](mcp.md) for JSON-RPC agent tool equivalents and [Architecture Overview](../architecture.md) for compiler passes.
+See [CLI Inspection Audit & Agent Ergonomics Evaluation](cli-audit.md) for empirical test runs, defect analysis, and UX roadmap, [Model Context Protocol (MCP)](mcp.md) for JSON-RPC agent tool equivalents, and [Architecture Overview](../architecture.md) for compiler passes.
