@@ -13,7 +13,7 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 
 - **Modules & components**:
   - `f8_core::compiler::compiled`: Declares `CompiledModel`, inspection query implementations, and domain error `InspectionError`.
-  - `f8_core::compiler::compiled::model`: Declares public inspection data contracts (`ModelSummary`, `SheetSummary`, `TableSummary`, `CellInspection`, `TableInspection`, `ColumnInspection`, `RowInspection`, `TableCellInfo`, `DependencyTree`, `DependencyNode`).
+  - `f8_core::compiler::compiled::model`: Declares public inspection data contracts (`ModelSummary`, `SheetSummary`, `TableSummary`, `CellInspection`, `CellNeighborInspection`, `TableInspection`, `ColumnInspection`, `RowInspection`, `TableCellInfo`, `DependencyTree`, `DependencyNode`).
   - `f8_core::compiler::mod`: Exposes `Compiler::compile` and `Compiler::compile_with_registry` as the high-level compiler drivers.
 - **Data flow & interfaces**:
   - Input: `ProjectManifest`, `&[TableSpec]`, and `Theme`.
@@ -59,16 +59,16 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 
 ### 4. Cell-Level Inspection & Auditing
 
-`CompiledModel::inspect_cell` resolves coordinates to physical sheet addresses (`Financials!C18`), evaluated values, format presets, precision, currency, formula ASTs, lowered Excel formulas, and direct incoming/outgoing edges.
+`CompiledModel::inspect_cell` resolves coordinates to physical sheet addresses (`Financials!C18`), evaluated values, pre-formatted value strings (`"$ 115.0"`), format presets, precision, currency, formula ASTs, lowered Excel formulas, and direct incoming/outgoing edges enriched with neighbor display metadata (`CellNeighborInspection`).
 
 #### Scenarios
 
 - **Formula cell inspection**:
   - **When** inspecting a formula cell
-  - **Then** returns `CellInspection` with `is_formula = true`, source DSL expression string, lowered `=A1` formula, and populated `precedents`.
+  - **Then** returns `CellInspection` with `is_formula = true`, source DSL expression string, lowered `=A1` formula, `formatted_value`, and populated `precedents` containing coordinates and formatted values.
 - **Literal cell inspection**:
   - **When** inspecting a literal input cell
-  - **Then** returns `CellInspection` with `is_formula = false`, `formula_expr = None`, and empty `precedents`.
+  - **Then** returns `CellInspection` with `is_formula = false`, `formula_expr = None`, `formatted_value`, and empty `precedents`.
 - **Missing cell coordinate**:
   - **When** querying a coordinate not present in the model grid
   - **Then** returns `InspectionError::CellNotFound`.
@@ -88,19 +88,19 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 
 ### 6. Dependency Trees & Blast-Radius Traversals
 
-`precedents_of` and `dependents_of` construct hierarchical trees for upstream root-cause analysis and downstream blast-radius analysis.
+`precedents_of` and `dependents_of` construct hierarchical trees for upstream root-cause analysis and downstream blast-radius analysis, populating `formatted_value` on each calculation node.
 
 #### Scenarios
 
 - **Direct precedents/dependents**:
   - **When** calling `precedents_of(cell, false)` or `dependents_of(cell, false)`
-  - **Then** returns `DependencyTree` containing only direct child nodes with empty `children`.
+  - **Then** returns `DependencyTree` containing only direct child nodes with `formatted_value` and empty `children`.
 - **Recursive calculation tree**:
   - **When** calling `precedents_of(cell, true)` or `dependents_of(cell, true)`
-  - **Then** returns `DependencyTree` with nested children and accurate `transitive_count` reflecting unique reached cells.
+  - **Then** returns `DependencyTree` with nested children containing `formatted_value` and accurate `transitive_count` reflecting unique reached cells.
 - **Reconvergent DAG path pruning**:
   - **When** traversing a calculation graph where a cell is reached through multiple paths
-  - **Then** expands children on first encounter and marks subsequent encounters as pruned (`is_pruned = true`, `children = []`), bounding tree expansion linearly while preserving exact `transitive_count`.
+  - **Then** expands children on first encounter and marks subsequent encounters as pruned (`is_pruned = true`, `children = []`), retaining `formatted_value` while bounding tree expansion linearly and preserving exact `transitive_count`.
 
 ## Public Interfaces
 

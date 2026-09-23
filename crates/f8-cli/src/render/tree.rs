@@ -66,13 +66,17 @@ fn render_node_list(nodes: &[DependencyNode], prefix: &str, out: &mut String) {
         } else {
             format!("{prefix}│   ")
         };
+        let val_suffix = match &node.formatted_value {
+            Some(v) if !v.is_empty() => format!(" = {v}"),
+            _ => String::new(),
+        };
         if node.is_pruned {
             out.push_str(&format!(
-                "{prefix}{branch}{} (already visited)\n",
+                "{prefix}{branch}{}{val_suffix} (already visited)\n",
                 node.cell_id
             ));
         } else {
-            out.push_str(&format!("{prefix}{branch}{}\n", node.cell_id));
+            out.push_str(&format!("{prefix}{branch}{}{val_suffix}\n", node.cell_id));
         }
         if !node.children.is_empty() {
             render_node_list(&node.children, &next_prefix, out);

@@ -3,8 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use f8_core::compiler::compiled::TableInspection;
 use f8_core::compiler::ir::id::CellId;
-use f8_core::model::format::{CurrencyCode, FormatPreset};
-use f8_core::value::CellValue;
+use f8_core::value::format_cell_value;
 
 /// View mode for table cell content rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Serialize, Deserialize)]
@@ -45,110 +44,6 @@ pub fn render_table(table: &TableInspection, view: ViewMode, format: TableFormat
     }
 }
 
-/// Formats a cell value according to accounting rules and format presets.
-#[must_use]
-pub fn format_cell_value(
-    value: &CellValue,
-    format: Option<FormatPreset>,
-    decimals: Option<u32>,
-    currency: Option<CurrencyCode>,
-) -> String {
-    match value {
-        CellValue::Number(n) => format_accounting_number(*n, format, decimals, currency),
-        CellValue::Text(s) => s.clone(),
-        CellValue::Boolean(b) => {
-            if *b {
-                "TRUE".to_string()
-            } else {
-                "FALSE".to_string()
-            }
-        }
-        CellValue::Empty => String::new(),
-        CellValue::Error(e) => format!("#{e}"),
-    }
-}
-
-/// Formats an accounting number with parentheses for negative values, commas, and currency/percent symbols.
-#[must_use]
-pub fn format_accounting_number(
-    val: f64,
-    format: Option<FormatPreset>,
-    decimals: Option<u32>,
-    currency: Option<CurrencyCode>,
-) -> String {
-    let is_neg = val < 0.0 && val.abs() > 1e-9;
-    let abs_val = val.abs();
-
-    let dec = match format {
-        Some(FormatPreset::Percentage) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::Multiple) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::BasisPoints) => decimals.unwrap_or(0) as usize,
-        Some(FormatPreset::Currency) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::Number) => decimals.unwrap_or(0) as usize,
-        _ => decimals
-            .map(|d| d as usize)
-            .unwrap_or(if abs_val.fract().abs() > 1e-6 { 1 } else { 0 }),
-    };
-
-    let (scaled_val, suffix) = match format {
-        Some(FormatPreset::Percentage) => (abs_val * 100.0, "%"),
-        Some(FormatPreset::Multiple) => (abs_val, "x"),
-        Some(FormatPreset::BasisPoints) => (abs_val * 10000.0, " bps"),
-        _ => (abs_val, ""),
-    };
-
-    let formatted_num = format_with_commas(scaled_val, dec);
-
-    match format {
-        Some(FormatPreset::Currency) => {
-            let sym = currency.unwrap_or_default().symbol();
-            if is_neg {
-                format!("({sym} {formatted_num})")
-            } else {
-                format!("{sym} {formatted_num}")
-            }
-        }
-        Some(FormatPreset::Percentage)
-        | Some(FormatPreset::Multiple)
-        | Some(FormatPreset::BasisPoints) => {
-            if is_neg {
-                format!("({formatted_num}{suffix})")
-            } else {
-                format!("{formatted_num}{suffix}")
-            }
-        }
-        _ => {
-            if is_neg {
-                format!("({formatted_num})")
-            } else {
-                formatted_num
-            }
-        }
-    }
-}
-
-fn format_with_commas(val: f64, decimals: usize) -> String {
-    let raw = format!("{val:.decimals$}");
-    let parts: Vec<&str> = raw.split('.').collect();
-    let int_part = parts[0];
-    let frac_part = parts.get(1);
-
-    let mut result = String::new();
-    let chars: Vec<char> = int_part.chars().collect();
-    let len = chars.len();
-    for (i, &ch) in chars.iter().enumerate() {
-        if i > 0 && (len - i).is_multiple_of(3) {
-            result.push(',');
-        }
-        result.push(ch);
-    }
-    if let Some(frac) = frac_part {
-        result.push('.');
-        result.push_str(frac);
-    }
-    result
-}
-
 fn str_width(s: &str) -> usize {
     s.chars().count()
 }
@@ -165,12 +60,24 @@ fn extract_render_columns(table: &TableInspection) -> Vec<RenderColumn> {
         if col.is_gutter {
             continue;
         }
-        let header = col
+        let raw_header = col
             .headers
             .last()
             .cloned()
             .or_else(|| col.id.as_ref().map(ToString::to_string))
             .unwrap_or_default();
+        let header = match &col.id {
+            Some(id) => {
+                if raw_header.is_empty() {
+                    id.to_string()
+                } else if raw_header.eq_ignore_ascii_case(id.as_str()) {
+                    raw_header
+                } else {
+                    format!("{raw_header} [{id}]")
+                }
+            }
+            None => raw_header,
+        };
         let is_descriptor = i == 0
             || col
                 .headers
@@ -220,7 +127,14 @@ fn get_cell_text(
             .iter()
             .find(|r| r.id.as_ref().is_some_and(|id| id.as_str() == row_id))
             .map_or(0, |r| r.indent);
-        format!("{}{}", "  ".repeat(row_indent as usize), val_str)
+        let label = if val_str.is_empty() {
+            row_id.to_string()
+        } else if val_str.eq_ignore_ascii_case(row_id) {
+            val_str
+        } else {
+            format!("{val_str} [{row_id}]")
+        };
+        format!("{}{label}", "  ".repeat(row_indent as usize))
     } else {
         val_str
     };

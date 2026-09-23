@@ -25,9 +25,15 @@ pub fn render_summary(summary: &ModelSummary, duration_ms: Option<f64>) -> Strin
         ));
 
         for table in &sheet.tables {
+            let label =
+                if table.title.is_empty() || table.title.eq_ignore_ascii_case(table.id.as_str()) {
+                    table.id.to_string()
+                } else {
+                    format!("{} [{}]", table.title, table.id)
+                };
             out.push_str(&format!(
                 "      - {} [{} rows x {} cols] ({} cells)\n",
-                table.id, table.row_count, table.col_count, table.cell_count
+                label, table.row_count, table.col_count, table.cell_count
             ));
         }
     }

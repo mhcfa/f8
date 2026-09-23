@@ -15,9 +15,9 @@ pub mod lowering;
 use std::borrow::Cow;
 
 pub use compiled::{
-    CellInspection, ColumnInspection, CompiledModel, DependencyNode, DependencyTree,
-    InspectionError, ModelSummary, RowInspection, SheetSummary, TableCellInfo, TableInspection,
-    TableSummary,
+    CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel, DependencyNode,
+    DependencyTree, InspectionError, ModelSummary, RowInspection, SheetSummary, TableCellInfo,
+    TableInspection, TableSummary,
 };
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 pub use error::CompilerError;

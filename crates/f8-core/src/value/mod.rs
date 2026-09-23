@@ -4,8 +4,10 @@
 //! `docs/compiler/evaluator.md` and `docs/compiler/parity.md`.
 
 pub mod error;
+pub mod format;
 
 pub use error::{ExcelError, ParseExcelError};
+pub use format::{format_accounting_number, format_cell_value};
 
 use crate::expr::ast::Literal;
 use crate::model::table::ValueLiteral;

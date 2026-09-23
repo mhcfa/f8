@@ -9,8 +9,8 @@ use indexmap::IndexMap;
 
 pub use error::InspectionError;
 pub use model::{
-    CellInspection, ColumnInspection, DependencyNode, DependencyTree, ModelSummary, RowInspection,
-    SheetSummary, TableCellInfo, TableInspection, TableSummary,
+    CellInspection, CellNeighborInspection, ColumnInspection, DependencyNode, DependencyTree,
+    ModelSummary, RowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
 };
 
 use crate::compiler::emission::{EmissionOptions, WorkbookEmitter};
@@ -180,17 +180,41 @@ impl CompiledModel {
         };
 
         let excel_formula = self.lowered_map.get(&cell_id).map(ToString::to_string);
+        let formatted_value = Some(crate::value::format_cell_value(
+            &evaluated_value,
+            cell_node.format,
+            cell_node.decimals,
+            cell_node.currency,
+        ));
         let precedents = self
             .graph
             .dependencies_of(&cell_id)
             .into_iter()
-            .cloned()
+            .map(|dep| {
+                let (sheet_address, value, formatted_value, _) =
+                    self.get_node_display_metadata(dep);
+                CellNeighborInspection {
+                    cell_id: dep.clone(),
+                    sheet_address,
+                    value,
+                    formatted_value,
+                }
+            })
             .collect();
         let dependents = self
             .graph
             .dependents_of(&cell_id)
             .into_iter()
-            .cloned()
+            .map(|dep| {
+                let (sheet_address, value, formatted_value, _) =
+                    self.get_node_display_metadata(dep);
+                CellNeighborInspection {
+                    cell_id: dep.clone(),
+                    sheet_address,
+                    value,
+                    formatted_value,
+                }
+            })
             .collect();
 
         Ok(CellInspection {
@@ -198,6 +222,7 @@ impl CompiledModel {
             sheet: cell_node.sheet.clone(),
             physical_address,
             evaluated_value,
+            formatted_value,
             format: cell_node.format,
             decimals: cell_node.decimals,
             currency: cell_node.currency,
@@ -361,11 +386,13 @@ impl CompiledModel {
             let nodes = direct
                 .into_iter()
                 .map(|dep| {
-                    let (sheet_address, value, excel_formula) = self.get_node_display_metadata(dep);
+                    let (sheet_address, value, formatted_value, excel_formula) =
+                        self.get_node_display_metadata(dep);
                     DependencyNode {
                         cell_id: dep.clone(),
                         sheet_address,
                         value,
+                        formatted_value,
                         excel_formula,
                         is_pruned: false,
                         children: Vec::new(),
@@ -426,11 +453,13 @@ impl CompiledModel {
             let nodes = direct
                 .into_iter()
                 .map(|dep| {
-                    let (sheet_address, value, excel_formula) = self.get_node_display_metadata(dep);
+                    let (sheet_address, value, formatted_value, excel_formula) =
+                        self.get_node_display_metadata(dep);
                     DependencyNode {
                         cell_id: dep.clone(),
                         sheet_address,
                         value,
+                        formatted_value,
                         excel_formula,
                         is_pruned: false,
                         children: Vec::new(),
@@ -479,7 +508,8 @@ impl CompiledModel {
         all_visited: &mut HashSet<CellId>,
     ) -> DependencyNode {
         all_visited.insert(cell_id.clone());
-        let (sheet_address, value, excel_formula) = self.get_node_display_metadata(cell_id);
+        let (sheet_address, value, formatted_value, excel_formula) =
+            self.get_node_display_metadata(cell_id);
 
         let deps = self.graph.dependencies_of(cell_id);
         if deps.is_empty() {
@@ -487,6 +517,7 @@ impl CompiledModel {
                 cell_id: cell_id.clone(),
                 sheet_address,
                 value,
+                formatted_value,
                 excel_formula,
                 is_pruned: false,
                 children: Vec::new(),
@@ -498,6 +529,7 @@ impl CompiledModel {
                 cell_id: cell_id.clone(),
                 sheet_address,
                 value,
+                formatted_value,
                 excel_formula,
                 is_pruned: true,
                 children: Vec::new(),
@@ -522,6 +554,7 @@ impl CompiledModel {
             cell_id: cell_id.clone(),
             sheet_address,
             value,
+            formatted_value,
             excel_formula,
             is_pruned: false,
             children,
@@ -536,7 +569,8 @@ impl CompiledModel {
         all_visited: &mut HashSet<CellId>,
     ) -> DependencyNode {
         all_visited.insert(cell_id.clone());
-        let (sheet_address, value, excel_formula) = self.get_node_display_metadata(cell_id);
+        let (sheet_address, value, formatted_value, excel_formula) =
+            self.get_node_display_metadata(cell_id);
 
         let deps = self.graph.dependents_of(cell_id);
         if deps.is_empty() {
@@ -544,6 +578,7 @@ impl CompiledModel {
                 cell_id: cell_id.clone(),
                 sheet_address,
                 value,
+                formatted_value,
                 excel_formula,
                 is_pruned: false,
                 children: Vec::new(),
@@ -555,6 +590,7 @@ impl CompiledModel {
                 cell_id: cell_id.clone(),
                 sheet_address,
                 value,
+                formatted_value,
                 excel_formula,
                 is_pruned: true,
                 children: Vec::new(),
@@ -579,6 +615,7 @@ impl CompiledModel {
             cell_id: cell_id.clone(),
             sheet_address,
             value,
+            formatted_value,
             excel_formula,
             is_pruned: false,
             children,
@@ -588,14 +625,22 @@ impl CompiledModel {
     fn get_node_display_metadata(
         &self,
         cell_id: &CellId,
-    ) -> (String, Option<CellValue>, Option<String>) {
+    ) -> (String, Option<CellValue>, Option<String>, Option<String>) {
         let sheet_address = self
             .layout_map
             .get_cell(cell_id)
             .map(|c| format!("{}!{}", c.sheet, c.a1))
             .unwrap_or_default();
         let value = self.evaluated.get_cell(cell_id).cloned();
+        let formatted_value = value.as_ref().map(|v| {
+            let (format, decimals, currency) = self
+                .grid
+                .get(cell_id)
+                .map(|cell| (cell.format, cell.decimals, cell.currency))
+                .unwrap_or((None, None, None));
+            crate::value::format_cell_value(v, format, decimals, currency)
+        });
         let excel_formula = self.lowered_map.get(cell_id).map(ToString::to_string);
-        (sheet_address, value, excel_formula)
+        (sheet_address, value, formatted_value, excel_formula)
     }
 }

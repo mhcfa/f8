@@ -127,22 +127,22 @@ Provides terminal auditing tools for model structures, 2D statement tables, cell
 
 - **Model overview summary**:
   - **When** running `f8 inspect`
-  - **Then** renders summary listing sheets, tables, cell counts, driver inputs, formulas, and evaluation duration to `stdout`.
-- **Table matrix inspection with accounting formatting**:
-  - **When** running `f8 inspect table <table_id> --view values`
-  - **Then** renders aligned Unicode table with accounting typography (`$ 100.0`, `(50.0)`, `15.0%`).
+  - **Then** renders summary listing sheets, human-readable table titles alongside IDs (`Title [id]`), cell counts, driver inputs, formulas, and evaluation duration to `stdout`.
+- **Table matrix inspection with dual programmatic IDs**:
+  - **When** running `f8 inspect table <table_id>`
+  - **Then** renders aligned Unicode or Markdown table with accounting typography, displaying inline programmatic IDs alongside column headers (`Header [id]`) and row descriptors (`Title [id]`), deduplicating when label and ID match case-insensitively.
 - **Formula auditing parity & markdown export**:
   - **When** running `f8 inspect table <table_id> --view formulas --format markdown`
-  - **Then** outputs a GitHub Flavored Markdown table displaying live formula expressions.
+  - **Then** outputs a GitHub Flavored Markdown table displaying live formula expressions with dual headers and row descriptors.
 - **Dual stacked auditing view**:
   - **When** running `f8 inspect table <table_id> --view both`
   - **Then** displays stacked cells showing evaluated values and formula expressions simultaneously.
-- **Cell audit card**:
+- **Cell audit card with neighbor values**:
   - **When** running `f8 inspect cell <table_id> <row_id> <col_id>`
-  - **Then** displays coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, precedents, and dependents.
-- **Precedent & blast-radius DAG trees**:
+  - **Then** displays coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, and direct precedents and dependents annotated with evaluated values (`├── <CellId> = <formatted_value>`).
+- **Precedent & blast-radius DAG trees with evaluated values**:
   - **When** running `f8 inspect precedents <table_id> <row_id> <col_id>` or `f8 inspect dependents <table_id> <row_id> <col_id>`
-  - **Then** renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) when `--recursive` is supplied, annotating pruned reconvergent paths with `(already visited)`.
+  - **Then** renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) displaying evaluated runtime values for every node (`<CellId> = <formatted_value>`), annotating pruned reconvergent paths with `(already visited)`.
 - **Structured machine-readable JSON**:
   - **When** passing `--json` to any inspect subcommand
   - **Then** prints structured JSON to `stdout` on success, or structured error JSON to `stderr` with exit code `2` if a coordinate/table entity does not exist.

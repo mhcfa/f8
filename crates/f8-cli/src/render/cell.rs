@@ -1,7 +1,5 @@
 use f8_core::compiler::compiled::CellInspection;
 
-use crate::render::table::format_cell_value;
-
 /// Formats an individual cell inspection record into a detailed audit card.
 #[must_use]
 pub fn render_cell(cell: &CellInspection) -> String {
@@ -9,12 +7,7 @@ pub fn render_cell(cell: &CellInspection) -> String {
     out.push_str(&format!("Coordinate:     {}\n", cell.coordinate));
     out.push_str(&format!("Sheet Address:  {}\n", cell.physical_address));
 
-    let formatted_val = format_cell_value(
-        &cell.evaluated_value,
-        cell.format,
-        cell.decimals,
-        cell.currency,
-    );
+    let formatted_val = cell.formatted_value.as_deref().unwrap_or_default();
     let mut meta = Vec::new();
     if let Some(f) = cell.format {
         meta.push(format!("{f:?}"));
@@ -68,7 +61,11 @@ pub fn render_cell(cell: &CellInspection) -> String {
             } else {
                 "├── "
             };
-            out.push_str(&format!("  {}{}\n", branch, p));
+            let val_suffix = match &p.formatted_value {
+                Some(v) if !v.is_empty() => format!(" = {v}"),
+                _ => String::new(),
+            };
+            out.push_str(&format!("  {}{}{val_suffix}\n", branch, p.cell_id));
         }
     }
 
@@ -85,7 +82,11 @@ pub fn render_cell(cell: &CellInspection) -> String {
             } else {
                 "├── "
             };
-            out.push_str(&format!("  {}{}\n", branch, d));
+            let val_suffix = match &d.formatted_value {
+                Some(v) if !v.is_empty() => format!(" = {v}"),
+                _ => String::new(),
+            };
+            out.push_str(&format!("  {}{}{val_suffix}\n", branch, d.cell_id));
         }
     }
 

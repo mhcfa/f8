@@ -118,9 +118,11 @@ fn test_scenario_1_model_summary_inspection() {
         .stdout(predicate::str::contains("Theme:     corporate_navy"))
         .stdout(predicate::str::contains("Sheets (1):"))
         .stdout(predicate::str::contains("• Financials (2 tables"))
-        .stdout(predicate::str::contains("Assumptions [2 rows x 2 cols]"))
         .stdout(predicate::str::contains(
-            "IncomeStatement [6 rows x 3 cols]",
+            "Model Assumptions [Assumptions] [2 rows x 2 cols]",
+        ))
+        .stdout(predicate::str::contains(
+            "Income Statement [IncomeStatement] [6 rows x 3 cols]",
         ))
         .stdout(predicate::str::contains("DAG acyclic (0 cycles)"));
 
@@ -155,6 +157,8 @@ fn test_scenario_2_table_matrix_values_view_accounting_format() {
         ])
         .assert()
         .success()
+        .stdout(predicate::str::contains("2024E [y2024e]"))
+        .stdout(predicate::str::contains("Cost of Goods Sold [cogs]"))
         .stdout(predicate::str::contains("$ 100.0"))
         .stdout(predicate::str::contains("$ 115.0"))
         .stdout(predicate::str::contains("(50.0)"))
@@ -183,8 +187,11 @@ fn test_scenario_3_table_matrix_formulas_and_markdown() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("| Line Item | 2023A | 2024E |"))
+        .stdout(predicate::str::contains(
+            "| Line Item [line_item] | 2023A [y2023a] | 2024E [y2024e] |",
+        ))
         .stdout(predicate::str::contains("| :--- | ---: | ---: |"))
+        .stdout(predicate::str::contains("| Cost of Goods Sold [cogs] |"))
         .stdout(predicate::str::contains(
             "IncomeStatement[\"revenue\", col.prev]",
         ))
@@ -263,7 +270,7 @@ fn test_scenario_5_cell_inspection_card_and_json() {
         .stdout(predicate::str::contains("Excel Formula:  "))
         .stdout(predicate::str::contains("Precedents (3):"))
         .stdout(predicate::str::contains(
-            "├── IncomeStatement[\"cogs\", \"y2024e\"]",
+            "├── IncomeStatement[\"cogs\", \"y2024e\"] = $ 46.0",
         ));
 
     // JSON format
@@ -283,6 +290,7 @@ fn test_scenario_5_cell_inspection_card_and_json() {
         .success()
         .stdout(predicate::str::contains("\"coordinate\": {"))
         .stdout(predicate::str::contains("\"evaluated_value\": {"))
+        .stdout(predicate::str::contains("\"formatted_value\": \"$ 49.0\""))
         .stdout(predicate::str::contains("\"is_formula\": true"));
 }
 
@@ -307,7 +315,7 @@ fn test_scenario_6_precedents_direct_and_recursive() {
         .success()
         .stdout(predicate::str::contains("Direct Precedents (3):"))
         .stdout(predicate::str::contains(
-            "├── IncomeStatement[\"cogs\", \"y2024e\"]",
+            "├── IncomeStatement[\"cogs\", \"y2024e\"] = $ 46.0",
         ));
 
     // Recursive precedents tree
@@ -329,7 +337,7 @@ fn test_scenario_6_precedents_direct_and_recursive() {
             "Transitive Precedent Tree (5 calculations):",
         ))
         .stdout(predicate::str::contains(
-            "Assumptions[\"rev_growth\", \"val\"]",
+            "Assumptions[\"rev_growth\", \"val\"] = 15.0%",
         ));
 
     // JSON precedents
@@ -348,7 +356,8 @@ fn test_scenario_6_precedents_direct_and_recursive() {
         .assert()
         .success()
         .stdout(predicate::str::contains("\"root\": {"))
-        .stdout(predicate::str::contains("\"direct_count\": 3"));
+        .stdout(predicate::str::contains("\"direct_count\": 3"))
+        .stdout(predicate::str::contains("\"formatted_value\": \"$ 46.0\""));
 }
 
 #[test]
@@ -372,7 +381,7 @@ fn test_scenario_7_dependents_direct_and_recursive() {
         .success()
         .stdout(predicate::str::contains("Direct Dependents (1):"))
         .stdout(predicate::str::contains(
-            "└── IncomeStatement[\"revenue\", \"y2024e\"]",
+            "└── IncomeStatement[\"revenue\", \"y2024e\"] = $ 115.0",
         ));
 
     // Recursive blast radius tree

@@ -107,11 +107,24 @@ fn test_scenario_4_cell_inspection_formula_and_literal() {
         "Expected evaluated number ~115.0, got: {:?}",
         formula_cell.evaluated_value
     );
+    assert_eq!(formula_cell.formatted_value.as_deref(), Some("$ 115.0"));
     assert!(formula_cell.is_formula);
     assert!(formula_cell.formula_expr.is_some());
     assert!(formula_cell.excel_formula.is_some());
     assert_eq!(formula_cell.precedents.len(), 2);
+    assert!(
+        formula_cell
+            .precedents
+            .iter()
+            .all(|p| p.formatted_value.is_some())
+    );
     assert!(!formula_cell.dependents.is_empty());
+    assert!(
+        formula_cell
+            .dependents
+            .iter()
+            .all(|d| d.formatted_value.is_some())
+    );
 
     // 2. Literal input cell: revenue in y2023a
     let literal_cell = compiled
@@ -119,6 +132,7 @@ fn test_scenario_4_cell_inspection_formula_and_literal() {
         .expect("Literal cell inspection must succeed");
 
     assert_eq!(literal_cell.evaluated_value, CellValue::Number(100.0));
+    assert_eq!(literal_cell.formatted_value.as_deref(), Some("$ 100.0"));
     assert!(!literal_cell.is_formula);
     assert!(literal_cell.formula_expr.is_none());
     assert!(literal_cell.excel_formula.is_none());
@@ -224,6 +238,10 @@ fn test_scenario_8_precedents_of_direct_and_recursive() {
     assert_eq!(direct_tree.transitive_count, 2);
     assert_eq!(direct_tree.nodes.len(), 2);
     for node in &direct_tree.nodes {
+        assert!(
+            node.formatted_value.is_some(),
+            "DependencyNode must have formatted_value"
+        );
         assert!(
             node.children.is_empty(),
             "Direct query must not nest children"

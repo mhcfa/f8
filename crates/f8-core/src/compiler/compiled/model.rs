@@ -70,6 +70,9 @@ pub struct CellInspection {
     pub physical_address: String,
     /// Topologically evaluated runtime value.
     pub evaluated_value: CellValue,
+    /// Pre-formatted runtime value string (e.g. `"$ 115.0"`, `"15.0%"`).
+    #[serde(default)]
+    pub formatted_value: Option<String>,
     /// Formatting preset if assigned.
     pub format: Option<FormatPreset>,
     /// Display precision override if specified.
@@ -88,10 +91,23 @@ pub struct CellInspection {
     pub excel_formula: Option<String>,
     /// Audit note if attached.
     pub note: Option<String>,
-    /// Direct incoming precedent cell coordinates.
-    pub precedents: Vec<CellId>,
-    /// Direct outgoing dependent cell coordinates.
-    pub dependents: Vec<CellId>,
+    /// Direct incoming precedent cell coordinates and evaluated values.
+    pub precedents: Vec<CellNeighborInspection>,
+    /// Direct outgoing dependent cell coordinates and evaluated values.
+    pub dependents: Vec<CellNeighborInspection>,
+}
+
+/// Direct neighbor cell inspection (precedent or dependent) within a cell audit card.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CellNeighborInspection {
+    /// Coordinate identifier `(TableId, RowId, ColId)`.
+    pub cell_id: CellId,
+    /// Canonical Excel sheet address (e.g. `"Financials!C14"`).
+    pub sheet_address: String,
+    /// Evaluated runtime value if available.
+    pub value: Option<CellValue>,
+    /// Pre-formatted runtime value string (e.g. `"$ 115.0"`, `"15.0%"`).
+    pub formatted_value: Option<String>,
 }
 
 /// 2D tabular inspection record for an entire table.
@@ -225,6 +241,9 @@ pub struct DependencyNode {
     pub sheet_address: String,
     /// Evaluated runtime value.
     pub value: Option<CellValue>,
+    /// Pre-formatted runtime value string (e.g. `"$ 182.4"`, `"15.0%"`).
+    #[serde(default)]
+    pub formatted_value: Option<String>,
     /// Lowered Excel formula string if applicable.
     pub excel_formula: Option<String>,
     /// `true` if this calculation subtree was already expanded earlier in traversal.
