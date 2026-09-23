@@ -28,7 +28,7 @@ Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D
   - [`docs/compiler/lowering-and-emission.md`](../../docs/compiler/lowering-and-emission.md): Update coordinate lowering rules to use `@col` instead of bare `@`, add lowering rules for `@row`, `row.prev`, and `row.next`.
   - [`docs/compiler/parity.md`](../../docs/compiler/parity.md): Update formula examples from bare `@` to canonical `@col`.
   - [`docs/architecture.md`](../../docs/architecture.md): Reconcile the 3-tier separation of concerns, 2D matrix paradigm, and pipeline descriptions to reflect explicit axis roles and vector rules.
-  - [`docs/interfaces/mcp.md`](../../docs/interfaces/mcp.md): Purge references to `match` boilerplate absorption; simplify tool descriptions to reflect concise 2D authoring.
+  - `docs/interfaces/mcp.md`: Purge references to `match` boilerplate absorption; simplify tool descriptions to reflect concise 2D authoring.
 - **Out-of-scope**:
   - Modifying Rust source files in `src/` (to be executed in subsequent code implementation draft specs).
   - Editing completed archive logs in `specs/history/`.
@@ -100,7 +100,7 @@ Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D
   - **Then** all cells (both descriptor labels and measure values) are documented as first-class `CellId` nodes in `CellGrid`.
 
 - [x] **Scenario 6: MCP documentation purges match boilerplate references**
-  - **Given** [`docs/interfaces/mcp.md`](../../docs/interfaces/mcp.md)
+  - **Given** `docs/interfaces/mcp.md`
   - **When** inspected for tool roles
   - **Then** all references to expanding or absorbing `match` blocks are removed.
 
@@ -151,7 +151,7 @@ Migrate the entire documentation suite under `docs/` to reflect the **Unified 2D
   - [x] Reconcile pipeline pass descriptions with the 2D matrix model.
 
 ### Phase 3: Interface Documentation Migration
-- [x] Update [`docs/interfaces/mcp.md`](../../docs/interfaces/mcp.md):
+- [x] Update `docs/interfaces/mcp.md`:
   - [x] Purge references to `match` boilerplate absorption.
   - [x] Reconcile tool descriptions for `finx_create_statement`, `finx_create_table`, and `finx_add_row`.
 

@@ -68,4 +68,4 @@ Because the in-memory evaluator maintains the complete `CellValue` matrix across
 
 - **JSON / CSV / Parquet**: Exports evaluated tables directly to structured files for AI agent consumption, CI/CD verification, and database pipelines.
 
-See [Spatial Layout Planning](spatial-layout.md) for grid assignment, [Semantic Formatting & Themes](../dsl/formatting.md) for theme configurations, [In-Memory Evaluator](./evaluator.md) for precalculated cache values, and [Addressing Syntax](../dsl/addressing.md) for input reference formats.
+See [Spatial Layout Planning](./spatial-layout.md) for grid assignment, [Semantic Formatting & Themes](../dsl/formatting.md) for theme configurations, [In-Memory Evaluator](./evaluator.md) for precalculated cache values, and [Addressing Syntax](../dsl/addressing.md) for input reference formats.

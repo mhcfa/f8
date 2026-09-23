@@ -160,24 +160,24 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
 Detailed specifications and engine designs are organized into dedicated topics:
 
 - **End-to-end workflow**:
-  - [Model Authoring Guide](authoring-guide.md): Practical walkthrough for authoring financial models from scratch.
+  - [Model Authoring Guide](./authoring-guide.md): Practical walkthrough for authoring financial models from scratch.
 - **System and codebase**:
-  - [Codebase Structure](codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
+  - [Codebase Structure](./codebase-structure.md): Directory layout, module boundaries, architectural layers, and dependency rules.
 - **DSL and specifications**:
-  - [Specification Format & 2D Grid](dsl/spec-format.md): Multi-file JSON schemas, table structure, gutters, and multi-tier headers.
-  - [Addressing Syntax](dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets, and slicing.
-  - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar and operator precedence.
-  - [Semantic Formatting & Themes](dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.
-  - [Modeling Patterns & Archetypes](dsl/patterns.md): Canonical 2D patterns (horizontal statements, cap tables, comps, debt schedules).
+  - [Specification Format & 2D Grid](./dsl/spec-format.md): Multi-file JSON schemas, table structure, gutters, and multi-tier headers.
+  - [Addressing Syntax](./dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets, and slicing.
+  - [Formula Grammar](./dsl/grammar.md): Formal EBNF grammar and operator precedence.
+  - [Semantic Formatting & Themes](./dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.
+  - [Modeling Patterns & Archetypes](./dsl/patterns.md): Canonical 2D patterns (horizontal statements, cap tables, comps, debt schedules).
 - **Compiler internals**:
-  - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR, 2D Specificity Resolution Lattice, and grid expansion.
-  - [Dependency Graph](compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
-  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
-  - [Excel Parity & Semantics](compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
-  - [Spatial Layout Planning](compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
-  - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
+  - [Intermediate Representation (IR)](./compiler/ir.md): Cell-level IR, 2D Specificity Resolution Lattice, and grid expansion.
+  - [Dependency Graph](./compiler/dependency-graph.md): Tarjan SCC analysis, cycle prevention, and FAST standard rules.
+  - [In-Memory Evaluator](./compiler/evaluator.md): Topological DAG evaluation, `CellValue` model, and runtime execution loop.
+  - [Excel Parity & Semantics](./compiler/parity.md): Precision, coercion asymmetry, date day counts, and vectorization.
+  - [Spatial Layout Planning](./compiler/spatial-layout.md): 2D table stacking, headers, gutters, and freeze panes.
+  - [Formula Lowering & Emission](./compiler/lowering-and-emission.md): Coordinate lowering, `.xlsx` binary emission, and headless exports.
 - **Function subsystem**:
-  - [Function Registry Architecture](functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
-  - [Standard Function Catalog](functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
+  - [Function Registry Architecture](./functions/registry.md): `ExcelFunction` trait, parameter contracts, and compiler lifecycle.
+  - [Standard Function Catalog](./functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces & Scaffolding**:
-  - [Command-Line Interface (CLI)](interfaces/cli.md): Terminal tool for human modeling, verification, and agent scripting.
+  - [Command-Line Interface (CLI)](./interfaces/cli.md): Terminal tool for human modeling, verification, and agent scripting.

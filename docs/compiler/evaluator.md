@@ -97,5 +97,5 @@ Following DAG execution, the resulting `EvaluatedModel` is consolidated alongsid
 - **`find_errors()`**: Sweeps the evaluated matrix, identifying all coordinates that resolved to `CellValue::Error(ExcelError)`.
 - **`precedents_of(cell, recursive)` / `dependents_of(cell, recursive)`**: Walks the DAG to report direct or transitive dependencies and blast radius.
 
-See [Dependency Graph](dependency-graph.md) for DAG construction, [Function Registry](../functions/registry.md) for function contracts, and [Excel Parity](parity.md) for calculation parity rules.
+See [Dependency Graph](./dependency-graph.md) for DAG construction, [Function Registry](../functions/registry.md) for function contracts, and [Excel Parity](./parity.md) for calculation parity rules.
 

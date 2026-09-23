@@ -12,7 +12,7 @@ target-living-spec:
 
 ### What
 
-Implement Phase 3 of the CLI inspection ergonomics roadmap identified in [`docs/interfaces/cli-audit.md`](../../docs/interfaces/cli-audit.md):
+Implement Phase 3 of the CLI inspection ergonomics roadmap identified in `docs/interfaces/cli-audit.md`:
 1. **Dual coordinate input**: Allow `f8 inspect cell`, `precedents`, and `dependents` to accept coordinates either as three positional arguments (`<table> <row> <col>`) or as a single canonical IR string (`'Table["row", "col"]'`).
 2. **Integer format preset and calendar year typography**: Introduce `FormatPreset::Integer` (`"integer"`) for unformatted whole numbers and apply year heuristics so calendar years (e.g. `2029`) never render with thousands commas (`2,029`).
 3. **Multi-tier column header rendering**: Render stacked column category headers in terminal box-drawing tables and markdown views when columns declare multi-level header tiers.

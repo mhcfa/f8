@@ -298,4 +298,4 @@ For vertical amortization schedules where rows represent time periods and column
 
 ---
 
-See [Specification Format](spec-format.md) for schema syntax and [Addressing Syntax](addressing.md) for coordinate lowering rules.
+See [Specification Format](./spec-format.md) for schema syntax and [Addressing Syntax](./addressing.md) for coordinate lowering rules.

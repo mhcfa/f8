@@ -89,7 +89,7 @@ Every built-in and user-registered Excel function implements the `ExcelFunction`
 
 ## 5. Related Specifications & Reference Documents
 
-- [Standard Function Catalog](catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
+- [Standard Function Catalog](./catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
 - [Excel Function Registry Living Spec](../../specs/living-specs/functions/registry.md): Code-level trait contracts, exhaustive types, and BDD verification scenarios.
 - [In-Memory Evaluator](../compiler/evaluator.md): Topological DAG evaluation loop and runtime state.
 - [Excel Parity](../compiler/parity.md): Precision, coercion mechanics, date arithmetic, and criteria syntax.

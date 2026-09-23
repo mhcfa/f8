@@ -285,19 +285,19 @@ Before compiling, verify that your model conforms to these compiler rules:
 ## 6. Related Specifications & Reference Documents
 
 - **DSL Specifications**:
-  - [Specification Format & 2D Grid](dsl/spec-format.md): Declarative JSON schemas, table structure, gutters, and multi-tier headers.
-  - [Addressing Syntax](dsl/addressing.md): Reference coordinates, active tokens, relative offsets, and range slicing.
-  - [Formula Grammar](dsl/grammar.md): Formal EBNF grammar, Pratt precedence, and operator rules.
-  - [Semantic Formatting & Themes](dsl/formatting.md): Format presets, display precision, structural styles, and themes.
-  - [Modeling Patterns & Archetypes](dsl/patterns.md): Canonical patterns (Horizontal Statements, Cap Tables, Corkscrews).
+  - [Specification Format & 2D Grid](./dsl/spec-format.md): Declarative JSON schemas, table structure, gutters, and multi-tier headers.
+  - [Addressing Syntax](./dsl/addressing.md): Reference coordinates, active tokens, relative offsets, and range slicing.
+  - [Formula Grammar](./dsl/grammar.md): Formal EBNF grammar, Pratt precedence, and operator rules.
+  - [Semantic Formatting & Themes](./dsl/formatting.md): Format presets, display precision, structural styles, and themes.
+  - [Modeling Patterns & Archetypes](./dsl/patterns.md): Canonical patterns (Horizontal Statements, Cap Tables, Corkscrews).
 - **Compiler Internals**:
-  - [Intermediate Representation (IR)](compiler/ir.md): Cell-level IR and the 2D Specificity Resolution Lattice.
-  - [Dependency Graph](compiler/dependency-graph.md): Directed cell graph, cycle prevention, and topological sort.
-  - [In-Memory Evaluator](compiler/evaluator.md): Topological DAG evaluation loop and runtime values.
-  - [Excel Parity](compiler/parity.md): Precision, coercion mechanics, date arithmetic, and criteria rules.
-  - [Spatial Layout Planning](compiler/spatial-layout.md): Physical grid assignment and column width arbitration.
-  - [Formula Lowering & Emission](compiler/lowering-and-emission.md): Excel coordinate lowering and binary `.xlsx` emission.
+  - [Intermediate Representation (IR)](./compiler/ir.md): Cell-level IR and the 2D Specificity Resolution Lattice.
+  - [Dependency Graph](./compiler/dependency-graph.md): Directed cell graph, cycle prevention, and topological sort.
+  - [In-Memory Evaluator](./compiler/evaluator.md): Topological DAG evaluation loop and runtime values.
+  - [Excel Parity](./compiler/parity.md): Precision, coercion mechanics, date arithmetic, and criteria rules.
+  - [Spatial Layout Planning](./compiler/spatial-layout.md): Physical grid assignment and column width arbitration.
+  - [Formula Lowering & Emission](./compiler/lowering-and-emission.md): Excel coordinate lowering and binary `.xlsx` emission.
 - **Functions & Interfaces**:
-  - [Standard Function Catalog](functions/catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
-  - [Function Registry Architecture](functions/registry.md): `ExcelFunction` trait, parameter contracts, and dispatch.
-  - [Command-Line Interface (CLI)](interfaces/cli.md): CLI subcommands, workflows, and inspection commands.
+  - [Standard Function Catalog](./functions/catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
+  - [Function Registry Architecture](./functions/registry.md): `ExcelFunction` trait, parameter contracts, and dispatch.
+  - [Command-Line Interface (CLI)](./interfaces/cli.md): CLI subcommands, workflows, and inspection commands.

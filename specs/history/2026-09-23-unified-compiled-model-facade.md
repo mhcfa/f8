@@ -19,7 +19,7 @@ Introduce the unified compiler inspection facade (`CompiledModel`) in `crates/f8
 
 Currently, high-level methods on [`Compiler`](crates/f8-core/src/compiler/mod.rs) (`evaluate`, `plan_layout`, `lower_formulas`, `emit_workbook`) each independently re-validate manifests and re-expand intermediate representations:
 - **Redundant re-computation**: `Compiler::emit_workbook` runs specification validation and IR expansion twice (once in `evaluate` and once in `prepare_emission_context`), wasting CPU cycles.
-- **Missing shared state for outer interfaces**: Upcoming interface crates ([`f8-cli`](docs/interfaces/cli.md) and [`f8-mcp`](docs/interfaces/mcp.md)) need to answer cell, table, precedent, and dependent inspection queries without re-running passes or maintaining fragmented compiler state.
+- **Missing shared state for outer interfaces**: Upcoming interface crates ([`f8-cli`](../../docs/interfaces/cli.md) and `f8-mcp`) need to answer cell, table, precedent, and dependent inspection queries without re-running passes or maintaining fragmented compiler state.
 - **Single source of truth**: Retaining all pass artifacts in a cohesive `CompiledModel` establishes a clean public boundary between the functional compiler core and imperative presentation adapters, ensuring outer tools never assemble or manipulate compiler internals directly.
 
 ### Scope

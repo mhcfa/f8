@@ -38,7 +38,7 @@ Enhance CLI model inspection interfaces to be agent-first by exposing programmat
 
 - **Out-of-scope**:
   - Modifier flags like `--ids-only` / `--labels-only`: omitted to avoid premature complexity. Machine-readable consumption is already fully served by `--format json`, while terminal inspection is intended for human and agent auditing.
-  - Phase 3 ergonomics: flexible coordinate string parser (`Model!D20` / canonical string syntax), integer year formatting heuristics, multi-tier header stacking, table schema subcommand ([`docs/interfaces/cli-audit.md`](../../docs/interfaces/cli-audit.md) §4 Phase 3).
+  - Phase 3 ergonomics: flexible coordinate string parser (`Model!D20` / canonical string syntax), integer year formatting heuristics, multi-tier header stacking, table schema subcommand (`docs/interfaces/cli-audit.md` §4 Phase 3).
 
 ### What Changes
 

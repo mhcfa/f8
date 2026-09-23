@@ -71,4 +71,4 @@ Parentheses `( ... )` override default operator precedence.
 - **String literals**: Double-quoted strings with standard escaping (`"value"`, `"2024E"`).
 - **Whitespace**: Whitespace between tokens is ignored during parsing.
 
-See [Addressing Syntax](addressing.md) for reference coordinates, [Standard Function Catalog](../functions/catalog.md) for supported functions, and [Specification Format](spec-format.md) for embedding expressions within JSON table specifications.
+See [Addressing Syntax](./addressing.md) for reference coordinates, [Standard Function Catalog](../functions/catalog.md) for supported functions, and [Specification Format](./spec-format.md) for embedding expressions within JSON table specifications.

@@ -134,4 +134,4 @@ Each expanded cell node contains:
 - **Notes & Provenance**: Inherited or overridden note string and provenance metadata.
 - **Spatial Position**: Populated later by the layout engine (`sheet_name`, `col_idx`, `row_idx`).
 
-See [Dependency Graph](./dependency-graph.md) for how cell nodes are assembled into a DAG, and [Spatial Layout Planning](spatial-layout.md) for coordinate assignment.
+See [Dependency Graph](./dependency-graph.md) for how cell nodes are assembled into a DAG, and [Spatial Layout Planning](./spatial-layout.md) for coordinate assignment.

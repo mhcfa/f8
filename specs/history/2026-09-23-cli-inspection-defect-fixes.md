@@ -11,7 +11,7 @@ target-living-spec:
 
 ### What
 
-Fix two critical runtime defects in model inspection identified in [`docs/interfaces/cli-audit.md`](../../docs/interfaces/cli-audit.md):
+Fix two critical runtime defects in model inspection identified in `docs/interfaces/cli-audit.md`:
 1. **Combinatorial DAG path explosion** in `f8-core` recursive precedent and dependent tree construction ([`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs)).
 2. **Unhandled `SIGPIPE` panic** (`Broken pipe (os error 32)`) in `f8-cli` when piping stdout output into downstream Unix utilities such as `head`, `less`, or `grep` ([`crates/f8-cli/src/main.rs`](../../crates/f8-cli/src/main.rs)).
 
@@ -31,8 +31,8 @@ Fix two critical runtime defects in model inspection identified in [`docs/interf
   - Integration tests in `f8-cli` asserting `ReturnsSummary irr val --recursive` generates concise output (< 250 lines) in < 100ms, and pipes cleanly to Unix filters without panic.
 
 - **Out-of-scope**:
-  - Phase 2 agent DX enhancements: `--show-ids` table flag and evaluated cell values in dependency trees ([`docs/interfaces/cli-audit.md`](../../docs/interfaces/cli-audit.md) §4 Phase 2).
-  - Phase 3 ergonomics and formatting polish: flexible coordinate parser, integer year heuristics, multi-tier headers, and table outline schema mode ([`docs/interfaces/cli-audit.md`](../../docs/interfaces/cli-audit.md) §4 Phase 3).
+  - Phase 2 agent DX enhancements: `--show-ids` table flag and evaluated cell values in dependency trees (`docs/interfaces/cli-audit.md` §4 Phase 2).
+  - Phase 3 ergonomics and formatting polish: flexible coordinate parser, integer year heuristics, multi-tier headers, and table outline schema mode (`docs/interfaces/cli-audit.md` §4 Phase 3).
 
 ### What Changes
 

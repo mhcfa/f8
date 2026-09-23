@@ -44,8 +44,8 @@ f8/
 ### 2.1. Layer 1: Foundational Domain Types & ASTs (`f8-core::model`, `value`, `expr`)
 
 - **`model`**: Declarative project specifications (`f8.json` manifests and `tables/*.json` specs). Performs two-stage validation before compilation. Zero internal dependencies.
-- **`expr`**: Pratt parser and AST nodes (`Expr`, `BinaryOp`, `Reference`) implementing [Formula Grammar](dsl/grammar.md).
-- **`value`**: Runtime cell value enum (`CellValue`), Excel domain errors (`ExcelError`), and arithmetic parity rules as defined in [Excel Parity](compiler/parity.md).
+- **`expr`**: Pratt parser and AST nodes (`Expr`, `BinaryOp`, `Reference`) implementing [Formula Grammar](./dsl/grammar.md).
+- **`value`**: Runtime cell value enum (`CellValue`), Excel domain errors (`ExcelError`), and arithmetic parity rules as defined in [Excel Parity](./compiler/parity.md).
 
 ### 2.2. Layer 2: Cross-Cutting Function Subsystem (`f8-core::functions`)
 
