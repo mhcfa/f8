@@ -136,7 +136,7 @@ The compiler core is designed from day one to support both native operating syst
    - Implement pure in-memory query APIs (`inspect_cell`, `table_matrix`, `precedents_of`, `dependents_of`).
    - Maintain fail-fast, coordinate-rich compiler error reporting with `thiserror`.
 2. **Phase 2: Local Command-Line Interface (`f8-cli`)**:
-   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`, `--open`), and `f8 inspect` (`summary`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel`.
+   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`), and `f8 inspect` (`summary`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel`.
    - Dogfood on personal and institutional financial models (3-statement, LBO, comps) to refine authoring ergonomics.
 3. **Phase 3: Model Context Protocol Server (`f8-mcp`)**:
    - Create `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.

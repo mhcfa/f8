@@ -1,0 +1,100 @@
+{
+  "id": "Scenarios",
+  "title": "Operating & Exit Scenarios",
+  "subtitle": "Management Case Sensitivity Matrix",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "scenario_name",
+      "role": "descriptor",
+      "headers": [
+        "Scenario Case"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "case_id",
+      "role": "measure",
+      "headers": [
+        "Case ID"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "rev_growth",
+      "role": "measure",
+      "headers": [
+        "Rev Growth"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "ebitda_margin",
+      "role": "measure",
+      "headers": [
+        "EBITDA Margin"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "exit_multiple",
+      "role": "measure",
+      "headers": [
+        "Exit Multiple"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "data",
+      "id": "base",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "scenario_name": "Base Case (Management Plan)",
+        "case_id": "base",
+        "rev_growth": 0.08,
+        "ebitda_margin": 0.25,
+        "exit_multiple": {
+          "value": 10.0,
+          "format": "multiple",
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "bull",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "scenario_name": "Bull Case (Upside Expansion)",
+        "case_id": "bull",
+        "rev_growth": 0.12,
+        "ebitda_margin": 0.28,
+        "exit_multiple": {
+          "value": 12.0,
+          "format": "multiple",
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "bear",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "scenario_name": "Bear Case (Downside Contraction)",
+        "case_id": "bear",
+        "rev_growth": 0.03,
+        "ebitda_margin": 0.2,
+        "exit_multiple": {
+          "value": 8.0,
+          "format": "multiple",
+          "decimals": 1
+        }
+      }
+    }
+  ]
+}

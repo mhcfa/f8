@@ -1,3 +1,4 @@
+pub mod archetypes;
 pub mod cli;
 pub mod commands;
 pub mod error;
@@ -47,5 +48,9 @@ pub fn run() -> i32 {
 fn dispatch(cli: &Cli) -> Result<(), CliError> {
     match &cli.command {
         Command::Check(args) => commands::check::execute(args, cli.project.as_deref(), cli.json),
+        Command::Compile(args) => {
+            commands::compile::execute(args, cli.project.as_deref(), cli.json)
+        }
+        Command::Init(args) => commands::init::execute(args, cli.json),
     }
 }

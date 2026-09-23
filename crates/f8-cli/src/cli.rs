@@ -26,8 +26,49 @@ pub struct Cli {
 pub enum Command {
     /// Run headless compiler verification across Passes 1–6a
     Check(CheckArgs),
+
+    /// Compile project specifications into an OpenXML .xlsx workbook
+    Compile(CompileArgs),
+
+    /// Initialize a new financial model project or unpack an archetype template
+    Init(InitArgs),
 }
 
 /// Arguments for `f8 check`.
 #[derive(Debug, Args, Default)]
 pub struct CheckArgs {}
+
+/// Arguments for `f8 compile`.
+#[derive(Debug, Args, Default)]
+pub struct CompileArgs {
+    /// Output .xlsx file destination ('-' for stdout)
+    #[arg(short = 'o', long = "out")]
+    pub out: Option<PathBuf>,
+
+    /// Override the visual theme configured in f8.json
+    #[arg(long = "theme")]
+    pub theme: Option<String>,
+
+    /// Freeze calculated formulas into static calculation values
+    #[arg(long = "values-only")]
+    pub values_only: bool,
+
+    /// Omit precalculated <v> calculation result tags in OpenXML cells
+    #[arg(long = "omit-cache")]
+    pub omit_cache: bool,
+}
+
+/// Arguments for `f8 init`.
+#[derive(Debug, Args, Default)]
+pub struct InitArgs {
+    /// Destination directory for the new project (defaults to current directory)
+    pub path: Option<PathBuf>,
+
+    /// Template archetype to unpack (three-statement, lbo, trading-comps)
+    #[arg(short = 't', long = "template")]
+    pub template: Option<String>,
+
+    /// Visual theme preset for the project
+    #[arg(long = "theme", default_value = "corporate_navy")]
+    pub theme: String,
+}

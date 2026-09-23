@@ -1,0 +1,253 @@
+{
+  "id": "DealAssumptions",
+  "title": "Transaction & Financing Assumptions",
+  "subtitle": "Capital Structure, Debt Terms & Purchase Price",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Transaction Parameter"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "val",
+      "role": "measure",
+      "headers": [
+        "Value"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "section_header",
+      "title": "Scenario Case Selection"
+    },
+    {
+      "kind": "data",
+      "id": "active_case",
+      "cells": {
+        "line_item": "Active Scenario Case",
+        "val": "base"
+      }
+    },
+    {
+      "kind": "data",
+      "id": "rev_growth",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Revenue Growth Rate",
+        "val": {
+          "expr": "XLOOKUP(DealAssumptions[\"active_case\", \"val\"], Scenarios[\"base\"..\"bear\", \"case_id\"], Scenarios[\"base\"..\"bear\", \"rev_growth\"])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "ebitda_margin",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "line_item": "EBITDA Margin Target",
+        "val": {
+          "expr": "XLOOKUP(DealAssumptions[\"active_case\", \"val\"], Scenarios[\"base\"..\"bear\", \"case_id\"], Scenarios[\"base\"..\"bear\", \"ebitda_margin\"])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "exit_multiple",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Exit Multiple (EV / EBITDA)",
+        "val": {
+          "expr": "XLOOKUP(DealAssumptions[\"active_case\", \"val\"], Scenarios[\"base\"..\"bear\", \"case_id\"], Scenarios[\"base\"..\"bear\", \"exit_multiple\"])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sponsor_hurdle",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Sponsor Target Hurdle Rate (SWITCH)",
+        "val": {
+          "expr": "SWITCH(DealAssumptions[\"active_case\", \"val\"], \"base\", 0.20, \"bull\", 0.25, \"bear\", 0.15, 0.20)"
+        }
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Valuation & Leverage Drivers"
+    },
+    {
+      "kind": "data",
+      "id": "entry_ebitda",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "LTM Entry EBITDA ($M)",
+        "val": 50.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "entry_multiple",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Entry Multiple (EV / EBITDA)",
+        "val": 10.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "senior_leverage",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Senior Debt Leverage (x EBITDA)",
+        "val": 3.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sub_leverage",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Subordinated Debt Leverage (x EBITDA)",
+        "val": 1.5
+      }
+    },
+    {
+      "kind": "data",
+      "id": "senior_rate",
+      "format": "percentage",
+      "decimals": 2,
+      "cells": {
+        "line_item": "Senior Debt Interest Rate",
+        "val": 0.08
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sub_rate",
+      "format": "percentage",
+      "decimals": 2,
+      "cells": {
+        "line_item": "Subordinated Debt Interest Rate",
+        "val": 0.12
+      }
+    },
+    {
+      "kind": "data",
+      "id": "tax_rate",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Corporate Tax Rate",
+        "val": 0.25
+      }
+    },
+    {
+      "kind": "data",
+      "id": "capex_pct",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Capex (% Revenue)",
+        "val": 0.05
+      }
+    },
+    {
+      "kind": "data",
+      "id": "discount_rate",
+      "format": "percentage",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Sponsor Hurdle Rate (WACC)",
+        "val": 0.1
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Sources & Uses of Funds"
+    },
+    {
+      "kind": "data",
+      "id": "entry_ev",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Target Enterprise Value ($M)",
+        "val": {
+          "expr": "DealAssumptions[\"entry_ebitda\", \"val\"] * DealAssumptions[\"entry_multiple\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "senior_debt_entry",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Senior Debt Issued ($M)",
+        "val": {
+          "expr": "DealAssumptions[\"entry_ebitda\", \"val\"] * DealAssumptions[\"senior_leverage\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sub_debt_entry",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Subordinated Debt Issued ($M)",
+        "val": {
+          "expr": "DealAssumptions[\"entry_ebitda\", \"val\"] * DealAssumptions[\"sub_leverage\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "total_debt_entry",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Total Debt Financed ($M)",
+        "val": {
+          "expr": "DealAssumptions[\"senior_debt_entry\", \"val\"] + DealAssumptions[\"sub_debt_entry\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sponsor_equity_entry",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Sponsor Equity Invested ($M)",
+        "val": {
+          "expr": "DealAssumptions[\"entry_ev\", \"val\"] - DealAssumptions[\"total_debt_entry\", \"val\"]"
+        }
+      }
+    }
+  ]
+}

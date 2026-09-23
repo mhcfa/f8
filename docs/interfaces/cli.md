@@ -51,7 +51,7 @@ All CLI operations are grouped under clear, noun-first subcommands with consiste
 ```text
 f8 init [path] [--template <name>] [--theme <name>]
 f8 check [-p <path>] [--json]
-f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache] [--open]
+f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache]
 f8 inspect [-p <path>] [--json]
 f8 inspect table <table_id> [--view <values|formulas|both>] [--format <table|markdown|json>] [--json] [-p <path>]
 f8 inspect cell <table_id> <row_id> <col_id> [-p <path>] [--json]
@@ -147,9 +147,6 @@ f8 compile --theme classic_charcoal -o dist/model.xlsx
 
 # Compile and freeze formulas into values (for distribution)
 f8 compile --values-only -o dist/client_presentation.xlsx
-
-# Compile and immediately open in default spreadsheet application
-f8 compile --open
 ```
 
 **Options**:
@@ -158,7 +155,6 @@ f8 compile --open
 - `--theme <name>`: Overrides the workbook theme configured in `f8.json`.
 - `--values-only`: Emits the workbook with calculated formulas frozen into static values, omitting live Excel formulas.
 - `--omit-cache`: Disables precalculated `<v>` calculation result caches in OpenXML cells.
-- `--open`: Automatically opens the generated workbook in the operating system's default spreadsheet viewer (`xdg-open` on Linux, `open` on macOS, `start` on Windows).
 
 ---
 

@@ -1,0 +1,98 @@
+{
+  "id": "CashFlows",
+  "title": "Sponsor Equity Cash Flows",
+  "subtitle": "($ in Millions) - Initial Equity Investment & Exit Equity Proceeds",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Line Item"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y0",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "Transaction Close",
+        "Close (Y0)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y1",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2025 (Y1)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2026 (Y2)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y3",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2027 (Y3)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y4",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2028 (Y4)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y5",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2029 (Y5)"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "data",
+      "id": "sponsor_cf",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Sponsor Net Equity Cash Flow",
+        "y0": {
+          "expr": "-DealAssumptions[\"sponsor_equity_entry\", \"val\"]"
+        },
+        "y1": 0.0,
+        "y2": 0.0,
+        "y3": 0.0,
+        "y4": 0.0,
+        "y5": {
+          "expr": "ReturnsSummary[\"exit_equity_proceeds\", \"val\"]"
+        }
+      }
+    }
+  ]
+}

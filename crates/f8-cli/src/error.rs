@@ -23,6 +23,17 @@ pub enum CliError {
         source: serde_json::Error,
     },
 
+    #[error(
+        "Cannot write binary OpenXML workbook to an interactive terminal. Redirect output or specify a destination with '-o <path>'."
+    )]
+    TtyOutputDisallowed,
+
+    #[error("Unknown template archetype '{name}'. Available templates: {available}")]
+    UnknownTemplate { name: String, available: String },
+
+    #[error("Project already exists at '{path}' (f8.json found)")]
+    ProjectAlreadyExists { path: PathBuf },
+
     #[error(transparent)]
     Compiler(#[from] CompilerError),
 }
@@ -34,7 +45,7 @@ impl CliError {
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::Compiler(_) => 2,
-            Self::ProjectNotFound { .. } | Self::Io { .. } | Self::Json { .. } => 1,
+            _ => 1,
         }
     }
 }

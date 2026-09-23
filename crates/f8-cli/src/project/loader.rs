@@ -55,7 +55,7 @@ impl ProjectLoader {
             }
         }
 
-        let theme = Self::resolve_theme(&manifest, &root_dir)?;
+        let theme = Self::resolve_theme(&manifest.theme, &root_dir)?;
 
         Ok(LoadedProject {
             root_dir,
@@ -114,13 +114,12 @@ impl ProjectLoader {
         }
     }
 
-    /// Resolves the theme specified in the project manifest, checking for custom theme files on disk
+    /// Resolves the theme specified by name or custom theme file path, checking for custom theme files on disk
     /// before falling back to built-in themes.
-    fn resolve_theme(manifest: &ProjectManifest, root_dir: &Path) -> Result<Theme, CliError> {
-        let theme_str = manifest.theme.trim();
+    pub fn resolve_theme(theme_str: &str, root_dir: &Path) -> Result<Theme, CliError> {
+        let theme_str = theme_str.trim();
         if theme_str.is_empty() {
-            return manifest
-                .resolve_theme()
+            return Theme::resolve_builtin(Theme::DEFAULT_NAME)
                 .map_err(|e| CliError::Compiler(CompilerError::Model(e)));
         }
 
@@ -150,9 +149,7 @@ impl ProjectLoader {
             });
         }
 
-        manifest
-            .resolve_theme()
-            .map_err(|e| CliError::Compiler(CompilerError::Model(e)))
+        Theme::resolve_builtin(theme_str).map_err(|e| CliError::Compiler(CompilerError::Model(e)))
     }
 }
 

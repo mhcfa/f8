@@ -1,0 +1,201 @@
+{
+  "id": "Operations",
+  "title": "Operating Forecast & Cash Flows",
+  "subtitle": "($ in Millions)",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Line Item"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y0",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "Transaction Close",
+        "Close (Y0)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y1",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2025 (Y1)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2026 (Y2)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y3",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2027 (Y3)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y4",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2028 (Y4)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y5",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2029 (Y5)"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "section_header",
+      "title": "Operating Forecast"
+    },
+    {
+      "kind": "data",
+      "id": "revenue",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"revenue\", col.prev] * (1 + DealAssumptions[\"rev_growth\", \"val\"])",
+      "cells": {
+        "line_item": "Revenue",
+        "y0": 200.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "ebitda",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"revenue\", @col] * DealAssumptions[\"ebitda_margin\", \"val\"]",
+      "cells": {
+        "line_item": "EBITDA",
+        "y0": 50.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "depreciation",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"revenue\", @col] * 0.04",
+      "cells": {
+        "line_item": "Depreciation Expense",
+        "y0": 8.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "ebit",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"ebitda\", @col] - Operations[\"depreciation\", @col]",
+      "cells": {
+        "line_item": "Operating Income (EBIT)"
+      }
+    },
+    {
+      "kind": "section_header",
+      "title": "Earnings & Taxes"
+    },
+    {
+      "kind": "data",
+      "id": "interest_expense",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"total_interest\", @col]",
+      "cells": {
+        "line_item": "Debt Interest Expense",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "ebt",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"ebit\", @col] - Operations[\"interest_expense\", @col]",
+      "cells": {
+        "line_item": "Earnings Before Taxes (EBT)"
+      }
+    },
+    {
+      "kind": "data",
+      "id": "tax",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "IF(Operations[\"ebt\", @col] > 0, Operations[\"ebt\", @col] * DealAssumptions[\"tax_rate\", \"val\"], 0)",
+      "cells": {
+        "line_item": "Income Tax Provision",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "net_income",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"ebt\", @col] - Operations[\"tax\", @col]",
+      "cells": {
+        "line_item": "Net Income"
+      }
+    },
+    {
+      "kind": "section_header",
+      "title": "Cash Conversion"
+    },
+    {
+      "kind": "data",
+      "id": "capex",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"revenue\", @col] * DealAssumptions[\"capex_pct\", \"val\"]",
+      "cells": {
+        "line_item": "Capital Expenditures",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "fcf_pre_debt",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Operations[\"ebitda\", @col] - Operations[\"tax\", @col] - Operations[\"capex\", @col]",
+      "cells": {
+        "line_item": "Free Cash Flow (Pre-Debt)",
+        "y0": 0.0
+      }
+    }
+  ]
+}
