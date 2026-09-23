@@ -128,7 +128,7 @@ Legacy singular variants (`SUMIF`, `COUNTIF`, `AVERAGEIF`), which invert argumen
 ### 5.2. Criteria Evaluation Engine
 The criteria argument accepts numbers, strings, cell references, or logical comparisons evaluated against each element in `criteria_range_k`:
 - **Exact equality**: Numeric (`42`), boolean (`TRUE`), or string (`"US"`) matching. String comparison is case-insensitive ASCII matching (`CellValue::excel_eq`).
-- **Relational comparison prefixes**: Strings containing leading operators (`">"`, `"<"`, `">="`, `"<="`, `"<>"`, `"="`). For example, `">0"` or `"<=" & Assumptions["hurdle_rate", "value"]`.
+- **Relational comparison prefixes**: Strings containing leading operators (`">"`, `"<"`, `">="`, `"<="`, `"<>"`, `"="`), such as `">0"`, or cell references evaluating to criteria strings (e.g. `Assumptions["hurdle_rate", "value"]`).
 - **Wildcard matching**: Text criteria support wildcard characters:
   - `?`: Matches any single character.
   - `*`: Matches any sequence of zero or more characters.

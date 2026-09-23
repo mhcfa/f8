@@ -222,10 +222,14 @@ f8 inspect table IncomeStatement --view both
 ---
 
 #### `f8 inspect cell <table_id> <row_id> <col_id> [options]`
-Inspects an individual calculation cell by explicit semantic coordinates, showing evaluated values, formatting, formula ASTs, lowered Excel formulas, physical sheet addresses, precedents, and dependents:
+Inspects an individual calculation cell by explicit semantic coordinates or canonical IR string (`Table["row", "col"]`), showing evaluated values, formatting, formula ASTs, lowered Excel formulas, physical sheet addresses, precedents, and dependents:
 
 ```bash
+# Three-argument syntax
 f8 inspect cell IncomeStatement total_opex 2028E
+
+# Canonical IR string syntax
+f8 inspect cell 'IncomeStatement["total_opex", "2028E"]'
 ```
 
 **Output (Human)**:
@@ -255,11 +259,11 @@ Dependents (1):
 Performs upstream root-cause analysis by querying incoming DAG edges (`dependencies_of`):
 
 ```bash
-# Direct precedents
+# Direct precedents (three arguments)
 f8 inspect precedents IncomeStatement net_income 2024E
 
-# Transitive upstream calculation tree
-f8 inspect precedents IncomeStatement net_income 2024E --recursive
+# Transitive upstream calculation tree (canonical IR string)
+f8 inspect precedents 'IncomeStatement["net_income", "2024E"]' --recursive
 ```
 
 **Output**:
@@ -286,11 +290,11 @@ Transitive Precedent Tree (5 calculations):
 Performs blast-radius impact analysis by querying outgoing DAG edges (`dependents_of`):
 
 ```bash
-# Direct dependents of a driver cell
+# Direct dependents of a driver cell (three arguments)
 f8 inspect dependents Assumptions rev_growth 2024E
 
-# Transitive blast radius across all tables and statements
-f8 inspect dependents Assumptions rev_growth 2024E --recursive
+# Transitive blast radius across all tables and statements (canonical IR string)
+f8 inspect dependents 'Assumptions["rev_growth", "2024E"]' --recursive
 ```
 
 **Output**:

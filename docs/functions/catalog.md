@@ -36,7 +36,7 @@ f8 standardizes exclusively on modern plural `*IFS` signatures with paired trail
 ### 2.1. 1:1 Criteria Parity & Syntax Rules
 
 - **Exact equality**: Scalar values (`"US"`, `42`, `TRUE`). String equality is case-insensitive.
-- **Comparison prefixes**: String expressions with relational operators (`">10"`, `"<=" & ref`, `"<>"`, `"="`).
+- **Comparison prefixes**: String expressions with relational operators (`">10"`, `"<=5"`, `"<>"`, `"="`), or cell references evaluating to criteria strings.
 - **Wildcards**: Text criteria support `?` (any single character), `*` (zero or more characters), and `~` (escape character for `~?`, `~*`, `~~`).
 - **Dimension matching**: Every `criteria_range_k` must have identical row and column counts to the primary range; mismatched dimensions return `#VALUE!`.
 - **Excel emission parity**: f8 compiles and evaluates standard `*IFS` expressions directly and emits identical `=SUMIFS(...)` formulas into `.xlsx` binaries without synthetic AST transformations.

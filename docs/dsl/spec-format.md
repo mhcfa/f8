@@ -1,10 +1,12 @@
-# Specification Format
+# Specification Format & 2D Grid
 
-This document defines f8's multi-file declarative JSON specification schemas, table structure, axis roles, cell input syntax, and validation invariants.
+This document defines f8's declarative multi-file JSON specification schemas, 2D grid structure, axis roles, cell input syntax, and validation invariants.
+
+---
 
 ## 1. Project Directory Architecture
 
-A f8 financial model is structured as a modular project directory separating workbook containers from standalone calculation tables:
+A f8 model project is structured as a directory separating workbook containers from standalone calculation tables:
 
 ```text
 my_model/
@@ -15,44 +17,57 @@ my_model/
     └── balance_sheet.json
 ```
 
-### V1 Core Invariants
-- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) must reside in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining in V1**: Sheets in `f8.json` reference table file paths. Inlining table objects directly into `f8.json` is prohibited.
-- **Global table ID uniqueness**: Every table `id` must be globally unique across the entire workbook.
+### Invariants
+- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/` (or relative subdirectories).
+- **No inlining**: Sheets in `f8.json` reference table relative file paths.
+- **Global table ID uniqueness**: Every table `id` must be globally unique across the workbook.
+- **Filename-to-ID correspondence**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores).
 
 ---
 
 ## 2. Project Manifest Schema (`f8.json`)
 
-The root manifest defines workbook-level metadata, pluggable theme selection, and physical sheet presentation containers:
+The root manifest defines workbook-level metadata, pluggable theme selection, and sheet containers:
 
 ```json
 {
-  "model_name": "string",
-  "theme": "string",
+  "model_name": "LBO_Simple",
+  "theme": "corporate_navy",
   "sheets": [
     {
-      "name": "string",
-      "tab_color": "string (optional)",
-      "freeze_panes": {
-        "row": "integer",
-        "col": "integer"
-      },
-      "show_gridlines": "boolean (optional, default: true)",
+      "name": "Summary",
+      "tab_color": "#1B365D",
+      "show_gridlines": true,
       "tables": [
-        "path/to/table_a.json",
-        "path/to/table_b.json"
+        "tables/assumptions.json"
+      ]
+    },
+    {
+      "name": "Financials",
+      "tab_color": "#2C4D75",
+      "freeze_panes": {
+        "row": 6,
+        "col": 2
+      },
+      "show_gridlines": true,
+      "tables": [
+        "tables/revenue_schedule.json",
+        "tables/income_statement.json"
       ]
     }
   ]
 }
 ```
 
-### Vertical Table Stacking & Modularity
-When a sheet lists multiple table paths, the [Spatial Layout Engine](../compiler/spatial-layout.md) stacks them vertically in the listed order, inserting blank-row gutters:
-- **Independent column dimensions**: Stacked tables are self-contained calculation blocks. They do not need to share identical column counts, column keys, or timeline spans.
-- **Physical anchoring**: Each table maps its declared columns $0 \dots C-1$ directly to worksheet column offsets, anchored by explicit descriptor columns without implicit Column A/B stubs.
-- **Semantic decoupling**: Formula references resolve via semantic identifiers (`Table[row, col]`), remaining fully isolated from the physical row and column placement on the sheet.
+### Manifest Properties
+- **`model_name`** (`string`, required): Model title used in metadata and workbook document properties.
+- **`theme`** (`string`, optional, default `"corporate_navy"`): Built-in theme name or relative path to a custom theme JSON file.
+- **`sheets`** (`array`, required): Ordered list of worksheet definitions:
+  - `name` (`string`, required): Worksheet tab label. Must be unique across the workbook.
+  - `tab_color` (`string`, optional): Hex color code starting with `#` (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`).
+  - `freeze_panes` (`object`, optional): `{ "row": u32, "col": u32 }` physical worksheet row and column split lines.
+  - `show_gridlines` (`boolean`, optional, default `true`): Toggles gridline rendering.
+  - `tables` (`array of strings`, required): Relative file paths to table specifications. Stacked vertically in declaration order, separated by blank row gutters.
 
 ---
 
@@ -62,25 +77,29 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
 
 ```json
 {
-  "id": "string",
-  "title": "string",
-  "subtitle": "string (optional)",
-  "currency": "CurrencyCode (optional default, e.g. USD)",
-  "collapsible": "boolean (optional, default: false)",
+  "id": "IncomeStatement",
+  "title": "Income Statement",
+  "subtitle": "($ in Millions)",
+  "currency": "usd",
+  "collapsible": false,
   "columns": [
     {
       "kind": "data",
-      "id": "string",
-      "role": "measure | descriptor (optional, default: measure)",
-      "headers": ["string (multi-tier header labels, optional)"],
-      "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
-      "highlight": "boolean (optional, default: false)",
-      "format": "FormatPreset (optional)",
-      "decimals": "integer (optional, fractional display precision)",
-      "currency": "CurrencyCode (optional)",
-      "expr": "string (optional, column-wide vector formula)",
-      "note": "string (optional)",
-      "source": "string or object (optional)"
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": ["Line Item"]
+    },
+    {
+      "kind": "data",
+      "id": "2024E",
+      "role": "measure",
+      "headers": ["Forecast Projections", "2024E"],
+      "style": "data",
+      "format": "currency",
+      "decimals": 1,
+      "currency": "usd",
+      "expr": "...",
+      "highlight": false
     },
     {
       "kind": "gutter"
@@ -89,70 +108,121 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
   "rows": [
     {
       "kind": "section_header",
-      "title": "string",
-      "indent": "integer (optional, typographic indent level, default: 0)",
-      "note": "string (optional)"
+      "title": "Operating Expenses",
+      "indent": 0
     },
     {
       "kind": "gutter"
     },
     {
       "kind": "data",
-      "id": "string",
-      "style": "SemanticStyle (optional: data | subtotal | total, default: data)",
-      "highlight": "boolean (optional, default: false)",
-      "format": "FormatPreset (optional)",
-      "decimals": "integer (optional, fractional display precision)",
-      "currency": "CurrencyCode (optional)",
-      "expr": "string (optional, row-wide vector formula)",
-      "note": "string (optional)",
-      "source": "string or object (optional)",
+      "id": "r_and_d",
+      "style": "data",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "...",
       "cells": {
-        "<col_id>": "ValueLiteral | { \"expr\": \"string\" } | DetailedCellInput"
+        "line_item": { "value": "Research & Development", "indent": 1 },
+        "2024E": 120.0
       }
     }
   ]
 }
 ```
 
-### 3.1. Axis Roles (`role`)
-Data columns explicitly declare their calculation role:
-- **`measure` (default)**: Numerical quantities, time periods, and calculation outputs. Vector formulas broadcast across opposing measure axes.
-- **`descriptor`**: Categorical labels, metadata, units, and stub information. Excluded from vector broadcasting and temporal navigation.
+---
 
-### 3.2. Semantic Styles (`style`), Highlights (`highlight`), & Precision (`decimals`)
-Columns and rows declare structural presentation styles (`data`, `subtotal`, `total`), visual emphasis (`highlight: true`), and numeric display precision (`decimals: integer`), completely decoupled from number format masks. See [Semantic Formatting & Themes](formatting.md#3-structural-semantic-styles-semanticstyle).
+## 4. Column Elements & Horizontal Grid Structure
 
-### 3.3. Cell Input Syntax (`cells`)
-Every key under `data_row.cells` refers strictly to a declared data column identifier (`ColId`). Each entry represents one 0D coordinate point:
-- **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
-- **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
-- **Detailed override**: `{ "value": 85000, "note": "Audited actuals", "format": "currency", "decimals": 2, "style": "total", "highlight": true, "indent": 1 }`. An explicit `style: "data"` suppresses inherited row/column total borders. Note that `indent` is valid only on descriptor columns; setting `indent > 0` on a measure column produces a validation error.
+Columns are declared in `table.columns` as either calculable data columns or spacing gutters.
+
+### 4.1. Data Columns (`kind: "data"`)
+- **`id`** (`string`, required): Column identifier (`ColId`), referenced in formula coordinates (e.g. `"2024E"`).
+- **`role`** (`"measure"` | `"descriptor"`, optional, default `"measure"`):
+  - `measure`: Numerical quantities, time periods, and calculation outputs. Row vector formulas (`row.expr`) broadcast across all measure columns.
+  - `descriptor`: Row labels, line item descriptions, units, or metadata stubs. Descriptors are strictly isolated from vector broadcasting and temporal offsets (`col.prev` / `col.next`).
+- **`headers`** (`array of strings`, optional): Multi-tier column header labels.
+  - *Center across selection*: Adjacent columns sharing identical upper-tier labels center automatically across the span without cell merging (FAST financial modeling standard).
+  - *Bottom alignment*: When columns declare differing header array lengths, headers are bottom-aligned so the bottom tier always holds the primary metric label while upper tiers remain blank.
+  - *Zero headers*: Omitting `headers` allocates zero physical header rows.
+
+### 4.2. Column Gutters (`kind: "gutter"`)
+Spacing columns visually separate analytical periods or categories without dummy identifiers:
+- Allocate blank spacing width (default 3.0 characters).
+- Produce zero calculation cells and are skipped by formula navigation.
 
 ---
 
-## 4. Core Validation Invariants
+## 5. Row Elements & Vertical Grid Structure
 
-1. **Every coordinate is explicit**: Physical cells map 1:1 to explicit table declarations. The compiler never synthesizes phantom rows or unaddressed stub columns.
+Rows are declared in `table.rows` in their exact vertical display order.
+
+### 5.1. Data Rows (`kind: "data"`)
+Calculable rows containing values, vector formulas, or individual cell overrides:
+- **`id`** (`string`, required): Row identifier (`RowId`), referenced in formula coordinates (e.g. `"revenue"`).
+- **`expr`** (`string`, optional): Row-wide vector formula broadcasting across all measure columns.
+- **`style`**, **`format`**, **`decimals`**, **`currency`**, **`highlight`**: Row-level default presentation attributes.
+- **`cells`** (`object`, optional): Map of column IDs (`ColId`) to cell inputs.
+
+### 5.2. Section Header Rows (`kind: "section_header"`)
+Visual divider banners organizing line items into logical financial sections:
+- **`title`** (`string`, required): Header label displayed across the table width.
+- **`indent`** (`integer`, optional, default `0`): Typographic indent level ($0 \le N \le 3$).
+- Section headers contain zero calculable cells and do not interrupt vector formulas across data rows.
+
+### 5.3. Row Gutters (`kind: "gutter"`)
+Vertical blank spacing rows (default 9.0 pt height) between logical sections. Gutters have no ID and contain no cells.
+
+### 5.4. Typographic Indentation
+Descriptor cells and section headers accept an optional `indent` level ($0 \le N \le 3$). Indentation applies directly to individual descriptor cells as a typographic cell indent. It has zero effect on row height, calculation graphs, or measure columns. Setting `indent` on a measure cell produces a validation error (`InvalidIndentOnMeasureCell`).
+
+### 5.5. Table Collapsing (`collapsible`)
+Tables can opt into outline folding via `"collapsible": true`. When enabled, all body rows collapse into the table title banner using spreadsheet outline groups.
+
+---
+
+## 6. Cell Input Syntax (`cells`)
+
+Every key under `data_row.cells` refers strictly to a declared data column identifier (`ColId`). Each entry represents one 0D coordinate point:
+
+1. **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
+2. **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
+3. **Detailed override**:
+   ```json
+   {
+     "value": 85000,
+     "note": "Audited actuals",
+     "format": "currency",
+     "decimals": 2,
+     "style": "total",
+     "highlight": true,
+     "indent": 1
+   }
+   ```
+   Setting `style: "data"` on an individual cell override acts as an explicit point escape hatch, suppressing inherited horizontal or vertical summary borders.
+
+---
+
+## 7. Core Validation Invariants
+
+1. **1:1 physical mapping**: Declared rows and columns map 1:1 to physical spreadsheet coordinates. The compiler never synthesizes phantom rows or unaddressed stub columns.
 2. **Single source of truth**:
    - `id`: Immutable programmatic identifier used in formulas and ASTs.
    - `headers` / descriptor cell: Display text rendered in headers and row stubs.
-   - Physical coordinates: Computed deterministically by the layout engine.
+   - Physical coordinates: Computed deterministically by the spatial layout engine.
 3. **Three-tier specificity lattice**:
-   $$\text{Cell Override (0D Point)} > \text{Vector Rule (1D Row or Column)} > \text{Explicit Null}$$
-4. **Zero silent precedence**: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, compilation halts with `AmbiguousExpressionConflict`.
-5. **Zero silent blanks**: Every measure cell must resolve to a value, formula, or explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`.
-6. **Formula isolation**: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing data rows and measure columns, and never evaluate across descriptor columns.
+   $$\text{Cell override (0D point)} > \text{Vector rule (1D row or column)} > \text{Explicit null}$$
+4. **Zero silent ambiguity**: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, compilation halts with `AmbiguousExpressionConflict`.
+5. **Zero silent blanks**: Every measure cell must resolve to a value, formula override, vector formula, or explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`.
+6. **Descriptor boundary isolation**: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing data rows and measure columns, and never evaluate across descriptor columns.
 
 ---
 
-## 5. Related Documentation
+## 8. Related Documentation
 
-- [Model Authoring Guide](authoring-guide.md): Comprehensive end-to-end guide to authoring raw f8 models.
-- [Grid Architecture](grid.md): Multi-tier column headers, section headers, gutters, and table collapsing.
-- [Semantic Formatting & Themes](formatting.md): Format preset catalog, conflict resolution, and workbook themes.
-- [Modeling Patterns & Archetypes](patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
-- [End-to-End Project Example](project-example.md): Complete working reference model.
+- [Model Authoring Guide](../authoring-guide.md): Practical end-to-end walkthrough for creating financial models.
 - [Addressing Syntax](addressing.md): Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
 - [Formula Grammar](grammar.md): Formal EBNF expression grammar and operator precedence.
-- [Intermediate Representation (IR)](../compiler/ir.md): 2D Specificity Resolution Lattice flowchart and expansion pass.
+- [Semantic Formatting & Themes](formatting.md): Format preset catalog, conflict resolution, and workbook themes.
+- [Modeling Patterns & Archetypes](patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
+- [Spatial Layout Planning](../compiler/spatial-layout.md): Physical layout planning, margin metrics, and column width arbitration.

@@ -88,21 +88,14 @@ Detailed calculation rules, numeric precision, range coercion asymmetry, date da
 
 ---
 
-## 5. Agent Inspection Interface
+## 5. Inspection Interface & Unified Facade (`CompiledModel`)
 
-The evaluated matrix exposes lookup APIs for CLI commands and MCP agent tools:
+Following DAG execution, the resulting `EvaluatedModel` is consolidated alongside other compiler pass artifacts into `CompiledModel`. Outer tools (`f8-cli`, `f8-mcp`) query evaluation state directly:
 
-```rust
-impl EvaluatedModel {
-    /// Retrieve evaluated value for a specific cell coordinate.
-    pub fn get_value(&self, table: &TableId, row: &RowId, col: &ColId) -> Option<&CellValue>;
+- **`inspect_cell(table, row, col)`**: Returns cell evaluation state, raw literal or formula AST, lowered Excel formula, physical coordinates, and dependency edges.
+- **`table_matrix(table)`**: Emits a 2D matrix of evaluated values, formula expressions, or stacked audit pairs for tabular display.
+- **`find_errors()`**: Sweeps the evaluated matrix, identifying all coordinates that resolved to `CellValue::Error(ExcelError)`.
+- **`precedents_of(cell, recursive)` / `dependents_of(cell, recursive)`**: Walks the DAG to report direct or transitive dependencies and blast radius.
 
-    /// Retrieve all evaluated row values across columns as an ordered map.
-    pub fn get_row_values(&self, table: &TableId, row: &RowId) -> Result<IndexMap<ColId, CellValue>, ModelError>;
+See [Dependency Graph](dependency-graph.md) for DAG construction, [Function Registry](../functions/registry.md) for function contracts, and [Excel Parity](parity.md) for calculation parity rules.
 
-    /// Check if any cell in the model evaluated to an Excel error.
-    pub fn find_errors(&self) -> Vec<(CellId, ExcelError)>;
-}
-```
-
-See [Dependency Graph](./dependency-graph.md) for DAG construction, [Function Registry](../functions/registry.md) for function contracts, and [Excel Parity](parity.md) for calculation parity rules.

@@ -109,4 +109,4 @@ pub struct SheetLayout {
 }
 ```
 
-See [Grid Architecture](../dsl/grid.md) for DSL definitions and [Formula Lowering & Emission](lowering-and-emission.md) for emission details.
+See [Specification Format & 2D Grid](../dsl/spec-format.md) for DSL definitions and [Formula Lowering & Emission](lowering-and-emission.md) for emission details.
