@@ -4,4 +4,7 @@ pub mod functions;
 pub mod model;
 pub mod value;
 
-pub use compiler::{Compiler, CompilerError};
+pub use compiler::{
+    CellInspection, CompiledModel, Compiler, CompilerError, DependencyNode, DependencyTree,
+    InspectionError, ModelSummary, TableInspection,
+};

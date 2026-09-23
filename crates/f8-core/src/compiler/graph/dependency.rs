@@ -140,6 +140,25 @@ impl DependencyGraph {
     }
 }
 
+impl PartialEq for DependencyGraph {
+    fn eq(&self, other: &Self) -> bool {
+        if self.topological_order != other.topological_order
+            || self.node_count() != other.node_count()
+            || self.edge_count() != other.edge_count()
+        {
+            return false;
+        }
+        for (cell, _) in &self.node_indices {
+            let self_deps: HashSet<&CellId> = self.dependencies_of(cell).into_iter().collect();
+            let other_deps: HashSet<&CellId> = other.dependencies_of(cell).into_iter().collect();
+            if self_deps != other_deps {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 /// Reconstructs an ordered simple cycle loop from nodes in an SCC.
 fn find_cycle_in_scc(graph: &DiGraph<CellId, ()>, scc: &[NodeIndex]) -> Option<Vec<CellId>> {
     if scc.is_empty() {

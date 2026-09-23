@@ -4,6 +4,7 @@
 
 use thiserror::Error;
 
+use crate::compiler::compiled::error::InspectionError;
 use crate::compiler::emission::error::EmissionError;
 use crate::compiler::eval::error::EvalError;
 use crate::compiler::graph::error::GraphError;
@@ -41,4 +42,8 @@ pub enum CompilerError {
     /// OpenXML format synthesis and workbook emission error occurring during Pass 6b.
     #[error("Emission error: {0}")]
     Emission(#[from] EmissionError),
+
+    /// Model inspection or coordinate lookup error.
+    #[error("Inspection error: {0}")]
+    Inspection(#[from] InspectionError),
 }
