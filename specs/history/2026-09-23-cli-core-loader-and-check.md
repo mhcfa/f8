@@ -1,7 +1,7 @@
 ---
 title: CLI Core, Project Loader, and Verification (f8 check)
 date: 2026-09-23
-status: draft
+status: complete
 target-living-spec: specs/living-specs/interfaces/cli.md
 ---
 
@@ -155,42 +155,42 @@ Status: OK
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Upward project discovery**
+- [x] **Scenario 1: Upward project discovery**
   - **Given** an `f8.json` in a root directory and a deeply nested current working directory
   - **When** running `f8 check` without `-p`
   - **Then** the CLI traverses parent directories, locates `f8.json`, loads all relative table files, and exits with code `0`.
 
-- [ ] **Scenario 2: Explicit project flag**
+- [x] **Scenario 2: Explicit project flag**
   - **Given** an f8 project at `./models/lbo`
   - **When** running `f8 -p ./models/lbo check` or `f8 check -p ./models/lbo`
   - **Then** the CLI loads the specified project and exits with code `0`.
 
-- [ ] **Scenario 3: Missing manifest operational error**
+- [x] **Scenario 3: Missing manifest operational error**
   - **Given** a directory tree containing no `f8.json`
   - **When** running `f8 check`
   - **Then** the CLI exits with code `1` and emits an error message to `stderr`.
 
-- [ ] **Scenario 4: Invalid JSON file error**
+- [x] **Scenario 4: Invalid JSON file error**
   - **Given** a project where a table JSON file contains a syntax error
   - **When** running `f8 check`
   - **Then** the CLI exits with code `1` and identifies the unreadable file on `stderr`.
 
-- [ ] **Scenario 5: Fail-fast compiler diagnostic**
+- [x] **Scenario 5: Fail-fast compiler diagnostic**
   - **Given** an f8 project containing a circular reference or unresolved coordinate
   - **When** running `f8 check`
   - **Then** compilation halts, exits with code `2`, and outputs the exact compiler error to `stderr`.
 
-- [ ] **Scenario 6: Machine-readable JSON output on success**
+- [x] **Scenario 6: Machine-readable JSON output on success**
   - **Given** a valid f8 project
   - **When** running `f8 check --json`
   - **Then** valid JSON with `"status": "ok"` and summary metrics is emitted to `stdout` with exit code `0`.
 
-- [ ] **Scenario 7: Machine-readable JSON output on compiler failure**
+- [x] **Scenario 7: Machine-readable JSON output on compiler failure**
   - **Given** an f8 project with a circular reference
   - **When** running `f8 check --json`
   - **Then** valid JSON with `"status": "error"` and `"exit_code": 2` is emitted to `stderr` with exit code `2`.
 
-- [ ] **Scenario 8: Zero production panics**
+- [x] **Scenario 8: Zero production panics**
   - **Given** `crates/f8-cli`
   - **When** running `cargo clippy -p f8-cli --all-targets -- -D warnings`
   - **Then** zero warnings and zero unhandled panics (`unwrap`/`expect`) are found.
@@ -200,31 +200,31 @@ Status: OK
 ## Tasks
 
 ### Phase 1: Dependencies & Error Hierarchy
-- [ ] Add `clap` (derive), `serde`, `serde_json`, and `thiserror` to `crates/f8-cli/Cargo.toml`.
-- [ ] Add `assert_cmd`, `predicates`, and `tempfile` to `crates/f8-cli/Cargo.toml` under `[dev-dependencies]`.
-- [ ] Implement `CliError` in `crates/f8-cli/src/error.rs` with variants for `ProjectNotFound`, `Io`, `Json`, and `Compiler(CompilerError)`.
-- [ ] Implement `exit_code()` on `CliError` mapping I/O/operational errors to `1` and compiler errors to `2`.
+- [x] Add `clap` (derive), `serde`, `serde_json`, and `thiserror` to `crates/f8-cli/Cargo.toml`.
+- [x] Add `assert_cmd`, `predicates`, and `tempfile` to `crates/f8-cli/Cargo.toml` under `[dev-dependencies]`.
+- [x] Implement `CliError` in `crates/f8-cli/src/error.rs` with variants for `ProjectNotFound`, `Io`, `Json`, and `Compiler(CompilerError)`.
+- [x] Implement `exit_code()` on `CliError` mapping I/O/operational errors to `1` and compiler errors to `2`.
 
 ### Phase 2: Upward Traversal & Multi-File Project Loader
-- [ ] Implement upward directory search for `f8.json` in `crates/f8-cli/src/project/loader.rs`.
-- [ ] Implement multi-file reader resolving relative table paths declared in `SheetSpec.tables`.
-- [ ] Support custom theme loading if a custom path is declared in `f8.json`.
-- [ ] Add unit tests for project loader verifying upward traversal and multi-file assembly.
+- [x] Implement upward directory search for `f8.json` in `crates/f8-cli/src/project/loader.rs`.
+- [x] Implement multi-file reader resolving relative table paths declared in `SheetSpec.tables`.
+- [x] Support custom theme loading if a custom path is declared in `f8.json`.
+- [x] Add unit tests for project loader verifying upward traversal and multi-file assembly.
 
 ### Phase 3: Clap CLI Structure & Dispatcher
-- [ ] Define Clap command hierarchy in `crates/f8-cli/src/cli.rs` with global `-p, --project` and `--json` flags.
-- [ ] Define `CheckArgs` for the `check` subcommand.
-- [ ] Implement `main.rs` dispatching to command handlers, catching errors, formatting to `stderr`, and returning the appropriate process exit code.
+- [x] Define Clap command hierarchy in `crates/f8-cli/src/cli.rs` with global `-p, --project` and `--json` flags.
+- [x] Define `CheckArgs` for the `check` subcommand.
+- [x] Implement `main.rs` dispatching to command handlers, catching errors, formatting to `stderr`, and returning the appropriate process exit code.
 
 ### Phase 4: `f8 check` Runner & Output Formatting
-- [ ] Implement `commands/check.rs` executing Passes 1–6a via `Compiler::compile`.
-- [ ] Implement human-readable check summary output.
-- [ ] Implement JSON check summary output for `--json`.
-- [ ] Implement JSON error output on `stderr` when `--json` is enabled.
+- [x] Implement `commands/check.rs` executing Passes 1–6a via `Compiler::compile`.
+- [x] Implement human-readable check summary output.
+- [x] Implement JSON check summary output for `--json`.
+- [x] Implement JSON error output on `stderr` when `--json` is enabled.
 
 ### Phase 5: Verification Suite
-- [ ] Add integration test suite in `crates/f8-cli/tests/check_test.rs` covering all acceptance criteria.
-- [ ] Verify `cargo check`.
-- [ ] Verify `cargo test --workspace`.
-- [ ] Verify `cargo clippy --workspace --all-targets -- -D warnings`.
-- [ ] Verify `cargo fmt --check`.
+- [x] Add integration test suite in `crates/f8-cli/tests/check_test.rs` covering all acceptance criteria.
+- [x] Verify `cargo check`.
+- [x] Verify `cargo test --workspace`.
+- [x] Verify `cargo clippy --workspace --all-targets -- -D warnings`.
+- [x] Verify `cargo fmt --check`.

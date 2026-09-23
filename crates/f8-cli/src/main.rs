@@ -1,3 +1,4 @@
 fn main() {
-    println!("f8 CLI");
+    let exit_code = f8_cli::run();
+    std::process::exit(exit_code);
 }
