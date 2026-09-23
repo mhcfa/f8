@@ -33,7 +33,7 @@ flowchart LR
 The CLI discovers and loads projects deterministically across subdirectories:
 
 1. **Manifest discovery**:
-   - If `--project <path>` (or `-p <path>`) is specified, the CLI targets that file or directory directly.
+   - If `--project <path>` (or `-p <path>`) is specified, the CLI targets that file or directory directly. As a global flag, `-p` can be positioned before or after any subcommand (e.g. `f8 -p ./models check` or `f8 check -p ./models`).
    - Otherwise, the CLI starts in the current working directory and traverses upward through parent directories until it locates `f8.json` (identical to `cargo` finding `Cargo.toml` or `git` finding `.git`).
    - If no `f8.json` is found, the CLI returns exit code `1` with a descriptive error.
 2. **Table resolution**:
@@ -46,14 +46,14 @@ The CLI discovers and loads projects deterministically across subdirectories:
 
 ## 3. Command Hierarchy
 
-All CLI operations are grouped under clear, noun-first subcommands:
+All CLI operations are grouped under clear, noun-first subcommands with consistent global flags:
 
 ```text
 f8 init [path] [--template <name>] [--theme <name>]
 f8 check [-p <path>] [--json]
 f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache] [--open]
 f8 inspect [-p <path>] [--json]
-f8 inspect table <table_id> [--view <values|formulas|both>] [--format <table|markdown|json>] [-p <path>]
+f8 inspect table <table_id> [--view <values|formulas|both>] [--format <table|markdown|json>] [--json] [-p <path>]
 f8 inspect cell <table_id> <row_id> <col_id> [-p <path>] [--json]
 f8 inspect precedents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
 f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
@@ -211,13 +211,14 @@ f8 inspect table IncomeStatement --view both
 
 **Options**:
 - `--view <values|formulas|both>`:
-  - `values` (default): Evaluated and formatted numbers with accounting typography.
+  - `values` (default): Evaluated and formatted numbers with accounting typography according to each cell's format preset, decimal precision, and currency symbol.
   - `formulas`: Formula expressions for calculation cells; raw inputs for literal cells.
   - `both`: Stacked view displaying both evaluated value and formula expression per cell.
 - `--format <table|markdown|json>`:
-  - `table` (default): Aligned Unicode terminal table.
+  - `table` (default): Aligned Unicode terminal table with clean box-drawing borders.
   - `markdown`: GitHub Flavored Markdown table.
   - `json`: 2D array of cell objects.
+- `--json`: Convenience shortcut equivalent to `--format json`.
 
 ---
 
