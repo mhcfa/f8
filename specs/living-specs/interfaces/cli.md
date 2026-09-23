@@ -128,21 +128,24 @@ Provides terminal auditing tools for model structures, 2D statement tables, cell
 - **Model overview summary**:
   - **When** running `f8 inspect`
   - **Then** renders summary listing sheets, human-readable table titles alongside IDs (`Title [id]`), cell counts, driver inputs, formulas, and evaluation duration to `stdout`.
-- **Table matrix inspection with dual programmatic IDs**:
+- **Table matrix inspection with dual programmatic IDs and multi-tier headers**:
   - **When** running `f8 inspect table <table_id>`
-  - **Then** renders aligned Unicode or Markdown table with accounting typography, displaying inline programmatic IDs alongside column headers (`Header [id]`) and row descriptors (`Title [id]`), deduplicating when label and ID match case-insensitively.
+  - **Then** renders aligned Unicode or Markdown table with accounting typography, displaying multi-tier column headers stacked across hierarchical rows (bottom-aligned with inline IDs `Header [id]` on the lowest tier), row descriptors (`Title [id]`), and calendar years formatted without thousands commas (`2029`).
 - **Formula auditing parity & markdown export**:
   - **When** running `f8 inspect table <table_id> --view formulas --format markdown`
-  - **Then** outputs a GitHub Flavored Markdown table displaying live formula expressions with dual headers and row descriptors.
+  - **Then** outputs a GitHub Flavored Markdown table displaying live formula expressions with multi-tier column headers and dual row descriptors.
 - **Dual stacked auditing view**:
   - **When** running `f8 inspect table <table_id> --view both`
   - **Then** displays stacked cells showing evaluated values and formula expressions simultaneously.
-- **Cell audit card with neighbor values**:
-  - **When** running `f8 inspect cell <table_id> <row_id> <col_id>`
-  - **Then** displays coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, and direct precedents and dependents annotated with evaluated values (`├── <CellId> = <formatted_value>`).
-- **Precedent & blast-radius DAG trees with evaluated values**:
-  - **When** running `f8 inspect precedents <table_id> <row_id> <col_id>` or `f8 inspect dependents <table_id> <row_id> <col_id>`
-  - **Then** renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) displaying evaluated runtime values for every node (`<CellId> = <formatted_value>`), annotating pruned reconvergent paths with `(already visited)`.
+- **Flexible coordinate cell audit card**:
+  - **When** running `f8 inspect cell <table_id> <row_id> <col_id>` or `f8 inspect cell 'Table["row", "col"]'`
+  - **Then** parses coordinates from either 3 positional arguments or 1 canonical IR string, displaying coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, and direct precedents and dependents annotated with evaluated values (`├── <CellId> = <formatted_value>`).
+- **Precedent & blast-radius DAG trees with flexible coordinates**:
+  - **When** running `f8 inspect precedents <target>` or `f8 inspect dependents <target>` with 3 arguments or 1 IR string
+  - **Then** resolves coordinates and renders immediate direct edges or recursive hierarchical tree (`├──`, `└──`) displaying evaluated runtime values for every node (`<CellId> = <formatted_value>`), annotating pruned reconvergent paths with `(already visited)`.
+- **Coordinate syntax rejection**:
+  - **When** running `f8 inspect cell <target> <row>` without third column argument or without IR brackets
+  - **Then** fails with exit code `1` and guidance error on `stderr` explaining coordinates must be 3 positional arguments or 1 canonical IR string.
 - **Structured machine-readable JSON**:
   - **When** passing `--json` to any inspect subcommand
   - **Then** prints structured JSON to `stdout` on success, or structured error JSON to `stderr` with exit code `2` if a coordinate/table entity does not exist.

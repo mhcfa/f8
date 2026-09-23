@@ -149,6 +149,10 @@ impl Default for BordersConfig {
     }
 }
 
+fn default_integer_format() -> String {
+    "0;(-0);\"-\"_)".to_string()
+}
+
 /// Number format templates and default precisions across all semantic presets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NumberFormatsConfig {
@@ -159,6 +163,8 @@ pub struct NumberFormatsConfig {
     pub basis_points: String,
     pub date: String,
     pub text: String,
+    #[serde(default = "default_integer_format")]
+    pub integer: String,
     pub defaults: FormatDefaults,
 }
 
@@ -172,6 +178,7 @@ impl Default for NumberFormatsConfig {
             basis_points: "#,##0{dec}\" bps\"".to_string(),
             date: "yyyy-mm-dd".to_string(),
             text: "@".to_string(),
+            integer: default_integer_format(),
             defaults: FormatDefaults::default(),
         }
     }
@@ -376,6 +383,7 @@ impl Theme {
         let (template, default_dec) = match preset {
             FormatPreset::Date => return Ok(self.number_formats.date.clone()),
             FormatPreset::Text => return Ok(self.number_formats.text.clone()),
+            FormatPreset::Integer => return Ok(self.number_formats.integer.clone()),
             FormatPreset::Currency => (
                 &self.number_formats.currency,
                 self.number_formats.defaults.currency_decimals,

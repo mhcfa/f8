@@ -42,7 +42,7 @@ pub fn format_accounting_number(
         Some(FormatPreset::Multiple) => decimals.unwrap_or(1) as usize,
         Some(FormatPreset::BasisPoints) => decimals.unwrap_or(0) as usize,
         Some(FormatPreset::Currency) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::Number) => decimals.unwrap_or(0) as usize,
+        Some(FormatPreset::Number | FormatPreset::Integer) => decimals.unwrap_or(0) as usize,
         _ => decimals
             .map(|d| d as usize)
             .unwrap_or(if abs_val.fract().abs() > 1e-6 { 1 } else { 0 }),
@@ -55,7 +55,18 @@ pub fn format_accounting_number(
         _ => (abs_val, ""),
     };
 
-    let formatted_num = format_with_commas(scaled_val, dec);
+    let is_integer_preset = matches!(format, Some(FormatPreset::Integer));
+    let is_year_heuristic = dec == 0
+        && matches!(format, Some(FormatPreset::Number) | None)
+        && abs_val.fract().abs() < 1e-6
+        && (1900.0..=2100.0).contains(&val);
+    let omit_commas = is_integer_preset || is_year_heuristic;
+
+    let formatted_num = if omit_commas {
+        format!("{scaled_val:.dec$}")
+    } else {
+        format_with_commas(scaled_val, dec)
+    };
 
     match format {
         Some(FormatPreset::Currency) => {
@@ -108,6 +119,7 @@ fn format_with_commas(val: f64, decimals: usize) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::value::error::ExcelError;
@@ -183,5 +195,31 @@ mod tests {
             "1,000,000"
         );
         assert_eq!(format_accounting_number(-42.0, None, None, None), "(42)");
+
+        // Integer preset (no commas even for large numbers or negatives)
+        assert_eq!(
+            format_accounting_number(2029.0, Some(FormatPreset::Integer), None, None),
+            "2029"
+        );
+        assert_eq!(
+            format_accounting_number(1000000.0, Some(FormatPreset::Integer), None, None),
+            "1000000"
+        );
+        assert_eq!(
+            format_accounting_number(-42.0, Some(FormatPreset::Integer), None, None),
+            "(42)"
+        );
+
+        // Calendar year heuristic [1900..=2100] with 0 decimals (no commas)
+        assert_eq!(
+            format_accounting_number(2029.0, Some(FormatPreset::Number), Some(0), None),
+            "2029"
+        );
+        assert_eq!(format_accounting_number(1999.0, None, None, None), "1999");
+        // Numbers with fractional parts retain decimals and commas if outside integer
+        assert_eq!(
+            format_accounting_number(2024.5, Some(FormatPreset::Number), Some(1), None),
+            "2,024.5"
+        );
     }
 }

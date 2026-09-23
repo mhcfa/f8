@@ -643,4 +643,181 @@ impl CompiledModel {
         let excel_formula = self.lowered_map.get(cell_id).map(ToString::to_string);
         (sheet_address, value, formatted_value, excel_formula)
     }
+
+    /// Resolves coordinate arguments from either 3 positional tokens or 1 canonical IR string into a [`CellId`].
+    ///
+    /// # Errors
+    /// Returns [`InspectionError::InvalidCoordinate`] if the arguments do not form a valid coordinate.
+    pub fn parse_coordinate(
+        &self,
+        target: &str,
+        row: Option<&str>,
+        col: Option<&str>,
+    ) -> Result<CellId, InspectionError> {
+        let (table_id, row_id, col_id) = parse_coordinate_tokens(target, row, col)?;
+        Ok(CellId::new(table_id, row_id, col_id))
+    }
+}
+
+/// Helper to clean quotes and whitespace from an identifier.
+fn clean_id(s: &str) -> &str {
+    let trimmed = s.trim();
+    trimmed
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|t| t.strip_suffix('\''))
+        })
+        .unwrap_or(trimmed)
+        .trim()
+}
+
+/// Parses coordinate arguments from either 3 positional tokens or 1 canonical IR string.
+///
+/// Supported formats:
+/// - 3 tokens: `("IncomeStatement", Some("cogs"), Some("y2024e"))`
+/// - Canonical IR string: `("IncomeStatement[\"cogs\", \"y2024e\"]", None, None)`
+/// - Canonical IR string (unquoted IDs): `("IncomeStatement[cogs, y2024e]", None, None)`
+pub fn parse_coordinate_tokens(
+    target: &str,
+    row: Option<&str>,
+    col: Option<&str>,
+) -> Result<(TableId, RowId, ColId), InspectionError> {
+    let input_repr = match (row, col) {
+        (Some(r), Some(c)) => format!("{target} {r} {c}"),
+        (Some(r), None) => format!("{target} {r}"),
+        (None, Some(c)) => format!("{target} {c}"),
+        (None, None) => target.to_string(),
+    };
+
+    match (row, col) {
+        (Some(r), Some(c)) => {
+            let target_trimmed = target.trim();
+            let row_trimmed = r.trim();
+            let col_trimmed = c.trim();
+
+            if target_trimmed.contains('[')
+                || target_trimmed.is_empty()
+                || row_trimmed.is_empty()
+                || col_trimmed.is_empty()
+            {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            }
+
+            let table_id = TableId::from(clean_id(target_trimmed));
+            let row_id = RowId::from(clean_id(row_trimmed));
+            let col_id = ColId::from(clean_id(col_trimmed));
+            Ok((table_id, row_id, col_id))
+        }
+        (None, None) => {
+            let trimmed = target.trim();
+            let Some((table_part, rest)) = trimmed.split_once('[') else {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            };
+
+            let table_name = clean_id(table_part);
+            if table_name.is_empty() || table_part.contains('[') || table_part.contains(']') {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            }
+
+            let rest_trimmed = rest.trim();
+            let Some(inner) = rest_trimmed.strip_suffix(']') else {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            };
+
+            if inner.contains('[') || inner.contains(']') {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            }
+
+            let parts: Vec<&str> = inner.split(',').collect();
+            if parts.len() != 2 {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            }
+
+            let row_name = clean_id(parts[0]);
+            let col_name = clean_id(parts[1]);
+
+            if row_name.is_empty() || col_name.is_empty() {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            }
+
+            Ok((
+                TableId::from(table_name),
+                RowId::from(row_name),
+                ColId::from(col_name),
+            ))
+        }
+        _ => Err(InspectionError::InvalidCoordinate(input_repr)),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_coordinate_tokens_three_args() {
+        let (table, row, col) =
+            parse_coordinate_tokens("IncomeStatement", Some("cogs"), Some("y2024e"))
+                .expect("valid 3-arg coordinate");
+        assert_eq!(table.as_str(), "IncomeStatement");
+        assert_eq!(row.as_str(), "cogs");
+        assert_eq!(col.as_str(), "y2024e");
+    }
+
+    #[test]
+    fn test_parse_coordinate_tokens_canonical_ir() {
+        let (table, row, col) =
+            parse_coordinate_tokens("IncomeStatement[\"cogs\", \"y2024e\"]", None, None)
+                .expect("valid canonical IR coordinate");
+        assert_eq!(table.as_str(), "IncomeStatement");
+        assert_eq!(row.as_str(), "cogs");
+        assert_eq!(col.as_str(), "y2024e");
+    }
+
+    #[test]
+    fn test_parse_coordinate_tokens_unquoted_ir() {
+        let (table, row, col) =
+            parse_coordinate_tokens("IncomeStatement[cogs, y2024e]", None, None)
+                .expect("valid unquoted IR coordinate");
+        assert_eq!(table.as_str(), "IncomeStatement");
+        assert_eq!(row.as_str(), "cogs");
+        assert_eq!(col.as_str(), "y2024e");
+    }
+
+    #[test]
+    fn test_parse_coordinate_tokens_single_quoted_ir() {
+        let (table, row, col) =
+            parse_coordinate_tokens("IncomeStatement['cogs', 'y2024e']", None, None)
+                .expect("valid single-quoted IR coordinate");
+        assert_eq!(table.as_str(), "IncomeStatement");
+        assert_eq!(row.as_str(), "cogs");
+        assert_eq!(col.as_str(), "y2024e");
+    }
+
+    #[test]
+    fn test_parse_coordinate_tokens_invalid_partial_args() {
+        let err = parse_coordinate_tokens("IncomeStatement", Some("cogs"), None).unwrap_err();
+        assert!(
+            matches!(err, InspectionError::InvalidCoordinate(ref repr) if repr == "IncomeStatement cogs")
+        );
+
+        let err2 = parse_coordinate_tokens("IncomeStatement", None, None).unwrap_err();
+        assert!(
+            matches!(err2, InspectionError::InvalidCoordinate(ref repr) if repr == "IncomeStatement")
+        );
+    }
+
+    #[test]
+    fn test_parse_coordinate_tokens_invalid_ir_syntax() {
+        let err = parse_coordinate_tokens("IncomeStatement[cogs]", None, None).unwrap_err();
+        assert!(matches!(err, InspectionError::InvalidCoordinate(_)));
+
+        let err2 = parse_coordinate_tokens("IncomeStatement[cogs, y2024e, extra]", None, None)
+            .unwrap_err();
+        assert!(matches!(err2, InspectionError::InvalidCoordinate(_)));
+    }
 }

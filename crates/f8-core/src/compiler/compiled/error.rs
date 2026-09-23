@@ -19,4 +19,10 @@ pub enum InspectionError {
     /// Referenced worksheet was not found in the compiled model.
     #[error("Sheet '{0}' not found in compiled model")]
     SheetNotFound(SheetId),
+
+    /// Invalid coordinate arguments format.
+    #[error(
+        "Invalid coordinate '{0}': expected 3 positional arguments (<table row col>) or 1 canonical IR string (Table[\"row\", \"col\"])"
+    )]
+    InvalidCoordinate(String),
 }

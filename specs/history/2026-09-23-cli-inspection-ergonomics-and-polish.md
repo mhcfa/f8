@@ -1,7 +1,7 @@
 ---
 title: CLI inspection ergonomics and formatting polish
 date: 2026-09-23
-status: draft
+status: completed
 target-living-spec:
   - specs/living-specs/interfaces/cli.md
   - specs/living-specs/compiler/compiled-model.md
@@ -146,32 +146,32 @@ pub struct InspectCellArgs {
 
 ### Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Flexible coordinate via 3 positional arguments**
+- [x] **Scenario 1: Flexible coordinate via 3 positional arguments**
   - **Given** a compiled model
   - **When** executing `f8 inspect cell IncomeStatement cogs y2024e`
   - **Then** resolves to `IncomeStatement["cogs", "y2024e"]` and displays the cell audit card with exit code `0`.
 
-- [ ] **Scenario 2: Flexible coordinate via canonical IR string**
+- [x] **Scenario 2: Flexible coordinate via canonical IR string**
   - **Given** a compiled model
   - **When** executing `f8 inspect cell 'IncomeStatement["cogs", "y2024e"]'` or `f8 inspect precedents 'ReturnsSummary["irr", "val"]'`
   - **Then** parses the IR string, resolves to `CellId`, and outputs inspection results with exit code `0`.
 
-- [ ] **Scenario 3: Flexible coordinate with unquoted IDs in IR string**
+- [x] **Scenario 3: Flexible coordinate with unquoted IDs in IR string**
   - **Given** a compiled model
   - **When** executing `f8 inspect cell 'IncomeStatement[cogs, y2024e]'`
   - **Then** parses the IR string, trims whitespace, resolves to `CellId`, and displays the cell audit card with exit code `0`.
 
-- [ ] **Scenario 4: Invalid coordinate arguments rejection**
+- [x] **Scenario 4: Invalid coordinate arguments rejection**
   - **Given** a compiled model
   - **When** executing `f8 inspect cell IncomeStatement cogs` (missing 3rd argument without brackets)
   - **Then** fails with exit code `1` and a message explaining coordinates must be 3 arguments (`<table row col>`) or 1 IR string (`Table["row", "col"]`).
 
-- [ ] **Scenario 5: Calendar year formatting without thousands commas**
+- [x] **Scenario 5: Calendar year formatting without thousands commas**
   - **Given** a cell evaluating to `2029.0` with `format: "integer"` or `format: "number"` with `decimals: 0`
   - **When** formatted via `format_cell_value` or rendered in `f8 inspect table`
   - **Then** renders as `2029` (not `2,029`).
 
-- [ ] **Scenario 6: Multi-tier column header rendering**
+- [x] **Scenario 6: Multi-tier column header rendering**
   - **Given** the `Timeline` table in the `lbo` template with 3 header tiers
   - **When** executing `f8 inspect table Timeline`
   - **Then** renders 3 distinct header rows showing `"Project Titan LBO"` across columns, intermediate category headers, and bottom-tier column headers with inline IDs.
@@ -181,24 +181,24 @@ pub struct InspectCellArgs {
 ## Tasks
 
 ### Phase 1: Core AST & Coordinate Parser
-- [ ] Add `FormatPreset::Integer` to `crates/f8-core/src/model/format.rs`.
-- [ ] Update `NumberFormatsConfig` in `crates/f8-core/src/model/theme.rs` to support `integer`.
-- [ ] Update `crates/f8-core/src/value/format.rs` to format `Integer` and year values `[1900..=2100]` without commas.
-- [ ] Implement `parse_coordinate_tokens` in `crates/f8-core/src/compiler/compiled/mod.rs`.
-- [ ] Add unit tests in `crates/f8-core` for coordinate parsing and year formatting.
+- [x] Add `FormatPreset::Integer` to `crates/f8-core/src/model/format.rs`.
+- [x] Update `NumberFormatsConfig` in `crates/f8-core/src/model/theme.rs` to support `integer`.
+- [x] Update `crates/f8-core/src/value/format.rs` to format `Integer` and year values `[1900..=2100]` without commas.
+- [x] Implement `parse_coordinate_tokens` in `crates/f8-core/src/compiler/compiled/mod.rs`.
+- [x] Add unit tests in `crates/f8-core` for coordinate parsing and year formatting.
 
 ### Phase 2: CLI Multi-tier Column Headers
-- [ ] Update `extract_render_columns` and header row rendering in `crates/f8-cli/src/render/table.rs` for Unicode and Markdown.
-- [ ] Verify single-tier tables retain unchanged formatting.
-- [ ] Add regression test asserting multi-tier header rendering for `Timeline` in `lbo`.
+- [x] Update `extract_render_columns` and header row rendering in `crates/f8-cli/src/render/table.rs` for Unicode and Markdown.
+- [x] Verify single-tier tables retain unchanged formatting.
+- [x] Add regression test asserting multi-tier header rendering for `Timeline` in `lbo`.
 
 ### Phase 3: CLI Coordinate Integration & Template Updates
-- [ ] Update `InspectCellArgs`, `InspectPrecedentsArgs`, and `InspectDependentsArgs` in `crates/f8-cli/src/cli.rs` for flexible arguments (`target`, `row`, `col`).
-- [ ] Update `crates/f8-cli/src/commands/inspect.rs` to invoke `parse_coordinate_tokens`.
-- [ ] Update `crates/f8-cli/templates/lbo/tables/timeline.json` to use `"format": "integer"` on `year` row.
-- [ ] Add CLI integration tests in `crates/f8-cli/tests/inspect_test.rs` covering 3-arg and IR string invocations.
+- [x] Update `InspectCellArgs`, `InspectPrecedentsArgs`, and `InspectDependentsArgs` in `crates/f8-cli/src/cli.rs` for flexible arguments (`target`, `row`, `col`).
+- [x] Update `crates/f8-cli/src/commands/inspect.rs` to invoke `parse_coordinate_tokens`.
+- [x] Update `crates/f8-cli/templates/lbo/tables/timeline.json` to use `"format": "integer"` on `year` row.
+- [x] Add CLI integration tests in `crates/f8-cli/tests/inspect_test.rs` covering 3-arg and IR string invocations.
 
 ### Phase 4: Verification Suite & Documentation
-- [ ] Run full verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
-- [ ] Update living specs `specs/living-specs/interfaces/cli.md`, `specs/living-specs/compiler/compiled-model.md`, and `specs/living-specs/model/spec-ast.md`.
-- [ ] Archive draft spec to `specs/history/`.
+- [x] Run full verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
+- [x] Update living specs `specs/living-specs/interfaces/cli.md`, `specs/living-specs/compiler/compiled-model.md`, and `specs/living-specs/model/spec-ast.md`.
+- [x] Archive draft spec to `specs/history/`.

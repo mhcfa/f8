@@ -113,3 +113,5 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 | `CompiledModel::inspect_table` | 2D table grid query | `inspect_table(&self, table: &TableId) -> Result<TableInspection, InspectionError>` |
 | `CompiledModel::precedents_of` | Upstream root-cause calculation tree | `precedents_of(&self, cell: &CellId, recursive: bool) -> Result<DependencyTree, InspectionError>` |
 | `CompiledModel::dependents_of` | Downstream blast-radius impact tree | `dependents_of(&self, cell: &CellId, recursive: bool) -> Result<DependencyTree, InspectionError>` |
+| `CompiledModel::parse_coordinate` | Resolves 3 arguments or 1 canonical IR string into CellId | `parse_coordinate(&self, target: &str, row: Option<&str>, col: Option<&str>) -> Result<CellId, InspectionError>` |
+| `parse_coordinate_tokens` | Free function parsing coordinate arguments into IDs | `parse_coordinate_tokens(target: &str, row: Option<&str>, col: Option<&str>) -> Result<(TableId, RowId, ColId), InspectionError>` |

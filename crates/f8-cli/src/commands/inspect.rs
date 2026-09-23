@@ -1,9 +1,8 @@
 use std::path::Path;
 use std::time::Instant;
 
-use f8_core::compiler::Compiler;
-use f8_core::compiler::ir::id::CellId;
-use f8_core::model::id::{ColId, RowId, TableId};
+use f8_core::compiler::{Compiler, parse_coordinate_tokens};
+use f8_core::model::id::TableId;
 
 use crate::cli::{InspectArgs, InspectSubcommand};
 use crate::error::CliError;
@@ -57,9 +56,11 @@ pub fn execute(
             }
         }
         Some(InspectSubcommand::Cell(cell_args)) => {
-            let table_id = TableId::from(cell_args.table.as_str());
-            let row_id = RowId::from(cell_args.row.as_str());
-            let col_id = ColId::from(cell_args.col.as_str());
+            let (table_id, row_id, col_id) = parse_coordinate_tokens(
+                &cell_args.target,
+                cell_args.row.as_deref(),
+                cell_args.col.as_deref(),
+            )?;
             let inspection = compiled.inspect_cell(&table_id, &row_id, &col_id)?;
             if json {
                 let json_str =
@@ -74,10 +75,11 @@ pub fn execute(
             }
         }
         Some(InspectSubcommand::Precedents(prec_args)) => {
-            let table_id = TableId::from(prec_args.table.as_str());
-            let row_id = RowId::from(prec_args.row.as_str());
-            let col_id = ColId::from(prec_args.col.as_str());
-            let cell_id = CellId::new(table_id, row_id, col_id);
+            let cell_id = compiled.parse_coordinate(
+                &prec_args.target,
+                prec_args.row.as_deref(),
+                prec_args.col.as_deref(),
+            )?;
             let tree = compiled.precedents_of(&cell_id, prec_args.recursive)?;
             if json {
                 let json_str =
@@ -96,10 +98,11 @@ pub fn execute(
             }
         }
         Some(InspectSubcommand::Dependents(dep_args)) => {
-            let table_id = TableId::from(dep_args.table.as_str());
-            let row_id = RowId::from(dep_args.row.as_str());
-            let col_id = ColId::from(dep_args.col.as_str());
-            let cell_id = CellId::new(table_id, row_id, col_id);
+            let cell_id = compiled.parse_coordinate(
+                &dep_args.target,
+                dep_args.row.as_deref(),
+                dep_args.col.as_deref(),
+            )?;
             let tree = compiled.dependents_of(&cell_id, dep_args.recursive)?;
             if json {
                 let json_str =

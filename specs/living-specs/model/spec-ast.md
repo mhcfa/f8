@@ -79,7 +79,7 @@ Tables represent layout directly through tagged `RowSpec` (`Data`, `SectionHeade
 
 ### 4. Numeric Precision Applicability
 
-The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) reject explicit precision declarations. In addition, explicit precision declarations must not exceed the maximum display bound of 14 decimal places.
+The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`, `integer`). Non-numeric presets (`date`, `text`) reject explicit precision declarations. In addition, explicit precision declarations must not exceed the maximum display bound of 14 decimal places.
 
 #### Scenarios
 

@@ -50,43 +50,70 @@ fn str_width(s: &str) -> usize {
 
 struct RenderColumn {
     id: Option<String>,
-    header: String,
+    headers: Vec<String>,
     is_descriptor: bool,
 }
 
 fn extract_render_columns(table: &TableInspection) -> Vec<RenderColumn> {
-    let mut cols = Vec::new();
-    for (i, col) in table.columns.iter().enumerate() {
-        if col.is_gutter {
-            continue;
-        }
-        let raw_header = col
-            .headers
-            .last()
-            .cloned()
-            .or_else(|| col.id.as_ref().map(ToString::to_string))
-            .unwrap_or_default();
-        let header = match &col.id {
-            Some(id) => {
-                if raw_header.is_empty() {
-                    id.to_string()
-                } else if raw_header.eq_ignore_ascii_case(id.as_str()) {
-                    raw_header
-                } else {
-                    format!("{raw_header} [{id}]")
-                }
-            }
-            None => raw_header,
-        };
+    let non_gutter_cols: Vec<_> = table.columns.iter().filter(|c| !c.is_gutter).collect();
+    if non_gutter_cols.is_empty() {
+        return Vec::new();
+    }
+
+    let max_tiers = non_gutter_cols
+        .iter()
+        .map(|c| c.headers.len())
+        .max()
+        .unwrap_or(0)
+        .max(1);
+
+    let mut cols = Vec::with_capacity(non_gutter_cols.len());
+    for (i, col) in non_gutter_cols.into_iter().enumerate() {
         let is_descriptor = i == 0
             || col
                 .headers
                 .first()
                 .is_some_and(|h| h == "Line Item" || h == "Parameter")
             || col.id.as_ref().is_some_and(|id| id.as_str() == "line_item");
+
+        let k = col.headers.len();
+        let bottom_raw = if k > 0 {
+            col.headers[k - 1].clone()
+        } else {
+            col.id.as_ref().map(ToString::to_string).unwrap_or_default()
+        };
+
+        let bottom_header = match &col.id {
+            Some(id) => {
+                if bottom_raw.is_empty() {
+                    id.to_string()
+                } else if bottom_raw.eq_ignore_ascii_case(id.as_str()) {
+                    bottom_raw
+                } else {
+                    format!("{bottom_raw} [{id}]")
+                }
+            }
+            None => bottom_raw,
+        };
+
+        let actual_len = k.max(1);
+        let pad = max_tiers.saturating_sub(actual_len);
+
+        let mut headers = Vec::with_capacity(max_tiers);
+        for tier_idx in 0..max_tiers {
+            if tier_idx < pad {
+                headers.push(String::new());
+            } else if tier_idx == max_tiers - 1 {
+                headers.push(bottom_header.clone());
+            } else {
+                let col_header_idx = tier_idx - pad;
+                headers.push(col.headers[col_header_idx].clone());
+            }
+        }
+
         cols.push(RenderColumn {
             id: col.id.as_ref().map(ToString::to_string),
-            header,
+            headers,
             is_descriptor,
         });
     }
@@ -178,9 +205,18 @@ fn render_unicode_table(table: &TableInspection, view: ViewMode) -> String {
         return String::new();
     }
 
+    let num_tiers = render_cols.first().map_or(1, |c| c.headers.len());
+
     let mut col_widths: Vec<usize> = render_cols
         .iter()
-        .map(|c| str_width(&c.header).max(4))
+        .map(|c| {
+            c.headers
+                .iter()
+                .map(|h| str_width(h))
+                .max()
+                .unwrap_or(0)
+                .max(4)
+        })
         .collect();
 
     for row in &table.rows {
@@ -214,17 +250,20 @@ fn render_unicode_table(table: &TableInspection, view: ViewMode) -> String {
     }
     out.push_str("┐\n");
 
-    // Header row
-    out.push('│');
-    for (i, col) in render_cols.iter().enumerate() {
-        let w = col_widths[i];
-        if col.is_descriptor {
-            out.push_str(&format!(" {:<w$} │", col.header));
-        } else {
-            out.push_str(&format!(" {:>w$} │", col.header));
+    // Header rows
+    for tier in 0..num_tiers {
+        out.push('│');
+        for (i, col) in render_cols.iter().enumerate() {
+            let w = col_widths[i];
+            let text = &col.headers[tier];
+            if col.is_descriptor {
+                out.push_str(&format!(" {:<w$} │", text));
+            } else {
+                out.push_str(&format!(" {:>w$} │", text));
+            }
         }
+        out.push('\n');
     }
-    out.push('\n');
 
     // Header separator
     out.push('├');
@@ -315,14 +354,17 @@ fn render_markdown_table(table: &TableInspection, view: ViewMode) -> String {
         return String::new();
     }
 
+    let num_tiers = render_cols.first().map_or(1, |c| c.headers.len());
     let mut out = String::new();
 
-    // Header row
-    out.push('|');
-    for col in &render_cols {
-        out.push_str(&format!(" {} |", col.header));
+    // Header rows
+    for tier in 0..num_tiers {
+        out.push('|');
+        for col in &render_cols {
+            out.push_str(&format!(" {} |", col.headers[tier]));
+        }
+        out.push('\n');
     }
-    out.push('\n');
 
     // Alignment row
     out.push('|');

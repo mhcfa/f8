@@ -119,27 +119,27 @@ pub struct InspectTableArgs {
 /// Arguments for `f8 inspect cell`.
 #[derive(Debug, Args)]
 pub struct InspectCellArgs {
-    /// Table programmatic identifier
-    pub table: String,
+    /// Target coordinate: table ID (when specifying 3 args) or canonical IR reference `Table["row", "col"]`
+    pub target: String,
 
-    /// Row identifier
-    pub row: String,
+    /// Row identifier (when using 3 positional arguments: <table row col>)
+    pub row: Option<String>,
 
-    /// Column identifier
-    pub col: String,
+    /// Column identifier (when using 3 positional arguments: <table row col>)
+    pub col: Option<String>,
 }
 
 /// Arguments for `f8 inspect precedents`.
 #[derive(Debug, Args)]
 pub struct InspectPrecedentsArgs {
-    /// Table programmatic identifier
-    pub table: String,
+    /// Target coordinate: table ID (when specifying 3 args) or canonical IR reference `Table["row", "col"]`
+    pub target: String,
 
-    /// Row identifier
-    pub row: String,
+    /// Row identifier (when using 3 positional arguments: <table row col>)
+    pub row: Option<String>,
 
-    /// Column identifier
-    pub col: String,
+    /// Column identifier (when using 3 positional arguments: <table row col>)
+    pub col: Option<String>,
 
     /// Recursively traverse all transitive upstream calculation dependencies
     #[arg(long)]
@@ -149,14 +149,14 @@ pub struct InspectPrecedentsArgs {
 /// Arguments for `f8 inspect dependents`.
 #[derive(Debug, Args)]
 pub struct InspectDependentsArgs {
-    /// Table programmatic identifier
-    pub table: String,
+    /// Target coordinate: table ID (when specifying 3 args) or canonical IR reference `Table["row", "col"]`
+    pub target: String,
 
-    /// Row identifier
-    pub row: String,
+    /// Row identifier (when using 3 positional arguments: <table row col>)
+    pub row: Option<String>,
 
-    /// Column identifier
-    pub col: String,
+    /// Column identifier (when using 3 positional arguments: <table row col>)
+    pub col: Option<String>,
 
     /// Recursively traverse all transitive downstream affected calculations
     #[arg(long)]

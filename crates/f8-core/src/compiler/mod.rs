@@ -17,7 +17,7 @@ use std::borrow::Cow;
 pub use compiled::{
     CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel, DependencyNode,
     DependencyTree, InspectionError, ModelSummary, RowInspection, SheetSummary, TableCellInfo,
-    TableInspection, TableSummary,
+    TableInspection, TableSummary, parse_coordinate_tokens,
 };
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 pub use error::CompilerError;

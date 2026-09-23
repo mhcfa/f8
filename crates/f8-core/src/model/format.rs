@@ -12,6 +12,7 @@ pub enum FormatPreset {
     BasisPoints,
     Date,
     Text,
+    Integer,
 }
 
 impl FormatPreset {
@@ -24,6 +25,7 @@ impl FormatPreset {
             Self::BasisPoints => "basis_points",
             Self::Date => "date",
             Self::Text => "text",
+            Self::Integer => "integer",
         }
     }
 
@@ -34,7 +36,8 @@ impl FormatPreset {
             | Self::Number
             | Self::Percentage
             | Self::Multiple
-            | Self::BasisPoints => true,
+            | Self::BasisPoints
+            | Self::Integer => true,
             Self::Date | Self::Text => false,
         }
     }

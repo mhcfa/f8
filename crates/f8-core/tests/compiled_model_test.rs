@@ -379,3 +379,24 @@ fn test_scenario_11_dag_pruning_on_reconvergent_paths() {
         "Reconvergent calculation DAG must prune duplicate subtree expansions"
     );
 }
+
+#[test]
+fn test_scenario_parse_coordinate() {
+    let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
+    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
+    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+
+    // 1. 3 positional tokens
+    let cell_1 = compiled
+        .parse_coordinate("IncomeStatement", Some("cogs"), Some("y2024e"))
+        .expect("3-arg coordinate parse must succeed");
+    assert_eq!(cell_1.table.as_str(), "IncomeStatement");
+    assert_eq!(cell_1.row.as_str(), "cogs");
+    assert_eq!(cell_1.col.as_str(), "y2024e");
+
+    // 2. Canonical IR string
+    let cell_2 = compiled
+        .parse_coordinate("IncomeStatement[\"cogs\", \"y2024e\"]", None, None)
+        .expect("Canonical IR coordinate parse must succeed");
+    assert_eq!(cell_1, cell_2);
+}

@@ -88,8 +88,7 @@
     {
       "kind": "data",
       "id": "year",
-      "format": "number",
-      "decimals": 0,
+      "format": "integer",
       "expr": "YEAR(Timeline[\"date\", @col])",
       "cells": {
         "line_item": "Calendar Year"

@@ -47,7 +47,11 @@ impl CliError {
     /// - `2`: Compiler diagnostic (Passes 1–6a)
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::Compiler(_) | Self::Inspection(_) => 2,
+            Self::Compiler(_) => 2,
+            Self::Inspection(InspectionError::TableNotFound(_))
+            | Self::Inspection(InspectionError::CellNotFound(_))
+            | Self::Inspection(InspectionError::SheetNotFound(_)) => 2,
+            Self::Inspection(InspectionError::InvalidCoordinate(_)) => 1,
             _ => 1,
         }
     }

@@ -567,3 +567,184 @@ fn test_scenario_11_sigpipe_broken_pipe_head() {
         "Must not panic on SIGPIPE: {stderr}"
     );
 }
+
+#[test]
+fn test_scenario_flexible_coordinate_input() {
+    let dir = tempdir().unwrap();
+    setup_financial_model(dir.path());
+
+    // 1. 3 Positional arguments
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "cell",
+            "IncomeStatement",
+            "cogs",
+            "y2024e",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Coordinate:     IncomeStatement[\"cogs\", \"y2024e\"]",
+        ))
+        .stdout(predicate::str::contains("Evaluated:      $ 46.0"));
+
+    // 2. Canonical IR string (double-quoted IDs)
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "cell",
+            "IncomeStatement[\"cogs\", \"y2024e\"]",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Coordinate:     IncomeStatement[\"cogs\", \"y2024e\"]",
+        ))
+        .stdout(predicate::str::contains("Evaluated:      $ 46.0"));
+
+    // 3. Unquoted IDs in IR string
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "cell",
+            "IncomeStatement[cogs, y2024e]",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Coordinate:     IncomeStatement[\"cogs\", \"y2024e\"]",
+        ))
+        .stdout(predicate::str::contains("Evaluated:      $ 46.0"));
+
+    // 4. Precedents via IR string
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "precedents",
+            "IncomeStatement[\"cogs\", \"y2024e\"]",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Direct Precedents (1):"));
+
+    // 5. Dependents via IR string
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "dependents",
+            "Assumptions[\"rev_growth\", \"val\"]",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Direct Dependents (1):"));
+
+    // 6. Incomplete 2-arg coordinate -> Exit code 1
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "cell",
+            "IncomeStatement",
+            "cogs",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "Invalid coordinate 'IncomeStatement cogs'",
+        ))
+        .stderr(predicate::str::contains(
+            "expected 3 positional arguments (<table row col>) or 1 canonical IR string (Table[\"row\", \"col\"])",
+        ));
+
+    // 7. Single token without brackets -> Exit code 1
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "cell",
+            "IncomeStatement",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "Invalid coordinate 'IncomeStatement'",
+        ));
+}
+
+#[test]
+fn test_scenario_multitier_headers_and_year_formatting() {
+    let lbo_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/lbo");
+
+    // Table inspection of Timeline in LBO
+    let output = Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "table",
+            "Timeline",
+            "-p",
+            lbo_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout);
+
+    // Multi-tier header assertions
+    assert!(stdout.contains("Project Titan LBO"));
+    assert!(stdout.contains("Transaction Close"));
+    assert!(stdout.contains("5-Year Investment Horizon"));
+    assert!(stdout.contains("Line Item [line_item]"));
+    assert!(stdout.contains("Close (Y0) [y0]"));
+    assert!(stdout.contains("2025 (Y1) [y1]"));
+
+    // Calendar year formatting: must render without commas
+    assert!(stdout.contains("2024"));
+    assert!(stdout.contains("2025"));
+    assert!(stdout.contains("2029"));
+    assert!(!stdout.contains("2,024"));
+    assert!(!stdout.contains("2,025"));
+    assert!(!stdout.contains("2,029"));
+
+    // Markdown inspection of Timeline in LBO
+    let md_output = Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "table",
+            "Timeline",
+            "--format",
+            "markdown",
+            "-p",
+            lbo_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let md_stdout = String::from_utf8_lossy(&md_output.get_output().stdout);
+    assert!(md_stdout.contains("Project Titan LBO"));
+    assert!(md_stdout.contains("5-Year Investment Horizon"));
+    assert!(md_stdout.contains("2025 (Y1) [y1]"));
+    assert!(md_stdout.contains("2029"));
+    assert!(!md_stdout.contains("2,029"));
+}
