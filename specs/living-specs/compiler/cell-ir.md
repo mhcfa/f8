@@ -1,6 +1,6 @@
 ---
 title: Cell Intermediate Representation & Symbol Table
-last_updated: 2026-09-20
+last_updated: 2026-09-24
 domain: compiler
 status: active
 ---
@@ -128,4 +128,7 @@ $$\text{Cell Override (0D Point)} > (\text{Row Rule } \mathbf{XOR} \text{ Column
 - **Typographic Indentation Propagation**:
   - **When** cell $(r, c)$ specifies `indent: Some(n)` on `DetailedCellInput`
   - **Then** the generated `CellNode` has `indent == n`; otherwise `indent == 0`.
+- **0D Cell Note Isolation**:
+  - **When** cell $(r, c)$ specifies `note: Some(text)` on `DetailedCellInput`
+  - **Then** `CellNode.note` resolves to `Some(text)`. Vector-generated formula cells and unannotated cells unconditionally resolve `note: None`. Notes never broadcast across rows or columns.
 

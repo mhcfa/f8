@@ -147,14 +147,6 @@ impl ColumnSpec {
         self
     }
 
-    /// Builder method attaching an audit note.
-    pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        if let Self::Data(d) = &mut self {
-            d.note = Some(note.into());
-        }
-        self
-    }
-
     /// Builder method attaching provenance source metadata.
     pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
         if let Self::Data(d) = &mut self {
@@ -191,8 +183,6 @@ pub struct DataColumnSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<serde_json::Value>,
 }
 
@@ -209,7 +199,6 @@ impl DataColumnSpec {
             decimals: None,
             currency: None,
             expr: None,
-            note: None,
             source: None,
         }
     }
@@ -226,7 +215,6 @@ impl DataColumnSpec {
             decimals: None,
             currency: None,
             expr: None,
-            note: None,
             source: None,
         }
     }
@@ -287,12 +275,6 @@ impl DataColumnSpec {
     /// Builder method attaching a formula expression.
     pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
         self.expr = Some(expr.into());
-        self
-    }
-
-    /// Builder method attaching an audit note.
-    pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.note = Some(note.into());
         self
     }
 
@@ -655,16 +637,6 @@ impl RowSpec {
         self
     }
 
-    /// Builder method attaching an audit note.
-    pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        match &mut self {
-            Self::Data(d) => d.note = Some(note.into()),
-            Self::SectionHeader(h) => h.note = Some(note.into()),
-            Self::Gutter => {}
-        }
-        self
-    }
-
     /// Builder method attaching cell inputs.
     pub fn with_cells(mut self, cells: IndexMap<ColId, CellInput>) -> Self {
         if let Self::Data(d) = &mut self {
@@ -719,8 +691,6 @@ pub struct DataRowSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub cells: IndexMap<ColId, CellInput>,
@@ -737,7 +707,6 @@ impl DataRowSpec {
             decimals: None,
             currency: None,
             expr: None,
-            note: None,
             source: None,
             cells: IndexMap::new(),
         }
@@ -776,12 +745,6 @@ impl DataRowSpec {
     /// Builder method attaching a formula expression.
     pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
         self.expr = Some(expr.into());
-        self
-    }
-
-    /// Builder method attaching an audit note.
-    pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.note = Some(note.into());
         self
     }
 

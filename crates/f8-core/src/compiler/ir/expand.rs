@@ -143,10 +143,7 @@ pub fn expand_table(
                 let is_highlight =
                     resolve_highlight(cell_highlight, row_data.highlight, col_data.highlight);
 
-                let effective_note = cell_note
-                    .map(String::from)
-                    .or_else(|| row_data.note.clone())
-                    .or_else(|| col_data.note.clone());
+                let effective_note = cell_note.map(String::from);
                 let effective_source = cell_source
                     .or_else(|| row_data.source.clone())
                     .or_else(|| col_data.source.clone());
@@ -212,7 +209,6 @@ pub fn expand_table(
             let (horizontal, vertical) = resolve_style(None, row_data.style, col_data.style);
             let is_highlight = resolve_highlight(None, row_data.highlight, col_data.highlight);
 
-            let effective_note = row_data.note.clone().or_else(|| col_data.note.clone());
             let effective_source = row_data.source.clone().or_else(|| col_data.source.clone());
 
             cells.push(
@@ -222,7 +218,6 @@ pub fn expand_table(
                     .with_currency(effective_currency)
                     .with_style(horizontal, vertical)
                     .with_highlight(is_highlight)
-                    .with_note(effective_note)
                     .with_source(effective_source),
             );
         }
@@ -466,11 +461,17 @@ mod tests {
             rows: vec![
                 RowSpec::new("tax_rate")
                     .with_format(Some(FormatPreset::Percentage))
-                    .with_note("Federal tax rate")
                     .with_cells({
                         let mut map = IndexMap::new();
                         map.insert("param".into(), CellInput::string("Corporate Tax Rate"));
-                        map.insert("val".into(), CellInput::number(0.25));
+                        map.insert(
+                            "val".into(),
+                            CellInput::Detailed(crate::model::table::DetailedCellInput {
+                                value: Some(ValueLiteral::Number(0.25)),
+                                note: Some("Federal tax rate".to_string()),
+                                ..Default::default()
+                            }),
+                        );
                         map
                     }),
                 RowSpec::new("exit_multiple")
@@ -494,6 +495,7 @@ mod tests {
             CellPayload::Literal(ValueLiteral::String("Corporate Tax Rate".to_string()))
         );
         assert_eq!(cells[0].format, None); // Descriptor column isolates measure format
+        assert_eq!(cells[0].note, None);
 
         assert_eq!(cells[1].id, CellId::new("Assumptions", "tax_rate", "val"));
         assert_eq!(

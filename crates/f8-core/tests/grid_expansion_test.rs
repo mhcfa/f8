@@ -78,7 +78,6 @@ fn test_scenario_1_expand_literal_row_across_columns() {
 fn test_scenario_2_expand_uniform_formula_row_across_columns() {
     let row = RowSpec::new("ebit")
         .with_format(Some(FormatPreset::Currency))
-        .with_note("Operating margin formula")
         .with_expr("IncomeStatement[\"revenue\", @col] * 0.1");
 
     let table = create_simple_table("IncomeStatement", &["2024E", "2025E"], vec![row]);
@@ -97,11 +96,12 @@ fn test_scenario_2_expand_uniform_formula_row_across_columns() {
     assert_eq!(cells[0].id, CellId::new("IncomeStatement", "ebit", "2024E"));
     assert_eq!(cells[0].payload, CellPayload::Formula(expected_ast.clone()));
     assert_eq!(cells[0].format, Some(FormatPreset::Currency));
-    assert_eq!(cells[0].note.as_deref(), Some("Operating margin formula"));
+    assert_eq!(cells[0].note, None);
 
     assert_eq!(cells[1].id, CellId::new("IncomeStatement", "ebit", "2025E"));
     assert_eq!(cells[1].payload, CellPayload::Formula(expected_ast));
     assert_eq!(cells[1].format, Some(FormatPreset::Currency));
+    assert_eq!(cells[1].note, None);
 }
 
 #[test]
@@ -118,7 +118,6 @@ fn test_scenario_3_expand_vector_row_with_point_overrides() {
 
     let row = RowSpec::new("revenue")
         .with_format(Some(FormatPreset::Currency))
-        .with_note("5% growth projection")
         .with_expr("IncomeStatement[\"revenue\", col.prev] * 1.05")
         .with_cells(cells);
 
@@ -149,7 +148,7 @@ fn test_scenario_3_expand_vector_row_with_point_overrides() {
         CellId::new("IncomeStatement", "revenue", "2024E")
     );
     assert!(cells[1].payload.is_formula());
-    assert_eq!(cells[1].note.as_deref(), Some("5% growth projection"));
+    assert_eq!(cells[1].note, None);
 
     // 2025E: Vector Formula
     assert_eq!(
@@ -157,7 +156,7 @@ fn test_scenario_3_expand_vector_row_with_point_overrides() {
         CellId::new("IncomeStatement", "revenue", "2025E")
     );
     assert!(cells[2].payload.is_formula());
-    assert_eq!(cells[2].note.as_deref(), Some("5% growth projection"));
+    assert_eq!(cells[2].note, None);
 }
 
 #[test]
@@ -178,7 +177,6 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
 
     let row = RowSpec::new("revenue")
         .with_format(Some(FormatPreset::Currency))
-        .with_note("Base revenue note")
         .with_source(Some(serde_json::json!({ "source_id": "10-K" })))
         .with_cells(cells);
 
@@ -192,19 +190,23 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
     let cells = expand_table(&symbols, &table).expect("expansion succeeds");
     assert_eq!(cells.len(), 3);
 
-    // 2023A: Inherits format, note, source
+    // 2023A: Inherits format, source, zero note
     assert_eq!(cells[0].format, Some(FormatPreset::Currency));
-    assert_eq!(cells[0].note.as_deref(), Some("Base revenue note"));
+    assert_eq!(cells[0].note, None);
     assert_eq!(
         cells[0].source,
         Some(serde_json::json!({ "source_id": "10-K" }))
     );
 
-    // 2024E: Inherits format, note, source
+    // 2024E: Inherits format, source, zero note
     assert_eq!(cells[1].format, Some(FormatPreset::Currency));
-    assert_eq!(cells[1].note.as_deref(), Some("Base revenue note"));
+    assert_eq!(cells[1].note, None);
+    assert_eq!(
+        cells[1].source,
+        Some(serde_json::json!({ "source_id": "10-K" }))
+    );
 
-    // 2025E: Inherits format, overrides note and source
+    // 2025E: Inherits format, explicit cell note, overrides source
     assert_eq!(cells[2].format, Some(FormatPreset::Currency));
     assert_eq!(cells[2].note.as_deref(), Some("Forecast update"));
     assert_eq!(

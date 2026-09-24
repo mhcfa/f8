@@ -82,9 +82,8 @@ fn test_scenario_2_deserialize_and_validate_assumptions_table() {
                 "kind": "data",
                 "id": "tax_rate",
                 "format": "percentage",
-                "note": "Federal + blended state rate",
                 "cells": {
-                    "parameter": "Corporate Tax Rate",
+                    "parameter": { "value": "Corporate Tax Rate", "note": "Federal + blended state rate" },
                     "value": 0.25
                 }
             },
@@ -110,6 +109,14 @@ fn test_scenario_2_deserialize_and_validate_assumptions_table() {
     assert_eq!(table.rows.len(), 2);
     if let RowSpec::Data(d) = &table.rows[0] {
         assert_eq!(d.format, Some(FormatPreset::Percentage));
+        assert_eq!(
+            d.cells.get(&ColId::from("parameter")),
+            Some(&CellInput::Detailed(DetailedCellInput {
+                value: Some(ValueLiteral::String("Corporate Tax Rate".to_string())),
+                note: Some("Federal + blended state rate".to_string()),
+                ..Default::default()
+            }))
+        );
         assert_eq!(
             d.cells.get(&ColId::from("value")),
             Some(&CellInput::number(0.25))
@@ -138,10 +145,9 @@ fn test_scenario_2_deserialize_and_validate_income_statement_example() {
                 "kind": "data",
                 "id": "revenue",
                 "format": "currency",
-                "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth",
                 "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08",
                 "cells": {
-                    "line_item": "Total Revenue",
+                    "line_item": { "value": "Total Revenue", "note": "Actuals from SEC 10-K; forecast assumes 8% constant growth" },
                     "2023A": 100000.0
                 }
             },

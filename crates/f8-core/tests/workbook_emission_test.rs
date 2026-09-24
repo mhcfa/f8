@@ -753,3 +753,62 @@ fn test_scenario_11_audit_note_attachment() {
     let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
     assert!(comments_xml.contains("Audit checked by Senior Associate"));
 }
+
+// ----------------------------------------------------------------------------
+// Scenario 12: Audit Note 0D Isolation and Section Header Notes
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_12_audit_note_isolation_and_section_header() {
+    let mut table = TableSpec::new("NoteTable", "Audit Note Showcase");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Descriptor"));
+    table.columns.push(ColumnSpec::new("val"));
+
+    table.rows.push(
+        SectionHeaderRowSpec::new("Executive Summary")
+            .with_note("Section level annotation")
+            .into(),
+    );
+
+    let r1 = RowSpec::new("r1")
+        .with_cell(
+            "desc",
+            CellInput::Detailed(DetailedCellInput {
+                value: Some(ValueLiteral::String("Revenue Line Item".to_string())),
+                note: Some("Line item audit sign-off".to_string()),
+                ..Default::default()
+            }),
+        )
+        .with_cell("val", CellInput::number(500.0));
+    table.rows.push(r1);
+
+    let manifest = ProjectManifest {
+        model_name: "NoteModel".to_string(),
+        theme: "corporate_navy".to_string(),
+        sheets: vec![SheetSpec {
+            name: "AuditSheet".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![PathBuf::from("tables/NoteTable.json")],
+        }],
+    };
+
+    let theme = Theme::corporate_navy();
+    let buffer = Compiler::emit_workbook(
+        &manifest,
+        &[table],
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+
+    let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
+    assert!(comments_xml.contains("Section level annotation"));
+    assert!(comments_xml.contains("Line item audit sign-off"));
+    // Exactly 2 comments should be emitted
+    let comment_count = comments_xml.matches("<comment ").count();
+    assert_eq!(comment_count, 2);
+}
