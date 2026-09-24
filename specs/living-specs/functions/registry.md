@@ -12,11 +12,11 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::value`: Strongly typed runtime cell representations:
+  - `f8_core::value`: Strongly typed runtime cell representations:
     - `CellValue`: `Number(f64)`, `Text(String)`, `Boolean(bool)`, `Empty`, `Error(ExcelError)`.
     - `CellValue::excel_cmp` and `CellValue::excel_eq`: Single source of truth for case-insensitive ASCII string comparisons and Excel type-ranked ordering.
     - `ExcelError`: Domain calculation error variants (`#DIV/0!`, `#VALUE!`, `#REF!`, `#NUM!`, `#N/A`, `#NAME?`).
-  - `finx::functions::traits`: Function execution contracts:
+  - `f8_core::functions::traits`: Function execution contracts:
     - `ExcelFunction`: Core trait defining function metadata, parameter definitions, arity rules, and evaluation mechanics.
     - `FunctionCategory`: Functional taxonomy (`Math`, `Logical`, `Financial`, `Lookup`, `DateTime`, `Text`, `Information`).
     - `ParamKind`: Positional evaluation contracts (`Scalar`, `RangeOrArray`, `Lazy`).
@@ -24,14 +24,14 @@ The `functions` and `value` subsystems provide the runtime calculation value mod
     - `ParameterDef`: Positional metadata with optionality and default values.
     - `FunctionArg`: Bound runtime argument (`Scalar`, `Array`, `Lazy`, `Omitted`).
     - `EvalContext`: Abstraction decoupling function evaluation from internal compiler topological state.
-  - `finx::functions::registry`: Deterministic `IndexMap`-backed registry with uppercase lookup, static call validation, and argument binding (`bind_arguments`), including cyclical pair resolution for `VariadicRule::Pairs`.
-  - `finx::functions::common`: Shared argument traversal and branch evaluation helpers (`NumericCollector`, `LogicalCollector`, `eval_branch_arg`, `count_numbers`, `count_non_empty`) and IEEE-754 decimal rounding routines.
-  - `finx::functions::error`: Structured `FunctionError` diagnostic variants with 1-indexed argument positions.
-  - `finx::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `MEDIAN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`), conditional aggregation functions (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`), and criteria compilation engine (`Criterion`).
-  - `finx::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
-  - `finx::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
-  - `finx::functions::lookup`: Built-in modern lookup and reference functions (`XLOOKUP`, `XMATCH`, `INDEX`) and shared 1D search engine (`search.rs`).
-  - `finx::functions::date`: Built-in date and time functions (`DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`, `DAYS`) and pure Rust calendar conversion engine with Excel 1900 leap year bug parity (`serial.rs`).
+  - `f8_core::functions::registry`: Deterministic `IndexMap`-backed registry with uppercase lookup, static call validation, and argument binding (`bind_arguments`), including cyclical pair resolution for `VariadicRule::Pairs`.
+  - `f8_core::functions::common`: Shared argument traversal and branch evaluation helpers (`NumericCollector`, `LogicalCollector`, `eval_branch_arg`, `count_numbers`, `count_non_empty`) and IEEE-754 decimal rounding routines.
+  - `f8_core::functions::error`: Structured `FunctionError` diagnostic variants with 1-indexed argument positions.
+  - `f8_core::functions::math`: Built-in mathematical and aggregation functions (`ABS`, `SUM`, `AVERAGE`, `COUNT`, `COUNTA`, `MAX`, `MIN`, `MEDIAN`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SUMPRODUCT`), conditional aggregation functions (`SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`), and criteria compilation engine (`Criterion`).
+  - `f8_core::functions::logical`: Built-in logical functions (`IF`, `IFS`, `IFERROR`, `IFNA`, `AND`, `OR`, `NOT`, `CHOOSE`, `SWITCH`).
+  - `f8_core::functions::financial`: Built-in financial and discounting functions (`NPV`, `XNPV`, `IRR`, `XIRR`, `PMT`, `IPMT`, `PPMT`).
+  - `f8_core::functions::lookup`: Built-in modern lookup and reference functions (`XLOOKUP`, `XMATCH`, `INDEX`) and shared 1D search engine (`search.rs`).
+  - `f8_core::functions::date`: Built-in date and time functions (`DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`, `DAYS`) and pure Rust calendar conversion engine with Excel 1900 leap year bug parity (`serial.rs`).
 - **Data flow & interfaces**:
   1. AST parsing (Pass 1) $\rightarrow$ `FunctionRegistry::validate_call` validates identifier existence, arity bounds, variadic pair counts, and non-omittable required arguments.
   2. Evaluator execution (Pass 4) $\rightarrow$ `FunctionRegistry::bind_arguments` pre-evaluates scalar coordinates and multi-dimensional range slices while wrapping lazy branches $\rightarrow$ `ExcelFunction::evaluate`.

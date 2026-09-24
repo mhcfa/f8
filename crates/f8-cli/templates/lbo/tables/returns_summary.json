@@ -1,0 +1,160 @@
+{
+  "id": "ReturnsSummary",
+  "title": "Exit Valuation & Sponsor Returns",
+  "subtitle": "5-Year Exit Multiples, IRR & Waterfall Proceeds",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Investment Return Metric"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "val",
+      "role": "measure",
+      "headers": [
+        "Metric Value"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "section_header",
+      "title": "Exit Valuation"
+    },
+    {
+      "kind": "data",
+      "id": "exit_year",
+      "format": "number",
+      "decimals": 0,
+      "cells": {
+        "line_item": "Exit Fiscal Year",
+        "val": {
+          "expr": "YEAR(Timeline[\"date\", \"y5\"])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "exit_multiple",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Exit EV / EBITDA Multiple",
+        "val": {
+          "expr": "DealAssumptions[\"exit_multiple\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "exit_ebitda",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Exit Year LTM EBITDA ($M)",
+        "val": {
+          "expr": "Operations[\"ebitda\", \"y5\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "exit_ev",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Exit Enterprise Value ($M)",
+        "val": {
+          "expr": "ReturnsSummary[\"exit_ebitda\", \"val\"] * ReturnsSummary[\"exit_multiple\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "exit_net_debt",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Less: Ending Net Debt ($M)",
+        "val": {
+          "expr": "DebtSchedule[\"total_debt_end\", \"y5\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "exit_equity_proceeds",
+      "style": "total",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Exit Sponsor Equity Value ($M)",
+        "val": {
+          "expr": "ReturnsSummary[\"exit_ev\", \"val\"] - ReturnsSummary[\"exit_net_debt\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "section_header",
+      "title": "Sponsor Investment Returns"
+    },
+    {
+      "kind": "data",
+      "id": "initial_equity",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Initial Sponsor Equity Invested ($M)",
+        "val": {
+          "expr": "DealAssumptions[\"sponsor_equity_entry\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "moic",
+      "style": "subtotal",
+      "highlight": true,
+      "format": "multiple",
+      "decimals": 2,
+      "cells": {
+        "line_item": "Multiple on Invested Capital (MOIC)",
+        "val": {
+          "expr": "ReturnsSummary[\"exit_equity_proceeds\", \"val\"] / ReturnsSummary[\"initial_equity\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "irr",
+      "style": "total",
+      "highlight": true,
+      "format": "percentage",
+      "decimals": 2,
+      "cells": {
+        "line_item": "Internal Rate of Return (IRR)",
+        "val": {
+          "expr": "XIRR(CashFlows[\"sponsor_cf\", \"y0\"..\"y5\"], Timeline[\"date\", \"y0\"..\"y5\"])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "npv",
+      "style": "total",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "line_item": "Net Present Value (NPV @ 10%)",
+        "val": {
+          "expr": "XNPV(DealAssumptions[\"discount_rate\", \"val\"], CashFlows[\"sponsor_cf\", \"y0\"..\"y5\"], Timeline[\"date\", \"y0\"..\"y5\"])"
+        }
+      }
+    }
+  ]
+}

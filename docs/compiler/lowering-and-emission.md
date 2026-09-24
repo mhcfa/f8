@@ -1,6 +1,6 @@
 # Formula Lowering & Binary Emission
 
-This document specifies Finx's formula lowering engine and workbook emission pipeline (Pass 6), transforming semantic AST expressions into Excel formulas and serializing `.xlsx` binaries or headless data.
+This document specifies f8's formula lowering engine and workbook emission pipeline (Pass 6), transforming semantic AST expressions into Excel formulas and serializing `.xlsx` binaries or headless data.
 
 ## 1. Formula Lowering Engine
 
@@ -64,8 +64,8 @@ The binary emitter streams the spatial layout, styling, and lowered formulas int
 
 ## 3. Headless Data Serialization
 
-Because the in-memory evaluator maintains the complete `CellValue` matrix across all tables, Finx supports direct headless exports without Excel binary overhead:
+Because the in-memory evaluator maintains the complete `CellValue` matrix across all tables, f8 supports direct headless exports without Excel binary overhead:
 
 - **JSON / CSV / Parquet**: Exports evaluated tables directly to structured files for AI agent consumption, CI/CD verification, and database pipelines.
 
-See [Spatial Layout Planning](spatial-layout.md) for grid assignment, [Semantic Formatting & Themes](../dsl/formatting.md) for theme configurations, [In-Memory Evaluator](./evaluator.md) for precalculated cache values, and [Addressing Syntax](../dsl/addressing.md) for input reference formats.
+See [Spatial Layout Planning](./spatial-layout.md) for grid assignment, [Semantic Formatting & Themes](../dsl/formatting.md) for theme configurations, [In-Memory Evaluator](./evaluator.md) for precalculated cache values, and [Addressing Syntax](../dsl/addressing.md) for input reference formats.

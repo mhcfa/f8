@@ -7,17 +7,17 @@ status: active
 
 ## Purpose
 
-The `expr` subsystem provides the Abstract Syntax Tree (AST), structured diagnostic errors, canonical string emission, and top-down operator precedence (Pratt) parser for Finx formula expressions. It translates declarative formula strings into strongly typed trees for consumption by downstream compiler passes (dependency graph analysis, spatial lowering, and calculation evaluation).
+The `expr` subsystem provides the Abstract Syntax Tree (AST), structured diagnostic errors, canonical string emission, and top-down operator precedence (Pratt) parser for f8 formula expressions. It translates declarative formula strings into strongly typed trees for consumption by downstream compiler passes (dependency graph analysis, spatial lowering, and calculation evaluation).
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RowSelector`, `ColSelector`, `RelativeOffset`) and `Display` implementations.
-  - `finx::expr::error`: Diagnostic domain errors (`ParseError`).
-  - `finx::expr::parser`: Two-stage parsing pipeline:
+  - `f8_core::expr::ast`: Strongly typed AST definitions (`Expr`, `BinaryOp`, `UnaryOp`, `Literal`, `TableRef`, `RowSelector`, `ColSelector`, `RelativeOffset`) and `Display` implementations.
+  - `f8_core::expr::error`: Diagnostic domain errors (`ParseError`).
+  - `f8_core::expr::parser`: Two-stage parsing pipeline:
     - Lexer: `tokenize` parses `&str` into `Vec<SpannedToken>` using the borrowed `Token` enum with zero external dependencies.
     - Pratt parser: `TokenStream` cursor and operator precedence parsing loop over strongly typed tokens.
-  - `finx::expr::Expr::parse`: Public parsing facade.
+  - `f8_core::expr::Expr::parse`: Public parsing facade.
 - **Data flow & interfaces**:
   1. Formula string slice (`&str`) $\rightarrow$ `tokenize` $\rightarrow$ `Vec<SpannedToken>` $\rightarrow$ `TokenStream` $\rightarrow$ `Expr::parse` $\rightarrow$ `Result<Expr, ParseError>`.
   2. `Expr::to_string()` / `Display` $\rightarrow$ Canonical formula string adhering to operator precedence and associativity.

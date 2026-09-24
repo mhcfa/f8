@@ -1,6 +1,6 @@
 # Spatial Layout Planning
 
-This document specifies Finx's spatial layout engine (Pass 5), mapping semantic tables into physical 2D grid coordinates on Excel worksheets.
+This document specifies f8's spatial layout engine (Pass 5), mapping semantic tables into physical 2D grid coordinates on Excel worksheets.
 
 ## 1. Overview
 
@@ -109,4 +109,4 @@ pub struct SheetLayout {
 }
 ```
 
-See [Grid Architecture](../dsl/grid.md) for DSL definitions and [Formula Lowering & Emission](lowering-and-emission.md) for emission details.
+See [Specification Format & 2D Grid](../dsl/spec-format.md) for DSL definitions and [Formula Lowering & Emission](./lowering-and-emission.md) for emission details.

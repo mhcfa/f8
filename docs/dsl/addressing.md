@@ -1,6 +1,6 @@
 # Addressing Syntax
 
-This document defines the reference addressing syntax used in Finx formulas and specification models.
+This document defines the reference addressing syntax used in f8 formulas and specification models.
 
 ## 1. Core Invariants
 
@@ -107,4 +107,4 @@ Lowers to a 2D rectangular range (e.g. `=SUM($C$14:$G$18)`).
   - Dynamic coordinates (`@col`, `@row`, `col.prev`, `row.prev`) emit relative coordinates so formulas track active cells.
   - Static coordinates (explicit keys and slice bounds) emit absolute coordinates (`$`).
 
-See [Formula Grammar](grammar.md) for the complete EBNF specification.
+See [Formula Grammar](./grammar.md) for the complete EBNF specification.

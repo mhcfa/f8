@@ -1,0 +1,145 @@
+{
+  "id": "TargetValuation",
+  "title": "Target Valuation Benchmarking",
+  "subtitle": "Implied Enterprise and Equity Valuation Based on Peer Medians ($ in Millions)",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "metric",
+      "role": "descriptor",
+      "headers": [
+        "Valuation Metric"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "val",
+      "role": "measure",
+      "headers": [
+        "Value"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "data",
+      "id": "target_rev",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Target LTM Revenue",
+        "val": 250.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "target_ebitda",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Target LTM EBITDA",
+        "val": 45.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "target_debt",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Target Total Debt",
+        "val": 20.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "target_cash",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Target Cash & Equivalents",
+        "val": 15.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "peer_median_ev_rev",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "metric": "Peer Median EV / LTM Rev",
+        "val": {
+          "expr": "Comps[\"median\", \"ev_rev\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "peer_median_ev_ebitda",
+      "format": "multiple",
+      "decimals": 1,
+      "cells": {
+        "metric": "Peer Median EV / LTM EBITDA",
+        "val": {
+          "expr": "Comps[\"median\", \"ev_ebitda\"]"
+        }
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "implied_ev_rev",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Implied EV (EV / Rev)",
+        "val": {
+          "expr": "TargetValuation[\"target_rev\", \"val\"] * TargetValuation[\"peer_median_ev_rev\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "implied_ev_ebitda",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Implied EV (EV / EBITDA)",
+        "val": {
+          "expr": "TargetValuation[\"target_ebitda\", \"val\"] * TargetValuation[\"peer_median_ev_ebitda\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "implied_ev_blended",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Implied Enterprise Value (Blended)",
+        "val": {
+          "expr": "AVERAGE(TargetValuation[\"implied_ev_rev\"..\"implied_ev_ebitda\", \"val\"])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "implied_equity_val",
+      "style": "total",
+      "format": "currency",
+      "decimals": 1,
+      "cells": {
+        "metric": "Implied Equity Value",
+        "val": {
+          "expr": "TargetValuation[\"implied_ev_blended\", \"val\"] - TargetValuation[\"target_debt\", \"val\"] + TargetValuation[\"target_cash\", \"val\"]"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+{
+  "id": "CashFlow",
+  "title": "Cash Flow Statement",
+  "subtitle": "($ in Millions)",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Line Item"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2023a",
+      "role": "measure",
+      "headers": [
+        "Historical Actuals",
+        "2023A"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2024e",
+      "role": "measure",
+      "headers": [
+        "Forecast Projections",
+        "2024E"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2025e",
+      "role": "measure",
+      "headers": [
+        "Forecast Projections",
+        "2025E"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2026e",
+      "role": "measure",
+      "headers": [
+        "Forecast Projections",
+        "2026E"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "section_header",
+      "title": "Operating Activities"
+    },
+    {
+      "kind": "data",
+      "id": "net_income",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "IncomeStatement[\"net_income\", @col]",
+      "cells": {
+        "line_item": {
+          "value": "Net Income",
+          "indent": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "depreciation",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Assumptions[\"depreciation\", \"val\"]",
+      "cells": {
+        "line_item": {
+          "value": "Depreciation Addback",
+          "indent": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "change_in_wc",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "(IncomeStatement[\"revenue\", @col] - IncomeStatement[\"revenue\", col.prev]) * Assumptions[\"wc_pct_rev\", \"val\"]",
+      "cells": {
+        "line_item": {
+          "value": "Change in Working Capital",
+          "indent": 1
+        },
+        "y2023a": 0.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "operating_cf",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "CashFlow[\"net_income\", @col] + CashFlow[\"depreciation\", @col] - CashFlow[\"change_in_wc\", @col]",
+      "cells": {
+        "line_item": "Cash Flow from Operations"
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Investing Activities"
+    },
+    {
+      "kind": "data",
+      "id": "capex",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Assumptions[\"capex\", \"val\"]",
+      "cells": {
+        "line_item": {
+          "value": "Capital Expenditures",
+          "indent": 1
+        }
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "investing_cf",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "0.0 - CashFlow[\"capex\", @col]",
+      "cells": {
+        "line_item": "Cash Flow from Investing"
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "net_cash_flow",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "CashFlow[\"operating_cf\", @col] + CashFlow[\"investing_cf\", @col]",
+      "cells": {
+        "line_item": "Net Change in Cash"
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "ending_cash",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "expr": "CashFlow[\"ending_cash\", col.prev] + CashFlow[\"net_cash_flow\", @col]",
+      "cells": {
+        "line_item": "Ending Cash Balance",
+        "y2023a": 50.0
+      }
+    }
+  ]
+}

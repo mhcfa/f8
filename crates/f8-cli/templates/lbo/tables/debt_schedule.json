@@ -1,0 +1,240 @@
+{
+  "id": "DebtSchedule",
+  "title": "Debt Schedule & Cash Sweep",
+  "subtitle": "($ in Millions) - Senior Debt 5% Mandatory Amortization & 100% Cash Sweep",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Line Item"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y0",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "Transaction Close",
+        "Close (Y0)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y1",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2025 (Y1)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2026 (Y2)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y3",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2027 (Y3)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y4",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2028 (Y4)"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y5",
+      "role": "measure",
+      "headers": [
+        "Project Titan LBO",
+        "5-Year Investment Horizon",
+        "2029 (Y5)"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "section_header",
+      "title": "Senior Tranche (8.0% Rate)"
+    },
+    {
+      "kind": "data",
+      "id": "senior_begin",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"senior_end\", col.prev]",
+      "cells": {
+        "line_item": "Senior Debt - Beginning",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "senior_interest",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"senior_begin\", @col] * DealAssumptions[\"senior_rate\", \"val\"] * Timeline[\"year_frac\", @col]",
+      "cells": {
+        "line_item": "Senior Debt Interest (8.0%)",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Subordinated Tranche (12.0% Rate)"
+    },
+    {
+      "kind": "data",
+      "id": "sub_begin",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"sub_end\", col.prev]",
+      "cells": {
+        "line_item": "Subordinated Debt - Beginning",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sub_interest",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"sub_begin\", @col] * DealAssumptions[\"sub_rate\", \"val\"] * Timeline[\"year_frac\", @col]",
+      "cells": {
+        "line_item": "Subordinated Debt Interest (12.0%)",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Debt Service & Sweep Mechanics"
+    },
+    {
+      "kind": "data",
+      "id": "term_pmt_benchmark",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "PMT(DealAssumptions[\"senior_rate\", \"val\"], 5, -DealAssumptions[\"senior_debt_entry\", \"val\"])",
+      "cells": {
+        "line_item": "5-Year Full Amortization Benchmark (PMT)",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "total_interest",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"senior_interest\", @col] + DebtSchedule[\"sub_interest\", @col]",
+      "cells": {
+        "line_item": "Total Debt Interest",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "senior_mandatory",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "MIN(DebtSchedule[\"senior_begin\", @col], DealAssumptions[\"senior_debt_entry\", \"val\"] * 0.05)",
+      "cells": {
+        "line_item": "Senior Mandatory Amortization (5%)",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "cash_available_sweep",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "MAX(0, Operations[\"fcf_pre_debt\", @col] - DebtSchedule[\"total_interest\", @col] - DebtSchedule[\"senior_mandatory\", @col])",
+      "cells": {
+        "line_item": "Cash Flow Available for Sweep",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "senior_sweep",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "MIN(DebtSchedule[\"cash_available_sweep\", @col], DebtSchedule[\"senior_begin\", @col] - DebtSchedule[\"senior_mandatory\", @col])",
+      "cells": {
+        "line_item": "Senior Debt Cash Sweep",
+        "y0": 0.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Outstanding Debt Balances"
+    },
+    {
+      "kind": "data",
+      "id": "senior_end",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"senior_begin\", @col] - DebtSchedule[\"senior_mandatory\", @col] - DebtSchedule[\"senior_sweep\", @col]",
+      "cells": {
+        "line_item": "Senior Debt - Ending Balance",
+        "y0": {
+          "expr": "DealAssumptions[\"senior_debt_entry\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "sub_end",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"sub_begin\", @col]",
+      "cells": {
+        "line_item": "Subordinated Debt - Ending Balance",
+        "y0": {
+          "expr": "DealAssumptions[\"sub_debt_entry\", \"val\"]"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "total_debt_end",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "expr": "DebtSchedule[\"senior_end\", @col] + DebtSchedule[\"sub_end\", @col]",
+      "cells": {
+        "line_item": "Total Outstanding Debt"
+      }
+    }
+  ]
+}

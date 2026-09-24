@@ -1,23 +1,25 @@
 # Function Registry Architecture
 
-This document specifies Finx's Excel function registry, parameter contracts, runtime dispatch types, and compiler lifecycle integration.
+This document specifies f8's Excel function registry, parameter contracts, runtime dispatch model, and compiler lifecycle integration.
 
-## 1. Overview
+---
 
-The function registry decouples built-in Excel function implementations from compiler internals, providing a unified contract across three compiler passes:
+## 1. Overview & Architectural Role
 
-- **Static validation**: Verifies function names, arity bounds, variadic repetition rules, and argument omission constraints during AST construction.
-- **Formula lowering**: Emits canonical uppercase Excel formula strings (`SUM(...)`, `XLOOKUP(...)`), leaving OpenXML prefixing (`_xlfn.`) to `rust_xlsxwriter`.
-- **In-memory evaluation**: Dispatches argument evaluation to registered Rust implementations, supporting range aggregations, lazy short-circuiting, and returning scalar cell values.
+The function registry decouples built-in Excel function implementations from compiler internals, providing a centralized single source of truth across three compiler passes:
+
+- **Static call validation (Pass 1)**: Verifies function identifiers, arity bounds, variadic pair rules, and argument omission constraints during formula AST construction.
+- **In-memory evaluation (Pass 4)**: Dispatches arguments to registered Rust implementations, supporting range aggregations, lazy branch short-circuiting, and returning scalar cell values.
+- **Formula lowering (Pass 6)**: Emits canonical uppercase Excel formula strings (`SUM`, `XLOOKUP`), leaving OpenXML syntax and prefixes to the emission layer.
 
 ```mermaid
 flowchart TD
-    A["FunctionRegistry"] --> B["Registered ExcelFunction Trait Objects"]
+    A["FunctionRegistry\n(Deterministic IndexMap)"] --> B["Registered ExcelFunction Implementations"]
 
     subgraph Passes ["Compiler Pass Integration"]
-        C["Parser: Arity, Types & Variadic Check"]
-        D["Evaluator: Scalar Dispatch, Slices & Short-Circuiting"]
-        E["Lowering: Canonical Formula Syntax Emission"]
+        C["Pass 1 (Parser):\nArity, Types & Variadic Validation"]
+        D["Pass 4 (Evaluator):\nScalar Dispatch, Range Slices & Short-Circuiting"]
+        E["Pass 6 (Lowering):\nCanonical Upper-Case Formula Emission"]
     end
 
     A -.-> C
@@ -27,160 +29,67 @@ flowchart TD
 
 ---
 
-## 2. Parameter & Argument Contracts
+## 2. Parameter Contracts & Evaluation Strategies
 
-Signatures define parameter expectations using strongly typed metadata:
+Each registered function defines parameter expectations using strongly typed metadata (`ParameterDef`).
 
-```rust
-/// Classification of how a parameter consumes inputs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParamKind {
-    /// Scalar value. Expects a single CellValue.
-    Scalar,
-    /// Consumes 1D or 2D ranges/arrays as an aggregate (e.g. SUM, XLOOKUP lookup_array).
-    RangeOrArray,
-    /// Unevaluated AST expression branch evaluated conditionally on demand (e.g. IF, IFS).
-    Lazy,
-}
+### 2.1. Parameter Kinds (`ParamKind`)
 
-/// Variadic repetition constraints.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VariadicRule {
-    /// Fixed arity; no repeated arguments.
-    None,
-    /// Variadic single argument repetition (e.g. SUM(num1, [num2], ...)).
-    Single,
-    /// Arguments repeat in exact pairs (e.g. IFS(test1, val1, [test2, val2], ...)).
-    Pairs,
-}
+| Kind | Description | Handling in Evaluator | Example Functions |
+| :--- | :--- | :--- | :--- |
+| **`Scalar`** | Single cell value | Evaluated eagerly to a scalar `CellValue` | `ABS`, `ROUND`, `YEAR` |
+| **`RangeOrArray`** | 1D or 2D rectangular range slice | Pre-evaluated range slice preserving dimensions and range provenance | `SUM`, `AVERAGE`, `XLOOKUP` (`lookup_array`) |
+| **`Lazy`** | Conditional branch expression | Passed as an unevaluated expression branch (`&Expr`), evaluated on demand | `IF`, `IFS`, `IFERROR`, `CHOOSE`, `SWITCH` |
 
-/// Excel functional category.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FunctionCategory {
-    Math,
-    Logical,
-    Financial,
-    Lookup,
-    DateTime,
-    Text,
-    Information,
-}
+### 2.2. Variadic Repetition Rules (`VariadicRule`)
 
-/// Strongly typed parameter definition.
-#[derive(Debug, Clone)]
-pub struct ParameterDef {
-    /// Programmatic parameter name (e.g. "lookup_value", "basis").
-    pub name: &'static str,
-    /// Concise description for tooling, diagnostics, and AI agents.
-    pub description: &'static str,
-    /// Evaluation and binding strategy.
-    pub kind: ParamKind,
-    /// Whether the argument can be omitted by the caller.
-    pub optional: bool,
-    /// Default value assigned when the argument is omitted or empty.
-    pub default_value: Option<CellValue>,
-}
-```
+| Rule | Repetition Constraint | Example Functions |
+| :--- | :--- | :--- |
+| **`None`** | Fixed parameter count; no repeating arguments | `ABS` (1), `ROUND` (2), `PMT` (3–5) |
+| **`Single`** | Single trailing argument repeats indefinitely | `SUM(num1, [num2], ...)`, `AND(cond1, [cond2], ...)` |
+| **`Pairs`** | Trailing arguments repeat in exact pairs | `IFS(test1, val1, [test2, val2], ...)`, `SUMIFS(rng, crit_rng1, crit1, ...)` |
 
 ---
 
-## 3. Runtime Argument Types
+## 3. Function Trait & Runtime Execution
 
-During topological evaluation, arguments are prepared as `FunctionArg`:
+Every built-in and user-registered Excel function implements the `ExcelFunction` contract:
 
-```rust
-/// Argument passed into function evaluation.
-pub enum FunctionArg<'a> {
-    /// Unevaluated AST expression branch for conditional evaluation.
-    Lazy(&'a Expr),
-    /// Pre-evaluated scalar value.
-    Scalar(CellValue),
-    /// Evaluated range slice preserving dimensions and range provenance.
-    Array {
-        rows: usize,
-        cols: usize,
-        values: Vec<CellValue>,
-        is_range_ref: bool,
-    },
-    /// Explicitly omitted positional argument (e.g. FUNC(a, _, c)).
-    Omitted,
-}
-
-/// Context interface provided to functions for evaluating lazy expression branches.
-pub trait EvalContext {
-    /// Evaluates an unevaluated expression branch for lazy functions.
-    fn eval_expr(&self, expr: &Expr) -> Result<CellValue, FunctionError>;
-}
-
-impl<'a> FunctionArg<'a> {
-    /// Resolves argument to a scalar, evaluating lazy branches or extracting single-cell values.
-    pub fn eval_scalar(&self, function: &'static str, ctx: &dyn EvalContext) -> Result<CellValue, FunctionError>;
-
-    /// Resolves argument to an array slice, preserving row and column dimensions.
-    pub fn eval_array(&self, function: &'static str, ctx: &dyn EvalContext) -> Result<(usize, usize, Vec<CellValue>), FunctionError>;
-}
-```
-
-Every function execution evaluates strictly to a scalar `Result<CellValue, FunctionError>`, maintaining 1:1 mapping with target `CellId` nodes.
+- **Metadata**: Canonical uppercase name (`name()`), category (`category()`), and ordered parameter definitions (`parameters()`).
+- **Arity contracts**:
+  - `min_args()`: Derived from non-optional parameters.
+  - `max_args()`: Finite bound for `VariadicRule::None`; unbounded for `Single` and `Pairs`.
+- **Runtime execution (`evaluate`)**:
+  - Consumes bound `FunctionArg` inputs (`Scalar`, `Array`, `Lazy`, `Omitted`).
+  - Accesses contextual expression evaluation via `EvalContext`.
+  - Always returns a single scalar `Result<CellValue, FunctionError>`.
+  - Formulas never produce dynamic arrays or spill across neighboring cells, preserving a pure 1:1 cell dependency DAG.
 
 ---
 
-## 4. The `ExcelFunction` Trait
-
-Every built-in and user-registered Excel function implements `ExcelFunction`:
-
-```rust
-pub trait ExcelFunction: Send + Sync {
-    /// Canonical uppercase Excel function name (e.g. "XLOOKUP").
-    fn name(&self) -> &'static str;
-
-    /// Excel functional category.
-    fn category(&self) -> FunctionCategory;
-
-    /// Ordered parameter definitions.
-    fn parameters(&self) -> &'static [ParameterDef];
-
-    /// Variadic repetition constraints.
-    fn variadic_rule(&self) -> VariadicRule {
-        VariadicRule::None
-    }
-
-    /// Minimum required arguments.
-    fn min_args(&self) -> usize {
-        self.parameters().iter().take_while(|p| !p.optional).count()
-    }
-
-    /// Maximum allowed arguments, or None if variadic.
-    fn max_args(&self) -> Option<usize> {
-        match self.variadic_rule() {
-            VariadicRule::None => Some(self.parameters().len()),
-            VariadicRule::Single | VariadicRule::Pairs => None,
-        }
-    }
-
-    /// Evaluates function arguments against cell context, returning a scalar cell value.
-    fn evaluate(&self, args: &[FunctionArg], ctx: &dyn EvalContext) -> Result<CellValue, FunctionError>;
-}
-```
-
----
-
-## 5. Compiler Lifecycle Integration
+## 4. Compiler Lifecycle Integration
 
 1. **Parser & signature validation**:
-   - Matches `FunctionName` against keys in `FunctionRegistry`. Unknown functions trigger `FunctionError::UnknownFunction`.
+   - Matches function names case-insensitively against `FunctionRegistry`. Unknown functions trigger `FunctionError::UnknownFunction`.
    - Validates argument counts against `min_args()` and `max_args()`.
-   - Enforces variadic repetition rules (e.g. `VariadicRule::Pairs` requires an even number of conditional arguments).
-   - Verifies that omitted arguments occur only where `ParameterDef::optional` is `true`.
-2. **Formula lowering**:
-   - Emits canonical uppercase formula names (`SUM`, `XLOOKUP`, `IF`).
-   - Formulas are written as standard formula cells via `write_formula`.
-3. **In-memory evaluation**:
+   - Enforces variadic constraints (e.g. `VariadicRule::Pairs` requires paired arguments).
+   - Verifies that omitted arguments (`_`) occur only where `ParameterDef::optional` is `true`.
+2. **In-memory evaluation**:
    - Dispatches inputs according to `ParameterDef::kind`:
-     - `Scalar`: Evaluates expression eagerly to a single `CellValue`.
+     - `Scalar`: Evaluates eagerly to `CellValue`.
      - `RangeOrArray`: Resolves coordinate ranges into `FunctionArg::Array` with `is_range_ref: true`.
-     - `Lazy`: Passed as `FunctionArg::Lazy` for conditional execution.
-   - Substitutes omitted arguments with defaults or `FunctionArg::Omitted`.
-   - Stores the resulting scalar `CellValue` in the evaluated matrix at `(TableId, RowId, ColId)`.
+     - `Lazy`: Binds unevaluated AST branches for conditional execution.
+   - Normalizes omitted arguments (`_`) to parameter defaults or `FunctionArg::Omitted`.
+   - Stores the evaluated scalar `CellValue` in the model matrix at `(TableId, RowId, ColId)`.
+3. **Formula lowering**:
+   - Emits canonical uppercase formula names (`SUM`, `XLOOKUP`, `IF`).
+   - Translates omitted arguments (`_`) into standard Excel comma spacing (e.g. `, ,`).
 
-See [Standard Catalog](catalog.md) for built-in catalog definitions, [Excel Parity](../compiler/parity.md) for calculation semantics, and [In-Memory Evaluator](../compiler/evaluator.md) for DAG execution.
+---
+
+## 5. Related Specifications & Reference Documents
+
+- [Standard Function Catalog](./catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
+- [Excel Function Registry Living Spec](../../specs/living-specs/functions/registry.md): Code-level trait contracts, exhaustive types, and BDD verification scenarios.
+- [In-Memory Evaluator](../compiler/evaluator.md): Topological DAG evaluation loop and runtime state.
+- [Excel Parity](../compiler/parity.md): Precision, coercion mechanics, date arithmetic, and criteria syntax.

@@ -1,0 +1,189 @@
+{
+  "id": "BalanceSheet",
+  "title": "Balance Sheet",
+  "subtitle": "($ in Millions)",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "line_item",
+      "role": "descriptor",
+      "headers": [
+        "Line Item"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2023a",
+      "role": "measure",
+      "headers": [
+        "Historical Actuals",
+        "2023A"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2024e",
+      "role": "measure",
+      "headers": [
+        "Forecast Projections",
+        "2024E"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2025e",
+      "role": "measure",
+      "headers": [
+        "Forecast Projections",
+        "2025E"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "y2026e",
+      "role": "measure",
+      "headers": [
+        "Forecast Projections",
+        "2026E"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "kind": "section_header",
+      "title": "Assets"
+    },
+    {
+      "kind": "data",
+      "id": "cash",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "CashFlow[\"ending_cash\", @col]",
+      "cells": {
+        "line_item": {
+          "value": "Cash & Cash Equivalents",
+          "indent": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "working_capital",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "IncomeStatement[\"revenue\", @col] * Assumptions[\"wc_pct_rev\", \"val\"]",
+      "cells": {
+        "line_item": {
+          "value": "Operating Working Capital",
+          "indent": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "ppe",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "BalanceSheet[\"ppe\", col.prev] + Assumptions[\"capex\", \"val\"] - Assumptions[\"depreciation\", \"val\"]",
+      "cells": {
+        "line_item": {
+          "value": "Property, Plant & Equipment (Net)",
+          "indent": 1
+        },
+        "y2023a": 40.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "total_assets",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "expr": "BalanceSheet[\"cash\", @col] + BalanceSheet[\"working_capital\", @col] + BalanceSheet[\"ppe\", @col]",
+      "cells": {
+        "line_item": "Total Assets"
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "section_header",
+      "title": "Liabilities & Stockholders' Equity"
+    },
+    {
+      "kind": "data",
+      "id": "debt",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "0.0",
+      "cells": {
+        "line_item": {
+          "value": "Total Outstanding Debt",
+          "indent": 1
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "equity_capital",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "BalanceSheet[\"equity_capital\", col.prev]",
+      "cells": {
+        "line_item": {
+          "value": "Common Stock & Contributed Capital",
+          "indent": 1
+        },
+        "y2023a": 76.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "retained_earnings",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "BalanceSheet[\"retained_earnings\", col.prev] + IncomeStatement[\"net_income\", @col]",
+      "cells": {
+        "line_item": {
+          "value": "Retained Earnings",
+          "indent": 1
+        },
+        "y2023a": 24.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "total_liabilities_and_equity",
+      "style": "total",
+      "highlight": true,
+      "format": "currency",
+      "decimals": 1,
+      "expr": "BalanceSheet[\"debt\", @col] + BalanceSheet[\"equity_capital\", @col] + BalanceSheet[\"retained_earnings\", @col]",
+      "cells": {
+        "line_item": "Total Liabilities & Equity"
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "balance_check",
+      "style": "subtotal",
+      "format": "currency",
+      "decimals": 1,
+      "expr": "BalanceSheet[\"total_assets\", @col] - BalanceSheet[\"total_liabilities_and_equity\", @col]",
+      "cells": {
+        "line_item": "Balance Check (Assets - L&E)"
+      }
+    }
+  ]
+}

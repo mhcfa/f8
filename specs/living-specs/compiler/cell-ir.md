@@ -1,6 +1,6 @@
 ---
 title: Cell Intermediate Representation & Symbol Table
-last_updated: 2026-09-20
+last_updated: 2026-09-24
 domain: compiler
 status: active
 ---
@@ -12,12 +12,12 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
-  - `finx::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, typographic indent level, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
-  - `finx::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
-  - `finx::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
-  - `finx::compiler::ir::error`: Structured domain errors (`IrError`).
-  - `finx::model::id`: Strongly typed identifier wrappers including `SheetId`.
+  - `f8_core::compiler::ir::id`: Canonical `CellId` representing the 3-tuple `(TableId, RowId, ColId)`.
+  - `f8_core::compiler::ir::cell`: `CellPayload` (`Literal` vs `Formula`), `CellNode` (sheet binding, format preset, currency code, fractional decimals, orthogonal 2D structural styles `(horizontal, vertical)`, visual highlight emphasis, typographic indent level, payload, audit metadata), and `CellGrid` (`IndexMap`-backed deterministic container with indexed lookups).
+  - `f8_core::compiler::ir::symbol`: `SymbolTable` and `TableMetadata` managing workbook-wide table ownership, sheet placement, column/row coordinate indexing, axis roles, and group catalogs.
+  - `f8_core::compiler::ir::expand`: Grid expansion engine implementing the 3-Tier Specificity Lattice (`expand_table`, `expand_grid`, `expand_workbook`).
+  - `f8_core::compiler::ir::error`: Structured domain errors (`IrError`).
+  - `f8_core::model::id`: Strongly typed identifier wrappers including `SheetId`.
 - **Data flow & interfaces**:
   1. `TableSpec` $\rightarrow$ `SymbolTable::register_table(sheet_id, &table)` $\rightarrow$ Validates global table uniqueness, indexes column/row positions, and stores axis roles.
   2. `TableSpec` + `SymbolTable` $\rightarrow$ `expand_table(&symbol_table, &table)` $\rightarrow$ Evaluates the 3-Tier Specificity Lattice for each $(r, c)$ coordinate pair into `Vec<CellNode>`.
@@ -128,4 +128,7 @@ $$\text{Cell Override (0D Point)} > (\text{Row Rule } \mathbf{XOR} \text{ Column
 - **Typographic Indentation Propagation**:
   - **When** cell $(r, c)$ specifies `indent: Some(n)` on `DetailedCellInput`
   - **Then** the generated `CellNode` has `indent == n`; otherwise `indent == 0`.
+- **0D Cell Note Isolation**:
+  - **When** cell $(r, c)$ specifies `note: Some(text)` on `DetailedCellInput`
+  - **Then** `CellNode.note` resolves to `Some(text)`. Vector-generated formula cells and unannotated cells unconditionally resolve `note: None`. Notes never broadcast across rows or columns.
 

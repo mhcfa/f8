@@ -1,6 +1,6 @@
 # Intermediate Representation (IR)
 
-This document specifies Finx's intermediate representations, focusing on cell-level granularity, the 2D grid expansion pass, and the deterministic property resolution lattice.
+This document specifies f8's intermediate representations, focusing on cell-level granularity, the 2D grid expansion pass, and the deterministic property resolution lattice.
 
 ## 1. Cell-Level IR Granularity
 
@@ -115,8 +115,9 @@ In a 2D matrix, rows and columns govern orthogonal geometric axes:
 
 ### 3.5. Note & Provenance Resolution
 
-- **Precedence**: `Cell.note > Row.note > Col.note`.
-- **Inheritance**: A cell inherits its row or column note/source unless explicitly overridden at the cell level.
+- **0D Cell Note Isolation**: Notes are strictly 0D point attributes declared directly on `DetailedCellInput`. Notes do not broadcast across rows or columns.
+- **Section Headers**: Structural section headers (`SectionHeaderRowSpec`) declare a visual note emitted at the table start column.
+- **Provenance Source Precedence**: `Cell.source > Row.source > Col.source`. A cell inherits its row or column source unless explicitly overridden at the cell level.
 
 ---
 
@@ -131,7 +132,7 @@ Each expanded cell node contains:
   - `Formula(AstNode)`: Parsed expression AST containing reference targets.
 - **Formatting, Precision & Currency**: Resolved format preset token (`FormatPreset`), optional display precision (`decimals: Option<u32>`), and optional currency denomination code (`currency: Option<CurrencyCode>`).
 - **Style**: Resolved structural style pair (`horizontal: SemanticStyle`, `vertical: SemanticStyle`) and visual emphasis flag (`is_highlight: bool`).
-- **Notes & Provenance**: Inherited or overridden note string and provenance metadata.
+- **Notes & Provenance**: Cell-level audit note string and resolved provenance metadata.
 - **Spatial Position**: Populated later by the layout engine (`sheet_name`, `col_idx`, `row_idx`).
 
-See [Dependency Graph](./dependency-graph.md) for how cell nodes are assembled into a DAG, and [Spatial Layout Planning](spatial-layout.md) for coordinate assignment.
+See [Dependency Graph](./dependency-graph.md) for how cell nodes are assembled into a DAG, and [Spatial Layout Planning](./spatial-layout.md) for coordinate assignment.

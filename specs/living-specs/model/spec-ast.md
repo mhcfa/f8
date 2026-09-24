@@ -7,16 +7,16 @@ status: active
 
 ## Purpose
 
-The `model` subsystem provides the foundational in-memory data structures, Serde models, and semantic validation rules for Finx financial models. It ingests multi-file declarative project specifications (`finx.json` manifests and `tables/*.json` calculation specifications), enforces orthogonal 2D matrix invariants and axis role definitions, and produces structured error diagnostics.
+The `model` subsystem provides the foundational in-memory data structures, Serde models, and semantic validation rules for f8 financial models. It ingests multi-file declarative project specifications (`f8.json` manifests and `tables/*.json` calculation specifications), enforces orthogonal 2D matrix invariants and axis role definitions, and produces structured error diagnostics.
 
 ## Architecture & Boundaries
 
 - **Modules & components**:
-  - `finx::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `SheetId`).
-  - `finx::model::format`: Semantic formatting preset catalog (`FormatPreset`), structural style enum (`SemanticStyle`), and canonical ISO currency codes (`CurrencyCode`).
-  - `finx::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
-  - `finx::model::table`: 2D table definitions (`TableSpec`), tagged column specifications (`ColumnSpec::Data`, `ColumnSpec::Gutter`), tagged row specifications (`RowSpec::Data`, `RowSpec::SectionHeader`, `RowSpec::Gutter`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `DataColumnSpec`, `DataRowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata, default table `currency`, and an opt-in `collapsible` boolean (default: `false`).
-  - `finx::model::error`: Diagnostic error types (`ModelError`).
+  - `f8_core::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `SheetId`).
+  - `f8_core::model::format`: Semantic formatting preset catalog (`FormatPreset`), structural style enum (`SemanticStyle`), and canonical ISO currency codes (`CurrencyCode`).
+  - `f8_core::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
+  - `f8_core::model::table`: 2D table definitions (`TableSpec`), tagged column specifications (`ColumnSpec::Data`, `ColumnSpec::Gutter`), tagged row specifications (`RowSpec::Data`, `RowSpec::SectionHeader`, `RowSpec::Gutter`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `DataColumnSpec`, `DataRowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata, default table `currency`, and an opt-in `collapsible` boolean (default: `false`).
+  - `f8_core::model::error`: Diagnostic error types (`ModelError`).
 
 - **Data flow & interfaces**:
   1. JSON string / file content $\rightarrow$ `serde_json::from_str` $\rightarrow$ Unvalidated `TableSpec` / `ProjectManifest`.
@@ -79,7 +79,7 @@ Tables represent layout directly through tagged `RowSpec` (`Data`, `SectionHeade
 
 ### 4. Numeric Precision Applicability
 
-The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) reject explicit precision declarations. In addition, explicit precision declarations must not exceed the maximum display bound of 14 decimal places.
+The `decimals` attribute specifies fractional display precision and is strictly applicable only to numeric format presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`, `integer`). Non-numeric presets (`date`, `text`) reject explicit precision declarations. In addition, explicit precision declarations must not exceed the maximum display bound of 14 decimal places.
 
 #### Scenarios
 

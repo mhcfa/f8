@@ -1,10 +1,10 @@
 # Semantic Formatting & Themes
 
-This document specifies Finx's semantic formatting system, preset catalog, structural axis styles, property resolution lattice, and pluggable workbook themes.
+This document specifies f8's semantic formatting system, preset catalog, structural axis styles, property resolution lattice, and pluggable workbook themes.
 
 ## 1. Core Philosophy
 
-Finx enforces complete decoupling between calculation logic and visual styling:
+f8 enforces complete decoupling between calculation logic and visual styling:
 - **Semantic intent over raw masks**: Model authors specify *what* data represents (`currency`, `number`, `percentage`, `multiple`), never raw Excel format strings (e.g. `$#,##0_);($#,##0);"-"_)`).
 - **Orthogonal visual axes**: Presentation decomposes cleanly into four independent, composable axes:
   1. **Structural style (`style`)**: Borders, summary rules, and bold typography (`data`, `subtotal`, `total`).
@@ -74,7 +74,7 @@ Numeric precision is an orthogonal property decoupled from the format preset:
 - **Numeric applicability**: `decimals` applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) ignore `decimals` or trigger a validation error (`InvalidPrecisionForPresetError`) if explicitly configured.
 
 ### 4.1. Symmetrical Usage in Specifications
-The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](spec-format.md#3-table-specification-schema-tablesidjson), [`RowSpec`](spec-format.md#3-table-specification-schema-tablesidjson), and point-level [`DetailedCellInput`](spec-format.md#33-cell-input-syntax-cells):
+The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](./spec-format.md#3-table-specification-schema-tablesidjson), [`RowSpec`](./spec-format.md#3-table-specification-schema-tablesidjson), and point-level [`DetailedCellInput`](./spec-format.md#33-cell-input-syntax-cells):
 
 ```json
 {
@@ -181,11 +181,11 @@ A point override `highlight: false` explicitly un-highlights a cell even if its 
 
 ## 6. Pluggable Themes (IDE-Style Config)
 
-Finx supports pluggable, external workbook themes inspired by modern IDE and editor color themes (e.g. VS Code, TextMate). The visual identity of an emitted workbook is completely isolated into standalone theme configurations.
+f8 supports pluggable, external workbook themes inspired by modern IDE and editor color themes (e.g. VS Code, TextMate). The visual identity of an emitted workbook is completely isolated into standalone theme configurations.
 
 ### 6.1. Manifest theme declaration
 
-The root workbook manifest (`finx.json`) declares the active `theme` either by referencing a built-in preset or a relative file path to a custom theme JSON. If omitted, it defaults to `"corporate_navy"`:
+The root workbook manifest (`f8.json`) declares the active `theme` either by referencing a built-in preset or a relative file path to a custom theme JSON. If omitted, it defaults to `"corporate_navy"`:
 
 ```json
 {
@@ -207,7 +207,7 @@ Or pointing to an external custom theme file:
 
 ### 6.2. Built-in theme
 
-Finx provides `corporate_navy` as its built-in institutional theme:
+f8 provides `corporate_navy` as its built-in institutional theme:
 - **`corporate_navy`**: Institutional private equity and investment banking style with deep navy headers, subtle blue section fills, crisp thin borders, and classic blue inputs.
 
 Additional or custom themes can be loaded via external JSON theme files (see below).
@@ -218,7 +218,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
 
 ```json
 {
-  "$schema": "https://finx.dev/schemas/theme.json",
+  "$schema": "https://f8.dev/schemas/theme.json",
   "name": "corporate_navy",
   "typography": {
     "font_family": "Aptos",
@@ -316,4 +316,4 @@ This guarantees that changing themes re-skins the emitted workbook completely an
 
 ---
 
-See [Specification Format](spec-format.md) for schema usage and [Spatial Layout Planning](../compiler/spatial-layout.md) for coordinate and metric assignment.
+See [Specification Format](./spec-format.md) for schema usage and [Spatial Layout Planning](../compiler/spatial-layout.md) for coordinate and metric assignment.

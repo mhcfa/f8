@@ -1,0 +1,442 @@
+{
+  "id": "Comps",
+  "title": "Public Trading Comparables (SaaS Peers)",
+  "subtitle": "Enterprise Value and Operational Trading Multiples ($ in Millions, except share price)",
+  "columns": [
+    {
+      "kind": "data",
+      "id": "company",
+      "role": "descriptor",
+      "headers": [
+        "Company"
+      ]
+    },
+    {
+      "kind": "data",
+      "id": "ticker",
+      "role": "descriptor",
+      "headers": [
+        "Ticker"
+      ]
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "share_price",
+      "role": "measure",
+      "headers": [
+        "Market Data",
+        "Share Price"
+      ],
+      "format": "currency",
+      "decimals": 2
+    },
+    {
+      "kind": "data",
+      "id": "shares_out",
+      "role": "measure",
+      "headers": [
+        "Market Data",
+        "Shares Out"
+      ],
+      "format": "number",
+      "decimals": 1
+    },
+    {
+      "kind": "data",
+      "id": "market_cap",
+      "role": "measure",
+      "headers": [
+        "Market Data",
+        "Market Cap"
+      ],
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Comps[@row, \"share_price\"] * Comps[@row, \"shares_out\"]"
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "cash",
+      "role": "measure",
+      "headers": [
+        "Balance Sheet",
+        "Cash"
+      ],
+      "format": "currency",
+      "decimals": 1
+    },
+    {
+      "kind": "data",
+      "id": "debt",
+      "role": "measure",
+      "headers": [
+        "Balance Sheet",
+        "Total Debt"
+      ],
+      "format": "currency",
+      "decimals": 1
+    },
+    {
+      "kind": "data",
+      "id": "ev",
+      "role": "measure",
+      "headers": [
+        "Balance Sheet",
+        "Enterprise Value"
+      ],
+      "format": "currency",
+      "decimals": 1,
+      "expr": "Comps[@row, \"market_cap\"] + Comps[@row, \"debt\"] - Comps[@row, \"cash\"]"
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "revenue",
+      "role": "measure",
+      "headers": [
+        "Operating Metrics",
+        "LTM Revenue"
+      ],
+      "format": "currency",
+      "decimals": 1
+    },
+    {
+      "kind": "data",
+      "id": "ebitda",
+      "role": "measure",
+      "headers": [
+        "Operating Metrics",
+        "LTM EBITDA"
+      ],
+      "format": "currency",
+      "decimals": 1
+    },
+    {
+      "kind": "data",
+      "id": "ebitda_margin",
+      "role": "measure",
+      "headers": [
+        "Operating Metrics",
+        "EBITDA Margin"
+      ],
+      "format": "percentage",
+      "decimals": 1,
+      "expr": "Comps[@row, \"ebitda\"] / Comps[@row, \"revenue\"]"
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "ev_rev",
+      "role": "measure",
+      "headers": [
+        "Valuation Multiples",
+        "EV / Rev"
+      ],
+      "format": "multiple",
+      "decimals": 1,
+      "expr": "Comps[@row, \"ev\"] / Comps[@row, \"revenue\"]"
+    },
+    {
+      "kind": "data",
+      "id": "ev_ebitda",
+      "role": "measure",
+      "headers": [
+        "Valuation Multiples",
+        "EV / EBITDA"
+      ],
+      "format": "multiple",
+      "decimals": 1,
+      "expr": "Comps[@row, \"ev\"] / Comps[@row, \"ebitda\"]"
+    },
+    {
+      "kind": "data",
+      "id": "pe",
+      "role": "measure",
+      "headers": [
+        "Valuation Multiples",
+        "P / E"
+      ],
+      "format": "multiple",
+      "decimals": 1,
+      "expr": "Comps[@row, \"market_cap\"] / (Comps[@row, \"ebitda\"] * 0.75)"
+    }
+  ],
+  "rows": [
+    {
+      "kind": "data",
+      "id": "snow",
+      "cells": {
+        "company": "Snowflake Inc.",
+        "ticker": "SNOW",
+        "share_price": 150.0,
+        "shares_out": 330.0,
+        "cash": 3500.0,
+        "debt": 0.0,
+        "revenue": 3200.0,
+        "ebitda": 350.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "ddog",
+      "cells": {
+        "company": "Datadog Inc.",
+        "ticker": "DDOG",
+        "share_price": 120.0,
+        "shares_out": 325.0,
+        "cash": 2800.0,
+        "debt": 0.0,
+        "revenue": 2600.0,
+        "ebitda": 600.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "mdb",
+      "cells": {
+        "company": "MongoDB Inc.",
+        "ticker": "MDB",
+        "share_price": 280.0,
+        "shares_out": 75.0,
+        "cash": 1900.0,
+        "debt": 0.0,
+        "revenue": 1850.0,
+        "ebitda": 280.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "net",
+      "cells": {
+        "company": "Cloudflare Inc.",
+        "ticker": "NET",
+        "share_price": 85.0,
+        "shares_out": 340.0,
+        "cash": 1400.0,
+        "debt": 1200.0,
+        "revenue": 1650.0,
+        "ebitda": 210.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "crwd",
+      "cells": {
+        "company": "CrowdStrike Holdings",
+        "ticker": "CRWD",
+        "share_price": 310.0,
+        "shares_out": 245.0,
+        "cash": 3700.0,
+        "debt": 750.0,
+        "revenue": 3450.0,
+        "ebitda": 900.0
+      }
+    },
+    {
+      "kind": "data",
+      "id": "estc",
+      "cells": {
+        "company": "Elastic N.V.",
+        "ticker": "ESTC",
+        "share_price": 105.0,
+        "shares_out": 100.0,
+        "cash": 1000.0,
+        "debt": 570.0,
+        "revenue": 1300.0,
+        "ebitda": 195.0
+      }
+    },
+    {
+      "kind": "gutter"
+    },
+    {
+      "kind": "data",
+      "id": "mean",
+      "style": "subtotal",
+      "cells": {
+        "company": "Mean",
+        "ticker": "—",
+        "share_price": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "shares_out": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "market_cap": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "cash": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "debt": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "revenue": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda_margin": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_rev": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_ebitda": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "pe": {
+          "expr": "AVERAGE(Comps[\"snow\"..\"estc\", @col])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "median",
+      "style": "subtotal",
+      "cells": {
+        "company": "Median",
+        "ticker": "—",
+        "share_price": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "shares_out": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "market_cap": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "cash": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "debt": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "revenue": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda_margin": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_rev": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_ebitda": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "pe": {
+          "expr": "MEDIAN(Comps[\"snow\"..\"estc\", @col])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "max",
+      "style": "data",
+      "cells": {
+        "company": "High",
+        "ticker": "—",
+        "share_price": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "shares_out": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "market_cap": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "cash": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "debt": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "revenue": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda_margin": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_rev": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_ebitda": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "pe": {
+          "expr": "MAX(Comps[\"snow\"..\"estc\", @col])"
+        }
+      }
+    },
+    {
+      "kind": "data",
+      "id": "min",
+      "style": "data",
+      "cells": {
+        "company": "Low",
+        "ticker": "—",
+        "share_price": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "shares_out": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "market_cap": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "cash": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "debt": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "revenue": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ebitda_margin": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_rev": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "ev_ebitda": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        },
+        "pe": {
+          "expr": "MIN(Comps[\"snow\"..\"estc\", @col])"
+        }
+      }
+    }
+  ]
+}
