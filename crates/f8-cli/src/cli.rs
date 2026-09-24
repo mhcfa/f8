@@ -91,6 +91,9 @@ pub enum InspectSubcommand {
     /// Inspect a 2D table grid in terminal table, markdown, or JSON format
     Table(InspectTableArgs),
 
+    /// Inspect a physical worksheet 2D grid in terminal table, markdown, or JSON format
+    Sheet(InspectSheetArgs),
+
     /// Inspect an individual cell coordinate with formulas, values, and dependencies
     Cell(InspectCellArgs),
 
@@ -107,7 +110,22 @@ pub struct InspectTableArgs {
     /// Programmatic identifier of the table to inspect
     pub table: String,
 
-    /// Cell display mode (values, formulas, both)
+    /// Cell display mode (values, formulas, expr, addresses, both)
+    #[arg(long, default_value = "values")]
+    pub view: ViewMode,
+
+    /// Output presentation format (markdown, table, json)
+    #[arg(long, default_value = "markdown")]
+    pub format: TableFormat,
+}
+
+/// Arguments for `f8 inspect sheet`.
+#[derive(Debug, Args)]
+pub struct InspectSheetArgs {
+    /// Name or programmatic identifier of the worksheet to inspect
+    pub sheet: String,
+
+    /// Cell display mode (values, formulas, expr, addresses, both)
     #[arg(long, default_value = "values")]
     pub view: ViewMode,
 

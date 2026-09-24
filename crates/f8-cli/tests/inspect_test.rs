@@ -218,10 +218,48 @@ fn test_scenario_3_table_matrix_formulas_and_markdown() {
         ))
         .stdout(predicate::str::contains("| :--- | ---: | ---: |"))
         .stdout(predicate::str::contains("| Cost of Goods Sold [cogs] |"))
+        .stdout(predicate::str::contains("=C12*(1+$C$5)"))
+        .stdout(predicate::str::contains("=C12*0.4"))
+        .stdout(predicate::str::contains("| **Operating Expenses** |"));
+
+    // View mode: expr (DSL expressions)
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "table",
+            "IncomeStatement",
+            "--view",
+            "expr",
+            "--format",
+            "markdown",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
         .stdout(predicate::str::contains(
             "IncomeStatement[\"revenue\", col.prev]",
-        ))
-        .stdout(predicate::str::contains("| **Operating Expenses** |"));
+        ));
+
+    // View mode: addresses (Physical A1 coordinates)
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "table",
+            "IncomeStatement",
+            "--view",
+            "addresses",
+            "--format",
+            "markdown",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("C12"))
+        .stdout(predicate::str::contains("D12"));
 }
 
 #[test]
@@ -244,9 +282,7 @@ fn test_scenario_4_table_matrix_both_view_and_json() {
         .assert()
         .success()
         .stdout(predicate::str::contains("$ 115.0"))
-        .stdout(predicate::str::contains(
-            "=IncomeStatement[\"revenue\", col.prev]",
-        ));
+        .stdout(predicate::str::contains("=C12*(1+$C$5)"));
 
     // JSON format
     Command::cargo_bin("f8")
@@ -773,4 +809,128 @@ fn test_scenario_multitier_headers_and_year_formatting() {
     assert!(md_stdout.contains("2025 (Y1) [y1]"));
     assert!(md_stdout.contains("2029"));
     assert!(!md_stdout.contains("2,029"));
+}
+
+#[test]
+fn test_scenario_inspect_sheet_markdown_and_view_modes() {
+    let dir = tempdir().unwrap();
+    setup_financial_model(dir.path());
+
+    // 1. Markdown with default values view
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "sheet",
+            "Financials",
+            "--format",
+            "markdown",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Sheet: Financials"))
+        .stdout(predicate::str::contains(
+            "Tables: Assumptions, IncomeStatement",
+        ))
+        .stdout(predicate::str::contains("| Row | Col B | Col C | Col D |"))
+        .stdout(predicate::str::contains("Model Assumptions [Assumptions]"))
+        .stdout(predicate::str::contains(
+            "Income Statement [IncomeStatement]",
+        ))
+        .stdout(predicate::str::contains("Revenue Growth Rate [rev_growth]"))
+        .stdout(predicate::str::contains("$ 100.0"))
+        .stdout(predicate::str::contains("$ 115.0"));
+
+    // 2. Formulas view mode
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "sheet",
+            "Financials",
+            "--view",
+            "formulas",
+            "--format",
+            "markdown",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("=C12*(1+$C$5)"))
+        .stdout(predicate::str::contains("=C12*0.4"));
+
+    // 3. Addresses view mode
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "sheet",
+            "Financials",
+            "--view",
+            "addresses",
+            "--format",
+            "markdown",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("C12"))
+        .stdout(predicate::str::contains("D12"));
+
+    // 4. Unicode Table format
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "sheet",
+            "Financials",
+            "--format",
+            "table",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("┌─"))
+        .stdout(predicate::str::contains("└─"))
+        .stdout(predicate::str::contains("Col B"))
+        .stdout(predicate::str::contains("Income Statement"));
+
+    // 5. JSON format
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "sheet",
+            "Financials",
+            "--json",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"sheet_id\": \"Financials\""))
+        .stdout(predicate::str::contains(
+            "\"table_id\": \"IncomeStatement\"",
+        ))
+        .stdout(predicate::str::contains("\"row_id\": \"revenue\""))
+        .stdout(predicate::str::contains("\"physical_a1\": \"D12\""));
+
+    // 6. Non-existent sheet returns error exit code 2
+    Command::cargo_bin("f8")
+        .unwrap()
+        .args([
+            "inspect",
+            "sheet",
+            "NonExistent",
+            "-p",
+            dir.path().to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Sheet 'NonExistent' not found"));
 }

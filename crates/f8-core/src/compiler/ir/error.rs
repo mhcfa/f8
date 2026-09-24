@@ -70,7 +70,7 @@ pub enum IrError {
     },
 
     #[error(
-        "Table '{table}': format conflict at row '{row}' ({row_format}) and column '{column}' ({col_format})"
+        "Table '{table}': format conflict at row '{row}' ({row_format}) and column '{column}' ({col_format}) (hint: remove 'format' from either row or column, or specify an explicit cell override)"
     )]
     FormatConflict {
         table: TableId,
@@ -81,7 +81,7 @@ pub enum IrError {
     },
 
     #[error(
-        "Table '{table}': decimals conflict at row '{row}' ({row_decimals}) and column '{column}' ({col_decimals})"
+        "Table '{table}': decimals conflict at row '{row}' ({row_decimals}) and column '{column}' ({col_decimals}) (hint: remove 'decimals' from either row or column, or specify an explicit cell override)"
     )]
     DecimalsConflict {
         table: TableId,
@@ -92,7 +92,7 @@ pub enum IrError {
     },
 
     #[error(
-        "Table '{table}': currency conflict at row '{row}' ('{row_currency}') and column '{column}' ('{col_currency}')"
+        "Table '{table}': currency conflict at row '{row}' ('{row_currency}') and column '{column}' ('{col_currency}') (hint: remove 'currency' from either row or column, or specify an explicit cell override)"
     )]
     CurrencyConflict {
         table: TableId,

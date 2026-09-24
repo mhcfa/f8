@@ -12,9 +12,13 @@ pub enum ViewMode {
     /// Evaluated numbers with accounting typography.
     #[default]
     Values,
-    /// Live formula expressions for calculations, literals for inputs.
+    /// Concrete lowered Excel formulas for calculations, formatted values for inputs.
     Formulas,
-    /// Dual stacked view showing evaluated value and formula.
+    /// High-level f8 model DSL expressions for calculations, formatted values for inputs.
+    Expr,
+    /// Physical Excel sheet cell addresses (e.g. C7).
+    Addresses,
+    /// Dual stacked view showing evaluated value on line 1 and lowered Excel formula on line 2.
     Both,
 }
 
@@ -68,13 +72,8 @@ fn extract_render_columns(table: &TableInspection) -> Vec<RenderColumn> {
         .max(1);
 
     let mut cols = Vec::with_capacity(non_gutter_cols.len());
-    for (i, col) in non_gutter_cols.into_iter().enumerate() {
-        let is_descriptor = i == 0
-            || col
-                .headers
-                .first()
-                .is_some_and(|h| h == "Line Item" || h == "Parameter")
-            || col.id.as_ref().is_some_and(|id| id.as_str() == "line_item");
+    for col in non_gutter_cols {
+        let is_descriptor = col.is_descriptor;
 
         let k = col.headers.len();
         let bottom_raw = if k > 0 {
@@ -173,7 +172,9 @@ fn get_cell_text(
         },
         ViewMode::Formulas => {
             let formula_text = if cell.is_formula {
-                cell.formula_expr.clone().unwrap_or_default()
+                cell.excel_formula
+                    .clone()
+                    .unwrap_or_else(|| val_with_indent.clone())
             } else {
                 val_with_indent
             };
@@ -182,12 +183,31 @@ fn get_cell_text(
                 secondary: None,
             }
         }
+        ViewMode::Expr => {
+            let expr_text = if cell.is_formula {
+                cell.formula_expr.clone().unwrap_or_default()
+            } else {
+                val_with_indent
+            };
+            RenderCell {
+                primary: expr_text,
+                secondary: None,
+            }
+        }
+        ViewMode::Addresses => {
+            let addr_text = if col.is_descriptor {
+                val_with_indent
+            } else {
+                cell.physical_a1.clone()
+            };
+            RenderCell {
+                primary: addr_text,
+                secondary: None,
+            }
+        }
         ViewMode::Both => {
             let formula_text = if cell.is_formula {
-                Some(format!(
-                    "={}",
-                    cell.formula_expr.as_deref().unwrap_or_default()
-                ))
+                cell.excel_formula.clone()
             } else {
                 None
             };

@@ -181,6 +181,8 @@ pub struct ColumnInspection {
     pub headers: Vec<String>,
     /// `true` if this column is a blank spacing gutter.
     pub is_gutter: bool,
+    /// `true` if this column is a descriptor axis (carrying row/item labels).
+    pub is_descriptor: bool,
 }
 
 /// Row inspection metadata.
@@ -251,4 +253,85 @@ pub struct DependencyNode {
     pub is_pruned: bool,
     /// Nested child calculation nodes.
     pub children: Vec<DependencyNode>,
+}
+
+/// Structural classification of a cell within a physical worksheet layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetCellKind {
+    /// Blank or unused cell within the sheet bounding box.
+    Empty,
+    /// Table title banner cell.
+    TableTitle,
+    /// Table subtitle banner cell.
+    TableSubtitle,
+    /// Multi-tier column header cell.
+    ColumnHeader,
+    /// Structural section header row cell.
+    SectionHeader,
+    /// Explicit spacing gutter cell.
+    Gutter,
+    /// Calculable data or literal input cell.
+    Data,
+}
+
+/// Inspection record for a discrete physical cell on a worksheet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SheetCellInspection {
+    /// 0-indexed column index on worksheet.
+    pub physical_col: u32,
+    /// Canonical Excel cell address (e.g. `"C7"`).
+    pub physical_a1: String,
+    /// Programmatic table identifier if cell belongs to a table.
+    pub table_id: Option<TableId>,
+    /// Programmatic row identifier if this is a data cell.
+    pub row_id: Option<RowId>,
+    /// Programmatic column identifier if this is a data cell.
+    pub col_id: Option<ColId>,
+    /// Cell structural classification.
+    pub kind: SheetCellKind,
+    /// `true` if this cell is on a descriptor column axis (carrying row/item labels).
+    pub is_descriptor: bool,
+    /// Evaluated runtime value.
+    pub value: CellValue,
+    /// Formatted display string if applicable.
+    pub formatted_value: Option<String>,
+    /// High-level formula expression string if applicable.
+    pub formula_expr: Option<String>,
+    /// Lowered concrete Excel formula string if applicable.
+    pub excel_formula: Option<String>,
+}
+
+/// Physical row record containing all cells across sheet columns within bounding box.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SheetRowInspection {
+    /// 0-indexed row index on worksheet.
+    pub physical_row: u32,
+    /// 1-indexed Excel row number (e.g. 7).
+    pub excel_row: u32,
+    /// Cells spanning active sheet columns.
+    pub cells: Vec<SheetCellInspection>,
+}
+
+/// Comprehensive physical grid inspection for an entire worksheet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SheetInspection {
+    /// Worksheet programmatic identifier.
+    pub sheet_id: SheetId,
+    /// Worksheet display name.
+    pub title: String,
+    /// Ordered list of table identifiers placed on this worksheet.
+    pub tables: Vec<TableId>,
+    /// Minimum column index in sheet bounding box (0-indexed).
+    pub min_col: u32,
+    /// Maximum column index in sheet bounding box (0-indexed).
+    pub max_col: u32,
+    /// Minimum row index in sheet bounding box (0-indexed).
+    pub min_row: u32,
+    /// Maximum row index in sheet bounding box (0-indexed).
+    pub max_row: u32,
+    /// Sheet-wide column widths (0-indexed col -> character widths).
+    pub col_widths: IndexMap<u32, f64>,
+    /// Physical row records spanning active rows.
+    pub rows: Vec<SheetRowInspection>,
 }

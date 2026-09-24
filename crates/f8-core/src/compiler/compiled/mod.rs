@@ -10,7 +10,8 @@ use indexmap::IndexMap;
 pub use error::InspectionError;
 pub use model::{
     CellInspection, CellNeighborInspection, ColumnInspection, DependencyNode, DependencyTree,
-    ModelSummary, RowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
+    ModelSummary, RowInspection, SheetCellInspection, SheetCellKind, SheetInspection,
+    SheetRowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
 };
 
 use crate::compiler::emission::{EmissionOptions, WorkbookEmitter};
@@ -18,13 +19,14 @@ use crate::compiler::error::CompilerError;
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::graph::DependencyGraph;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
+use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
-use crate::compiler::layout::LayoutMap;
+use crate::compiler::layout::{LayoutMap, coordinate_to_a1};
 use crate::compiler::lowering::LoweredFormulaMap;
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
-use crate::model::table::TableSpec;
+use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
 use crate::model::theme::Theme;
 use crate::value::CellValue;
 
@@ -261,11 +263,13 @@ impl CompiledModel {
                     id: Some(d.id.clone()),
                     headers: d.headers.clone(),
                     is_gutter: false,
+                    is_descriptor: d.role.is_descriptor(),
                 },
                 crate::model::table::ColumnSpec::Gutter => ColumnInspection {
                     id: None,
                     headers: Vec::new(),
                     is_gutter: true,
+                    is_descriptor: false,
                 },
             })
             .collect();
@@ -363,6 +367,448 @@ impl CompiledModel {
             columns,
             rows,
             cells,
+        })
+    }
+
+    /// Inspects an entire physical worksheet grid compositing all tables placed on it.
+    ///
+    /// # Errors
+    /// Returns [`InspectionError::SheetNotFound`] if the sheet does not exist in the model.
+    pub fn inspect_sheet(&self, sheet: &SheetId) -> Result<SheetInspection, InspectionError> {
+        let sheet_spec = self
+            .manifest
+            .sheets
+            .iter()
+            .find(|s| s.name == sheet.as_str())
+            .ok_or_else(|| InspectionError::SheetNotFound(sheet.clone()))?;
+
+        let sheet_layout = self
+            .layout_map
+            .get_sheet(sheet)
+            .ok_or_else(|| InspectionError::SheetNotFound(sheet.clone()))?;
+
+        let mut sheet_tables = Vec::new();
+        for table_path in &sheet_spec.tables {
+            if let Some((_, table_spec)) = self
+                .tables
+                .iter()
+                .find(|(_, t)| matches_table_id(table_path, &t.id))
+            {
+                sheet_tables.push(table_spec);
+            }
+        }
+
+        if sheet_tables.is_empty() {
+            return Ok(SheetInspection {
+                sheet_id: sheet.clone(),
+                title: sheet_spec.name.clone(),
+                tables: Vec::new(),
+                min_col: 0,
+                max_col: 0,
+                min_row: 0,
+                max_row: 0,
+                col_widths: sheet_layout.col_widths.clone(),
+                rows: Vec::new(),
+            });
+        }
+
+        let min_col = sheet_tables
+            .iter()
+            .filter_map(|t| self.layout_map.get_table(&t.id).map(|p| p.start_col))
+            .min()
+            .unwrap_or(0);
+        let max_col = sheet_tables
+            .iter()
+            .filter_map(|t| self.layout_map.get_table(&t.id).map(|p| p.end_col))
+            .max()
+            .unwrap_or(0);
+        let min_row = sheet_tables
+            .iter()
+            .filter_map(|t| self.layout_map.get_table(&t.id).map(|p| p.start_row))
+            .min()
+            .unwrap_or(0);
+        let max_row = sheet_tables
+            .iter()
+            .filter_map(|t| self.layout_map.get_table(&t.id).map(|p| p.end_row))
+            .max()
+            .unwrap_or(0);
+
+        let mut cells_map: IndexMap<(u32, u32), SheetCellInspection> = IndexMap::new();
+
+        for table in &sheet_tables {
+            let Some(placement) = self.layout_map.get_table(&table.id) else {
+                continue;
+            };
+
+            // 1. Title Banner
+            if let Some(title_row) = placement.title_row
+                && !table.title.trim().is_empty()
+            {
+                for col in placement.start_col..=placement.end_col {
+                    let physical_a1 = coordinate_to_a1(col, title_row)
+                        .unwrap_or_else(|_| format!("R{title_row}C{col}"));
+                    if col == placement.start_col {
+                        cells_map.insert(
+                            (title_row, col),
+                            SheetCellInspection {
+                                physical_col: col,
+                                physical_a1,
+                                table_id: Some(table.id.clone()),
+                                row_id: None,
+                                col_id: None,
+                                kind: SheetCellKind::TableTitle,
+                                is_descriptor: false,
+                                value: CellValue::Text(table.title.clone()),
+                                formatted_value: Some(table.title.clone()),
+                                formula_expr: None,
+                                excel_formula: None,
+                            },
+                        );
+                    } else {
+                        cells_map.insert(
+                            (title_row, col),
+                            SheetCellInspection {
+                                physical_col: col,
+                                physical_a1,
+                                table_id: Some(table.id.clone()),
+                                row_id: None,
+                                col_id: None,
+                                kind: SheetCellKind::TableTitle,
+                                is_descriptor: false,
+                                value: CellValue::Empty,
+                                formatted_value: None,
+                                formula_expr: None,
+                                excel_formula: None,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // 2. Subtitle Banner
+            if let (Some(subtitle_row), Some(subtitle)) = (placement.subtitle_row, &table.subtitle)
+            {
+                for col in placement.start_col..=placement.end_col {
+                    let physical_a1 = coordinate_to_a1(col, subtitle_row)
+                        .unwrap_or_else(|_| format!("R{subtitle_row}C{col}"));
+                    if col == placement.start_col {
+                        cells_map.insert(
+                            (subtitle_row, col),
+                            SheetCellInspection {
+                                physical_col: col,
+                                physical_a1,
+                                table_id: Some(table.id.clone()),
+                                row_id: None,
+                                col_id: None,
+                                kind: SheetCellKind::TableSubtitle,
+                                is_descriptor: false,
+                                value: CellValue::Text(subtitle.clone()),
+                                formatted_value: Some(subtitle.clone()),
+                                formula_expr: None,
+                                excel_formula: None,
+                            },
+                        );
+                    } else {
+                        cells_map.insert(
+                            (subtitle_row, col),
+                            SheetCellInspection {
+                                physical_col: col,
+                                physical_a1,
+                                table_id: Some(table.id.clone()),
+                                row_id: None,
+                                col_id: None,
+                                kind: SheetCellKind::TableSubtitle,
+                                is_descriptor: false,
+                                value: CellValue::Empty,
+                                formatted_value: None,
+                                formula_expr: None,
+                                excel_formula: None,
+                            },
+                        );
+                    }
+                }
+            }
+
+            // 3. Title Gutter
+            if let Some(gutter_row) = placement.title_gutter_row {
+                for col in placement.start_col..=placement.end_col {
+                    let physical_a1 = coordinate_to_a1(col, gutter_row)
+                        .unwrap_or_else(|_| format!("R{gutter_row}C{col}"));
+                    cells_map.insert(
+                        (gutter_row, col),
+                        SheetCellInspection {
+                            physical_col: col,
+                            physical_a1,
+                            table_id: Some(table.id.clone()),
+                            row_id: None,
+                            col_id: None,
+                            kind: SheetCellKind::Gutter,
+                            is_descriptor: false,
+                            value: CellValue::Empty,
+                            formatted_value: None,
+                            formula_expr: None,
+                            excel_formula: None,
+                        },
+                    );
+                }
+            }
+
+            // 4. Multi-tier Column Headers
+            if let Some((header_start, header_end)) = placement.header_row_range {
+                let total_tiers = (header_end - header_start + 1) as usize;
+                for t in 0..total_tiers {
+                    let tier_row = header_start + t as u32;
+                    let is_bottom_tier = t == total_tiers - 1;
+                    for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                        let physical_col = placement.start_col + c_idx as u32;
+                        let physical_a1 = coordinate_to_a1(physical_col, tier_row)
+                            .unwrap_or_else(|_| format!("R{tier_row}C{physical_col}"));
+                        match col_spec {
+                            ColumnSpec::Gutter => {
+                                cells_map.insert(
+                                    (tier_row, physical_col),
+                                    SheetCellInspection {
+                                        physical_col,
+                                        physical_a1,
+                                        table_id: Some(table.id.clone()),
+                                        row_id: None,
+                                        col_id: None,
+                                        kind: SheetCellKind::Gutter,
+                                        is_descriptor: false,
+                                        value: CellValue::Empty,
+                                        formatted_value: None,
+                                        formula_expr: None,
+                                        excel_formula: None,
+                                    },
+                                );
+                            }
+                            ColumnSpec::Data(d) => {
+                                let k_len = d.headers.len();
+                                let mut header_text = if t >= total_tiers - k_len {
+                                    let k = t - (total_tiers - k_len);
+                                    d.headers.get(k).cloned()
+                                } else {
+                                    None
+                                };
+                                if is_bottom_tier && header_text.is_none() {
+                                    header_text = Some(d.id.to_string());
+                                }
+                                cells_map.insert(
+                                    (tier_row, physical_col),
+                                    SheetCellInspection {
+                                        physical_col,
+                                        physical_a1,
+                                        table_id: Some(table.id.clone()),
+                                        row_id: None,
+                                        col_id: Some(d.id.clone()),
+                                        kind: SheetCellKind::ColumnHeader,
+                                        is_descriptor: false,
+                                        value: header_text
+                                            .as_deref()
+                                            .map_or(CellValue::Empty, |s| {
+                                                CellValue::Text(s.to_string())
+                                            }),
+                                        formatted_value: header_text,
+                                        formula_expr: None,
+                                        excel_formula: None,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Body Rows
+            let mut current_row = placement.body_row_range.0;
+            for row_spec in &table.rows {
+                match row_spec {
+                    RowSpec::Gutter => {
+                        for (c_idx, _) in table.columns.iter().enumerate() {
+                            let physical_col = placement.start_col + c_idx as u32;
+                            let physical_a1 = coordinate_to_a1(physical_col, current_row)
+                                .unwrap_or_else(|_| format!("R{current_row}C{physical_col}"));
+                            cells_map.insert(
+                                (current_row, physical_col),
+                                SheetCellInspection {
+                                    physical_col,
+                                    physical_a1,
+                                    table_id: Some(table.id.clone()),
+                                    row_id: None,
+                                    col_id: None,
+                                    kind: SheetCellKind::Gutter,
+                                    is_descriptor: false,
+                                    value: CellValue::Empty,
+                                    formatted_value: None,
+                                    formula_expr: None,
+                                    excel_formula: None,
+                                },
+                            );
+                        }
+                        current_row += 1;
+                    }
+                    RowSpec::SectionHeader(s) => {
+                        for (c_idx, _) in table.columns.iter().enumerate() {
+                            let physical_col = placement.start_col + c_idx as u32;
+                            let physical_a1 = coordinate_to_a1(physical_col, current_row)
+                                .unwrap_or_else(|_| format!("R{current_row}C{physical_col}"));
+                            if c_idx == 0 {
+                                cells_map.insert(
+                                    (current_row, physical_col),
+                                    SheetCellInspection {
+                                        physical_col,
+                                        physical_a1,
+                                        table_id: Some(table.id.clone()),
+                                        row_id: None,
+                                        col_id: None,
+                                        kind: SheetCellKind::SectionHeader,
+                                        is_descriptor: false,
+                                        value: CellValue::Text(s.title.clone()),
+                                        formatted_value: Some(s.title.clone()),
+                                        formula_expr: None,
+                                        excel_formula: None,
+                                    },
+                                );
+                            } else {
+                                cells_map.insert(
+                                    (current_row, physical_col),
+                                    SheetCellInspection {
+                                        physical_col,
+                                        physical_a1,
+                                        table_id: Some(table.id.clone()),
+                                        row_id: None,
+                                        col_id: None,
+                                        kind: SheetCellKind::SectionHeader,
+                                        is_descriptor: false,
+                                        value: CellValue::Empty,
+                                        formatted_value: None,
+                                        formula_expr: None,
+                                        excel_formula: None,
+                                    },
+                                );
+                            }
+                        }
+                        current_row += 1;
+                    }
+                    RowSpec::Data(data_row) => {
+                        for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                            let physical_col = placement.start_col + c_idx as u32;
+                            let physical_a1 = coordinate_to_a1(physical_col, current_row)
+                                .unwrap_or_else(|_| format!("R{current_row}C{physical_col}"));
+                            match col_spec {
+                                ColumnSpec::Gutter => {
+                                    cells_map.insert(
+                                        (current_row, physical_col),
+                                        SheetCellInspection {
+                                            physical_col,
+                                            physical_a1,
+                                            table_id: Some(table.id.clone()),
+                                            row_id: Some(data_row.id.clone()),
+                                            col_id: None,
+                                            kind: SheetCellKind::Gutter,
+                                            is_descriptor: false,
+                                            value: CellValue::Empty,
+                                            formatted_value: None,
+                                            formula_expr: None,
+                                            excel_formula: None,
+                                        },
+                                    );
+                                }
+                                ColumnSpec::Data(data_col) => {
+                                    let cell_id = CellId::new(
+                                        table.id.clone(),
+                                        data_row.id.clone(),
+                                        data_col.id.clone(),
+                                    );
+                                    let cell_node = self.grid.get(&cell_id);
+                                    let value = self
+                                        .evaluated
+                                        .get_cell(&cell_id)
+                                        .cloned()
+                                        .unwrap_or(CellValue::Empty);
+                                    let (format, decimals, currency) = cell_node
+                                        .map_or((None, None, None), |n| {
+                                            (n.format, n.decimals, n.currency)
+                                        });
+                                    let formatted_value = Some(crate::value::format_cell_value(
+                                        &value, format, decimals, currency,
+                                    ));
+                                    let (formula_expr, excel_formula) = match cell_node
+                                        .map(|n| &n.payload)
+                                    {
+                                        Some(CellPayload::Formula(expr)) => (
+                                            Some(expr.to_string()),
+                                            self.lowered_map.get(&cell_id).map(ToString::to_string),
+                                        ),
+                                        _ => (None, None),
+                                    };
+                                    cells_map.insert(
+                                        (current_row, physical_col),
+                                        SheetCellInspection {
+                                            physical_col,
+                                            physical_a1,
+                                            table_id: Some(table.id.clone()),
+                                            row_id: Some(data_row.id.clone()),
+                                            col_id: Some(data_col.id.clone()),
+                                            kind: SheetCellKind::Data,
+                                            is_descriptor: data_col.role.is_descriptor(),
+                                            value,
+                                            formatted_value,
+                                            formula_expr,
+                                            excel_formula,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        current_row += 1;
+                    }
+                }
+            }
+        }
+
+        let mut rows = Vec::with_capacity((max_row - min_row + 1) as usize);
+        for r in min_row..=max_row {
+            let mut row_cells = Vec::with_capacity((max_col - min_col + 1) as usize);
+            for c in min_col..=max_col {
+                if let Some(cell) = cells_map.swap_remove(&(r, c)) {
+                    row_cells.push(cell);
+                } else {
+                    let physical_a1 =
+                        coordinate_to_a1(c, r).unwrap_or_else(|_| format!("R{r}C{c}"));
+                    row_cells.push(SheetCellInspection {
+                        physical_col: c,
+                        physical_a1,
+                        table_id: None,
+                        row_id: None,
+                        col_id: None,
+                        kind: SheetCellKind::Empty,
+                        is_descriptor: false,
+                        value: CellValue::Empty,
+                        formatted_value: None,
+                        formula_expr: None,
+                        excel_formula: None,
+                    });
+                }
+            }
+            rows.push(SheetRowInspection {
+                physical_row: r,
+                excel_row: r + 1,
+                cells: row_cells,
+            });
+        }
+
+        let tables = sheet_tables.iter().map(|t| t.id.clone()).collect();
+        Ok(SheetInspection {
+            sheet_id: sheet.clone(),
+            title: sheet_spec.name.clone(),
+            tables,
+            min_col,
+            max_col,
+            min_row,
+            max_row,
+            col_widths: sheet_layout.col_widths.clone(),
+            rows,
         })
     }
 

@@ -10,6 +10,8 @@ Guidelines for AI agents working with this codebase.
 - **Pragmatic simplicity**: Favor direct, idiomatic Rust code. Avoid premature abstractions, unnecessary wrappers, or speculative generalities unless there is a demonstrated requirement.
 - **Explicit and predictable core data structures**: Keep compiler core types and IR representations dead simple, explicit, and predictable, with strictly one way to represent any concept. Reject implicit behavior, magic fallbacks, or core syntactic sugar; leave authoring ergonomics, scaffolding, and syntactic convenience entirely to outer adapters and tooling.
 - **Explicit data flow**: Prefer pure functions with explicit inputs and outputs. Minimize hidden side effects, implicit state dependencies, and unexpected argument mutations.
+- **Root-cause correctness**: Fix bugs and design gaps at their origin in the proper compiler phase or data model. Never introduce downstream band-aids, test-specific overrides, or tactical workarounds.
+- **Strong typing over string heuristics**: Model domain concepts, states, and entities with explicit enums and typed structures. Avoid stringly-typed logic, string guessing, substring matching, or ad-hoc parsing to determine semantics.
 
 ## Spec-Driven-Development
 

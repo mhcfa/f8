@@ -2,13 +2,14 @@ use std::path::Path;
 use std::time::Instant;
 
 use f8_core::compiler::{Compiler, parse_coordinate_tokens};
-use f8_core::model::id::TableId;
+use f8_core::model::id::{SheetId, TableId};
 
 use crate::cli::{InspectArgs, InspectSubcommand};
 use crate::error::CliError;
 use crate::project::ProjectLoader;
 use crate::render::{
-    TableFormat, render_cell, render_dependents, render_precedents, render_summary, render_table,
+    TableFormat, render_cell, render_dependents, render_precedents, render_sheet, render_summary,
+    render_table,
 };
 
 /// Executes the `f8 inspect` family of subcommands.
@@ -49,6 +50,21 @@ pub fn execute(
                 table_args.format
             };
             let rendered = render_table(&inspection, table_args.view, format);
+            if rendered.ends_with('\n') {
+                print!("{rendered}");
+            } else {
+                println!("{rendered}");
+            }
+        }
+        Some(InspectSubcommand::Sheet(sheet_args)) => {
+            let sheet_id = SheetId::from(sheet_args.sheet.as_str());
+            let inspection = compiled.inspect_sheet(&sheet_id)?;
+            let format = if json {
+                TableFormat::Json
+            } else {
+                sheet_args.format
+            };
+            let rendered = render_sheet(&inspection, sheet_args.view, format);
             if rendered.ends_with('\n') {
                 print!("{rendered}");
             } else {

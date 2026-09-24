@@ -16,7 +16,8 @@ use std::borrow::Cow;
 
 pub use compiled::{
     CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel, DependencyNode,
-    DependencyTree, InspectionError, ModelSummary, RowInspection, SheetSummary, TableCellInfo,
+    DependencyTree, InspectionError, ModelSummary, RowInspection, SheetCellInspection,
+    SheetCellKind, SheetInspection, SheetRowInspection, SheetSummary, TableCellInfo,
     TableInspection, TableSummary, parse_coordinate_tokens,
 };
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
@@ -24,7 +25,7 @@ pub use error::CompilerError;
 pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
     LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SheetLayout, StyleRole,
-    TablePlacement,
+    TablePlacement, col_to_excel_col,
 };
 pub use lowering::{FormulaLowerer, LoweredFormulaMap, LoweringError};
 

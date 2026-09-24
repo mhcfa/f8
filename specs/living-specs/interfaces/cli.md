@@ -131,12 +131,19 @@ Provides terminal auditing tools for model structures, 2D statement tables, cell
 - **Table matrix inspection with dual programmatic IDs and multi-tier headers**:
   - **When** running `f8 inspect table <table_id>`
   - **Then** renders a GitHub Flavored Markdown table by default (or an aligned Unicode box-drawing table with `--format table`) with accounting typography, displaying multi-tier column headers stacked across hierarchical rows (bottom-aligned with inline IDs `Header [id]` on the lowest tier), row descriptors (`Title [id]`), and calendar years formatted without thousands commas (`2029`).
-- **Formula auditing parity & alternative formats**:
+- **Lowered Excel formulas and view modes**:
   - **When** running `f8 inspect table <table_id> --view formulas`
-  - **Then** outputs a table displaying live formula expressions with multi-tier column headers and dual row descriptors.
+  - **Then** outputs a table displaying concrete lowered Excel formulas (`=C7+C8`, `='Store Sales'!H29*1000000`) for calculations and formatted numbers for inputs.
+  - **When** running `f8 inspect table <table_id> --view expr`
+  - **Then** outputs high-level `f8` DSL expression strings.
+  - **When** running `f8 inspect table <table_id> --view addresses`
+  - **Then** outputs physical Excel sheet cell addresses (`C7`, `D8`).
 - **Dual stacked auditing view**:
   - **When** running `f8 inspect table <table_id> --view both`
-  - **Then** displays stacked cells showing evaluated values and formula expressions simultaneously.
+  - **Then** displays stacked cells showing evaluated values and lowered Excel formulas simultaneously.
+- **Physical worksheet 2D grid inspection**:
+  - **When** running `f8 inspect sheet <sheet_id>`
+  - **Then** renders the unified 2D physical grid of all stacked and adjacent tables placed on the worksheet, with physical row numbers, column letters, table title banners, multi-tier headers, section rows, and data cells in Markdown, Unicode Table (`--format table`), or JSON (`--format json` or `--json`).
 - **Flexible coordinate cell audit card**:
   - **When** running `f8 inspect cell <table_id> <row_id> <col_id>` or `f8 inspect cell 'Table["row", "col"]'`
   - **Then** parses coordinates from either 3 positional arguments or 1 canonical IR string, displaying coordinates, canonical physical sheet address, evaluated value, formatting metadata, DSL formula AST, lowered Excel formula, and direct precedents and dependents annotated with evaluated values (`├── <CellId> = <formatted_value>`).

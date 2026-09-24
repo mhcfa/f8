@@ -102,6 +102,19 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
   - **When** traversing a calculation graph where a cell is reached through multiple paths
   - **Then** expands children on first encounter and marks subsequent encounters as pruned (`is_pruned = true`, `children = []`), retaining `formatted_value` while bounding tree expansion linearly and preserving exact `transitive_count`.
 
+### 7. Physical Worksheet Grid Inspection
+
+`CompiledModel::inspect_sheet` composites all tables placed on a worksheet into a unified physical 2D grid spanning the worksheet's active bounding box (`min_col..=max_col`, `min_row..=max_row`), rendering table titles, subtitles, buffer gutters, multi-tier column headers, section headers, and data cells.
+
+#### Scenarios
+
+- **Sheet grid inspection**:
+  - **When** calling `compiled.inspect_sheet(sheet_id)`
+  - **Then** returns `SheetInspection` containing all tables placed on the sheet, physical bounding coordinates, sheet-wide column widths, and physical row records (`SheetRowInspection`) with discrete cell classifications (`SheetCellKind`), values, formatted text, and lowered Excel formulas.
+- **Missing worksheet identifier**:
+  - **When** querying a sheet not present in the model manifest
+  - **Then** returns `InspectionError::SheetNotFound`.
+
 ## Public Interfaces
 
 | Method / Type | Purpose | Signature |
@@ -111,6 +124,7 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 | `CompiledModel::summary` | Model-, sheet-, and table-level summary | `summary(&self) -> ModelSummary` |
 | `CompiledModel::inspect_cell` | Discrete cell-level audit query | `inspect_cell(&self, table: &TableId, row: &RowId, col: &ColId) -> Result<CellInspection, InspectionError>` |
 | `CompiledModel::inspect_table` | 2D table grid query | `inspect_table(&self, table: &TableId) -> Result<TableInspection, InspectionError>` |
+| `CompiledModel::inspect_sheet` | Physical 2D worksheet grid query across all placed tables | `inspect_sheet(&self, sheet: &SheetId) -> Result<SheetInspection, InspectionError>` |
 | `CompiledModel::precedents_of` | Upstream root-cause calculation tree | `precedents_of(&self, cell: &CellId, recursive: bool) -> Result<DependencyTree, InspectionError>` |
 | `CompiledModel::dependents_of` | Downstream blast-radius impact tree | `dependents_of(&self, cell: &CellId, recursive: bool) -> Result<DependencyTree, InspectionError>` |
 | `CompiledModel::parse_coordinate` | Resolves 3 arguments or 1 canonical IR string into CellId | `parse_coordinate(&self, target: &str, row: Option<&str>, col: Option<&str>) -> Result<CellId, InspectionError>` |

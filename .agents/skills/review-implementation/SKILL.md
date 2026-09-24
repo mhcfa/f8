@@ -19,6 +19,7 @@ Use this skill to conduct rigorous, objective code reviews for implementations, 
 2. **Single source of truth (SSOT)**: Domain models, identifiers, invariants, and error definitions must have exactly one authoritative source.
 3. **Spec-driven alignment**: Implementation must adhere to active draft specs (`specs/drafts/`) and preserve living spec contracts (`specs/living-specs/`).
 4. **Rust 2024 robustness**: Strict error propagation, zero unhandled panics, deterministic collections, and allocation efficiency.
+5. **Root-cause correctness**: Zero tolerance for tactical hacks, symptom-patching workarounds, or string-based semantic guessing.
 
 ---
 
@@ -43,6 +44,7 @@ Because this is a greenfield codebase with no legacy production callers, enforce
 - **No dead code or tombstones**: Remove commented-out code, unused functions, obsolete trait methods, abandoned match arms, and unused imports.
 - **No speculative code (YAGNI)**: Flag premature trait abstractions, unused generics, or configuration options with only one concrete usage.
 - **No placeholder stubs**: Eliminate `todo!()`, `unimplemented!()`, or empty placeholder structs/functions left behind.
+- **No hacks or workarounds**: Reject downstream band-aids that patch symptoms instead of root causes. Reject special-cased branches, hardcoded magic values, or test-specific overrides designed merely to make a test pass.
 
 ### Step 3: Architecture, Modularity, and SSOT
 
@@ -56,6 +58,10 @@ Because this is a greenfield codebase with no legacy production callers, enforce
   - Keep functions focused on a single responsibility.
   - Prefer pure functions with explicit inputs and outputs over shared or hidden mutable state.
   - Verify use of immutable `let` bindings by default; allow `let mut` only when mutation is strictly required.
+- **Strong typing over string heuristics**:
+  - Reject string guessing and ad-hoc matching (e.g., `starts_with`, `ends_with`, regex, substring inspection, or splitting formatted strings) to infer semantics, types, or roles.
+  - Require explicit enum variants, interned symbol IDs, or dedicated AST/IR node fields.
+  - Prevent round-trip string serialization (e.g., converting to string just to inspect or compare values) when typed representations exist.
 
 ### Step 4: Rust 2024 and Operational Robustness
 

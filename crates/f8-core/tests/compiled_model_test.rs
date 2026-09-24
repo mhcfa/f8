@@ -400,3 +400,103 @@ fn test_scenario_parse_coordinate() {
         .expect("Canonical IR coordinate parse must succeed");
     assert_eq!(cell_1, cell_2);
 }
+
+#[test]
+fn test_scenario_inspect_sheet_success() {
+    let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
+    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
+    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+
+    let sheet_id = f8_core::model::id::SheetId::from("Model");
+    let sheet = compiled
+        .inspect_sheet(&sheet_id)
+        .expect("Sheet inspection must succeed");
+
+    assert_eq!(sheet.sheet_id.as_str(), "Model");
+    assert_eq!(sheet.title, "Model");
+    assert_eq!(sheet.tables.len(), 4);
+    assert!(sheet.max_row > sheet.min_row);
+    assert!(sheet.max_col > sheet.min_col);
+    assert_eq!(
+        sheet.rows.len(),
+        (sheet.max_row - sheet.min_row + 1) as usize
+    );
+
+    // Verify cell kinds exist: TableTitle, ColumnHeader, Data
+    let has_title = sheet.rows.iter().any(|r| {
+        r.cells
+            .iter()
+            .any(|c| c.kind == f8_core::compiler::compiled::SheetCellKind::TableTitle)
+    });
+    let has_header = sheet.rows.iter().any(|r| {
+        r.cells
+            .iter()
+            .any(|c| c.kind == f8_core::compiler::compiled::SheetCellKind::ColumnHeader)
+    });
+    let has_data = sheet.rows.iter().any(|r| {
+        r.cells
+            .iter()
+            .any(|c| c.kind == f8_core::compiler::compiled::SheetCellKind::Data)
+    });
+
+    assert!(has_title, "Sheet inspection must include TableTitle cells");
+    assert!(
+        has_header,
+        "Sheet inspection must include ColumnHeader cells"
+    );
+    assert!(has_data, "Sheet inspection must include Data cells");
+
+    // Verify data cell contains formula and physical address
+    let formula_cell = sheet
+        .rows
+        .iter()
+        .flat_map(|r| &r.cells)
+        .find(|c| c.excel_formula.is_some())
+        .expect("Sheet must contain at least one formula cell");
+    assert!(
+        formula_cell.physical_a1.starts_with('B')
+            || formula_cell.physical_a1.starts_with('C')
+            || formula_cell.physical_a1.starts_with('D')
+            || formula_cell.physical_a1.starts_with('E')
+            || formula_cell.physical_a1.starts_with('F')
+    );
+    assert!(
+        formula_cell
+            .excel_formula
+            .as_ref()
+            .unwrap()
+            .starts_with('=')
+    );
+    assert!(
+        !formula_cell.is_descriptor,
+        "Formula calculation cells must not be descriptors"
+    );
+
+    // Verify descriptor cell exists and has is_descriptor = true
+    let descriptor_cell = sheet
+        .rows
+        .iter()
+        .flat_map(|r| &r.cells)
+        .find(|c| c.is_descriptor)
+        .expect("Sheet must contain at least one descriptor cell");
+    assert_eq!(
+        descriptor_cell.kind,
+        f8_core::compiler::compiled::SheetCellKind::Data
+    );
+    assert!(descriptor_cell.excel_formula.is_none());
+}
+
+#[test]
+fn test_scenario_inspect_sheet_not_found() {
+    let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
+    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
+    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+
+    let err = compiled
+        .inspect_sheet(&f8_core::model::id::SheetId::from("NonExistent"))
+        .unwrap_err();
+    assert_eq!(
+        err,
+        InspectionError::SheetNotFound(f8_core::model::id::SheetId::from("NonExistent"))
+    );
+}
