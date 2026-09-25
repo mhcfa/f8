@@ -181,3 +181,4 @@ Detailed specifications and engine designs are organized into dedicated topics:
   - [Standard Function Catalog](./functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
 - **Interfaces & Scaffolding**:
   - [Command-Line Interface (CLI)](./interfaces/cli.md): Terminal tool for human modeling, verification, and agent scripting.
+  - [Software Development Kits (SDK)](./interfaces/sdk.md): Native Python and TypeScript SDKs for programmatic modeling, data science interop, and agent automation.

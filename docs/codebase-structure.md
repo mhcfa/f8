@@ -80,8 +80,9 @@ Curated canonical JSON skeletons demonstrating institutional financial modeling 
 Outer adapters providing access across diverse execution environments:
 
 - **`f8-cli` (Phase 2)**: Command-line interface powered by `clap` (`init`, `check`, `compile`, `inspect`). Provides direct terminal execution for financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
-- **`f8-mcp` (Phase 3 Planned)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
-- **`f8-wasm` (Phase 4 Planned)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps.
+- **`f8-python` (Phase 3 Planned)**: Native Python C-extension via `pyo3` and fluent modeling SDK (`f8`). Enables programmatic model building, DataFrame ingestion, in-process evaluation, and Excel export as documented in [SDK Architecture & Design](./interfaces/sdk.md).
+- **`f8-mcp` (Phase 4 Planned)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
+- **`f8-wasm` (Phase 5 Planned)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps and TypeScript environments.
 
 ---
 
