@@ -113,11 +113,10 @@ In a 2D matrix, rows and columns govern orthogonal geometric axes:
 6. **Highlight precedence**: `cell.highlight.unwrap_or(row.highlight || col.highlight)`.
    - Point override `highlight: false` explicitly un-highlights a cell even if its row or column is highlighted.
 
-### 3.5. Note & Provenance Resolution
+### 3.5. Note Resolution
 
 - **0D Cell Note Isolation**: Notes are strictly 0D point attributes declared directly on `DetailedCellInput`. Notes do not broadcast across rows or columns.
 - **Section Headers**: Structural section headers (`SectionHeaderRowSpec`) declare a visual note emitted at the table start column.
-- **Provenance Source Precedence**: `Cell.source > Row.source > Col.source`. A cell inherits its row or column source unless explicitly overridden at the cell level.
 
 ---
 
@@ -132,7 +131,7 @@ Each expanded cell node contains:
   - `Formula(AstNode)`: Parsed expression AST containing reference targets.
 - **Formatting, Precision & Currency**: Resolved format preset token (`FormatPreset`), optional display precision (`decimals: Option<u32>`), and optional currency denomination code (`currency: Option<CurrencyCode>`).
 - **Style**: Resolved structural style pair (`horizontal: SemanticStyle`, `vertical: SemanticStyle`) and visual emphasis flag (`is_highlight: bool`).
-- **Notes & Provenance**: Cell-level audit note string and resolved provenance metadata.
+- **Audit Notes**: Cell-level audit note string.
 - **Spatial Position**: Populated later by the layout engine (`sheet_name`, `col_idx`, `row_idx`).
 
 See [Dependency Graph](./dependency-graph.md) for how cell nodes are assembled into a DAG, and [Spatial Layout Planning](./spatial-layout.md) for coordinate assignment.

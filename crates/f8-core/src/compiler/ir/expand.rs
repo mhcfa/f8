@@ -95,7 +95,6 @@ pub fn expand_table(
                 let cell_currency = cell_input.currency();
                 let cell_indent = cell_input.indent().unwrap_or(0);
                 let cell_note = cell_input.note();
-                let cell_source = cell_input.source().cloned();
 
                 let payload = match cell_input {
                     CellInput::Literal(lit) => CellPayload::Literal(lit.clone()),
@@ -143,9 +142,6 @@ pub fn expand_table(
                     resolve_highlight(cell_highlight, row_data.highlight, col_data.highlight);
 
                 let effective_note = cell_note.map(String::from);
-                let effective_source = cell_source
-                    .or_else(|| row_data.source.clone())
-                    .or_else(|| col_data.source.clone());
 
                 cells.push(
                     CellNode::new(cell_id, sheet_id.clone(), payload)
@@ -155,8 +151,7 @@ pub fn expand_table(
                         .with_style(horizontal, vertical)
                         .with_highlight(is_highlight)
                         .with_indent(cell_indent)
-                        .with_note(effective_note)
-                        .with_source(effective_source),
+                        .with_note(effective_note),
                 );
                 continue;
             }
@@ -208,16 +203,13 @@ pub fn expand_table(
             let (horizontal, vertical) = resolve_style(None, row_data.style, col_data.style);
             let is_highlight = resolve_highlight(None, row_data.highlight, col_data.highlight);
 
-            let effective_source = row_data.source.clone().or_else(|| col_data.source.clone());
-
             cells.push(
                 CellNode::new(cell_id, sheet_id.clone(), payload)
                     .with_format(effective_format)
                     .with_decimals(effective_decimals)
                     .with_currency(effective_currency)
                     .with_style(horizontal, vertical)
-                    .with_highlight(is_highlight)
-                    .with_source(effective_source),
+                    .with_highlight(is_highlight),
             );
         }
     }

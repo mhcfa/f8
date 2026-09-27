@@ -1,6 +1,6 @@
 ---
 title: Cell Intermediate Representation & Symbol Table
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 domain: compiler
 status: active
 ---

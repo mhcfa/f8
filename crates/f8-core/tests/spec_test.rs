@@ -491,7 +491,6 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
             style: None,
             highlight: None,
             note: None,
-            source: None,
             currency: None,
             indent: None,
         }),
@@ -771,4 +770,19 @@ fn test_scenario_13_table_collapsible_serde() {
     // 5. Deserializing JSON with "collapsible": true yields collapsible == true
     let deserialized_coll: TableSpec = serde_json::from_str(&coll_json).unwrap();
     assert!(deserialized_coll.collapsible);
+}
+
+#[test]
+fn test_detailed_cell_input_rejects_unknown_source_field() {
+    let json_data = r#"{
+        "value": 100.0,
+        "source": { "doc": "10-K" }
+    }"#;
+    let result: Result<DetailedCellInput, _> = serde_json::from_str(json_data);
+    assert!(
+        result.is_err(),
+        "DetailedCellInput must reject unknown 'source' field due to deny_unknown_fields"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("unknown field `source`"));
 }
