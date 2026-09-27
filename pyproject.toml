@@ -44,7 +44,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 include = ["python"]
 extraPaths = ["python"]
 pythonVersion = "3.12"
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
 

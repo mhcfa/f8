@@ -12,10 +12,12 @@ from f8 import (
     SpecificationError,
 )
 
+type SampleModelFixture = tuple[dict[str, object], list[dict[str, object]]]
+
 
 @pytest.fixture
-def sample_model():
-    manifest = {
+def sample_model() -> SampleModelFixture:
+    manifest: dict[str, object] = {
         "model_name": "TestModel",
         "theme": "corporate_navy",
         "sheets": [
@@ -26,7 +28,7 @@ def sample_model():
         ],
     }
 
-    tables = [
+    tables: list[dict[str, object]] = [
         {
             "id": "OPERATIONS",
             "title": "Operations Summary",
@@ -87,7 +89,9 @@ def sample_model():
     return manifest, tables
 
 
-def test_scenario_1_in_memory_compilation_and_emission(sample_model):
+def test_scenario_1_in_memory_compilation_and_emission(
+    sample_model: SampleModelFixture,
+) -> None:
     manifest, tables = sample_model
     compiled = f8.compile(manifest, tables)
 
@@ -99,7 +103,9 @@ def test_scenario_1_in_memory_compilation_and_emission(sample_model):
     assert len(buffer) > 1000
 
 
-def test_scenario_2_emission_options_values_only(sample_model):
+def test_scenario_2_emission_options_values_only(
+    sample_model: SampleModelFixture,
+) -> None:
     manifest, tables = sample_model
     compiled = f8.compile(manifest, tables)
 
@@ -109,7 +115,9 @@ def test_scenario_2_emission_options_values_only(sample_model):
     assert len(buffer) > 1000
 
 
-def test_scenario_3_cell_inspection_flexible_coordinates(sample_model):
+def test_scenario_3_cell_inspection_flexible_coordinates(
+    sample_model: SampleModelFixture,
+) -> None:
     manifest, tables = sample_model
     compiled = f8.compile(manifest, tables)
 
@@ -125,7 +133,9 @@ def test_scenario_3_cell_inspection_flexible_coordinates(sample_model):
     assert len(cell_3args["precedents"]) == 2
 
 
-def test_scenario_4_dependency_tree_direct_and_recursive(sample_model):
+def test_scenario_4_dependency_tree_direct_and_recursive(
+    sample_model: SampleModelFixture,
+) -> None:
     manifest, tables = sample_model
     compiled = f8.compile(manifest, tables)
 
@@ -145,7 +155,9 @@ def test_scenario_4_dependency_tree_direct_and_recursive(sample_model):
     assert deps["direct_count"] == 1
 
 
-def test_scenario_5_model_and_sheet_summary_inspection(sample_model):
+def test_scenario_5_model_and_sheet_summary_inspection(
+    sample_model: SampleModelFixture,
+) -> None:
     manifest, tables = sample_model
     compiled = f8.compile(manifest, tables)
 
@@ -168,13 +180,13 @@ def test_scenario_5_model_and_sheet_summary_inspection(sample_model):
     assert len(table_insp["columns"]) == 2
 
 
-def test_scenario_6_cyclic_dependency_error():
-    manifest = {
+def test_scenario_6_cyclic_dependency_error() -> None:
+    manifest: dict[str, object] = {
         "model_name": "CycleModel",
         "theme": "corporate_navy",
         "sheets": [{"name": "S", "tables": ["T"]}],
     }
-    tables = [
+    tables: list[dict[str, object]] = [
         {
             "id": "T",
             "title": "Cycle Table",
@@ -212,13 +224,13 @@ def test_scenario_6_cyclic_dependency_error():
     assert "Circular dependency" in err.message or "cycle" in err.message.lower()
 
 
-def test_scenario_7_reference_resolution_error():
-    manifest = {
+def test_scenario_7_reference_resolution_error() -> None:
+    manifest: dict[str, object] = {
         "model_name": "RefModel",
         "theme": "corporate_navy",
         "sheets": [{"name": "S", "tables": ["T"]}],
     }
-    tables = [
+    tables: list[dict[str, object]] = [
         {
             "id": "T",
             "title": "Table",
@@ -248,13 +260,13 @@ def test_scenario_7_reference_resolution_error():
     assert err.target_table == "NONEXISTENT"
 
 
-def test_scenario_8_formula_syntax_parse_error():
-    manifest = {
+def test_scenario_8_formula_syntax_parse_error() -> None:
+    manifest: dict[str, object] = {
         "model_name": "ParseErrorModel",
         "theme": "corporate_navy",
         "sheets": [{"name": "S", "tables": ["T"]}],
     }
-    tables = [
+    tables: list[dict[str, object]] = [
         {
             "id": "T",
             "title": "Table",
@@ -287,14 +299,14 @@ def test_scenario_8_formula_syntax_parse_error():
     assert hasattr(err, "message")
 
 
-def test_scenario_9_specification_error():
+def test_scenario_9_specification_error() -> None:
     # Duplicate row ID
-    manifest = {
+    manifest: dict[str, object] = {
         "model_name": "SpecErrorModel",
         "theme": "corporate_navy",
         "sheets": [{"name": "S", "tables": ["T"]}],
     }
-    tables = [
+    tables: list[dict[str, object]] = [
         {
             "id": "T",
             "title": "Table",
@@ -328,7 +340,9 @@ def test_scenario_9_specification_error():
     assert "duplicate" in err.reason.lower()
 
 
-def test_scenario_10_inspection_entity_not_found(sample_model):
+def test_scenario_10_inspection_entity_not_found(
+    sample_model: SampleModelFixture,
+) -> None:
     manifest, tables = sample_model
     compiled = f8.compile(manifest, tables)
 

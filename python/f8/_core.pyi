@@ -1,39 +1,52 @@
-from typing import Any
+from collections.abc import Sequence
+
+from f8.types import (
+    CellInspection,
+    DependencyTree,
+    EmissionOptions,
+    ManifestInput,
+    ModelSummary,
+    SheetInspection,
+    TableInput,
+    TableInspection,
+    ThemeInput,
+)
 
 def compile(
-    manifest: dict[str, Any],
-    tables: list[dict[str, Any]],
-    theme: dict[str, Any] | str | None = None,
+    manifest: ManifestInput,
+    tables: Sequence[TableInput],
+    theme: ThemeInput | None = None,
 ) -> CompiledModel: ...
 
 class CompiledModel:
-    def emit_workbook(self, options: dict[str, Any] | None = None) -> bytes: ...
-    def summary(self) -> dict[str, Any]: ...
+    def emit_workbook(self, options: EmissionOptions | None = None) -> bytes: ...
+    def summary(self) -> ModelSummary: ...
     def inspect_cell(
         self,
         target: str,
         row: str | None = None,
         col: str | None = None,
-    ) -> dict[str, Any]: ...
-    def inspect_table(self, table: str) -> dict[str, Any]: ...
-    def inspect_sheet(self, sheet: str) -> dict[str, Any]: ...
+    ) -> CellInspection: ...
+    def inspect_table(self, table: str) -> TableInspection: ...
+    def inspect_sheet(self, sheet: str) -> SheetInspection: ...
     def precedents_of(
         self,
         target: str,
         row: str | None = None,
         col: str | None = None,
         recursive: bool = False,
-    ) -> dict[str, Any]: ...
+    ) -> DependencyTree: ...
     def dependents_of(
         self,
         target: str,
         row: str | None = None,
         col: str | None = None,
         recursive: bool = False,
-    ) -> dict[str, Any]: ...
+    ) -> DependencyTree: ...
 
 class F8Error(Exception):
     message: str
+    def __init__(self, message: str = ...) -> None: ...
 
 class CycleDetectedError(F8Error):
     cycle: list[str]
@@ -57,5 +70,4 @@ class FormulaParseError(F8Error):
 class InspectionError(F8Error):
     entity: str
 
-class EmissionError(F8Error):
-    pass
+class EmissionError(F8Error): ...
