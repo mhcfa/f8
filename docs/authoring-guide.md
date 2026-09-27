@@ -64,7 +64,7 @@ The manifest defines global workbook properties, theme selection, and sheet tab 
       "name": "Summary",
       "tab_color": "#1B365D",
       "tables": [
-        "tables/assumptions.json"
+        "Assumptions"
       ]
     },
     {
@@ -76,7 +76,7 @@ The manifest defines global workbook properties, theme selection, and sheet tab 
       },
       "show_gridlines": true,
       "tables": [
-        "tables/income_statement.json"
+        "IncomeStatement"
       ]
     }
   ]

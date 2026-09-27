@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use f8_core::compiler::graph::{DependencyGraph, GraphError};
 use f8_core::compiler::ir::{CellId, SymbolTable, expand_grid, expand_workbook};
 use f8_core::model::format::FormatPreset;
@@ -261,14 +259,14 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/assumptions.json")],
+                tables: vec![TableId::from("Assumptions")],
             },
             SheetSpec {
                 name: "Model".to_string(),
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/forecast.json")],
+                tables: vec![TableId::from("Forecast")],
             },
         ],
     };

@@ -7,10 +7,10 @@
       "tab_color": "#1B365D",
       "show_gridlines": true,
       "tables": [
-        "tables/scenarios.json",
-        "tables/deal_assumptions.json",
-        "tables/sources_and_uses.json",
-        "tables/returns_summary.json"
+        "Scenarios",
+        "DealAssumptions",
+        "SourcesAndUses",
+        "ReturnsSummary"
       ]
     },
     {
@@ -18,10 +18,10 @@
       "tab_color": "#003366",
       "show_gridlines": true,
       "tables": [
-        "tables/timeline.json",
-        "tables/operations.json",
-        "tables/debt_schedule.json",
-        "tables/cash_flows.json"
+        "Timeline",
+        "Operations",
+        "DebtSchedule",
+        "CashFlows"
       ]
     }
   ]

@@ -6,7 +6,7 @@
       "name": "Sheet1",
       "show_gridlines": true,
       "tables": [
-        "tables/table.json"
+        "table"
       ]
     }
   ]

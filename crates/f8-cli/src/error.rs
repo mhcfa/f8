@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use f8_core::compiler::{CompilerError, InspectionError};
+use f8_core::model::id::TableId;
 
 /// Structured CLI error type mapping cleanly to exit codes.
 #[derive(Debug, Error)]
@@ -21,6 +22,13 @@ pub enum CliError {
         path: PathBuf,
         #[source]
         source: serde_json::Error,
+    },
+
+    #[error("Duplicate table ID '{id}' declared in '{path1}' and '{path2}'")]
+    DuplicateTableId {
+        id: TableId,
+        path1: PathBuf,
+        path2: PathBuf,
     },
 
     #[error(

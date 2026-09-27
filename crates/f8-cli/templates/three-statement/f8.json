@@ -7,10 +7,10 @@
       "tab_color": "#1B365D",
       "show_gridlines": true,
       "tables": [
-        "tables/assumptions.json",
-        "tables/income_statement.json",
-        "tables/cash_flow.json",
-        "tables/balance_sheet.json"
+        "Assumptions",
+        "IncomeStatement",
+        "CashFlow",
+        "BalanceSheet"
       ]
     }
   ]

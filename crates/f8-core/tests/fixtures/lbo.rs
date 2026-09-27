@@ -1,7 +1,5 @@
 //! Consolidated Institutional LBO Model test fixture.
 
-use std::path::PathBuf;
-
 use f8_core::model::format::{FormatPreset, SemanticStyle};
 use f8_core::model::id::TableId;
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
@@ -683,10 +681,10 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 tables: vec![
-                    PathBuf::from("tables/scenarios.json"),
-                    PathBuf::from("tables/deal_assumptions.json"),
-                    PathBuf::from("tables/sources_and_uses.json"),
-                    PathBuf::from("tables/returns_summary.json"),
+                    TableId::from("Scenarios"),
+                    TableId::from("DealAssumptions"),
+                    TableId::from("SourcesAndUses"),
+                    TableId::from("ReturnsSummary"),
                 ],
             },
             SheetSpec {
@@ -695,10 +693,10 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 tables: vec![
-                    PathBuf::from("tables/timeline.json"),
-                    PathBuf::from("tables/operations.json"),
-                    PathBuf::from("tables/debt_schedule.json"),
-                    PathBuf::from("tables/cash_flows.json"),
+                    TableId::from("Timeline"),
+                    TableId::from("Operations"),
+                    TableId::from("DebtSchedule"),
+                    TableId::from("CashFlows"),
                 ],
             },
         ],

@@ -1,6 +1,6 @@
 ---
 title: Command-Line Interface (f8 CLI)
-last_updated: 2026-09-23
+last_updated: 2026-09-27
 domain: interfaces
 status: active
 ---
@@ -13,7 +13,7 @@ The `f8` command-line executable (`crates/f8-cli`) provides a lightweight, headl
 
 - **Modules & components**:
   - `f8_cli::cli`: Clap command hierarchy and argument parsing with global `-p, --project` and `--json` flags.
-  - `f8_cli::project::loader`: Manifest discovery via upward directory traversal, multi-file project assembly (`SheetSpec.tables`), and theme resolution.
+  - `f8_cli::project::loader`: Manifest discovery via upward directory traversal, directory scanning of `tables/*.json` in deterministic sorted order, duplicate table ID validation, multi-file project assembly matching `SheetSpec.tables` logical IDs, and theme resolution.
   - `f8_cli::project::writer`: Filesystem directory scaffolding and JSON file writer for project initialization.
   - `f8_cli::archetypes`: Embedded template catalog bundling canonical JSON models (`three-statement`, `lbo`, `trading-comps`, `blank`) via `include_str!`.
   - `f8_cli::commands::check`: Headless model verification executing Passes 1–6a via `f8_core::Compiler::compile`.
@@ -24,7 +24,7 @@ The `f8` command-line executable (`crates/f8-cli`) provides a lightweight, headl
   - `f8_cli::error`: Structured `CliError` classifying I/O/syntax failures vs compiler diagnostics and resolving exit codes.
 - **Data flow & interfaces**:
   - Input: Discovers `f8.json` on disk by walking parent directories up to filesystem root or via explicit `-p, --project <path>`.
-  - Loading: Reads manifest, resolves relative table file paths, deserializes `TableSpec`s, and loads built-in or custom JSON themes.
+  - Loading: Reads manifest, scans `tables/*.json` in deterministic sorted order, deserializes `TableSpec`s, indexes them by `TableId`, rejects duplicate table IDs with exit code `1`, orders tables matching manifest sheets, and loads built-in or custom JSON themes.
   - Delegation: Passes in-memory models directly to `Compiler::compile` and `emit_workbook`. CLI contains zero domain layout, graph, or formula evaluation logic.
   - Output: Success summaries and valid JSON to `stdout`; error messages, compiler diagnostics, and error JSON to `stderr`.
 
@@ -156,4 +156,21 @@ Provides terminal auditing tools for model structures, 2D statement tables, cell
 - **Structured machine-readable JSON**:
   - **When** passing `--json` to any inspect subcommand
   - **Then** prints structured JSON to `stdout` on success, or structured error JSON to `stderr` with exit code `2` if a coordinate/table entity does not exist.
+
+### 7. Decoupled Table Discovery & Assembly
+
+The CLI discovers table specifications dynamically by scanning the `tables/` directory located adjacent to `f8.json`. Filenames are decoupled from logical identifiers, allowing users to organize files flexibly.
+
+#### Scenarios
+
+- **Decoupled Filename Discovery**:
+  - **When** table files have arbitrary names (e.g. `tables/01_core_assumptions.json` with `"id": "Assumptions"`)
+  - **Then** `ProjectLoader` discovers and associates the table by its internal `TableSpec.id`.
+- **Deterministic Scanning Order**:
+  - **When** discovering files in `tables/`
+  - **Then** file paths are sorted deterministically before parsing.
+- **Duplicate Table ID Rejection**:
+  - **When** two files in `tables/` declare the same `TableSpec.id`
+  - **Then** `ProjectLoader` halts with `CliError::DuplicateTableId` and exit code `1`.
+
 

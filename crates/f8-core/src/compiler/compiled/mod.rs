@@ -19,7 +19,6 @@ use crate::compiler::error::CompilerError;
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::graph::DependencyGraph;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
-use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::{LayoutMap, coordinate_to_a1};
@@ -388,12 +387,8 @@ impl CompiledModel {
             .ok_or_else(|| InspectionError::SheetNotFound(sheet.clone()))?;
 
         let mut sheet_tables = Vec::new();
-        for table_path in &sheet_spec.tables {
-            if let Some((_, table_spec)) = self
-                .tables
-                .iter()
-                .find(|(_, t)| matches_table_id(table_path, &t.id))
-            {
+        for table_id in &sheet_spec.tables {
+            if let Some(table_spec) = self.tables.get(table_id) {
                 sheet_tables.push(table_spec);
             }
         }

@@ -36,8 +36,11 @@ The CLI discovers and loads projects deterministically across subdirectories:
    - If `--project <path>` (or `-p <path>`) is specified, the CLI targets that file or directory directly. As a global flag, `-p` can be positioned before or after any subcommand (e.g. `f8 -p ./models check` or `f8 check -p ./models`).
    - Otherwise, the CLI starts in the current working directory and traverses upward through parent directories until it locates `f8.json` (identical to `cargo` finding `Cargo.toml` or `git` finding `.git`).
    - If no `f8.json` is found, the CLI returns exit code `1` with a descriptive error.
-2. **Table resolution**:
-   - File paths declared in `SheetSpec.tables` (e.g. `"tables/income_statement.json"`) are resolved relative to the directory containing `f8.json`.
+2. **Table discovery and resolution**:
+   - The CLI scans the `tables/` directory adjacent to `f8.json` for all `*.json` files in deterministic sorted order.
+   - Each table's logical identity is determined solely by its internal `"id"` property (e.g. `"IncomeStatement"`). Filenames are decoupled from table IDs.
+   - Duplicate table IDs across discovered files are rejected with an operational error before compilation.
+   - Manifest sheets reference tables purely by logical `TableId` (e.g. `"IncomeStatement"`).
 3. **Theme resolution**:
    - Built-in themes (such as `"corporate_navy"`) resolve instantly via in-memory catalog.
    - Custom theme paths are resolved relative to the project directory and validated via `Theme::from_json_str`.

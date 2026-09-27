@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use f8_core::compiler::layout::{
     LayoutError, LayoutPlanner, MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, col_to_excel_col,
     coordinate_to_a1,
@@ -56,7 +54,7 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/SimpleTable.json")],
+            tables: vec![TableId::from("SimpleTable")],
         }],
     };
 
@@ -111,7 +109,7 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/IncomeStatement.json")],
+            tables: vec![TableId::from("IncomeStatement")],
         }],
     };
 
@@ -215,7 +213,7 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/TimelineTable.json")],
+            tables: vec![TableId::from("TimelineTable")],
         }],
     };
 
@@ -265,7 +263,7 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/HierarchyTable.json")],
+            tables: vec![TableId::from("HierarchyTable")],
         }],
     };
 
@@ -350,10 +348,7 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![
-                PathBuf::from("tables/Table1.json"),
-                PathBuf::from("tables/Table2.json"),
-            ],
+            tables: vec![TableId::from("Table1"), TableId::from("Table2")],
         }],
     };
 
@@ -432,10 +427,7 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![
-                PathBuf::from("tables/Table1.json"),
-                PathBuf::from("tables/Table2.json"),
-            ],
+            tables: vec![TableId::from("Table1"), TableId::from("Table2")],
         }],
     };
 
@@ -482,7 +474,7 @@ fn test_scenario_7_full_style_role_propagation_to_physical_coordinates() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/SummaryTable.json")],
+            tables: vec![TableId::from("SummaryTable")],
         }],
     };
 
@@ -561,7 +553,7 @@ fn test_scenario_9_multi_tier_column_header_row_height_allocation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/MultiTierTable.json")],
+            tables: vec![TableId::from("MultiTierTable")],
         }],
     };
 
@@ -608,7 +600,7 @@ fn test_scenario_10_rejection_of_unassigned_tables() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/AssignedTable.json")],
+            tables: vec![TableId::from("AssignedTable")],
         }],
     };
 
@@ -648,7 +640,7 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
             tab_color: Some("#1B365D".to_string()),
             freeze_panes: Some(FreezePanes { row: 2, col: 2 }),
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/FacadeTable.json")],
+            tables: vec![TableId::from("FacadeTable")],
         }],
     };
 
@@ -699,7 +691,7 @@ fn test_scenario_12_descriptor_indentation_tiers() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/NestedHierarchyTable.json")],
+            tables: vec![TableId::from("NestedHierarchyTable")],
         }],
     };
 
@@ -802,7 +794,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/GutterTable.json")],
+            tables: vec![TableId::from("GutterTable")],
         }],
     };
 

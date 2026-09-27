@@ -1,7 +1,5 @@
 //! Consolidated Three-Statement Financial Model test fixture.
 
-use std::path::PathBuf;
-
 use f8_core::model::format::{FormatPreset, SemanticStyle};
 use f8_core::model::id::TableId;
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
@@ -305,10 +303,10 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
             freeze_panes: None,
             show_gridlines: true,
             tables: vec![
-                PathBuf::from("tables/assumptions.json"),
-                PathBuf::from("tables/income_statement.json"),
-                PathBuf::from("tables/cash_flow.json"),
-                PathBuf::from("tables/balance_sheet.json"),
+                TableId::from("Assumptions"),
+                TableId::from("IncomeStatement"),
+                TableId::from("CashFlow"),
+                TableId::from("BalanceSheet"),
             ],
         }],
     };

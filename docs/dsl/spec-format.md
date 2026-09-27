@@ -39,7 +39,7 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
       "tab_color": "#1B365D",
       "show_gridlines": true,
       "tables": [
-        "tables/assumptions.json"
+        "Assumptions"
       ]
     },
     {
@@ -51,8 +51,8 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
       },
       "show_gridlines": true,
       "tables": [
-        "tables/revenue_schedule.json",
-        "tables/income_statement.json"
+        "RevenueSchedule",
+        "IncomeStatement"
       ]
     }
   ]
@@ -67,11 +67,11 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
   - `tab_color` (`string`, optional): Hex color code starting with `#` (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`).
   - `freeze_panes` (`object`, optional): `{ "row": u32, "col": u32 }` physical worksheet row and column split lines.
   - `show_gridlines` (`boolean`, optional, default `true`): Toggles gridline rendering.
-  - `tables` (`array of strings`, required): Relative file paths to table specifications. Stacked vertically in declaration order, separated by blank row gutters.
+  - `tables` (`array of strings`, required): Logical table IDs (`TableId`, e.g. `"Assumptions"`, `"IncomeStatement"`) assigned to this worksheet. Stacked vertically in declaration order, separated by blank row gutters.
 
 ---
 
-## 3. Table Specification Schema (`tables/<id>.json`)
+## 3. Table Specification Schema (`tables/*.json`)
 
 Each table file defines an orthogonal 2D calculation matrix with explicit columns and rows:
 

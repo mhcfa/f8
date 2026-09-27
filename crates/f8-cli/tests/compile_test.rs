@@ -15,7 +15,7 @@ fn setup_valid_project(dir: &std::path::Path) {
         "sheets": [
             {
                 "name": "Summary",
-                "tables": ["tables/table.json"]
+                "tables": ["table"]
             }
         ]
     }"#;
@@ -45,7 +45,7 @@ fn setup_circular_project(dir: &std::path::Path) {
         "sheets": [
             {
                 "name": "Model",
-                "tables": ["tables/circular.json"]
+                "tables": ["circular"]
             }
         ]
     }"#;

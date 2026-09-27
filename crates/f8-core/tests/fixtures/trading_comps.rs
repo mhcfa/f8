@@ -5,8 +5,6 @@
 //! vertical range summary benchmark aggregations (`MEDIAN`, `AVERAGE`, `MIN`, `MAX`),
 //! and a secondary stacked target valuation benchmarking table.
 
-use std::path::PathBuf;
-
 use indexmap::IndexMap;
 
 use f8_core::model::format::{FormatPreset, SemanticStyle};
@@ -346,10 +344,7 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![
-                PathBuf::from("tables/comps.json"),
-                PathBuf::from("tables/target_valuation.json"),
-            ],
+            tables: vec![TableId::from("Comps"), TableId::from("TargetValuation")],
         }],
     };
 

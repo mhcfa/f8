@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::path::PathBuf;
 
 use f8_core::model::{
     AxisRole, CellInput, ColId, ColumnSpec, CurrencyCode, DetailedCellInput, FormatPreset,
@@ -16,14 +15,14 @@ fn test_scenario_1_deserialize_valid_manifest() {
             {
                 "name": "Summary",
                 "tab_color": "navy",
-                "tables": ["tables/assumptions.json"]
+                "tables": ["Assumptions"]
             },
             {
                 "name": "Model",
                 "tab_color": "forest_green",
                 "freeze_panes": { "row": 2, "col": 1 },
                 "show_gridlines": true,
-                "tables": ["tables/income_statement.json"]
+                "tables": ["IncomeStatement"]
             }
         ]
     }"#;
@@ -33,10 +32,18 @@ fn test_scenario_1_deserialize_valid_manifest() {
     assert_eq!(manifest.theme, "corporate_navy");
     assert_eq!(manifest.sheets.len(), 2);
     assert_eq!(manifest.sheets[0].name, "Summary");
+    assert_eq!(
+        manifest.sheets[0].tables,
+        vec![TableId::from("Assumptions")]
+    );
     assert!(manifest.sheets[0].show_gridlines);
     assert_eq!(
         manifest.sheets[1].freeze_panes,
         Some(FreezePanes { row: 2, col: 1 })
+    );
+    assert_eq!(
+        manifest.sheets[1].tables,
+        vec![TableId::from("IncomeStatement")]
     );
     assert!(manifest.validate().is_ok());
 }
@@ -52,14 +59,14 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/a.json")],
+                tables: vec![TableId::from("a")],
             },
             SheetSpec {
                 name: "Model".to_string(),
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/b.json")],
+                tables: vec![TableId::from("b")],
             },
         ],
     };

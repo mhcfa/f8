@@ -1,7 +1,7 @@
 ---
 title: Eliminate Path Matching and Use Logical Table IDs in SheetSpec
 date: 2026-09-25
-status: draft
+status: completed
 target-living-spec:
   - specs/living-specs/model/spec-ast.md
   - specs/living-specs/compiler/cell-ir.md
@@ -12,7 +12,7 @@ target-living-spec:
 
 ### What
 
-Refactor `SheetSpec.tables` from `Vec<PathBuf>` to `Vec<TableId>` across `f8-core`, eliminating the heuristic `matches_table_id` function and all filesystem path assumptions from the core compiler. Update `f8-cli` project loading to discover table specification files on disk, index them by `TableSpec.id`, and populate `ProjectManifest` using strongly typed `TableId`s.
+Refactor `SheetSpec.tables` from `Vec<PathBuf>` to `Vec<TableId>` across `f8-core`, eliminating the heuristic `matches_table_id` function and all filesystem path assumptions from the core compiler. Update `f8-cli` project loading to discover table specification files on disk, index them by `TableSpec.id`, and assemble `LoadedProject.tables` matching declared sheet order.
 
 ### Why
 
@@ -23,12 +23,13 @@ Refactor `SheetSpec.tables` from `Vec<PathBuf>` to `Vec<TableId>` across `f8-cor
 ### Scope
 
 - **In-scope**:
-  - Update `SheetSpec.tables` to `Vec<TableId>` in `crates/f8-core/src/model/manifest.rs`.
+  - Update `SheetSpec.tables` to `Vec<TableId>` in `crates/f8-core/src/model/manifest.rs` (removing `std::path::PathBuf` from model manifest).
   - Remove `matches_table_id` from `crates/f8-core/src/compiler/ir/expand.rs`.
   - Replace path matching with exact `TableId` lookups in compiler passes (`ir::expand_workbook`, `layout::LayoutPlanner`, `WorkbookEmitter::emit_to_buffer`, `CompiledModel`).
-  - Update `ProjectLoader` in `crates/f8-cli` to discover table files in `tables/`, index them by `TableSpec.id`, and assemble `ProjectManifest`.
+  - Update `ProjectLoader` in `crates/f8-cli` to discover table files in `tables/`, index them by `TableSpec.id`, and assemble `LoadedProject.tables`.
   - Update CLI project templates (`blank`, `three-statement`, `lbo`, `trading-comps`) to declare table IDs in `f8.json`.
   - Update test fixtures across `crates/f8-core/tests/` and `crates/f8-cli/tests/`.
+  - Update documentation references in `docs/interfaces/cli.md`.
 - **Out-of-scope**:
   - Python SDK implementation (handled in subsequent SDK specs).
   - Changes to table calculation grammar, AST expressions, or evaluation engine.
@@ -40,7 +41,7 @@ Refactor `SheetSpec.tables` from `Vec<PathBuf>` to `Vec<TableId>` across `f8-cor
 - `crates/f8-core/src/compiler/layout/mod.rs`: Update placement checks to test `sheet.tables.contains(&table.id)`.
 - `crates/f8-core/src/compiler/emission/workbook.rs`: Update sheet table resolution to match by `t.id == *table_id`.
 - `crates/f8-core/src/compiler/compiled/mod.rs`: Update `summary` and sheet inspections to use `TableId`.
-- `crates/f8-cli/src/project/loader.rs`: Discover and parse `tables/*.json` from disk, index by `TableSpec.id`, and validate that all table IDs declared in `sheet.tables` exist.
+- `crates/f8-cli/src/project/loader.rs`: Discover and parse top-level `tables/*.json` from disk, sort by filename for deterministic loading, index by `TableSpec.id`, reject duplicate table IDs on disk, and assemble `LoadedProject.tables` in manifest declaration order.
 - `crates/f8-cli/templates/**/f8.json`: Update `tables` arrays from relative paths (e.g. `"tables/assumptions.json"`) to logical IDs (e.g. `"Assumptions"`).
 
 ### Capabilities
@@ -56,13 +57,14 @@ Refactor `SheetSpec.tables` from `Vec<PathBuf>` to `Vec<TableId>` across `f8-cor
 
 - Strictly one way to associate tables with sheets: via `TableId`.
 - Zero filesystem path references or fuzzy matching in `f8-core`.
-- Backward-compatible or clean discovery in CLI loader for existing on-disk table layouts.
+- Clean discovery in CLI loader decoupling on-disk file layouts from model identifiers, with zero legacy shims.
 
 ### Invariants
 
 - **Table ID uniqueness**: Table IDs within a project remain globally unique.
 - **Deterministic ordering**: Tables on a sheet are ordered strictly by their declaration order in `SheetSpec.tables`.
 - **Zero OS I/O in core**: `f8-core` has zero filesystem dependencies and remains `wasm32-unknown-unknown` compatible.
+- **Zero compatibility shims**: Clean-break migration with no legacy fallback heuristics or path stripping in the CLI.
 
 ### Decisions
 
@@ -70,8 +72,10 @@ Refactor `SheetSpec.tables` from `Vec<PathBuf>` to `Vec<TableId>` across `f8-cor
   - *Rationale*: A sheet contains tables. Modeling this as `Vec<TableId>` aligns with compiler core simplicity and explicit domain typing.
   - *Alternatives considered*: Keeping `Vec<PathBuf>` with dummy paths in Python (rejected: abstraction leak, fragile heuristics).
 - **CLI discovery via `tables/` directory scan and index**:
-  - *Rationale*: The CLI discovers all `*.json` files in the project's `tables/` directory, parses each `TableSpec`, and indexes them by `id`. The `f8.json` sheet references tables by ID. This decouples file naming on disk from model identifiers.
-  - *Alternatives considered*: Requiring `tables/<id>.json` strict filename parity (rejected: breaks if filenames differ in casing or style from table IDs).
+  - *Rationale*: The CLI discovers top-level `*.json` files in `tables/` (if present), sorts them for deterministic ordering, parses each into `TableSpec`, and indexes them by `TableSpec.id`. If `tables/` is absent (e.g. empty or purely in-memory projects), discovery yields an empty collection without error. If multiple files declare duplicate table IDs, the loader halts with a structured error. Tables are assembled into `LoadedProject.tables` following `manifest.sheets` declaration order (with any unassigned tables appended deterministically).
+  - *Alternatives considered*:
+    - Requiring `tables/<id>.json` strict filename parity (rejected: breaks if filenames differ in casing or style from table IDs).
+    - Allowing path-stem stripping fallback in loader (rejected: violates greenfield minimalism and reintroduces string heuristics).
 
 ### Data Contracts
 
@@ -105,52 +109,68 @@ pub struct SheetSpec {
 ### Risks & Trade-offs
 
 - **Risk**: Existing templates and test fixtures use `"tables/operations.json"` in `f8.json`.
-  - **Mitigation**: Update all 4 embedded CLI templates and CLI tests in the same change. In `ProjectLoader`, accept either table IDs or paths during migration by stripping filename stems if a path is encountered in `f8.json`.
+  - **Mitigation**: Clean break across the repository. Update all 4 embedded CLI templates and CLI tests in the same change. Reject path strings in `f8.json` with zero compatibility shims, strictly enforcing greenfield minimalism.
 
 ---
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: In-memory workbook expansion by TableId**
+- [x] **Scenario 1: In-memory workbook expansion by TableId**
   - **Given** a `ProjectManifest` with a sheet specifying `tables: vec![TableId::from("OPERATIONS")]`
   - **When** `expand_workbook` is called with a `TableSpec` having `id == "OPERATIONS"`
   - **Then** the table is successfully registered to the sheet with zero path comparisons.
 
-- [ ] **Scenario 2: Missing table on sheet diagnostic**
+- [x] **Scenario 2: Missing table on sheet diagnostic**
   - **Given** a `ProjectManifest` specifying `tables: vec![TableId::from("NON_EXISTENT")]`
   - **When** `expand_workbook` is executed
   - **Then** `IrError::UnknownTable` is returned identifying `NON_EXISTENT`.
 
-- [ ] **Scenario 3: CLI project discovery and compilation**
+- [x] **Scenario 3: CLI project discovery and compilation**
   - **Given** an on-disk project with `f8.json` referencing table IDs in `tables/`
   - **When** `f8 check` or `f8 compile` is executed
   - **Then** the loader discovers table files, matches IDs, and compilation succeeds with exit code `0`.
 
-- [ ] **Scenario 4: Spatial layout and workbook emission parity**
+- [x] **Scenario 4: Spatial layout and workbook emission parity**
   - **Given** compiled models with multiple stacked tables on a sheet
   - **When** spatial layout planning and `.xlsx` emission execute
   - **Then** tables are positioned and emitted in exact `SheetSpec.tables` sequence.
+
+- [x] **Scenario 5: Decoupled filename discovery in CLI**
+  - **Given** an on-disk project with `tables/01_operations_v2.json` declaring `"id": "OPERATIONS"`
+  - **When** `f8.json` declares `"tables": ["OPERATIONS"]` and `f8 check` is executed
+  - **Then** the loader discovers the table by ID regardless of disk filename, and validation succeeds with exit code `0`.
+
+- [x] **Scenario 6: Missing tables directory with empty manifest**
+  - **Given** an on-disk project with `f8.json` specifying `sheets: []` and no `tables/` directory
+  - **When** `ProjectLoader::load` is executed
+  - **Then** project loading succeeds with zero tables and zero I/O errors.
+
+- [x] **Scenario 7: Duplicate table ID on disk rejected**
+  - **Given** two distinct files in `tables/` declaring identical `TableSpec.id`
+  - **When** `ProjectLoader::load` or `f8 check` is executed
+  - **Then** loading halts with a structured error identifying the duplicate table ID.
 
 ---
 
 ## Tasks
 
 ### Phase 1: Core AST & Compiler Passes
-- [ ] Update `SheetSpec.tables` to `Vec<TableId>` in `crates/f8-core/src/model/manifest.rs`.
-- [ ] Remove `matches_table_id` and update `ir::expand_workbook` in `crates/f8-core/src/compiler/ir/expand.rs`.
-- [ ] Update table resolution in `crates/f8-core/src/compiler/layout/mod.rs`.
-- [ ] Update table resolution in `crates/f8-core/src/compiler/emission/workbook.rs`.
-- [ ] Update table resolution in `crates/f8-core/src/compiler/compiled/mod.rs`.
-- [ ] Update all unit and integration test fixtures in `crates/f8-core/tests/`.
+- [x] Update `SheetSpec.tables` to `Vec<TableId>` in `crates/f8-core/src/model/manifest.rs` (removing `PathBuf` import).
+- [x] Remove `matches_table_id` and update `ir::expand_workbook` in `crates/f8-core/src/compiler/ir/expand.rs`.
+- [x] Update table resolution in `crates/f8-core/src/compiler/layout/mod.rs`.
+- [x] Update table resolution in `crates/f8-core/src/compiler/emission/workbook.rs`.
+- [x] Update table resolution in `crates/f8-core/src/compiler/compiled/mod.rs`.
+- [x] Update all unit and integration test fixtures in `crates/f8-core/tests/`.
 
 ### Phase 2: CLI Loader & Templates
-- [ ] Update `ProjectLoader` in `crates/f8-cli/src/project/loader.rs` to scan `tables/` and resolve `TableId`s.
-- [ ] Update template manifests in `crates/f8-cli/templates/**/f8.json`.
-- [ ] Update CLI integration tests in `crates/f8-cli/tests/`.
+- [x] Update `ProjectLoader` in `crates/f8-cli/src/project/loader.rs` to scan `tables/*.json`, sort deterministically, index by `TableId`, reject duplicates, and assemble `LoadedProject.tables` in manifest order.
+- [x] Update template manifests in `crates/f8-cli/templates/**/f8.json`.
+- [x] Update CLI integration tests in `crates/f8-cli/tests/`.
+- [x] Update `docs/interfaces/cli.md` documentation references.
 
 ### Phase 3: Verification & Reconciliation
-- [ ] Verify full test suite: `cargo test`.
-- [ ] Verify zero warnings: `cargo clippy --all-targets -- -D warnings`.
-- [ ] Verify formatting: `cargo fmt --check`.
-- [ ] Reconcile living specs (`specs/living-specs/model/spec-ast.md`, `specs/living-specs/compiler/cell-ir.md`, `specs/living-specs/interfaces/cli.md`).
-- [ ] Archive draft spec to `specs/history/`.
+- [x] Verify full test suite: `cargo test`.
+- [x] Verify zero warnings: `cargo clippy --all-targets -- -D warnings`.
+- [x] Verify formatting: `cargo fmt --check`.
+- [x] Reconcile living specs (`specs/living-specs/model/spec-ast.md`, `specs/living-specs/compiler/cell-ir.md`, `specs/living-specs/interfaces/cli.md`).
+- [x] Archive draft spec to `specs/history/`.

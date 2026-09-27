@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-use std::path::Path;
 
 use super::cell::{CellGrid, CellNode, CellPayload};
 use super::error::IrError;
@@ -370,24 +369,6 @@ pub fn expand_grid(symbol_table: &SymbolTable, tables: &[TableSpec]) -> Result<C
     Ok(grid)
 }
 
-/// Helper to match a path string from `SheetSpec.tables` to a `TableId`.
-pub fn matches_table_id(path: &Path, table_id: &TableId) -> bool {
-    let id_str = table_id.as_str();
-    let norm_id = id_str.replace(['_', '-'], "");
-
-    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-        if stem.eq_ignore_ascii_case(id_str) {
-            return true;
-        }
-        let norm_stem = stem.replace(['_', '-'], "");
-        if norm_stem.eq_ignore_ascii_case(&norm_id) {
-            return true;
-        }
-    }
-
-    false
-}
-
 /// Orchestrates workbook symbol registration and grid expansion from a manifest and table specs.
 pub fn expand_workbook(
     manifest: &ProjectManifest,
@@ -400,19 +381,15 @@ pub fn expand_workbook(
     for sheet in &manifest.sheets {
         let sheet_id = SheetId::from(sheet.name.as_str());
 
-        for table_path in &sheet.tables {
-            let matched_table = tables
-                .iter()
-                .find(|t| matches_table_id(table_path, &t.id))
-                .ok_or_else(|| IrError::UnknownTable {
-                    table: TableId::from(
-                        table_path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or_default(),
-                    ),
-                    context: format!("sheet '{}'", sheet.name),
-                })?;
+        for table_id in &sheet.tables {
+            let matched_table =
+                tables
+                    .iter()
+                    .find(|t| t.id == *table_id)
+                    .ok_or_else(|| IrError::UnknownTable {
+                        table: table_id.clone(),
+                        context: format!("sheet '{}'", sheet.name),
+                    })?;
 
             symbol_table.register_table(sheet_id.clone(), matched_table)?;
         }

@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use f8_core::compiler::ir::{
     CellId, CellPayload, IrError, SymbolTable, expand_grid, expand_table, expand_workbook,
 };
@@ -247,14 +245,14 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/assumptions.json")],
+                tables: vec![TableId::from("Assumptions")],
             },
             SheetSpec {
                 name: "Model".to_string(),
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/income_statement.json")],
+                tables: vec![TableId::from("IncomeStatement")],
             },
         ],
     };
@@ -391,7 +389,7 @@ fn test_expand_workbook_unassigned_table_rejected() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/assumptions.json")],
+            tables: vec![TableId::from("Assumptions")],
         }],
     };
 
