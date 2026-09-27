@@ -12,7 +12,7 @@ The f8 SDK transforms financial modeling from manual spreadsheet data entry into
 - **Zero CLI dependency**: The CLI (`f8-cli`) and SDK (`f8-python`) are sibling adapters built on top of `f8-core`. The SDK executes in-process via C-ABI with zero subprocess overhead, shipping as self-contained precompiled wheels (`pip install f8`).
 - **"Code as Model" source of truth**: Python scripts (`.py`) serve as the authoring source of truth for analysts and AI agents, enabling standard Git version control, branch diffs, and pull request reviews.
 - **Canonical IR preservation**: The multi-file JSON specification (`f8.json` + `tables/*.json`) remains the language-agnostic Intermediate Representation (IR) for serialization, cross-language interop, and headless verification.
-- **First-class data science interop**: Bidirectional integration with `pandas` and standard Python data structures enables direct ingestion of financial filings and in-memory analysis without writing JSON or markdown to disk. Polars users can seamlessly consume models via `pl.from_pandas()` or `pl.DataFrame(table.to_dict())`.
+- **Standard Python & data ecosystem interop**: Ingestion and export rely on standard Python dictionaries, lists, and iterables. This keeps f8 zero-dependency, ultra-lightweight, and universally compatible with any dataframe or numerical engine (`pandas`, `polars`, `duckdb`, `pyarrow`) via standard dictionary protocols without forcing heavy third-party dependencies.
 
 ```mermaid
 flowchart TD
@@ -41,7 +41,7 @@ flowchart TD
     F8_CLI --> CORE
 
     CORE --> OUT1[".xlsx Workbooks (Live Formulas + Cache)"]
-    CORE --> OUT2["Evaluated Matrices / DataFrames"]
+    CORE --> OUT2["Evaluated Matrices / Dictionaries"]
     CORE --> OUT3["Canonical JSON Spec (Export / Ingest)"]
 ```
 
@@ -51,10 +51,10 @@ flowchart TD
 
 | Dimension | `f8-core` (Compiler) | `f8-python` (SDK) | `f8-cli` (CLI) |
 | :--- | :--- | :--- | :--- |
-| **Responsibility** | Specification AST, DAG validation, evaluation, layout, `.xlsx` emission. | Fluent authoring DSL, data ingestion (`pandas`), in-process execution. | Standalone terminal workflow, CI validation, file discovery, human inspections. |
+| **Responsibility** | Specification AST, DAG validation, evaluation, layout, `.xlsx` emission. | Fluent authoring DSL, in-process execution, zero-dependency data structures. | Standalone terminal workflow, CI validation, file discovery, human inspections. |
 | **Environment** | Pure in-memory Rust (`no_std` / WASM-ready, zero OS I/O). | Python runtime via PyO3 C-extensions. | Standalone zero-dependency native binary (`clap`). |
-| **Input** | `ProjectManifest` (logical `TableId`s), `TableSpec`, `Theme`. | Fluent Python objects, variables, DataFrames. | Filesystem paths (`f8.json`, `tables/*.json`). |
-| **Output** | In-memory `CompiledModel`, `.xlsx` byte buffer. | Python objects, DataFrames, saved `.xlsx` files. | Terminal tables, formatted JSON stdout, written `.xlsx` files. |
+| **Input** | `ProjectManifest` (logical `TableId`s), `TableSpec`, `Theme`. | Fluent Python objects, variables, dictionaries. | Filesystem paths (`f8.json`, `tables/*.json`). |
+| **Output** | In-memory `CompiledModel`, `.xlsx` byte buffer. | Python objects, dictionaries, saved `.xlsx` files. | Terminal tables, formatted JSON stdout, written `.xlsx` files. |
 | **Inter-dependency** | None (root crate). | Depends on `f8-core`. **Zero CLI dependency.** | Depends on `f8-core`. **Zero SDK dependency.** |
 
 ### Role of the CLI in a Python-Centric Workflow
@@ -264,37 +264,49 @@ ops.set_cell(
 
 
 
-### 3.3. Document Ingestion & DataFrame Bridge
+### 3.3. Tabular Data Ingestion & Data Ecosystem Interop
 
-AI agents frequently extract historical tables from SEC filings, PDF annual reports, or SQL warehouses into Pandas DataFrames. The SDK allows direct ingestion of DataFrames into tables:
+To keep `f8` zero-dependency, ultra-lightweight, and universally compatible across data engineering ecosystems (`pandas`, `polars`, `duckdb`), `f8` does not impose dataframe dependencies. Ingestion from external tabular data (such as dataframes extracted from SEC filings, SQL queries, or CSVs) is handled directly via idiomatic Python scripts:
 
 ```python
-import pandas as pd
 from f8 import Model
 
-# Ingested DataFrame from raw filing (e.g. via pdfplumber or read_html)
-df = pd.DataFrame({
-    "line_item": ["Product Revenue", "Service Revenue", "Total Revenue"],
-    "2022A": [1000.0, 250.0, 1250.0],
-    "2023A": [1200.0, 310.0, 1510.0],
-})
+# Tabular data extracted from filing, database, or dataframe (e.g. df.to_dict("records"))
+records = [
+    {"line_item": "Product Revenue", "2022A": 1000.0, "2023A": 1200.0},
+    {"line_item": "Service Revenue", "2022A": 250.0, "2023A": 310.0},
+    {"line_item": "Total Revenue", "2022A": 1250.0, "2023A": 1510.0},
+]
 
 model = Model("Corporate_Model")
 sheet = model.add_sheet("Income Statement")
-
-# Automatically generates descriptor column and measure columns from DataFrame schema
-table = sheet.add_table_from_dataframe(
+table = sheet.add_table(
     id="INCOME_STMT",
     title="Consolidated Income Statement",
-    df=df,
-    descriptor_col="line_item",
-    default_format="currency",
 )
 
-# Extend with forecast columns
+# 1. Define columns
+table.add_column("line_item", role="descriptor", header="Line Item")
+measure_cols = ["2022A", "2023A"]
+for col in measure_cols:
+    table.add_column(col, role="measure")
+
+# 2. Ingest rows with programmatic IDs and formatting
+for row in records:
+    slug = row["line_item"].lower().replace(" ", "_")
+    table.add_row(
+        id=slug,
+        label=row["line_item"],
+        cells={col: row[col] for col in measure_cols},
+        format="currency",
+    )
+
+# 3. Extend with forecast columns
 for col in ["2024E", "2025E"]:
     table.add_column(col, role="measure")
 ```
+
+This pattern preserves complete authoring control: modelers and AI agents can selectively assign semantic styles (`subtotal`, `total`), custom number formats, section headers, and audit notes without being constrained by an inflexible generic dataframe wrapper.
 
 ### 3.4. Compilation & In-Memory Inspection
 
@@ -306,9 +318,11 @@ import f8
 # 1. Compile in-memory (<5ms)
 compiled = model.compile()
 
-# 2. Inspect evaluated results as a Pandas DataFrame or raw dictionary
-df_evaluated = compiled.table("OPERATIONS").to_pandas()
+# 2. Inspect evaluated results as a dictionary or record list (ready for Pandas/Polars)
 dict_evaluated = compiled.table("OPERATIONS").to_dict()
+# Ingest into any dataframe library without f8 depending on it:
+# df = pd.DataFrame(dict_evaluated)
+# pl_df = pl.DataFrame(dict_evaluated)
 
 # 3. Direct cell auditing
 cell_info = compiled.inspect_cell("OPERATIONS", "gross_profit", "2024E")
@@ -369,8 +383,7 @@ To guarantee seamless interoperability between Python code, CLI workflows, and a
 - Support canonical formula string expressions and 0D cell overrides on rows and tables.
 - Implement pure Python project export (`model.export_project`) and direct project compilation (`f8.compile_project`).
 
-### Phase 3: Ecosystem Interop & Inspection
-- Implement `.to_pandas()` and `.to_dict()` on `TableInspection`.
-- Implement `sheet.add_table_from_dataframe(...)` ingestion helper.
+### Phase 3: Inspection Protocols & Auditing
+- Implement `.to_dict()` and standard dictionary export orientations (`records`, `split`) on `TableInspection`.
 - Implement interactive auditing methods (`inspect_cell`, `precedents_of`, `dependents_of`).
 
