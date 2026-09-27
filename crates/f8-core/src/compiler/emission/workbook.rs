@@ -22,6 +22,7 @@ use crate::value::CellValue;
 
 /// Configuration options for OpenXML workbook emission.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EmissionOptions {
     /// When true, emits evaluated values instead of formulas (frozen audit workbook).
     pub values_only: bool,

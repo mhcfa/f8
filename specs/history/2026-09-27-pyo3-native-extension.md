@@ -1,7 +1,7 @@
 ---
 title: Native PyO3 extension (crates/f8-python)
 date: 2026-09-27
-status: draft
+status: completed
 target-living-spec: specs/living-specs/interfaces/python-sdk.md
 ---
 
@@ -55,7 +55,7 @@ The f8 architecture establishes Python as the primary "Code as Model" authoring 
 - `python/f8/_core.pyi`: PEP 561 type stub definitions for native functions, classes, and exceptions, providing 100% type coverage for `pyright`.
 - `python/f8/py.typed`: PEP 561 marker indicating typing support.
 - `.gitignore`: Add Python virtual environment (`.venv`), Python bytecode (`__pycache__/`, `*.pyc`), Maturin build outputs (`*.so`, `*.pyd`, `dist/`), `.ruff_cache`, and pytest cache artifacts.
-- `tests/test_core_binding.py`: Python unit tests exercising compilation, cell inspection, workbook emission, and exception propagation.
+- `python/tests/test_core_binding.py`: Python unit tests exercising compilation, cell inspection, workbook emission, and exception propagation.
 
 ### Capabilities
 
@@ -221,6 +221,7 @@ def compile(
     theme: dict | str | None = None,
 ) -> CompiledModel: ...
 
+
 class CompiledModel:
     def emit_workbook(self, options: dict | None = None) -> bytes: ...
     def summary(self) -> dict: ...
@@ -242,11 +243,14 @@ class CompiledModel:
         recursive: bool = False,
     ) -> dict: ...
 
+
 class F8Error(Exception):
     message: str
 
+
 class CycleDetectedError(F8Error):
     cycle: list[str]
+
 
 class ReferenceResolutionError(F8Error):
     coordinate: str
@@ -254,9 +258,11 @@ class ReferenceResolutionError(F8Error):
     row: str | None
     col: str | None
 
+
 class SpecificationError(F8Error):
     table: str | None
     reason: str
+
 
 class FormulaParseError(F8Error):
     table: str
@@ -264,8 +270,10 @@ class FormulaParseError(F8Error):
     col: str | None
     token_offset: int | None
 
+
 class InspectionError(F8Error):
     entity: str
+
 
 class EmissionError(F8Error):
     pass
@@ -316,52 +324,52 @@ All `PyCompiledModel` query methods (`inspect_cell`, `inspect_table`, `inspect_s
 
 ### Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: In-memory compilation and workbook emission**
+- [x] **Scenario 1: In-memory compilation and workbook emission**
   - **Given** valid manifest, table, and theme dictionaries representing a model
   - **When** calling `f8._core.compile(manifest, tables, theme)` from Python
   - **Then** a `CompiledModel` instance is returned, and `emit_workbook()` returns valid non-empty OpenXML bytes (`PK\x03\x04...`).
 
-- [ ] **Scenario 2: Emission options with values-only freezing**
+- [x] **Scenario 2: Emission options with values-only freezing**
   - **Given** a compiled model with calculated formula cells
   - **When** calling `compiled.emit_workbook({"values_only": True})`
   - **Then** returns valid OpenXML bytes emitting evaluated values without live formulas.
 
-- [ ] **Scenario 3: Cell inspection with flexible coordinates**
+- [x] **Scenario 3: Cell inspection with flexible coordinates**
   - **Given** a compiled model with calculated formula cells
   - **When** calling `inspect_cell("OPERATIONS", "gross_profit", "2024E")` or `inspect_cell('OPERATIONS["gross_profit", "2024E"]')`
   - **Then** both invocations return identical dictionaries containing `physical_address`, `evaluated_value`, `excel_formula`, and populated `precedents`.
 
-- [ ] **Scenario 4: Dependency tree querying (direct and recursive)**
+- [x] **Scenario 4: Dependency tree querying (direct and recursive)**
   - **Given** a compiled model with calculation chains
   - **When** calling `precedents_of("OPERATIONS", "ebitda", "2024E", recursive=True)`
   - **Then** returns a dictionary representing the recursive `DependencyTree` with `root`, `direct_count`, `transitive_count`, and pruned nodes.
 
-- [ ] **Scenario 5: Model and sheet summary inspection**
+- [x] **Scenario 5: Model and sheet summary inspection**
   - **Given** a compiled model with multiple tables across sheets
   - **When** calling `compiled.summary()` and `compiled.inspect_sheet("Operations")`
   - **Then** `summary()` returns cell/driver/formula totals, and `inspect_sheet()` returns physical 2D grid dimensions and cell records.
 
-- [ ] **Scenario 6: Cyclic dependency error propagation**
+- [x] **Scenario 6: Cyclic dependency error propagation**
   - **Given** a table with a formula cycle (e.g. `A = B` and `B = A`)
   - **When** attempting to compile the model
   - **Then** `f8._core.CycleDetectedError` is raised containing the ordered `cycle` list of coordinate strings and diagnostic message.
 
-- [ ] **Scenario 7: Reference resolution error propagation**
+- [x] **Scenario 7: Reference resolution error propagation**
   - **Given** a table with a formula referencing a non-existent table or column
   - **When** attempting to compile the model
   - **Then** `f8._core.ReferenceResolutionError` is raised with `coordinate`, `target_table`, `row`, or `col` diagnostic fields.
 
-- [ ] **Scenario 8: Formula syntax parse error propagation**
+- [x] **Scenario 8: Formula syntax parse error propagation**
   - **Given** a table with a syntactically invalid formula (e.g. unclosed parenthesis or invalid operator)
   - **When** attempting to compile the model
   - **Then** `f8._core.FormulaParseError` is raised with `table`, `row`, `col`, `token_offset`, and syntax error `message`.
 
-- [ ] **Scenario 9: Specification and deserialization error propagation**
+- [x] **Scenario 9: Specification and deserialization error propagation**
   - **Given** an invalid manifest or table dictionary (e.g. missing required fields or duplicate row IDs)
   - **When** attempting to compile the model
   - **Then** `f8._core.SpecificationError` is raised containing the faulty `table` (if applicable) and descriptive `reason`.
 
-- [ ] **Scenario 10: Inspection entity not found error propagation**
+- [x] **Scenario 10: Inspection entity not found error propagation**
   - **Given** a compiled model
   - **When** calling `inspect_cell("NONEXISTENT", "r", "c")` or `inspect_table("UNKNOWN")`
   - **Then** `f8._core.InspectionError` is raised detailing the missing entity.
@@ -371,25 +379,25 @@ All `PyCompiledModel` query methods (`inspect_cell`, `inspect_table`, `inspect_s
 ## Tasks
 
 ### Phase 1: Environment & Workspace Setup
-- [ ] Add `.venv`, `__pycache__/`, `*.pyc`, `*.so`, `*.pyd`, `dist/`, `.pytest_cache`, `.ruff_cache` to `.gitignore`.
-- [ ] Create root `README.md` project overview and architecture links as required by `pyproject.toml`.
-- [ ] Create `.python-version` pinning `3.12` for deterministic `uv` hermetic environment resolution.
-- [ ] Create `pyproject.toml` configuring `maturin` build backend (`manifest-path = "crates/f8-python/Cargo.toml"`, `python-source = "python"`, `module-name = "f8._core"`), project metadata (`requires-python = ">=3.12"`), `ruff` (`target-version = "py312"`), `pyright` (`pythonVersion = "3.12"`, `extraPaths = ["python"]`), and `uv` dev dependencies (`maturin`, `pytest`, `ruff`, `pyright`).
-- [ ] Create `python/f8/__init__.py` re-exporting native primitives from `f8._core` (`compile`, `CompiledModel`, exception classes) with explicit `__all__`, plus `python/f8/py.typed` and `python/f8/_core.pyi` type stubs.
-- [ ] Create `crates/f8-python` directory and configure `crates/f8-python/Cargo.toml` with workspace-inherited package metadata (`version`, `edition`, `license`, `authors`), `[lib] name = "_core"`, `crate-type = ["cdylib"]`, `test = false` (prevents workspace `cargo test` linker failure), `pyo3 = { workspace = true, features = ["abi3-py312", "extension-module"] }`, `pythonize`, `serde`, `serde_json`, `indexmap`, `f8-core`, and `[lints] workspace = true`.
-- [ ] Add `crates/f8-python` to root `Cargo.toml` workspace members and register `pyo3 = { version = "0.24", default-features = false, features = ["macros"] }` and `pythonize` in `[workspace.dependencies]`.
+- [x] Add `.venv`, `__pycache__/`, `*.pyc`, `*.so`, `*.pyd`, `dist/`, `.pytest_cache`, `.ruff_cache` to `.gitignore`.
+- [x] Create root `README.md` project overview and architecture links as required by `pyproject.toml`.
+- [x] Create `.python-version` pinning `3.12` for deterministic `uv` hermetic environment resolution.
+- [x] Create `pyproject.toml` configuring `maturin` build backend (`manifest-path = "crates/f8-python/Cargo.toml"`, `python-source = "python"`, `module-name = "f8._core"`), project metadata (`requires-python = ">=3.12"`), `ruff` (`target-version = "py312"`), `pyright` (`pythonVersion = "3.12"`, `extraPaths = ["python"]`), and `uv` dev dependencies (`maturin`, `pytest`, `ruff`, `pyright`).
+- [x] Create `python/f8/__init__.py` re-exporting native primitives from `f8._core` (`compile`, `CompiledModel`, exception classes) with explicit `__all__`, plus `python/f8/py.typed` and `python/f8/_core.pyi` type stubs.
+- [x] Create `crates/f8-python` directory and configure `crates/f8-python/Cargo.toml` with workspace-inherited package metadata (`version`, `edition`, `license`, `authors`), `[lib] name = "_core"`, `crate-type = ["cdylib"]`, `test = false` (prevents workspace `cargo test` linker failure), `pyo3 = { workspace = true, features = ["abi3-py312", "extension-module"] }`, `pythonize`, `serde`, `serde_json`, `indexmap`, `f8-core`, and `[lints] workspace = true`.
+- [x] Add `crates/f8-python` to root `Cargo.toml` workspace members and register `pyo3 = { version = "0.24", default-features = false, features = ["macros"] }` and `pythonize` in `[workspace.dependencies]`.
 
 ### Phase 2: Native Bridge Implementation
-- [ ] Define Python exception hierarchy (`F8Error`, `CycleDetectedError`, `ReferenceResolutionError`, `SpecificationError`, `FormulaParseError`, `InspectionError` as `PyInspectionError`, `EmissionError`) with typed attributes in `crates/f8-python/src/error.rs`, propagating `message` to `PyException`.
-- [ ] Implement error mapping functions via pattern matching from `f8_core::CompilerError` (including `Eval` and `FormulaParse`) and `f8_core::InspectionError` into PyO3 exceptions.
-- [ ] Implement `PyCompiledModel` wrapper around `f8_core::CompiledModel` in `crates/f8-python/src/model.rs` supporting flexible coordinate arguments (`target`, `row`, `col`) via `CompiledModel::parse_coordinate`, inspection marshaling via `pythonize`, and releasing GIL during `emit_workbook`.
-- [ ] Implement `compile` entrypoint in `crates/f8-python/src/lib.rs` deserializing via `pythonize`, resolving themes (None/str/dict), and releasing GIL during compilation.
-- [ ] Register module entrypoint `_core` with all classes and functions.
+- [x] Define Python exception hierarchy (`F8Error`, `CycleDetectedError`, `ReferenceResolutionError`, `SpecificationError`, `FormulaParseError`, `InspectionError` as `PyInspectionError`, `EmissionError`) with typed attributes in `crates/f8-python/src/error.rs`, propagating `message` to `PyException`.
+- [x] Implement error mapping functions via pattern matching from `f8_core::CompilerError` (including `Eval` and `FormulaParse`) and `f8_core::InspectionError` into PyO3 exceptions.
+- [x] Implement `PyCompiledModel` wrapper around `f8_core::CompiledModel` in `crates/f8-python/src/model.rs` supporting flexible coordinate arguments (`target`, `row`, `col`) via `CompiledModel::parse_coordinate`, inspection marshaling via `pythonize`, and releasing GIL during `emit_workbook`.
+- [x] Implement `compile` entrypoint in `crates/f8-python/src/lib.rs` deserializing via `pythonize`, resolving themes (None/str/dict), and releasing GIL during compilation.
+- [x] Register module entrypoint `_core` with all classes and functions.
 
 ### Phase 3: Verification & Python Tests
-- [ ] Build extension with `uv run maturin develop`.
-- [ ] Write comprehensive unit tests in `tests/test_core_binding.py` covering all 10 acceptance scenarios (compilation, values-only emission, flexible coordinate inspection, dependency trees, and structured exception attributes).
-- [ ] Run `cargo check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (verifying workspace tests pass cleanly with `test = false` on cdylib), and `cargo fmt --check`.
-- [ ] Run `uv run ruff check .` and `uv run ruff format --check .`.
-- [ ] Run `uv run pyright`.
-- [ ] Run `uv run pytest` to verify all acceptance scenarios.
+- [x] Build extension with `uv run maturin develop`.
+- [x] Write comprehensive unit tests in `python/tests/test_core_binding.py` covering all 10 acceptance scenarios (compilation, values-only emission, flexible coordinate inspection, dependency trees, and structured exception attributes).
+- [x] Run `cargo check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (verifying workspace tests pass cleanly with `test = false` on cdylib), and `cargo fmt --check`.
+- [x] Run `uv run ruff check .` and `uv run ruff format --check .`.
+- [x] Run `uv run pyright`.
+- [x] Run `uv run pytest` to verify all acceptance scenarios.
