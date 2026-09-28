@@ -24,7 +24,8 @@ flowchart TD
     H -->|save| J[".xlsx File on Disk"]
 ```
 
-- **`python/f8/builder.py`**: Pure Python authoring DSL providing `Model`, `Sheet`, `Table`, and `Cell` builders with in-memory specification synthesis (`to_spec()`) and direct compilation (`compile()`).
+- **`python/f8/builder.py`**: Pure Python authoring DSL providing `Model`, `Sheet`, `Table`, and `Cell` builders with in-memory specification synthesis (`to_spec()`), direct compilation (`compile()`), and multi-file project export (`export_project()`).
+- **`python/f8/loader.py`**: Pure Python on-disk project loader and direct compiler (`compile_project()`) discovering and assembling `f8.json` and `tables/*.json` without invoking CLI subprocesses.
 - **`python/f8/types.py`**: Strict PEP 561 / `pyright` type contracts, `Literal` choices, and `TypedDict` schemas covering both compiler inspection models and authoring specifications.
 - **`crates/f8-python`**: PyO3 C-ABI native extension crate compiled as `cdylib` targeting Python stable ABI `abi3-py312`.
 - **Marshaling layer**: Uses `pythonize` for microsecond conversion of Python dictionaries directly into `f8-core` Serde types (`ProjectManifest`, `TableSpec`, `Theme`).
@@ -56,31 +57,44 @@ The modeling DSL provides hierarchical, in-memory model construction with strict
   - `Cell`: Frozen dataclass utilizing an internal sentinel to distinguish explicit nulls (`value=None`) from omitted values.
 - **Currency casing normalization**:
   - `CurrencyCode` accepts all 15 supported currencies in ISO uppercase or lowercase. Builders normalize codes to lowercase (`'usd'`, `'eur'`, etc.) during `to_spec()` synthesis.
+- **Multi-file project export**:
+  - `model.export_project(dir_path, overwrite=False, indent=2)`: Serializes in-memory model to `<dir_path>/f8.json` and `<dir_path>/tables/<table_id>.json`. Validates specs via `to_spec()` before I/O, creates directories automatically, and enforces fail-fast overwrite safety (`FileExistsError`) if files exist without `overwrite=True`.
 
 #### Scenarios
 
 - **Model compilation**:
   - **When** calling `model.compile()`.
   - **Then** synthesizes `ProjectManifestDict` and `list[TableSpecDict]` via `to_spec()` and returns a `CompiledModel`.
+- **Multi-file project export**:
+  - **When** calling `model.export_project(dir_path)`.
+  - **Then** creates `<dir_path>/f8.json` and `<dir_path>/tables/<table_id>.json` formatted with 2-space indentation and UTF-8 encoding.
 - **Point cell overrides**:
   - **When** calling `table.set_cell("rev", "2024E", expr="PREV * 1.10")` or updating an existing cell's presentation attributes with `table.set_cell("rev", "2023A", note="Audited")`.
   - **Then** updates target cell payload or metadata while preserving unchanged fields.
 
-### 2. In-Memory Compilation & Theme Resolution
+### 2. In-Memory Compilation & On-Disk Ingestion
 
-The native entrypoint `f8._core.compile(manifest, tables, theme=None)` compiles high-level model definitions into an in-memory `CompiledModel`.
+The SDK supports both pure in-memory compilation via PyO3 native entrypoints and direct on-disk project compilation without CLI subprocesses.
 
 - **Theme resolution order**:
-  1. `theme is None`: Resolves theme declared in `manifest.theme` via `ProjectManifest::resolve_theme` (defaults to built-in `corporate_navy`).
-  2. `isinstance(theme, str)`: Resolves built-in theme catalog by name via `Theme::resolve_builtin`.
+  1. `theme is None`: Resolves theme declared in `manifest.theme` via `ProjectManifest::resolve_theme` (defaults to built-in `corporate_navy`). Checks for local theme file on disk before resolving built-in catalog.
+  2. `isinstance(theme, str)`: If matching an existing file path on disk, loads the JSON theme; otherwise resolves built-in theme catalog by name via `Theme::resolve_builtin`.
   3. `isinstance(theme, dict)`: Deserializes explicit custom theme specification via `pythonize`.
-- **Zero filesystem I/O**: Operates purely on in-memory data structures without reading or writing disk files.
+- **Zero core filesystem I/O**: `f8-core` remains purely in-memory. All project disk I/O is managed cleanly in Python `f8.loader` using `pathlib.Path`.
+- **Direct on-disk compilation**:
+  - `f8.compile_project(dir_path, theme=None) -> CompiledModel`: Discovers `<dir_path>/f8.json` (or accepts direct `f8.json` path) and contained `<dir_path>/tables/*.json` files.
+  - Validates uniqueness of table IDs, raising `ValueError` on duplicates.
+  - Raises `FileNotFoundError` if destination path or `f8.json` does not exist.
+  - Round-trip fidelity guarantee: Models compiled directly in memory produce identical cell values, formulas, coordinates, and summaries as models exported to disk and recompiled via `compile_project`.
 
 #### Scenarios
 
 - **Compilation success**:
   - **When** valid manifest and table specifications are passed to `f8.compile(manifest, tables)`.
   - **Then** returns a `CompiledModel` instance wrapping evaluated cell values, dependency graph, and spatial layout.
+- **Direct on-disk project compilation**:
+  - **When** calling `f8.compile_project(dir_path)`.
+  - **Then** loads manifest and table specifications from disk, assembling them and compiling directly into a `CompiledModel`.
 
 ### 3. Workbook Binary Emission & Disk Persistence
 

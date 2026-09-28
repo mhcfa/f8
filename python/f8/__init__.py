@@ -12,6 +12,7 @@ from f8._core import (
     compile,
 )
 from f8.builder import Cell, CellInputValue, Model, Sheet, Table
+from f8.loader import compile_project
 from f8.types import (
     AxisRole,
     CellCoordinate,
@@ -55,6 +56,7 @@ from f8.types import (
 
 __all__ = [
     "compile",
+    "compile_project",
     "CompiledModel",
     "Model",
     "Sheet",

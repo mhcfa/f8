@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from f8._core import CompiledModel
@@ -659,6 +661,62 @@ class Model:
     def compile(self, theme: ThemeInput | None = None) -> CompiledModel:
         manifest, tables = self.to_spec()
         return core_compile(manifest, tables, theme=theme)
+
+    def export_project(
+        self,
+        dir_path: str | Path,
+        overwrite: bool = False,
+        indent: int = 2,
+    ) -> None:
+        """Export in-memory model to canonical multi-file JSON project directory.
+
+        Creates `<dir_path>/f8.json` and `<dir_path>/tables/<table_id>.json` for each table.
+
+        Args:
+            dir_path: Target directory path for project serialization.
+            overwrite: Whether to overwrite existing files in destination directory.
+            indent: Number of spaces for JSON indentation (default: 2).
+
+        Raises:
+            FileExistsError: If destination files already exist and overwrite is False.
+
+        Note:
+            When `overwrite=True`, existing table files with matching IDs are overwritten.
+            Orphaned table files from prior exports with differing IDs will remain on disk
+            unless manually pruned.
+        """
+        dest_dir = Path(dir_path)
+        manifest_file = dest_dir / "f8.json"
+        tables_dir = dest_dir / "tables"
+
+        manifest, table_specs = self.to_spec()
+
+        if not overwrite:
+            if manifest_file.exists():
+                msg = (
+                    f"Project manifest already exists at '{manifest_file}'. "
+                    "Use overwrite=True to replace."
+                )
+                raise FileExistsError(msg)
+            for table in self.tables:
+                table_file = tables_dir / f"{table.id}.json"
+                if table_file.exists():
+                    msg = (
+                        f"Table file already exists at '{table_file}'. "
+                        "Use overwrite=True to replace."
+                    )
+                    raise FileExistsError(msg)
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        tables_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest_json = json.dumps(manifest, indent=indent) + "\n"
+        manifest_file.write_text(manifest_json, encoding="utf-8")
+
+        for table, spec in zip(self.tables, table_specs, strict=True):
+            table_file = tables_dir / f"{table.id}.json"
+            table_json = json.dumps(spec, indent=indent) + "\n"
+            table_file.write_text(table_json, encoding="utf-8")
 
 
 __all__ = ["Cell", "CellInputValue", "Model", "Sheet", "Table"]

@@ -1,7 +1,7 @@
 ---
 title: Python Project Serialization & Disk Interoperability
 date: 2026-09-28
-status: draft
+status: completed
 target-living-spec: specs/living-specs/interfaces/python-sdk.md
 ---
 
@@ -122,30 +122,30 @@ def compile_project(
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Canonical Multi-File JSON Export**
+- [x] **Scenario 1: Canonical Multi-File JSON Export**
   - **Given** a valid `Model` instance with 2 sheets and 3 tables.
   - **When** calling `model.export_project(dir_path)`.
   - **Then** creates `<dir_path>/f8.json` containing the manifest and `<dir_path>/tables/<table_id>.json` for each table.
   - **And** all JSON files are formatted with 2-space indentation and valid UTF-8.
 
-- [ ] **Scenario 2: Overwrite Protection**
+- [x] **Scenario 2: Overwrite Protection**
   - **Given** an existing project directory containing `f8.json`.
   - **When** calling `model.export_project(dir_path, overwrite=False)`.
   - **Then** raises `FileExistsError` without modifying any disk files.
   - **When** calling `model.export_project(dir_path, overwrite=True)`.
   - **Then** successfully updates the project files on disk.
 
-- [ ] **Scenario 3: Direct Project Compilation from Disk**
+- [x] **Scenario 3: Direct Project Compilation from Disk**
   - **Given** an on-disk project directory with `f8.json` and tables.
   - **When** calling `f8.compile_project(dir_path)`.
   - **Then** compiles the model into `CompiledModel` with zero CLI subprocess execution.
 
-- [ ] **Scenario 4: Round-Trip Evaluation Fidelity**
+- [x] **Scenario 4: Round-Trip Evaluation Fidelity**
   - **Given** a complex model authored in Python containing formulas, cell overrides, gutters, and freeze panes.
   - **When** compiling directly in memory via `model.compile()` and compiling the exported project via `f8.compile_project(dir_path)`.
   - **Then** both `CompiledModel` instances produce identical summary metrics, evaluated cell values, and lowered formulas.
 
-- [ ] **Scenario 5: Missing Project Manifest Error Handling**
+- [x] **Scenario 5: Missing Project Manifest Error Handling**
   - **Given** a directory without `f8.json`.
   - **When** calling `f8.compile_project(dir_path)`.
   - **Then** raises `FileNotFoundError` with a clear message indicating `f8.json` is missing.
@@ -156,29 +156,29 @@ def compile_project(
 
 ### Phase 1: Pure Python Project Exporter
 
-- [ ] Implement `Model.export_project(dir_path, overwrite=False, indent=2)` in `python/f8/builder.py`.
-- [ ] Add directory validation, parent creation, and `FileExistsError` check.
-- [ ] Format and serialize `f8.json` and `tables/<id>.json` using `to_spec()`.
+- [x] Implement `Model.export_project(dir_path, overwrite=False, indent=2)` in `python/f8/builder.py`.
+- [x] Add directory validation, parent creation, and `FileExistsError` check.
+- [x] Format and serialize `f8.json` and `tables/<id>.json` using `to_spec()`.
 
 ### Phase 2: Direct Project Loader & Compiler
 
-- [ ] Implement `compile_project(dir_path: str | Path, theme: str | None = None) -> CompiledModel` in `python/f8/loader.py`.
-- [ ] Load and parse `f8.json` and contained `tables/*.json` using standard `json.loads`.
-- [ ] Delegate to `f8._core.compile(manifest, tables, theme)`.
-- [ ] Re-export `compile_project` in `python/f8/__init__.py`.
+- [x] Implement `compile_project(dir_path: str | Path, theme: str | None = None) -> CompiledModel` in `python/f8/loader.py`.
+- [x] Load and parse `f8.json` and contained `tables/*.json` using standard `json.loads`.
+- [x] Delegate to `f8._core.compile(manifest, tables, theme)`.
+- [x] Re-export `compile_project` in `python/f8/__init__.py`.
 
 ### Phase 3: Verification & Round-Trip Test Suite
 
-- [ ] Add comprehensive tests in `python/tests/test_project_io.py`:
+- [x] Add comprehensive tests in `python/tests/test_project_io.py`:
   - Test export creation and directory structure.
   - Test overwrite protection.
   - Test round-trip evaluation against fixture models.
   - Test missing manifest error reporting.
-- [ ] Verify complete project suite:
+- [x] Verify complete project suite:
   - `cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check`
   - `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`
 
 ### Phase 4: Living Spec Reconciliation
 
-- [ ] Update living spec `specs/living-specs/interfaces/python-sdk.md` with project export and loader signatures.
-- [ ] Archive completed draft spec to `specs/history/`.
+- [x] Update living spec `specs/living-specs/interfaces/python-sdk.md` with project export and loader signatures.
+- [x] Archive completed draft spec to `specs/history/`.
