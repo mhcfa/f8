@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use f8_core::compiler::compiled::TableInspection;
 use f8_core::compiler::ir::id::CellId;
-use f8_core::value::format_cell_value;
 
 /// View mode for table cell content rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, ValueEnum, Serialize, Deserialize)]
@@ -146,7 +145,7 @@ fn get_cell_text(
         };
     };
 
-    let val_str = format_cell_value(&cell.value, cell.format, cell.decimals, cell.currency);
+    let val_str = cell.formatted_value.as_deref().unwrap_or_default();
     let val_with_indent = if col.is_descriptor {
         let row_indent = table
             .rows
@@ -156,13 +155,13 @@ fn get_cell_text(
         let label = if val_str.is_empty() {
             row_id.to_string()
         } else if val_str.eq_ignore_ascii_case(row_id) {
-            val_str
+            val_str.to_string()
         } else {
             format!("{val_str} [{row_id}]")
         };
         format!("{}{label}", "  ".repeat(row_indent as usize))
     } else {
-        val_str
+        val_str.to_string()
     };
 
     match view {

@@ -75,13 +75,13 @@ The unified inspection facade (`CompiledModel`) consolidates all compiler pass a
 
 ### 5. 2D Table Matrix Inspection
 
-`CompiledModel::inspect_table` outputs full 2D table structures with declared column headers, row descriptors, indentations, and cell records containing formatting presets, display precision, and currency metadata in declared order.
+`CompiledModel::inspect_table` outputs full 2D table structures with declared column headers, row descriptors, indentations, and cell records containing pre-formatted runtime value strings (`formatted_value`), evaluated values, formatting presets, display precision, and currency metadata in declared order.
 
 #### Scenarios
 
 - **Table inspection**:
   - **When** inspecting a registered table
-  - **Then** returns `TableInspection` with columns, rows, and cells enriched with formatting presets, decimal precision, and currency codes.
+  - **Then** returns `TableInspection` with columns, rows, and cells enriched with pre-formatted typography (`formatted_value`), formatting presets, decimal precision, and currency codes.
 - **Missing table identifier**:
   - **When** querying a table not present in the model
   - **Then** returns `InspectionError::TableNotFound`.

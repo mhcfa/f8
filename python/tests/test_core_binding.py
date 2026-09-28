@@ -183,6 +183,10 @@ def test_scenario_5_model_and_sheet_summary_inspection(
     assert table_insp["table_id"] == "OPERATIONS"
     assert len(table_insp["rows"]) == 4
     assert len(table_insp["columns"]) == 2
+    rev_cell = table_insp["cells"]['OPERATIONS["revenue", "2024E"]']
+    assert rev_cell["formatted_value"] == "$ 100.0"
+    assert rev_cell["value"] == {"Number": 100.0}
+    assert rev_cell["format"] == "currency"
 
 
 def test_scenario_6_cyclic_dependency_error() -> None:

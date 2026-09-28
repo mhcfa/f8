@@ -136,6 +136,7 @@ class TableCellInfo(TypedDict):
     """Cell audit metadata within a 2D table inspection view."""
 
     value: CellValueDict
+    formatted_value: str | None
     is_formula: bool
     formula_expr: str | None
     excel_formula: str | None

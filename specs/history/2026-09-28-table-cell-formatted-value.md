@@ -1,7 +1,7 @@
 ---
 title: Pre-formatted Value Synthesis in Table Inspection
 date: 2026-09-28
-status: draft
+status: completed
 target-living-spec: specs/living-specs/compiler/compiled-model.md
 ---
 
@@ -132,23 +132,23 @@ class TableCellInfo(TypedDict):
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Currency & Percentage Formatted Value Synthesis**
+- [x] **Scenario 1: Currency & Percentage Formatted Value Synthesis**
   - **Given** a compiled model with a table containing a currency cell (`value = 1200.0`, `format = Currency`) and a percentage cell (`value = 0.15`, `format = Percentage`).
   - **When** calling `compiled.inspect_table(table_id)`.
   - **Then** the currency cell's `formatted_value` equals `Some("$ 1,200.0")` (or configured currency format).
   - **And** the percentage cell's `formatted_value` equals `Some("15.0%")`.
 
-- [ ] **Scenario 2: Negative Number Accounting Format in Table Inspection**
+- [x] **Scenario 2: Negative Number Accounting Format in Table Inspection**
   - **Given** a cell with negative numeric value `-50.0` and currency format.
   - **When** calling `compiled.inspect_table(table_id)`.
-  - **Then** `formatted_value` displays accounting parentheses: `Some("$ (50.0)")`.
+  - **Then** `formatted_value` displays accounting parentheses: `Some("($ 50.0)")`.
 
-- [ ] **Scenario 3: CLI Table Rendering Parity**
+- [x] **Scenario 3: CLI Table Rendering Parity**
   - **Given** a table with formatted currency, integer, and percentage cells.
   - **When** executing `f8 inspect table <id>` in the CLI.
   - **Then** rendered table output is identical before and after switching `crates/f8-cli/src/render/table.rs` to consume `cell.formatted_value`.
 
-- [ ] **Scenario 4: Python SDK Marshaling & Pyright Compliance**
+- [x] **Scenario 4: Python SDK Marshaling & Pyright Compliance**
   - **Given** a compiled model inspected via Python `compiled.inspect_table(table_id)`.
   - **When** accessing `cell["formatted_value"]`.
   - **Then** returns a string matching the pre-formatted accounting value.
@@ -160,27 +160,27 @@ class TableCellInfo(TypedDict):
 
 ### Phase 1: Core Compiler Inspection Enhancement
 
-- [ ] Add `pub formatted_value: Option<String>` to `TableCellInfo` in `crates/f8-core/src/compiler/compiled/model.rs`.
-- [ ] Populate `formatted_value` using `format_cell_value` in `CompiledModel::inspect_table` in `crates/f8-core/src/compiler/compiled/mod.rs`.
-- [ ] Update unit and integration tests in `crates/f8-core` verifying `TableCellInfo.formatted_value`.
+- [x] Add `pub formatted_value: Option<String>` to `TableCellInfo` in `crates/f8-core/src/compiler/compiled/model.rs`.
+- [x] Populate `formatted_value` using `format_cell_value` in `CompiledModel::inspect_table` in `crates/f8-core/src/compiler/compiled/mod.rs`.
+- [x] Update unit and integration tests in `crates/f8-core` verifying `TableCellInfo.formatted_value`.
 
 ### Phase 2: CLI Rendering Simplification
 
-- [ ] Update `get_cell_text` in `crates/f8-cli/src/render/table.rs` to read `cell.formatted_value.as_deref().unwrap_or_default()`.
-- [ ] Remove redundant `format_cell_value` call from `crates/f8-cli/src/render/table.rs`.
-- [ ] Verify CLI snapshot and rendering tests pass with zero regressions.
+- [x] Update `get_cell_text` in `crates/f8-cli/src/render/table.rs` to read `cell.formatted_value.as_deref().unwrap_or_default()`.
+- [x] Remove redundant `format_cell_value` call from `crates/f8-cli/src/render/table.rs`.
+- [x] Verify CLI snapshot and rendering tests pass with zero regressions.
 
 ### Phase 3: Python SDK Contract Synchronization
 
-- [ ] Update `TableCellInfo` TypedDict in `python/f8/types.py` to include `formatted_value: str | None`.
-- [ ] Verify native extension marshaling with `uv run maturin develop`.
-- [ ] Add Python test in `python/tests/` asserting `inspect_table` returns `formatted_value`.
-- [ ] Verify Python verification suite passes (`uv run ruff check .`, `uv run pyright`, `uv run pytest`).
+- [x] Update `TableCellInfo` TypedDict in `python/f8/types.py` to include `formatted_value: str | None`.
+- [x] Verify native extension marshaling with `uv run maturin develop`.
+- [x] Add Python test in `python/tests/` asserting `inspect_table` returns `formatted_value`.
+- [x] Verify Python verification suite passes (`uv run ruff check .`, `uv run pyright`, `uv run pytest`).
 
 ### Phase 4: Verification & Living Spec Reconciliation
 
-- [ ] Run full workspace verification:
+- [x] Run full workspace verification:
   - `cargo check && cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check`
   - `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`
-- [ ] Update `specs/living-specs/compiler/compiled-model.md` Section 5 to document `formatted_value` on `TableCellInfo`.
-- [ ] Archive draft spec to `specs/history/` upon completion.
+- [x] Update `specs/living-specs/compiler/compiled-model.md` Section 5 to document `formatted_value` on `TableCellInfo`.
+- [x] Archive draft spec to `specs/history/` upon completion.

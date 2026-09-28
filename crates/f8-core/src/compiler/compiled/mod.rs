@@ -27,7 +27,7 @@ use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
 use crate::model::theme::Theme;
-use crate::value::CellValue;
+use crate::value::{CellValue, format_cell_value};
 
 /// Unified compiled model consolidating all pass artifacts.
 #[derive(Debug, Clone, PartialEq)]
@@ -335,6 +335,13 @@ impl CompiledModel {
                     .cloned()
                     .unwrap_or(CellValue::Empty);
 
+                let formatted_value = Some(format_cell_value(
+                    &value,
+                    cell_node.format,
+                    cell_node.decimals,
+                    cell_node.currency,
+                ));
+
                 let (is_formula, formula_expr) = match &cell_node.payload {
                     CellPayload::Formula(expr) => (true, Some(expr.to_string())),
                     CellPayload::Literal(_) => (false, None),
@@ -346,6 +353,7 @@ impl CompiledModel {
                     cell_id,
                     TableCellInfo {
                         value,
+                        formatted_value,
                         is_formula,
                         formula_expr,
                         excel_formula,
