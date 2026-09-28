@@ -28,6 +28,7 @@ flowchart TD
 - **`python/f8/loader.py`**: Pure Python on-disk project loader and direct compiler (`compile_project()`) discovering and assembling `f8.json` and `tables/*.json` without invoking CLI subprocesses.
 - **`python/f8/audit.py`**: Pure Python high-level table auditing and tabular data export wrapper (`TableAuditor`) providing unboxed scalar conversion, `.to_dict()` across 4 orientations, and aligned 2D Markdown rendering.
 - **`python/f8/types.py`**: Strict PEP 561 / `pyright` type contracts, `Literal` choices, and `TypedDict` schemas covering both compiler inspection models and authoring specifications.
+- **`python/f8/cli.py` & `__main__.py`**: Lightweight CLI runner entrypoints for streaming financial modeling documentation (`f8 guide`) and scaffolding agent skill directories (`f8 agent init`).
 - **`crates/f8-python`**: PyO3 C-ABI native extension crate compiled as `cdylib` targeting Python stable ABI `abi3-py312`.
 - **Marshaling layer**: Uses `pythonize` for microsecond conversion of Python dictionaries directly into `f8-core` Serde types (`ProjectManifest`, `TableSpec`, `Theme`).
 - **Concurrency**: Explicitly releases the Python GIL (`py.allow_threads`) during CPU-bound compilation, OpenXML workbook synthesis, and filesystem disk writes.
@@ -255,3 +256,36 @@ The SDK packages an autonomous AI agent modeling skill directly within the distr
 - **Packaging safety**:
   - **When** test runners or static analysis tools scan the SDK distribution.
   - **Then** the skill directory introduces zero executable scripts or type checking side effects.
+
+### 9. Module Runner & Skill Scaffolding
+
+The SDK provides a lightweight standard library CLI module runner (`python/f8/cli.py` and `python/f8/__main__.py`) executed via `python -m f8` or `uv run -m f8`.
+
+- **Zero binary collisions**:
+  - No global console script is registered in `pyproject.toml`, preventing executable name shadowing with `crates/f8-cli`.
+- **Empty invocation**:
+  - Invoking `python -m f8` without arguments prints the top-level usage/help summary to `sys.stdout` and exits with code `0`.
+- **Documentation streaming (`f8 guide`)**:
+  - `python -m f8 guide`: Streams `SKILL.md` overview directly to `sys.stdout`.
+  - `python -m f8 guide <topic>`: Streams specific reference document to `stdout` (`syntax`, `functions`, `audit`).
+  - `python -m f8 guide --list`: Displays aligned list of available topics with summaries.
+  - `python -m f8 guide --all` (or `guide all`): Concatenates `SKILL.md` and all reference guides separated by `\n\n---\n\n`.
+  - Invalid topic argument: Prints usage and valid choices to `stderr` and exits with code `2`.
+- **Workspace scaffolding (`f8 agent init`)**:
+  - `python -m f8 agent init [--dest <PATH>] [--force]`: Recursively unpacks `.agents/skills/f8-modeling/` into the destination workspace (default `.`).
+  - Safe extraction: Uses `importlib.resources.Traversable` extraction to support both loose directories and installed wheel packages.
+  - Collision prevention: Aborts with exit code `1` if destination contains files and `--force` is omitted.
+  - Self-copy guard: Prevents copying into package resource directories, aborting with exit code `1`.
+
+#### Scenarios
+
+- **Top-level help**:
+  - **When** running `python -m f8`.
+  - **Then** prints usage instructions to `stdout` and exits with code `0`.
+- **Targeted guide inspection**:
+  - **When** running `python -m f8 guide syntax`.
+  - **Then** streams `references/syntax-and-grid.md` to `stdout` with exit code `0`.
+- **Workspace skill scaffolding**:
+  - **When** running `python -m f8 agent init` in an empty workspace.
+  - **Then** creates `.agents/skills/f8-modeling/` with complete documentation assets and zero `.py` files, exiting with code `0`.
+
