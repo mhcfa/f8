@@ -5,68 +5,42 @@ description: Author, audit, and compile financial models using the f8 Python SDK
 
 # f8 Financial Modeling Guide
 
-The `f8` Python SDK provides a strongly typed, in-memory DSL for authoring institutional-grade financial models compiled into live OpenXML (`.xlsx`) workbooks.
+`f8` is a financial modeling compiler and Python DSL that bridges programmatic modeling and spreadsheet software. It compiles in-memory tabular structures and vector formulas into a validated dependency DAG, enables immediate programmatic auditing, and emits native OpenXML (`.xlsx`) workbooks with live, interactive Excel formulas.
 
 ## Mental Model
 
-- **Hierarchy**: `Model` $\rightarrow$ `Sheet` $\rightarrow$ `Table` $\rightarrow$ `Column` & `Row` $\rightarrow$ `Cell`.
-- **2D Coordinates**: Every cell reference specifies both row and column: `Table[RowSelector, ColSelector]`.
-- **Vector Formulas**: Rows declare vector formulas lowered across measure columns automatically.
-- **In-Memory Verification**: Build in Python, compile in-memory via `model.compile()`, audit with `TableAuditor`, and save to `.xlsx` with live Excel formulas intact.
+- **Structural hierarchy**: `Model` $\rightarrow$ `Sheet` $\rightarrow$ `Table` $\rightarrow$ `Column` / `Row` $\rightarrow$ `Cell`.
+- **Vector-to-grid lowering**: Tables evaluate formulas along 1D vectors: horizontal row expressions (`row.expr`) broadcast across measure columns, while vertical column expressions (`col.expr`) broadcast down data rows.
+- **3-tier specificity lattice**: Cell resolution follows strict precedence:
+  1. *0D cell override*: Explicit cell values or `Cell(expr=...)` take highest priority.
+  2. *1D vector rules*: `row.expr` XOR `col.expr` (intersecting expressions without a 0D override raise `AmbiguousExpressionConflict`).
+  3. *Unassigned enforcement*: Every measure cell must resolve to an explicit value or formula; unassigned coordinates raise `SpecificationError`.
+- **In-memory evaluation**: Compiling executes the model in memory, enabling instant value calculation, tabular inspection, and cycle detection before saving to disk.
+- **Live Excel emission**: Emitted `.xlsx` workbooks retain native Excel formulas, formatting styles, and column layouts.
 
-## Quickstart
+## Modeling Lifecycle
 
-```python
-from f8 import Model, Cell
+1. **Define**: Construct the model hierarchy with explicit column roles (`descriptor` vs `measure`), section headers, row gutters, and vector formulas.
+2. **Compile**: Call `compiled = model.compile()` to parse formulas, lower vector coordinates, and resolve the dependency DAG.
+3. **Audit**: Inspect tabular slices and cell calculations via `compiled.table(...)` and `compiled.inspect_cell(...)` before generating outputs.
+4. **Self-heal**: Catch structured `F8Error` exceptions (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, etc.) to diagnose and resolve errors programmatically.
+5. **Emit**: Save the final workbook via `compiled.save("model.xlsx")` or export in-memory bytes using `compiled.emit_workbook()`.
 
-model = Model(name="CompanyForecast", theme="corporate_navy")
-sheet = model.add_sheet("Forecast")
-table = sheet.add_table("Operations", title="Operating Projections", currency="USD")
+## Core Invariants
 
-table.add_column("line_item", role="descriptor", header="Line Item")
-table.add_column("2023A", role="measure", header="2023A", format="currency", decimals=1)
-table.add_column("2024E", role="measure", header="2024E", format="currency", decimals=1)
+- **Always 2D coordinates**: All cell references require explicit 2D bracket syntax (`Table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`). Quoted row and column keys are required; bare identifiers inside brackets or dot syntax (`Table.row`) raise parse errors.
+- **Explicit column roles**: Assign `role="descriptor"` for text labels/metadata and `role="measure"` for calculated timeline periods.
+- **3-tier expression precedence**: 0D cell overrides (`Cell(value=...)` or `Cell(expr=...)`) override 1D vector expressions. Never define both a `row.expr` and `col.expr` for the same cell without a 0D override.
+- **Complete grid assignment**: Every measure cell must have an explicit value, vector formula, or cell override. Unassigned cells raise `SpecificationError`.
+- **Cell-level formatting and indentation**: Apply indentation and cell-specific styles directly to cells (`Cell("Label", indent=1)`), not to rows.
+- **Uppercase functions and booleans**: Built-in Excel functions (`SUM`, `AVERAGE`, `IF`, `XLOOKUP`) and boolean literals (`TRUE`, `FALSE`) must be uppercase.
+- **Explicit argument omission**: Use the underscore placeholder `_` to omit optional positional function arguments (e.g. `PMT(rate, nper, pv, _, type)`).
+- **Structured error handling**: Rely on typed attributes on `F8Error` subclasses rather than string matching to resolve compiler diagnostics.
 
-table.add_row(
-    "revenue",
-    cells={"line_item": "Revenue", "2023A": 100.0},
-    expr='Operations["revenue", col.prev] * 1.10',
-    format="currency",
-    decimals=1,
-)
-table.add_row(
-    "cogs",
-    cells={"line_item": Cell("Cost of Goods Sold", indent=1), "2023A": 40.0},
-    expr='Operations["revenue", @col] * 0.40',
-    format="currency",
-    decimals=1,
-)
-table.add_row(
-    "gross_profit",
-    cells={"line_item": "Gross Profit"},
-    expr='Operations["revenue", @col] - Operations["cogs", @col]',
-    style="subtotal",
-    format="currency",
-    decimals=1,
-)
+## Reference Index
 
-compiled = model.compile()
-auditor = compiled.table("Operations")
-print(auditor.to_markdown(view="values"))
-```
+Consult the detailed references when authoring specific model components:
 
-## Golden Rules
-
-1. **Always 2D coordinates**: Always use `Table["row", @col]` for intra-period references and `Table["row", col.prev]` for period-over-period lags. Bare identifiers or dot-syntax (`Table.revenue`) are syntax errors.
-2. **Explicit column roles**: Use `role="descriptor"` for text labels/metadata and `role="measure"` for calculable numeric timeline periods.
-3. **Cell-level indentation**: Place indentation on descriptor cells (`Cell("Label", indent=1)`), not on rows.
-4. **Clean visual hierarchy**: Separate logical blocks with `table.add_section_header("Title")` and visual spacing with `table.add_row_gutter()`.
-5. **Self-healing structured exceptions**: Catch `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`) to diagnose graph cycles, missing coordinates, or syntax errors programmatically.
-
-## Topic Index
-
-For in-depth guides and copy-pasteable patterns, see the references:
-
-- [references/syntax-and-grid.md](references/syntax-and-grid.md): 2D coordinates, vector expressions, column roles, section headers, gutters, and indentation.
-- [references/auditing-and-repair.md](references/auditing-and-repair.md): `TableAuditor`, cell inspection, unboxing, and structured exception self-healing.
-- [references/patterns.md](references/patterns.md): Roll-forward corkscrews, cross-table links, multi-tier subtotals and totals, and multi-tier headers.
+- [references/syntax-and-grid.md](references/syntax-and-grid.md): 2D coordinate grammar, active axes (`@col`, `@row`), temporal offsets (`col.prev`, `col.next`), slice syntax, column roles, 3-tier specificity lattice, section headers, row gutters, and styling.
+- [references/functions.md](references/functions.md): 44 built-in Excel functions (math, logical, financial, lookup, date), signatures, default values, criteria syntax, and argument omission rules.
+- [references/auditing-and-repair.md](references/auditing-and-repair.md): `CompiledModel` methods, `TableAuditor` inspection/markdown/DataFrame export, precedent/dependent traversal, and structured exception diagnostics.

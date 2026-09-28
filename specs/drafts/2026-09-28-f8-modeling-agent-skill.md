@@ -11,10 +11,10 @@ target-living-spec: specs/living-specs/interfaces/python-sdk.md
 
 Package an autonomous agent modeling skill directly within the Python SDK package tree at `python/f8/skills/f8-modeling/` using pure Markdown (`.md`) files. The skill provides progressive disclosure across four structured documents:
 
-1. `SKILL.md`: Root discovery document containing standard YAML frontmatter (`name: f8-modeling`), concise mental model, quickstart, golden rules, and topic routing index.
-2. `references/syntax-and-grid.md`: Generic, objective syntax reference guide covering 2D cell coordinates, vector expressions, column roles (`descriptor`, `measure`), section headers, symmetric gutters (`add_row_gutter()`, `add_column_gutter()`), and cell-level indentation (`Cell(indent=N)`).
-3. `references/auditing-and-repair.md`: Objective reference guide for `TableAuditor` tabular inspection, value unboxing, Markdown rendering, and structured `F8Error` compiler diagnostics (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`).
-4. `references/patterns.md`: Generic DSL wiring patterns (roll-forward corkscrews, cross-table links, multi-tier subtotals and totals, multi-tier headers) presented as concise structural templates rather than narrative story-driven examples.
+1. `SKILL.md`: Root discovery document containing standard YAML frontmatter (`name: f8-modeling`), concise mental model with 3-tier specificity lattice, modeling lifecycle, core invariants, and topic routing index.
+2. `references/syntax-and-grid.md`: Generic, objective syntax reference guide covering 2D cell coordinates, vector expressions, column roles (`descriptor`, `measure`), 3-tier specificity lattice, section headers, symmetric gutters (`add_row_gutter()`, `add_column_gutter()`), and cell-level indentation (`Cell(indent=N)`).
+3. `references/functions.md`: Comprehensive specification of the 44 built-in Excel functions supported by the `f8` formula engine, covering signatures, parameter semantics, default values, argument omission (`_`), criteria syntax, and error modes.
+4. `references/auditing-and-repair.md`: Objective reference guide for `CompiledModel` and `TableAuditor` tabular inspection, value unboxing, Markdown rendering, dependency tree traversal, and structured `F8Error` compiler diagnostics (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`).
 
 ### Why
 
@@ -26,7 +26,7 @@ Package an autonomous agent modeling skill directly within the Python SDK packag
 ### Scope
 
 - **In-scope**:
-  - Authoring canonical skill documents (`SKILL.md`, `references/syntax-and-grid.md`, `references/auditing-and-repair.md`, `references/patterns.md`) in `python/f8/skills/f8-modeling/`.
+  - Authoring canonical skill documents (`SKILL.md`, `references/syntax-and-grid.md`, `references/functions.md`, `references/auditing-and-repair.md`) in `python/f8/skills/f8-modeling/`.
   - Standard YAML frontmatter in `SKILL.md` with `name: f8-modeling` and descriptive intent routing metadata.
   - Standardized, generic syntax specifications, parameter contracts, and concise structural templates.
 - **Out-of-scope**:
@@ -39,10 +39,10 @@ Package an autonomous agent modeling skill directly within the Python SDK packag
 ### What Changes
 
 - **New files**:
-  - `python/f8/skills/f8-modeling/SKILL.md`: Concise executive summary, YAML frontmatter, mental model, quickstart, golden rules, and topic index.
-  - `python/f8/skills/f8-modeling/references/syntax-and-grid.md`: Generic 2D coordinate grammar, vector expression rules, column roles, section headers, gutters, and cell-level indentation.
-  - `python/f8/skills/f8-modeling/references/auditing-and-repair.md`: `TableAuditor` API contract, cell inspection, unboxing, and structured exception self-healing patterns.
-  - `python/f8/skills/f8-modeling/references/patterns.md`: Generic mechanical DSL wiring templates (roll-forward corkscrews, inter-table links, subtotal/total tiers, multi-tier headers).
+  - `python/f8/skills/f8-modeling/SKILL.md`: Concise executive summary, YAML frontmatter, mental model, modeling lifecycle, core invariants, and topic index.
+  - `python/f8/skills/f8-modeling/references/syntax-and-grid.md`: Generic 2D coordinate grammar, vector expression rules, column roles, 3-tier specificity lattice, section headers, gutters, and cell-level indentation.
+  - `python/f8/skills/f8-modeling/references/functions.md`: Comprehensive Excel function reference covering 44 built-in functions, argument omission (`_`), criteria syntax, and error codes.
+  - `python/f8/skills/f8-modeling/references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` API contracts, cell inspection, unboxing, dependency trees, and structured exception self-healing patterns.
 - **Modified files**: None.
 
 ### Capabilities
@@ -106,26 +106,26 @@ Package an autonomous agent modeling skill directly within the Python SDK packag
 - [x] **Scenario 4: Objective auditing and repair reference**
   - **Given** `python/f8/skills/f8-modeling/references/auditing-and-repair.md`.
   - **When** reviewed for coverage and style.
-  - **Then** documents `TableAuditor`, value unboxing, Markdown tables, and structured exception handling (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`) with concise, generic recovery patterns.
+  - **Then** documents `CompiledModel`, `TableAuditor`, cell inspection, value unboxing, dependency tree traversal, and structured exception handling (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) with concise, generic recovery patterns.
 
-- [x] **Scenario 5: Generic modeling patterns reference**
-  - **Given** `python/f8/skills/f8-modeling/references/patterns.md`.
+- [x] **Scenario 5: Comprehensive built-in function reference**
+  - **Given** `python/f8/skills/f8-modeling/references/functions.md`.
   - **When** reviewed for coverage and style.
-  - **Then** documents roll-forward corkscrews, cross-table links, multi-tier subtotals and totals, and multi-tier headers using clean, generic structural templates.
+  - **Then** documents 44 built-in functions across math, logical, financial, lookup, and date categories, argument omission (`_`), criteria syntax, and domain calculation error codes.
 
 - [x] **Scenario 6: Progressive disclosure hierarchy**
   - **Given** `python/f8/skills/f8-modeling/SKILL.md`.
   - **When** reviewed for structure.
-  - **Then** provides a concise orientation, core mental model, quickstart, golden rules, and clean relative links to `references/`.
+  - **Then** provides a concise orientation, core mental model with 3-tier specificity lattice, 5-step modeling lifecycle, core invariants, and clean relative links to `references/`.
 
 ## Tasks
 
 ### Phase 1: Author Modular Skill Package
 
-- [x] Update `python/f8/skills/f8-modeling/SKILL.md` to provide a concise orientation, core mental model, quickstart, golden rules, and topic index.
+- [x] Update `python/f8/skills/f8-modeling/SKILL.md` to provide a concise orientation, core mental model with 3-tier specificity lattice, 5-step modeling lifecycle, core invariants, and topic index.
 - [x] Refactor `python/f8/skills/f8-modeling/references/syntax-and-grid.md` to use generic syntax tables, concise structural snippets, and remove repetitive boilerplate and assertions.
-- [x] Refactor `python/f8/skills/f8-modeling/references/auditing-and-repair.md` to provide an objective API reference for `TableAuditor` and structured exception recovery.
-- [x] Refactor `python/f8/skills/f8-modeling/references/patterns.md` to present generic structural modeling templates rather than verbose narrative test scripts.
+- [x] Refactor `python/f8/skills/f8-modeling/references/auditing-and-repair.md` to provide an objective API reference for `CompiledModel`, `TableAuditor`, and structured exception recovery.
+- [x] Add `python/f8/skills/f8-modeling/references/functions.md` documenting all 44 built-in Excel functions, argument omission (`_`), criteria syntax, and calculation error modes.
 
 ### Phase 2: Verification
 
