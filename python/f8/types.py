@@ -254,6 +254,17 @@ type CurrencyCode = Literal[
 ]
 
 type CellValueLiteral = float | int | str | bool | None
+type CellScalarValue = CellValueLiteral
+type TableOrient = Literal["records", "dict", "index", "split"]
+type TableViewMode = Literal["values", "formulas", "expr", "addresses"]
+
+
+class SplitDict(TypedDict):
+    """Tabular dataset split into columns, index row IDs, and 2D data matrix."""
+
+    columns: list[str]
+    index: list[str]
+    data: list[list[CellScalarValue]]
 
 
 class DetailedCellDict(TypedDict, total=False):

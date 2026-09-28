@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 
+from f8.audit import TableAuditor
 from f8.types import (
     CellInspection,
     DependencyTree,
@@ -30,6 +31,7 @@ class CompiledModel:
         col: str | None = None,
     ) -> CellInspection: ...
     def inspect_table(self, table: str) -> TableInspection: ...
+    def table(self, table: str) -> TableAuditor: ...
     def inspect_sheet(self, sheet: str) -> SheetInspection: ...
     def precedents_of(
         self,

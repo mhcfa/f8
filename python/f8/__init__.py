@@ -11,6 +11,7 @@ from f8._core import (
     SpecificationError,
     compile,
 )
+from f8.audit import TableAuditor, unbox_cell_value
 from f8.builder import Cell, CellInputValue, Model, Sheet, Table
 from f8.loader import compile_project
 from f8.types import (
@@ -18,6 +19,7 @@ from f8.types import (
     CellCoordinate,
     CellInspection,
     CellNeighborInspection,
+    CellScalarValue,
     CellValueDict,
     CellValueLiteral,
     ColumnInspection,
@@ -46,13 +48,24 @@ from f8.types import (
     SheetRowInspection,
     SheetSpecDict,
     SheetSummary,
+    SplitDict,
     TableCellInfo,
     TableInput,
     TableInspection,
+    TableOrient,
     TableSpecDict,
     TableSummary,
+    TableViewMode,
     ThemeInput,
 )
+
+
+def _compiled_model_table(self: CompiledModel, table_id: str) -> TableAuditor:
+    raw = self.inspect_table(table_id)
+    return TableAuditor(raw)
+
+
+CompiledModel.table = _compiled_model_table  # type: ignore[method-assign]
 
 __all__ = [
     "compile",
@@ -62,6 +75,8 @@ __all__ = [
     "Sheet",
     "Table",
     "Cell",
+    "TableAuditor",
+    "unbox_cell_value",
     "F8Error",
     "CycleDetectedError",
     "ReferenceResolutionError",
@@ -74,6 +89,7 @@ __all__ = [
     "CellInputValue",
     "CellInspection",
     "CellNeighborInspection",
+    "CellScalarValue",
     "CellValueDict",
     "CellValueLiteral",
     "ColumnInspection",
@@ -102,10 +118,13 @@ __all__ = [
     "SheetRowInspection",
     "SheetSpecDict",
     "SheetSummary",
+    "SplitDict",
     "TableCellInfo",
     "TableInput",
     "TableInspection",
+    "TableOrient",
     "TableSpecDict",
     "TableSummary",
+    "TableViewMode",
     "ThemeInput",
 ]

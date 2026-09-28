@@ -26,6 +26,7 @@ flowchart TD
 
 - **`python/f8/builder.py`**: Pure Python authoring DSL providing `Model`, `Sheet`, `Table`, and `Cell` builders with in-memory specification synthesis (`to_spec()`), direct compilation (`compile()`), and multi-file project export (`export_project()`).
 - **`python/f8/loader.py`**: Pure Python on-disk project loader and direct compiler (`compile_project()`) discovering and assembling `f8.json` and `tables/*.json` without invoking CLI subprocesses.
+- **`python/f8/audit.py`**: Pure Python high-level table auditing and tabular data export wrapper (`TableAuditor`) providing unboxed scalar conversion, `.to_dict()` across 4 orientations, and aligned 2D Markdown rendering.
 - **`python/f8/types.py`**: Strict PEP 561 / `pyright` type contracts, `Literal` choices, and `TypedDict` schemas covering both compiler inspection models and authoring specifications.
 - **`crates/f8-python`**: PyO3 C-ABI native extension crate compiled as `cdylib` targeting Python stable ABI `abi3-py312`.
 - **Marshaling layer**: Uses `pythonize` for microsecond conversion of Python dictionaries directly into `f8-core` Serde types (`ProjectManifest`, `TableSpec`, `Theme`).
@@ -138,7 +139,60 @@ The compiled model exposes read-only inspection methods returning native Python 
   - **When** querying `inspect_cell("OPERATIONS", "gross_profit", "2024E")` and `inspect_cell('OPERATIONS["gross_profit", "2024E"]')`.
   - **Then** both queries resolve identically via `CompiledModel::parse_coordinate`.
 
-### 5. Structured Exception Hierarchy
+### 5. Table Auditing, Coordinate Inspection & Tabular Data Export
+
+`TableAuditor` wraps `TableInspection` in pure Python, providing high-level cell lookups, scalar unboxing, zero-dependency tabular exports, and aligned 2D Markdown rendering:
+
+- **Table accessor**:
+  - `compiled.table(table_id: str) -> TableAuditor`: Resolves table inspection. Raises `InspectionError` if `table_id` does not exist in the model.
+- **Table dimensions & metadata**:
+  - `table.id`: Table identifier.
+  - `table.title`: Table display title.
+  - `table.subtitle`: Optional table subtitle or units label (`str | None`).
+  - `table.sheet`: Parent worksheet name.
+  - `table.columns`: Ordered list of non-gutter column IDs (`list[str]`).
+  - `table.rows`: Ordered list of non-gutter, non-section calculable data row IDs (`list[str]`).
+  - `table.shape`: `(len(rows), len(columns))` dimension tuple.
+  - `len(table)`: Number of calculable data rows.
+- **Unboxed scalar cell lookups**:
+  - `table.value(row, col)` / `table[row, col]`: Returns unboxed scalar values (`float`, `str`, `bool`, or `None`). Unknown coordinates raise `KeyError`. Indexing requires a 2-tuple `(row, col)` of strings, raising `TypeError` otherwise.
+  - `table.formula(row, col)`: Returns lowered Excel formula string (e.g. `"=C5*1.15"`), or `None` if driver/literal input.
+  - `table.expr(row, col)`: Returns high-level f8 expression string, or `None` if driver/literal input.
+  - `table.address(row, col)`: Returns physical sheet A1 cell coordinate (e.g. `"C18"`).
+  - `table.cell(row, col)`: Returns raw `TableCellInfo` dictionary.
+- **Scalar unboxing engine (`unbox_cell_value`)**:
+  - Converts Serde-tagged enum variants (`Number` -> `float`, `Text` -> `str`, `Boolean` -> `bool`, bare string `"Empty"` or tagged `Empty` -> `None`).
+  - Maps evaluated error variants to canonical Excel literals: `"Div0"` -> `"#DIV/0!"`, `"Value"` -> `"#VALUE!"`, `"Ref"` -> `"#REF!"`, `"Num"` -> `"#NUM!"`, `"Na"` -> `"#N/A"`, `"Name"` -> `"#NAME?"`.
+- **Tabular data export (`to_dict`)**:
+  - `table.to_dict(orient="records" | "dict" | "index" | "split" = "records")`:
+    - `records`: `list[dict[str, CellScalarValue]]`
+    - `dict`: `dict[str, list[CellScalarValue]]`
+    - `index`: `dict[str, dict[str, CellScalarValue]]`
+    - `split`: `SplitDict` (`columns`, `index`, `data`)
+  - Strict rectangular guarantee: all non-gutter data rows contain 100% of non-gutter columns. Unassigned or empty cells map to `None`.
+  - Gutter columns, gutter rows, and section header rows are omitted from tabular data exports.
+- **Aligned 2D Markdown rendering (`to_markdown`)**:
+  - `table.to_markdown(view="values" | "formulas" | "expr" | "addresses" = "values") -> str`:
+    - Produces aligned GitHub-Flavored Markdown tables with space-padded columns matching maximum content width.
+    - Stacks multi-tier column headers, formatting bottom headers as `{header} [{id}]` when header text differs from column ID.
+    - Section header rows render as full-width bold divider rows (`| **{title}** | | ... |`).
+    - Descriptor column cells preserve declared indentation (`"  " * indent`) and label `{label} [{id}]` formatting across all view modes.
+    - `view="values"` renders pre-formatted accounting typography (`formatted_value`).
+    - `view="formulas"` displays lowered Excel formulas for calculated cells and formatted values for inputs.
+
+#### Scenarios
+
+- **Table auditing & unboxing**:
+  - **When** calling `compiled.table("Performance").value("revenue", "2024E")`.
+  - **Then** returns primitive `float` (`115.0`) unboxed from Serde dictionary.
+- **Tabular export rectangularity**:
+  - **When** calling `table.to_dict("records")`.
+  - **Then** returns list of row dictionaries containing 100% of `table.columns` keys, mapping unassigned cells to `None`.
+- **Markdown visual inspection**:
+  - **When** calling `table.to_markdown()`.
+  - **Then** returns aligned Markdown text with stacked headers, section dividers, and accounting numbers.
+
+### 6. Structured Exception Hierarchy
 
 All engine errors map to typed Python exception classes inheriting from `f8.F8Error(Exception)`:
 
@@ -154,9 +208,9 @@ All engine errors map to typed Python exception classes inheriting from `f8.F8Er
 
 - **String representation**: Base exception message is populated so `str(err)` and Python tracebacks display the full formatted compiler diagnostic.
 
-### 6. Specification Typed Contracts
+### 7. Specification Typed Contracts
 
-Authoring models and PyO3 native entrypoints exchange strictly typed dictionary structures defined in `f8.types`:
+Authoring models, inspection auditors, and PyO3 native entrypoints exchange strictly typed dictionary structures defined in `f8.types`:
 
 | Contract | Type | Description |
 | :--- | :--- | :--- |
@@ -165,6 +219,10 @@ Authoring models and PyO3 native entrypoints exchange strictly typed dictionary 
 | `SemanticStyle` | `Literal["data", "subtotal", "total"]` | Visual presentation typography tiers |
 | `CurrencyCode` | `Literal[...]` | 15 ISO currency codes (upper/lowercase) |
 | `CellValueLiteral` | `float \| int \| str \| bool \| None` | Primitive cell literal value |
+| `CellScalarValue` | `float \| int \| str \| bool \| None` | Unboxed primitive cell scalar value |
+| `TableOrient` | `Literal["records", "dict", "index", "split"]` | Tabular data export orientation |
+| `TableViewMode` | `Literal["values", "formulas", "expr", "addresses"]` | 2D table grid inspection view mode |
+| `SplitDict` | `TypedDict` | Tabular dataset split into columns, index, and data |
 | `DetailedCellDict` | `TypedDict` | 0D cell override specification dictionary |
 | `CellInputValue` | `CellValueLiteral \| Cell \| DetailedCellDict` | Union of acceptable cell inputs |
 | `ColumnSpecDict` | `DataColumnSpecDict \| GutterColumnSpecDict` | Column definition specification |

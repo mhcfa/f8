@@ -1,7 +1,7 @@
 ---
 title: Python Table Inspection Protocols & Tabular Data Export
 date: 2026-09-28
-status: draft
+status: completed
 target-living-spec: specs/living-specs/interfaces/python-sdk.md
 ---
 
@@ -228,14 +228,14 @@ class TableAuditor:
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: Table Accessor on CompiledModel**
+- [x] **Scenario 1: Table Accessor on CompiledModel**
   - **Given** a compiled model with table `"IncomeStatement"`.
   - **When** calling `compiled.table("IncomeStatement")`.
   - **Then** returns a `TableAuditor` instance populated with table columns, rows, and cell records.
   - **When** calling `compiled.table("NonExistent")`.
   - **Then** raises `InspectionError` indicating the table does not exist.
 
-- [ ] **Scenario 2: Unboxed Scalar Cell Lookups**
+- [x] **Scenario 2: Unboxed Scalar Cell Lookups**
   - **Given** a `TableAuditor` containing literal inputs, evaluated formulas, empty cells, and division by zero.
   - **When** calling `table.value("revenue", "2024E")` or `table["revenue", "2024E"]`.
   - **Then** returns unboxed primitive `float` (e.g. `115.0`) rather than a tagged dictionary.
@@ -252,29 +252,29 @@ class TableAuditor:
   - **When** invoking coordinate indexing with a non-tuple key (e.g. `table["revenue"]`).
   - **Then** raises `TypeError` indicating a 2-tuple `(row, col)` is required.
 
-- [ ] **Scenario 3: Tabular Export with Records Orientation & Rectangular Guarantee**
+- [x] **Scenario 3: Tabular Export with Records Orientation & Rectangular Guarantee**
   - **Given** a `TableAuditor` with descriptor column `"line_item"`, measure columns `"2023A"`, `"2024E"`, and an unassigned cell.
   - **When** calling `table.to_dict(orient="records")`.
   - **Then** returns a list of dictionaries where each entry corresponds to a calculable row with column keys mapped to unboxed scalar values.
   - **And** blank gutter columns and visual section header rows are excluded.
   - **And** every row dictionary contains 100% of `table.columns` keys, with unassigned cells mapped to `None`.
 
-- [ ] **Scenario 4: Tabular Export with Columnar Dict Orientation**
+- [x] **Scenario 4: Tabular Export with Columnar Dict Orientation**
   - **Given** a `TableAuditor` with 3 data rows and 2 measure columns.
   - **When** calling `table.to_dict(orient="dict")`.
   - **Then** returns a dictionary mapping each non-gutter column ID to an ordered list of cell scalar values matching row order and length.
 
-- [ ] **Scenario 5: Tabular Export with Index Orientation**
+- [x] **Scenario 5: Tabular Export with Index Orientation**
   - **Given** a `TableAuditor` with rows `"revenue"`, `"cogs"` and columns `"line_item"`, `"2024E"`.
   - **When** calling `table.to_dict(orient="index")`.
   - **Then** returns a nested dictionary mapping each row ID to a dictionary of column IDs and unboxed scalar values.
 
-- [ ] **Scenario 6: Tabular Export with Split Orientation**
+- [x] **Scenario 6: Tabular Export with Split Orientation**
   - **Given** a `TableAuditor`.
   - **When** calling `table.to_dict(orient="split")`.
   - **Then** returns a `SplitDict` with `"columns"`, `"index"` (data row IDs), and 2D `"data"` matrix with uniform rectangular dimensions `len(index) x len(columns)`.
 
-- [ ] **Scenario 7: Visual Markdown Grid Rendering**
+- [x] **Scenario 7: Visual Markdown Grid Rendering**
   - **Given** a `TableAuditor` with multi-tier headers, section headers, descriptor column with row indentation, and measure columns.
   - **When** calling `table.to_markdown(view="values")`.
   - **Then** returns an aligned GitHub-Flavored Markdown table with space-padded columns, stacked column header tiers, left-aligned descriptor headers, right-aligned measure headers, section header divider rows, and evaluated values (using `formatted_value` if available, or unboxed scalar string).
@@ -282,7 +282,7 @@ class TableAuditor:
   - **When** calling `table.to_markdown(view="formulas")`.
   - **Then** returns an aligned Markdown table displaying lowered Excel formulas for formula cells and literal values for inputs.
 
-- [ ] **Scenario 8: Dimension and Metadata Introspection**
+- [x] **Scenario 8: Dimension and Metadata Introspection**
   - **Given** a `TableAuditor` initialized from a table with title `"Performance"`, subtitle `"($ in Millions)"`, 5 data rows, and 4 non-gutter columns (1 descriptor and 3 measure columns).
   - **When** inspecting `table.title`, `table.subtitle`, `table.shape`, and `len(table)`.
   - **Then** `table.title` returns `"Performance"`.
@@ -296,23 +296,23 @@ class TableAuditor:
 
 ### Phase 1: Type Contracts & Unboxing Engine
 
-- [ ] Add `CellScalarValue`, `TableOrient`, `TableViewMode`, and `SplitDict` to `python/f8/types.py`.
-- [ ] Implement `unbox_cell_value` in `python/f8/audit.py` handling all `CellValue` variants (including bare `"Empty"` string and tagged dicts) and canonical `_EXCEL_ERROR_MAP`.
+- [x] Add `CellScalarValue`, `TableOrient`, `TableViewMode`, and `SplitDict` to `python/f8/types.py`.
+- [x] Implement `unbox_cell_value` in `python/f8/audit.py` handling all `CellValue` variants (including bare `"Empty"` string and tagged dicts) and canonical `_EXCEL_ERROR_MAP`.
 
 ### Phase 2: TableAuditor Implementation
 
-- [ ] Implement `TableAuditor` class in `python/f8/audit.py`:
+- [x] Implement `TableAuditor` class in `python/f8/audit.py`:
   - Internal indexing: pre-index cells into `dict[tuple[str, str], TableCellInfo]` in `__init__` for $O(1)$ lookups.
   - Properties & dimensions: `id`, `title`, `subtitle`, `sheet`, `columns`, `rows`, `shape`, and `__len__()`.
   - Cell lookups: `cell()`, `value()`, `formula()`, `expr()`, `address()`, and `__getitem__()` with tuple type validation.
   - Export: `to_dict()` supporting `records`, `dict`, `index`, and `split` with strict `@overload` signatures and guaranteed rectangularity.
   - Rendering: `to_markdown()` supporting `values`, `formulas`, `expr`, and `addresses` with column alignment, stacked multi-tier headers, descriptor row indentation, and section dividers.
-- [ ] Bind `.table(table_id: str)` on `CompiledModel` in `python/f8/__init__.py`.
-- [ ] Update `python/f8/_core.pyi` with `table()` signature and re-export `TableAuditor`.
+- [x] Bind `.table(table_id: str)` on `CompiledModel` in `python/f8/__init__.py`.
+- [x] Update `python/f8/_core.pyi` with `table()` signature and re-export `TableAuditor`.
 
 ### Phase 3: Comprehensive Test Suite & Verification
 
-- [ ] Create `python/tests/test_audit.py`:
+- [x] Create `python/tests/test_audit.py`:
   - Test `compiled.table()` lookup and error handling on unknown table (`InspectionError`).
   - Test scalar unboxing across numbers, text, booleans, errors (`#N/A`, `#DIV/0!`), and empty cells (`"Empty"` string and dict).
   - Test `.to_dict()` across `records`, `dict`, `index`, and `split` including rectangular matrix guarantee.
@@ -321,11 +321,11 @@ class TableAuditor:
   - Test `table.subtitle`, `table.shape`, and `len(table)`.
   - Test `.to_markdown()` across all four view modes (`values`, `formulas`, `expr`, `addresses`) including multi-tier headers and descriptor indentation.
   - Test end-to-end compatibility with fixture templates (`three-statement`, `lbo`).
-- [ ] Run full project verification:
+- [x] Run full project verification:
   - `cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check`
   - `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`
 
 ### Phase 4: Living Spec Reconciliation
 
-- [ ] Update `specs/living-specs/interfaces/python-sdk.md` with table inspection contracts and `.to_dict()` schemas.
-- [ ] Archive completed draft to `specs/history/`.
+- [x] Update `specs/living-specs/interfaces/python-sdk.md` with table inspection contracts and `.to_dict()` schemas.
+- [x] Archive completed draft to `specs/history/`.
