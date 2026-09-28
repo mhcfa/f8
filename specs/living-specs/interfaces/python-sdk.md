@@ -31,6 +31,7 @@ flowchart TD
 - **`crates/f8-python`**: PyO3 C-ABI native extension crate compiled as `cdylib` targeting Python stable ABI `abi3-py312`.
 - **Marshaling layer**: Uses `pythonize` for microsecond conversion of Python dictionaries directly into `f8-core` Serde types (`ProjectManifest`, `TableSpec`, `Theme`).
 - **Concurrency**: Explicitly releases the Python GIL (`py.allow_threads`) during CPU-bound compilation, OpenXML workbook synthesis, and filesystem disk writes.
+- **`python/f8/skills/f8-modeling/`**: Packaged agent skill distributing canonical modeling instructions, grammar rules, built-in function schemas, and self-healing diagnostics as inert Markdown documentation.
 
 ## Requirements & Invariants
 
@@ -230,3 +231,27 @@ Authoring models, inspection auditors, and PyO3 native entrypoints exchange stri
 | `TableSpecDict` | `TypedDict` | Table definition specification |
 | `SheetSpecDict` | `TypedDict` | Worksheet definition specification |
 | `ProjectManifestDict` | `TypedDict` | Root project manifest specification |
+
+### 8. Packaged Agent Modeling Skill
+
+The SDK packages an autonomous AI agent modeling skill directly within the distribution tree at `python/f8/skills/f8-modeling/` using pure Markdown (`.md`) files.
+
+- **Progressive disclosure architecture**:
+  - `SKILL.md`: Root discovery document containing standard YAML frontmatter (`name: f8-modeling`), concise mental model with 3-tier specificity lattice, 5-step modeling lifecycle (define, compile, audit, self-heal, emit), core invariants, and topic routing index.
+  - `references/syntax-and-grid.md`: 2D coordinate addressing grammar (`Table[RowSelector, ColSelector]`), active axes (`@col`, `@row`), temporal navigation (`col.prev`, `col.next`), 1D/2D slices, column roles (`measure` vs `descriptor`), 3-tier specificity lattice, section headers, symmetric gutters, and cell-level indentation.
+  - `references/functions.md`: Canonical reference for 44 built-in Excel functions (math, logical, financial, lookup, date), parameter schemas, argument omission (`_`), criteria syntax, and domain error codes.
+  - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` inspection methods, scalar unboxing (`unbox_cell_value`), tabular data export (`to_dict`), 2D Markdown rendering, dependency tree traversal, and structured `F8Error` self-healing guidelines.
+- **Pure Markdown isolation**:
+  - The skill package contains exclusively `.md` files; zero `.py`, `.sh`, or binary assets.
+  - Prevents host test runner discovery (`pytest`), linter pollution (`ruff`, `pyright`), and Python bytecode cache (`.pyc`) generation.
+- **Authoring mechanics over financial doctrine**:
+  - Provides objective rules for `f8` compiler invariants and DSL idioms without imposing accounting doctrines, line-item taxonomies, or valuation assumptions.
+
+#### Scenarios
+
+- **Agent skill discovery**:
+  - **When** an autonomous coding assistant inspects `python/f8/skills/f8-modeling/SKILL.md`.
+  - **Then** parses valid YAML frontmatter with `name: f8-modeling` and navigates modular topics via relative links to `references/`.
+- **Packaging safety**:
+  - **When** test runners or static analysis tools scan the SDK distribution.
+  - **Then** the skill directory introduces zero executable scripts or type checking side effects.

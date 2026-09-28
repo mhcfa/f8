@@ -1,7 +1,7 @@
 ---
 title: Autonomous Agent Modeling Skill
 date: 2026-09-28
-status: draft
+status: completed
 target-living-spec: specs/living-specs/interfaces/python-sdk.md
 ---
 
