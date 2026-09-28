@@ -1,5 +1,5 @@
 ---
-title: Python SDK Agent Skill and Module Runner
+title: Python SDK Module Runner and Skill Scaffolding
 date: 2026-09-28
 status: draft
 target-living-spec: specs/living-specs/interfaces/python-sdk.md
@@ -9,40 +9,36 @@ target-living-spec: specs/living-specs/interfaces/python-sdk.md
 
 ### What
 
-Package a modular, progressive-disclosure autonomous agent skill inside the Python SDK (`python/f8/skills/f8-modeling/`) using pure Markdown (`.md`) files, and provide a lightweight, zero-dependency Python module runner (`python/f8/__main__.py` and `python/f8/cli.py`) invoked via `python -m f8` or `uv run -m f8` with two primary commands:
+Provide a lightweight, zero-dependency Python module runner (`python/f8/__main__.py` and `python/f8/cli.py`) invoked via `python -m f8` or `uv run -m f8` with two primary commands:
 
-1. `python -m f8 guide [topic]`: Streams the financial modeling guide and syntax reference directly to stdout. Supports optional topic routing (`syntax`, `audit`, `patterns`, `all`) and listing flags (`--list`, `--all`).
-2. `python -m f8 agent init`: Non-destructively scaffolds the full `.agents/skills/f8-modeling/` directory tree (including `references/`) into the user's workspace.
+1. `python -m f8 guide [topic]`: Streams the financial modeling guide and syntax reference directly from package resources to `stdout`. Supports optional topic routing (`syntax`, `audit`, `patterns`, `all`), listing flags (`--list`), and full concatenated output (`--all`).
+2. `python -m f8 agent init [--dest <PATH>] [--force]`: Non-destructively scaffolds the full `.agents/skills/f8-modeling/` directory tree (including `references/`) into the target workspace using standard `importlib.resources.Traversable` extraction.
 
-The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary authoring source of truth. No console script is registered in `pyproject.toml`, preserving zero binary namespace collisions with the native Rust compiler CLI binary (`crates/f8-cli`). The runner never modifies or overwrites existing user configuration files (`AGENTS.md`, `.cursorrules`).
+When invoked without subcommands (`python -m f8`), the runner writes usage instructions to `stdout` and exits with code `0`. No console script is registered in `pyproject.toml`, preserving zero binary namespace collisions with the native Rust compiler CLI binary (`crates/f8-cli`). The runner never modifies or overwrites existing user configuration files (`AGENTS.md`, `.cursorrules`).
 
 ### Why
 
-- **Agent context and progressive disclosure**: Autonomous coding assistants (Antigravity, Claude Code, Cursor, Windsurf) need authoritative guidance on declarative 2D grid modeling, vector formulas, cell-level indentation, auditing, and self-healing on structured exceptions. Packaging this guidance as a modular skill with `references/` enables progressive disclosure: agents load a concise `SKILL.md` initially and fetch detailed syntax or repair patterns only when needed, minimizing token bloat.
 - **Python as authoring source of truth**: Unlike headless CI pipelines that consume on-disk JSON specifications via `crates/f8-cli`, Python developers and agents author models natively in Python scripts (`model.py`), verify them in-memory via `model.compile()`, test them via `pytest`, and inspect them via `TableAuditor.to_markdown()`. The Python SDK does not require an on-disk JSON compiler CLI.
 - **Zero binary collision with Rust CLI**: Registering a global `f8` console script in `pyproject.toml` would shadow the native Rust `crates/f8-cli` binary in virtual environments while supporting none of the compiler commands (`check`, `compile`, `init`, `inspect`). Using standard Python module execution (`python -m f8` / `uv run -m f8`) ensures clean separation of concerns without namespace clashes.
-- **Pure Markdown safety and isolation**: Packaging purely static `.md` documentation eliminates security red flags (no executable script payloads), prevents user CI and test runner interference (`pytest`, `ruff`, or `pyright` traversing external `.py` files in `.agents/`), and prevents bytecode (`.pyc`) cache pollution.
 - **Zero post-install file pollution**: Package managers (`pip`, `uv`) unpack static wheels into `site-packages` and forbid arbitrary disk writes. Workspace files must be explicitly initialized.
 - **Workspace safety**: Modifying or appending to existing `AGENTS.md` files risks merge conflicts, corrupted settings, or duplicate instructions. Scaffolding a dedicated, self-contained skill directory (`.agents/skills/f8-modeling/`) isolates `f8` knowledge cleanly.
-- **Targeted CLI inspection**: Providing topic-based subcommands for `python -m f8 guide` (`syntax`, `audit`, `patterns`) prevents dumping a massive wall of text into terminal outputs or agent command buffers.
+- **Targeted CLI inspection**: Providing topic-based subcommands for `python -m f8 guide` (`syntax`, `audit`, `patterns`) prevents dumping massive text walls into terminal outputs or agent command buffers.
 - **API purity**: Keeping prompt/instruction retrieval out of the root `f8` Python namespace preserves clean separation of concerns, keeping the modeling SDK lean and focused.
 
 ### Scope
 
 - **In-scope**:
-  - Authoring the canonical modeling skill directory at `python/f8/skills/f8-modeling/` containing pure Markdown files (`SKILL.md` with standard YAML frontmatter and `references/*.md`).
-  - Embedding comprehensive, runnable Python DSL code snippets directly in fenced markdown blocks within `SKILL.md` and `references/patterns.md`.
   - Implementing `python/f8/cli.py` using Python's standard library `argparse` and `importlib.resources`.
+  - Implementing `python/f8/__main__.py` to support `python -m f8 <command>` and `uv run -m f8 <command>`.
   - Supporting topic routing in `python -m f8 guide [topic]` (`syntax`, `audit`, `patterns`, `all`, `--list`, `--all`).
   - Implementing recursive directory copy in `python -m f8 agent init` with `--dest` and `--force` options.
-  - Implementing `python/f8/__main__.py` to support `python -m f8 <command>` and `uv run -m f8 <command>`.
-  - Unit tests covering `python -m f8 guide` (all topics and flags) and `python -m f8 agent init` (recursive scaffolding, collision error, and `--force` overwrite).
+  - Fail-safe collision handling (exit code `1`) and self-copy protection.
+  - Standard exit code contracts (`0` success, `1` operational error, `2` CLI argument syntax error).
+  - Unit tests covering `python -m f8 guide` (all topics and flags) and `python -m f8 agent init` (recursive scaffolding, collision error, self-copy protection, and `--force` overwrite).
 - **Out-of-scope**:
   - Registering a global console script `f8` in `pyproject.toml` (reserved for `crates/f8-cli`).
   - Re-implementing JSON compiler CLI commands (`check`, `compile`, `init`, `inspect`) in Python (on-disk compiler workflows belong to `crates/f8-cli`).
-  - Distributing standalone `.py` or `.sh` script files inside the skill directory.
-  - Encoding opinionated accounting doctrines, specific valuation models, or firm-specific line-item taxonomies (these belong in user- or team-level skills/rules).
-  - Modifying `crates/f8-cli` or altering Rust CLI commands.
+  - Authoring the markdown skill documentation (covered in `2026-09-28-f8-modeling-agent-skill.md`).
   - Adding third-party CLI dependencies (`click`, `typer`).
   - Editing, appending to, or creating user `AGENTS.md` or `.cursorrules` files.
   - Exposing prompt/instruction retrieval helper functions on the root `f8` module.
@@ -50,45 +46,40 @@ The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary 
 ### What Changes
 
 - **New files**:
-  - `python/f8/skills/f8-modeling/SKILL.md`: Concise executive summary, YAML frontmatter (`name: f8-modeling`), mental model, quickstart, golden rules, and topic index.
-  - `python/f8/skills/f8-modeling/references/syntax-and-grid.md`: 2D coordinates, vector expressions, column roles, section headers, gutters, and 0D cell indentation.
-  - `python/f8/skills/f8-modeling/references/auditing-and-repair.md`: `TableAuditor`, cell inspection, unboxing, and self-healing structured exception recovery.
-  - `python/f8/skills/f8-modeling/references/patterns.md`: Generic mechanical DSL wiring patterns (roll-forward corkscrews, inter-table links, subtotal/total tiers, multi-tier headers).
   - `python/f8/cli.py`: Minimal CLI entrypoint implementing `guide` and `agent init`.
   - `python/f8/__main__.py`: Module entrypoint for `python -m f8` and `uv run -m f8`.
   - `python/tests/test_cli.py`: Verification test suite for module runner commands.
-- **Modified files**: None. `pyproject.toml` remains unchanged, avoiding global binary name collisions.
+- **Modified files**:
+  - `specs/living-specs/interfaces/python-sdk.md`: Updated upon reconciliation to document CLI runner and agent skill scaffolding.
 
 ### Capabilities
 
 - **New capabilities**:
-  - `uv run -m f8 guide` (or `python -m f8 guide`): Streams `SKILL.md` (overview and topic index) to stdout with zero disk writes.
-  - `uv run -m f8 guide <topic>`: Streams specific topic guide (`syntax`, `audit`, `patterns`, `all`) to stdout.
+  - `uv run -m f8` (or `python -m f8`): Prints usage summary to `stdout` and exits with code `0`.
+  - `uv run -m f8 guide`: Streams `SKILL.md` overview to `stdout` with zero disk writes.
+  - `uv run -m f8 guide <topic>`: Streams specific topic guide (`syntax`, `audit`, `patterns`, `all`) to `stdout`.
   - `uv run -m f8 guide --list`: Lists available topics with summaries.
-  - `uv run -m f8 agent init` (or `python -m f8 agent init`): Recursively scaffolds `.agents/skills/f8-modeling/` into the active workspace, failing fast if destination files exist unless `--force` is provided.
-- **Modified capabilities**: None. Existing Python DSL, PyO3 bindings, and Rust compiler remain unchanged.
+  - `uv run -m f8 agent init`: Recursively scaffolds `.agents/skills/f8-modeling/` into the active workspace, failing fast if destination files exist unless `--force` is provided.
+- **Modified capabilities**: None.
 
 ## Design
 
 ### Goals
 
 - **Zero dependencies**: Rely exclusively on Python standard library modules (`argparse`, `importlib.resources`, `pathlib`, `shutil`, `sys`).
-- **Progressive disclosure**: Keep `SKILL.md` concise (< 120 lines) with valid YAML frontmatter to avoid context bloat; deeper instructions live in `references/`.
-- **Pure static documentation**: Avoid shipping executable files in the skill directory; keep all references and code snippets in Markdown.
-- **Engine mechanics over financial doctrine**: Provide authoritative guidance on `f8` compiler invariants and DSL idioms without imposing opinionated accounting choices.
 - **Zero binary collision**: Run exclusively via Python module execution (`python -m f8` / `uv run -m f8`), leaving the `f8` executable name for `crates/f8-cli`.
-- **Single source of truth**: `python/f8/skills/f8-modeling/` serves as the authoritative source of truth for both the packaged `.whl` distribution and the module stdout runner.
+- **Single source of truth**: `python/f8/skills/f8-modeling/` serves as the authoritative source of truth for both the packaged `.whl` distribution and the module runner.
 - **Idempotent and safe**: Never overwrite existing workspace files without explicit user consent (`--force`).
 - **Standard Python exit codes**: Follow standard Python conventions (`0` for success, `1` for operational / runtime errors, `2` for CLI syntax / argument errors).
 
 ### Invariants
 
-1. **Wheel isolation**: The Python wheel distribution contains only `f8` Python code, package documentation data, and `f8._core` binary extension.
-2. **Workspace non-interference**: No files outside `.agents/skills/f8-modeling/` are created or modified during `agent init`.
-3. **Fail-safe initialization**: `python -m f8 agent init` raises an error and aborts with exit code `1` if target files or directories exist and `--force` is omitted.
+1. **Workspace non-interference**: No files outside `<dest>/.agents/skills/f8-modeling/` are created or modified during `agent init`.
+2. **Fail-safe initialization**: `python -m f8 agent init` raises an error and aborts with exit code `1` if target files or directories exist and `--force` is omitted.
+3. **Self-copy prevention**: `agent init` aborts with exit code `1` if target destination resolves to package resource root.
 4. **Safe resource traversal**: Package assets are resolved via `importlib.resources.files("f8").joinpath("skills", "f8-modeling")` rather than passing hyphenated package module strings.
 5. **Strict typing**: `python/f8/cli.py` enforces 100% type annotations with zero `pyright` strict-mode errors.
-6. **Standard Python exit codes**: Command-line argument syntax and invalid choice errors return exit code `2` (handled automatically by standard `argparse`), operational errors (e.g. target collisions without `--force`) return exit code `1`, and successful executions return exit code `0`.
+6. **Standard Python exit codes**: Command-line argument syntax and invalid choice errors return exit code `2` (handled automatically by standard `argparse`), operational errors return exit code `1`, and successful executions return exit code `0`.
 
 ### Decisions
 
@@ -98,27 +89,9 @@ The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary 
 - **Standard Python `argparse` exit codes (`0`, `1`, `2`)**:
   - _Rationale_: Autonomous agents parse structured `stderr` output (usage information and allowed option lists) to self-correct rather than branching on specific non-zero error codes. Adopting standard Python `argparse` defaults (`0` success, `1` operational/runtime errors, `2` CLI argument syntax errors) eliminates custom error-handling overrides and maintains clean Python idioms.
   - _Alternatives considered_: Forcing exit code `1` on CLI syntax errors via custom `ArgumentParser.error()` monkey-patching. Rejected because standard exit code `2` with built-in `argparse` formatting is idiomatic, zero-boilerplate, and universally supported by agent execution harnesses.
-- **Pure Markdown files over executable `.py` scripts**:
-  - _Rationale_: Scaffolding `.py` files into a user's workspace exposes them to the user's test runners (`pytest`), linters (`ruff`, `flake8`), and type checkers (`pyright`, `mypy`), which can cause unwanted CI failures. Additionally, shipping executable scripts in package assets raises supply-chain security scrutiny. Embedding fenced code snippets directly in Markdown provides complete documentation while keeping the footprint 100% inert and safe.
-  - _Alternatives considered_: Shipping standalone `.py` script files in `examples/`. Rejected to preserve workspace hygiene, prevent CI breakage, and avoid security scan alarms.
-- **DSL engine mechanics over prescriptive financial methodology**:
-  - _Rationale_: `f8` is a compiler and modeling engine (comparable to SQL or pandas). Different financial disciplines (M&A investment banking, private equity LBO, real estate, FP&A) follow divergent accounting and valuation doctrines. The packaged skill focuses strictly on `f8` DSL idioms, 2D coordinates, vector formulas, layout, auditing, and self-healing. Opinionated valuation or accounting conventions belong in user- or team-level custom skills and rules.
-  - _Alternatives considered_: Including detailed financial valuation templates (e.g. specific 3-statement LBO frameworks). Rejected to avoid prescribing domain opinions into a general-purpose compiler skill.
-- **Single skill with progressive disclosure over multiple skills**:
-  - _Rationale_: Coding assistants use semantic description matching. Splitting into multiple skills (`f8-modeling`, `f8-auditing`) causes routing confusion and incomplete context. Progressive disclosure via `references/` allows the agent to load `SKILL.md` initially and read detailed references on demand via `view_file`.
-  - _Alternatives considered_: Multiple separate skills in `.agents/skills/`. Rejected to avoid router confusion and workspace directory clutter.
-- **Standard YAML frontmatter for `SKILL.md`**:
-  - _Rationale_: Agent systems (Antigravity, Claude Code, Cursor) rely on top-level YAML frontmatter containing `name` and `description` to discover, index, and activate skills based on user intent.
-  - _Alternatives considered_: Plain markdown heading. Rejected because agent discovery engines require structured frontmatter.
-- **Standard library `argparse` over `click`/`typer`**:
-  - _Rationale_: Eliminates external dependencies for the Python package, keeping installation lightweight and instant.
-  - _Alternatives considered_: `click` or `typer`. Rejected to preserve zero-dependency runtime for the pure Python layer.
-- **Decoupled from `crates/f8-cli`**:
-  - _Rationale_: `f8-cli` is a separate native binary distribution for non-Python environments. Coupling Python wheels to the Rust CLI binary would complicate cross-compilation and packaging.
-  - _Alternatives considered_: Invoking `f8-cli` via subprocess. Rejected because `f8-cli` is not bundled into wheels.
-- **Omitting `f8.get_instructions()` in library API**:
-  - _Rationale_: Keeps `f8` focused strictly on financial modeling constructs (`Model`, `Sheet`, `Table`, `compile`, `TableAuditor`).
-  - _Alternatives considered_: Exporting `get_instructions()` on `f8`. Rejected to maintain separation of concerns.
+- **Traversable byte extraction over `shutil.copytree`**:
+  - _Rationale_: In installed wheel packages (especially zip-safe or packaged archives), resources are `importlib.resources.abc.Traversable` objects that may not be concrete filesystem directories. Traversing the `Traversable` hierarchy and copying bytes guarantees reliability across wheel installation environments.
+  - _Alternatives considered_: Assuming unpacked concrete directories and calling `shutil.copytree`. Rejected because it fails in non-extracted wheel environments.
 
 ### Command Specifications
 
@@ -176,8 +149,6 @@ The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary 
   - _Mitigation_: `python -m f8 agent init --force` provides an explicit, non-destructive upgrade path to overwrite and refresh the skill with the latest package version on demand.
 - **Resource traversal in packaged wheels**: Hyphenated directory names (`f8-modeling`) cannot be imported as module strings via `importlib.resources.files("f8.skills.f8-modeling")`. Additionally, non-extracted wheels provide `Traversable` objects rather than concrete filesystem paths.
   - _Mitigation_: Access resources via `importlib.resources.files("f8").joinpath("skills", "f8-modeling")` and traverse the `Traversable` hierarchy directly, reading and writing file bytes/text without assuming a flat unpacked filesystem.
-- **Absence of global compiler CLI in Python wheel**: Users installing `f8` via `pip` or `uv` cannot run `f8 compile` or `f8 check` on disk JSON files without the native `crates/f8-cli` binary.
-  - _Mitigation_: By design, Python SDK users author and compile models in Python code. Clear documentation in the README directs users to either run Python scripts (`python model.py`) or install `crates/f8-cli` if on-disk JSON pipelines are required.
 
 ### Acceptance Criteria (Given / When / Then)
 
@@ -221,10 +192,10 @@ The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary 
   - **When** running `python -m f8 agent init --force`.
   - **Then** overwrites files with latest packaged contents, prints confirmation, and exits with code `0`.
 
-- [ ] **Scenario 9: Validate YAML frontmatter in SKILL.md**
-  - **Given** the generated or packaged `SKILL.md`.
-  - **When** parsed for YAML frontmatter.
-  - **Then** contains non-empty `name: f8-modeling` and a descriptive `description` string suitable for agent routing.
+- [ ] **Scenario 9: Prevent self-copy into source asset tree**
+  - **Given** destination path pointing directly to the internal package resource directory.
+  - **When** running `python -m f8 agent init --dest <package_dir>`.
+  - **Then** prints error to `stderr` and exits with code `1`.
 
 - [ ] **Scenario 10: Type safety and lint verification**
   - **Given** all new Python CLI modules.
@@ -233,22 +204,15 @@ The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary 
 
 ## Tasks
 
-### Phase 1: Author Modular Skill Package
-
-- [ ] Create `python/f8/skills/f8-modeling/SKILL.md` documenting core mental model, quickstart, golden rules, topic index, and standard YAML frontmatter (`name: f8-modeling`).
-- [ ] Create `python/f8/skills/f8-modeling/references/syntax-and-grid.md` covering 2D coordinates, vector expressions, column roles, section headers, gutters, and 0D cell indentation.
-- [ ] Create `python/f8/skills/f8-modeling/references/auditing-and-repair.md` covering `TableAuditor`, inspection, unboxing, and structured exception self-healing.
-- [ ] Create `python/f8/skills/f8-modeling/references/patterns.md` covering generic mechanical DSL wiring patterns (roll-forward corkscrews, inter-table links, subtotal/total tiers, multi-tier headers).
-
-### Phase 2: Implement Module Runner Entrypoint
+### Phase 1: Implement Module Runner Entrypoint
 
 - [ ] Implement `python/f8/cli.py` with:
   - Top-level help summary when invoked without arguments (exit code `0`).
   - `guide` subcommand supporting topic routing (`syntax`, `audit`, `patterns`), deterministic `--all` concatenation, `--list` formatting, and standard exit code `2` on invalid topic argument.
-  - `agent init` subcommand supporting recursive `Traversable` file extraction (reading and writing bytes without relying on `shutil.copytree`), self-copy guard, parent directory creation, collision error (exit code `1`), and `--force` overwrite.
+  - `agent init` subcommand supporting recursive `Traversable` file extraction, self-copy guard, parent directory creation, collision error (exit code `1`), and `--force` overwrite.
 - [ ] Implement `python/f8/__main__.py` to dispatch to `f8.cli.main()`.
 
-### Phase 3: Unit Testing & Verification
+### Phase 2: Unit Testing & Verification
 
 - [ ] Create `python/tests/test_cli.py` testing:
   - Empty invocation prints usage and exits with code `0`.
@@ -256,6 +220,5 @@ The Python SDK treats Python code (`f8.Model`, `Sheet`, `Table`) as the primary 
   - `guide` invalid topic exits with code `2`.
   - `agent init` recursive scaffolding, collision failure with exit code `1`, and `--force` overwrite.
   - `agent init` self-copy detection prevents copying into source asset directory.
-  - `SKILL.md` frontmatter validation.
 - [ ] Run full verification suite (`uv run ruff check .`, `uv run ruff format --check .`, `uv run pyright`, `uv run pytest`).
-- [ ] Update living spec `specs/living-specs/interfaces/python-sdk.md` with CLI runner and agent skill documentation upon reconciliation.
+- [ ] Update living spec `specs/living-specs/interfaces/python-sdk.md` with CLI runner documentation upon reconciliation.
