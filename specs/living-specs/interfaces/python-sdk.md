@@ -1,35 +1,72 @@
 ---
 title: Python SDK & Native Extension
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 domain: interfaces
 status: active
 ---
 
 ## Purpose
 
-The Python SDK native extension (`crates/f8-python` / `f8._core`) provides an in-process, zero-I/O C-ABI bridge between Python applications and the `f8-core` financial modeling engine. It enables quantitative modelers and autonomous AI agents to compile models in-memory, inspect cell grids and calculation dependency graphs, emit OpenXML workbooks, and programmatically diagnose modeling errors through strongly typed Python exceptions without CLI subprocess overhead.
+The Python SDK provides both a fluent, strongly typed modeling DSL (`f8.Model`, `Sheet`, `Table`, `Cell`) and a high-performance in-process native extension (`crates/f8-python` / `f8._core`). It enables quantitative modelers and autonomous AI agents to author financial models programmatically, compile them in memory, inspect calculation graphs, emit or persist production OpenXML `.xlsx` workbooks, and diagnose modeling errors via structured Python exceptions.
 
 ## Architecture & Boundaries
 
 ```mermaid
 flowchart TD
-    A["Python Caller / Agent"] --> B["python/f8/__init__.py"]
-    B --> C["f8._core (PyO3 cdylib, abi3-py312)"]
-    C --> D["crates/f8-python (Rust)"]
-    D -->|pythonize| E["f8-core (Serde Types)"]
-    D -->|py.allow_threads| F["f8-core Compiler Engine"]
-    F --> G["CompiledModel (In-Memory Facade)"]
-    G --> H[".xlsx OpenXML Bytes Buffer"]
+    A["Python Caller / Agent"] --> B["python/f8 (DSL: Model, Sheet, Table, Cell)"]
+    B --> C["python/f8.builder (In-Memory Lowering)"]
+    C --> D["f8._core.compile (PyO3 cdylib, abi3-py312)"]
+    D --> E["crates/f8-python (Rust)"]
+    E -->|pythonize| F["f8-core (Serde Types)"]
+    E -->|py.allow_threads| G["f8-core Compiler Engine"]
+    G --> H["CompiledModel (In-Memory Facade)"]
+    H -->|emit_workbook| I[".xlsx Byte Buffer"]
+    H -->|save| J[".xlsx File on Disk"]
 ```
 
+- **`python/f8/builder.py`**: Pure Python authoring DSL providing `Model`, `Sheet`, `Table`, and `Cell` builders with in-memory specification synthesis (`to_spec()`) and direct compilation (`compile()`).
+- **`python/f8/types.py`**: Strict PEP 561 / `pyright` type contracts, `Literal` choices, and `TypedDict` schemas covering both compiler inspection models and authoring specifications.
 - **`crates/f8-python`**: PyO3 C-ABI native extension crate compiled as `cdylib` targeting Python stable ABI `abi3-py312`.
-- **`python/f8`**: Python package root distributing type stubs ([`_core.pyi`](../../../python/f8/_core.pyi)), PEP 561 marker ([`py.typed`](../../../python/f8/py.typed)), and package re-exports ([`__init__.py`](../../../python/f8/__init__.py)).
-- **Marshaling layer**: Uses `pythonize` for microsecond conversion of lightweight Python dictionaries directly into `f8-core` Serde types (`ProjectManifest`, `TableSpec`, `Theme`).
-- **Concurrency**: Explicitly releases Python GIL (`py.allow_threads`) during CPU-bound compilation and OpenXML workbook emission.
+- **Marshaling layer**: Uses `pythonize` for microsecond conversion of Python dictionaries directly into `f8-core` Serde types (`ProjectManifest`, `TableSpec`, `Theme`).
+- **Concurrency**: Explicitly releases the Python GIL (`py.allow_threads`) during CPU-bound compilation, OpenXML workbook synthesis, and filesystem disk writes.
 
 ## Requirements & Invariants
 
-### 1. In-Memory Compilation & Theme Resolution
+### 1. Fluent Authoring DSL
+
+The modeling DSL provides hierarchical, in-memory model construction with strict PEP 561 typing and autocomplete.
+
+- **Model and sheet containers**:
+  - `Model(name="Model", theme="corporate_navy")`: Root container holding ordered worksheets.
+  - `model.add_sheet(name, tab_color=None, show_gridlines=True, freeze_panes=None)`: Adds and returns a `Sheet`. Duplicate sheet names raise `ValueError`.
+  - `model.get_sheet(name)`: Resolves a worksheet by name, raising `KeyError` if absent.
+  - `model.get_table(id)`: Searches all worksheets and resolves a table by unique identifier, raising `KeyError` if absent.
+  - `sheet.add_table(id, title, ...)`: Adds a `Table` to the worksheet. Enforces globally unique table IDs across the entire model, raising `ValueError` on duplicates.
+  - `sheet.get_table(id)`: Resolves a table within the worksheet, raising `KeyError` if absent.
+- **Freeze panes convention**:
+  - `freeze_panes: tuple[int, int]` defines explicit `(row, col)` 0-indexed split coordinates (number of top frozen rows, number of left frozen columns). Negative values raise `ValueError`.
+- **Table grid structure**:
+  - `table.add_column(id, role="measure", header=None, headers=None, ...)`: Declares a data column. `header` and `headers` are mutually exclusive; specifying both raises `ValueError`.
+  - Symmetrical gutters: Visual grid spacing is declared via `table.add_column_gutter()` on columns and `table.add_row_gutter()` on rows. Redundant aliases are rejected.
+  - `table.add_section_header(title, indent=None, note=None)`: Adds full-width non-calculable visual section dividing rows.
+  - `table.add_row(id, cells=None, expr=None, ...)`: Declares a calculable data row with vector formula or literal cells. Duplicate row IDs raise `ValueError`.
+- **Strict 0D cell indentation & overrides**:
+  - Indentation is modeled at the cell level via `Cell(value, indent=N)` or dictionary overrides (`{"value": value, "indent": N}`), eliminating temporal row-level coupling or phantom row descriptor heuristics.
+  - `table.set_cell(row, col, cell=None, value=..., expr=..., ...)`: Overrides or updates specific point coordinates. Raises `KeyError` if `row` is not declared, and raises `ValueError` if a new cell lacks both `value` and `expr` or specifies both.
+  - `Cell`: Frozen dataclass utilizing an internal sentinel to distinguish explicit nulls (`value=None`) from omitted values.
+- **Currency casing normalization**:
+  - `CurrencyCode` accepts all 15 supported currencies in ISO uppercase or lowercase. Builders normalize codes to lowercase (`'usd'`, `'eur'`, etc.) during `to_spec()` synthesis.
+
+#### Scenarios
+
+- **Model compilation**:
+  - **When** calling `model.compile()`.
+  - **Then** synthesizes `ProjectManifestDict` and `list[TableSpecDict]` via `to_spec()` and returns a `CompiledModel`.
+- **Point cell overrides**:
+  - **When** calling `table.set_cell("rev", "2024E", expr="PREV * 1.10")` or updating an existing cell's presentation attributes with `table.set_cell("rev", "2023A", note="Audited")`.
+  - **Then** updates target cell payload or metadata while preserving unchanged fields.
+
+### 2. In-Memory Compilation & Theme Resolution
 
 The native entrypoint `f8._core.compile(manifest, tables, theme=None)` compiles high-level model definitions into an in-memory `CompiledModel`.
 
@@ -45,14 +82,17 @@ The native entrypoint `f8._core.compile(manifest, tables, theme=None)` compiles 
   - **When** valid manifest and table specifications are passed to `f8.compile(manifest, tables)`.
   - **Then** returns a `CompiledModel` instance wrapping evaluated cell values, dependency graph, and spatial layout.
 
-### 2. Workbook Binary Emission
+### 3. Workbook Binary Emission & Disk Persistence
 
-`CompiledModel.emit_workbook(options=None)` synthesizes OpenXML `.xlsx` byte buffers directly in memory.
+`CompiledModel` provides workbook synthesis directly in memory or saved to disk outside the Python GIL.
 
 - **Emission options**:
   - Supports dictionary with optional keys: `values_only` (bool), `omit_formula_cache` (bool), `title` (str), `author` (str).
   - Defaults to preserving live formulas and evaluated cache values `<v>`.
-- **GIL release**: Compilation and emission run outside the Python GIL, allowing multi-threaded concurrency.
+- **In-memory byte emission**:
+  - `compiled.emit_workbook(options=None) -> bytes`: Synthesizes OpenXML byte buffers starting with `PK\x03\x04`.
+- **Direct disk persistence**:
+  - `compiled.save(path, options=None) -> None`: Accepts `str` or `os.PathLike`/`pathlib.Path`, creates parent directories recursively, and writes `.xlsx` workbook bytes directly outside the Python GIL.
 
 #### Scenarios
 
@@ -62,8 +102,11 @@ The native entrypoint `f8._core.compile(manifest, tables, theme=None)` compiles 
 - **Values-only freezing**:
   - **When** calling `compiled.emit_workbook({"values_only": True})`.
   - **Then** returns bytes emitting calculated values without live formulas.
+- **Direct workbook persistence**:
+  - **When** calling `compiled.save("nested/dir/model.xlsx")`.
+  - **Then** creates `nested/dir` if missing and writes valid OpenXML `.xlsx` bytes.
 
-### 3. Model & Dependency Inspection
+### 4. Model & Dependency Inspection
 
 The compiled model exposes read-only inspection methods returning native Python dictionaries:
 - `summary()`: Model metadata, sheets, tables, cell counts, drivers, and formula totals.
@@ -81,7 +124,7 @@ The compiled model exposes read-only inspection methods returning native Python 
   - **When** querying `inspect_cell("OPERATIONS", "gross_profit", "2024E")` and `inspect_cell('OPERATIONS["gross_profit", "2024E"]')`.
   - **Then** both queries resolve identically via `CompiledModel::parse_coordinate`.
 
-### 4. Structured Exception Hierarchy
+### 5. Structured Exception Hierarchy
 
 All engine errors map to typed Python exception classes inheriting from `f8.F8Error(Exception)`:
 
@@ -96,3 +139,22 @@ All engine errors map to typed Python exception classes inheriting from `f8.F8Er
 | `EmissionError` | `F8Error` | `message: str` | OpenXML binary emission failure |
 
 - **String representation**: Base exception message is populated so `str(err)` and Python tracebacks display the full formatted compiler diagnostic.
+
+### 6. Specification Typed Contracts
+
+Authoring models and PyO3 native entrypoints exchange strictly typed dictionary structures defined in `f8.types`:
+
+| Contract | Type | Description |
+| :--- | :--- | :--- |
+| `AxisRole` | `Literal["measure", "descriptor"]` | Column calculation axis role |
+| `FormatPreset` | `Literal[...]` | 8 supported numerical format presets |
+| `SemanticStyle` | `Literal["data", "subtotal", "total"]` | Visual presentation typography tiers |
+| `CurrencyCode` | `Literal[...]` | 15 ISO currency codes (upper/lowercase) |
+| `CellValueLiteral` | `float \| int \| str \| bool \| None` | Primitive cell literal value |
+| `DetailedCellDict` | `TypedDict` | 0D cell override specification dictionary |
+| `CellInputValue` | `CellValueLiteral \| Cell \| DetailedCellDict` | Union of acceptable cell inputs |
+| `ColumnSpecDict` | `DataColumnSpecDict \| GutterColumnSpecDict` | Column definition specification |
+| `RowSpecDict` | `DataRowSpecDict \| SectionHeaderRowSpecDict \| GutterRowSpecDict` | Row definition specification |
+| `TableSpecDict` | `TypedDict` | Table definition specification |
+| `SheetSpecDict` | `TypedDict` | Worksheet definition specification |
+| `ProjectManifestDict` | `TypedDict` | Root project manifest specification |

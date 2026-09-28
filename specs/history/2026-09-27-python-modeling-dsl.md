@@ -1,7 +1,7 @@
 ---
 title: Python Modeling DSL & In-Memory Lowering
 date: 2026-09-27
-status: draft
+status: completed
 target-living-spec: specs/living-specs/interfaces/python-sdk.md
 ---
 
@@ -431,7 +431,7 @@ class Table:
 
 ## Acceptance Criteria (Given / When / Then)
 
-- [ ] **Scenario 1: End-to-End Model Construction and Compilation**
+- [x] **Scenario 1: End-to-End Model Construction and Compilation**
   - **Given** a Python script constructing a `Model` with a sheet, columns, rows, and vector formulas.
   - **When** calling `model.compile()`.
   - **Then** compilation succeeds, returning a `CompiledModel` with correct cell counts and evaluated values.
@@ -441,33 +441,33 @@ class Table:
   - **When** calling `compiled.save("nested/dir/output.xlsx")`.
   - **Then** creates parent directories as needed and writes a valid `.xlsx` file starting with the `PK\x03\x04` zip magic header.
 
-- [ ] **Scenario 3: Explicit 0D Cell Indentation via `Cell` and Dictionary Overrides**
+- [x] **Scenario 3: Explicit 0D Cell Indentation via `Cell` and Dictionary Overrides**
   - **Given** a table with a descriptor column `line_item`.
   - **When** adding rows with `cells={"line_item": Cell("Cost of Goods Sold", indent=1)}` and `cells={"line_item": {"value": "Operating Expenses", "indent": 2}}`.
   - **Then** the serialized row specs contain `indent: 1` and `indent: 2` on the respective cell inputs, and compilation evaluates correctly.
 
-- [ ] **Scenario 4: Symmetrical Column and Row Spacing Gutters**
+- [x] **Scenario 4: Symmetrical Column and Row Spacing Gutters**
   - **Given** a table where `add_column_gutter()` is placed between column groups and `add_row_gutter()` is placed between row groups.
   - **When** calling `model.to_spec()`.
   - **Then** the serialized table specification contains `{"kind": "gutter"}` entries in both `columns` and `rows`.
 
-- [ ] **Scenario 5: Point Cell Override via `set_cell`**
+- [x] **Scenario 5: Point Cell Override via `set_cell`**
   - **Given** an existing row with a vector formula and a row with an existing cell literal.
   - **When** calling `table.set_cell(row="rev", col="2023A", value=150.0, note="Audited", indent=0)`, updating an existing cell with `table.set_cell(row="existing", col="c1", note="Updated note")`, or passing a pre-constructed `Cell` via `table.set_cell(row="rev", col="2024E", cell=Cell(expr="PREV * 1.10"))`.
   - **Then** the cell in `2023A` is overridden with literal value `150.0` and audit note `"Audited"`, `2024E` contains the overridden formula, and `existing["c1"]` retains its previous value while updating the note.
   - **And** calling `set_cell` on a non-existent row raises `KeyError`, and creating a new cell without `value` or `expr` raises `ValueError`.
 
-- [ ] **Scenario 6: Header Specification Validation**
+- [x] **Scenario 6: Header Specification Validation**
   - **Given** a table builder.
   - **When** calling `table.add_column("rev", header="Revenue", headers=["Financials", "Revenue"])`.
   - **Then** raises `ValueError` indicating `header` and `headers` are mutually exclusive.
 
-- [ ] **Scenario 7: Duplicate Identifier Validation**
+- [x] **Scenario 7: Duplicate Identifier Validation**
   - **Given** an existing sheet, table, column, or row.
   - **When** attempting to add an entity with a duplicate ID.
   - **Then** raises `ValueError` with entity details before reaching compilation.
 
-- [ ] **Scenario 8: Global and Sheet-Scoped Lookups**
+- [x] **Scenario 8: Global and Sheet-Scoped Lookups**
   - **Given** a model with multiple sheets and tables.
   - **When** calling `model.get_table("income_statement")`, `sheet.get_table("income_statement")`, and `model.get_sheet("Operations")`.
   - **Then** resolves the matching entity directly.
@@ -479,7 +479,7 @@ class Table:
   - **Then** both construct valid specs without errors.
   - **And** attempting `Cell()` with neither value nor expr, or specifying both, raises `ValueError`.
 
-- [ ] **Scenario 10: Worksheet Freeze Panes Split Coordinates**
+- [x] **Scenario 10: Worksheet Freeze Panes Split Coordinates**
   - **Given** a sheet configured with `freeze_panes=(4, 2)`.
   - **When** calling `model.to_spec()`.
   - **Then** the manifest sheet spec contains `{"freeze_panes": {"row": 4, "col": 2}}`, preserving 0-indexed split coordinates.
@@ -497,19 +497,19 @@ class Table:
 ### Phase 2: Python Builder Implementation
 
 - [x] Implement `Cell` dataclass helper with `_UNSET` sentinel and payload validation in `python/f8/builder.py`.
-- [ ] Implement `Table` builder with `add_column`, `add_column_gutter`, `add_row`, `add_row_gutter`, `add_section_header`, and `set_cell` (supporting kwargs and `Cell` instance) in `python/f8/builder.py`.
-- [ ] Implement `Sheet` container with `add_table`, `get_table`, and `tables` property in `python/f8/builder.py`.
-- [ ] Implement `Model` container with `add_sheet`, `get_sheet`, `get_table`, `sheets`, `tables`, `to_spec`, and `compile` in `python/f8/builder.py`.
-- [ ] Re-export `Cell`, `Model`, `Sheet`, `Table`, and `CellInputValue` in `python/f8/__init__.py`.
+- [x] Implement `Table` builder with `add_column`, `add_column_gutter`, `add_row`, `add_row_gutter`, `add_section_header`, and `set_cell` (supporting kwargs and `Cell` instance) in `python/f8/builder.py`.
+- [x] Implement `Sheet` container with `add_table`, `get_table`, and `tables` property in `python/f8/builder.py`.
+- [x] Implement `Model` container with `add_sheet`, `get_sheet`, `get_table`, `sheets`, `tables`, `to_spec`, and `compile` in `python/f8/builder.py`.
+- [x] Re-export `Cell`, `Model`, `Sheet`, `Table`, and `CellInputValue` in `python/f8/__init__.py`.
 
 ### Phase 3: Verification & Test Suite
 
-- [ ] Add comprehensive test suite in `python/tests/test_dsl.py` verifying all acceptance scenarios.
-- [ ] Verify complete project suite:
+- [x] Add comprehensive test suite in `python/tests/test_dsl.py` verifying all acceptance scenarios.
+- [x] Verify complete project suite:
   - `cargo test && cargo clippy --all-targets -- -D warnings && cargo fmt --check`
   - `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`
 
 ### Phase 4: Living Spec Reconciliation
 
-- [ ] Update living spec `specs/living-specs/interfaces/python-sdk.md` with DSL builder contracts and `.save()`.
-- [ ] Archive completed draft spec to `specs/history/`.
+- [x] Update living spec `specs/living-specs/interfaces/python-sdk.md` with DSL builder contracts and `.save()`.
+- [x] Archive completed draft spec to `specs/history/`.
