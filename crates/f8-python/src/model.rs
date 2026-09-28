@@ -1,10 +1,15 @@
+use std::path::PathBuf;
+
 use f8_core::compiler::CompiledModel;
 use f8_core::compiler::emission::EmissionOptions;
+use f8_core::compiler::error::CompilerError;
 use f8_core::model::id::{SheetId, TableId};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::error::{map_compiler_error, map_inspection_error, map_pythonize_error};
+use crate::error::{
+    make_emission_error, map_compiler_error, map_inspection_error, map_pythonize_error,
+};
 
 #[pyclass(name = "CompiledModel")]
 pub struct PyCompiledModel {
@@ -17,8 +22,62 @@ impl PyCompiledModel {
     }
 }
 
+enum SaveError {
+    Compiler(CompilerError),
+    Io(String),
+}
+
 #[pymethods]
 impl PyCompiledModel {
+    #[pyo3(signature = (path, options = None))]
+    pub fn save<'py>(
+        &self,
+        py: Python<'py>,
+        path: PathBuf,
+        options: Option<&Bound<'py, PyAny>>,
+    ) -> PyResult<()> {
+        let opts = match options {
+            Some(opt) if !opt.is_none() => pythonize::depythonize::<EmissionOptions>(opt)
+                .map_err(|e| map_pythonize_error(py, e))?,
+            _ => EmissionOptions::default(),
+        };
+
+        py.allow_threads(|| -> Result<(), SaveError> {
+            let bytes = self
+                .inner
+                .emit_workbook(&opts)
+                .map_err(SaveError::Compiler)?;
+
+            if let Some(parent) = path.parent()
+                && !parent.as_os_str().is_empty()
+                && !parent.exists()
+            {
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    SaveError::Io(format!(
+                        "Failed to create parent directory '{}': {}",
+                        parent.display(),
+                        e
+                    ))
+                })?;
+            }
+
+            std::fs::write(&path, &bytes).map_err(|e| {
+                SaveError::Io(format!(
+                    "Failed to write workbook to '{}': {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+
+            Ok(())
+        })
+        .map_err(|err| match err {
+            SaveError::Compiler(compiler_err) => map_compiler_error(py, &compiler_err),
+            SaveError::Io(io_err) => make_emission_error(py, io_err),
+        })?;
+
+        Ok(())
+    }
     #[pyo3(signature = (options = None))]
     pub fn emit_workbook<'py>(
         &self,

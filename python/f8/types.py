@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from f8.builder import CellInputValue as CellInputValue
 
 type CellValueDict = dict[str, object] | str
 
@@ -201,6 +204,172 @@ class EmissionOptions(TypedDict, total=False):
     author: str
 
 
+type AxisRole = Literal["measure", "descriptor"]
+
+type FormatPreset = Literal[
+    "currency",
+    "percentage",
+    "number",
+    "multiple",
+    "basis_points",
+    "date",
+    "text",
+    "integer",
+]
+
+type SemanticStyle = Literal["data", "subtotal", "total"]
+
+type CurrencyCode = Literal[
+    "USD",
+    "EUR",
+    "GBP",
+    "JPY",
+    "CHF",
+    "CAD",
+    "AUD",
+    "CNY",
+    "HKD",
+    "SGD",
+    "SEK",
+    "NOK",
+    "NZD",
+    "INR",
+    "BRL",
+    "usd",
+    "eur",
+    "gbp",
+    "jpy",
+    "chf",
+    "cad",
+    "aud",
+    "cny",
+    "hkd",
+    "sgd",
+    "sek",
+    "nok",
+    "nzd",
+    "inr",
+    "brl",
+]
+
+type CellValueLiteral = float | int | str | bool | None
+
+
+class DetailedCellDict(TypedDict, total=False):
+    """Detailed 0D cell override specification dictionary."""
+
+    value: CellValueLiteral
+    expr: str
+    style: SemanticStyle
+    highlight: bool
+    format: FormatPreset
+    decimals: int
+    currency: CurrencyCode
+    indent: int
+    note: str
+
+
+class FreezePanesDict(TypedDict):
+    """0-indexed split coordinate for worksheet freeze panes."""
+
+    row: int
+    col: int
+
+
+class SheetSpecDict(TypedDict, total=False):
+    """Worksheet manifest specification dictionary."""
+
+    name: str
+    tab_color: str
+    freeze_panes: FreezePanesDict
+    show_gridlines: bool
+    tables: list[str]
+
+
+class ProjectManifestDict(TypedDict):
+    """Complete project manifest specification dictionary."""
+
+    model_name: str
+    theme: str
+    sheets: list[SheetSpecDict]
+
+
+class DataColumnSpecDict(TypedDict, total=False):
+    """Specification dictionary for a tabular data column."""
+
+    kind: Literal["data"]
+    id: str
+    role: AxisRole
+    headers: list[str]
+    style: SemanticStyle
+    highlight: bool
+    format: FormatPreset
+    decimals: int
+    currency: CurrencyCode
+    expr: str
+
+
+class GutterColumnSpecDict(TypedDict):
+    """Specification dictionary for an empty spacing column gutter."""
+
+    kind: Literal["gutter"]
+
+
+type ColumnSpecDict = DataColumnSpecDict | GutterColumnSpecDict
+
+
+class DataRowSpecDict(TypedDict, total=False):
+    """Specification dictionary for a tabular data row."""
+
+    kind: Literal["data"]
+    id: str
+    style: SemanticStyle
+    highlight: bool
+    format: FormatPreset
+    decimals: int
+    currency: CurrencyCode
+    expr: str
+    cells: dict[str, CellValueLiteral | DetailedCellDict]
+
+
+class SectionHeaderRowSpecDict(TypedDict, total=False):
+    """Specification dictionary for a table section header row."""
+
+    kind: Literal["section_header"]
+    title: str
+    indent: int
+    note: str
+
+
+class GutterRowSpecDict(TypedDict):
+    """Specification dictionary for an empty spacing row gutter."""
+
+    kind: Literal["gutter"]
+
+
+type RowSpecDict = DataRowSpecDict | SectionHeaderRowSpecDict | GutterRowSpecDict
+
+
+class TableSpecDict(TypedDict, total=False):
+    """Specification dictionary for a complete financial table."""
+
+    id: str
+    title: str
+    subtitle: str
+    currency: CurrencyCode
+    collapsible: bool
+    columns: list[ColumnSpecDict]
+    rows: list[RowSpecDict]
+
+
 type ManifestInput = Mapping[str, object]
 type TableInput = Mapping[str, object]
 type ThemeInput = Mapping[str, object] | str
+
+
+def __getattr__(name: str) -> object:
+    if name == "CellInputValue":
+        from f8.builder import CellInputValue
+
+        return CellInputValue
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

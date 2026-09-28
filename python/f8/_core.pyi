@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from pathlib import Path
 
 from f8.types import (
     CellInspection,
@@ -20,6 +21,7 @@ def compile(
 
 class CompiledModel:
     def emit_workbook(self, options: EmissionOptions | None = None) -> bytes: ...
+    def save(self, path: str | Path, options: EmissionOptions | None = None) -> None: ...
     def summary(self) -> ModelSummary: ...
     def inspect_cell(
         self,

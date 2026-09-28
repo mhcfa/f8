@@ -436,7 +436,7 @@ class Table:
   - **When** calling `model.compile()`.
   - **Then** compilation succeeds, returning a `CompiledModel` with correct cell counts and evaluated values.
 
-- [ ] **Scenario 2: Workbook Saving to Disk with Parent Directory Creation**
+- [x] **Scenario 2: Workbook Saving to Disk with Parent Directory Creation**
   - **Given** a compiled model.
   - **When** calling `compiled.save("nested/dir/output.xlsx")`.
   - **Then** creates parent directories as needed and writes a valid `.xlsx` file starting with the `PK\x03\x04` zip magic header.
@@ -473,7 +473,7 @@ class Table:
   - **Then** resolves the matching entity directly.
   - **And** calling `model.get_table("unknown")` or `model.get_sheet("unknown")` raises `KeyError`.
 
-- [ ] **Scenario 9: Cell Payload Validation and Sentinel Nulls**
+- [x] **Scenario 9: Cell Payload Validation and Sentinel Nulls**
   - **Given** cell definitions using `Cell`.
   - **When** creating `Cell(value=None)` (explicit null) and `Cell(expr="PREV * 1.05")`.
   - **Then** both construct valid specs without errors.
@@ -490,13 +490,13 @@ class Table:
 
 ### Phase 1: Native & Type Foundations
 
-- [ ] Add `save(path, options=None)` method to `PyCompiledModel` in `crates/f8-python/src/model.rs` accepting `str` and `Path` with automatic parent directory creation outside the Python GIL.
-- [ ] Update `python/f8/_core.pyi` type stub with `CompiledModel.save(path: str | Path, options: EmissionOptions | None = None) -> None`.
-- [ ] Add `AxisRole`, `FormatPreset`, `SemanticStyle`, `CurrencyCode`, `DetailedCellDict`, `CellInputValue`, `SheetSpecDict`, `ProjectManifestDict`, and `TableSpecDict` in `python/f8/types.py`.
+- [x] Add `save(path, options=None)` method to `PyCompiledModel` in `crates/f8-python/src/model.rs` accepting `str` and `Path` with automatic parent directory creation outside the Python GIL.
+- [x] Update `python/f8/_core.pyi` type stub with `CompiledModel.save(path: str | Path, options: EmissionOptions | None = None) -> None`.
+- [x] Add `AxisRole`, `FormatPreset`, `SemanticStyle`, `CurrencyCode`, `DetailedCellDict`, `CellInputValue`, `SheetSpecDict`, `ProjectManifestDict`, and `TableSpecDict` in `python/f8/types.py`.
 
 ### Phase 2: Python Builder Implementation
 
-- [ ] Implement `Cell` dataclass helper with `_UNSET` sentinel and payload validation in `python/f8/builder.py`.
+- [x] Implement `Cell` dataclass helper with `_UNSET` sentinel and payload validation in `python/f8/builder.py`.
 - [ ] Implement `Table` builder with `add_column`, `add_column_gutter`, `add_row`, `add_row_gutter`, `add_section_header`, and `set_cell` (supporting kwargs and `Cell` instance) in `python/f8/builder.py`.
 - [ ] Implement `Sheet` container with `add_table`, `get_table`, and `tables` property in `python/f8/builder.py`.
 - [ ] Implement `Model` container with `add_sheet`, `get_sheet`, `get_table`, `sheets`, `tables`, `to_spec`, and `compile` in `python/f8/builder.py`.

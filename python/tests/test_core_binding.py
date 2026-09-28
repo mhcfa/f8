@@ -1,15 +1,20 @@
-"""Tests for the native f8 Python extension (_core)."""
+from pathlib import Path
 
 import f8
 import pytest
 from f8 import (
     CompiledModel,
     CycleDetectedError,
+    EmissionError,
     F8Error,
     FormulaParseError,
     InspectionError,
     ReferenceResolutionError,
     SpecificationError,
+)
+from f8.types import (
+    ProjectManifestDict,
+    TableSpecDict,
 )
 
 type SampleModelFixture = tuple[dict[str, object], list[dict[str, object]]]
@@ -361,3 +366,110 @@ def test_scenario_10_inspection_entity_not_found(
     assert isinstance(err, F8Error)
     assert hasattr(err, "entity")
     assert "UNKNOWN_TABLE" in err.entity
+
+
+def test_scenario_11_save_workbook_str_and_path(
+    sample_model: SampleModelFixture,
+    tmp_path: Path,
+) -> None:
+    manifest, tables = sample_model
+    compiled = f8.compile(manifest, tables)
+
+    # Save via str path
+    str_target = str(tmp_path / "model_str.xlsx")
+    compiled.save(str_target)
+    assert Path(str_target).exists()
+    file_bytes = Path(str_target).read_bytes()
+    assert file_bytes.startswith(b"PK\x03\x04")
+    assert len(file_bytes) > 1000
+
+    # Save via Path with automatic parent directory creation
+    nested_target = tmp_path / "nested" / "deeply" / "dir" / "model_path.xlsx"
+    assert not nested_target.parent.exists()
+    compiled.save(nested_target)
+    assert nested_target.exists()
+    nested_bytes = nested_target.read_bytes()
+    assert nested_bytes.startswith(b"PK\x03\x04")
+    assert len(nested_bytes) > 1000
+
+    # Save with options
+    values_only_target = tmp_path / "values_only.xlsx"
+    compiled.save(values_only_target, options={"values_only": True})
+    assert values_only_target.exists()
+
+    # Emission failure with non-writable location raises EmissionError
+    if not (tmp_path / "dir_blocked").exists():
+        (tmp_path / "dir_blocked").mkdir()
+    with pytest.raises(EmissionError):
+        # Trying to save to a directory as a file path
+        compiled.save(tmp_path / "dir_blocked")
+
+
+def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
+    manifest: ProjectManifestDict = {
+        "model_name": "TypedModel",
+        "theme": "corporate_navy",
+        "sheets": [
+            {
+                "name": "Sheet1",
+                "tables": ["T1"],
+                "show_gridlines": True,
+                "freeze_panes": {"row": 2, "col": 1},
+            }
+        ],
+    }
+
+    table: TableSpecDict = {
+        "id": "T1",
+        "title": "Typed Table",
+        "subtitle": "Subtitle",
+        "currency": "usd",
+        "collapsible": False,
+        "columns": [
+            {
+                "kind": "data",
+                "id": "line_item",
+                "role": "descriptor",
+                "headers": ["Line Item"],
+            },
+            {
+                "kind": "data",
+                "id": "c1",
+                "role": "measure",
+                "headers": ["Col 1"],
+                "format": "currency",
+                "decimals": 2,
+                "currency": "usd",
+            },
+            {"kind": "gutter"},
+        ],
+        "rows": [
+            {
+                "kind": "section_header",
+                "title": "Revenue Section",
+                "indent": 0,
+                "note": "Section note",
+            },
+            {
+                "kind": "data",
+                "id": "r1",
+                "format": "currency",
+                "cells": {
+                    "line_item": {
+                        "value": "Total Revenue",
+                        "indent": 1,
+                        "note": "Audited",
+                    },
+                    "c1": 100.0,
+                },
+            },
+            {"kind": "gutter"},
+        ],
+    }
+
+    compiled = f8.compile(manifest, [table])
+    assert isinstance(compiled, CompiledModel)
+    summary = compiled.summary()
+    assert summary["model_name"] == "TypedModel"
+    assert summary["total_tables"] == 1
+    assert summary["total_cells"] == 2
