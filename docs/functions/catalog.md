@@ -149,8 +149,8 @@ Excel represents dates as floating-point day counts where serial day `1.0` is `1
 To guarantee bit-for-bit Excel calculation parity, f8 strictly reproduces the historical Lotus 1-2-3 / Excel leap year bug:
 - **Serial day 60.0**: Treats `1900-02-29` as serial day `60.0`, even though 1900 was not a leap year in the Gregorian calendar.
 - **Offset on modern dates**: All serial dates on or after March 1, 1900 carry a $+1$ offset relative to true astronomical day counts, causing the Unix epoch (`1970-01-01`) to map to serial day `25569.0` rather than `25568.0`.
-- See [The 1900 Leap Year Bug (Lotus 1-2-3 Parity)](../compiler/parity.md#42-the-1900-leap-year-bug-lotus-1-2-3-parity) for details.
+- See [In-Memory Evaluator & Parity](../../specs/living-specs/compiler/evaluator.md) for details on the 1900 leap year bug.
 
-Day count conventions and basis values (`0` through `4`) for `YEARFRAC` are specified in [Contractual Day Count Conventions (YEARFRAC)](../compiler/parity.md#45-contractual-day-count-conventions-yearfrac).
+Day count conventions and basis values (`0` through `4`) for `YEARFRAC` are specified in [In-Memory Evaluator & Parity](../../specs/living-specs/compiler/evaluator.md).
 
-See [Function Registry Architecture](./registry.md) for traits and dispatch, [Excel Parity](../compiler/parity.md) for calculation rules, and [Formula Grammar](../dsl/grammar.md) for formula expressions.
+See [Function Registry Architecture](../../specs/living-specs/functions/registry.md) for traits and dispatch, [In-Memory Evaluator & Parity](../../specs/living-specs/compiler/evaluator.md) for calculation rules, and [Formula Grammar](../dsl/grammar.md) for formula expressions.

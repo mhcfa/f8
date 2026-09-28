@@ -1,7 +1,7 @@
 //! Excel conditional aggregation functions (*IFS family).
 //!
-//! Conforms to Excel parity rules specified in `docs/compiler/parity.md` Section 5
-//! and standard catalog definitions in `docs/functions/catalog.md`.
+//! Provides conditional aggregation implementations including `SUMIFS`, `AVERAGEIFS`,
+//! `COUNTIFS`, `MAXIFS`, and `MINIFS` conforming to Excel calculation semantics.
 
 use crate::functions::error::FunctionError;
 use crate::functions::math::criteria::Criterion;

@@ -85,9 +85,10 @@ Guidelines for AI agents working with this codebase.
 
 ## Documentation Layout
 
-- `docs/`: Strategic architecture and design specifications.
+- `docs/`: Strategic architecture and philosophy.
+- `python/f8/skills/`: Bundled Python financial modeling agent skill and authoring references.
 - `specs/`: Technical specifications for spec-driven development.
-  - `specs/living-specs/<domain>/`: Permanent single source of truth for active subsystems.
-  - `specs/drafts/`: In-flight draft specifications.
+  - `specs/living-specs/<domain>/`: Permanent single source of truth for compiler passes, AST, IR, evaluator, and interfaces.
+  - `specs/drafts/`: In-flight draft specifications and design RFCs (all feature designs and proposals are locked here).
   - `specs/templates/`: Markdown templates for draft and living specs.
   - `specs/history/`: Completed, reconciled, and archived specifications.

@@ -316,4 +316,4 @@ This guarantees that changing themes re-skins the emitted workbook completely an
 
 ---
 
-See [Specification Format](./spec-format.md) for schema usage and [Spatial Layout Planning](../compiler/spatial-layout.md) for coordinate and metric assignment.
+See [Specification Format](./spec-format.md) for schema usage and [Spatial Layout Planning](../../specs/living-specs/compiler/spatial-layout.md) for coordinate and metric assignment.

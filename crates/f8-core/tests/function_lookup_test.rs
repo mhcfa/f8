@@ -1,7 +1,6 @@
 //! Integration tests for Excel modern lookup and reference functions suite.
 //!
-//! Covers `XLOOKUP`, `XMATCH`, and `INDEX` conforming to Excel calculation parity
-//! and acceptance criteria in `specs/drafts/2026-09-19-modern-lookup-functions.md`.
+//! Covers `XLOOKUP`, `XMATCH`, and `INDEX` conforming to Excel calculation parity.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
