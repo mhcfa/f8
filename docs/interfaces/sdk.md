@@ -318,26 +318,33 @@ import f8
 # 1. Compile in-memory (<5ms)
 compiled = model.compile()
 
-# 2. Inspect evaluated results as a dictionary or record list (ready for Pandas/Polars)
-dict_evaluated = compiled.table("OPERATIONS").to_dict()
-# Ingest into any dataframe library without f8 depending on it:
-# df = pd.DataFrame(dict_evaluated)
-# pl_df = pl.DataFrame(dict_evaluated)
+# 2. Table auditing & Markdown inspection (ideal for agents, terminal logs, and notebooks)
+ops = compiled.table("OPERATIONS")
+print(ops.to_markdown(view="values"))    # 2D table with accounting format
+print(ops.to_markdown(view="formulas"))  # Concrete lowered Excel formulas
 
-# 3. Direct cell auditing
+# 3. Direct unboxed scalar indexing
+gross_profit = ops["gross_profit", "2024E"]  # 450000.0
+
+# 4. Ingest into dataframes via standard dictionary export (zero pandas/polars dependency in f8)
+dict_records = ops.to_dict(orient="records")
+# df = pd.DataFrame(dict_records)
+# pl_df = pl.DataFrame(dict_records)
+
+# 5. Direct cell auditing
 cell_info = compiled.inspect_cell("OPERATIONS", "gross_profit", "2024E")
 print(cell_info.physical_address)  # "C15"
 print(cell_info.lowered_formula)   # "=C12-C13"
 print(cell_info.evaluated_value)   # 450000.0
 print(cell_info.precedents)        # ["OPERATIONS[revenue, 2024E]", "OPERATIONS[cogs, 2024E]"]
 
-# 4. Save native Excel file
+# 6. Save native Excel file
 compiled.save("output/lbo_model.xlsx")
 
-# 5. Optional export to canonical multi-file JSON spec for Git / CLI parity
+# 7. Optional export to canonical multi-file JSON spec for Git / CLI parity
 model.export_project("./models/lbo_project")
 
-# 6. Direct in-memory compilation of existing JSON projects (zero CLI subprocess)
+# 8. Direct in-memory compilation of existing JSON projects (zero CLI subprocess)
 compiled_from_json = f8.compile_project("./models/lbo_project")
 ```
 
@@ -369,21 +376,9 @@ To guarantee seamless interoperability between Python code, CLI workflows, and a
 
 ---
 
-## 6. Implementation Roadmap
+## 6. Verification & Living Specification
 
-### Phase 1: Native PyO3 Extension (`crates/f8-python`)
-- Initialize `crates/f8-python` in Cargo workspace using `maturin` and `pyo3`.
-- Implement thin C-ABI bridge using `pythonize` to marshal `ProjectManifest`, `Vec<TableSpec>`, and `Theme` into `f8-core`.
-- Bind `Compiler::compile`, `CompiledModel` inspection methods, and `.xlsx` byte emission.
-- Implement structured Python exceptions with typed diagnostic attributes (`cycle`, `coordinate`, `token_offset`).
-
-### Phase 2: Pythonic Modeling DSL (`f8`)
-- Implement pure Python `Model`, `Sheet`, and `Table` builder classes with `py.typed` and `Literal` type definitions.
-- Implement symmetrical table APIs: `table.add_column(...)`, `table.add_row(...)`, `table.add_section_header(...)`, `table.add_gutter()`, and `table.set_cell(...)`.
-- Support canonical formula string expressions and 0D cell overrides on rows and tables.
-- Implement pure Python project export (`model.export_project`) and direct project compilation (`f8.compile_project`).
-
-### Phase 3: Inspection Protocols & Auditing
-- Implement `.to_dict()` and standard dictionary export orientations (`records`, `split`) on `TableInspection`.
-- Implement interactive auditing methods (`inspect_cell`, `precedents_of`, `dependents_of`).
+- **Living Specification**: Exhaustive contracts, type definitions, and behavioral scenarios are maintained in the [Python SDK Living Spec](../../specs/living-specs/interfaces/python-sdk.md).
+- **Static Type Checking**: 100% strict `pyright` adherence with PEP 561 `py.typed` marker and `.pyi` C-extension stubs.
+- **Test Suite**: Verified via `uv run pytest` across unit tests, in-memory compilation, round-trip project export, and Excel binary parity.
 

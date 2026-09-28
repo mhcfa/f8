@@ -24,14 +24,21 @@ f8/
 │   │   │   └── compiler/       # Core 6 passes (IR -> Graph -> Eval -> Layout -> Lowering -> Emission)
 │   │   └── tests/              # Core compiler pass tests, calculation parity, & model archetypes
 │   │
-│   └── f8-cli/               # Command-line interface binary (clap)
-│       ├── src/                # CLI subcommands (init, check, compile, inspect)
-│       ├── templates/          # Institutional model archetypes (embedded via include_str!)
-│       │   ├── three-statement/# Linked IS, BS, CF, and driver assumptions
-│       │   ├── lbo/            # Transaction assumptions, debt schedules, returns
-│       │   ├── trading-comps/  # Public SaaS trading comps and valuation multiples
-│       │   └── cap-table/      # Pre-/post-money ownership and dilution schedule
-│       └── tests/              # CLI integration tests, argument parsing, & exit code assertions
+│   ├── f8-cli/               # Command-line interface binary (clap)
+│   │   ├── src/                # CLI subcommands (init, check, compile, inspect)
+│   │   ├── templates/          # Institutional model archetypes (embedded via include_str!)
+│   │   │   ├── three-statement/# Linked IS, BS, CF, and driver assumptions
+│   │   │   ├── lbo/            # Transaction assumptions, debt schedules, returns
+│   │   │   ├── trading-comps/  # Public SaaS trading comps and valuation multiples
+│   │   │   └── cap-table/      # Pre-/post-money ownership and dilution schedule
+│   │   └── tests/              # CLI integration tests, argument parsing, & exit code assertions
+│   │
+│   └── f8-python/            # Native C-extension PyO3 bindings (abi3-py312)
+│       └── src/                # In-process compiler bridge, Serde marshaling, & error mapping
+│
+├── python/                     # Python package (uv / maturin)
+│   ├── f8/                   # Fluent modeling DSL, loader, & inspection protocols
+│   └── tests/                # Python unit tests & integration fixtures
 │
 ├── docs/                       # High-level strategic architecture & subsystem documentation
 └── specs/                      # Spec-driven development (living specs & draft specs)
@@ -80,7 +87,7 @@ Curated canonical JSON skeletons demonstrating institutional financial modeling 
 Outer adapters providing access across diverse execution environments:
 
 - **`f8-cli` (Phase 2)**: Command-line interface powered by `clap` (`init`, `check`, `compile`, `inspect`). Provides direct terminal execution for financial analyst modeling (CFA personal workflow) and autonomous shell-enabled agents (Antigravity, Claude Code, Cursor) with zero protocol friction.
-- **`f8-python` (Phase 3 Planned)**: Native Python C-extension via `pyo3` and fluent modeling SDK (`f8`). Enables programmatic model building, DataFrame ingestion, in-process evaluation, and Excel export as documented in [SDK Architecture & Design](./interfaces/sdk.md).
+- **`f8-python` & `f8` (Phase 3)**: Native Python C-extension (`crates/f8-python`) and fluent modeling package (`python/f8`). Enables programmatic model building (`Model`, `Sheet`, `Table`, `Cell`), in-process compilation (`CompiledModel`), table inspection (`TableAuditor`), and direct multi-file export/loading (`export_project`, `compile_project`) as documented in [SDK Architecture & Design](./interfaces/sdk.md).
 - **`f8-mcp` (Phase 4 Planned)**: Model Context Protocol JSON-RPC server (stdio and streamable HTTP) providing headless compilation, cell/table inspection, blast-radius analysis, and canonical table I/O for chat-only agents (Claude Desktop).
 - **`f8-wasm` (Phase 5 Planned)**: WebAssembly bindings via `wasm-bindgen` exposing in-memory compilation and evaluation to browser web apps and TypeScript environments.
 
@@ -93,6 +100,7 @@ To prevent circular dependencies and maintain clean boundaries across workspace 
 ```mermaid
 flowchart TD
     CLI["f8-cli (CLI Binary)"] --> Core["f8-core (Compiler & Evaluator)"]
+    SDK["f8-python & f8 (Python SDK)"] --> Core
     MCP["f8-mcp (Planned MCP Binary)"] -.-> Core
     WASM["f8-wasm (WASM Bindings)"] -.-> Core
 
@@ -108,11 +116,11 @@ flowchart TD
     end
 ```
 
-- **Acyclic hierarchy**: `f8-core` is strictly leaf-level. It never depends on outer interface crates (`f8-cli`, `f8-mcp`, `f8-wasm`).
-- **I/O-agnostic pure core**: `f8-core` performs pure in-memory computations with zero direct filesystem I/O (`std::fs`). Manifest and theme loading from disk, directory discovery, and workbook file saving are strictly performed by outer adapters (`f8-cli`, `f8-mcp`).
+- **Acyclic hierarchy**: `f8-core` is strictly leaf-level. It never depends on outer interface crates (`f8-cli`, `f8-python`, `f8-mcp`, `f8-wasm`).
+- **I/O-agnostic pure core**: `f8-core` performs pure in-memory computations with zero direct filesystem I/O (`std::fs`). Manifest and theme loading from disk, directory discovery, and workbook file saving are strictly performed by outer adapters (`f8-cli`, `f8` Python package loader/exporter).
 - **Embedded archetype assets**: Built-in institutional templates are compiled directly into outer interface binaries as static assets (`include_str!`), ensuring single-binary portability and eliminating runtime path-discovery failures.
 - **Pass isolation**: Core compiler passes depend on shared domain types (`model`, `expr`, `value`, `functions`), but do not depend backwards on each other.
-- **Direct interface integration**: Outer interfaces (`f8-cli`, `f8-mcp`, `f8-wasm`) depend directly on `f8-core` for validation, topological evaluation, and compilation.
+- **Direct interface integration**: Outer interfaces (`f8-cli`, `f8-python`, `f8-mcp`, `f8-wasm`) depend directly on `f8-core` for validation, topological evaluation, and compilation.
 - **Linear data flow**: Each compiler pass consumes the output of the prior pass as pure, explicit data structures.
 
 ---
@@ -133,11 +141,15 @@ The compiler core is designed from day one to support both native operating syst
    - Implement pure in-memory query APIs (`inspect_cell`, `table_matrix`, `precedents_of`, `dependents_of`).
    - Maintain fail-fast, coordinate-rich compiler error reporting with `thiserror`.
 2. **Phase 2: Local Command-Line Interface (`f8-cli`)**:
-   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`), and `f8 inspect` (`summary`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel`.
+   - Build `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`), and `f8 inspect` (`summary`, `sheet`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel`.
    - Dogfood on personal and institutional financial models (3-statement, LBO, comps) to refine authoring ergonomics.
-3. **Phase 3: Model Context Protocol Server (`f8-mcp`, Planned)**:
+3. **Phase 3: Python SDK & Native Extension (`f8-python` / `f8`)**:
+   - PyO3 native extension bridge (`crates/f8-python`) with stable ABI (`abi3-py312`).
+   - Fluent modeling DSL (`f8.Model`, `Sheet`, `Table`, `Cell`) with PEP 561 static typing.
+   - In-memory compilation, inspection facade (`TableAuditor`), and bidirectional project serialization (`export_project`, `compile_project`).
+4. **Phase 4: Model Context Protocol Server (`f8-mcp`, Planned)**:
    - Introduce `crates/f8-mcp` using JSON-RPC stdio / streamable HTTP.
    - Wrap core inspection, scaffolding, and validation routines as typed MCP tools for chat-only AI agents.
-4. **Phase 4: WebAssembly & Web Application (`f8-wasm`)**:
+5. **Phase 5: WebAssembly & Web Application (`f8-wasm`, Planned)**:
    - Expose `f8-core` via `wasm-bindgen` for client-side evaluation.
    - Build interactive web spreadsheet visualizers or SaaS integrations.

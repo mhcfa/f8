@@ -67,7 +67,7 @@ Cycle handling is encapsulated behind a Rust trait:
 
 ```rust
 pub trait CycleHandler {
-    fn handle_cycles(&self, graph: &Graph<CellId, ()>, sccs: &[Vec<CellId>]) -> Result<(), CompileError>;
+    fn handle_cycles(&self, cycle: &[CellId]) -> Result<(), GraphError>;
 }
 ```
 

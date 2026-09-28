@@ -18,10 +18,10 @@ my_model/
 ```
 
 ### Invariants
-- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining**: Sheets in `f8.json` reference table relative file paths.
+- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/`.
+- **Logical table references**: Sheets in `f8.json` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`), never filesystem paths.
 - **Global table ID uniqueness**: Every table `id` must be globally unique across the workbook.
-- **Filename-to-ID correspondence**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores).
+- **Decoupled file discovery**: The project loader discovers all `tables/*.json` files and indexes them by internal `id`. Filenames are decoupled from table IDs.
 
 ---
 

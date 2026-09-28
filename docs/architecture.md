@@ -8,8 +8,8 @@ Traditional financial modeling conflates business logic, multi-dimensional time 
 
 - **Code is single source of truth**: Models are defined in structured, declarative JSON project specifications (`f8.json` + `tables/*.json`).
 - **Explicit, minimal core data structures**: The compiler core enforces strict predictability with only one canonical way to represent any concept. Core data structures contain zero implicit behavior, hidden defaults, or magic inferences. Authoring ergonomics and conveniences are strictly deferred to outer adapters and tooling layers.
-- **Agent-first intermediate representation (IR)**: The specification schema is an explicit, orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic compiler verification rather than human typing brevity. Ergonomics, domain scaffolding, and high-level abstractions reside in the **Adapter / Tooling Layer (CLI, MCP server, and Web/WASM adapters)**, keeping the core data model strictly orthogonal, uniform, and free of special-case syntactic magic.
-- **Universal, WASM-ready engine**: The calculation core (`f8-core`) is strictly decoupled from operating system I/O. It compiles to both native targets and WebAssembly (`wasm32-unknown-unknown`), powering local CLI terminal workflows, stdio/HTTP MCP agent servers, and client-side web applications with in-memory `.xlsx` generation. All filesystem I/O (manifest/theme disk loading and file writes) is strictly confined to outer adapter crates (`f8-cli`), keeping the core 100% in-memory.
+- **Agent-first intermediate representation (IR)**: The specification schema is an explicit, orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic compiler verification rather than human typing brevity. Ergonomics, domain scaffolding, and high-level abstractions reside in the **Adapter / Tooling Layer (CLI, Python SDK, MCP server, and Web/WASM adapters)**, keeping the core data model strictly orthogonal, uniform, and free of special-case syntactic magic.
+- **Universal, WASM-ready engine**: The calculation core (`f8-core`) is strictly decoupled from operating system I/O. It compiles to both native targets and WebAssembly (`wasm32-unknown-unknown`), powering local CLI terminal workflows, the Python SDK, stdio/HTTP MCP agent servers, and client-side web applications with in-memory `.xlsx` generation. All filesystem I/O (manifest/theme disk loading and file writes) is strictly confined to outer adapters (`f8-cli`, `f8` Python package), keeping the core 100% in-memory.
 - **Orthogonal 2D matrix paradigm**: A table is a general $R \times C$ matrix. Columns are user-defined and can represent timelines, categories, units, assumptions, or multi-directional metrics (Cap Tables, Comps, Sensitivity matrices, Vertical waterfalls). Every cell $(row, col)$ is a full calculation citizen addressable via `Table[row, col]`.
 - **Excel is an uneditable compile artifact**: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - **Deterministic compilation**: A Rust engine validates schemas, constructs cell-level dependency graphs, proves acyclicity, plans 2D layouts, and lowers semantic formulas to concrete Excel grid coordinates.
@@ -122,10 +122,10 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
   - Validates driver inputs during IR expansion, pinpointing any unassigned coordinates.
   - Exposes a unified inspection facade (`CompiledModel`) containing evaluated values, DAG dependencies, layout mappings, and lowered formulas.
   - Remains completely agnostic to table shapes (3-statement models, Cap Tables, Comps, Sensitivity matrices, and Vertical waterfalls share the exact same primitive data structures).
-- **Adapter / Tooling Layer (CLI & MCP Server)**:
+- **Adapter / Tooling Layer (CLI, Python SDK & MCP Server)**:
   - Acts as the ergonomic bridge between humans, AI agents, and the core compiler.
-  - Handles all operating system and filesystem I/O (manifest/theme loading from disk, `.xlsx` file persistence).
-  - Exposes high-level commands and tools (e.g. project initialization, fast verification, cell/table inspection, blast-radius queries).
+  - Handles all operating system and filesystem I/O (manifest/theme loading from disk, `.xlsx` file persistence, multi-file export).
+  - Exposes high-level commands, Python modeling DSL, and inspection tools (e.g. project initialization, fast verification, cell/table inspection, blast-radius queries).
   - Absorbs repetitive templates (such as statement line-item structures and timeline columns) without complicating compiler invariants.
 
 ---
@@ -150,7 +150,8 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
 | **In-memory evaluator**  | Native Rust engine                  | Topological DAG execution with 100% Excel calculation parity          |
 | **Function catalog**     | Extensible registry pattern         | Single source of truth for Excel built-in functions                   |
 | **Workbook emitter**     | `rust_xlsxwriter`                   | Fast generation of native `.xlsx` files with live formulas and styles |
-| **CLI framework**        | `clap`                              | Command-line interface for human developers                           |
+| **CLI framework**        | `clap`                              | Command-line interface for human developers and shell agents          |
+| **Python SDK & bridge**  | `pyo3`, `maturin`, `pythonize`      | Native C-extension, fluent modeling DSL, and in-process execution     |
 | **Agent protocol**       | Stdio JSON-RPC (`rmcp`) (Planned)   | Model Context Protocol server for AI agents                           |
 
 ---

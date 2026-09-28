@@ -56,7 +56,8 @@ f8 init [path] [--template <name>] [--theme <name>]
 f8 check [-p <path>] [--json]
 f8 compile [-p <path>] [-o <path>] [--theme <name>] [--values-only] [--omit-cache]
 f8 inspect [-p <path>] [--json]
-f8 inspect table <table_id> [--view <values|formulas|both>] [--format <markdown|table|json>] [--json] [-p <path>]
+f8 inspect sheet <sheet_id> [--view <values|formulas|expr|addresses|both>] [--format <markdown|table|json>] [--json] [-p <path>]
+f8 inspect table <table_id> [--view <values|formulas|expr|addresses|both>] [--format <markdown|table|json>] [--json] [-p <path>]
 f8 inspect cell <table_id> <row_id> <col_id> [-p <path>] [--json]
 f8 inspect precedents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
 f8 inspect dependents <table_id> <row_id> <col_id> [--recursive] [-p <path>] [--json]
@@ -81,7 +82,8 @@ f8 init M_and_A_Comps --template trading-comps
 ```
 
 **Options**:
-- `--template <archetype>`, `-t <archetype>`: Institutional model template to unpack. Supported archetypes:
+- `--template <archetype>`, `-t <archetype>`: Model template to unpack. Supported archetypes:
+  - `blank`: Minimal starter model with a single table.
   - `three-statement`: Integrated Income Statement, Balance Sheet, Cash Flow, and operating driver schedules.
   - `lbo`: Transaction assumptions, sources & uses, debt amortization schedules, and cash sweep waterfalls.
   - `trading-comps`: Peer valuation matrix with metric columns, valuation multiples, and summary benchmark aggregations.
@@ -194,6 +196,37 @@ Status:    DAG acyclic (0 cycles), evaluated in 1.8ms
 
 ---
 
+---
+
+#### `f8 inspect sheet <sheet_id> [options]`
+Renders the complete physical 2D worksheet grid across all stacked tables, title banners, multi-tier headers, and gutters.
+
+```bash
+# View physical worksheet grid in Markdown (default)
+f8 inspect sheet Financials
+
+# View aligned Unicode terminal table with physical row numbers and column letters
+f8 inspect sheet Financials --format table
+
+# View physical Excel cell addresses across the sheet
+f8 inspect sheet Financials --view addresses
+```
+
+**Options**:
+- `--view <values|formulas|expr|addresses|both>`:
+  - `values` (default): Evaluated numbers with accounting typography.
+  - `formulas`: Concrete lowered Excel formulas for calculations, formatted values for inputs.
+  - `expr`: High-level f8 model DSL expressions for calculations, formatted values for inputs.
+  - `addresses`: Physical Excel sheet cell addresses (e.g. `C7`).
+  - `both`: Dual stacked view showing evaluated value on line 1 and lowered Excel formula on line 2.
+- `--format <markdown|table|json>`:
+  - `markdown` (default): GitHub Flavored Markdown table.
+  - `table`: Aligned Unicode terminal table with clean box-drawing borders.
+  - `json`: Machine-readable JSON representation.
+- `--json`: Convenience shortcut equivalent to `--format json`.
+
+---
+
 #### `f8 inspect table <table_id> [options]`
 Renders a 2D table cell matrix directly to stdout for immediate terminal auditing.
 
@@ -207,19 +240,27 @@ f8 inspect table IncomeStatement --format table
 # Formula auditing mode (Excel Ctrl + ~ parity)
 f8 inspect table IncomeStatement --view formulas
 
+# Expression auditing mode (DSL AST string)
+f8 inspect table IncomeStatement --view expr
+
+# Physical cell addresses
+f8 inspect table IncomeStatement --view addresses
+
 # Dual auditing view (value + formula)
 f8 inspect table IncomeStatement --view both
 ```
 
 **Options**:
-- `--view <values|formulas|both>`:
-  - `values` (default): Evaluated and formatted numbers with accounting typography according to each cell's format preset, decimal precision, and currency symbol.
-  - `formulas`: Formula expressions for calculation cells; raw inputs for literal cells.
-  - `both`: Stacked view displaying both evaluated value and formula expression per cell.
+- `--view <values|formulas|expr|addresses|both>`:
+  - `values` (default): Evaluated and formatted numbers with accounting typography.
+  - `formulas`: Concrete lowered Excel formulas for calculations, formatted values for inputs.
+  - `expr`: High-level f8 model DSL expressions for calculations, formatted values for inputs.
+  - `addresses`: Physical Excel sheet cell addresses (e.g. `C7`).
+  - `both`: Dual stacked view showing evaluated value on line 1 and lowered Excel formula on line 2.
 - `--format <markdown|table|json>`:
   - `markdown` (default): GitHub Flavored Markdown table.
   - `table`: Aligned Unicode terminal table with clean box-drawing borders.
-  - `json`: 2D array of cell objects.
+  - `json`: Machine-readable JSON representation.
 - `--json`: Convenience shortcut equivalent to `--format json`.
 
 ---
@@ -239,17 +280,17 @@ f8 inspect cell 'IncomeStatement["total_opex", "2028E"]'
 ```text
 Coordinate:     IncomeStatement["total_opex", "2028E"]
 Sheet Address:  Financials!C18
-Evaluated:      74.2 (Currency, 1 decimal)
+Evaluated:      74.2 (Currency, 1 decimal, USD)
 Formula Expr:   SUM(IncomeStatement["cogs".."sga", @col])
 Excel Formula:  =SUM(C14:C16)
 
 Precedents (3):
-  ├── IncomeStatement["cogs", "2028E"]
-  ├── IncomeStatement["rd", "2028E"]
-  └── IncomeStatement["sga", "2028E"]
+  ├── IncomeStatement["cogs", "2028E"] = 40.0
+  ├── IncomeStatement["rd", "2028E"] = 20.0
+  └── IncomeStatement["sga", "2028E"] = 14.2
 
 Dependents (1):
-  └── IncomeStatement["ebit", "2028E"]
+  └── IncomeStatement["ebit", "2028E"] = 25.8
 ```
 
 **Options**:
@@ -273,18 +314,18 @@ f8 inspect precedents 'IncomeStatement["net_income", "2024E"]' --recursive
 ```text
 Coordinate:     IncomeStatement["net_income", "2024E"]
 Direct Precedents (2):
-  ├── IncomeStatement["ebt", "2024E"]
-  └── IncomeStatement["tax", "2024E"]
+  ├── IncomeStatement["ebt", "2024E"] = 35.0
+  └── IncomeStatement["tax", "2024E"] = 7.35
 
 Transitive Precedent Tree (5 calculations):
-  ├── IncomeStatement["ebt", "2024E"]
-  │   ├── IncomeStatement["ebit", "2024E"]
-  │   │   ├── IncomeStatement["gross_profit", "2024E"]
-  │   │   │   ├── IncomeStatement["revenue", "2024E"]
-  │   │   │   └── IncomeStatement["cogs", "2024E"]
-  │   │   └── IncomeStatement["total_opex", "2024E"]
-  │   └── IncomeStatement["interest_expense", "2024E"]
-  └── IncomeStatement["tax", "2024E"]
+  ├── IncomeStatement["ebt", "2024E"] = 35.0
+  │   ├── IncomeStatement["ebit", "2024E"] = 39.0
+  │   │   ├── IncomeStatement["gross_profit", "2024E"] = 65.0
+  │   │   │   ├── IncomeStatement["revenue", "2024E"] = 100.0
+  │   │   │   └── IncomeStatement["cogs", "2024E"] = 35.0
+  │   │   └── IncomeStatement["total_opex", "2024E"] = 26.0
+  │   └── IncomeStatement["interest_expense", "2024E"] = 4.0
+  └── IncomeStatement["tax", "2024E"] = 7.35
 ```
 
 ---
@@ -304,15 +345,15 @@ f8 inspect dependents 'Assumptions["rev_growth", "2024E"]' --recursive
 ```text
 Coordinate:     Assumptions["rev_growth", "2024E"]
 Direct Dependents (1):
-  └── IncomeStatement["revenue", "2024E"]
+  └── IncomeStatement["revenue", "2024E"] = 100.0
 
 Transitive Blast Radius (6 downstream calculations affected):
-  └── IncomeStatement["revenue", "2024E"]
-      ├── IncomeStatement["gross_profit", "2024E"]
-      │   └── IncomeStatement["ebit", "2024E"]
-      │       ├── IncomeStatement["net_income", "2024E"]
-      │       │   ├── BalanceSheet["retained_earnings", "2024E"]
-      │       │   └── CashFlow["net_income", "2024E"]
+  └── IncomeStatement["revenue", "2024E"] = 100.0
+      ├── IncomeStatement["gross_profit", "2024E"] = 65.0
+      │   └── IncomeStatement["ebit", "2024E"] = 39.0
+      │       ├── IncomeStatement["net_income", "2024E"] = 27.65
+      │       │   ├── BalanceSheet["retained_earnings", "2024E"] = 145.0
+      │       │   └── CashFlow["net_income", "2024E"] = 27.65
 ```
 
 ---
