@@ -9,7 +9,7 @@ target-living-spec: specs/living-specs/interfaces/python-sdk.md
 
 ### What
 
-Implement Phase 1 of the Python SDK roadmap defined in [`docs/interfaces/sdk.md`](../../docs/interfaces/sdk.md):
+Implement Phase 1 of the Python SDK roadmap defined in `docs/interfaces/sdk.md`:
 1. **Cargo workspace integration**: Create `crates/f8-python` as a `cdylib` crate wrapping `f8-core` via PyO3 (targeting stable ABI `abi3-py312`) and `pythonize`. Configure `[lib] name = "_core"` with `test = false` to prevent workspace `cargo test` linker failures.
 2. **Python packaging and environment**: Set up root `pyproject.toml` targeting Python `>=3.12` configured with `maturin` and `uv` developer workflows, plus `python/f8` package root with `__init__.py`, `py.typed`, and `_core.pyi` type stubs.
 3. **Thin C-ABI marshaling bridge**: Deserialize Python dictionary/JSON representations into Serde structures (`ProjectManifest`, `Vec<TableSpec>`, `Theme`) via `pythonize` in microseconds without filesystem I/O. Support built-in theme resolution by name or automatic fallback to the manifest theme.

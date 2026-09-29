@@ -23,7 +23,7 @@ While `CompiledModel` exposes low-level inspection methods (`inspect_table`, `in
 2. **Missing tabular export**: Analysts and automated pipelines frequently need to pass evaluated model outputs into dataframe libraries or database clients without `f8` requiring heavy third-party dataframe dependencies.
 3. **Lack of visual 2D inspection in Python**: In the CLI, `f8 inspect table` produces clean, aligned Markdown tables across values and formulas. In Python, agents currently have to write 30 lines of boilerplate to reshape flat coordinate dictionaries into readable 2D grids.
 
-Providing zero-dependency table auditing and dictionary export completes Phase 3 of the Python SDK roadmap defined in [`docs/interfaces/sdk.md`](../../docs/interfaces/sdk.md).
+Providing zero-dependency table auditing and dictionary export completes Phase 3 of the Python SDK roadmap defined in `docs/interfaces/sdk.md`.
 
 ### Scope
 

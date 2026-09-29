@@ -18,7 +18,7 @@ While Python scripts (`model.py`) serve as the primary authoring source of truth
 2. Headless CI validation and verification using static binaries (`f8-cli check` / `f8-cli verify`) without requiring a Python environment.
 3. Cross-language model exchange with future web and WASM frontends.
 
-Providing pure Python project export and direct project loading completes the artifact lifecycle defined in [`docs/interfaces/sdk.md`](../../docs/interfaces/sdk.md) while preserving the zero-filesystem-I/O boundary of `f8-core`.
+Providing pure Python project export and direct project loading completes the artifact lifecycle defined in `docs/interfaces/sdk.md` while preserving the zero-filesystem-I/O boundary of `f8-core`.
 
 ### Scope
 

@@ -18,7 +18,7 @@ This migration is purely structural: it moves existing modules and tests into `c
 
 ### Why
 
-As specified in [Codebase Structure](../../docs/codebase-structure.md) and [Architecture Overview](../../docs/architecture.md), f8 enforces a strict boundary between its mathematical calculation engine and outer interface adapters. 
+As specified in `docs/codebase-structure.md` and `docs/architecture.md`, f8 enforces a strict boundary between its mathematical calculation engine and outer interface adapters. 
 
 Restructuring into a Cargo workspace now:
 1. Enforces acyclic crate boundaries at compile time (`f8-core` cannot depend on outer interfaces).

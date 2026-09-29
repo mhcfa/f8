@@ -18,7 +18,7 @@ Implement the foundational runtime value system (`finx::value`), the extensible 
    - Pass 4: Dispatching scalar values, range slices, and lazy expressions to registered Rust implementations during topological evaluation.
    - Pass 6: Lowering semantic function names into standard uppercase Excel formula strings.
 2. **Lean skeleton before catalog expansion**: Testing parameter contracts, variadic validation, range aggregation filtering, and lazy evaluation on three canonical archetypes proves the architecture and dispatch mechanics without the noise of implementing 20+ specialized financial or date algorithms upfront.
-3. **Strict type safety and Excel parity**: Introduces minimal, type-safe primitives ([`CellValue`](src/value/mod.rs) and [`ExcelError`](src/value/mod.rs)) conforming to Excel calculation semantics while preserving zero-panic, pure-function guarantees.
+3. **Strict type safety and Excel parity**: Introduces minimal, type-safe primitives (`CellValue` and `ExcelError`) conforming to Excel calculation semantics while preserving zero-panic, pure-function guarantees.
 
 ### Scope
 
@@ -44,7 +44,7 @@ Implement the foundational runtime value system (`finx::value`), the extensible 
     - `IF`: Conditional branch (`ParamKind::Lazy`, arity 2..=3). Evaluates condition eagerly; lazily evaluates only the chosen branch; defaults omitted false branch (`_` or missing 3rd arg) to `CellValue::Boolean(false)`.
   - Comprehensive unit and integration test suite in `tests/function_registry_test.rs`.
 - **Prerequisites / Dependencies**:
-  - Formula boolean literals (`TRUE`, `FALSE`) and omitted argument placeholders (`Expr::Omitted`) implemented via [`2026-09-18-formula-boolean-and-omitted-arguments.md`](./2026-09-18-formula-boolean-and-omitted-arguments.md).
+  - Formula boolean literals (`TRUE`, `FALSE`) and omitted argument placeholders (`Expr::Omitted`) implemented via `specs/history/2026-09-18-formula-boolean-and-omitted-arguments.md`.
 - **Out-of-scope**:
   - In-memory topological evaluator walking `DependencyGraph` (Phase 4B: `finx::compiler::eval`).
   - Remaining standard catalog functions (Financial: `XIRR`, `NPV`, `PMT`; Date: `YEARFRAC`, `DATE`; Lookup: `XLOOKUP`, `INDEX`).
@@ -82,7 +82,7 @@ Implement the foundational runtime value system (`finx::value`), the extensible 
 ### Goals
 
 1. **Clean boundary**: `functions` and `value` remain independent of `compiler`, depending only on `expr` and `model`.
-2. **Deterministic execution**: Arithmetic and range filtering adhere to Excel parity rules ([`docs/compiler/parity.md`](file:///home/mhcfa/Work/finx/docs/compiler/parity.md)). Function iteration order is strictly deterministic.
+2. **Deterministic execution**: Arithmetic and range filtering adhere to Excel parity rules (`docs/compiler/parity.md`). Function iteration order is strictly deterministic.
 3. **Zero legacy shims or stubs**: Every trait and data contract created in this skeleton is permanent and directly consumed by the Phase 4B evaluator.
 4. **Actionable diagnostics**: Arity and signature mismatches produce clear, structured `FunctionError` variants with 1-indexed argument positions.
 

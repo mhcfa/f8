@@ -12,7 +12,7 @@ target-living-spec: specs/living-specs/compiler/compiled-model.md
 Extend `TableCellInfo` in `f8-core` with `pub formatted_value: Option<String>` pre-rendered via `format_cell_value(&value, format, decimals, currency)` during `CompiledModel::inspect_table`. Propagate this contract to outer interfaces:
 1. Expose `formatted_value: str | None` on `TableCellInfo` in the Python SDK (`python/f8/types.py`).
 2. Consume `cell.formatted_value` directly in the CLI table renderer (`crates/f8-cli/src/render/table.rs`), eliminating redundant on-the-fly formatting.
-3. Provide instant access to canonical accounting-formatted strings for the pure Python `TableAuditor.to_markdown(view="values")` renderer defined in [`specs/drafts/2026-09-28-python-inspection-protocols.md`](2026-09-28-python-inspection-protocols.md).
+3. Provide instant access to canonical accounting-formatted strings for the pure Python `TableAuditor.to_markdown(view="values")` renderer defined in `specs/history/2026-09-28-python-inspection-protocols.md`.
 
 ### Why
 

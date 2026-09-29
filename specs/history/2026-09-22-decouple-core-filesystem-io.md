@@ -20,7 +20,7 @@ Refactor `crates/f8-core` to eliminate all direct filesystem I/O (`std::fs`), es
 
 ### Why
 
-As defined in [Architecture Overview](../../docs/architecture.md) and [Codebase Structure](../../docs/codebase-structure.md), f8 adheres strictly to a "Functional Core, Imperative Shell" architecture:
+As defined in `docs/architecture.md` and `docs/codebase-structure.md`, f8 adheres strictly to a "Functional Core, Imperative Shell" architecture:
 - **WebAssembly target readiness**: `std::fs` does not exist on `wasm32-unknown-unknown`. Removing filesystem calls from `f8-core` guarantees that the compiler core can be compiled and executed in browser workers and WASM runtimes without runtime traps or OS shims.
 - **Local reasoning and single responsibility**: A calculation compiler's single responsibility is transforming domain ASTs into evaluated matrices and byte streams. Operating system concerns (file path canonicalization, disk permissions, directory traversal, file writes) belong exclusively in outer interface adapters (`f8-cli`, `f8-mcp`).
 - **Deterministic and leak-free testing**: Pure in-memory core tests eliminate temp file creation, leftover test artifacts, and filesystem race conditions during parallel test execution (`cargo test`).

@@ -36,6 +36,7 @@ Capture the plan in a focused draft spec:
 - Focus exclusively on the current phase or milestone.
 - Define the proposal scope, invariants, architectural choices with rationale, and testable acceptance scenarios (`Given / When / Then`).
 - **Concise contracts over code dumps**: Avoid dumping full implementation code. Summarize data structures, AST enums, and traits using concise markdown tables or type signatures. Use short code snippets only when illustrating non-obvious interface designs or subtle edge cases.
+- **Code spans for file references**: Cite source files, test paths, external docs, and affected modules using backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs` or `docs/dsl/grammar.md`), rather than relative markdown hyperlinks. Reserve relative hyperlinks exclusively for linking between active living specifications and stable documentation.
 - Break down execution into sequential, manageable tasks.
 
 ### 3. Implement & Verify

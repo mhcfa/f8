@@ -13,10 +13,10 @@ Purge the vestigial and unused `source: Option<serde_json::Value>` provenance fi
 
 ### Why
 
-- **Greenfield minimalism**: Zero tolerance for dead code, legacy stubs, or unused speculative fields ([AGENTS.md](../../AGENTS.md)).
+- **Greenfield minimalism**: Zero tolerance for dead code, legacy stubs, or unused speculative fields (`AGENTS.md`).
 - **Eliminate untyped structures**: `source` was modeled as an arbitrary untyped JSON tree (`Option<serde_json::Value>`), conflicting with the compiler's strict typing principles.
-- **Eliminate hidden allocation overhead**: In [`expand_table`](../../crates/f8-core/src/compiler/ir/expand.rs), `effective_source` performs deep heap clones of `serde_json::Value` across every cell in a table, only for downstream passes (OpenXML workbook emission, calculation DAG evaluation, inspection facade) to discard it.
-- **Precedence alignment**: In [2026-09-24 Cell-Level Notes & Vector Note Elimination](../history/2026-09-24-cell-level-notes-and-vector-note-elimination.md), vector-level notes on rows and columns were eliminated because 1D vector broadcasting is flawed for point annotations. `source` retains that same flawed vector cascading (`Cell > Row > Col`).
+- **Eliminate hidden allocation overhead**: In `expand_table`, `effective_source` performs deep heap clones of `serde_json::Value` across every cell in a table, only for downstream passes (OpenXML workbook emission, calculation DAG evaluation, inspection facade) to discard it.
+- **Precedence alignment**: In `specs/history/2026-09-24-cell-level-notes-and-vector-note-elimination.md`, vector-level notes on rows and columns were eliminated because 1D vector broadcasting is flawed for point annotations. `source` retains that same flawed vector cascading (`Cell > Row > Col`).
 - **Future-proofing**: Any future data provenance or lineage tracking subsystem must be designed intentionally with strongly typed domain structures and living specs, rather than retaining an unconsumed, untyped placeholder.
 
 ### Scope

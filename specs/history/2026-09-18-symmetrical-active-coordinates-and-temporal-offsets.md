@@ -11,7 +11,7 @@ target-living-spec:
 
 ### What
 
-Retire bare `@` across the entire codebase and implement symmetrical 2D active coordinate tokens (`@col`, `@row`) and vertical temporal offsets (`row.prev`, `row.next`) in [`finx::expr`](src/expr/mod.rs) and [`finx::compiler::graph`](src/compiler/graph/mod.rs). Align the expression AST, lexer, Pratt parser, reference resolution engine, and all test suites with the unified 2D matrix model documented in [`docs/dsl/addressing.md`](docs/dsl/addressing.md) and [`docs/dsl/grammar.md`](docs/dsl/grammar.md).
+Retire bare `@` across the entire codebase and implement symmetrical 2D active coordinate tokens (`@col`, `@row`) and vertical temporal offsets (`row.prev`, `row.next`) in `finx::expr` (`src/expr/mod.rs`) and `finx::compiler::graph` (`src/compiler/graph/mod.rs`). Align the expression AST, lexer, Pratt parser, reference resolution engine, and all test suites with the unified 2D matrix model documented in `docs/dsl/addressing.md` and `docs/dsl/grammar.md`.
 
 ### Why
 
@@ -38,7 +38,7 @@ Retire bare `@` across the entire codebase and implement symmetrical 2D active c
   - Repository-wide test suites and specs:
     - Update all formula strings from bare `@` to `@col` across `tests/`, `src/`, and `specs/`.
     - Add integration tests for `@row`, `row.prev`, `row.next`, and bare `@` rejection.
-    - Update living specs [`specs/living-specs/expr/formula-parser.md`](specs/living-specs/expr/formula-parser.md) and [`specs/living-specs/compiler/dependency-graph.md`](specs/living-specs/compiler/dependency-graph.md).
+    - Update living specs `specs/living-specs/expr/formula-parser.md` and `specs/living-specs/compiler/dependency-graph.md`.
 - **Out-of-scope**:
   - Downstream Pass 3B (petgraph DAG cycle detection), Pass 4 (evaluator), Pass 5 (lowering).
 

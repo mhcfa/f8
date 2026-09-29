@@ -63,7 +63,7 @@ Guidelines for AI agents working with this codebase.
 
 - **Sentence case for lists and labels**: In English documentation, capitalize only the first word (and proper nouns/acronyms) in list items and bold prefix labels.
 - **Standard and clean formatting**: Use standard GitHub-Flavored Markdown.
-- **Consistent references**: Prefer clean relative markdown links when cross-referencing internal docs and specs.
+- **Consistent references**: Use relative markdown links exclusively for durable cross-references between active living specs (`specs/living-specs/`) and stable documentation. In draft specs, historical archives, and task checklists, reference files and modules using backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs` or `docs/dsl/grammar.md`) rather than relative links to avoid link bit-rot over time.
 - **Extremely concise and objective**: Use EXTRA concise and objective language when drafting documentation and specs.
 
 ## Naming Conventions

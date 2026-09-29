@@ -9,7 +9,7 @@ target-living-spec: specs/living-specs/expr/formula-parser.md
 
 ### What
 
-Refactor [`src/expr/parser.rs`](../../src/expr/parser.rs) from single-pass string-level scanning into a two-stage pipeline:
+Refactor `src/expr/parser.rs` from single-pass string-level scanning into a two-stage pipeline:
 1. Lexer: Tokenizes the formula string slice into a stream of strongly typed [`Token`] items with byte offset spans.
 2. Pratt Parser: Evaluates operator precedence, function calls, and addressing coordinates by pattern matching over the token stream.
 
@@ -28,14 +28,14 @@ The initial implementation performed manual string slicing (e.g. `*input = &inpu
   - `SpannedToken` struct tracking token byte offsets and spans.
   - `tokenize` lexer function transforming `&str` into `Vec<SpannedToken>` with full error diagnostics.
   - Refactored `TokenStream` cursor and Pratt precedence parser.
-  - Zero changes to public APIs ([`Expr::parse`](../../src/expr/mod.rs)), AST nodes ([`src/expr/ast.rs`](../../src/expr/ast.rs)), or diagnostic errors ([`src/expr/error.rs`](../../src/expr/error.rs)).
+  - Zero changes to public APIs (`Expr::parse`), AST nodes (`src/expr/ast.rs`), or diagnostic errors (`src/expr/error.rs`).
 - **Out-of-scope**:
-  - Modifying grammar rules in [`docs/dsl/grammar.md`](../../docs/dsl/grammar.md).
+  - Modifying grammar rules in `docs/dsl/grammar.md`.
   - Semantic evaluation or spatial coordinate lowering.
 
 ### What Changes
 
-- [`src/expr/parser.rs`](../../src/expr/parser.rs): Complete rewrite to define `Token`, `SpannedToken`, `TokenStream`, lexer combinators, and token-matching Pratt parser.
+- `src/expr/parser.rs`: Complete rewrite to define `Token`, `SpannedToken`, `TokenStream`, lexer combinators, and token-matching Pratt parser.
 
 ### Capabilities
 

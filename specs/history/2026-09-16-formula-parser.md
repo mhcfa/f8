@@ -9,11 +9,11 @@ target-living-spec: specs/living-specs/expr/formula-parser.md
 
 ### What
 
-Implement the formula expression Abstract Syntax Tree (AST), structured error diagnostics, and a top-down operator precedence (Pratt) parser using `winnow` in [`src/expr/`](../../src/expr/mod.rs). This implements the formal grammar defined in [`docs/dsl/grammar.md`](../../docs/dsl/grammar.md) and reference addressing rules defined in [`docs/dsl/addressing.md`](../../docs/dsl/addressing.md).
+Implement the formula expression Abstract Syntax Tree (AST), structured error diagnostics, and a top-down operator precedence (Pratt) parser using `winnow` in `src/expr/`. This implements the formal grammar defined in `docs/dsl/grammar.md` and reference addressing rules defined in `docs/dsl/addressing.md`.
 
 ### Why
 
-The specification AST in [`src/model/`](../../src/model/mod.rs) captures formula calculations as raw strings (e.g. within `RowSpec::expr` and `MatchArmSpec::expr`). To perform dependency graph construction, topological sorting, cycle detection, coordinate lowering, and formula evaluation, the compiler requires a strongly typed, validated expression tree.
+The specification AST in `src/model/` captures formula calculations as raw strings (e.g. within `RowSpec::expr` and `MatchArmSpec::expr`). To perform dependency graph construction, topological sorting, cycle detection, coordinate lowering, and formula evaluation, the compiler requires a strongly typed, validated expression tree.
 
 ### Scope
 
@@ -46,7 +46,7 @@ The specification AST in [`src/model/`](../../src/model/mod.rs) captures formula
 
 - **Dependencies**: Add `winnow = "1.0"` (or compatible) to `Cargo.toml`.
 - **Modules in `src/expr/`**:
-  - [`src/expr/mod.rs`](../../src/expr/mod.rs): Re-export AST, parser facade (`Expr::parse`), and error types.
+  - `src/expr/mod.rs`: Re-export AST, parser facade (`Expr::parse`), and error types.
   - `src/expr/ast.rs`: AST node definitions and `Display` formatting.
   - `src/expr/error.rs`: Structured `ParseError` enum with diagnostic spans/offsets.
   - `src/expr/parser.rs`: `winnow` combinators and Pratt precedence parser.
@@ -65,7 +65,7 @@ The specification AST in [`src/model/`](../../src/model/mod.rs) captures formula
 
 ### Goals
 
-1. **Strict grammar compliance**: Adhere strictly to the EBNF grammar in [`docs/dsl/grammar.md`](../../docs/dsl/grammar.md).
+1. **Strict grammar compliance**: Adhere strictly to the EBNF grammar in `docs/dsl/grammar.md`.
 2. **Algebraic correctness**: Honor standard precedence and associativity rules (e.g. `1 + 2 * 3 ^ 2` $\rightarrow$ `1 + (2 * (3 ^ 2))`, `-2 ^ 2` $\rightarrow$ `-(2 ^ 2)`).
 3. **Zero production panics**: Return `Result<Expr, ParseError>` with no `.unwrap()` or `.expect()` calls.
 4. **Clean boundary**: Pure syntactic parsing; no coupling to `TableSpec` or workbook symbol tables.
@@ -210,12 +210,12 @@ pub enum ParseError {
 - [x] Implement Pratt precedence parser loop for prefix unary and infix binary expressions.
 - [x] Implement function call and argument list combinators.
 - [x] Implement dot access and bracket access reference combinators.
-- [x] Implement `Expr::parse(input: &str) -> Result<Expr, ParseError>` facade in [`src/expr/mod.rs`](../../src/expr/mod.rs).
+- [x] Implement `Expr::parse(input: &str) -> Result<Expr, ParseError>` facade in `src/expr/mod.rs`.
 
 ### Phase 3: Testing & Verification
 
 - [x] Add unit tests in `src/expr/` covering arithmetic precedence, associativity, parentheses grouping, function calls, and error cases.
-- [x] Add tests for all addressing modes from [`docs/dsl/addressing.md`](../../docs/dsl/addressing.md).
+- [x] Add tests for all addressing modes from `docs/dsl/addressing.md`.
 - [x] Run full verification suite:
   - `cargo check`
   - `cargo test`

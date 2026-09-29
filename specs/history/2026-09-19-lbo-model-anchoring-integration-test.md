@@ -9,7 +9,7 @@ target-living-spec: specs/living-specs/compiler/evaluator.md
 
 ### What
 
-Author a realistic, institutional-grade Leveraged Buyout (LBO) model integration test suite ([`tests/lbo_model_test.rs`](../../tests/lbo_model_test.rs)) to serve as Finx's primary anchoring benchmark across the compiler pipeline.
+Author a realistic, institutional-grade Leveraged Buyout (LBO) model integration test suite (`tests/lbo_model_test.rs`) to serve as Finx's primary anchoring benchmark across the compiler pipeline.
 
 The model spans 2 worksheets, 7 tables, and 6 timeline columns (`y0` close through `y5` exit). It models:
 - Dynamic scenario selection across cases (`base`, `bull`, `bear`) using `XLOOKUP`.
@@ -21,7 +21,7 @@ The model spans 2 worksheets, 7 tables, and 6 timeline columns (`y0` close throu
 ### Why
 
 1. **Canonical anchoring benchmark**: Finx requires an authentic, end-to-end financial model benchmark. This anchoring test will validate in-memory DAG evaluation now (Pass 4), and will anchor sheet placement and gutters during spatial layout planning (Pass 5), formula lowering to A1 notation (Pass 6a), and OpenXML `.xlsx` workbook emission (Pass 6b).
-2. **Multi-subsystem composition**: Existing integration tests ([`tests/three_statement_model_test.rs`](../../tests/three_statement_model_test.rs), [`tests/cap_table_test.rs`](../../tests/cap_table_test.rs)) were created before the addition of the new function suites and only test basic arithmetic and `SUM`. The LBO model exercises `DATE`, `EDATE`, `YEAR`, `DAYS`, `YEARFRAC`, `XLOOKUP`, `IF`, `MIN`, `MAX`, `SUM`, `XIRR`, and `XNPV` operating simultaneously across interconnected tables.
+2. **Multi-subsystem composition**: Existing integration tests (`tests/three_statement_model_test.rs`, `tests/cap_table_test.rs`) were created before the addition of the new function suites and only test basic arithmetic and `SUM`. The LBO model exercises `DATE`, `EDATE`, `YEAR`, `DAYS`, `YEARFRAC`, `XLOOKUP`, `IF`, `MIN`, `MAX`, `SUM`, `XIRR`, and `XNPV` operating simultaneously across interconnected tables.
 3. **Institutional private equity rigor**: Private equity models represent the standard for corporate finance modeling complexity. Proving that Finx compiles an institutional LBO model without circularity, runtime drift, or panics demonstrates the viability of the compiler architecture.
 
 ### Scope
@@ -34,7 +34,7 @@ The model spans 2 worksheets, 7 tables, and 6 timeline columns (`y0` close throu
     - Verification of leap-year calendar math (`DAYS = 366` in 2028).
     - Exact returns verification: Exit Enterprise Value, Net Debt, Equity Proceeds, MoIC, `XIRR`, and `XNPV`.
     - Dynamic scenario switching: mutating the active case from `base` to `bull` and verifying model-wide recalculation.
-    - Error-free compilation through the unified [`Compiler::evaluate`](../../src/compiler/mod.rs) facade.
+    - Error-free compilation through the unified `Compiler::evaluate` facade.
 - **Out-of-scope**:
   - Passes 5 and 6 (Spatial Layout Planning and OpenXML Emission).
   - Volatile functions (`TODAY()`, `NOW()`).

@@ -89,7 +89,7 @@ The Python DSL maintains full feature parity with the underlying `f8-core` engin
   - _Alternatives considered_: Implementing `save()` purely in Python using `Path(path).write_bytes(...)`. Native implementation matches `f8-cli` and keeps type stubs synchronized.
 
 - **Decision 2: Strict 0D Cell Authoring & Elimination of Row-Level Label/Indent Magic**:
-  - _Rationale_: f8 decoupled indentation from axis roles in [`cell-level-indentation-and-primary-descriptor-elimination.md`](../history/2026-09-21-cell-level-indentation-and-primary-descriptor-elimination.md). Indentation in Excel is an asymmetric 0D cell presentation attribute, not a 1D vector row attribute. Placing `label` and `indent` on `add_row` introduces several critical problems:
+  - _Rationale_: f8 decoupled indentation from axis roles in `specs/history/2026-09-21-cell-level-indentation-and-primary-descriptor-elimination.md`. Indentation in Excel is an asymmetric 0D cell presentation attribute, not a 1D vector row attribute. Placing `label` and `indent` on `add_row` introduces several critical problems:
     1. Temporal order dependency: `add_row` would fail if called before defining a descriptor column.
     2. Ambiguity: Tables with multiple descriptor columns (e.g. `code` and `line_item`) have no clean way to know which column receives `label`.
     3. Conflicting state: Ambiguity arises when both `label` and `cells={"line_item": ...}` are provided.
@@ -114,7 +114,7 @@ The Python DSL maintains full feature parity with the underlying `f8-core` engin
 
 - **Decision 6: Defer Project Disk Serialization to Dedicated Spec**:
   - _Rationale_: Preserves spec-level decomposition per SDD guidelines. Authoring in-memory models and compiling them is independent of writing multi-file JSON schemas to disk.
-  - _Choice_: Project export (`model.export_project`) and disk project compilation (`f8.compile_project`) are deferred to [`specs/drafts/2026-09-28-python-project-export.md`](2026-09-28-python-project-export.md).
+  - _Choice_: Project export (`model.export_project`) and disk project compilation (`f8.compile_project`) are deferred to `specs/history/2026-09-28-python-project-export.md`.
 
 - **Decision 7: Global and Sheet-Scoped Table Lookups**:
   - _Rationale_: Table identifiers in `f8` are globally unique across the entire workbook. `model.get_table(id)` searches all sheets and returns the matching table directly, while `sheet.get_table(id)` provides sheet-scoped access. Both methods raise `KeyError(f"Table '{id}' not found")` if the identifier is not found. Similarly, `model.get_sheet(name)` raises `KeyError(f"Sheet '{name}' not found")`.
