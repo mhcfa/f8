@@ -68,7 +68,7 @@ def compile_project(
                 raise ValueError(
                     f"Table file '{p}' must contain a JSON object, got {type(loaded).__name__}"
                 )
-            table_dict = cast(dict[str, object], loaded)
+            table_dict = cast(TableSpecDict, loaded)
             raw_id = table_dict.get("id")
             if not isinstance(raw_id, str) or not raw_id.strip():
                 raise ValueError(f"Table file '{p}' must specify a non-empty string 'id'")
@@ -78,7 +78,7 @@ def compile_project(
                 raise ValueError(
                     f"Duplicate table id '{table_id}' found in '{p}' and '{existing_path}'"
                 )
-            discovered_tables[table_id] = (p, cast(TableSpecDict, table_dict))
+            discovered_tables[table_id] = (p, table_dict)
 
     tables: list[TableSpecDict] = []
     seen: set[str] = set()
@@ -96,8 +96,8 @@ def compile_project(
 
     theme_to_pass: ThemeInput | None = None
     if theme is None:
-        raw_theme = cast(object, manifest.get("theme"))
-        if isinstance(raw_theme, str) and raw_theme.strip():
+        raw_theme = manifest.get("theme")
+        if raw_theme and raw_theme.strip():
             candidate = root_dir / raw_theme.strip()
             if candidate.is_file():
                 custom_theme_content: ThemeInput = json.loads(candidate.read_text(encoding="utf-8"))

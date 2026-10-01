@@ -64,6 +64,11 @@ class Cell:
 type CellInputValue = CellValueLiteral | Cell | DetailedCellDict
 
 
+def _normalize_currency(currency: str) -> CurrencyCode:
+    """Normalizes an authoring currency code to canonical lowercase ISO representation."""
+    return cast(CurrencyCode, currency.lower())
+
+
 def _serialize_cell_input(
     cell: CellInputValue,
 ) -> CellValueLiteral | DetailedCellDict:
@@ -92,7 +97,7 @@ def _serialize_cell_input(
             if cell.decimals is not None:
                 d["decimals"] = cell.decimals
             if cell.currency is not None:
-                d["currency"] = cast(CurrencyCode, cell.currency.lower())
+                d["currency"] = _normalize_currency(cell.currency)
             if cell.indent is not None:
                 d["indent"] = cell.indent
             if cell.note is not None:
@@ -107,7 +112,7 @@ def _serialize_cell_input(
         if isinstance(curr, str):
             norm_dict: DetailedCellDict = {
                 **cell,
-                "currency": cast(CurrencyCode, curr.lower()),
+                "currency": _normalize_currency(curr),
             }
             return norm_dict
         return cell
@@ -457,7 +462,7 @@ class Table:
             if col.decimals is not None:
                 data_col["decimals"] = col.decimals
             if col.currency is not None:
-                data_col["currency"] = cast(CurrencyCode, col.currency.lower())
+                data_col["currency"] = _normalize_currency(col.currency)
             if col.expr is not None:
                 data_col["expr"] = col.expr
             cols_spec.append(data_col)
@@ -495,7 +500,7 @@ class Table:
                 if row.decimals is not None:
                     data_row["decimals"] = row.decimals
                 if row.currency is not None:
-                    data_row["currency"] = cast(CurrencyCode, row.currency.lower())
+                    data_row["currency"] = _normalize_currency(row.currency)
                 if row.expr is not None:
                     data_row["expr"] = row.expr
                 rows_spec.append(data_row)
@@ -510,7 +515,7 @@ class Table:
         if self.subtitle is not None:
             table_spec["subtitle"] = self.subtitle
         if self.currency is not None:
-            table_spec["currency"] = cast(CurrencyCode, self.currency.lower())
+            table_spec["currency"] = _normalize_currency(self.currency)
         return table_spec
 
 
