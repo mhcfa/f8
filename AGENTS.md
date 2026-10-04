@@ -1,94 +1,86 @@
-# AGENTS.md
+# Agent Guidelines
 
-Guidelines for AI agents working with this codebase.
+Guidelines for AI agents working with the f8 compiler, runtime, and language workspace.
 
-## Development and Quality Principles
+> [!IMPORTANT]
+> **Polyglot workspace**: Core IR, compiler, and CLI in Rust 2024; native bindings in PyO3; Python 3.12+ high-level package.
+> **Spec-driven**: Invoke [spec-driven development workflow and guidelines](specs/sdd-guidelines.md) for non-trivial features or refactoring.
 
-- **Single source of truth**: Centralize shared definitions and avoid duplicating logic.
-- **Separation of concerns**: Keep clean boundaries between features.
-- **Local reasoning and single responsibility**: Keep functions and modules small and focused on a single task.
-- **Pragmatic simplicity**: Favor direct, idiomatic Rust and Python code. Avoid premature abstractions, unnecessary wrappers, or speculative generalities unless there is a demonstrated requirement.
-- **Explicit and predictable core data structures**: Keep compiler core types and IR representations dead simple, explicit, and predictable, with strictly one way to represent any concept. Reject implicit behavior, magic fallbacks, or core syntactic sugar; leave authoring ergonomics, scaffolding, and syntactic convenience entirely to outer adapters and tooling.
-- **Explicit data flow**: Prefer pure functions with explicit inputs and outputs. Minimize hidden side effects, implicit state dependencies, and unexpected argument mutations.
-- **Root-cause correctness**: Fix bugs and design gaps at their origin in the proper compiler phase or data model. Never introduce downstream band-aids, test-specific overrides, or tactical workarounds.
-- **Strong typing over string heuristics**: Model domain concepts, states, and entities with explicit enums and typed structures. Avoid stringly-typed logic, string guessing, substring matching, or ad-hoc parsing to determine semantics.
+## Repository context & architecture
 
-## Spec-Driven-Development
+| Path                | Layer / Target      | Purpose & architectural rules                                                                                                                                                 |
+| :------------------ | :------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crates/f8-core/`   | Core engine (Rust)  | Pure in-memory calculation core: 6 compiler passes (IR, DAG/SCC, evaluator, layout, lowering, emitter) and `CompiledModel` facade.                                            |
+| `crates/f8-cli/`    | CLI binary (Rust)   | Standalone CLI binary (`f8`). Subcommands (`init`, `check`, `compile`, `inspect`), disk filesystem I/O, terminal renderer.                                                    |
+| `crates/f8-python/` | Native C-ABI (PyO3) | Native C-extension (`f8._core`, `abi3-py312`). Deserializes inputs via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.            |
+| `python/f8/`        | High-level SDK (Py) | Fluent modeling DSL (`Model`, `Table`, `Cell`), project disk I/O, auditing facade (`TableAuditor`), synchronized stubs (`.pyi`), `py.typed`, and bundled `f8-modeling` skill. |
+| `python/tests/`     | Test suite (Pytest) | End-to-end integration suite for Python DSL, PyO3 bindings, project I/O, inspection audit, and Excel calculation parity.                                                      |
+| `.agents/skills/`   | Agent workflows     | Git-tracked agent skills and verification routines.                                                                                                                           |
+| `specs/`            | SDD specifications  | Spec-driven development: SDD guidelines, permanent living specs (`living-specs/`), active RFCs (`drafts/`), and archived milestones (`history/`).                             |
+| `docs/`             | Durable docs        | Product architecture overview, 2D matrix DSL design, and Excel standard function catalog.                                                                                     |
 
-- When tasked with non-trivial features or refactoring, invoke [spec-driven development workflow and guidelines](specs/sdd-guidelines.md).
+## Development principles
 
-## Git Conventions
+- **Single source of truth**: Centralize shared definitions. Zero logic duplication across crates or modules.
+- **Predictable core IR**: Strictly one canonical representation per concept. Zero magic fallbacks or core syntactic sugar; isolate ergonomics and convenience to outer adapters.
+- **Pure data flow**: Pure functions with explicit inputs and outputs. Zero global mutable state or implicit side effects.
+- **Root-cause correctness**: Fix defects at parser, IR, or schema origin. Zero downstream band-aids or test overrides.
+- **Strong typing**: Model domain concepts with explicit enums and typed structs. Ban stringly-typed heuristics.
+- **Pragmatic simplicity**: Direct, idiomatic Rust and Python. Ban premature abstractions or speculative generalizations.
 
-- **Format**: Follow Conventional Commits (`<type>(<scope>): <summary>`). Common types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `perf`.
-- **Subject line**: Imperative mood, lowercase after colon, no trailing period.
-- **Body breakdown**:
-  - Separate subject from body with a single blank line.
-  - Use hyphen bullet points (`- `) for itemized changes.
-  - Keep bullets contiguous with no empty lines between breakdown items.
+## Code standards
 
-## Code Style & Language Guidelines
+### Rust standards (Rust 2024 edition)
 
-### Rust Guidelines
+- **Immutability by default**: Immutable `let` bindings; `let mut` only when mutation is strictly required.
+- **Zero production panics**: Enforced via `clippy::unwrap_used = "deny"` and `clippy::expect_used = "deny"`. Propagate via `?`. Allowed only in `#[cfg(test)]` or `tests/`.
+- **Structured errors**: Use `thiserror` for compiler diagnostics and domain errors.
+- **Deterministic ordering**: Use `IndexMap` / `IndexSet` over standard `HashMap` / `HashSet` for layout, IR, or serialization.
+- **Memory efficiency**: Borrowed references (`&str`, `&[T]`) or `Cow` over unnecessary cloning in compiler passes.
+- **Guard clauses**: Early returns over deep branching nesting.
+- **Verification suite**:
+  - `cargo check`: Quick compilation check.
+  - `cargo test`: Unit and integration test suite.
+  - `cargo clippy --all-targets -- -D warnings`: Zero warnings and no unhandled panics.
+  - `cargo fmt --check`: Formatting adherence.
 
-- **Rust edition**: Use Rust 2024 edition features and idioms.
-- **Variables**: Use immutable `let` bindings by default; use `let mut` only when mutation is strictly required.
-- **Zero production panics**: Never use `.unwrap()` or `.expect()` in production code. Propagate errors cleanly. Unwraps are allowed only in test targets (`#[cfg(test)]` or `tests/`).
-- **Error handling**: Use `thiserror` for structured domain and compiler diagnostic errors; bubble errors via `?`.
-- **Deterministic ordering**: Use `IndexMap` / `IndexSet` instead of standard `HashMap` / `HashSet` when iteration order or deterministic serialization/layout generation is required.
-- **Allocations and efficiency**: Prefer borrowed references (`&str`, `&[T]`) or `Cow` over unnecessary cloning in compiler passes.
-- **Guard clauses**: Use early returns and guard clauses; avoid deeply nested conditionals.
-- **Verification suite**: Always verify changes using standard Cargo commands:
-  - `cargo check`: Quick compile check.
-  - `cargo test`: Unit and integration tests.
-  - `cargo clippy --all-targets -- -D warnings`: Linting with zero warnings and no unhandled panics.
-  - `cargo fmt --check`: Code formatting adherence.
+### Python standards (Python 3.12+)
 
-### Python Guidelines
-
-- **Python version**: Use Python 3.12+ syntax and idioms (PEP 604 union `X | Y`, built-in generics `list[T]`, `dict[K, V]`).
-- **Strict typing**: Enforce 100% type annotations across public APIs, internal modules, test suites, and test fixtures, including explicit return types (`-> None`). Reject untyped functions, bare `Any` escapes, or unjustified `# type: ignore` comments. Model dictionary/JSON-shaped inputs, compiler emission options, and inspection outputs with explicit `TypedDict` contracts rather than untyped `dict[str, Any]`.
-- **Type stubs and packaging**: Maintain synchronized `.pyi` type stubs for PyO3 native extensions (`f8._core`) with explicit `TypedDict` schemas for all marshaled models and typed exception signatures; maintain the PEP 561 `py.typed` marker file.
-- **Zero bare exceptions**: Never use bare `except:` or catch-all `except Exception:` without re-raising or wrapping in domain exceptions.
-- **Structured exceptions**: Inherit from `F8Error`; include typed attributes (e.g., `coordinate`, `cycle`, `table`) instead of requiring string parsing.
-- **Predictable data flow**: Use pure functions with explicit arguments; ban mutable default arguments (`def f(x=[])`). Prefer immutable models (`@dataclass(frozen=True)`) or read-only dictionaries for compiler data representations.
-- **Native efficiency and GIL**: Release the Python GIL (`py.allow_threads`) during CPU-bound tasks in PyO3; use binary buffer protocols (`bytes`, `memoryview`) for file formats without temporary file round-trips.
-- **Verification suite**: Always verify Python changes using `uv`:
-  - `uv run ruff check .`: Linting with zero warnings (`E`, `F`, `I`, `UP`, `B`, `SIM`).
-  - `uv run ruff format --check .`: Code formatting adherence.
-  - `uv run pyright`: Static type checking in strict mode with zero errors and zero warnings.
+- **Strict typing**: 100% typed (PEP 604 `X | Y`, built-in generics, explicit return `-> None`). Zero bare `Any` or unjustified `# type: ignore`.
+- **Data contracts**: Explicit `TypedDict` for dict/JSON payloads and compiler outputs over `dict[str, Any]`.
+- **Native stubs**: Synchronized `.pyi` type stubs for `f8._core` with typed exceptions; maintain PEP 561 `py.typed`.
+- **Exception hygiene**: Zero bare `except:`. Structured errors inheriting from `F8Error` with typed attributes (coordinates, cycles, tables). Use `raise ... from err` when wrapping native errors.
+- **GIL & buffers**: Release GIL (`py.allow_threads`) during CPU-bound tasks in PyO3; use `memoryview`/`bytes` buffer protocols.
+- **Predictable defaults**: Ban mutable defaults (`def f(x=[])`). Immutable `@dataclass(frozen=True)` or read-only dicts.
+- **Verification suite**:
   - `uv run pytest`: Unit and integration test suite.
-  - `uv run maturin develop`: Recompile native extension into local environment when Rust bindings change.
+  - `uv run ruff check .`: Zero warnings (`E`, `F`, `I`, `UP`, `B`, `SIM`).
+  - `uv run ruff format --check .`: Code formatting adherence.
+  - `uv run pyright`: Static type checking in strict mode with zero errors/warnings.
+  - `uv run maturin develop`: Recompile native extension after Rust binding changes.
 
-## Markdown and Documentation Style
+## Naming conventions
 
-- **Sentence case for lists and labels**: In English documentation, capitalize only the first word (and proper nouns/acronyms) in list items and bold prefix labels.
-- **Standard and clean formatting**: Use standard GitHub-Flavored Markdown.
-- **Consistent references**: Use relative markdown links exclusively for durable cross-references between active living specs (`specs/living-specs/`) and stable documentation. In draft specs, historical archives, and task checklists, reference files and modules using backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs` or `docs/dsl/grammar.md`) rather than relative links to avoid link bit-rot over time.
-- **Extremely concise and objective**: Use EXTRA concise and objective language when drafting documentation and specs.
+- **Rust**: `snake_case` (files, functions, modules, variables), `PascalCase` (structs, enums, traits), `SCREAMING_SNAKE_CASE` (constants).
+- **Python**: `snake_case` (files, packages, functions, variables), `PascalCase` (classes, exceptions), `_snake_case` (native/internal modules), `SCREAMING_SNAKE_CASE` (constants).
+- **Specs**: `kebab-case.md` for filenames; group living specs under `specs/living-specs/<domain>/<topic>.md`.
 
-## Naming Conventions
+## Writing style
 
-- **Rust**:
-  - Files: `snake_case.rs`
-  - Structs, enums, traits, variants, type aliases: `PascalCase`
-  - Functions, methods, variables, modules: `snake_case`
-  - Constants and statics: `SCREAMING_SNAKE_CASE`
-- **Python**:
-  - Files and packages: `snake_case.py`
-  - Classes and exception types: `PascalCase`
-  - Functions, methods, variables: `snake_case`
-  - Constants: `SCREAMING_SNAKE_CASE`
-  - Internal or native C-ABI modules: `_snake_case` (e.g., `_core`)
-- **Specs and documentation**:
-  - Spec filenames: `kebab-case.md`
-  - Living specs: grouped by domain in `specs/living-specs/<domain>/<topic>.md`
+Applies universally across documentation, specs, docstrings, and commit messages.
 
-## Documentation Layout
+- **Telegraphic and high-density**:
+  - Prioritize conciseness, density, and clarity over conversational narrative.
+  - Favor bulleted lists, sentence fragments, structured tables.
+  - Eliminate conversational pleasantries, introductory filler, and redundant conclusions.
+  - Sentence case for list items and bold prefix labels.
+- **Cross-references**:
+  - Relative links exclusively for living specs (`specs/living-specs/`) and stable documentation.
+  - Code spans (e.g. `crates/f8-core/src/compiler/mod.rs`) in draft specs and archives to avoid link bit-rot.
 
-- `docs/`: Strategic architecture and philosophy.
-- `python/f8/skills/`: Bundled Python financial modeling agent skill and authoring references.
-- `specs/`: Technical specifications for spec-driven development.
-  - `specs/living-specs/<domain>/`: Permanent single source of truth for compiler passes, AST, IR, evaluator, and interfaces.
-  - `specs/drafts/`: In-flight draft specifications and design RFCs (all feature designs and proposals are locked here).
-  - `specs/templates/`: Markdown templates for draft and living specs.
-  - `specs/history/`: Completed, reconciled, and archived specifications.
+## Git conventions
+
+- **Conventional commits**: Follow `<type>(<scope>): <summary>`.
+  - Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `perf`.
+  - Format: Imperative mood, lowercase after colon, no trailing period.
+  - Body: Blank line before body. Itemize changes with contiguous hyphen bullets (`- `) and zero empty lines between bullets.
