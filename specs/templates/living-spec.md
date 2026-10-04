@@ -6,29 +6,24 @@ status: active # active | deprecated
 ---
 
 ## Purpose
+High-level summary of subsystem responsibilities and core problems solved.
 
-High-level summary of what this subsystem or capability provides and the core problem it solves.
+## Architecture & boundaries
 
-## Architecture & Boundaries
+- **Components**: Primary modules, structs, enums, and traits.
+- **Data flow**: Sequence of state transitions across compiler passes or boundaries.
+- **Dependencies**: Critical internal and external crate dependencies.
 
-- **Modules & components**: Primary modules, traits, or structs involved.
-- **Data flow & interfaces**: How state and data move across architectural boundaries.
-- **Dependencies**: Critical internal or external crate dependencies.
-
-## Requirements & Invariants
-
-Describe the permanent domain rules, compiler invariants, and behaviors using clear, testable statements and scenarios.
+## Requirements & invariants
 
 ### 1. <Capability or Invariant Group>
-
-High-level description of what the system guarantees.
+Domain rule or compiler guarantee enforced.
 
 #### Scenarios
+- **<Nominal Scenario>**:
+  - **When** <trigger or input>
+  - **Then** <expected outcome and invariant maintained>
 
-- **<Scenario Title>**:
-  - **When** <trigger or state transition occurs>
-  - **Then** <expected system behavior or invariant that holds>
-
-- **<Error or Edge Case>**:
-  - **When** <invalid input or compiler error occurs>
-  - **Then** <expected diagnostics, recovery, or rejection>
+- **<Edge or Error Case>**:
+  - **When** <invalid condition or boundary event>
+  - **Then** <expected diagnostics or failure response>
