@@ -67,7 +67,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 
 ## Writing style
 
-Applies universally across documentation, specs, docstrings, and commit messages.
+Applies to documentation, specs, docstrings, and commit messages.
 
 - **Telegraphic and high-density**:
   - Prioritize conciseness, density, and clarity over conversational narrative.
