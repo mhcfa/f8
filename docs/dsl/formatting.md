@@ -208,7 +208,7 @@ Or pointing to an external custom theme file:
 ### 6.2. Built-in theme
 
 f8 provides `corporate_navy` as its built-in institutional theme:
-- **`corporate_navy`**: Institutional private equity and investment banking style with deep navy headers, subtle blue section fills, crisp thin borders, and classic blue inputs.
+- **`corporate_navy`**: Institutional private equity and investment banking style with deep navy headers, underlined section titles on transparent backgrounds, crisp thin borders, and classic blue inputs.
 
 Additional or custom themes can be loaded via external JSON theme files (see below).
 
@@ -227,7 +227,8 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "super_header_size": 10.0,
     "col_header_size": 10.0,
     "section_header_size": 10.0,
-    "data_size": 10.0
+    "data_size": 10.0,
+    "section_header_underline": true
   },
   "metrics": {
     "title_row_height": 24.0,
@@ -249,7 +250,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "super_header_text": "#FFFFFF",
     "col_header_fill": "#F0F4F8",
     "col_header_text": "#1B365D",
-    "section_header_fill": "#F7F9FC",
+    "section_header_fill": "none",
     "section_header_text": "#1B365D",
     "data_fill": "none",
     "data_text": "#1F2937",

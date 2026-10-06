@@ -383,6 +383,7 @@ fn test_scenario_6_structural_header_formats_and_alignments() {
     let sec_debug = format!("{sec_fmt:?}");
     assert!(sec_debug.contains("horizontal: Left"));
     assert!(sec_debug.contains("bold: true"));
+    assert!(sec_debug.contains("underline: Single"));
 }
 
 #[test]
@@ -854,4 +855,29 @@ fn test_scenario_13_row_group_and_section_header_indentation() {
         debug_s3.contains("indent: 2"),
         "section level 3 must have indent 2: {debug_s3}"
     );
+}
+
+#[test]
+fn test_scenario_14_section_header_underline_and_fill_suppression() {
+    // 1. Corporate navy theme has underline true and fill none
+    let theme = Theme::corporate_navy();
+    let cache = FormatCache::new(&theme).expect("valid theme");
+    assert!(!cache.has_section_header_fill());
+    let sec_fmt = cache.section_header_format(None);
+    let sec_debug = format!("{sec_fmt:?}");
+    assert!(sec_debug.contains("underline: Single"));
+
+    // 2. Disabled underline produces underline: None
+    let mut no_underline_theme = Theme::corporate_navy();
+    no_underline_theme.typography.section_header_underline = false;
+    let cache_no_underline = FormatCache::new(&no_underline_theme).expect("valid theme");
+    let sec_fmt_none = cache_no_underline.section_header_format(None);
+    let sec_debug_none = format!("{sec_fmt_none:?}");
+    assert!(sec_debug_none.contains("underline: None"));
+
+    // 3. Hex fill color enables has_section_header_fill
+    let mut hex_fill_theme = Theme::corporate_navy();
+    hex_fill_theme.palette.section_header_fill = "#E0E0E0".to_string();
+    let cache_hex = FormatCache::new(&hex_fill_theme).expect("valid theme");
+    assert!(cache_hex.has_section_header_fill());
 }

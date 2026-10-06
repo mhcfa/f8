@@ -16,6 +16,10 @@ pub struct Theme {
     pub number_formats: NumberFormatsConfig,
 }
 
+fn default_section_header_underline() -> bool {
+    true
+}
+
 /// Font family and point sizes for workbook hierarchy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypographyConfig {
@@ -26,6 +30,8 @@ pub struct TypographyConfig {
     pub col_header_size: f64,
     pub section_header_size: f64,
     pub data_size: f64,
+    #[serde(default = "default_section_header_underline")]
+    pub section_header_underline: bool,
 }
 
 impl Default for TypographyConfig {
@@ -38,6 +44,7 @@ impl Default for TypographyConfig {
             col_header_size: 10.0,
             section_header_size: 10.0,
             data_size: 10.0,
+            section_header_underline: true,
         }
     }
 }
@@ -475,7 +482,7 @@ impl Theme {
                 super_header_text: "#FFFFFF".to_string(),
                 col_header_fill: "#F0F4F8".to_string(),
                 col_header_text: "#1B365D".to_string(),
-                section_header_fill: "#F7F9FC".to_string(),
+                section_header_fill: "none".to_string(),
                 section_header_text: "#1B365D".to_string(),
                 data_fill: "none".to_string(),
                 data_text: "#1F2937".to_string(),

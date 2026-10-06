@@ -1,7 +1,7 @@
 //! Theme-to-OpenXML format synthesis, color translation, and style deduplication engine.
 
 use indexmap::IndexMap;
-use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder};
+use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, FormatUnderline};
 
 use super::error::EmissionError;
 use crate::compiler::layout::StyleRole;
@@ -277,6 +277,9 @@ impl FormatCache {
             .set_bold()
             .set_font_color(palette.section_header_text)
             .set_align(FormatAlign::Left);
+        if theme.typography.section_header_underline {
+            section_header_format = section_header_format.set_underline(FormatUnderline::Single);
+        }
         if let Some(fill) = palette.section_header_fill {
             section_header_format = section_header_format.set_background_color(fill);
         }

@@ -13,6 +13,8 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     // Verify typography and subtitle_size
     assert_eq!(theme.typography.subtitle_size, 9.0);
     assert!(theme.typography.title_size > theme.typography.data_size);
+    assert!(theme.typography.section_header_underline);
+    assert_eq!(theme.palette.section_header_fill, "none");
 
     // Verify metrics
     assert!(theme.metrics.gutter_row_height > 0.0);
@@ -240,6 +242,7 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
     let loaded = Theme::from_json_str(custom_theme_json).expect("failed to load custom theme");
     assert_eq!(loaded.name, "firm_custom");
     assert_eq!(loaded.typography.font_family, "Calibri");
+    assert!(loaded.typography.section_header_underline);
     assert_eq!(loaded.number_formats.defaults.currency_decimals, 2);
 }
 
@@ -382,4 +385,100 @@ fn test_scenario_10_transparent_fill_validation() {
         ModelError::InvalidThemeColor { field, color }
             if field == "data_fill" && color == "blurry_blue"
     ));
+}
+
+#[test]
+fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
+    // 1. Built-in corporate_navy defaults
+    let theme = Theme::corporate_navy();
+    assert!(theme.typography.section_header_underline);
+    assert_eq!(theme.palette.section_header_fill, "none");
+
+    // 2. Deserializing theme JSON with section_header_underline: false
+    let json_false = r##"{
+        "name": "no_underline_theme",
+        "typography": {
+            "font_family": "Aptos",
+            "title_size": 14.0,
+            "subtitle_size": 9.0,
+            "super_header_size": 10.0,
+            "col_header_size": 10.0,
+            "section_header_size": 10.0,
+            "data_size": 10.0,
+            "section_header_underline": false
+        },
+        "metrics": {
+            "title_row_height": 24.0,
+            "header_row_height": 18.0,
+            "section_row_height": 18.0,
+            "data_row_height": 15.0,
+            "gutter_row_height": 9.0,
+            "gutter_col_width": 3.0,
+            "title_gutter_row_height": 8.0,
+            "char_width_multiplier": 1.15,
+            "col_padding": 2.0,
+            "min_col_width": 12.0
+        },
+        "palette": {
+            "table_title_fill": "#1B365D",
+            "table_title_text": "#FFFFFF",
+            "table_subtitle_text": "#4B5563",
+            "super_header_fill": "#2C4D75",
+            "super_header_text": "#FFFFFF",
+            "col_header_fill": "#F0F4F8",
+            "col_header_text": "#1B365D",
+            "section_header_fill": "none",
+            "section_header_text": "#1B365D",
+            "data_fill": "none",
+            "data_text": "#1F2937",
+            "subtotal_fill": "#F7F9FC",
+            "subtotal_text": "#000000",
+            "total_fill": "none",
+            "total_text": "#000000",
+            "input_text": "#0000FF",
+            "formula_text": "#000000",
+            "zebra_fill": "#FAFBFC",
+            "highlight_fill": "#FEF3C7",
+            "highlight_text": "#000000",
+            "gridline_color": "#E5E7EB",
+            "border_color": "#000000",
+            "total_border_color": "#1B365D"
+        },
+        "borders": {
+            "table_title_border_bottom": "none",
+            "super_header_border_bottom": "thick",
+            "header_border_bottom": "thin",
+            "descriptor_border_right": "none",
+            "subtotal_border_top": "thin",
+            "total_border_top": "thin",
+            "total_border_bottom": "double",
+            "col_subtotal_border_left": "thin",
+            "col_total_border_left": "thin",
+            "col_total_border_right": "double"
+        },
+        "number_formats": {
+            "currency": "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)",
+            "number": "#,##0{dec}_);(#,##0{dec});\"-\"_)",
+            "percentage": "0{dec}%",
+            "multiple": "0{dec}\"x\"",
+            "basis_points": "#,##0{dec}\" bps\"",
+            "date": "yyyy-mm-dd",
+            "text": "@",
+            "defaults": {
+                "currency_decimals": 0,
+                "number_decimals": 0,
+                "percentage_decimals": 1,
+                "multiple_decimals": 1,
+                "basis_points_decimals": 0
+            }
+        }
+    }"##;
+
+    let loaded_false = Theme::from_json_str(json_false).expect("valid theme");
+    assert!(!loaded_false.typography.section_header_underline);
+
+    // 3. Deserializing theme JSON omitting section_header_underline defaults to true
+    let json_omitted = json_false.replace(",\n            \"section_header_underline\": false", "");
+    let loaded_omitted = Theme::from_json_str(&json_omitted).expect("valid theme");
+    assert!(loaded_omitted.typography.section_header_underline);
 }
