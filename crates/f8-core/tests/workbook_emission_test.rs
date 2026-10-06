@@ -811,3 +811,59 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
     let comment_count = comments_xml.matches("<comment ").count();
     assert_eq!(comment_count, 2);
 }
+
+#[test]
+fn test_scenario_13_section_header_underline_workbook_emission() {
+    let mut table = TableSpec::new("SectionTable", "Section Underline Showcase");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Descriptor"));
+    table.columns.push(ColumnSpec::new("val"));
+
+    table
+        .rows
+        .push(SectionHeaderRowSpec::new("Operating Activities").into());
+
+    let r1 = RowSpec::new("r1")
+        .with_cell("desc", CellInput::string("Revenue"))
+        .with_cell("val", CellInput::number(100.0));
+    table.rows.push(r1);
+
+    let manifest = ProjectManifest {
+        model_name: "UnderlineModel".to_string(),
+        theme: "corporate_navy".to_string(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("SectionTable")],
+        }],
+    };
+
+    let theme = Theme::corporate_navy();
+    let buffer = Compiler::emit_workbook(
+        &manifest,
+        &[table],
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+    assert!(
+        styles_xml.contains("<u/>") || styles_xml.contains("<u val=\"single\"/>"),
+        "styles.xml must contain font underline definition: {styles_xml}"
+    );
+
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    assert!(
+        sheet_xml.contains("r=\"B5\""),
+        "Section header title must be written at B5: {sheet_xml}"
+    );
+    assert!(
+        !sheet_xml.contains("r=\"C5\""),
+        "Trailing measure column C5 must remain unwritten when section_header_fill is 'none': {sheet_xml}"
+    );
+}

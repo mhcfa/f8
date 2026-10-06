@@ -1,6 +1,6 @@
 ---
 title: Pluggable Themes & Dynamic Format Masks
-last_updated: 2026-09-21
+last_updated: 2026-10-06
 domain: model
 status: active
 ---
@@ -28,13 +28,16 @@ The `theme` subsystem decouples workbook presentation styling, visual palette, t
 
 ### 1. Theme Configuration Schema
 
-A `Theme` contains complete specifications for `typography`, `metrics`, `palette`, `borders`, and `number_formats`.
+A `Theme` contains complete specifications for `typography`, `metrics`, `palette`, `borders`, and `number_formats`. `TypographyConfig` includes `section_header_underline: bool` (defaulting to `true`). Built-in `corporate_navy` specifies `section_header_fill: "none"` and `section_header_underline: true`.
 
 #### Scenarios
 
 - **Valid built-in theme**:
   - **When** `Theme::resolve_builtin` is invoked for `"corporate_navy"`
-  - **Then** the built-in theme is loaded and passes validation.
+  - **Then** the built-in theme is loaded and passes validation with `section_header_fill: "none"` and `section_header_underline: true`.
+- **Section header typography & underline**:
+  - **When** `theme.typography.section_header_underline` is `true`
+  - **Then** `section_header_format` synthesizes native single text font underline (`FormatUnderline::Single`). When `section_header_fill` is `"none"`, trailing cells across measure columns remain unwritten.
 - **Removed preset themes**:
   - **When** `Theme::resolve_builtin` is invoked for removed presets (e.g. `"classic_green"`, `"modern_slate"`, or `"minimal_monochrome"`)
   - **Then** `ModelError::ThemeNotFound` is returned.

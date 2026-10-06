@@ -16,6 +16,10 @@ pub struct Theme {
     pub number_formats: NumberFormatsConfig,
 }
 
+fn default_section_header_underline() -> bool {
+    true
+}
+
 /// Font family and point sizes for workbook hierarchy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypographyConfig {
@@ -26,6 +30,8 @@ pub struct TypographyConfig {
     pub col_header_size: f64,
     pub section_header_size: f64,
     pub data_size: f64,
+    #[serde(default = "default_section_header_underline")]
+    pub section_header_underline: bool,
 }
 
 impl Default for TypographyConfig {
@@ -38,6 +44,7 @@ impl Default for TypographyConfig {
             col_header_size: 10.0,
             section_header_size: 10.0,
             data_size: 10.0,
+            section_header_underline: true,
         }
     }
 }
@@ -136,7 +143,7 @@ impl Default for BordersConfig {
     fn default() -> Self {
         Self {
             table_title_border_bottom: BorderStyle::None,
-            super_header_border_bottom: BorderStyle::Thick,
+            super_header_border_bottom: BorderStyle::None,
             header_border_bottom: BorderStyle::Thin,
             descriptor_border_right: BorderStyle::None,
             subtotal_border_top: BorderStyle::Thin,
@@ -471,15 +478,15 @@ impl Theme {
                 table_title_fill: "#1B365D".to_string(),
                 table_title_text: "#FFFFFF".to_string(),
                 table_subtitle_text: "#4B5563".to_string(),
-                super_header_fill: "#2C4D75".to_string(),
-                super_header_text: "#FFFFFF".to_string(),
-                col_header_fill: "#F0F4F8".to_string(),
-                col_header_text: "#1B365D".to_string(),
-                section_header_fill: "#F7F9FC".to_string(),
-                section_header_text: "#1B365D".to_string(),
+                super_header_fill: "#ced4da".to_string(),
+                super_header_text: "#000000".to_string(),
+                col_header_fill: "none".to_string(),
+                col_header_text: "#000000".to_string(),
+                section_header_fill: "none".to_string(),
+                section_header_text: "#000000".to_string(),
                 data_fill: "none".to_string(),
-                data_text: "#1F2937".to_string(),
-                subtotal_fill: "#F7F9FC".to_string(),
+                data_text: "#000000".to_string(),
+                subtotal_fill: "none".to_string(),
                 subtotal_text: "#000000".to_string(),
                 total_fill: "none".to_string(),
                 total_text: "#000000".to_string(),
