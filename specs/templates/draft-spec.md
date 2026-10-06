@@ -2,72 +2,63 @@
 title: <Short Title>
 date: YYYY-MM-DD
 status: draft # draft | in-progress | completed
-target-living-spec: specs/living-specs/<target-domain>/<target-living-spec>.md # single path, list of paths, or 'none'
+target-living-spec: specs/living-specs/<target-domain>/<target-living-spec>.md # path, list of paths, or 'none'
 ---
 
 ## Proposal
 
-### What
+### Problem
+Core limitation, bug, or missing capability addressed.
 
-Explain what is being built or modified using concise, objective language.
-
-### Why
-
-Explain why this is needed and what problem it solves.
+### Solution
+High-level summary of proposed change and mechanical approach.
 
 ### Scope
+- **In-scope**: Explicit boundaries and deliverables.
+- **Out-of-scope**: Deferred capabilities and non-goals.
 
-Outline what is in-scope and out-of-scope.
-
-### What Changes
-
-Affected modules, structs, enums, traits, CLI arguments, or dependencies.
+### Impacted components
+Affected crates, modules, structs, enums, traits, CLI arguments, or dependencies.
 
 ### Capabilities
-
-- **New capabilities**: What the system can now do.
-- **Modified capabilities**: What existing behaviors change.
+- **New capabilities**: System features added.
+- **Modified capabilities**: Existing behaviors changed or deprecated.
 
 ## Design
 
-### Goals
-
-Key outcomes to achieve upon completion.
+### Goals & non-goals
+- **Goals**: Target outcomes upon completion.
+- **Non-goals**: Deliberately avoided patterns or premature generalizations.
 
 ### Invariants
+Core domain invariants, compiler guarantees, and constraints preserved.
 
-Core domain rules, invariants, and compiler guarantees that must not be broken.
+### Technical decisions
+- **Decision**: Chosen architecture or data structure.
+- **Rationale**: Why chosen over alternatives.
+- **Alternatives considered**: Trade-offs evaluated and reason for rejection.
 
-### Decisions
+### Data contracts (optional)
+Compact schema tables or type signatures for new AST nodes, IR structs, or trait signatures.
 
-Key choices made during planning:
+### Risks & mitigations
+- **Risk**: Identified failure point or regression danger.
+- **Mitigation**: Strategy, architectural guard, or verification mechanism.
 
-- **Choice**: What choice was made.
-- **Rationale**: Why this choice was selected.
-- **Alternatives considered**: Other options evaluated and why they were rejected.
-
-### Data Contracts (Optional)
-
-Summarize new or modified structs, AST nodes, and enums using concise tables or type signatures.
-
-### Risks & Trade-offs
-
-Identified trade-offs, potential failure points, and mitigation strategies.
-
-### Acceptance Criteria (Given / When / Then)
+### Acceptance criteria (Given / When / Then)
 
 - [ ] **Scenario 1: <Scenario Title>**
   - **Given** <precondition>
-  - **When** <action/event>
-  - **Then** <expected outcome>
+  - **When** <trigger or action>
+  - **Then** <expected system behavior>
 
 - [ ] **Scenario 2: <Error / Edge Case>**
   - **Given** <precondition>
-  - **When** <action/event>
-  - **Then** <expected outcome>
+  - **When** <invalid input or error condition>
+  - **Then** <expected rejection or structured error>
 
 ## Tasks
 
-1. Make tasks manageable, sequential, and independently verifiable.
-2. Group tasks into logical phases appropriate for the change.
-3. Include explicit verification checks (`cargo test`, `cargo clippy`, `cargo fmt`).
+- [ ] 1. <Task title>: <Task details and affected files>.
+- [ ] 2. <Task title>: <Task details and affected files>.
+- [ ] 3. Run verification suite (`cargo test`, `cargo clippy`, `uv run pytest`).

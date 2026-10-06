@@ -1,14 +1,14 @@
 # Spec-Driven Development Guidelines
 
-Spec-driven development (SDD) separates ephemeral execution tasks from durable domain knowledge, keeping codebases maintainable, verified, and aligned over time.
+Spec-driven development (SDD) decouples ephemeral task execution from durable domain knowledge.
 
-## Core Philosophy
+## Core philosophy
 
-- **Dual-spec model**:
-  - **Living specs** (`specs/living-specs/<domain>/`): The permanent single source of truth describing current system behavior, invariants, and capabilities.
-  - **Draft specs** (`specs/drafts/`): Transient working documents defining a specific proposal, design decisions, acceptance criteria, and task checklist.
-- **Spec-level decomposition**: One draft spec represents one autonomous, verifiable increment. Complex initiatives are decomposed into a sequence of standalone specs.
-- **Verification as proof**: Specifications map directly to testable scenarios, unit tests, and compiler verification checks.
+- **Dual-spec architecture**:
+  - **Living specs** (`specs/living-specs/<domain>/`): Permanent single source of truth for runtime behavior, compiler invariants, and capabilities.
+  - **Draft specs** (`specs/drafts/`): Ephemeral execution plans defining proposals, technical trade-offs, acceptance criteria, and task checklists.
+- **Autonomous increments**: One draft spec represents one independently verifiable increment. Decompose multi-phase initiatives into sequential specs.
+- **Verification as proof**: Acceptance criteria map 1:1 to executable tests and compiler checks.
 
 ## Workflow
 
@@ -19,48 +19,39 @@ flowchart LR
     C --> D["4. Reconcile & Archive"]
 ```
 
-### 1. Explore & Discover
+### 1. Explore & discover
 
-Before proposing solutions or writing code:
+- **Inspect reality**: Ground designs in existing modules, AST/IR models, and living specs under `specs/living-specs/<domain>/`. Ban unverified assumptions.
+- **Evaluate trade-offs**: Surface 2–3 technical options with explicit pros/cons before choosing an approach.
+- **Decompose milestones**: Split multi-pass compiler changes or multi-layer features into sequential draft specs.
 
-- **Grounded in reality**: Inspect relevant living specs in `specs/living-specs/<domain>/`, existing modules, data models, and dependency constraints rather than hypothesizing in the abstract.
-- **Explore trade-offs**: Surface 2–3 viable technical paths and evaluate their trade-offs instead of defaulting to a single biased option.
-- **Decompose into distinct specs**: If an initiative is complex, ambiguous, or spans multiple compiler phases, outline a high-level roadmap of sequential phases. Actively propose implementing each phase as its own separate draft spec rather than bundling multiple phases into one spec.
+### 2. Specify & design
 
-### 2. Specify & Design
+- **Instantiate template**: Create `specs/drafts/YYYY-MM-DD-<feature-name>.md` from `specs/templates/draft-spec.md`.
+- **Target destination**: Set `target-living-spec` frontmatter pointing to `specs/living-specs/<domain>/`.
+- **Compact contracts**: Define data structures, AST enums, and trait signatures via markdown tables or type signatures. Ban speculative code dumps.
+- **Durable references**: Cite source paths and modules via backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs`). Reserve relative links exclusively for living specs and stable docs.
+- **Acceptance criteria**: Enforce testable behavior using `Given / When / Then` scenarios.
+- **Actionable checklist**: Break work into ordered, independently testable tasks.
 
-Capture the plan in a focused draft spec:
+### 3. Implement & verify
 
-- Create `specs/drafts/YYYY-MM-DD-<feature-name>.md` using `specs/templates/draft-spec.md`.
-- Set `target-living-spec` in frontmatter to link the draft to its destination under `specs/living-specs/<domain>/`.
-- Focus exclusively on the current phase or milestone.
-- Define the proposal scope, invariants, architectural choices with rationale, and testable acceptance scenarios (`Given / When / Then`).
-- **Concise contracts over code dumps**: Avoid dumping full implementation code. Summarize data structures, AST enums, and traits using concise markdown tables or type signatures. Use short code snippets only when illustrating non-obvious interface designs or subtle edge cases.
-- **Code spans for file references**: Cite source files, test paths, external docs, and affected modules using backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs` or `docs/dsl/grammar.md`), rather than relative markdown hyperlinks. Reserve relative hyperlinks exclusively for linking between active living specifications and stable documentation.
-- Break down execution into sequential, manageable tasks.
-
-### 3. Implement & Verify
-
-Execute against the defined specification:
-
-- Build code and tests that satisfy the acceptance criteria.
-- Keep the task checklist in the draft spec updated as progress occurs.
-- Verify work using project language toolchains:
-  - **Rust toolchain**:
-    - `cargo check`: Fast syntax and type checking.
-    - `cargo test`: Comprehensive unit and integration test suite.
-    - `cargo clippy --all-targets -- -D warnings`: Strict linter checks with zero warnings and no unhandled panics.
+- **Fulfill criteria**: Build implementation and test coverage against specified scenarios.
+- **Track execution**: Maintain real-time task checklist progress in the draft spec.
+- **Run verification suites**:
+  - **Rust**:
+    - `cargo check`: Syntax and type validation.
+    - `cargo test`: Unit and integration suite.
+    - `cargo clippy --all-targets -- -D warnings`: Strict linting with zero warnings and no unhandled panics.
     - `cargo fmt --check`: Formatting conformance.
-  - **Python toolchain** (when changes touch Python SDK or PyO3 bindings):
-    - `uv run ruff check .`: Linting with zero warnings (`E`, `F`, `I`, `UP`, `B`, `SIM`).
-    - `uv run ruff format --check .`: Code formatting adherence.
-    - `uv run pyright`: Static type checking in strict mode with zero errors and zero warnings.
-    - `uv run pytest`: Unit and integration test suite.
-    - `uv run maturin develop`: Recompile native extension when Rust bindings change.
+  - **Python** (SDK or PyO3 changes):
+    - `uv run ruff check .`: Linting (`E`, `F`, `I`, `UP`, `B`, `SIM`).
+    - `uv run ruff format --check .`: Code formatting.
+    - `uv run pyright`: Strict type checking with zero errors/warnings.
+    - `uv run pytest`: Integration and parity test suite.
+    - `uv run maturin develop`: Recompile native extension after Rust binding changes.
 
-### 4. Reconcile & Archive
+### 4. Reconcile & archive
 
-When all tasks and verifications are complete:
-
-- **Update living specs**: Update or create the relevant file in `specs/living-specs/<domain>/` to reflect current system behavior.
-- **Archive draft**: Move the completed draft from `specs/drafts/` to `specs/history/`.
+- **Update living specs**: Sync changes into `specs/living-specs/<domain>/` to reflect current system behavior.
+- **Archive draft**: Move completed spec from `specs/drafts/` to `specs/history/`.
