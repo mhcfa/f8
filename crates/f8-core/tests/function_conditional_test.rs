@@ -1,8 +1,7 @@
 //! Integration tests for Excel conditional aggregation functions (*IFS family).
 //!
 //! Covers `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, and `MAXIFS` conforming to
-//! Excel parity rules in `docs/compiler/parity.md` Section 5 and acceptance criteria
-//! in `specs/history/2026-09-19-conditional-aggregation-functions.md`.
+//! Excel calculation parity and criteria semantics.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

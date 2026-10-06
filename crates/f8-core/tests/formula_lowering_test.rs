@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::layout::LayoutPlanner;
 use f8_core::compiler::lowering::{FormulaLowerer, LoweringError};
@@ -209,11 +207,11 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 tables: vec![
-                    PathBuf::from("tables/IncomeStatement.json"),
-                    PathBuf::from("tables/CapTable.json"),
-                    PathBuf::from("tables/BalanceSheet.json"),
-                    PathBuf::from("tables/CashFlow.json"),
-                    PathBuf::from("tables/DebtSchedule.json"),
+                    TableId::from("IncomeStatement"),
+                    TableId::from("CapTable"),
+                    TableId::from("BalanceSheet"),
+                    TableId::from("CashFlow"),
+                    TableId::from("DebtSchedule"),
                 ],
             },
             SheetSpec {
@@ -221,7 +219,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/Assumptions.json")],
+                tables: vec![TableId::from("Assumptions")],
             },
         ],
     };

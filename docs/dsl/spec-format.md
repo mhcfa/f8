@@ -18,10 +18,10 @@ my_model/
 ```
 
 ### Invariants
-- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining**: Sheets in `f8.json` reference table relative file paths.
+- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/`.
+- **Logical table references**: Sheets in `f8.json` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`), never filesystem paths.
 - **Global table ID uniqueness**: Every table `id` must be globally unique across the workbook.
-- **Filename-to-ID correspondence**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores).
+- **Decoupled file discovery**: The project loader discovers all `tables/*.json` files and indexes them by internal `id`. Filenames are decoupled from table IDs.
 
 ---
 
@@ -39,7 +39,7 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
       "tab_color": "#1B365D",
       "show_gridlines": true,
       "tables": [
-        "tables/assumptions.json"
+        "Assumptions"
       ]
     },
     {
@@ -51,8 +51,8 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
       },
       "show_gridlines": true,
       "tables": [
-        "tables/revenue_schedule.json",
-        "tables/income_statement.json"
+        "RevenueSchedule",
+        "IncomeStatement"
       ]
     }
   ]
@@ -67,11 +67,11 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
   - `tab_color` (`string`, optional): Hex color code starting with `#` (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`).
   - `freeze_panes` (`object`, optional): `{ "row": u32, "col": u32 }` physical worksheet row and column split lines.
   - `show_gridlines` (`boolean`, optional, default `true`): Toggles gridline rendering.
-  - `tables` (`array of strings`, required): Relative file paths to table specifications. Stacked vertically in declaration order, separated by blank row gutters.
+  - `tables` (`array of strings`, required): Logical table IDs (`TableId`, e.g. `"Assumptions"`, `"IncomeStatement"`) assigned to this worksheet. Stacked vertically in declaration order, separated by blank row gutters.
 
 ---
 
-## 3. Table Specification Schema (`tables/<id>.json`)
+## 3. Table Specification Schema (`tables/*.json`)
 
 Each table file defines an orthogonal 2D calculation matrix with explicit columns and rows:
 
@@ -220,9 +220,9 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 
 ## 8. Related Documentation
 
-- [Model Authoring Guide](../authoring-guide.md): Practical end-to-end walkthrough for creating financial models.
+- [CLI & JSON Authoring Guide](../cli-authoring-guide.md): Practical end-to-end walkthrough for creating financial models.
 - [Addressing Syntax](./addressing.md): Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
 - [Formula Grammar](./grammar.md): Formal EBNF expression grammar and operator precedence.
 - [Semantic Formatting & Themes](./formatting.md): Format preset catalog, conflict resolution, and workbook themes.
 - [Modeling Patterns & Archetypes](./patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
-- [Spatial Layout Planning](../compiler/spatial-layout.md): Physical layout planning, margin metrics, and column width arbitration.
+- [Spatial Layout Planning](../../specs/living-specs/compiler/spatial-layout.md): Physical layout planning, margin metrics, and column width arbitration.

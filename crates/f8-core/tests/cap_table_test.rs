@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use indexmap::IndexMap;
 
 use f8_core::Compiler;
@@ -101,10 +99,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![
-                PathBuf::from("tables/cap_table.json"),
-                PathBuf::from("tables/valuation.json"),
-            ],
+            tables: vec![TableId::from("CapTable"), TableId::from("Valuation")],
         }],
     };
 

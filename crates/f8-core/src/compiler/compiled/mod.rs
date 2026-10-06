@@ -19,7 +19,6 @@ use crate::compiler::error::CompilerError;
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::graph::DependencyGraph;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
-use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::{LayoutMap, coordinate_to_a1};
@@ -28,7 +27,7 @@ use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
 use crate::model::theme::Theme;
-use crate::value::CellValue;
+use crate::value::{CellValue, format_cell_value};
 
 /// Unified compiled model consolidating all pass artifacts.
 #[derive(Debug, Clone, PartialEq)]
@@ -336,6 +335,13 @@ impl CompiledModel {
                     .cloned()
                     .unwrap_or(CellValue::Empty);
 
+                let formatted_value = Some(format_cell_value(
+                    &value,
+                    cell_node.format,
+                    cell_node.decimals,
+                    cell_node.currency,
+                ));
+
                 let (is_formula, formula_expr) = match &cell_node.payload {
                     CellPayload::Formula(expr) => (true, Some(expr.to_string())),
                     CellPayload::Literal(_) => (false, None),
@@ -347,6 +353,7 @@ impl CompiledModel {
                     cell_id,
                     TableCellInfo {
                         value,
+                        formatted_value,
                         is_formula,
                         formula_expr,
                         excel_formula,
@@ -388,12 +395,8 @@ impl CompiledModel {
             .ok_or_else(|| InspectionError::SheetNotFound(sheet.clone()))?;
 
         let mut sheet_tables = Vec::new();
-        for table_path in &sheet_spec.tables {
-            if let Some((_, table_spec)) = self
-                .tables
-                .iter()
-                .find(|(_, t)| matches_table_id(table_path, &t.id))
-            {
+        for table_id in &sheet_spec.tables {
+            if let Some(table_spec) = self.tables.get(table_id) {
                 sheet_tables.push(table_spec);
             }
         }

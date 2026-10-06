@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use indexmap::IndexMap;
 
 use f8_core::Compiler;
@@ -131,7 +129,7 @@ fn test_compiler_facade_error_propagation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/non_existent.json")],
+            tables: vec![TableId::from("non_existent")],
         }],
     };
 
@@ -164,7 +162,7 @@ fn test_compiler_facade_error_propagation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/cyclic_table.json")],
+            tables: vec![TableId::from("CyclicTable")],
         }],
     };
 
@@ -201,7 +199,7 @@ fn test_compiler_facade_error_propagation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/sum_table.json")],
+            tables: vec![TableId::from("SumTable")],
         }],
     };
 

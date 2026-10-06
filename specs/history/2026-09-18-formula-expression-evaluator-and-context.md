@@ -15,7 +15,7 @@ Implement the **Formula Expression Evaluator** (`finx::compiler::eval::expr`), t
 
 1. **Excel calculation parity**: Formula expressions in financial models require rigorous, deterministic evaluation conforming to Excel calculation parity rules (IEEE 754 arithmetic, signed zero `-0.0` normalization, power edge cases, divide-by-zero, non-numeric `#VALUE!`, and type-aware comparisons).
 2. **Autonomous verification**: Formula evaluation logic (operators, coercions, short-circuit lazy branches, range extractions, and function calls) can be exhaustively verified in isolation using static value maps without depending on the full DAG topological loop.
-3. **Context abstraction**: Extensible functions like `IF` and `SUM` require a concrete implementation of the [`EvalContext`](../../src/functions/traits.rs) trait (`eval_expr` and `eval_range`) to evaluate nested expressions and fetch 2D range slices.
+3. **Context abstraction**: Extensible functions like `IF` and `SUM` require a concrete implementation of the `EvalContext` trait (`eval_expr` and `eval_range`) to evaluate nested expressions and fetch 2D range slices.
 4. **2D shape preservation**: Functions operating on ranges and matrices require explicit grid dimensions `(rows, cols)` preserved by coordinate resolution, rather than losing shape data in flattened vectors.
 
 ### Scope
@@ -34,7 +34,7 @@ Implement the **Formula Expression Evaluator** (`finx::compiler::eval::expr`), t
       - `eval_expr(&self, expr: &Expr) -> Result<CellValue, FunctionError>` delegating to `expr::eval_expr`.
       - `eval_range(&self, expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError>` resolving references via `resolve_table_ref`, returning `(rows, cols, values)`.
   - `src/compiler/eval/expr.rs`:
-    - Expression evaluation of AST [`Expr`](../../src/expr/ast.rs) nodes:
+    - Expression evaluation of AST `Expr` nodes:
       - Constant literals (`Literal::Number`, `Literal::String`, `Literal::Boolean`).
       - Unary operations (`+`, `-`) with Excel sign, numeric coercion rules, and `-0.0` normalization.
       - Binary arithmetic (`+`, `-`, `*`, `/`, `^`) with IEEE 754 float precision, empty-cell zero coercion, non-numeric `#VALUE!`, divide-by-zero `#DIV/0!`, `0.0 ^ negative` `#DIV/0!`, non-real exponentiation / overflow / `NaN` `#NUM!`, and `-0.0` normalization.
@@ -50,7 +50,7 @@ Implement the **Formula Expression Evaluator** (`finx::compiler::eval::expr`), t
         - >1 cell in scalar position: return `Ok(CellValue::Error(ExcelError::Value))`.
         - 0 cells: return `Ok(CellValue::Error(ExcelError::Ref))`.
       - Standalone `Expr::Omitted`: return `Err(EvalError::UnexpectedOmitted(origin.clone()))`.
-      - Function calls: dispatching through [`FunctionRegistry::bind_arguments`](../../src/functions/registry.rs) and executing [`ExcelFunction::evaluate`](../../src/functions/traits.rs).
+      - Function calls: dispatching through `FunctionRegistry::bind_arguments` and executing `ExcelFunction::evaluate`.
   - `src/compiler/eval/mod.rs`:
     - Declare submodules `context`, `error`, `expr`.
     - Re-export `EvalError`, `CellEvalContext`, and `eval_expr`.
@@ -88,7 +88,7 @@ Implement the **Formula Expression Evaluator** (`finx::compiler::eval::expr`), t
 
 ### Goals
 
-1. **Strict Excel parity**: Adhere to calculation rules specified in [`docs/compiler/parity.md`](../../docs/compiler/parity.md).
+1. **Strict Excel parity**: Adhere to calculation rules specified in `docs/compiler/parity.md`.
 2. **Clean error boundaries**: Clearly separate internal compiler failures (`EvalError`) from runtime formula outcomes (`CellValue::Error(ExcelError)`).
 3. **Autonomous verifiability**: Enable unit testing of all operators, functions, and coercions using static cell value maps without requiring a full model graph.
 4. **Zero production panics**: Zero unwrap or panic in non-test code; propagate all failures cleanly.
@@ -110,7 +110,7 @@ Implement the **Formula Expression Evaluator** (`finx::compiler::eval::expr`), t
 
 - **Decision 2: Evaluation context abstraction**:
   - *Choice*: Implement `CellEvalContext<'a>` borrowing `origin: &'a CellId`, `memoized_values: &'a IndexMap<CellId, CellValue>`, `symbol_table: &'a SymbolTable`, and `registry: &'a FunctionRegistry`. Implement the `EvalContext` trait on `CellEvalContext`.
-  - *Rationale*: Directly implements the decoupling contract established in Pass 4A ([`src/functions/traits.rs`](../../src/functions/traits.rs)), allowing functions like `IF` to lazily evaluate AST expressions via `ctx.eval_expr(expr)` and `SUM` to fetch range grids via `ctx.eval_range(expr)`.
+  - *Rationale*: Directly implements the decoupling contract established in Pass 4A (`src/functions/traits.rs`), allowing functions like `IF` to lazily evaluate AST expressions via `ctx.eval_expr(expr)` and `SUM` to fetch range grids via `ctx.eval_range(expr)`.
   - *Alternatives considered*: Passing mutable evaluator state into functions (rejected: violates thread safety and pure function contracts).
 
 - **Decision 3: Comparison operator parity**:

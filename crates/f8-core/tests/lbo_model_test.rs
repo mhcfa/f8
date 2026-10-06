@@ -2,9 +2,6 @@
 //!
 //! Serves as f8's canonical anchoring model benchmark across the compiler pipeline:
 //! Pass 4 (Topological Evaluation), Pass 5 (Spatial Layout), and Pass 6 (Formula Lowering & Emission).
-//!
-//! Specifications defined in `specs/history/2026-09-19-lbo-model-anchoring-integration-test.md`
-//! and `specs/living-specs/compiler/evaluator.md`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

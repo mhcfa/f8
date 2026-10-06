@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::io::Read;
-use std::path::PathBuf;
 
 use f8_core::compiler::emission::{EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 use f8_core::compiler::ir::id::CellId;
@@ -75,14 +74,14 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/IncomeStatement.json")],
+                tables: vec![TableId::from("IncomeStatement")],
             },
             SheetSpec {
                 name: "Summary".to_string(),
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/SummaryTable.json")],
+                tables: vec![TableId::from("SummaryTable")],
             },
         ],
     };
@@ -135,7 +134,7 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
             tab_color: Some("#1B365D".to_string()),
             freeze_panes: Some(FreezePanes { row: 3, col: 2 }),
             show_gridlines: false,
-            tables: vec![PathBuf::from("tables/LayoutTable.json")],
+            tables: vec![TableId::from("LayoutTable")],
         }],
     };
 
@@ -194,7 +193,7 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/HeaderTable.json")],
+            tables: vec![TableId::from("HeaderTable")],
         }],
     };
 
@@ -264,7 +263,7 @@ fn test_scenario_4_single_cell_super_header_safety() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/SingleGroupTable.json")],
+            tables: vec![TableId::from("SingleGroupTable")],
         }],
     };
 
@@ -321,7 +320,7 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/FormulaTable.json")],
+            tables: vec![TableId::from("FormulaTable")],
         }],
     };
 
@@ -376,7 +375,7 @@ fn test_scenario_6_values_only_freezing_mode() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/FreezeTable.json")],
+            tables: vec![TableId::from("FreezeTable")],
         }],
     };
 
@@ -515,7 +514,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/OutlineTable.json")],
+            tables: vec![TableId::from("OutlineTable")],
         }],
     };
 
@@ -581,7 +580,7 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/DiskTable.json")],
+            tables: vec![TableId::from("DiskTable")],
         }],
     };
 
@@ -636,7 +635,7 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/DiagTable.json")],
+            tables: vec![TableId::from("DiagTable")],
         }],
     };
 
@@ -736,7 +735,7 @@ fn test_scenario_11_audit_note_attachment() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/NoteTable.json")],
+            tables: vec![TableId::from("NoteTable")],
         }],
     };
 
@@ -791,7 +790,7 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/NoteTable.json")],
+            tables: vec![TableId::from("NoteTable")],
         }],
     };
 

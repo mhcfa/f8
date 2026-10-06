@@ -9,7 +9,7 @@ target-living-spec: specs/living-specs/compiler/dependency-graph.md
 
 ### What
 
-Implement the **Reference Resolution Engine** (`finx::compiler::graph::resolve`), the first sub-pass of Pass 3 (Dependency Analysis). The engine traverses formula expression ASTs ([`Expr`](src/expr/ast.rs)) across a compiled [`CellGrid`](src/compiler/ir/cell.rs), lowers dynamic coordinate selectors (`@col`, `@row`, `col.prev(k)`, `col.next(k)`, coordinate slices, and group milestones) against the [`SymbolTable`](src/compiler/ir/symbol.rs), validates coordinate boundaries, and produces a deterministic dependency mapping (`IndexMap<CellId, IndexSet<CellId>>`).
+Implement the **Reference Resolution Engine** (`finx::compiler::graph::resolve`), the first sub-pass of Pass 3 (Dependency Analysis). The engine traverses formula expression ASTs (`Expr`) across a compiled `CellGrid`, lowers dynamic coordinate selectors (`@col`, `@row`, `col.prev(k)`, `col.next(k)`, coordinate slices, and group milestones) against the `SymbolTable`, validates coordinate boundaries, and produces a deterministic dependency mapping (`IndexMap<CellId, IndexSet<CellId>>`).
 
 ### Why
 
@@ -22,9 +22,9 @@ Implement the **Reference Resolution Engine** (`finx::compiler::graph::resolve`)
 - **In-scope**:
   - `src/compiler/graph/error.rs`: Structured `ResolveError` enum defining domain coordinate failure modes with actionable diagnostics (origin `CellId`, offending token, expected boundary).
   - `src/compiler/graph/resolve.rs`:
-    - AST traversal extracting all [`TableRef`](src/expr/ast.rs) references from an [`Expr`](src/expr/ast.rs).
-    - Resolution of [`ColSelector`](src/expr/ast.rs): active column (`@` / `@col`), discrete key, closed interval range (`col_a..col_b`), temporal offset (`col.prev(k)`, `col.next(k)`), and group milestones (`cols.<group>`, `.first`, `.last`).
-    - Resolution of [`RowSelector`](src/expr/ast.rs): discrete key, closed interval range (`row_a..row_b`), and group milestones (`rows.<group>`, `.first`, `.last`).
+    - AST traversal extracting all `TableRef` references from an `Expr`.
+    - Resolution of `ColSelector`: active column (`@` / `@col`), discrete key, closed interval range (`col_a..col_b`), temporal offset (`col.prev(k)`, `col.next(k)`), and group milestones (`cols.<group>`, `.first`, `.last`).
+    - Resolution of `RowSelector`: discrete key, closed interval range (`row_a..row_b`), and group milestones (`rows.<group>`, `.first`, `.last`).
     - Cartesian product expansion for 2D block references ($R \times C$).
     - Top-level orchestration function `resolve_cell_dependencies(&CellGrid, &SymbolTable) -> Result<IndexMap<CellId, IndexSet<CellId>>, ResolveError>`.
   - `tests/reference_resolution_test.rs`: Exhaustive integration test suite validating every selector variant, bounds checking, and error scenario.

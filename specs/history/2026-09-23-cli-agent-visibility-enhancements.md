@@ -235,26 +235,26 @@ pub struct CellNeighborInspection {
 
 ### Phase 2: Core Model Contracts & Inspection Facade (`f8-core`)
 
-- [x] Add `formatted_value: Option<String>` to `CellInspection` in [`crates/f8-core/src/compiler/compiled/model.rs`](../../crates/f8-core/src/compiler/compiled/model.rs).
-- [x] Add `formatted_value: Option<String>` to `DependencyNode` in [`crates/f8-core/src/compiler/compiled/model.rs`](../../crates/f8-core/src/compiler/compiled/model.rs).
-- [x] Define `CellNeighborInspection` in [`crates/f8-core/src/compiler/compiled/model.rs`](../../crates/f8-core/src/compiler/compiled/model.rs).
+- [x] Add `formatted_value: Option<String>` to `CellInspection` in `crates/f8-core/src/compiler/compiled/model.rs`.
+- [x] Add `formatted_value: Option<String>` to `DependencyNode` in `crates/f8-core/src/compiler/compiled/model.rs`.
+- [x] Define `CellNeighborInspection` in `crates/f8-core/src/compiler/compiled/model.rs`.
 - [x] Update `CellInspection::precedents` and `CellInspection::dependents` to `Vec<CellNeighborInspection>`.
-- [x] Update `get_node_display_metadata` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to return `(sheet_address, value, formatted_value, excel_formula)`.
-- [x] Update `inspect_cell` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to populate `formatted_value` on the target cell, and build `CellNeighborInspection` lists for precedents and dependents.
+- [x] Update `get_node_display_metadata` in `crates/f8-core/src/compiler/compiled/mod.rs` to return `(sheet_address, value, formatted_value, excel_formula)`.
+- [x] Update `inspect_cell` in `crates/f8-core/src/compiler/compiled/mod.rs` to populate `formatted_value` on the target cell, and build `CellNeighborInspection` lists for precedents and dependents.
 - [x] Update `precedents_of` and `dependents_of` (both non-recursive and recursive traversal paths) to pass `formatted_value` to `DependencyNode`.
 - [x] Update existing unit and integration tests in `crates/f8-core/tests/compiled_model_test.rs` to match the updated contract signatures.
 
 ### Phase 3: Dependency Tree & Cell Value Rendering (`f8-cli`)
 
-- [x] Update `render_node_list` in [`crates/f8-cli/src/render/tree.rs`](../../crates/f8-cli/src/render/tree.rs) to format `= <formatted_value>` on tree nodes when non-empty.
-- [x] Update `render_cell` in [`crates/f8-cli/src/render/cell.rs`](../../crates/f8-cli/src/render/cell.rs) to format `= <formatted_value>` for precedents and dependents when non-empty.
+- [x] Update `render_node_list` in `crates/f8-cli/src/render/tree.rs` to format `= <formatted_value>` on tree nodes when non-empty.
+- [x] Update `render_cell` in `crates/f8-cli/src/render/cell.rs` to format `= <formatted_value>` for precedents and dependents when non-empty.
 - [x] Verify that pruned nodes render `<CellId> = <formatted_value> (already visited)`.
 
 ### Phase 4: Table & Summary Dual Rendering (`f8-cli`)
 
-- [x] Update [`crates/f8-cli/src/render/table.rs`](../../crates/f8-cli/src/render/table.rs) to import `format_cell_value` from `f8_core::value`.
-- [x] Update `extract_render_columns` and `get_cell_text` in [`crates/f8-cli/src/render/table.rs`](../../crates/f8-cli/src/render/table.rs) to render `Header [id]` and `Title [id]` across Unicode and Markdown outputs, deduplicating when label and ID match case-insensitively.
-- [x] Update `render_summary` in [`crates/f8-cli/src/render/summary.rs`](../../crates/f8-cli/src/render/summary.rs) to render `- Title [id] [R rows x C cols] (N cells)`, deduplicating when title and ID match.
+- [x] Update `crates/f8-cli/src/render/table.rs` to import `format_cell_value` from `f8_core::value`.
+- [x] Update `extract_render_columns` and `get_cell_text` in `crates/f8-cli/src/render/table.rs` to render `Header [id]` and `Title [id]` across Unicode and Markdown outputs, deduplicating when label and ID match case-insensitively.
+- [x] Update `render_summary` in `crates/f8-cli/src/render/summary.rs` to render `- Title [id] [R rows x C cols] (N cells)`, deduplicating when title and ID match.
 
 ### Phase 5: Verification Suite
 

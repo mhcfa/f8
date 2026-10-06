@@ -8,8 +8,6 @@
 //! 5. `LookupParity`: 3 modern lookup and index functions.
 //! 6. `DateParity`: 8 serial date construction, decomposition, and difference functions.
 
-use std::path::PathBuf;
-
 use f8_core::Compiler;
 use f8_core::model::id::{ColId, TableId};
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
@@ -38,12 +36,12 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             freeze_panes: None,
             show_gridlines: true,
             tables: vec![
-                PathBuf::from("tables/SeedData.json"),
-                PathBuf::from("tables/MathParity.json"),
-                PathBuf::from("tables/LogicalParity.json"),
-                PathBuf::from("tables/FinancialParity.json"),
-                PathBuf::from("tables/LookupParity.json"),
-                PathBuf::from("tables/DateParity.json"),
+                TableId::from("SeedData"),
+                TableId::from("MathParity"),
+                TableId::from("LogicalParity"),
+                TableId::from("FinancialParity"),
+                TableId::from("LookupParity"),
+                TableId::from("DateParity"),
             ],
         }],
     };

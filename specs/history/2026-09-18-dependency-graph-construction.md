@@ -9,7 +9,7 @@ target-living-spec: specs/living-specs/compiler/dependency-graph.md
 
 ### What
 
-Implement **Dependency Graph Construction, Cycle Detection, and Topological Sorting** (`finx::compiler::graph::dependency`), completing Pass 3 of the compiler pipeline. This pass ingests the resolved dependency mappings (`IndexMap<CellId, IndexSet<CellId>>`) from Pass 3A and the expanded [`CellGrid`](src/compiler/ir/cell.rs), constructs a directed cell dependency graph using `petgraph`, enforces FAST Standard Section 2.01 (zero circularity) via Tarjan's Strongly Connected Components (SCC) algorithm, extracts actionable semantic cycle traces upon circularity, and computes deterministic topological evaluation order.
+Implement **Dependency Graph Construction, Cycle Detection, and Topological Sorting** (`finx::compiler::graph::dependency`), completing Pass 3 of the compiler pipeline. This pass ingests the resolved dependency mappings (`IndexMap<CellId, IndexSet<CellId>>`) from Pass 3A and the expanded `CellGrid`, constructs a directed cell dependency graph using `petgraph`, enforces FAST Standard Section 2.01 (zero circularity) via Tarjan's Strongly Connected Components (SCC) algorithm, extracts actionable semantic cycle traces upon circularity, and computes deterministic topological evaluation order.
 
 ### Why
 
@@ -82,14 +82,14 @@ Implement **Dependency Graph Construction, Cycle Detection, and Topological Sort
 - **Decision 1: Edge convention from dependency to dependent ($A \to B$)**:
   - *Choice*: Insert directed edge $A \to B$ when cell $B$ references cell $A$.
   - *Rationale*: Directly corresponds to data flow and evaluation precedence. A standard topological sort over the graph yields the exact sequence in which cells must be computed.
-  - *Alternatives considered*: Edge $B \to A$ (from dependent to dependency). Rejected because it would require reversing the topological sort output or transposing the graph, adding mental overhead and departing from [`docs/compiler/dependency-graph.md`](file:///home/mhcfa/Work/finx/docs/compiler/dependency-graph.md).
+  - *Alternatives considered*: Edge $B \to A$ (from dependent to dependency). Rejected because it would require reversing the topological sort output or transposing the graph, adding mental overhead and departing from `docs/compiler/dependency-graph.md`.
 - **Decision 2: Graph representation using `DiGraph<CellId, ()>` and `IndexMap<CellId, NodeIndex>`**:
   - *Choice*: Use `petgraph::graph::DiGraph` indexed by a bidirectional `IndexMap<CellId, NodeIndex>`.
   - *Rationale*: `CellId` contains dynamic string keys (`TableId`, `RowId`, `ColId`) and does not implement `Copy` (required by `DiGraphMap`). `IndexMap` guarantees $O(1)$ coordinate lookup and preserves deterministic insertion order from the grid.
   - *Alternatives considered*: `petgraph::graphmap::DiGraphMap` with custom integer IDs. Rejected as premature optimization that adds an unnecessary ID translation layer.
 - **Decision 3: Tarjan SCC with self-loop check and DFS cycle path reconstruction**:
   - *Choice*: Run `petgraph::algo::tarjan_scc`. Identify cyclic components where $\text{len} > 1$ or ($\text{len} == 1$ and node has an edge to itself). Reconstruct the exact cycle path using depth-first search within the component.
-  - *Rationale*: Tarjan's SCC isolates all nodes in a strongly connected component in $O(V + E)$ time. Crucially, `petgraph`'s `tarjan_scc` outputs components in **postorder (reverse topological order)**, and node IDs *within* each SCC vector are in **arbitrary stack order**, not in cycle traversal sequence. Reconstructing the ordered closed loop via DFS within the SCC is therefore strictly required to produce the exact numbered semantic trace specified in [`docs/compiler/dependency-graph.md`](file:///home/mhcfa/Work/finx/docs/compiler/dependency-graph.md).
+  - *Rationale*: Tarjan's SCC isolates all nodes in a strongly connected component in $O(V + E)$ time. Crucially, `petgraph`'s `tarjan_scc` outputs components in **postorder (reverse topological order)**, and node IDs *within* each SCC vector are in **arbitrary stack order**, not in cycle traversal sequence. Reconstructing the ordered closed loop via DFS within the SCC is therefore strictly required to produce the exact numbered semantic trace specified in `docs/compiler/dependency-graph.md`.
   - *Alternatives considered*: Dumping raw SCC vector nodes directly. Rejected because node ordering within a Tarjan SCC component does not reflect directed cycle order and would produce jumbled, misleading diagnostics. Simple `petgraph::algo::is_cyclic_directed` was also rejected because it only returns a boolean without identifying the participating nodes or the cyclic path.
 - **Decision 4: Stable topological order tie-broken by declaration index**:
   - *Choice*: Topologically sort nodes using `petgraph::algo::toposort` (or Kahn's algorithm) with declaration-order tie-breaking.

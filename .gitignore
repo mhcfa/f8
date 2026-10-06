@@ -1,2 +1,12 @@
 /target
 output/
+
+# Python and Maturin artifacts
+.venv/
+__pycache__/
+*.pyc
+*.so
+*.pyd
+dist/
+.pytest_cache/
+.ruff_cache/

@@ -1,8 +1,8 @@
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 use super::error::ModelError;
+use super::id::TableId;
 use super::theme::Theme;
 
 fn default_theme() -> String {
@@ -57,7 +57,7 @@ const fn default_true() -> bool {
     true
 }
 
-/// Worksheet container metadata and contained table specification paths.
+/// Worksheet container metadata and contained table identifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SheetSpec {
     pub name: String,
@@ -67,5 +67,5 @@ pub struct SheetSpec {
     pub freeze_panes: Option<FreezePanes>,
     #[serde(default = "default_true")]
     pub show_gridlines: bool,
-    pub tables: Vec<PathBuf>,
+    pub tables: Vec<TableId>,
 }

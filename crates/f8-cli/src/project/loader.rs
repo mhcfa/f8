@@ -1,9 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use f8_core::compiler::CompilerError;
+use f8_core::model::id::TableId;
 use f8_core::model::manifest::ProjectManifest;
 use f8_core::model::table::TableSpec;
 use f8_core::model::theme::Theme;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::error::CliError;
 
@@ -37,21 +39,69 @@ impl ProjectLoader {
                 source,
             })?;
 
-        let mut tables = Vec::new();
-        for sheet in &manifest.sheets {
-            for table_rel_path in &sheet.tables {
-                let full_table_path = root_dir.join(table_rel_path);
+        let mut discovered_tables: IndexMap<TableId, (PathBuf, TableSpec)> = IndexMap::new();
+        let tables_dir = root_dir.join("tables");
+
+        if tables_dir.is_dir() {
+            let mut file_paths = Vec::new();
+            for entry in std::fs::read_dir(&tables_dir).map_err(|source| CliError::Io {
+                path: tables_dir.clone(),
+                source,
+            })? {
+                let entry = entry.map_err(|source| CliError::Io {
+                    path: tables_dir.clone(),
+                    source,
+                })?;
+                let path = entry.path();
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "json") {
+                    file_paths.push(path);
+                }
+            }
+
+            file_paths.sort();
+
+            for path in file_paths {
                 let table_content =
-                    std::fs::read_to_string(&full_table_path).map_err(|source| CliError::Io {
-                        path: full_table_path.clone(),
+                    std::fs::read_to_string(&path).map_err(|source| CliError::Io {
+                        path: path.clone(),
                         source,
                     })?;
                 let table_spec: TableSpec =
                     serde_json::from_str(&table_content).map_err(|source| CliError::Json {
-                        path: full_table_path,
+                        path: path.clone(),
                         source,
                     })?;
-                tables.push(table_spec);
+
+                if let Some((existing_path, _)) = discovered_tables.get(&table_spec.id) {
+                    return Err(CliError::DuplicateTableId {
+                        id: table_spec.id.clone(),
+                        path1: existing_path.clone(),
+                        path2: path,
+                    });
+                }
+
+                discovered_tables.insert(table_spec.id.clone(), (path, table_spec));
+            }
+        }
+
+        // Assemble tables: first declared in manifest.sheets (preserving order),
+        // then append any remaining discovered tables so f8-core can validate unassigned tables.
+        let mut tables = Vec::new();
+        let mut seen = IndexSet::new();
+
+        for sheet in &manifest.sheets {
+            for table_id in &sheet.tables {
+                if let Some((_, table_spec)) = discovered_tables.get(table_id)
+                    && seen.insert(table_id.clone())
+                {
+                    tables.push(table_spec.clone());
+                }
+            }
+        }
+
+        for (table_id, (_, table_spec)) in &discovered_tables {
+            if seen.insert(table_id.clone()) {
+                tables.push(table_spec.clone());
             }
         }
 
@@ -207,7 +257,7 @@ mod tests {
             "sheets": [
                 {
                     "name": "Sheet1",
-                    "tables": ["tables/t1.json"]
+                    "tables": ["T1"]
                 }
             ]
         }"#;
@@ -218,6 +268,73 @@ mod tests {
         assert_eq!(project.tables.len(), 1);
         assert_eq!(project.tables[0].id.as_str(), "T1");
         assert_eq!(project.theme.name, "custom_navy");
+    }
+
+    #[test]
+    fn test_project_loader_decoupled_filename_discovery() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let tables_dir = root.join("tables");
+        fs::create_dir_all(&tables_dir).unwrap();
+
+        let table_content = r#"{
+            "id": "OPERATIONS",
+            "title": "Operations Table",
+            "columns": [{"kind": "data", "id": "c1", "headers": ["C1"]}],
+            "rows": [{"kind": "data", "id": "r1", "cells": {"c1": 100.0}}]
+        }"#;
+        // Filename is completely decoupled from table ID
+        fs::write(tables_dir.join("01_custom_ops_v2.json"), table_content).unwrap();
+
+        let manifest_content = r#"{
+            "model_name": "DecoupledModel",
+            "sheets": [
+                {
+                    "name": "OpsSheet",
+                    "tables": ["OPERATIONS"]
+                }
+            ]
+        }"#;
+        fs::write(root.join("f8.json"), manifest_content).unwrap();
+
+        let project = ProjectLoader::load(Some(root)).unwrap();
+        assert_eq!(project.tables.len(), 1);
+        assert_eq!(project.tables[0].id.as_str(), "OPERATIONS");
+    }
+
+    #[test]
+    fn test_project_loader_duplicate_table_id_rejected() {
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let tables_dir = root.join("tables");
+        fs::create_dir_all(&tables_dir).unwrap();
+
+        let table_content1 = r#"{
+            "id": "T1",
+            "title": "Table One",
+            "columns": [{"kind": "data", "id": "c1"}],
+            "rows": [{"kind": "data", "id": "r1"}]
+        }"#;
+        let table_content2 = r#"{
+            "id": "T1",
+            "title": "Table One Duplicate",
+            "columns": [{"kind": "data", "id": "c1"}],
+            "rows": [{"kind": "data", "id": "r1"}]
+        }"#;
+        fs::write(tables_dir.join("a.json"), table_content1).unwrap();
+        fs::write(tables_dir.join("b.json"), table_content2).unwrap();
+
+        let manifest_content = r#"{
+            "model_name": "DupModel",
+            "sheets": [{"name": "S1", "tables": ["T1"]}]
+        }"#;
+        fs::write(root.join("f8.json"), manifest_content).unwrap();
+
+        let result = ProjectLoader::load(Some(root));
+        assert!(matches!(
+            result,
+            Err(CliError::DuplicateTableId { ref id, .. }) if id.as_str() == "T1"
+        ));
     }
 
     #[test]

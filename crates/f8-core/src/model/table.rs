@@ -146,14 +146,6 @@ impl ColumnSpec {
         }
         self
     }
-
-    /// Builder method attaching provenance source metadata.
-    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
-        if let Self::Data(d) = &mut self {
-            d.source = source;
-        }
-        self
-    }
 }
 
 impl From<DataColumnSpec> for ColumnSpec {
@@ -182,8 +174,6 @@ pub struct DataColumnSpec {
     pub currency: Option<CurrencyCode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<serde_json::Value>,
 }
 
 impl DataColumnSpec {
@@ -199,7 +189,6 @@ impl DataColumnSpec {
             decimals: None,
             currency: None,
             expr: None,
-            source: None,
         }
     }
 
@@ -215,7 +204,6 @@ impl DataColumnSpec {
             decimals: None,
             currency: None,
             expr: None,
-            source: None,
         }
     }
 
@@ -275,12 +263,6 @@ impl DataColumnSpec {
     /// Builder method attaching a formula expression.
     pub fn with_expr(mut self, expr: impl Into<String>) -> Self {
         self.expr = Some(expr.into());
-        self
-    }
-
-    /// Builder method attaching provenance source metadata.
-    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
-        self.source = source;
         self
     }
 }
@@ -392,8 +374,6 @@ pub struct DetailedCellInput {
     pub indent: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<serde_json::Value>,
 }
 
 /// Cell input definition: raw literal, formula expression, or detailed override.
@@ -494,14 +474,6 @@ impl CellInput {
         match self {
             Self::Literal(_) => None,
             Self::Detailed(d) => d.note.as_deref(),
-        }
-    }
-
-    /// Returns the origin provenance metadata if present.
-    pub fn source(&self) -> Option<&serde_json::Value> {
-        match self {
-            Self::Literal(_) => None,
-            Self::Detailed(d) => d.source.as_ref(),
         }
     }
 
@@ -652,14 +624,6 @@ impl RowSpec {
         }
         self
     }
-
-    /// Builder method attaching provenance source metadata.
-    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
-        if let Self::Data(d) = &mut self {
-            d.source = source;
-        }
-        self
-    }
 }
 
 impl From<DataRowSpec> for RowSpec {
@@ -690,8 +654,6 @@ pub struct DataRowSpec {
     pub currency: Option<CurrencyCode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub cells: IndexMap<ColId, CellInput>,
 }
@@ -707,7 +669,6 @@ impl DataRowSpec {
             decimals: None,
             currency: None,
             expr: None,
-            source: None,
             cells: IndexMap::new(),
         }
     }
@@ -757,12 +718,6 @@ impl DataRowSpec {
     /// Builder method attaching a single cell input.
     pub fn with_cell(mut self, col: impl Into<ColId>, cell: impl Into<CellInput>) -> Self {
         self.cells.insert(col.into(), cell.into());
-        self
-    }
-
-    /// Builder method attaching provenance source metadata.
-    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
-        self.source = source;
         self
     }
 }

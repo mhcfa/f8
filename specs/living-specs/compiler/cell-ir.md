@@ -1,6 +1,6 @@
 ---
 title: Cell Intermediate Representation & Symbol Table
-last_updated: 2026-09-24
+last_updated: 2026-09-28
 domain: compiler
 status: active
 ---
@@ -22,7 +22,7 @@ The `compiler::ir` subsystem provides discrete cell-level Intermediate Represent
   1. `TableSpec` $\rightarrow$ `SymbolTable::register_table(sheet_id, &table)` $\rightarrow$ Validates global table uniqueness, indexes column/row positions, and stores axis roles.
   2. `TableSpec` + `SymbolTable` $\rightarrow$ `expand_table(&symbol_table, &table)` $\rightarrow$ Evaluates the 3-Tier Specificity Lattice for each $(r, c)$ coordinate pair into `Vec<CellNode>`.
   3. `expand_grid(&symbol_table, &tables)` $\rightarrow$ Populates `CellGrid` preserving declaration order (`table -> row -> col`).
-  4. `ProjectManifest` + `&[TableSpec]` $\rightarrow$ `expand_workbook(&manifest, tables)` $\rightarrow$ Synchronizes symbol registration and grid expansion.
+  4. `ProjectManifest` + `&[TableSpec]` $\rightarrow$ `expand_workbook(&manifest, tables)` $\rightarrow$ Matches sheet assignments via exact `TableId` equality (`t.id == *table_id`), synchronizing symbol registration and grid expansion with zero filesystem dependencies.
   5. `CellGrid` and `SymbolTable` are consumed by downstream compiler passes (`compiler::graph` for dependency DAG construction and `compiler::eval` for runtime evaluation).
 - **Dependencies**:
   - `indexmap`: Guarantees deterministic iteration ordering for reproducible compilation.
@@ -81,6 +81,13 @@ Each table in a workbook must belong to exactly one sheet. The `SymbolTable` enf
 - **Empty table rejection**:
   - **When** registering a table with no columns
   - **Then** returns `IrError::EmptyTable`.
+- **Exact logical TableId matching**:
+  - **When** expanding a workbook with `sheet.tables` containing logical `TableId`s matching `table.id`
+  - **Then** resolves and registers tables to their respective sheets without filesystem inspection or path stripping.
+- **Unknown table in manifest sheet**:
+  - **When** a sheet specifies a `TableId` not present in the provided table list
+  - **Then** returns `IrError::UnknownTable`.
+
 
 ### 4. 3-Tier Specificity Lattice Grid Expansion
 

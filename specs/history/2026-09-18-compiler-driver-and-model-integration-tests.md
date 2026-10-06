@@ -9,7 +9,7 @@ target-living-spec: specs/living-specs/compiler/evaluator.md
 
 ### What
 
-Introduce a unified compiler driver facade ([`Compiler::evaluate`](../../src/compiler/mod.rs) and `Compiler::evaluate_with_registry`) and a unified error hierarchy ([`CompilerError`](../../src/compiler/error.rs)) that seamlessly orchestrates Passes 1 through 4 (Spec Validation $\rightarrow$ Grid Expansion $\rightarrow$ Dependency Graph / Cycle Detection $\rightarrow$ Topological In-Memory Evaluation). 
+Introduce a unified compiler driver facade (`Compiler::evaluate` and `Compiler::evaluate_with_registry`) and a unified error hierarchy (`CompilerError`) that seamlessly orchestrates Passes 1 through 4 (Spec Validation $\rightarrow$ Grid Expansion $\rightarrow$ Dependency Graph / Cycle Detection $\rightarrow$ Topological In-Memory Evaluation). 
 
 Validate the closed authoring-to-in-memory calculation pipeline by authoring two rich, realistic end-to-end integration test suites:
 1. **Simplified 3-Statement Financial Model** (`tests/three_statement_model_test.rs`): Income Statement, Cash Flow Statement, and Balance Sheet across historical (`2023A`) and forecast (`2024E`..`2026E`) periods, utilizing multi-table cross-references, temporal predecessor lags (`col.prev`), and verifying that the Balance Sheet balances (`Assets == Liabilities + Equity`) for every period.
@@ -32,8 +32,8 @@ Furthermore, while Passes 1–4 have passing unit tests for individual features,
 ### Scope
 
 - **In-scope**:
-  - `src/compiler/error.rs`: Structured [`CompilerError`](../../src/compiler/error.rs) wrapping `ModelError`, `IrError`, `GraphError`, and `EvalError`.
-  - `src/compiler/mod.rs`: Top-level [`Compiler`](../../src/compiler/mod.rs) facade with `evaluate` and `evaluate_with_registry`.
+  - `src/compiler/error.rs`: Structured `CompilerError` wrapping `ModelError`, `IrError`, `GraphError`, and `EvalError`.
+  - `src/compiler/mod.rs`: Top-level `Compiler` facade with `evaluate` and `evaluate_with_registry`.
   - Re-exports in `src/lib.rs`.
   - `tests/three_statement_model_test.rs`: 3-statement financial model integration test.
   - `tests/cap_table_test.rs`: Column-based cap table integration test.
@@ -45,7 +45,7 @@ Furthermore, while Passes 1–4 have passing unit tests for individual features,
 ### What Changes
 
 - **New files**:
-  - `src/compiler/error.rs`: Defines [`CompilerError`](../../src/compiler/error.rs).
+  - `src/compiler/error.rs`: Defines `CompilerError`.
   - `tests/three_statement_model_test.rs`: Multi-table 3-statement financial model tests.
   - `tests/cap_table_test.rs`: Dual-axis column vector formula cap table tests.
 - **Modified files**:

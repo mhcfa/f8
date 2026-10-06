@@ -13,6 +13,7 @@ target-living-spec:
 ### What
 
 Implement Phase 3 of the CLI inspection ergonomics roadmap identified in `docs/interfaces/cli-audit.md`:
+
 1. **Dual coordinate input**: Allow `f8 inspect cell`, `precedents`, and `dependents` to accept coordinates either as three positional arguments (`<table> <row> <col>`) or as a single canonical IR string (`'Table["row", "col"]'`).
 2. **Integer format preset and calendar year typography**: Introduce `FormatPreset::Integer` (`"integer"`) for unformatted whole numbers and apply year heuristics so calendar years (e.g. `2029`) never render with thousands commas (`2,029`).
 3. **Multi-tier column header rendering**: Render stacked column category headers in terminal box-drawing tables and markdown views when columns declare multi-level header tiers.
@@ -37,7 +38,7 @@ Implement Phase 3 of the CLI inspection ergonomics roadmap identified in `docs/i
 
 - **Out-of-scope**:
   - Physical Excel addresses (`Sheet!A1` or `A1`): omitted to keep coordinate resolution focused purely on symbolic model identifiers.
-  - Table schema outline mode (`--schema`): deferred to the dedicated JSON schema generation and tooling specification ([`specs/drafts/2026-09-23-json-schema-generation-and-tooling.md`](2026-09-23-json-schema-generation-and-tooling.md)).
+  - Table schema outline mode (`--schema`): deferred to the dedicated JSON schema generation and tooling specification.
   - Interactive cell editing via CLI.
   - Terminal interactive scrolling / TUI pagination.
 
@@ -90,16 +91,16 @@ Implement Phase 3 of the CLI inspection ergonomics roadmap identified in `docs/i
 ### Decisions
 
 - **Decision 1: Dual coordinate support (3 positional tokens OR 1 canonical IR string)**
-  - *Rationale*: Positional arguments (`f8 inspect cell IncomeStatement cogs y2024e`) avoid shell quoting friction in interactive terminal sessions. Canonical IR strings (`'IncomeStatement["cogs", "y2024e"]'`) allow autonomous agents and clipboard users to query coordinates directly from error messages and tree outputs without string manipulation.
-  - *Alternatives considered*: Positional only (rejected: causes cognitive friction for agents copying coordinates). Canonical IR string only (rejected: requires shell quotes in bash/zsh due to `[` globbing).
+  - _Rationale_: Positional arguments (`f8 inspect cell IncomeStatement cogs y2024e`) avoid shell quoting friction in interactive terminal sessions. Canonical IR strings (`'IncomeStatement["cogs", "y2024e"]'`) allow autonomous agents and clipboard users to query coordinates directly from error messages and tree outputs without string manipulation.
+  - _Alternatives considered_: Positional only (rejected: causes cognitive friction for agents copying coordinates). Canonical IR string only (rejected: requires shell quotes in bash/zsh due to `[` globbing).
 
 - **Decision 2: Support both explicit `FormatPreset::Integer` and year heuristic**
-  - *Rationale*: Explicit `format: "integer"` is the robust, declarative single source of truth for AST specifications. However, existing models or expressions like `YEAR(...)` often use `format: "number", decimals: 0`. Adding a fallback heuristic for whole numbers in `[1900..=2100]` ensures immediate clean rendering without breaking existing project files.
-  - *Alternatives considered*: Heuristic only (rejected: violates explicit data structure principle; cannot format non-year integers like item counts without commas). Preset only (rejected: leaves existing templates with `2,029` until manually updated).
+  - _Rationale_: Explicit `format: "integer"` is the robust, declarative single source of truth for AST specifications. However, existing models or expressions like `YEAR(...)` often use `format: "number", decimals: 0`. Adding a fallback heuristic for whole numbers in `[1900..=2100]` ensures immediate clean rendering without breaking existing project files.
+  - _Alternatives considered_: Heuristic only (rejected: violates explicit data structure principle; cannot format non-year integers like item counts without commas). Preset only (rejected: leaves existing templates with `2,029` until manually updated).
 
 - **Decision 3: Multi-tier headers stacked per-column in terminal and markdown**
-  - *Rationale*: While Excel can merge cells via `CenterAcross`, terminal widths vary and markdown tables (GFM) do not support `colspan`. Rendering each tier row with column-aligned cells provides consistent, readable output across both Unicode terminal box-drawing and Markdown formats.
-  - *Alternatives considered*: Omitting upper tiers in markdown (rejected: causes loss of information between CLI output modes).
+  - _Rationale_: While Excel can merge cells via `CenterAcross`, terminal widths vary and markdown tables (GFM) do not support `colspan`. Rendering each tier row with column-aligned cells provides consistent, readable output across both Unicode terminal box-drawing and Markdown formats.
+  - _Alternatives considered_: Omitting upper tiers in markdown (rejected: causes loss of information between CLI output modes).
 
 ### Data Contracts
 
@@ -138,9 +139,9 @@ pub struct InspectCellArgs {
 ### Risks & Trade-offs
 
 - **Risk**: Multi-tier header rows increase the vertical height of terminal tables.
-  - *Mitigation*: Only tables that actually define multiple tiers incur extra header rows; single-tier tables retain their exact single-row appearance.
+  - _Mitigation_: Only tables that actually define multiple tiers incur extra header rows; single-tier tables retain their exact single-row appearance.
 - **Risk**: Incomplete coordinate arguments (e.g. providing `target` and `row` but omitting `col`).
-  - *Mitigation*: The parser explicitly detects partial arguments and returns an error explaining the expected format: either 3 positional tokens (`<table row col>`) or 1 canonical IR string (`Table["row", "col"]`).
+  - _Mitigation_: The parser explicitly detects partial arguments and returns an error explaining the expected format: either 3 positional tokens (`<table row col>`) or 1 canonical IR string (`Table["row", "col"]`).
 
 ---
 
@@ -181,6 +182,7 @@ pub struct InspectCellArgs {
 ## Tasks
 
 ### Phase 1: Core AST & Coordinate Parser
+
 - [x] Add `FormatPreset::Integer` to `crates/f8-core/src/model/format.rs`.
 - [x] Update `NumberFormatsConfig` in `crates/f8-core/src/model/theme.rs` to support `integer`.
 - [x] Update `crates/f8-core/src/value/format.rs` to format `Integer` and year values `[1900..=2100]` without commas.
@@ -188,17 +190,20 @@ pub struct InspectCellArgs {
 - [x] Add unit tests in `crates/f8-core` for coordinate parsing and year formatting.
 
 ### Phase 2: CLI Multi-tier Column Headers
+
 - [x] Update `extract_render_columns` and header row rendering in `crates/f8-cli/src/render/table.rs` for Unicode and Markdown.
 - [x] Verify single-tier tables retain unchanged formatting.
 - [x] Add regression test asserting multi-tier header rendering for `Timeline` in `lbo`.
 
 ### Phase 3: CLI Coordinate Integration & Template Updates
+
 - [x] Update `InspectCellArgs`, `InspectPrecedentsArgs`, and `InspectDependentsArgs` in `crates/f8-cli/src/cli.rs` for flexible arguments (`target`, `row`, `col`).
 - [x] Update `crates/f8-cli/src/commands/inspect.rs` to invoke `parse_coordinate_tokens`.
 - [x] Update `crates/f8-cli/templates/lbo/tables/timeline.json` to use `"format": "integer"` on `year` row.
 - [x] Add CLI integration tests in `crates/f8-cli/tests/inspect_test.rs` covering 3-arg and IR string invocations.
 
 ### Phase 4: Verification Suite & Documentation
+
 - [x] Run full verification suite: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
 - [x] Update living specs `specs/living-specs/interfaces/cli.md`, `specs/living-specs/compiler/compiled-model.md`, and `specs/living-specs/model/spec-ast.md`.
 - [x] Archive draft spec to `specs/history/`.

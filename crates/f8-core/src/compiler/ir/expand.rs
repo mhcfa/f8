@@ -1,5 +1,4 @@
 use indexmap::IndexMap;
-use std::path::Path;
 
 use super::cell::{CellGrid, CellNode, CellPayload};
 use super::error::IrError;
@@ -96,7 +95,6 @@ pub fn expand_table(
                 let cell_currency = cell_input.currency();
                 let cell_indent = cell_input.indent().unwrap_or(0);
                 let cell_note = cell_input.note();
-                let cell_source = cell_input.source().cloned();
 
                 let payload = match cell_input {
                     CellInput::Literal(lit) => CellPayload::Literal(lit.clone()),
@@ -144,9 +142,6 @@ pub fn expand_table(
                     resolve_highlight(cell_highlight, row_data.highlight, col_data.highlight);
 
                 let effective_note = cell_note.map(String::from);
-                let effective_source = cell_source
-                    .or_else(|| row_data.source.clone())
-                    .or_else(|| col_data.source.clone());
 
                 cells.push(
                     CellNode::new(cell_id, sheet_id.clone(), payload)
@@ -156,8 +151,7 @@ pub fn expand_table(
                         .with_style(horizontal, vertical)
                         .with_highlight(is_highlight)
                         .with_indent(cell_indent)
-                        .with_note(effective_note)
-                        .with_source(effective_source),
+                        .with_note(effective_note),
                 );
                 continue;
             }
@@ -209,16 +203,13 @@ pub fn expand_table(
             let (horizontal, vertical) = resolve_style(None, row_data.style, col_data.style);
             let is_highlight = resolve_highlight(None, row_data.highlight, col_data.highlight);
 
-            let effective_source = row_data.source.clone().or_else(|| col_data.source.clone());
-
             cells.push(
                 CellNode::new(cell_id, sheet_id.clone(), payload)
                     .with_format(effective_format)
                     .with_decimals(effective_decimals)
                     .with_currency(effective_currency)
                     .with_style(horizontal, vertical)
-                    .with_highlight(is_highlight)
-                    .with_source(effective_source),
+                    .with_highlight(is_highlight),
             );
         }
     }
@@ -370,24 +361,6 @@ pub fn expand_grid(symbol_table: &SymbolTable, tables: &[TableSpec]) -> Result<C
     Ok(grid)
 }
 
-/// Helper to match a path string from `SheetSpec.tables` to a `TableId`.
-pub fn matches_table_id(path: &Path, table_id: &TableId) -> bool {
-    let id_str = table_id.as_str();
-    let norm_id = id_str.replace(['_', '-'], "");
-
-    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-        if stem.eq_ignore_ascii_case(id_str) {
-            return true;
-        }
-        let norm_stem = stem.replace(['_', '-'], "");
-        if norm_stem.eq_ignore_ascii_case(&norm_id) {
-            return true;
-        }
-    }
-
-    false
-}
-
 /// Orchestrates workbook symbol registration and grid expansion from a manifest and table specs.
 pub fn expand_workbook(
     manifest: &ProjectManifest,
@@ -400,19 +373,15 @@ pub fn expand_workbook(
     for sheet in &manifest.sheets {
         let sheet_id = SheetId::from(sheet.name.as_str());
 
-        for table_path in &sheet.tables {
-            let matched_table = tables
-                .iter()
-                .find(|t| matches_table_id(table_path, &t.id))
-                .ok_or_else(|| IrError::UnknownTable {
-                    table: TableId::from(
-                        table_path
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or_default(),
-                    ),
-                    context: format!("sheet '{}'", sheet.name),
-                })?;
+        for table_id in &sheet.tables {
+            let matched_table =
+                tables
+                    .iter()
+                    .find(|t| t.id == *table_id)
+                    .ok_or_else(|| IrError::UnknownTable {
+                        table: table_id.clone(),
+                        context: format!("sheet '{}'", sheet.name),
+                    })?;
 
             symbol_table.register_table(sheet_id.clone(), matched_table)?;
         }

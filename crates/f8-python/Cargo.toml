@@ -1,0 +1,19 @@
+[package]
+name = "f8-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+test = false
+
+[dependencies]
+f8-core = { workspace = true }
+pyo3 = { workspace = true, features = ["abi3-py312", "extension-module"] }
+pythonize = { workspace = true }
+
+[lints]
+workspace = true

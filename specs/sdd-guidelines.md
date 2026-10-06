@@ -36,6 +36,7 @@ Capture the plan in a focused draft spec:
 - Focus exclusively on the current phase or milestone.
 - Define the proposal scope, invariants, architectural choices with rationale, and testable acceptance scenarios (`Given / When / Then`).
 - **Concise contracts over code dumps**: Avoid dumping full implementation code. Summarize data structures, AST enums, and traits using concise markdown tables or type signatures. Use short code snippets only when illustrating non-obvious interface designs or subtle edge cases.
+- **Code spans for file references**: Cite source files, test paths, external docs, and affected modules using backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs` or `docs/dsl/grammar.md`), rather than relative markdown hyperlinks. Reserve relative hyperlinks exclusively for linking between active living specifications and stable documentation.
 - Break down execution into sequential, manageable tasks.
 
 ### 3. Implement & Verify
@@ -44,11 +45,18 @@ Execute against the defined specification:
 
 - Build code and tests that satisfy the acceptance criteria.
 - Keep the task checklist in the draft spec updated as progress occurs.
-- Verify work using Rust standard toolchain commands
-  - `cargo check`: Fast syntax and type checking.
-  - `cargo test`: Comprehensive unit and integration test suite.
-  - `cargo clippy --all-targets -- -D warnings`: Strict linter checks with zero warnings and no unhandled panics.
-  - `cargo fmt --check`: Formatting conformance.
+- Verify work using project language toolchains:
+  - **Rust toolchain**:
+    - `cargo check`: Fast syntax and type checking.
+    - `cargo test`: Comprehensive unit and integration test suite.
+    - `cargo clippy --all-targets -- -D warnings`: Strict linter checks with zero warnings and no unhandled panics.
+    - `cargo fmt --check`: Formatting conformance.
+  - **Python toolchain** (when changes touch Python SDK or PyO3 bindings):
+    - `uv run ruff check .`: Linting with zero warnings (`E`, `F`, `I`, `UP`, `B`, `SIM`).
+    - `uv run ruff format --check .`: Code formatting adherence.
+    - `uv run pyright`: Static type checking in strict mode with zero errors and zero warnings.
+    - `uv run pytest`: Unit and integration test suite.
+    - `uv run maturin develop`: Recompile native extension when Rust bindings change.
 
 ### 4. Reconcile & Archive
 

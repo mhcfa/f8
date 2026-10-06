@@ -1,6 +1,6 @@
 ---
 title: Specification AST & Schema Ingestion
-last_updated: 2026-09-21
+last_updated: 2026-09-27
 domain: model
 status: active
 ---
@@ -14,7 +14,7 @@ The `model` subsystem provides the foundational in-memory data structures, Serde
 - **Modules & components**:
   - `f8_core::model::id`: Strongly typed identifier wrappers (`TableId`, `RowId`, `ColId`, `SheetId`).
   - `f8_core::model::format`: Semantic formatting preset catalog (`FormatPreset`), structural style enum (`SemanticStyle`), and canonical ISO currency codes (`CurrencyCode`).
-  - `f8_core::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`).
+  - `f8_core::model::manifest`: Project manifest structures (`ProjectManifest`, `SheetSpec`, `FreezePanes`). `SheetSpec.tables` contains `Vec<TableId>`, referencing tables strictly by logical identifier.
   - `f8_core::model::table`: 2D table definitions (`TableSpec`), tagged column specifications (`ColumnSpec::Data`, `ColumnSpec::Gutter`), tagged row specifications (`RowSpec::Data`, `RowSpec::SectionHeader`, `RowSpec::Gutter`), axis roles (`AxisRole`), 0D cell inputs (`CellInput`, `DetailedCellInput`), and literal values (`ValueLiteral`). Visual properties (`style`, `highlight`, `decimals`, `currency`) are defined symmetrically on `DataColumnSpec`, `DataRowSpec`, and `DetailedCellInput`. Tables accept optional `subtitle` metadata, default table `currency`, and an opt-in `collapsible` boolean (default: `false`).
   - `f8_core::model::error`: Diagnostic error types (`ModelError`).
 
@@ -118,6 +118,17 @@ Tables accept an optional `collapsible: bool` property (default: `false`, omitte
 - **Opt-In Collapsing**:
   - **When** a table is created with `table.collapsible = true` or deserialized from `{ "collapsible": true }`
   - **Then** `table.collapsible` is `true`.
+
+### 7. Logical Sheet Table Identifiers
+
+Worksheet specifications in `ProjectManifest` associate tables purely by logical identifier (`TableId`) via `SheetSpec.tables: Vec<TableId>`. `f8-core` models are completely decoupled from filesystem paths, enabling in-memory SDK authoring and clean separation from filesystem operations.
+
+#### Scenarios
+
+- **Logical Table Identifiers in Manifest**:
+  - **When** deserializing `ProjectManifest` with `"tables": ["Assumptions", "IncomeStatement"]`
+  - **Then** `sheet.tables` resolves to `vec![TableId::new("Assumptions"), TableId::new("IncomeStatement")]`.
+
 
 
 

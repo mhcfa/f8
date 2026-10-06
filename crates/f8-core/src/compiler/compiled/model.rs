@@ -205,6 +205,8 @@ pub struct RowInspection {
 pub struct TableCellInfo {
     /// Evaluated cell value.
     pub value: CellValue,
+    /// Pre-formatted runtime value string according to cell format preset, currency, and decimals.
+    pub formatted_value: Option<String>,
     /// `true` if calculated by formula.
     pub is_formula: bool,
     /// High-level formula expression string if applicable.

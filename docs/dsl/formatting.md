@@ -74,7 +74,7 @@ Numeric precision is an orthogonal property decoupled from the format preset:
 - **Numeric applicability**: `decimals` applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) ignore `decimals` or trigger a validation error (`InvalidPrecisionForPresetError`) if explicitly configured.
 
 ### 4.1. Symmetrical Usage in Specifications
-The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](./spec-format.md#3-table-specification-schema-tablesidjson), [`RowSpec`](./spec-format.md#3-table-specification-schema-tablesidjson), and point-level [`DetailedCellInput`](./spec-format.md#33-cell-input-syntax-cells):
+The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](./spec-format.md#4-column-elements-horizontal-grid-structure), [`RowSpec`](./spec-format.md#5-row-elements-vertical-grid-structure), and point-level [`DetailedCellInput`](./spec-format.md#6-cell-input-syntax-cells):
 
 ```json
 {
@@ -316,4 +316,4 @@ This guarantees that changing themes re-skins the emitted workbook completely an
 
 ---
 
-See [Specification Format](./spec-format.md) for schema usage and [Spatial Layout Planning](../compiler/spatial-layout.md) for coordinate and metric assignment.
+See [Specification Format](./spec-format.md) for schema usage and [Spatial Layout Planning](../../specs/living-specs/compiler/spatial-layout.md) for coordinate and metric assignment.

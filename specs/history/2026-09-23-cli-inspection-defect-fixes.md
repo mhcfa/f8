@@ -12,8 +12,8 @@ target-living-spec:
 ### What
 
 Fix two critical runtime defects in model inspection identified in `docs/interfaces/cli-audit.md`:
-1. **Combinatorial DAG path explosion** in `f8-core` recursive precedent and dependent tree construction ([`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs)).
-2. **Unhandled `SIGPIPE` panic** (`Broken pipe (os error 32)`) in `f8-cli` when piping stdout output into downstream Unix utilities such as `head`, `less`, or `grep` ([`crates/f8-cli/src/main.rs`](../../crates/f8-cli/src/main.rs)).
+1. **Combinatorial DAG path explosion** in `f8-core` recursive precedent and dependent tree construction (`crates/f8-core/src/compiler/compiled/mod.rs`).
+2. **Unhandled `SIGPIPE` panic** (`Broken pipe (os error 32)`) in `f8-cli` when piping stdout output into downstream Unix utilities such as `head`, `less`, or `grep` (`crates/f8-cli/src/main.rs`).
 
 ### Why
 
@@ -207,21 +207,21 @@ fn build_precedent_tree_node(
 
 ### Phase 1: Core DAG Traversal & Pruning (`f8-core`)
 
-- [x] Add `#[serde(default)] pub is_pruned: bool` to `DependencyNode` in [`crates/f8-core/src/compiler/compiled/model.rs`](../../crates/f8-core/src/compiler/compiled/model.rs).
-- [x] Update `build_precedent_tree_node` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
-- [x] Update `build_dependent_tree_node` in [`crates/f8-core/src/compiler/compiled/mod.rs`](../../crates/f8-core/src/compiler/compiled/mod.rs) to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
+- [x] Add `#[serde(default)] pub is_pruned: bool` to `DependencyNode` in `crates/f8-core/src/compiler/compiled/model.rs`.
+- [x] Update `build_precedent_tree_node` in `crates/f8-core/src/compiler/compiled/mod.rs` to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
+- [x] Update `build_dependent_tree_node` in `crates/f8-core/src/compiler/compiled/mod.rs` to accept `expanded: &mut HashSet<CellId>` and prune duplicate subtrees.
 - [x] Add unit tests in `crates/f8-core/tests/` asserting that diamond DAGs (A -> B, A -> C, B -> D, C -> D) prune duplicate expansion of D.
 
 ### Phase 2: CLI Tree Renderer Pruning Annotation (`f8-cli`)
 
-- [x] Update `render_node_list` in [`crates/f8-cli/src/render/tree.rs`](../../crates/f8-cli/src/render/tree.rs) to append ` (already visited)` when `node.is_pruned` is true.
+- [x] Update `render_node_list` in `crates/f8-cli/src/render/tree.rs` to append ` (already visited)` when `node.is_pruned` is true.
 - [x] Verify that `render_node_list` does not render recursive children for pruned nodes.
 
 ### Phase 3: SIGPIPE and Broken Pipe Handling (`f8-cli`)
 
-- [x] Add `libc` dependency under `[target.'cfg(unix)'.dependencies]` in [`Cargo.toml`](../../Cargo.toml) and [`crates/f8-cli/Cargo.toml`](../../crates/f8-cli/Cargo.toml).
-- [x] Reset `SIGPIPE` handler to `SIG_DFL` in [`crates/f8-cli/src/main.rs`](../../crates/f8-cli/src/main.rs) on `#[cfg(unix)]`.
-- [x] Install broken pipe panic hook in [`crates/f8-cli/src/lib.rs`](../../crates/f8-cli/src/lib.rs) ensuring clean exit on broken pipe.
+- [x] Add `libc` dependency under `[target.'cfg(unix)'.dependencies]` in `Cargo.toml` and `crates/f8-cli/Cargo.toml`.
+- [x] Reset `SIGPIPE` handler to `SIG_DFL` in `crates/f8-cli/src/main.rs` on `#[cfg(unix)]`.
+- [x] Install broken pipe panic hook in `crates/f8-cli/src/lib.rs` ensuring clean exit on broken pipe.
 
 ### Phase 4: Integration Verification Suite
 

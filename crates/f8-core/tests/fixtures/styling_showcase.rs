@@ -4,8 +4,6 @@
 //! number format preset, currency denomination, and cell override for the
 //! default Corporate Navy theme in a single inspectable workbook.
 
-use std::path::PathBuf;
-
 use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use f8_core::model::id::TableId;
 use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
@@ -1040,11 +1038,11 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 tables: vec![
-                    PathBuf::from("tables/Styles_And_Borders.json"),
-                    PathBuf::from("tables/Hierarchical_Outlines.json"),
-                    PathBuf::from("tables/Format_Presets_And_Decimals.json"),
-                    PathBuf::from("tables/Currency_Denominations.json"),
-                    PathBuf::from("tables/Cell_Features_And_Notes.json"),
+                    TableId::from("Styles_And_Borders"),
+                    TableId::from("Hierarchical_Outlines"),
+                    TableId::from("Format_Presets_And_Decimals"),
+                    TableId::from("Currency_Denominations"),
+                    TableId::from("Cell_Features_And_Notes"),
                 ],
             },
             SheetSpec {
@@ -1052,7 +1050,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: Some("#2C4D75".to_string()),
                 freeze_panes: Some(FreezePanes { row: 4, col: 2 }),
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/Freeze_Panes_Sample.json")],
+                tables: vec![TableId::from("Freeze_Panes_Sample")],
             },
         ],
     };

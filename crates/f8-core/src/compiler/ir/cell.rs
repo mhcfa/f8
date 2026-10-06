@@ -71,8 +71,6 @@ pub struct CellNode {
     pub payload: CellPayload,
     /// Optional developer or audit note.
     pub note: Option<String>,
-    /// Optional origin provenance metadata.
-    pub source: Option<serde_json::Value>,
 }
 
 impl CellNode {
@@ -90,7 +88,6 @@ impl CellNode {
             indent: 0,
             payload,
             note: None,
-            source: None,
         }
     }
 
@@ -139,12 +136,6 @@ impl CellNode {
     /// Builder method attaching an audit note.
     pub fn with_note(mut self, note: Option<String>) -> Self {
         self.note = note;
-        self
-    }
-
-    /// Builder method attaching provenance source metadata.
-    pub fn with_source(mut self, source: Option<serde_json::Value>) -> Self {
-        self.source = source;
         self
     }
 }

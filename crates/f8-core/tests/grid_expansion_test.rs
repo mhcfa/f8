@@ -1,7 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::PathBuf;
-
 use f8_core::compiler::ir::{
     CellId, CellPayload, IrError, SymbolTable, expand_grid, expand_table, expand_workbook,
 };
@@ -170,14 +168,12 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
             value: Some(ValueLiteral::Number(110.0)),
             note: Some("Forecast update".to_string()),
             currency: None,
-            source: Some(serde_json::json!({ "source_id": "Management Guidance" })),
             ..Default::default()
         }),
     );
 
     let row = RowSpec::new("revenue")
         .with_format(Some(FormatPreset::Currency))
-        .with_source(Some(serde_json::json!({ "source_id": "10-K" })))
         .with_cells(cells);
 
     let table = create_simple_table("IncomeStatement", &["2023A", "2024E", "2025E"], vec![row]);
@@ -190,29 +186,17 @@ fn test_scenario_4_metadata_and_format_preset_propagation() {
     let cells = expand_table(&symbols, &table).expect("expansion succeeds");
     assert_eq!(cells.len(), 3);
 
-    // 2023A: Inherits format, source, zero note
+    // 2023A: Inherits format, zero note
     assert_eq!(cells[0].format, Some(FormatPreset::Currency));
     assert_eq!(cells[0].note, None);
-    assert_eq!(
-        cells[0].source,
-        Some(serde_json::json!({ "source_id": "10-K" }))
-    );
 
-    // 2024E: Inherits format, source, zero note
+    // 2024E: Inherits format, zero note
     assert_eq!(cells[1].format, Some(FormatPreset::Currency));
     assert_eq!(cells[1].note, None);
-    assert_eq!(
-        cells[1].source,
-        Some(serde_json::json!({ "source_id": "10-K" }))
-    );
 
-    // 2025E: Inherits format, explicit cell note, overrides source
+    // 2025E: Inherits format, explicit cell note
     assert_eq!(cells[2].format, Some(FormatPreset::Currency));
     assert_eq!(cells[2].note.as_deref(), Some("Forecast update"));
-    assert_eq!(
-        cells[2].source,
-        Some(serde_json::json!({ "source_id": "Management Guidance" }))
-    );
 }
 
 #[test]
@@ -247,14 +231,14 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/assumptions.json")],
+                tables: vec![TableId::from("Assumptions")],
             },
             SheetSpec {
                 name: "Model".to_string(),
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![PathBuf::from("tables/income_statement.json")],
+                tables: vec![TableId::from("IncomeStatement")],
             },
         ],
     };
@@ -391,7 +375,7 @@ fn test_expand_workbook_unassigned_table_rejected() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![PathBuf::from("tables/assumptions.json")],
+            tables: vec![TableId::from("Assumptions")],
         }],
     };
 
@@ -728,7 +712,6 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
             format: None,
             decimals: None,
             note: None,
-            source: None,
             currency: None,
             indent: None,
         }),
@@ -776,7 +759,6 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
             format: None,
             decimals: Some(4),
             note: None,
-            source: None,
             currency: None,
             indent: None,
         }),
@@ -859,7 +841,6 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
             format: None,
             decimals: None,
             note: None,
-            source: None,
             currency: None,
             indent: None,
         }),

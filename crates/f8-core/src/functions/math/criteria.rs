@@ -1,8 +1,7 @@
 //! Excel criteria parsing and matching engine.
 //!
 //! Provides single-pass compilation of criteria arguments for conditional aggregation
-//! (`*IFS`) and pattern-matching lookup functions, conforming to Excel criteria parity
-//! rules specified in `docs/compiler/parity.md` Section 5.
+//! (`*IFS`) and pattern-matching lookup functions, conforming to Excel criteria parity rules.
 
 pub use crate::functions::common::WildcardToken;
 use crate::functions::common::{matches_wildcard, parse_wildcard_tokens};

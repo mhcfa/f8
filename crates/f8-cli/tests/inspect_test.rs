@@ -15,7 +15,7 @@ fn setup_financial_model(dir: &std::path::Path) {
         "sheets": [
             {
                 "name": "Financials",
-                "tables": ["tables/assumptions.json", "tables/income_statement.json"]
+                "tables": ["Assumptions", "IncomeStatement"]
             }
         ]
     }"#;

@@ -1,7 +1,6 @@
 //! Pass 5: Spatial layout planning and 2D grid coordinate assignment.
 //!
-//! Arranges tables, gutters, headers, and freeze panes into `LayoutMap`
-//! as documented in `docs/compiler/spatial-layout.md`.
+//! Arranges tables, gutters, headers, and freeze panes into `LayoutMap`.
 
 pub mod a1;
 pub mod error;
@@ -16,7 +15,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
-use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
 use crate::model::format::{FormatPreset, SemanticStyle};
 use crate::model::id::{SheetId, TableId};
@@ -161,7 +159,7 @@ impl LayoutPlanner {
             let assigned = manifest
                 .sheets
                 .iter()
-                .any(|sheet| sheet.tables.iter().any(|p| matches_table_id(p, &table.id)));
+                .any(|sheet| sheet.tables.contains(&table.id));
             if !assigned {
                 return Err(LayoutError::UnassignedTable {
                     table: table.id.clone(),
@@ -179,19 +177,13 @@ impl LayoutPlanner {
 
             // Resolve tables belonging to this sheet in declared order
             let mut sheet_tables = Vec::new();
-            for table_path in &sheet_spec.tables {
-                let matched = tables
-                    .iter()
-                    .find(|t| matches_table_id(table_path, &t.id))
-                    .ok_or_else(|| LayoutError::UnknownTable {
-                        table: TableId::from(
-                            table_path
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or_default(),
-                        ),
+            for table_id in &sheet_spec.tables {
+                let matched = tables.iter().find(|t| t.id == *table_id).ok_or_else(|| {
+                    LayoutError::UnknownTable {
+                        table: table_id.clone(),
                         sheet: sheet_id.clone(),
-                    })?;
+                    }
+                })?;
                 sheet_tables.push(matched);
             }
 

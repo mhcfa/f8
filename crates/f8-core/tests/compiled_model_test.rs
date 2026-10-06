@@ -189,11 +189,59 @@ fn test_scenario_6_table_matrix_inspection() {
         .get(&rev_2024_id)
         .expect("revenue y2024e must exist in table inspection");
     assert!((cell_info.value.as_number().unwrap() - 115.0).abs() < 1e-6);
+    assert_eq!(cell_info.formatted_value.as_deref(), Some("$ 115.0"));
     assert!(cell_info.is_formula);
     assert!(cell_info.excel_formula.is_some());
     assert_eq!(cell_info.format, Some(FormatPreset::Currency));
     assert_eq!(cell_info.decimals, Some(1));
     assert_eq!(cell_info.currency, Some(CurrencyCode::Usd));
+}
+
+#[test]
+fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
+    let (manifest, mut tables) = fixtures::three_statement::build_three_statement_model();
+    if let Some(table) = tables
+        .iter_mut()
+        .find(|t| t.id.as_str() == "IncomeStatement")
+    {
+        table.rows.push(
+            fixtures::RowBuilder::line_item("interest_expense", "Interest Expense")
+                .format(FormatPreset::Currency)
+                .decimals(1)
+                .expr("-50.0")
+                .build(),
+        );
+    }
+    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
+    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+
+    let assumptions_insp = compiled
+        .inspect_table(&TableId::from("Assumptions"))
+        .expect("Assumptions inspection must succeed");
+    let rev_growth_cell = assumptions_insp
+        .cells
+        .get(&CellId::new("Assumptions", "rev_growth", "val"))
+        .expect("rev_growth cell must exist");
+    assert_eq!(rev_growth_cell.formatted_value.as_deref(), Some("15.0%"));
+
+    let is_insp = compiled
+        .inspect_table(&TableId::from("IncomeStatement"))
+        .expect("IncomeStatement inspection must succeed");
+    let rev_cell = is_insp
+        .cells
+        .get(&CellId::new("IncomeStatement", "revenue", "y2023a"))
+        .expect("revenue cell must exist");
+    assert_eq!(rev_cell.formatted_value.as_deref(), Some("$ 100.0"));
+
+    let interest_cell = is_insp
+        .cells
+        .get(&CellId::new(
+            "IncomeStatement",
+            "interest_expense",
+            "y2023a",
+        ))
+        .expect("interest_expense cell must exist");
+    assert_eq!(interest_cell.formatted_value.as_deref(), Some("($ 50.0)"));
 }
 
 #[test]

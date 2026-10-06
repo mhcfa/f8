@@ -11,11 +11,10 @@ use super::error::EmissionError;
 use super::format::{CellFormatKey, FormatCache, parse_hex_color};
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
-use crate::compiler::ir::expand::matches_table_id;
 use crate::compiler::ir::id::CellId;
 use crate::compiler::layout::LayoutMap;
 use crate::compiler::lowering::LoweredFormulaMap;
-use crate::model::id::{SheetId, TableId};
+use crate::model::id::SheetId;
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
@@ -23,6 +22,7 @@ use crate::value::CellValue;
 
 /// Configuration options for OpenXML workbook emission.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EmissionOptions {
     /// When true, emits evaluated values instead of formulas (frozen audit workbook).
     pub values_only: bool,
@@ -169,18 +169,12 @@ impl WorkbookEmitter {
             // font metrics, maintaining natural line height and standard unified row heights.
 
             // 4. Resolve tables belonging to this worksheet in declared order
-            for table_path in &sheet_spec.tables {
-                let table = tables
-                    .iter()
-                    .find(|t| matches_table_id(table_path, &t.id))
-                    .ok_or_else(|| EmissionError::MissingTable {
-                        table: TableId::from(
-                            table_path
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                                .unwrap_or_default(),
-                        ),
-                    })?;
+            for table_id in &sheet_spec.tables {
+                let table = tables.iter().find(|t| t.id == *table_id).ok_or_else(|| {
+                    EmissionError::MissingTable {
+                        table: table_id.clone(),
+                    }
+                })?;
 
                 let placement =
                     layout_map

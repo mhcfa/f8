@@ -1,6 +1,9 @@
-# Model Authoring Guide
+# CLI & JSON Model Authoring Guide
 
-This guide provides an end-to-end walkthrough for authoring declarative financial models in f8. It details the project architecture, directory structure, step-by-step authoring workflow, and verification steps.
+This guide provides an end-to-end walkthrough for authoring declarative financial models in f8 via direct JSON files (`f8.json` + `tables/*.json`) and the Rust command-line interface (`f8-cli`).
+
+> [!NOTE]
+> For programmatic financial modeling in Python using the `f8` package, see the bundled modeling skill at [`python/f8/skills/f8-modeling`](../python/f8/skills/f8-modeling/SKILL.md).
 
 ---
 
@@ -33,10 +36,10 @@ my_model/
 ```
 
 ### Invariants
-- **One table per file**: Table specifications reside in separate JSON files under `tables/` (or relative subdirectories).
-- **No inlining**: Sheets in `f8.json` reference table relative file paths.
-- **Global table ID uniqueness**: Every table `id` must be unique across the entire workbook.
-- **Filename-to-ID correspondence**: The filename stem of each table file must match its declared table `id` (case-insensitively, ignoring hyphens and underscores, e.g. `income_statement.json` matches `IncomeStatement`).
+- **One table per file**: Table specifications reside in separate JSON files under `tables/`.
+- **Logical table references**: Sheets in `f8.json` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`), never filesystem paths.
+- **Global table ID uniqueness**: Every table `id` must be globally unique across the entire workbook.
+- **Decoupled file discovery**: The project loader discovers all `tables/*.json` files and matches tables by declared `id`. Filenames are decoupled from table IDs.
 - **Complete sheet assignment**: Every table specification must be assigned to exactly one sheet in `f8.json`.
 
 ---
@@ -64,7 +67,7 @@ The manifest defines global workbook properties, theme selection, and sheet tab 
       "name": "Summary",
       "tab_color": "#1B365D",
       "tables": [
-        "tables/assumptions.json"
+        "Assumptions"
       ]
     },
     {
@@ -76,7 +79,7 @@ The manifest defines global workbook properties, theme selection, and sheet tab 
       },
       "show_gridlines": true,
       "tables": [
-        "tables/income_statement.json"
+        "IncomeStatement"
       ]
     }
   ]
@@ -284,20 +287,16 @@ Before compiling, verify that your model conforms to these compiler rules:
 
 ## 6. Related Specifications & Reference Documents
 
-- **DSL Specifications**:
+- **Architecture & DSL Specifications**:
+  - [Architecture Overview](./architecture.md): Core philosophy, 2D matrix paradigm, compiler pipeline, and crate topology.
   - [Specification Format & 2D Grid](./dsl/spec-format.md): Declarative JSON schemas, table structure, gutters, and multi-tier headers.
   - [Addressing Syntax](./dsl/addressing.md): Reference coordinates, active tokens, relative offsets, and range slicing.
   - [Formula Grammar](./dsl/grammar.md): Formal EBNF grammar, Pratt precedence, and operator rules.
   - [Semantic Formatting & Themes](./dsl/formatting.md): Format presets, display precision, structural styles, and themes.
   - [Modeling Patterns & Archetypes](./dsl/patterns.md): Canonical patterns (Horizontal Statements, Cap Tables, Corkscrews).
-- **Compiler Internals**:
-  - [Intermediate Representation (IR)](./compiler/ir.md): Cell-level IR and the 2D Specificity Resolution Lattice.
-  - [Dependency Graph](./compiler/dependency-graph.md): Directed cell graph, cycle prevention, and topological sort.
-  - [In-Memory Evaluator](./compiler/evaluator.md): Topological DAG evaluation loop and runtime values.
-  - [Excel Parity](./compiler/parity.md): Precision, coercion mechanics, date arithmetic, and criteria rules.
-  - [Spatial Layout Planning](./compiler/spatial-layout.md): Physical grid assignment and column width arbitration.
-  - [Formula Lowering & Emission](./compiler/lowering-and-emission.md): Excel coordinate lowering and binary `.xlsx` emission.
-- **Functions & Interfaces**:
   - [Standard Function Catalog](./functions/catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
-  - [Function Registry Architecture](./functions/registry.md): `ExcelFunction` trait, parameter contracts, and dispatch.
-  - [Command-Line Interface (CLI)](./interfaces/cli.md): CLI subcommands, workflows, and inspection commands.
+- **Python Financial Modeling Reference**:
+  - [`f8-modeling` Agent Skill](../python/f8/skills/f8-modeling/SKILL.md): Bundled instructions and API reference for Python modeling.
+- **Compiler Subsystem Specifications**:
+  - [Compiler Living Specs](../specs/living-specs/): Detailed technical specifications for compiler passes, evaluation rules, and layout planning.
+

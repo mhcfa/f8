@@ -1,0 +1,53 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "f8"
+version = "0.1.0"
+description = "Financial modeling engine with compiler verification and live Excel formulas"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "maturin>=1.8",
+    "pytest>=8.0",
+    "ruff>=0.9",
+    "pyright>=1.1",
+]
+
+[tool.maturin]
+manifest-path = "crates/f8-python/Cargo.toml"
+python-source = "python"
+module-name = "f8._core"
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "crates/f8-python/Cargo.toml" },
+    { file = "crates/f8-python/src/**/*.rs" },
+    { file = "crates/f8-core/src/**/*.rs" },
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs", "specs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+include = ["python"]
+extraPaths = ["python"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+python_files = ["test_*.py"]

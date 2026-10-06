@@ -6,8 +6,8 @@
       "name": "Trading_Comps",
       "show_gridlines": true,
       "tables": [
-        "tables/comps.json",
-        "tables/target_valuation.json"
+        "Comps",
+        "TargetValuation"
       ]
     }
   ]
