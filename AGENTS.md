@@ -15,7 +15,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 | `crates/f8-python/` | Native C-ABI (PyO3) | Native C-extension (`f8._core`, `abi3-py312`). Deserializes inputs via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.            |
 | `python/f8/`        | High-level SDK (Py) | Fluent modeling DSL (`Model`, `Table`, `Cell`), project disk I/O, auditing facade (`TableAuditor`), synchronized stubs (`.pyi`), `py.typed`, and bundled `f8-modeling` skill. |
 | `python/tests/`     | Test suite (Pytest) | End-to-end integration suite for Python DSL, PyO3 bindings, project I/O, inspection audit, and Excel calculation parity.                                                      |
-| `.agents/skills/`   | Agent workflows     | Git-tracked agent skills and verification routines.                                                                                                                           |
+| `.agents/`          | Agent workflows     | Git-tracked agent skills, subagent prompts, and verification routines.                                                                        |
 | `specs/`            | SDD specifications  | Spec-driven development: SDD guidelines, permanent living specs (`living-specs/`), active RFCs (`drafts/`), and archived milestones (`history/`).                             |
 | `docs/`             | Durable docs        | Product architecture overview, 2D matrix DSL design, and Excel standard function catalog.                                                                                     |
 
@@ -27,6 +27,24 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 - **Root-cause correctness**: Fix defects at parser, IR, or schema origin. Zero downstream band-aids or test overrides.
 - **Strong typing**: Model domain concepts with explicit enums and typed structs. Ban stringly-typed heuristics.
 - **Pragmatic simplicity**: Direct, idiomatic Rust and Python. Ban premature abstractions or speculative generalizations.
+- **Zero silent workarounds**: Never patch around toolchain, compiler, or typing friction with silent workarounds (e.g. hacky `# type: ignore`, lossy `.ok()`, special-case branches, or unverified casts). Surface the root cause and resolve it cleanly; log tooling friction or upstream gaps explicitly.
+
+## Reasoning & judgment
+
+- **Intent over letter**: Identify architectural purpose. Flag when literal compliance defeats intent or violates compiler invariants.
+- **Competing interpretations & tensions**: Surface ambiguity, trade-offs, and compiler vs. performance tensions before executing.
+- **Second-order effects**: Trace downstream consequences across passes before editing.
+- **Calibrated confidence & disconfirmation**: Separate facts from assumptions; actively test edge and boundary invariants.
+- **Precision over hedging**: Nuance ≠ verbosity. Specific technical caveats beat generic disclaimers.
+
+## Spec-driven development & subagent lifecycle
+
+- **Universal scope**: Mandatory for non-trivial features, refactoring, and cross-tier changes (minor bug fixes and quick clarifications exempt). Governed by `specs/sdd-guidelines.md`.
+- **Tri-agent roles**:
+  - **Lead Orchestrator**: Aligns design, authors draft specs, dispatches subagents, reconciles living specs, and archives specs.
+  - **Implementer**: Builds strictly to draft spec contracts and satisfies verification gates.
+  - **Reviewer**: Adversarially audits diff against spec and checklist in report-only mode using `review-implementation` skill.
+- **Truth custody**: Permanent living specs (`specs/living-specs/`) and archives (`specs/history/`) are exclusively owned and updated by the Lead Orchestrator. Subagents never edit living specs directly.
 
 ## Code standards
 
@@ -53,11 +71,11 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 - **GIL & buffers**: Release GIL (`py.allow_threads`) during CPU-bound tasks in PyO3; use `memoryview`/`bytes` buffer protocols.
 - **Predictable defaults**: Ban mutable defaults (`def f(x=[])`). Immutable `@dataclass(frozen=True)` or read-only dicts.
 - **Verification suite**:
-  - `uv run pytest`: Unit and integration test suite.
   - `uv run ruff check .`: Zero warnings (`E`, `F`, `I`, `UP`, `B`, `SIM`).
   - `uv run ruff format --check .`: Code formatting adherence.
-  - `uv run pyright`: Static type checking in strict mode with zero errors/warnings.
   - `uv run maturin develop`: Recompile native extension after Rust binding changes.
+  - `uv run pyright`: Static type checking in strict mode with zero errors/warnings.
+  - `uv run pytest`: Unit and integration test suite.
 
 ## Naming conventions
 

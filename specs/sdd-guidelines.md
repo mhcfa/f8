@@ -7,51 +7,59 @@ Spec-driven development (SDD) decouples ephemeral task execution from durable do
 - **Dual-spec architecture**:
   - **Living specs** (`specs/living-specs/<domain>/`): Permanent single source of truth for runtime behavior, compiler invariants, and capabilities.
   - **Draft specs** (`specs/drafts/`): Ephemeral execution plans defining proposals, technical trade-offs, acceptance criteria, and task checklists.
-- **Autonomous increments**: One draft spec represents one independently verifiable increment. Decompose multi-phase initiatives into sequential specs.
-- **Verification as proof**: Acceptance criteria map 1:1 to executable tests and compiler checks.
+- **Autonomous increments**: One draft spec represents one independently verifiable increment. Decompose multi-phase initiatives or multi-pass compiler changes into sequential draft specs.
+- **Tri-agent division of labor**: Clear separation between orchestration, implementation, and adversarial review.
+- **Truth custody**: Permanent living specs and spec archives are exclusively owned and reconciled by the Lead Orchestrator. Implementer and Reviewer subagents never edit living specs directly.
+- **Verification as proof**: Acceptance criteria map 1:1 to executable tests, compiler checks, and static analysis.
+- **Zero silent workarounds**: Toolchain or compiler friction must be surfaced and resolved at root cause, never patched around silently.
 
 ## Workflow
 
 ```mermaid
 flowchart LR
-    A["1. Explore"] --> B["2. Specify"]
-    B --> C["3. Implement & Verify"]
-    C --> D["4. Reconcile & Archive"]
+    A["1. Explore (Lead)"] --> B["2. Specify (Lead)"]
+    B --> C["3. Implement (Subagent)"]
+    C --> D["4. Verify & Review (Reviewer)"]
+    D --> E["5. Reconcile & Archive (Lead)"]
 ```
 
-### 1. Explore & discover
+### 1. Explore & discover (Lead Orchestrator)
 
 - **Inspect reality**: Ground designs in existing modules, AST/IR models, and living specs under `specs/living-specs/<domain>/`. Ban unverified assumptions.
-- **Evaluate trade-offs**: Surface 2–3 technical options with explicit pros/cons before choosing an approach.
-- **Decompose milestones**: Split multi-pass compiler changes or multi-layer features into sequential draft specs.
+- **Evaluate trade-offs**: Surface 2–3 candidate implementation tiers (e.g. AST vs IR vs Lowering vs Python DSL) with explicit pros/cons and complexity analysis before choosing an approach.
+- **Decompose milestones**: Split multi-pass compiler changes or cross-crate features into sequential, self-contained draft specs.
+- **Align intent**: Align design, invariants, and scope with the user before committing to implementation.
 
-### 2. Specify & design
+### 2. Specify & design (Lead Orchestrator)
 
 - **Instantiate template**: Create `specs/drafts/YYYY-MM-DD-<feature-name>.md` from `specs/templates/draft-spec.md`.
-- **Target destination**: Set `target-living-spec` frontmatter pointing to `specs/living-specs/<domain>/`.
-- **Compact contracts**: Define data structures, AST enums, and trait signatures via markdown tables or type signatures. Ban speculative code dumps.
+- **Target destination**: Set `target-living-spec` frontmatter pointing to corresponding `specs/living-specs/<domain>/` file(s).
+- **Compact contracts**: Define data structures, AST enums, trait signatures, and error types via markdown tables or type signatures. Ban speculative code dumps.
 - **Durable references**: Cite source paths and modules via backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs`). Reserve relative links exclusively for living specs and stable docs.
-- **Acceptance criteria**: Enforce testable behavior using `Given / When / Then` scenarios.
+- **Invariants & non-goals**: Explicitly define compiler invariants preserved and design non-goals.
+- **Acceptance criteria**: Enforce testable behavior using `Given / When / Then` scenarios covering both nominal and error/boundary cases.
 - **Actionable checklist**: Break work into ordered, independently testable tasks.
 
-### 3. Implement & verify
+### 3. Implement (Implementer Subagent)
 
-- **Fulfill criteria**: Build implementation and test coverage against specified scenarios.
-- **Track execution**: Maintain real-time task checklist progress in the draft spec.
-- **Run verification suites**:
-  - **Rust**:
-    - `cargo check`: Syntax and type validation.
-    - `cargo test`: Unit and integration suite.
-    - `cargo clippy --all-targets -- -D warnings`: Strict linting with zero warnings and no unhandled panics.
-    - `cargo fmt --check`: Formatting conformance.
-  - **Python** (SDK or PyO3 changes):
-    - `uv run ruff check .`: Linting (`E`, `F`, `I`, `UP`, `B`, `SIM`).
-    - `uv run ruff format --check .`: Code formatting.
-    - `uv run pyright`: Strict type checking with zero errors/warnings.
-    - `uv run pytest`: Integration and parity test suite.
-    - `uv run maturin develop`: Recompile native extension after Rust binding changes.
+- **Subagent dispatch**: Lead Orchestrator dispatches an isolated Implementer Subagent via `invoke_subagent` (`TypeName: 'self'`, `Workspace: inherit`) using `.agents/prompts/prompt-implementer.md`.
+- **Contract adherence**: Build strictly to draft spec contracts. Zero scope creep or unrequested features.
+- **Progressive checklist tracking**: Update task checklist in draft spec (`specs/drafts/*.md`) progressively (`[ ]` to `[x]`).
+- **Verification gate adherence**: Implementer must verify a 100% clean pass across the full verification suite defined in `AGENTS.md` (Rust suite always; Python suite when touching `crates/f8-python` or `python/`).
+- **Completion receipt**: Implementer returns a structured **Implementation Receipt** (checklist progress, modified files, verification gate pass, diff summary) upon completion.
 
-### 4. Reconcile & archive
+### 4. Verify & Review (Reviewer Subagent)
 
-- **Update living specs**: Sync changes into `specs/living-specs/<domain>/` to reflect current system behavior.
-- **Archive draft**: Move completed spec from `specs/drafts/` to `specs/history/`.
+- **Reviewer dispatch**: Lead Orchestrator dispatches an adversarial Reviewer Subagent in a fresh context via `invoke_subagent` (`TypeName: 'self'`, `Workspace: inherit`) using `.agents/prompts/prompt-reviewer.md`.
+- **Report-only invariant**: Reviewer executes `review-implementation` skill in report-only mode. Zero edits to tracked files, living specs, draft specs, or git state.
+- **Adversarial probing**: Run edge-case probes in isolated scratchpad outside working tree (zero/empty matrices, topological cycles, type boundaries).
+- **Checklist audit**: Verify changes against `.agents/skills/review-implementation/references/checklist.md`.
+- **Verdict triage**:
+  - `Changes required`: Any `Blocker` or `Major` finding. Lead Orchestrator re-dispatches Implementer Subagent with findings table and coordinates. Loop repeats until clean.
+  - `Approve with flags`: Blocker- and Major-free; one or more architectural `Flag` items surfaced for user alignment.
+  - `Approve`: Clean review. Proceed to Reconcile & Archive.
+
+### 5. Reconcile & archive (Lead Orchestrator)
+
+- **Update living specs**: Lead Orchestrator reconciles permanent system behavior and compiler invariants in `specs/living-specs/<domain>/`.
+- **Archive draft**: Update draft spec `status: completed` and move file from `specs/drafts/` to `specs/history/`.

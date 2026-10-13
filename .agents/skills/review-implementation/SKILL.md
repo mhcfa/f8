@@ -1,101 +1,142 @@
 ---
 name: review-implementation
 description: >-
-  Review code changes, refactors, and feature implementations for greenfield rigor,
-  clean architecture, modularity, single source of truth, zero dead code or legacy shims,
-  and Rust 2024 & Python quality standards. Use when asked to review an implementation, audit a refactor,
-  or inspect code quality.
+  Report-only implementation review for the f8 compiler, runtime, and language workspace.
+  Verification gate, spec conformance, greenfield rigor, single source of truth,
+  Rust 2024 & Python standards, adversarial probing, and decisive verdicts.
+  Use after implementation, before living spec reconciliation and archive.
 ---
 
 # Implementation Review Workflow
 
-Use this skill to conduct rigorous, objective code reviews for implementations, refactors, and feature increments in this greenfield codebase.
+Use this skill to conduct rigorous, objective, report-only code reviews for implementations, refactors, and feature increments in the `f8` codebase.
 
 ---
 
-## Core Review Pillars
+## Core Philosophy
 
-1. **Greenfield minimalism**: Zero tolerance for dead code, backward-compatibility shims, deprecated aliases, or half-baked stubs.
-2. **Single source of truth (SSOT)**: Domain models, identifiers, invariants, and error definitions must have exactly one authoritative source.
-3. **Spec-driven alignment**: Implementation must adhere to active draft specs (`specs/drafts/`) and preserve living spec contracts (`specs/living-specs/`).
-4. **Language robustness (Rust 2024 & Python)**: Strict error propagation, zero unhandled panics, 100% strict typing, deterministic collections, and allocation efficiency.
-5. **Root-cause correctness**: Zero tolerance for tactical hacks, symptom-patching workarounds, or string-based semantic guessing.
+- **Report-only**: Read, run, probe. Zero edits to tracked files, `specs/living-specs/`, `specs/drafts/`, or git state. All remediation flows back through the Lead Orchestrator.
+- **Independent context**: Executed in a fresh Reviewer Subagent context (or standalone review). Free from author confirmation bias; judge work strictly against specs and repository standards.
+- **Evidence-bound**: Every finding cites `file:line`, concrete evidence (code excerpt, test output, or probe result), and a suggested fix. No location, no finding.
+- **Root-cause correctness**: Reject downstream band-aids, temporary shims, silent workarounds, or test-specific hacks.
+- **Decisive verdicts**: Clear classification (`Changes required`, `Approve with flags`, `Approve`) based on explicit severity criteria.
 
 ---
 
-## Step-by-Step Review Procedure
+## Workflow
 
-### Step 1: Context and Spec Alignment
+Context -> Verification Gate -> Spec Conformance -> Checklist Pass -> Adversarial Probes -> Report
 
-1. Inspect git status and changed files:
-   - Identify newly added, modified, and removed files.
-2. Locate the corresponding draft or living spec:
-   - Draft specs: `specs/drafts/YYYY-MM-DD-<feature>.md`
-   - Living specs: `specs/living-specs/<domain>/<topic>.md`
-3. Verify contract coverage:
-   - Confirm all acceptance criteria (`Given / When / Then`) from the spec are implemented.
-   - Confirm no out-of-scope features were smuggled into the implementation.
+### 1. Context & Diff
 
-### Step 2: Greenfield Purge Audit
+- **Truth & specs**: Read target draft spec in `specs/drafts/` and referenced living specs in `specs/living-specs/<domain>/`.
+- **Standards**: Re-read `AGENTS.md`.
+- **Diff inspection**:
+  - `git status --porcelain -uall`
+  - `git diff <base>` (base vs. working tree, including uncommitted changes)
+  - `git log --oneline <base>..HEAD`
+  - Cross-check actual changed files against spec `Impacted components` / `Affected files`.
 
-Because this is a greenfield codebase with no legacy production callers, enforce clean breaks:
+### 2. Verification Gate
 
-- **No compatibility shims**: Reject `#[deprecated]` attributes, legacy re-exports, alias types, or transition wrappers. Callers must be updated in-place across the repository.
-- **No dead code or tombstones**: Remove commented-out code, unused functions, obsolete trait methods, abandoned match arms, and unused imports.
-- **No speculative code (YAGNI)**: Flag premature trait abstractions, unused generics, or configuration options with only one concrete usage.
-- **No placeholder stubs**: Eliminate `todo!()`, `unimplemented!()`, or empty placeholder structs/functions left behind.
-- **No hacks or workarounds**: Reject downstream band-aids that patch symptoms instead of root causes. Reject special-cased branches, hardcoded magic values, or test-specific overrides designed merely to make a test pass.
+- **Rust verification**:
+  - `cargo check`
+  - `cargo test`
+  - `cargo clippy --all-targets -- -D warnings`
+  - `cargo fmt --check`
+- **Python verification** (when touching `crates/f8-python` or `python/`):
+  - `uv run ruff check .`
+  - `uv run ruff format --check .`
+  - `uv run maturin develop` (if native extension bindings changed)
+  - `uv run pyright`
+  - `uv run pytest`
+- **Gate rule**: Any failure is a `Blocker` resulting in verdict `Changes required`. Continue review to report all findings.
 
-### Step 3: Architecture, Modularity, and SSOT
+### 3. Spec Conformance
 
-- **Single source of truth**:
-  - Verify no duplicated data structures or logic across compiler phases (e.g., AST vs IR vs Table models).
-  - Verify centralized identifier and error definitions rather than parallel redefinitions.
-- **Clean phase boundaries**:
-  - Ensure compiler phases remain cleanly decoupled (e.g., Parser -> AST -> Lowering -> IR -> Graph -> Layout -> Emission / Eval).
-  - Prevent higher-level domain knowledge from leaking into lower-level primitives.
-- **Local reasoning and explicit data flow**:
-  - Keep functions focused on a single responsibility.
-  - Prefer pure functions with explicit inputs and outputs over shared or hidden mutable state.
-  - Verify use of immutable `let` bindings by default; allow `let mut` only when mutation is strictly required.
-- **Strong typing over string heuristics**:
-  - Reject string guessing and ad-hoc matching (e.g., `starts_with`, `ends_with`, regex, substring inspection, or splitting formatted strings) to infer semantics, types, or roles.
-  - Require explicit enum variants, interned symbol IDs, or dedicated AST/IR node fields.
-  - Prevent round-trip string serialization (e.g., converting to string just to inspect or compare values) when typed representations exist.
+- **Criteria mapping**: Map each acceptance criterion from the spec to implementing code and covering tests.
+- **Test quality**: Verify tests assert behavioral outcomes and fail if implementation logic is broken or reverted.
+- **Boundary audit**: Flag missing tests for specified criteria (`Major`); flag unspecified behavior or scope creep (`Major`); flag unticked tasks in draft spec (`Minor`).
 
-### Step 4: Language Robustness & Code Quality
+### 4. Checklist Pass
 
-- **Rust operational robustness**:
-  - **Zero production panics**: Ensure zero calls to `.unwrap()` or `.expect()` in non-test code (`clippy::unwrap_used` and `clippy::expect_used`). Verify index operations do not risk out-of-bounds panics; prefer `.get()` or pattern matching.
-  - **Structured error handling**: Verify errors use `thiserror` and bubble up cleanly with `?`. Avoid stringly-typed error messages or discarding error context with `.ok()`.
-  - **Deterministic ordering**: Ensure `IndexMap` and `IndexSet` are used instead of `HashMap` and `HashSet` wherever iteration order or output determinism matters.
-  - **Allocation efficiency**: Prefer borrowed references (`&str`, `&[T]`) or `Cow` over unneeded `.clone()`, `.to_vec()`, or `.to_string()`.
-  - **Guard clauses**: Ensure early returns and guard clauses are used to prevent deeply nested `if/else` ladders.
-- **Python operational robustness** (when touching Python SDK or PyO3):
-  - **100% strict type annotations**: Verify all functions, methods, test suites, and fixtures have complete type hints, including explicit return types (`-> None`). Reject untyped functions, bare `Any` escapes, or unjustified `# type: ignore` comments. Require explicit `TypedDict` contracts for dictionary/JSON-shaped inputs and inspection results rather than untyped `dict[str, Any]`.
-  - **Native stub parity**: Ensure PyO3 bindings in `crates/f8-python` have corresponding updated definitions in `python/f8/_core.pyi` with `TypedDict` contracts and typed exception signatures, and ensure the package retains `python/f8/py.typed`.
-  - **Zero bare exceptions**: Ensure no bare `except:` or catch-all `except Exception:` swallows errors. Verify exceptions inherit from `F8Error` and carry structured diagnostic attributes (e.g., `coordinate`, `cycle`, `table`) instead of requiring string parsing.
-  - **Predictable data flow & immutability**: Verify no mutable default arguments (`def f(x=[])`); prefer immutable models (`@dataclass(frozen=True)`) or pure functions without hidden global state.
-  - **Native efficiency & GIL release**: Verify CPU-bound operations in native bindings release the Python GIL (`py.allow_threads`) and use zero-copy buffer protocols (`bytes`, `memoryview`).
+- **Load**: `.agents/skills/review-implementation/references/checklist.md`.
+- **Evaluate**: Apply every relevant category (Compiler Invariants, Greenfield Rigor, Rust Standards, Python Standards). Record skipped categories with justification.
 
-### Step 5: Automated Verification Suite
+### 5. Adversarial Probes
 
-Run the project verification commands and verify clean passes:
+- **Location**: Agent scratch directory outside repository working tree (e.g. `<appDataDir>/brain/<conversation-id>/scratch/`). Never commit probe scripts into repository.
+- **Target failure points**:
+  - Zero-dimension ranges, empty coordinate matrices, single-cell tables.
+  - Circular dependency chains and topological cycle detection.
+  - Multi-tier column header spanning and misalignment.
+  - PyO3 boundary type mismatches, null values, and GIL release during CPU-bound tasks.
+  - Formatted value cache coherence after formula re-evaluation.
 
-#### Rust Verification
-```bash
-cargo check
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
+### 6. Report Delivery
+
+- Deliver in-conversation following the Report Schema. Write no permanent review file into git tree.
+
+---
+
+## Severity Classifications
+
+| Severity | Definition | Blocks Approval |
+| :--- | :--- | :--- |
+| `Blocker` | Soundness defect, production panic (`unwrap`/`expect`), compiler invariant breach, phase boundary violation, memory safety/GIL defect, stub desynchronization, silent workaround, or verification gate failure. | Yes |
+| `Major` | Acceptance criterion untested or unmet, scope creep, silent error handling / swallowed error context, typing escape hatch (`Any`, unjustified ignore), or stringly-typed semantics. | Yes |
+| `Minor` | Dead code, commented-out code, unused imports, duplication, docs drift, style deviation, unneeded memory cloning. | No |
+| `Nit` | Optional polish, minor phrasing in comments. | No |
+| `Flag` | Architectural observation or trade-off requiring Lead Orchestrator or user decision. | No |
+
+---
+
+## Verdicts
+
+- **`Changes required`**: Any `Blocker` or `Major` finding. Lead Orchestrator will re-dispatch Implementer Subagent with findings table and remediation steps.
+- **`Approve with flags`**: Zero `Blocker` and zero `Major` findings; one or more `Flag` items surfaced for user attention.
+- **`Approve`**: Clean review meeting all standards. Proceed to living spec reconciliation and archive.
+
+---
+
+## Report Schema
+
+```markdown
+# Implementation Review Report: <Spec Title>
+
+## Verdict: `<Changes required | Approve with flags | Approve>`
+<One-line rationale for the verdict.>
+
+## Verification gate
+
+| Command | Status | Details |
+| :--- | :--- | :--- |
+| `cargo check` | Pass/Fail | <details> |
+| `cargo test` | Pass/Fail | <counts> |
+| `cargo clippy --all-targets -- -D warnings` | Pass/Fail | <warnings> |
+| `cargo fmt --check` | Pass/Fail | <status> |
+| `uv run ruff check .` | Pass/Fail/Skipped | <counts> |
+| `uv run ruff format --check .` | Pass/Fail/Skipped | <status> |
+| `uv run maturin develop` | Pass/Fail/Skipped | <status> |
+| `uv run pyright` | Pass/Fail/Skipped | <counts> |
+| `uv run pytest` | Pass/Fail/Skipped | <counts> |
+
+## Spec conformance
+
+| Acceptance criterion | Implementation | Test | Status |
+| :--- | :--- | :--- | :--- |
+| <Scenario 1> | `<file:line>` | `<test_file:line>` | `met` |
+| <Scenario 2> | `<file:line>` | `<test_file:line>` | `untested` |
+
+## Findings
+
+| ID | Severity | Category | Location | Evidence | Fix | Confidence |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| R1 | `Blocker` | Compiler Invariants | `<file:line>` | `<evidence>` | `<fix>` | `high` |
+| R2 | `Major` | Python Standards | `<file:line>` | `<evidence>` | `<fix>` | `high` |
+
+## Coverage
+
+- **Reviewed categories**: <list of checklist categories evaluated>
+- **Skipped categories**: <list of skipped categories with rationale>
 ```
-
-#### Python Verification (when changes touch Python SDK or PyO3 bindings)
-```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run pyright
-uv run pytest
-```
-
-All commands must complete with zero errors, zero warnings, and zero unhandled panics or type errors.
