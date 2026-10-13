@@ -442,8 +442,8 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let col_b_width = *sheet.col_widths.get(&1).unwrap();
     let col_c_width = *sheet.col_widths.get(&2).unwrap();
 
-    // Col B (descriptor) must be wide enough for the long label (58 chars * 1.15 + 2.0 = ~68.7)
-    assert!(col_b_width > 60.0);
+    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 1.0 = 58.0)
+    assert_eq!(col_b_width, 58.0);
 
     // Col C (measure) must be at least min_col_width (12.0)
     assert!(col_c_width >= theme.metrics.min_col_width);

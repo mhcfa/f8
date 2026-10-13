@@ -238,8 +238,8 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "gutter_row_height": 9.0,
     "gutter_col_width": 3.0,
     "title_gutter_row_height": 8.0,
-    "char_width_multiplier": 1.15,
-    "col_padding": 2.0,
+    "char_width_multiplier": 1.0,
+    "col_padding": 1.0,
     "min_col_width": 12.0
   },
   "palette": {
@@ -282,7 +282,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
   "number_formats": {
     "currency": "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)",
     "number": "#,##0{dec}_);(#,##0{dec});\"-\"_)",
-    "percentage": "0{dec}%",
+    "percentage": "0{dec}%_);(0{dec}%);\"-\"_)",
     "multiple": "0{dec}\"x\"",
     "basis_points": "#,##0{dec}\" bps\"",
     "date": "yyyy-mm-dd",

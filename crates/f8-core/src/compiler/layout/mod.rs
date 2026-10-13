@@ -575,9 +575,9 @@ fn formatted_number_estimate(n: f64, format: Option<FormatPreset>) -> usize {
             }
         }
         Some(FormatPreset::Percentage) => {
-            base_len += 3; // ".0%"
+            base_len += 4; // ".0%" + trailing space "_)"
             if is_negative {
-                base_len += 1; // "-"
+                base_len += 1; // "()" wraps digits, 1 extra net char vs trailing space
             }
         }
         Some(FormatPreset::Multiple) => {

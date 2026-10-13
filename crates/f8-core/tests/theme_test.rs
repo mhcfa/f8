@@ -64,7 +64,7 @@ fn test_scenario_2_dynamic_dec_and_sym_expansion_zero_decimals() {
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, Some(0), None)
         .expect("percentage format resolution failed");
-    assert_eq!(pct_mask, "0%");
+    assert_eq!(pct_mask, "0%_);(0%);\"-\"_)");
 
     // Multiple with zero decimals
     let mult_mask = theme
@@ -99,7 +99,7 @@ fn test_scenario_3_dynamic_dec_and_sym_expansion_positive_decimals_and_currency(
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, Some(1), None)
         .expect("percentage resolution failed");
-    assert_eq!(pct_mask, "0.0%");
+    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_)");
 
     // Number: 4 decimals
     let num_mask = theme
@@ -122,7 +122,7 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, None, None)
         .expect("default percentage resolution failed");
-    assert_eq!(pct_mask, "0.0%");
+    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_)");
 
     // Multiple default: 1 decimal
     let mult_mask = theme

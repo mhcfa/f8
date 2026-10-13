@@ -74,8 +74,8 @@ impl Default for MetricsConfig {
             gutter_row_height: 9.0,
             gutter_col_width: 3.0,
             title_gutter_row_height: 8.0,
-            char_width_multiplier: 1.15,
-            col_padding: 2.0,
+            char_width_multiplier: 1.0,
+            col_padding: 1.0,
             min_col_width: 12.0,
         }
     }
@@ -180,7 +180,7 @@ impl Default for NumberFormatsConfig {
         Self {
             currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)".to_string(),
             number: "#,##0{dec}_);(#,##0{dec});\"-\"_)".to_string(),
-            percentage: "0{dec}%".to_string(),
+            percentage: "0{dec}%_);(0{dec}%);\"-\"_)".to_string(),
             multiple: "0{dec}\"x\"".to_string(),
             basis_points: "#,##0{dec}\" bps\"".to_string(),
             date: "yyyy-mm-dd".to_string(),
