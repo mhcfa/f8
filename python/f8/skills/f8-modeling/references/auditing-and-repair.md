@@ -14,17 +14,20 @@ compiled = model.compile()
 
 ### Inspection Methods and Properties
 
-| Method | Return type | Description |
-| :--- | :--- | :--- |
-| `compiled.summary()` | `ModelSummary` | Total counts for sheets, tables, cells, drivers, formulas, and per-sheet breakdowns |
-| `compiled.table(table_id)` | `TableAuditor` | Interactive 2D table auditor wrapper for tabular auditing and export |
-| `compiled.inspect_cell(target, row=None, col=None)` | `CellInspection` | Full cell metadata, evaluated value, physical address, and direct neighbors |
-| `compiled.inspect_table(table_id)` | `TableInspection` | Raw 2D table inspection dictionary |
-| `compiled.inspect_sheet(sheet_id)` | `SheetInspection` | Worksheet physical bounding box, column widths, and cell layout |
-| `compiled.precedents_of(target, row=None, col=None, recursive=False)` | `DependencyTree` | Inbound dependency calculation tree (direct or recursive) |
-| `compiled.dependents_of(target, row=None, col=None, recursive=False)` | `DependencyTree` | Outbound blast-radius calculation tree (direct or recursive) |
-| `compiled.save(path, options=None)` | `None` | Serializes model to `.xlsx` OpenXML workbook on disk |
-| `compiled.emit_workbook(options=None)` | `bytes` | Emits raw in-memory OpenXML workbook binary buffer |
+| Method                                                                | Return type       | Description                                                                               |
+| :-------------------------------------------------------------------- | :---------------- | :---------------------------------------------------------------------------------------- |
+| `compiled.summary()`                                                  | `ModelSummary`    | Total counts for sheets, tables, cells, drivers, formulas, and per-sheet breakdowns       |
+| `compiled.table(table_id)`                                            | `TableAuditor`    | Interactive 2D table auditor wrapper for tabular auditing and export                      |
+| `compiled.value(target, row=None, col=None)`                          | `CellScalarValue` | Fast-path unboxed scalar value (`float`, `str`, `bool`, `None`, or Excel error string)    |
+| `compiled.num(target, row=None, col=None)`                            | `float`           | Fast-path evaluated numeric `float` value (raises `TypeError` if non-numeric/empty/error) |
+| `compiled.formatted(target, row=None, col=None, *, unit="")`          | `str`             | Fast-path formatted display string with optional unit suffix spliced inside `)`           |
+| `compiled.inspect_cell(target, row=None, col=None)`                   | `CellInspection`  | Full cell metadata, evaluated value, physical address, and direct neighbors               |
+| `compiled.inspect_table(table_id)`                                    | `TableInspection` | Raw 2D table inspection dictionary                                                        |
+| `compiled.inspect_sheet(sheet_id)`                                    | `SheetInspection` | Worksheet physical bounding box, column widths, and cell layout                           |
+| `compiled.precedents_of(target, row=None, col=None, recursive=False)` | `DependencyTree`  | Inbound dependency calculation tree (direct or recursive)                                 |
+| `compiled.dependents_of(target, row=None, col=None, recursive=False)` | `DependencyTree`  | Outbound blast-radius calculation tree (direct or recursive)                              |
+| `compiled.save(path, options=None)`                                   | `None`            | Serializes model to `.xlsx` OpenXML workbook on disk                                      |
+| `compiled.emit_workbook(options=None)`                                | `bytes`           | Emits raw in-memory OpenXML workbook binary buffer                                        |
 
 ### Coordinate Addressing in Inspection APIs
 
@@ -32,10 +35,14 @@ Accepts either a single canonical coordinate string or discrete positional argum
 
 ```python
 # 1-argument canonical coordinate syntax
+rev = compiled.num('Operations["revenue", "2024E"]')
+rev_str = compiled.formatted('Operations["revenue", "2024E"]', unit="M")
 cell = compiled.inspect_cell('Operations["revenue", "2024E"]')
 tree = compiled.precedents_of('Operations["ebitda", "2024E"]', recursive=True)
 
 # 3-argument positional syntax
+rev = compiled.num("Operations", "revenue", "2024E")
+rev_str = compiled.formatted("Operations", "revenue", "2024E", unit="M")
 cell = compiled.inspect_cell("Operations", "revenue", "2024E")
 tree = compiled.precedents_of("Operations", "ebitda", "2024E", recursive=True)
 ```
@@ -55,7 +62,7 @@ Contracts defined in `f8.types`:
   - `sheet`: Parent worksheet identifier.
   - `physical_address`: Canonical worksheet address (e.g. `"Financials!C14"`).
   - `evaluated_value`: Evaluated runtime value dictionary (`CellValueDict`).
-  - `formatted_value`: Formatted display string with accounting typography (e.g. `"$ 115.0"`).
+  - `formatted_value`: Formatted display string with accounting typography (e.g. `"$115.0"`).
   - `format`, `decimals`, `currency`: Typography preset and precision metadata.
   - `is_highlight`: Visual fill emphasis flag.
   - `indent`: Descriptor indentation depth integer.
@@ -73,8 +80,8 @@ Contracts defined in `f8.types`:
 - **`TableInspection`**: 2D table grid metadata:
   - `table_id`, `title`, `subtitle`: Table identifiers and display headers.
   - `sheet`: Parent worksheet identifier.
-  - `columns`: List of `ColumnInspection` records (`id`, `headers`, `is_gutter`, `is_descriptor`).
-  - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`).
+  - `columns`: List of `ColumnInspection` records (`id`, `headers`, `is_gutter`, `is_descriptor`, `style`).
+  - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`, `style`).
   - `cells`: Dictionary keyed by canonical coordinate string (`'Table["row", "col"]'`) mapping to `TableCellInfo`.
 - **`SheetInspection`**: Physical worksheet grid layout:
   - `sheet_id`, `title`: Worksheet identifiers.
@@ -86,6 +93,7 @@ Contracts defined in `f8.types`:
 ### Workbook Emission Options
 
 `compiled.save()` and `compiled.emit_workbook()` accept optional `EmissionOptions`:
+
 - `values_only: bool`: Emits calculated static values without underlying formulas.
 - `omit_formula_cache: bool`: Omits formula cached values, forcing Excel recalculation upon opening.
 - `title: str`, `author: str`: Document metadata properties embedded in OpenXML package.
@@ -96,7 +104,7 @@ Contracts defined in `f8.types`:
 
 ## 2. Interactive Auditing with TableAuditor
 
-`TableAuditor` provides 2D coordinate lookups, dimension metadata, and formatted cell access for a specific table:
+`TableAuditor` provides 2D coordinate lookups, dimension metadata, 1D row series extraction, and formatted cell access for a specific table:
 
 ```python
 auditor = compiled.table("Operations")
@@ -104,28 +112,34 @@ auditor = compiled.table("Operations")
 
 ### Inspection Members and Properties
 
-| Member | Return type | Description |
-| :--- | :--- | :--- |
-| `auditor.id` | `str` | Unique table identifier |
-| `auditor.title` | `str` | Table display title |
-| `auditor.subtitle` | `str \| None` | Optional table subtitle or units label |
-| `auditor.sheet` | `str` | Parent worksheet identifier |
-| `auditor.shape` | `tuple[int, int]` | Dimensions `(row_count, col_count)` of non-gutter, non-section data grid |
-| `auditor.rows` | `list[str]` | Non-gutter, non-section data row IDs in layout order |
-| `auditor.columns` | `list[str]` | Non-gutter column IDs in layout order |
-| `len(auditor)` | `int` | Number of calculable data rows (`len(auditor.rows)`) |
-| `auditor[row, col]` | `CellScalarValue` | 2D coordinate bracket indexing returning unboxed scalar value |
-| `auditor.value(row, col)` | `CellScalarValue` | Evaluated scalar value (`float`, `int`, `str`, `bool`, or `None`) |
-| `auditor.formula(row, col)` | `str \| None` | Lowered physical Excel formula (e.g. `"=C5*0.2"`), or `None` if driver |
-| `auditor.expr(row, col)` | `str \| None` | High-level `f8` vector expression, or `None` if driver |
-| `auditor.address(row, col)` | `str` | Physical Excel cell address (e.g. `"C6"`) |
-| `auditor.cell(row, col)` | `TableCellInfo` | Raw cell metadata dictionary (raises `KeyError` if absent) |
+| Member                                    | Return type             | Description                                                                     |
+| :---------------------------------------- | :---------------------- | :------------------------------------------------------------------------------ |
+| `auditor.id`                              | `str`                   | Unique table identifier                                                         |
+| `auditor.title`                           | `str`                   | Table display title                                                             |
+| `auditor.subtitle`                        | `str \| None`           | Optional table subtitle or units label                                          |
+| `auditor.sheet`                           | `str`                   | Parent worksheet identifier                                                     |
+| `auditor.shape`                           | `tuple[int, int]`       | Dimensions `(row_count, col_count)` of non-gutter, non-section data grid        |
+| `auditor.rows`                            | `list[str]`             | Non-gutter, non-section data row IDs in layout order                            |
+| `auditor.columns`                         | `list[str]`             | Non-gutter column IDs in layout order                                           |
+| `auditor.measure_columns`                 | `list[str]`             | Non-gutter, non-descriptor measure column IDs in layout order                   |
+| `len(auditor)`                            | `int`                   | Number of calculable data rows (`len(auditor.rows)`)                            |
+| `auditor[row, col]`                       | `CellScalarValue`       | 2D coordinate bracket indexing returning unboxed scalar value                   |
+| `auditor.value(row, col)`                 | `CellScalarValue`       | Evaluated scalar value (`float`, `int`, `str`, `bool`, or `None`)               |
+| `auditor.num(row, col)`                   | `float`                 | Evaluated numeric `float` value (raises `TypeError` if non-numeric/empty/error) |
+| `auditor.formatted(row, col, *, unit="")` | `str`                   | Pre-formatted display string with optional unit suffix spliced inside `)`       |
+| `auditor.row_values(row, cols=None)`      | `list[CellScalarValue]` | 1D list of scalar values across `measure_columns` (or specified `cols`)         |
+| `auditor.row_nums(row, cols=None)`        | `list[float]`           | 1D list of `float` values across `measure_columns` (or specified `cols`)        |
+| `auditor.formula(row, col)`               | `str \| None`           | Lowered physical Excel formula (e.g. `"=C5*0.2"`), or `None` if driver          |
+| `auditor.expr(row, col)`                  | `str \| None`           | High-level `f8` vector expression, or `None` if driver                          |
+| `auditor.address(row, col)`               | `str`                   | Physical Excel cell address (e.g. `"C6"`)                                       |
+| `auditor.cell(row, col)`                  | `TableCellInfo`         | Raw cell metadata dictionary (raises `KeyError` if absent)                      |
 
 ### TableCellInfo Schema
 
 Returned by `auditor.cell(row, col)` and `compiled.inspect_table(table_id)["cells"]`:
+
 - `value`: Evaluated serde value payload (`CellValueDict`).
-- `formatted_value`: Formatted display string with accounting typography (e.g. `"$ 115.0"`), or `None`.
+- `formatted_value`: Formatted display string with accounting typography (e.g. `"$115.0"`), or `None`.
 - `is_formula`: `True` if formula-calculated, `False` if literal driver.
 - `formula_expr`: High-level vector DSL expression string, or `None`.
 - `excel_formula`: Lowered physical Excel formula string (e.g. `"=C5*1.15"`), or `None`.
@@ -137,13 +151,14 @@ Returned by `auditor.cell(row, col)` and `compiled.inspect_table(table_id)["cell
 
 ### Coordinate Lookup Error Semantics
 
-- **Absent coordinate (`KeyError`)**: Calling `auditor.cell(row, col)`, `auditor.value(row, col)`, or `auditor[row, col]` with non-existent row or column IDs raises `KeyError`.
+- **Absent coordinate (`KeyError`)**: Calling `auditor.cell(row, col)`, `auditor.value(row, col)`, `auditor.num(row, col)`, `auditor.formatted(row, col)`, `auditor.row_values(row, cols)`, `auditor.row_nums(row, cols)`, `auditor.to_markdown(rows=..., cols=...)`, or `auditor[row, col]` with non-existent row or column IDs raises `KeyError`.
+- **Non-numeric value (`TypeError`)**: Calling `compiled.num(...)`, `auditor.num(row, col)`, or `auditor.row_nums(row, cols)` on a cell that evaluated to text, boolean, `None` (empty), or an Excel error raises `TypeError`.
 - **Invalid index key (`TypeError`)**: Bracket indexing `auditor[key]` expects a 2-tuple `(row, col)`. Passing non-tuple or non-string elements raises `TypeError`.
 - **Unassigned cell (`None`)**: A calculable coordinate declared within table bounds but unassigned evaluates to `None`.
 
 ### Cell Value Unboxing and Error Codes
 
-Values unbox into standard Python scalars (`float`, `int`, `str`, `bool`, `None`). When inspecting raw cell dictionaries, `unbox_cell_value` unboxes the underlying serde payload:
+Values unbox into standard Python scalars (`float`, `int`, `str`, `bool`, `None`). Prefer `compiled.value(...)`, `compiled.num(...)`, `auditor.value(...)`, or `auditor.num(...)` for direct scalar reads. When inspecting raw cell dictionaries, `unbox_cell_value` unboxes the underlying serde payload:
 
 ```python
 from f8 import unbox_cell_value
@@ -158,6 +173,7 @@ val2 = unbox_cell_value(table_cell["value"])
 ```
 
 Calculation failures map to standard Excel error strings:
+
 - `#DIV/0!`: Division by zero.
 - `#VALUE!`: Type coercion failure or dimension mismatch.
 - `#REF!`: Out-of-bounds coordinate reference.
@@ -171,20 +187,30 @@ Calculation failures map to standard Excel error strings:
 
 ### Visual Markdown Table
 
-Renders aligned GitHub-Flavored Markdown tables with accounting typography:
+Renders aligned GitHub-Flavored Markdown tables (`MarkdownTable`, a `str` subclass implementing `_repr_markdown_()`) with accounting typography:
 
 ```python
-markdown_str = auditor.to_markdown(view="values")
+markdown_str = auditor.to_markdown(
+    view="values",
+    rows=None,
+    cols=None,
+    include_section_headers=None,
+    show_ids=False,
+)
 ```
 
-| View mode | Content rendered in data cells |
-| :--- | :--- |
-| `"values"` (default) | Formatted values with accounting typography and currency symbols |
-| `"formulas"` | Lowered physical Excel formulas (e.g. `"=C5*1.15"`) or literal values |
-| `"expr"` | Raw declarative `f8` DSL expressions or literal values |
-| `"addresses"` | Physical worksheet cell coordinates (e.g. `"D7"`) |
+| View mode            | Content rendered in data cells                                                                   |
+| :------------------- | :----------------------------------------------------------------------------------------------- |
+| `"values"` (default) | Formatted values with accounting typography, currency symbols, and `"—"` for empty measure cells |
+| `"formulas"`         | Lowered physical Excel formulas (e.g. `"=C5*1.15"`) or literal values                            |
+| `"expr"`             | Raw declarative `f8` DSL expressions or literal values                                           |
+| `"addresses"`        | Physical worksheet cell coordinates (e.g. `"D7"`)                                                |
 
-Renders stacked multi-tier headers, left-aligns descriptor columns, right-aligns measure data columns, formats bold section header divider rows, and applies descriptor indentation. If a descriptor cell label differs from its `row_id`, renders `"{label} [{row_id}]"`. Unrecognized `view` raises `ValueError`.
+- **Single-row GFM headers**: Multi-tier column headers are flattened into a single valid GFM header row joined with `": "` (e.g. `"Historical Actuals: 2023A"`).
+- **Row and column subsetting**: Pass `rows=[...]` and/or `cols=[...]` to render a focused slice. Descriptor columns are automatically retained alongside `cols`. When `rows` is specified, section headers are omitted by default unless `include_section_headers=True`.
+- **Summary row bolding**: Rows with `style="subtotal"` or `style="total"` automatically bold all non-empty cells (`**...**`).
+- **Coordinate ID suffixes (`show_ids`)**: Defaults to `False` for clean report publishing. Set `show_ids=True` during debugging to append `[{col_id}]` and `[{row_id}]` when display text differs from coordinate IDs.
+- **IPython / Quarto display**: Both `TableAuditor` and `MarkdownTable` implement `_repr_markdown_()` for direct rendering in Jupyter and Quarto without `Markdown(...)` wrappers. Unrecognized `view` raises `ValueError`.
 
 ### Tabular Dictionary Export and DataFrame Ingestion
 
@@ -194,12 +220,12 @@ Exports rectangular matrices mapping unassigned cells to `None`:
 data = auditor.to_dict(orient="records")
 ```
 
-| Orientation | Return type | Structure description |
-| :--- | :--- | :--- |
-| `"records"` (default) | `list[dict[str, CellScalarValue]]` | List of row dictionaries keyed by column ID |
-| `"dict"` | `dict[str, list[CellScalarValue]]` | Column dictionary keyed by column ID with row-ordered value lists |
-| `"index"` | `dict[str, dict[str, CellScalarValue]]` | Row dictionary keyed by row ID containing column-value mappings |
-| `"split"` | `SplitDict` | Dictionary containing `columns`, `index` row IDs, and 2D `data` matrix |
+| Orientation           | Return type                             | Structure description                                                  |
+| :-------------------- | :-------------------------------------- | :--------------------------------------------------------------------- |
+| `"records"` (default) | `list[dict[str, CellScalarValue]]`      | List of row dictionaries keyed by column ID                            |
+| `"dict"`              | `dict[str, list[CellScalarValue]]`      | Column dictionary keyed by column ID with row-ordered value lists      |
+| `"index"`             | `dict[str, dict[str, CellScalarValue]]` | Row dictionary keyed by row ID containing column-value mappings        |
+| `"split"`             | `SplitDict`                             | Dictionary containing `columns`, `index` row IDs, and 2D `data` matrix |
 
 Dictionary exports strictly omit section headers and gutter rows, guaranteeing uniform rectangular output of shape `(len(auditor.rows), len(auditor.columns))`. Unrecognized `orient` raises `ValueError`.
 
@@ -217,14 +243,14 @@ df = pd.DataFrame(auditor.to_dict(orient="records"))
 
 The compiler raises structured exceptions inheriting from `F8Error` (subclass of Python's standard `Exception`). All carry typed attributes for diagnostic analysis:
 
-| Exception | Typed attributes | Root cause |
-| :--- | :--- | :--- |
-| `CycleDetectedError` | `cycle: list[str]`, `message: str` | Dependency cycle in calculation graph |
-| `ReferenceResolutionError` | `coordinate: str`, `target_table: str \| None`, `row: str \| None`, `col: str \| None`, `message: str` | Undeclared table, row, or column ID, active axis mismatch, inverted range slice, or temporal lag out of bounds |
-| `FormulaParseError` | `table: str`, `row: str \| None`, `col: str \| None`, `token_offset: int \| None`, `message: str` | Formula syntax violation (unquoted key, lowercase function/boolean, bare `@`, invalid operator, or misplaced `_`) |
-| `SpecificationError` | `table: str \| None`, `reason: str`, `message: str` | Structural model constraint violation (unassigned cells, format/decimals/currency conflict, duplicate IDs, invalid indent/decimals) |
-| `InspectionError` | `entity: str`, `message: str` | Entity lookup failure during cell, table, or sheet inspection |
-| `EmissionError` | `message: str` | OpenXML workbook packaging or filesystem persistence failure |
+| Exception                  | Typed attributes                                                                                       | Root cause                                                                                                                          |
+| :------------------------- | :----------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------- |
+| `CycleDetectedError`       | `cycle: list[str]`, `message: str`                                                                     | Dependency cycle in calculation graph                                                                                               |
+| `ReferenceResolutionError` | `coordinate: str`, `target_table: str \| None`, `row: str \| None`, `col: str \| None`, `message: str` | Undeclared table, row, or column ID, active axis mismatch, inverted range slice, or temporal lag out of bounds                      |
+| `FormulaParseError`        | `table: str`, `row: str \| None`, `col: str \| None`, `token_offset: int \| None`, `message: str`      | Formula syntax violation (unquoted key, lowercase function/boolean, bare `@`, invalid operator, or misplaced `_`)                   |
+| `SpecificationError`       | `table: str \| None`, `reason: str`, `message: str`                                                    | Structural model constraint violation (unassigned cells, format/decimals/currency conflict, duplicate IDs, invalid indent/decimals) |
+| `InspectionError`          | `entity: str`, `message: str`                                                                          | Entity lookup failure during cell, table, or sheet inspection                                                                       |
+| `EmissionError`            | `message: str`                                                                                         | OpenXML workbook packaging or filesystem persistence failure                                                                        |
 
 ### Programmatic Exception Handling Pattern
 

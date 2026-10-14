@@ -291,11 +291,22 @@ def test_scenario_2_e2e_model_compilation_and_table_auditing() -> None:
     cell_info = compiled.inspect_cell("income_statement", "net_income", "y2026e")
     assert cell_info.get("note") == "5-Year Strategic Exit Target Milestone"
 
+    # Verify fast-path compiled accessors
+    assert compiled.num("income_statement", "rev", "y2024e") == pytest.approx(143750.0)
+    assert compiled.formatted("income_statement", "rev", "y2024e", unit="K") == "$143,750K"
+    assert is_auditor.measure_columns == ["y2023a", "y2024e", "y2025e", "y2026e"]
+    assert is_auditor.row_nums("rev", cols=["y2023a", "y2024e"]) == pytest.approx(
+        [125000.0, 143750.0]
+    )
+
     # Verify Markdown rendering across views
     md_values = is_auditor.to_markdown(view="values")
-    assert "$ 125,000" in md_values
-    assert "$ 143,750" in md_values
+    assert "$125,000" in md_values
+    assert "$143,750" in md_values
     assert "**Gross Revenue & Cost of Sales**" in md_values
+    assert "**Gross Operating Profit**" in md_values
+    assert "**Net Consolidated Income**" in md_values
+    assert "Historical: 2023A" in md_values
 
     md_formulas = is_auditor.to_markdown(view="formulas")
     assert "=C8*(1+'Assumptions'!D8)" in md_formulas

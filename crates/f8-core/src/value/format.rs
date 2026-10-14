@@ -72,9 +72,9 @@ pub fn format_accounting_number(
         Some(FormatPreset::Currency) => {
             let sym = currency.unwrap_or_default().symbol();
             if is_neg {
-                format!("({sym} {formatted_num})")
+                format!("({sym}{formatted_num})")
             } else {
-                format!("{sym} {formatted_num}")
+                format!("{sym}{formatted_num}")
             }
         }
         Some(FormatPreset::Percentage)
@@ -155,7 +155,7 @@ mod tests {
                 Some(2),
                 Some(CurrencyCode::Usd)
             ),
-            "$ 1,234.56"
+            "$1,234.56"
         );
         assert_eq!(
             format_accounting_number(
@@ -164,7 +164,7 @@ mod tests {
                 Some(2),
                 Some(CurrencyCode::Usd)
             ),
-            "($ 1,234.56)"
+            "($1,234.56)"
         );
 
         // Percentage

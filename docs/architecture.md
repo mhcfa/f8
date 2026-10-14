@@ -82,8 +82,9 @@ To power fast headless introspection across outer interfaces (`f8-python`, `f8-m
 
 `CompiledModel` exposes pure in-memory inspection and emission methods:
 - `emit_workbook(options)`: Directly generates standard `.xlsx` byte buffers (`Vec<u8>`).
+- `cell_value(table, row, col)` / `cell_formatted(table, row, col)`: Fast-path $O(1)$ evaluated scalar and pre-formatted display string lookups (`value`, `num`, and `formatted` on Python `CompiledModel`).
 - `inspect_cell(table, row, col)`: Returns cell values, formatted display strings, formats, formula ASTs, lowered Excel formulas, physical addresses, and direct/transitive edges.
-- `inspect_table(table)` / `inspect_sheet(sheet)`: Emits 2D grids of evaluated values, formatted values, formula expressions, and physical layout metrics.
+- `inspect_table(table)` / `inspect_sheet(sheet)`: Emits 2D grids of evaluated values, formatted values, semantic styles, formula expressions, and physical layout metrics.
 - `precedents_of(cell, recursive)` / `dependents_of(cell, recursive)`: Queries upstream dependencies and downstream blast radius.
 
 ---

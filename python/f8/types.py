@@ -120,6 +120,7 @@ class ColumnInspection(TypedDict):
     headers: list[str]
     is_gutter: bool
     is_descriptor: bool
+    style: SemanticStyle | None
 
 
 class RowInspection(TypedDict):
@@ -130,6 +131,7 @@ class RowInspection(TypedDict):
     is_section_header: bool
     is_gutter: bool
     indent: int
+    style: SemanticStyle | None
 
 
 class TableCellInfo(TypedDict):

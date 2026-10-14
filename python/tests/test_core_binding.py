@@ -132,7 +132,7 @@ def test_scenario_3_cell_inspection_flexible_coordinates(
     assert cell_3args == cell_1arg
     assert cell_3args["physical_address"] == "Operations!C7"
     assert cell_3args["evaluated_value"] == {"Number": 60.0}
-    assert cell_3args["formatted_value"] == "$ 60.0"
+    assert cell_3args["formatted_value"] == "$60.0"
     assert cell_3args["is_formula"] is True
     assert cell_3args["excel_formula"] is not None
     assert len(cell_3args["precedents"]) == 2
@@ -183,8 +183,10 @@ def test_scenario_5_model_and_sheet_summary_inspection(
     assert table_insp["table_id"] == "OPERATIONS"
     assert len(table_insp["rows"]) == 4
     assert len(table_insp["columns"]) == 2
+    assert table_insp["columns"][0]["style"] == "data"
+    assert table_insp["rows"][0]["style"] == "data"
     rev_cell = table_insp["cells"]['OPERATIONS["revenue", "2024E"]']
-    assert rev_cell["formatted_value"] == "$ 100.0"
+    assert rev_cell["formatted_value"] == "$100.0"
     assert rev_cell["value"] == {"Number": 100.0}
     assert rev_cell["format"] == "currency"
 
@@ -477,3 +479,80 @@ def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
     assert summary["model_name"] == "TypedModel"
     assert summary["total_tables"] == 1
     assert summary["total_cells"] == 2
+
+
+def test_scenario_13_fast_path_scalar_num_and_formatted_lookups() -> None:
+    model = f8.Model(name="ScalarLookupModel", theme="corporate_navy")
+    sheet = model.add_sheet("Main")
+    table = sheet.add_table("Metrics", title="Metrics", currency="USD")
+    table.add_column("line_item", role="descriptor", header="Item")
+    table.add_column("val", role="measure", header="Value")
+
+    table.add_row(
+        "rev",
+        cells={"line_item": "Revenue", "val": 115.0},
+        format="currency",
+        decimals=1,
+    )
+    table.add_row(
+        "loss",
+        cells={"line_item": "Net Loss", "val": -50.0},
+        format="currency",
+        decimals=1,
+    )
+    table.add_row(
+        "flag",
+        cells={"line_item": "Is Active", "val": True},
+    )
+    table.add_row(
+        "empty_row",
+        cells={"line_item": "Unassigned", "val": None},
+        format="currency",
+        decimals=1,
+    )
+    table.add_row(
+        "err_row",
+        cells={"line_item": "Div Zero"},
+        expr="1.0 / 0.0",
+    )
+
+    compiled = model.compile()
+
+    # 1. compiled.value (1-arg and 3-arg)
+    assert compiled.value('Metrics["rev", "val"]') == pytest.approx(115.0)
+    assert compiled.value("Metrics", "rev", "val") == pytest.approx(115.0)
+    assert compiled.value("Metrics", "rev", "line_item") == "Revenue"
+    assert compiled.value("Metrics", "flag", "val") is True
+    assert compiled.value("Metrics", "empty_row", "val") is None
+    assert compiled.value("Metrics", "err_row", "val") == "#DIV/0!"
+
+    # 2. compiled.num (1-arg and 3-arg)
+    num_1arg = compiled.num('Metrics["rev", "val"]')
+    num_3arg = compiled.num("Metrics", "rev", "val")
+    assert isinstance(num_1arg, float)
+    assert num_1arg == pytest.approx(115.0)
+    assert num_3arg == pytest.approx(115.0)
+
+    with pytest.raises(TypeError):
+        compiled.num("Metrics", "rev", "line_item")
+    with pytest.raises(TypeError):
+        compiled.num("Metrics", "flag", "val")
+    with pytest.raises(TypeError):
+        compiled.num("Metrics", "empty_row", "val")
+    with pytest.raises(TypeError):
+        compiled.num("Metrics", "err_row", "val")
+
+    # 3. compiled.formatted (1-arg and 3-arg, with and without unit)
+    assert compiled.formatted('Metrics["rev", "val"]') == "$115.0"
+    assert compiled.formatted("Metrics", "rev", "val", unit="M") == "$115.0M"
+    assert compiled.formatted("Metrics", "loss", "val") == "($50.0)"
+    assert compiled.formatted("Metrics", "loss", "val", unit="M") == "($50.0M)"
+    assert compiled.formatted("Metrics", "empty_row", "val", unit="M") == ""
+
+    # 4. Unknown coordinates raise InspectionError
+    with pytest.raises(InspectionError):
+        compiled.value("Metrics", "nonexistent", "val")
+    with pytest.raises(InspectionError):
+        compiled.num("Metrics", "nonexistent", "val")
+    with pytest.raises(InspectionError):
+        compiled.formatted("Metrics", "nonexistent", "val")

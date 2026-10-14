@@ -4,6 +4,7 @@ from pathlib import Path
 from f8.audit import TableAuditor
 from f8.types import (
     CellInspection,
+    CellScalarValue,
     DependencyTree,
     EmissionOptions,
     ManifestInput,
@@ -24,6 +25,26 @@ class CompiledModel:
     def emit_workbook(self, options: EmissionOptions | None = None) -> bytes: ...
     def save(self, path: str | Path, options: EmissionOptions | None = None) -> None: ...
     def summary(self) -> ModelSummary: ...
+    def value(
+        self,
+        target: str,
+        row: str | None = None,
+        col: str | None = None,
+    ) -> CellScalarValue: ...
+    def num(
+        self,
+        target: str,
+        row: str | None = None,
+        col: str | None = None,
+    ) -> float: ...
+    def formatted(
+        self,
+        target: str,
+        row: str | None = None,
+        col: str | None = None,
+        *,
+        unit: str = "",
+    ) -> str: ...
     def inspect_cell(
         self,
         target: str,
