@@ -220,7 +220,7 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 
 ## 8. Related Documentation
 
-- [CLI & JSON Authoring Guide](../cli-authoring-guide.md): Practical end-to-end walkthrough for creating financial models.
+- [Python Modeling Skill](../../python/f8/skills/f8-modeling/SKILL.md): Practical end-to-end workflow for authoring financial models in Python.
 - [Addressing Syntax](./addressing.md): Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
 - [Formula Grammar](./grammar.md): Formal EBNF expression grammar and operator precedence.
 - [Semantic Formatting & Themes](./formatting.md): Format preset catalog, conflict resolution, and workbook themes.

@@ -3,7 +3,7 @@
 Guidelines for AI agents working with the f8 compiler, runtime, and language workspace.
 
 > [!IMPORTANT]
-> **Polyglot workspace**: Core IR, compiler, and CLI in Rust 2024; native bindings in PyO3; Python 3.12+ high-level package.
+> **Polyglot workspace**: Core IR and compiler in Rust 2024; native bindings in PyO3; Python 3.12+ high-level package.
 > **Spec-driven**: Invoke [spec-driven development workflow and guidelines](docs/specs/sdd-guidelines.md) for non-trivial features or refactoring.
 
 ## Repository context & architecture
@@ -11,7 +11,6 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 | Path                | Layer / Target      | Purpose & architectural rules                                                                                                                                                 |
 | :------------------ | :------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `crates/f8-core/`   | Core engine (Rust)  | Pure in-memory calculation core: 6 compiler passes (IR, DAG/SCC, evaluator, layout, lowering, emitter) and `CompiledModel` facade.                                            |
-| `crates/f8-cli/`    | CLI binary (Rust)   | Standalone CLI binary (`f8`). Subcommands (`init`, `check`, `compile`, `inspect`), disk filesystem I/O, terminal renderer.                                                    |
 | `crates/f8-python/` | Native C-ABI (PyO3) | Native C-extension (`f8._core`, `abi3-py312`). Deserializes inputs via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.            |
 | `python/f8/`        | High-level SDK (Py) | Fluent modeling DSL (`Model`, `Table`, `Cell`), project disk I/O, auditing facade (`TableAuditor`), synchronized stubs (`.pyi`), `py.typed`, and bundled `f8-modeling` skill. |
 | `python/tests/`     | Test suite (Pytest) | End-to-end integration suite for Python DSL, PyO3 bindings, project I/O, inspection audit, and Excel calculation parity.                                                      |

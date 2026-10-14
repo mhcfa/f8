@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from f8 import (
     Cell,
@@ -12,7 +10,6 @@ from f8 import (
     Model,
     SplitDict,
     TableAuditor,
-    compile_project,
     unbox_cell_value,
 )
 
@@ -299,54 +296,78 @@ def test_invalid_orient_and_view_mode_validation() -> None:
         table.to_markdown(view="invalid")  # pyright: ignore[reportArgumentType]
 
 
-def test_scenario_9_fixture_template_auditing() -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    templates_dir = repo_root / "crates" / "f8-cli" / "templates"
+def test_scenario_9_multi_tier_header_and_section_auditing() -> None:
+    model = Model(name="ThreeStatementModel", theme="corporate_navy")
+    sheet = model.add_sheet("Model")
+    inc = sheet.add_table("IncomeStatement", title="Income Statement", currency="USD")
+    inc.add_column("line_item", role="descriptor", header="Line Item")
+    inc.add_column(
+        "y2023a",
+        role="measure",
+        headers=["Historical Actuals", "2023A"],
+        format="currency",
+        decimals=1,
+    )
+    inc.add_column(
+        "y2024e",
+        role="measure",
+        headers=["Forecast Projections", "2024E"],
+        format="currency",
+        decimals=1,
+    )
+    inc.add_column(
+        "y2025e",
+        role="measure",
+        headers=["Forecast Projections", "2025E"],
+        format="currency",
+        decimals=1,
+    )
 
-    if not templates_dir.is_dir():
-        pytest.skip("Templates directory not found")
+    inc.add_section_header("Operating Expenses")
+    inc.add_row(
+        "revenue",
+        cells={"line_item": "Revenue", "y2023a": 100.0},
+        expr='IncomeStatement["revenue", col.prev] * 1.10',
+        format="currency",
+        decimals=1,
+    )
+    inc.add_row(
+        "sga",
+        cells={"line_item": Cell("Salaries & SG&A Overhead", indent=1), "y2023a": 30.0},
+        expr='IncomeStatement["sga", col.prev] * 1.05',
+        format="currency",
+        decimals=1,
+    )
+    inc.add_row(
+        "net_income",
+        cells={"line_item": "Net Income"},
+        expr='IncomeStatement["revenue", @col] - IncomeStatement["sga", @col]',
+        style="total",
+        format="currency",
+        decimals=1,
+    )
 
-    # Three-statement model audit
-    three_stmt = compile_project(templates_dir / "three-statement")
-    is_table = three_stmt.table("IncomeStatement")
+    compiled = model.compile()
+    is_table = compiled.table("IncomeStatement")
     assert isinstance(is_table, TableAuditor)
     assert is_table.sheet == "Model"
-    assert is_table.shape == (8, 5)  # 8 calculable data rows, 5 columns
-    assert is_table.columns == ["line_item", "y2023a", "y2024e", "y2025e", "y2026e"]
-    assert "revenue" in is_table.rows
-    assert "net_income" in is_table.rows
+    assert is_table.shape == (3, 4)
+    assert is_table.columns == ["line_item", "y2023a", "y2024e", "y2025e"]
+    assert is_table.rows == ["revenue", "sga", "net_income"]
 
-    # Tabular exports on three-statement
     records = is_table.to_dict("records")
-    assert len(records) == 8
+    assert len(records) == 3
     assert all(list(r.keys()) == is_table.columns for r in records)
     assert records[0]["line_item"] == "Revenue"
     assert records[0]["y2023a"] == 100.0
 
     split_data = is_table.to_dict("split")
     assert split_data["columns"] == is_table.columns
-    assert len(split_data["data"]) == 8
-    assert len(split_data["data"][0]) == 5
+    assert len(split_data["data"]) == 3
+    assert len(split_data["data"][0]) == 4
 
-    # Markdown rendering on three-statement with stacked headers & sections
     md = is_table.to_markdown("values")
     assert "Historical Actuals" in md
     assert "Forecast Projections" in md
     assert "**Operating Expenses**" in md
-    assert "Salaries & SG&A Overhead" in md
-
-    # LBO model audit
-    lbo = compile_project(templates_dir / "lbo")
-    scenarios = lbo.table("Scenarios")
-    assert isinstance(scenarios, TableAuditor)
-    assert scenarios.shape == (3, 5)
-    assert scenarios.columns == [
-        "scenario_name",
-        "case_id",
-        "rev_growth",
-        "ebitda_margin",
-        "exit_multiple",
-    ]
-    assert scenarios.rows == ["base", "bull", "bear"]
-    lbo_records = scenarios.to_dict("records")
-    assert len(lbo_records) == 3
+    assert "  Salaries & SG&A Overhead" in md

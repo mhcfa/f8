@@ -212,24 +212,6 @@ def test_duplicate_table_id_detection(tmp_path: Path) -> None:
         compile_project(project_dir)
 
 
-def test_compile_fixture_templates() -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    templates_dir = repo_root / "crates" / "f8-cli" / "templates"
-
-    if not templates_dir.is_dir():
-        pytest.skip("Templates directory not found")
-
-    for template_name in ["three-statement", "lbo", "trading-comps"]:
-        template_path = templates_dir / template_name
-        assert (template_path / "f8.json").is_file()
-
-        compiled = compile_project(template_path)
-        assert isinstance(compiled, CompiledModel)
-        summary = compiled.summary()
-        assert summary["total_tables"] > 0
-        assert summary["total_cells"] > 0
-
-
 def test_manifest_without_theme_defaults_cleanly(tmp_path: Path) -> None:
     project_dir = tmp_path / "no_theme_project"
     project_dir.mkdir()
