@@ -2,7 +2,6 @@
 title: <Short Title>
 date: YYYY-MM-DD
 status: draft # draft | in-progress | completed
-target-living-spec: specs/living-specs/<target-domain>/<target-living-spec>.md # path, list of paths, or 'none'
 ---
 
 ## Proposal

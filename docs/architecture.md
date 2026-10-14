@@ -53,16 +53,28 @@ flowchart TD
 
 The pipeline operates across six primary passes:
 
-1. **Ingest & Parse**: Deserializes specifications and validates sheet/table invariants. Fails fast on duplicate sheet/table/axis names, invalid format options, or malformed themes.
-2. **Grid Expansion & Formula Parsing**: Expands table rows across defined columns into discrete cell intermediate representations (`CellId`) and parses formula expressions into AST nodes. Validates specificity lattice conflicts and verifies required cell inputs.
-3. **Dependency Graph & SCC**: Resolves semantic table/row/col references across all formula ASTs, constructs a directed dependency graph, and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
-4. **Topological Evaluation**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity (`CellValue::Error` on Excel formula errors).
-5. **Spatial Layout Planning**: Arranges tables onto sheets with margins, inter-table gutters, section headers, and freeze panes. Computes physical grid coordinates, arbitrates sheet-wide column widths and row heights using theme metrics, and generates a deterministic `LayoutMap` with semantic style roles.
-6. **Formula Lowering & Emission**: Resolves semantic labels to concrete cell coordinates (`$A$1` / `A1`), translates theme styles, and writes standard `.xlsx` files via `rust_xlsxwriter`. Formulas are emitted alongside precalculated in-memory results in the cell cache, enabling instant viewing in third-party tools (Apple Numbers, Quick Look, Google Drive, pandas) without waiting for Excel recalculation, with optional values-only freezing.
+1. **Ingest & Parse (`f8_core::model`)**: Deserializes specifications and validates sheet/table invariants. Fails fast on duplicate sheet/table/axis names, invalid format options (`decimals > 14` or precision on non-numeric presets), invalid cell payloads, `indent > 0` on measure columns, or malformed themes.
+2. **Grid Expansion & Formula Parsing (`f8_core::compiler::ir`)**: Expands table rows across defined columns into discrete cell intermediate representations (`CellId(TableId, RowId, ColId)`) and parses formula expressions into AST nodes. Enforces the **3-Tier Specificity Lattice**:
+   $$\text{Cell Override (0D Point)} > (\text{Row Rule } \mathbf{XOR} \text{ Column Rule}) > \text{Explicit Null}$$
+   Isolates `descriptor` columns from vector broadcasting, halts on unassigned cells (`IrError::UnassignedCell`) or intersecting vector rules (`IrError::AmbiguousExpressionConflict`), composes orthogonal 2D border roles `(horizontal, vertical)`, and resolves cell currency codes (`point > vector > table.currency > usd`).
+3. **Dependency Graph & SCC (`f8_core::compiler::graph`)**: Resolves mandatory table-qualified `Table[row, col]` references, active coordinates (`@col`, `@row` requiring matching target axis IDs), and relative offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)` stepping across measure/data axes while skipping gutters and halting at descriptor boundaries). Constructs a `petgraph::DiGraph` and executes Tarjan's Strongly Connected Components (SCC) algorithm to enforce a pure Directed Acyclic Graph (DAG).
+4. **Topological Evaluation (`f8_core::compiler::eval`)**: Executes the DAG in topological order using the `FunctionRegistry`, computing in-memory cell values with exact Excel parity:
+   - **IEEE-754 & coercion**: Normalizes `-0.0` to `0.0`; coerces `Empty` to `0.0` and booleans to `1.0`/`0.0` in arithmetic; returns `#DIV/0!` on division by zero/empty and `#VALUE!` on arithmetic text.
+   - **Comparison ranking**: Enforces Excel mixed-type ordering (`Number < Text < Boolean`) and case-insensitive ASCII string comparison.
+   - **Lazy branch isolation**: Short-circuits dormant branches in `IF`, `IFS`, `IFERROR`, `IFNA`, `CHOOSE`, `SWITCH`, and `XLOOKUP`.
+   - **Error persistence**: Stores runtime domain errors (`CellValue::Error`) without crashing compilation so downstream cells can bubble or trap them.
+5. **Spatial Layout Planning (`f8_core::compiler::layout`)**: Arranges tables onto physical worksheet coordinates (`LayoutMap`):
+   - **Margins & stacking**: Reserves Row 0 and Col A (`col: 0, row: 0`) as sheet gutters; places primary table origin at `B2` (`col: 1, row: 1`); stacks multiple tables vertically with 2 blank gutter rows between tables.
+   - **Header hierarchy**: Allocates optional title banner, subtitle row, 1-row title buffer gutter, and bottom-aligned multi-tier column headers ($H = \max(\text{headers.len()})$).
+   - **Sheet-wide width arbitration**: Computes each column's width as the maximum required width across all stacked tables covering that column ($\max(\text{chars} \times \text{char\_width\_multiplier} + \text{col\_padding}, \text{min\_col\_width})$), incorporating descriptor `indent * 2` character padding.
+6. **Formula Lowering & Emission (`f8_core::compiler::lowering` & `emission`)**:
+   - **Coordinate lowering**: Lowers dynamic selectors (`@col`, `@row`, `prev`, `next`) to relative coordinates (`C6`) and static keys to `$` pinned coordinates (`$B$41`), prefixing cross-sheet references with `'Sheet'!`.
+   - **Format synthesis & cache**: Deduplicates OpenXML `<cellXfs>` formats via `FormatCache` (`IndexMap<CellFormatKey, Format>`). Enforces institutional color precedence (measure literal inputs in `input_text` blue override highlights/totals; formulas in `formula_text` black; descriptors in neutral `data_text`). Preserves native Excel gridlines when fill is `"none"` or `"transparent"`.
+   - **OpenXML assembly**: Emits multi-column super-headers with `FormatAlign::CenterAcross` (zero merged cells), writes cell notes and opt-in `collapsible` row outline groupings, and pre-populates formula `<v>` caches (unless `omit_formula_cache` or `values_only` is set).
 
 ### Unified Inspection Facade (`CompiledModel`)
 
-To power fast headless introspection across outer interfaces (`f8-cli`, `f8-mcp`) without re-running compiler passes, `f8-core` exposes a unified `CompiledModel` artifact. It consolidates all compilation pass artifacts into a single in-memory structure:
+To power fast headless introspection across outer interfaces (`f8-cli`, `f8-python`, `f8-mcp`) without re-running compiler passes, `f8-core` exposes a unified `CompiledModel` artifact. It consolidates all compilation pass artifacts into a single in-memory structure:
 - **Project & Theme**: The parsed `ProjectManifest`, `Vec<TableSpec>`, and resolved `Theme`.
 - **Symbols & Cells**: The expanded `SymbolTable` and `CellGrid` (retaining full cell metadata, formats, and ASTs).
 - **Graph & Values**: The validated `DependencyGraph` (providing topological order, incoming dependencies, and outgoing blast-radius dependents) and calculated `EvaluatedModel`.
@@ -70,8 +82,8 @@ To power fast headless introspection across outer interfaces (`f8-cli`, `f8-mcp`
 
 `CompiledModel` exposes pure in-memory inspection and emission methods:
 - `emit_workbook(options)`: Directly generates standard `.xlsx` byte buffers (`Vec<u8>`).
-- `inspect_cell(table, row, col)`: Returns cell values, formats, formula ASTs, lowered Excel formulas, physical addresses, and direct/transitive edges.
-- `table_matrix(table)`: Emits 2D grids of evaluated values, formula expressions, or stacked auditing pairs.
+- `inspect_cell(table, row, col)`: Returns cell values, formatted display strings, formats, formula ASTs, lowered Excel formulas, physical addresses, and direct/transitive edges.
+- `inspect_table(table)` / `inspect_sheet(sheet)`: Emits 2D grids of evaluated values, formatted values, formula expressions, and physical layout metrics.
 - `precedents_of(cell, recursive)` / `dependents_of(cell, recursive)`: Queries upstream dependencies and downstream blast radius.
 
 ---
@@ -181,8 +193,10 @@ f8/
 ├── python/                     # Python package (uv / maturin)
 │   └── f8/                     # Fluent modeling DSL, loader, inspection protocols, & bundled agent skills
 │
-├── docs/                       # High-level architecture, 2D matrix DSL reference, & CLI guide
-└── specs/                      # Spec-driven development (living specs, drafts, & history)
+└── docs/                       # Architecture overview, 2D matrix DSL reference, CLI guide, & SDD specs
+    ├── dsl/                    # Declarative schema, addressing, grammar, formatting, & patterns
+    ├── functions/              # Standard Excel function catalog
+    └── specs/                  # Spec-driven development workflow (guidelines, drafts, & history)
 ```
 
 ### Dependency Rules
@@ -227,7 +241,7 @@ The compiler core is designed from day one to support both native operating syst
 
 1. **Phase 1: Unified Inspection Facade (`CompiledModel` in `f8-core`)** [Delivered]:
    - Consolidate all compilation pass artifacts into the unified `CompiledModel` facade (`SymbolTable`, `CellGrid`, `DependencyGraph`, `EvaluatedModel`, `LayoutMap`, `LoweredFormulaMap`).
-   - Pure in-memory query APIs (`inspect_cell`, `table_matrix`, `precedents_of`, `dependents_of`).
+   - Pure in-memory query APIs (`inspect_cell`, `inspect_table`, `inspect_sheet`, `precedents_of`, `dependents_of`).
 2. **Phase 2: Local Command-Line Interface (`f8-cli`)** [Delivered]:
    - Built `f8 init`, `f8 check`, `f8 compile` (`-o`, `--values-only`), and `f8 inspect` (`summary`, `sheet`, `table`, `cell`, `precedents`, `dependents`) on top of `CompiledModel`.
 3. **Phase 3: Python SDK & Native Extension (`f8-python` / `f8`)** [Delivered]:
@@ -244,10 +258,10 @@ The compiler core is designed from day one to support both native operating syst
 
 ## 9. Documentation Map
 
-Documentation is strictly organized into distinct, non-overlapping categories:
+Documentation is organized into non-overlapping categories under `docs/` and the packaged Python skill:
 
-- **Product Philosophy & DSL Reference (`docs/`)**:
-  - [Architecture Overview](./architecture.md): High-level mental model, pipeline passes, and crate topology.
+- **Architecture & DSL Reference (`docs/`)**:
+  - [Architecture Overview](./architecture.md): High-level mental model, compiler pass invariants, `CompiledModel` facade, and crate topology.
   - [CLI & JSON Authoring Guide](./cli-authoring-guide.md): Walkthrough for authoring models via direct JSON and terminal CLI workflows.
   - [Specification Format & 2D Grid](./dsl/spec-format.md): Declarative multi-file JSON schemas, table structure, gutters, and multi-tier headers.
   - [Addressing Syntax](./dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets (`col.prev`), and slicing.
@@ -261,16 +275,6 @@ Documentation is strictly organized into distinct, non-overlapping categories:
   - [`syntax-and-grid.md`](../python/f8/skills/f8-modeling/references/syntax-and-grid.md): Python DSL methods, column roles, and visual styling.
   - [`functions.md`](../python/f8/skills/f8-modeling/references/functions.md): Built-in function reference and formula conventions in Python.
   - [`auditing-and-repair.md`](../python/f8/skills/f8-modeling/references/auditing-and-repair.md): Model auditing, defect diagnosis, and fix workflows.
-- **Compiler Subsystem Specifications (`specs/living-specs/`)**:
-  - The permanent single source of truth for compiler passes, data contracts, and engine invariants:
-    - [Cell IR & Expansion](../specs/living-specs/compiler/cell-ir.md)
-    - [Dependency Graph & Cycle Analysis](../specs/living-specs/compiler/dependency-graph.md)
-    - [In-Memory Evaluator & Parity](../specs/living-specs/compiler/evaluator.md)
-    - [Spatial Layout Planning](../specs/living-specs/compiler/spatial-layout.md)
-    - [Formula Lowering](../specs/living-specs/compiler/formula-lowering.md)
-    - [Workbook Emission](../specs/living-specs/compiler/workbook-emission.md)
-    - [Compiled Model Facade](../specs/living-specs/compiler/compiled-model.md)
-    - [Function Registry Architecture](../specs/living-specs/functions/registry.md)
-    - [CLI Architecture](../specs/living-specs/interfaces/cli.md)
-    - [Python SDK Native Extension](../specs/living-specs/interfaces/python-sdk.md)
+- **Spec-Driven Development (`docs/specs/`)**:
+  - [SDD Guidelines](./specs/sdd-guidelines.md): Workflow for authoring draft specs (`docs/specs/drafts/`), subagent implementation/review, and historical archiving (`docs/specs/history/`).
 

@@ -4,7 +4,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 
 > [!IMPORTANT]
 > **Polyglot workspace**: Core IR, compiler, and CLI in Rust 2024; native bindings in PyO3; Python 3.12+ high-level package.
-> **Spec-driven**: Invoke [spec-driven development workflow and guidelines](specs/sdd-guidelines.md) for non-trivial features or refactoring.
+> **Spec-driven**: Invoke [spec-driven development workflow and guidelines](docs/specs/sdd-guidelines.md) for non-trivial features or refactoring.
 
 ## Repository context & architecture
 
@@ -15,9 +15,8 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 | `crates/f8-python/` | Native C-ABI (PyO3) | Native C-extension (`f8._core`, `abi3-py312`). Deserializes inputs via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.            |
 | `python/f8/`        | High-level SDK (Py) | Fluent modeling DSL (`Model`, `Table`, `Cell`), project disk I/O, auditing facade (`TableAuditor`), synchronized stubs (`.pyi`), `py.typed`, and bundled `f8-modeling` skill. |
 | `python/tests/`     | Test suite (Pytest) | End-to-end integration suite for Python DSL, PyO3 bindings, project I/O, inspection audit, and Excel calculation parity.                                                      |
-| `.agents/`          | Agent workflows     | Git-tracked agent skills, subagent prompts, and verification routines.                                                                        |
-| `specs/`            | SDD specifications  | Spec-driven development: SDD guidelines, permanent living specs (`living-specs/`), active RFCs (`drafts/`), and archived milestones (`history/`).                             |
-| `docs/`             | Durable docs        | Product architecture overview, 2D matrix DSL design, and Excel standard function catalog.                                                                                     |
+| `.agents/`          | Agent workflows     | Git-tracked agent skills, subagent prompts, and verification routines.                                                                                                        |
+| `docs/`             | Docs & SDD specs    | Architecture overview, 2D matrix DSL design, function catalog, and spec-driven development workflow (`docs/specs/drafts/` & `docs/specs/history/`).                           |
 
 ## Development principles
 
@@ -39,12 +38,12 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 
 ## Spec-driven development & subagent lifecycle
 
-- **Universal scope**: Mandatory for non-trivial features, refactoring, and cross-tier changes (minor bug fixes and quick clarifications exempt). Governed by `specs/sdd-guidelines.md`.
+- **Universal scope**: Mandatory for non-trivial features, refactoring, and cross-tier changes (minor bug fixes and quick clarifications exempt). Governed by `docs/specs/sdd-guidelines.md`.
 - **Tri-agent roles**:
-  - **Lead Orchestrator**: Aligns design, authors draft specs, dispatches subagents, reconciles living specs, and archives specs.
+  - **Lead Orchestrator**: Aligns design, authors draft specs, dispatches subagents, updates reference docs when external contracts change, and archives completed specs.
   - **Implementer**: Builds strictly to draft spec contracts and satisfies verification gates.
   - **Reviewer**: Adversarially audits diff against spec and checklist in report-only mode using `review-implementation` skill.
-- **Truth custody**: Permanent living specs (`specs/living-specs/`) and archives (`specs/history/`) are exclusively owned and updated by the Lead Orchestrator. Subagents never edit living specs directly.
+- **Archive custody**: Spec archives (`docs/specs/history/`) are exclusively managed by the Lead Orchestrator. Subagents never move or edit archived specs directly.
 
 ## Code standards
 
@@ -81,7 +80,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 
 - **Rust**: `snake_case` (files, functions, modules, variables), `PascalCase` (structs, enums, traits), `SCREAMING_SNAKE_CASE` (constants).
 - **Python**: `snake_case` (files, packages, functions, variables), `PascalCase` (classes, exceptions), `_snake_case` (native/internal modules), `SCREAMING_SNAKE_CASE` (constants).
-- **Specs**: `kebab-case.md` for filenames; group living specs under `specs/living-specs/<domain>/<topic>.md`.
+- **Docs & specs**: `kebab-case.md` for filenames; prefix task specs with `YYYY-MM-DD-<feature-name>.md` under `docs/specs/drafts/` and `docs/specs/history/`.
 
 ## Writing style
 
@@ -93,7 +92,7 @@ Applies to documentation, specs, docstrings, and commit messages.
   - Eliminate conversational pleasantries, introductory filler, and redundant conclusions.
   - Sentence case for list items and bold prefix labels.
 - **Cross-references**:
-  - Relative links exclusively for living specs (`specs/living-specs/`) and stable documentation.
+  - Relative links exclusively for stable reference documentation (`docs/`).
   - Code spans (e.g. `crates/f8-core/src/compiler/mod.rs`) in draft specs and archives to avoid link bit-rot.
 
 ## Git conventions

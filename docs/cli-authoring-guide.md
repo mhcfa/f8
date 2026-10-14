@@ -297,6 +297,4 @@ Before compiling, verify that your model conforms to these compiler rules:
   - [Standard Function Catalog](./functions/catalog.md): Supported Excel built-ins, signatures, and calculation behaviors.
 - **Python Financial Modeling Reference**:
   - [`f8-modeling` Agent Skill](../python/f8/skills/f8-modeling/SKILL.md): Bundled instructions and API reference for Python modeling.
-- **Compiler Subsystem Specifications**:
-  - [Compiler Living Specs](../specs/living-specs/): Detailed technical specifications for compiler passes, evaluation rules, and layout planning.
 

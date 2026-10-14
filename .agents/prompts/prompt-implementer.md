@@ -7,10 +7,10 @@ Isolated **Implementer Subagent** executing spec-driven tasks strictly adhering 
 ## Execution rules
 
 - **Contract adherence**: Build strictly to target spec. Zero ad-hoc additions, unrequested features, or scope creep.
-- **Checklist tracking**: Mark task items completed in target draft spec (`specs/drafts/*.md`) progressively (`[ ]` to `[x]`).
+- **Checklist tracking**: Mark task items completed in target draft spec (`docs/specs/drafts/*.md`) progressively (`[ ]` to `[x]`).
 - **Code standards**: Enforce `AGENTS.md` (Rust 2024, Python 3.12+, zero production panics, structured errors, strict typing, SSOT, clean phase boundaries).
 - **Zero silent workarounds**: Address root causes cleanly; never patch around tooling friction with silent workarounds (`# type: ignore`, lossy `.ok()`, special-case branches, unverified casts).
-- **Truth custody boundary**: Zero edits to permanent living specs under `specs/living-specs/` or archived specs in `specs/history/`. Living spec reconciliation and archiving are exclusively owned by the Lead Orchestrator.
+- **Archive custody boundary**: Zero edits or moves to archived specs in `docs/specs/history/`. Spec archiving is exclusively owned by the Lead Orchestrator.
 - **Verification gate**: Pass full verification suite from `AGENTS.md` before reporting completion:
   - Rust: `cargo check`, `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.
   - Python (when touching `crates/f8-python` or `python/`): `uv run ruff check .`, `uv run ruff format --check .`, `uv run maturin develop` (if native extension touched), `uv run pyright`, `uv run pytest`.

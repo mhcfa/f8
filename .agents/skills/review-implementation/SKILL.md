@@ -4,7 +4,7 @@ description: >-
   Report-only implementation review for the f8 compiler, runtime, and language workspace.
   Verification gate, spec conformance, greenfield rigor, single source of truth,
   Rust 2024 & Python standards, adversarial probing, and decisive verdicts.
-  Use after implementation, before living spec reconciliation and archive.
+  Use after implementation, before spec archiving.
 ---
 
 # Implementation Review Workflow
@@ -15,7 +15,7 @@ Use this skill to conduct rigorous, objective, report-only code reviews for impl
 
 ## Core Philosophy
 
-- **Report-only**: Read, run, probe. Zero edits to tracked files, `specs/living-specs/`, `specs/drafts/`, or git state. All remediation flows back through the Lead Orchestrator.
+- **Report-only**: Read, run, probe. Zero edits to tracked files, `docs/specs/drafts/`, or git state. All remediation flows back through the Lead Orchestrator.
 - **Independent context**: Executed in a fresh Reviewer Subagent context (or standalone review). Free from author confirmation bias; judge work strictly against specs and repository standards.
 - **Evidence-bound**: Every finding cites `file:line`, concrete evidence (code excerpt, test output, or probe result), and a suggested fix. No location, no finding.
 - **Root-cause correctness**: Reject downstream band-aids, temporary shims, silent workarounds, or test-specific hacks.
@@ -29,7 +29,7 @@ Context -> Verification Gate -> Spec Conformance -> Checklist Pass -> Adversaria
 
 ### 1. Context & Diff
 
-- **Truth & specs**: Read target draft spec in `specs/drafts/` and referenced living specs in `specs/living-specs/<domain>/`.
+- **Truth & specs**: Read target draft spec in `docs/specs/drafts/` and relevant reference documentation in `docs/`.
 - **Standards**: Re-read `AGENTS.md`.
 - **Diff inspection**:
   - `git status --porcelain -uall`
@@ -95,7 +95,7 @@ Context -> Verification Gate -> Spec Conformance -> Checklist Pass -> Adversaria
 
 - **`Changes required`**: Any `Blocker` or `Major` finding. Lead Orchestrator will re-dispatch Implementer Subagent with findings table and remediation steps.
 - **`Approve with flags`**: Zero `Blocker` and zero `Major` findings; one or more `Flag` items surfaced for user attention.
-- **`Approve`**: Clean review meeting all standards. Proceed to living spec reconciliation and archive.
+- **`Approve`**: Clean review meeting all standards. Proceed to spec archiving.
 
 ---
 

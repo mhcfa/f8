@@ -225,4 +225,4 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 - [Formula Grammar](./grammar.md): Formal EBNF expression grammar and operator precedence.
 - [Semantic Formatting & Themes](./formatting.md): Format preset catalog, conflict resolution, and workbook themes.
 - [Modeling Patterns & Archetypes](./patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
-- [Spatial Layout Planning](../../specs/living-specs/compiler/spatial-layout.md): Physical layout planning, margin metrics, and column width arbitration.
+- [Architecture Overview](../architecture.md): Compilation pipeline, spatial layout planning, and column width arbitration.
