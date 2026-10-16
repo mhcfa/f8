@@ -268,5 +268,5 @@ Documentation is organized into non-overlapping categories under `docs/` and the
   - [`functions.md`](../python/f8/skills/f8-modeling/references/functions.md): Built-in function reference and formula conventions in Python.
   - [`auditing-and-repair.md`](../python/f8/skills/f8-modeling/references/auditing-and-repair.md): Model auditing, defect diagnosis, and fix workflows.
 - **Spec-Driven Development (`docs/specs/`)**:
-  - [SDD Guidelines](./specs/sdd-guidelines.md): Workflow for authoring draft specs (`docs/specs/drafts/`), subagent implementation/review, and historical archiving (`docs/specs/history/`).
+  - [SDD Guidelines](./specs/sdd-guidelines.md): Workflow for authoring ephemeral draft specs (`docs/specs/drafts/`), subagent implementation/review, and folding durable changes into living reference docs.
 

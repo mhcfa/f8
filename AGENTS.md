@@ -15,7 +15,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 | `python/f8/`        | High-level SDK (Py) | Fluent modeling DSL (`Model`, `Table`, `Cell`), project disk I/O, auditing facade (`TableAuditor`), synchronized stubs (`.pyi`), `py.typed`, and bundled `f8-modeling` skill. |
 | `python/tests/`     | Test suite (Pytest) | End-to-end integration suite for Python DSL, PyO3 bindings, project I/O, inspection audit, and Excel calculation parity.                                                      |
 | `.agents/`          | Agent workflows     | Git-tracked agent skills, subagent prompts, and verification routines.                                                                                                        |
-| `docs/`             | Docs & SDD specs    | Architecture overview, 2D matrix DSL design, function catalog, and spec-driven development workflow (`docs/specs/drafts/` & `docs/specs/history/`).                           |
+| `docs/`             | Docs & SDD specs    | Architecture overview, 2D matrix DSL design, function catalog, and spec-driven development workflow (`docs/specs/sdd-guidelines.md` & `docs/specs/drafts/`).                  |
 
 ## Development principles
 
@@ -25,6 +25,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 - **Root-cause correctness**: Fix defects at parser, IR, or schema origin. Zero downstream band-aids or test overrides.
 - **Strong typing**: Model domain concepts with explicit enums and typed structs. Ban stringly-typed heuristics.
 - **Pragmatic simplicity**: Direct, idiomatic Rust and Python. Ban premature abstractions or speculative generalizations.
+- **Greenfield rigor**: Zero compatibility shims, `#[deprecated]` aliases, transition wrappers, dead code, commented-out tombstones, or placeholder stubs (`todo!()`, `unimplemented!()`). Update callers in-place across the repository.
 - **Zero silent workarounds**: Never patch around toolchain, compiler, or typing friction with silent workarounds (e.g. hacky `# type: ignore`, lossy `.ok()`, special-case branches, or unverified casts). Surface the root cause and resolve it cleanly; log tooling friction or upstream gaps explicitly.
 
 ## Reasoning & judgment
@@ -37,12 +38,14 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 
 ## Spec-driven development & subagent lifecycle
 
-- **Universal scope**: Mandatory for non-trivial features, refactoring, and cross-tier changes (minor bug fixes and quick clarifications exempt). Governed by `docs/specs/sdd-guidelines.md`.
+- **Proportional scope**: Governed by `docs/specs/sdd-guidelines.md`.
+  - **Full Tri-Agent SDD**: Mandatory for cross-crate features, compiler pass changes, new DSL/IR semantics, and multi-step refactors.
+  - **Direct execution**: Bug fixes, localized ergonomic tweaks, documentation/skill updates, and test additions execute directly without draft specs or subagent dispatch.
 - **Tri-agent roles**:
-  - **Lead Orchestrator**: Aligns design, authors draft specs, dispatches subagents, updates reference docs when external contracts change, and archives completed specs.
+  - **Lead Orchestrator**: Aligns design, authors ephemeral draft specs, dispatches subagents, folds durable changes into living reference docs, and deletes completed draft specs.
   - **Implementer**: Builds strictly to draft spec contracts and satisfies verification gates.
   - **Reviewer**: Adversarially audits diff against spec and checklist in report-only mode using `review-implementation` skill.
-- **Archive custody**: Spec archives (`docs/specs/history/`) are exclusively managed by the Lead Orchestrator. Subagents never move or edit archived specs directly.
+- **Spec custody**: Draft spec lifecycle (`docs/specs/drafts/`) is exclusively managed by the Lead Orchestrator. Subagents never edit, move, or delete specs directly.
 
 ## Code standards
 
@@ -55,9 +58,8 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 - **Memory efficiency**: Borrowed references (`&str`, `&[T]`) or `Cow` over unnecessary cloning in compiler passes.
 - **Guard clauses**: Early returns over deep branching nesting.
 - **Verification suite**:
-  - `cargo check`: Quick compilation check.
   - `cargo test`: Unit and integration test suite.
-  - `cargo clippy --all-targets -- -D warnings`: Zero warnings and no unhandled panics.
+  - `cargo clippy --all-targets -- -D warnings`: Compilation check, zero warnings, and no unhandled panics.
   - `cargo fmt --check`: Formatting adherence.
 
 ### Python standards (Python 3.12+)
@@ -79,7 +81,7 @@ Guidelines for AI agents working with the f8 compiler, runtime, and language wor
 
 - **Rust**: `snake_case` (files, functions, modules, variables), `PascalCase` (structs, enums, traits), `SCREAMING_SNAKE_CASE` (constants).
 - **Python**: `snake_case` (files, packages, functions, variables), `PascalCase` (classes, exceptions), `_snake_case` (native/internal modules), `SCREAMING_SNAKE_CASE` (constants).
-- **Docs & specs**: `kebab-case.md` for filenames; prefix task specs with `YYYY-MM-DD-<feature-name>.md` under `docs/specs/drafts/` and `docs/specs/history/`.
+- **Docs & specs**: `kebab-case.md` for filenames; prefix ephemeral task specs with `YYYY-MM-DD-<feature-name>.md` under `docs/specs/drafts/`.
 
 ## Writing style
 
@@ -92,7 +94,7 @@ Applies to documentation, specs, docstrings, and commit messages.
   - Sentence case for list items and bold prefix labels.
 - **Cross-references**:
   - Relative links exclusively for stable reference documentation (`docs/`).
-  - Code spans (e.g. `crates/f8-core/src/compiler/mod.rs`) in draft specs and archives to avoid link bit-rot.
+  - Code spans (e.g. `crates/f8-core/src/compiler/mod.rs`) in draft specs to avoid link bit-rot.
 
 ## Git conventions
 

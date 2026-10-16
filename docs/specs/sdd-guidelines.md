@@ -1,65 +1,58 @@
 # Spec-Driven Development Guidelines
 
-Spec-driven development (SDD) aligns architectural design, task contracts, and acceptance criteria before code execution.
+Spec-driven development (SDD) aligns architectural design, data contracts, and acceptance criteria before code execution.
 
 ## Core philosophy
 
 - **Truth hierarchy**:
   - **Code, types & tests**: Authoritative source of truth for implementation behavior, data structures, and edge-case verification.
   - **Reference docs** (`docs/`): High-level system architecture (`docs/architecture.md`), DSL schemas (`docs/dsl/`), and function catalog (`docs/functions/catalog.md`).
-  - **Draft specs** (`docs/specs/drafts/`): Ephemeral execution plans defining proposals, technical trade-offs, acceptance criteria, and task checklists.
-  - **Spec history** (`docs/specs/history/`): Immutable point-in-time archive of completed draft specs and architectural decisions.
-- **Autonomous increments**: One draft spec represents one independently verifiable increment. Decompose multi-phase initiatives or multi-pass compiler changes into sequential draft specs.
-- **Tri-agent division of labor**: Clear separation between orchestration, implementation, and adversarial review.
-- **Archive custody**: Spec archives (`docs/specs/history/`) are exclusively managed by the Lead Orchestrator. Implementer and Reviewer subagents never move or edit archived specs directly.
+  - **Draft specs** (`docs/specs/drafts/`): Ephemeral execution contracts defining scope, technical decisions, data contracts, acceptance criteria, and tasks for active work.
+- **Proportional workflow**:
+  - **Full Tri-Agent SDD**: Mandatory for cross-crate features, compiler pass changes, new DSL/IR semantics, and multi-step refactors.
+  - **Direct execution**: Bug fixes, localized ergonomic tweaks, documentation/skill updates, and test additions execute directly in the Lead session (still verified against `AGENTS.md` gates) without draft specs or subagent dispatch.
+- **Autonomous increments**: One draft spec represents one independently verifiable increment. Decompose multi-phase initiatives into sequential specs.
+- **Spec custody**: Draft specs (`docs/specs/drafts/`) are exclusively authored and deleted by the Lead Orchestrator. Subagents never edit, move, or delete spec files.
 - **Verification as proof**: Acceptance criteria map 1:1 to executable tests, compiler checks, and static analysis.
-- **Zero silent workarounds**: Toolchain or compiler friction must be surfaced and resolved at root cause, never patched around silently.
 
-## Workflow
+## Tri-Agent Workflow
 
 ```mermaid
 flowchart LR
     A["1. Explore (Lead)"] --> B["2. Specify (Lead)"]
-    B --> C["3. Implement (Subagent)"]
-    C --> D["4. Verify & Review (Reviewer)"]
-    D --> E["5. Archive (Lead)"]
+    B --> C["3. Implement (Implementer)"]
+    C --> D["4. Review (Reviewer)"]
+    D --> E["5. Fold & Delete (Lead)"]
 ```
 
-### 1. Explore & discover (Lead Orchestrator)
+### 1. Explore & align (Lead Orchestrator)
 
-- **Inspect reality**: Ground designs directly in existing Rust/Python source modules, AST/IR types, and architecture docs (`docs/architecture.md`). Ban unverified assumptions.
-- **Evaluate trade-offs**: Surface 2–3 candidate implementation tiers (e.g. AST vs IR vs Lowering vs Python DSL) with explicit pros/cons and complexity analysis before choosing an approach.
-- **Decompose milestones**: Split multi-pass compiler changes or cross-crate features into sequential, self-contained draft specs.
-- **Align intent**: Align design, invariants, and scope with the user before committing to implementation.
+- **Inspect reality**: Ground designs in existing Rust/Python source modules, AST/IR types, and `docs/architecture.md`.
+- **Evaluate trade-offs**: Surface candidate approaches with explicit pros/cons when design choices exist.
+- **Align intent**: Confirm scope, invariants, and trade-offs with the user before writing code when requirements are ambiguous.
 
-### 2. Specify & design (Lead Orchestrator)
+### 2. Specify (Lead Orchestrator)
 
 - **Instantiate template**: Create `docs/specs/drafts/YYYY-MM-DD-<feature-name>.md` from `docs/specs/templates/draft-spec.md`.
-- **Compact contracts**: Define data structures, AST enums, trait signatures, and error types via markdown tables or type signatures. Ban speculative code dumps.
-- **Durable references**: Cite source paths and modules via backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs`). Reserve relative links exclusively for stable reference docs (`docs/`).
-- **Invariants & non-goals**: Explicitly define compiler invariants preserved and design non-goals.
-- **Acceptance criteria**: Enforce testable behavior using `Given / When / Then` scenarios covering both nominal and error/boundary cases.
-- **Actionable checklist**: Break work into ordered, independently testable tasks (including updating `docs/` or bundled skills when user-facing syntax or APIs change).
+- **High-signal contracts**: Define data structures, trait/method signatures, invariants, and `Given / When / Then` acceptance criteria without repeating file lists across multiple sections.
+- **Durable references**: Cite source paths via backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs`). Reserve relative markdown links for stable reference docs (`docs/`).
 
 ### 3. Implement (Implementer Subagent)
 
-- **Subagent dispatch**: Lead Orchestrator dispatches an isolated Implementer Subagent via `invoke_subagent` (`TypeName: 'self'`, `Workspace: inherit`) using `.agents/prompts/prompt-implementer.md`.
-- **Contract adherence**: Build strictly to draft spec contracts. Zero scope creep or unrequested features.
-- **Progressive checklist tracking**: Update task checklist in draft spec (`docs/specs/drafts/*.md`) progressively (`[ ]` to `[x]`).
-- **Verification gate adherence**: Implementer must verify a 100% clean pass across the full verification suite defined in `AGENTS.md` (Rust suite always; Python suite when touching `crates/f8-python` or `python/`).
-- **Completion receipt**: Implementer returns a structured **Implementation Receipt** (checklist progress, modified files, verification gate pass, diff summary) upon completion.
+- **Dispatch**: Invoke an isolated Implementer Subagent (`TypeName: 'self'`, `Workspace: inherit`) referencing `.agents/prompts/prompt-implementer.md` and the target draft spec path.
+- **Contract adherence**: Implement strictly to the draft spec contracts and `AGENTS.md` standards. Do not edit the draft spec file.
+- **Verification gate**: Pass the verification suite defined in `AGENTS.md` (Rust suite always; Python suite when touching `crates/f8-python` or `python/`) and return a concise completion summary.
 
-### 4. Verify & Review (Reviewer Subagent)
+### 4. Review (Reviewer Subagent)
 
-- **Reviewer dispatch**: Lead Orchestrator dispatches an adversarial Reviewer Subagent in a fresh context via `invoke_subagent` (`TypeName: 'self'`, `Workspace: inherit`) using `.agents/prompts/prompt-reviewer.md`.
-- **Report-only invariant**: Reviewer executes `review-implementation` skill in report-only mode. Zero edits to tracked files, draft specs, or git state.
-- **Adversarial probing**: Run edge-case probes in isolated scratchpad outside working tree (zero/empty matrices, topological cycles, type boundaries).
-- **Checklist audit**: Verify changes against `.agents/skills/review-implementation/references/checklist.md`.
+- **Dispatch**: Invoke an independent Reviewer Subagent (`TypeName: 'self'`, `Workspace: inherit`) instructing it to run the `review-implementation` skill against the target draft spec and current git diff.
+- **Report-only audit**: Reviewer verifies gate status, checks 1:1 spec conformance, audits the diff against the inlined checklist in `.agents/skills/review-implementation/SKILL.md`, and probes suspected edge cases.
 - **Verdict triage**:
-  - `Changes required`: Any `Blocker` or `Major` finding. Lead Orchestrator re-dispatches Implementer Subagent with findings table and coordinates. Loop repeats until clean.
-  - `Approve with flags`: Blocker- and Major-free; one or more architectural `Flag` items surfaced for user alignment.
-  - `Approve`: Clean review. Proceed to Archive.
+  - `Changes required`: Any `Blocker` or `Major` finding. Lead Orchestrator re-dispatches Implementer with findings to remediate.
+  - `Approve with flags`: Zero `Blocker`/`Major` findings; surfaces architectural `Flag` items for user/Lead attention.
+  - `Approve`: Clean review. Proceed to Fold & Delete.
 
-### 5. Archive (Lead Orchestrator)
+### 5. Fold & Delete (Lead Orchestrator)
 
-- **Archive draft**: Update draft spec `status: completed` and move file from `docs/specs/drafts/` to `docs/specs/history/`.
+- **Fold durable knowledge**: Reconcile any lasting architectural changes, invariants, or external contract updates into living reference docs (`docs/architecture.md`, `docs/dsl/`, `docs/functions/catalog.md`).
+- **Delete draft spec**: Remove the completed draft spec from `docs/specs/drafts/` so zero stale transition specs remain in the working tree; distill key rationale into the git commit message.
