@@ -75,12 +75,14 @@ The pipeline operates across six primary passes:
 ### Unified Inspection Facade (`CompiledModel`)
 
 To power fast headless introspection across outer interfaces (`f8-python`, `f8-mcp`) without re-running compiler passes, `f8-core` exposes a unified `CompiledModel` artifact. It consolidates all compilation pass artifacts into a single in-memory structure:
+
 - **Project & Theme**: The parsed `ProjectManifest`, `Vec<TableSpec>`, and resolved `Theme`.
 - **Symbols & Cells**: The expanded `SymbolTable` and `CellGrid` (retaining full cell metadata, formats, and ASTs).
 - **Graph & Values**: The validated `DependencyGraph` (providing topological order, incoming dependencies, and outgoing blast-radius dependents) and calculated `EvaluatedModel`.
 - **Layout & Formulas**: The physical 2D `LayoutMap` (sheet coordinates and column width metrics) and `LoweredFormulaMap` (Excel A1 formulas).
 
 `CompiledModel` exposes pure in-memory inspection and emission methods:
+
 - `emit_workbook(options)`: Directly generates standard `.xlsx` byte buffers (`Vec<u8>`).
 - `cell_value(table, row, col)` / `cell_formatted(table, row, col)`: Fast-path $O(1)$ evaluated scalar and pre-formatted display string lookups (`value`, `num`, and `formatted` on Python `CompiledModel`).
 - `inspect_cell(table, row, col)`: Returns cell values, formatted display strings, formats, formula ASTs, lowered Excel formulas, physical addresses, and direct/transitive edges.
@@ -116,11 +118,11 @@ flowchart TD
 
 The architecture strictly decouples semantic identity, visual presentation, and physical grid location:
 
-| Tier                          | Table Axis                  | Row Axis                                            | Column Axis                | Responsibility                               | Mutability                                 |
-| :---------------------------- | :-------------------------- | :-------------------------------------------------- | :------------------------- | :------------------------------------------- | :----------------------------------------- |
-| **1. Identity (`id`)**        | `id: "IncomeStatement"`     | `id: "revenue"`                                     | `id: "2024E"`              | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
-| **2. Presentation**           | `title: "Income Statement"` | Descriptor cell (`line_item: "Total Net Revenue"`) | `headers: ["2024 (Forecast)"]` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
-| **3. Physical Grid**          | Sheet assignment            | Row offset                                          | Column offset              | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
+| Tier                   | Table Axis                  | Row Axis                                           | Column Axis                    | Responsibility                               | Mutability                                 |
+| :--------------------- | :-------------------------- | :------------------------------------------------- | :----------------------------- | :------------------------------------------- | :----------------------------------------- |
+| **1. Identity (`id`)** | `id: "IncomeStatement"`     | `id: "revenue"`                                    | `id: "2024E"`                  | Logic, formulas, AST nodes, dependency graph | Immutable programmatic identifier          |
+| **2. Presentation**    | `title: "Income Statement"` | Descriptor cell (`line_item: "Total Net Revenue"`) | `headers: ["2024 (Forecast)"]` | Display labels in headers and stubs          | Editable anytime without breaking formulas |
+| **3. Physical Grid**   | Sheet assignment            | Row offset                                         | Column offset                  | Concrete Excel coordinates (`C10`, `$B$4`)   | Automatically assigned by layout engine    |
 
 Modifying presentation labels, formatting rules, or table placement never invalidates logic or dependencies.
 
@@ -155,16 +157,16 @@ To preserve both mathematical purity in the compiler and high authoring speed fo
 
 ## 6. Technology Stack
 
-| Component                | Technology                          | Purpose                                                               |
-| :----------------------- | :---------------------------------- | :-------------------------------------------------------------------- |
-| **Data deserialization** | `serde`, `serde_json`               | Type-safe schema validation and project ingestion                     |
-| **Formula parser**       | Native Lexer & Pratt parser         | Parsing formula expressions into AST representations                  |
-| **Graph engine**         | `petgraph`                          | Directed dependency graph, topological sort, cycle isolation          |
-| **In-memory evaluator**  | Native Rust engine                  | Topological DAG execution with 100% Excel calculation parity          |
-| **Function catalog**     | Extensible registry pattern         | Single source of truth for Excel built-in functions                   |
-| **Workbook emitter**     | `rust_xlsxwriter`                   | Fast generation of native `.xlsx` files with live formulas and styles |
-| **Python SDK & bridge**  | `pyo3`, `maturin`, `pythonize`      | Native C-extension, fluent modeling DSL, and in-process execution     |
-| **Agent protocol**       | Stdio JSON-RPC (`rmcp`) (Planned)   | Model Context Protocol server for AI agents                           |
+| Component                | Technology                        | Purpose                                                               |
+| :----------------------- | :-------------------------------- | :-------------------------------------------------------------------- |
+| **Data deserialization** | `serde`, `serde_json`             | Type-safe schema validation and project ingestion                     |
+| **Formula parser**       | Native Lexer & Pratt parser       | Parsing formula expressions into AST representations                  |
+| **Graph engine**         | `petgraph`                        | Directed dependency graph, topological sort, cycle isolation          |
+| **In-memory evaluator**  | Native Rust engine                | Topological DAG execution with 100% Excel calculation parity          |
+| **Function catalog**     | Extensible registry pattern       | Single source of truth for Excel built-in functions                   |
+| **Workbook emitter**     | `rust_xlsxwriter`                 | Fast generation of native `.xlsx` files with live formulas and styles |
+| **Python SDK & bridge**  | `pyo3`, `maturin`, `pythonize`    | Native C-extension, fluent modeling DSL, and in-process execution     |
+| **Agent protocol**       | Stdio JSON-RPC (`rmcp`) (Planned) | Model Context Protocol server for AI agents                           |
 
 ---
 
@@ -228,6 +230,7 @@ flowchart TD
 ### WASM-Ready Core Architecture
 
 The compiler core is designed from day one to support both native operating systems and `wasm32-unknown-unknown`:
+
 - **Zero OS dependencies**: Core dependencies (`indexmap`, `petgraph`, `serde`, `serde_json`, `thiserror`) compile cleanly to WebAssembly.
 - **In-memory workbook emission**: `rust_xlsxwriter` natively supports in-memory byte buffer generation via `save_to_buffer()`, enabling `.xlsx` exports in browser environments without disk access.
 - **Predictable execution**: Headless in-memory evaluation runs synchronously at 60 FPS in interactive frontends.
@@ -246,27 +249,3 @@ The compiler core is designed from day one to support both native operating syst
    - Wrap core inspection, scaffolding, and validation routines as typed MCP tools for chat-only AI agents.
 4. **Phase 4: WebAssembly & Web Application (`f8-wasm`, Planned)**:
    - Expose `f8-core` via `wasm-bindgen` for client-side evaluation in browser environments.
-
----
-
-## 9. Documentation Map
-
-Documentation is organized into non-overlapping categories under `docs/` and the packaged Python skill:
-
-- **Architecture & DSL Reference (`docs/`)**:
-  - [Architecture Overview](./architecture.md): High-level mental model, compiler pass invariants, `CompiledModel` facade, and crate topology.
-  - [Specification Format & 2D Grid](./dsl/spec-format.md): Declarative multi-file JSON schemas, table structure, gutters, and multi-tier headers.
-  - [Addressing Syntax](./dsl/addressing.md): Reference syntax, active coordinates (`@col`, `@row`), temporal offsets (`col.prev`), and slicing.
-  - [Formula Grammar](./dsl/grammar.md): Formal EBNF grammar and operator precedence.
-  - [Semantic Formatting & Themes](./dsl/formatting.md): Semantic format presets, conflict resolution, and pluggable themes.
-  - [Modeling Patterns & Archetypes](./dsl/patterns.md): Canonical 2D patterns (horizontal statements, cap tables, comps, debt schedules).
-  - [Standard Function Catalog](./functions/catalog.md): Supported V1 Excel built-ins, signatures, and calculation behaviors.
-- **Python Modeling Reference (`python/f8/skills/f8-modeling/`)**:
-  - Bundled directly inside the `f8` package wheel for AI agents and human modelers.
-  - [`SKILL.md`](../python/f8/skills/f8-modeling/SKILL.md): Comprehensive financial modeling agent instructions.
-  - [`syntax-and-grid.md`](../python/f8/skills/f8-modeling/references/syntax-and-grid.md): Python DSL methods, column roles, and visual styling.
-  - [`functions.md`](../python/f8/skills/f8-modeling/references/functions.md): Built-in function reference and formula conventions in Python.
-  - [`auditing-and-repair.md`](../python/f8/skills/f8-modeling/references/auditing-and-repair.md): Model auditing, defect diagnosis, and fix workflows.
-- **Spec-Driven Development (`docs/specs/`)**:
-  - [SDD Guidelines](./specs/sdd-guidelines.md): Workflow for authoring ephemeral draft specs (`docs/specs/drafts/`), subagent implementation/review, and folding durable changes into living reference docs.
-

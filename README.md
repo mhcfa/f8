@@ -10,7 +10,7 @@ The f8 architecture separates declarative model specification, intermediate repr
 - [2D matrix DSL reference](docs/dsl/spec-format.md)
 - [Standard function catalog](docs/functions/catalog.md)
 - [Python modeling skill](python/f8/skills/f8-modeling/SKILL.md)
-- [Spec-driven development guidelines](docs/specs/sdd-guidelines.md)
+- [Spec-driven development skill](.agents/skills/spec-driven-development/SKILL.md)
 
 ## Workspace crates
 
