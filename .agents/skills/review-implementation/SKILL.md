@@ -28,15 +28,15 @@ description: >-
 3. **Checklist Audit**:
    - Audit all changed files against the checklist below.
 4. **Targeted Probes (when warranted)**:
-   - When the diff introduces complex edge cases not covered by unit tests (e.g., empty/1x1 ranges, cycle boundaries, header spanning, PyO3 boundary types/GIL, format cache invalidation), run a quick probe script in `<appDataDir>/brain/<conversation-id>/scratch/`. Never leave scratch files in the repository.
+   - When the diff introduces complex edge cases not covered by unit tests, run a temporary script outside the worktree (e.g., agent's scratch directory). Never leave scratch files in the repository.
 
 ## Review Checklist
 
 ### 1. Compiler Invariants & Architecture
 
 - [ ] **Single source of truth (`Blocker`)**: Domain models, identifiers, coordinate mappings, and errors have one authoritative definition; zero duplication across passes.
-- [ ] **Clean phase boundaries (`Blocker`)**: Passes remain decoupled (Parser $\rightarrow$ AST $\rightarrow$ Lowering $\rightarrow$ IR $\rightarrow$ DAG $\rightarrow$ Layout $\rightarrow$ Emitter / Evaluator); higher-level domain logic never leaks into low-level IR primitives.
-- [ ] **Predictable core IR (`Blocker`)**: One canonical representation per concept; syntactic sugar isolated to outer adapters/DSL.
+- [ ] **Clean phase boundaries (`Blocker`)**: Passes remain decoupled; higher-level domain logic never leaks into low-level IR primitives.
+- [ ] **Predictable core IR (`Blocker`)**: Strictly one canonical representation per concept; zero magic fallbacks or core syntactic sugar; isolate ergonomics and convenience to outer adapters.
 - [ ] **Strong typing over string heuristics (`Blocker`)**: Explicit enums, interned IDs, and typed AST/IR fields; zero regex/string parsing to infer semantics.
 - [ ] **Pure data flow (`Blocker`)**: Explicit inputs and outputs; zero hidden or shared mutable state.
 - [ ] **Root-cause correctness (`Blocker`)**: Defects fixed at origin (parser, IR, schema); zero downstream band-aids or test-specific branches.

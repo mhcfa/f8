@@ -32,14 +32,14 @@ description: >-
 
 ### 3. Implement (Implementer Subagent)
 
-- Invoke an isolated subagent (`TypeName: 'self'`, `Workspace: 'inherit'`) instructing it to:
+- Dispatch an isolated subagent in the shared workspace instructing it to:
   - Implement strictly to the target draft spec and `AGENTS.md` (zero scope creep; never edit or delete the draft spec).
   - Run and pass the `AGENTS.md` verification suite (Rust always; Python when touching `crates/f8-python` or `python/`).
   - Clean up any temporary scratch files and return a concise summary of changed files and verification results.
 
 ### 4. Review (Reviewer Subagent)
 
-- Invoke an independent subagent (`TypeName: 'self'`, `Workspace: 'inherit'`) instructing it to run the `review-implementation` skill against the target draft spec and current git diff.
+- Dispatch an independent subagent in the shared workspace instructing it to run the `review-implementation` skill against the target draft spec and current git diff.
 - **Verdict handling**:
   - `Changes required`: Re-dispatch the Implementer with the findings to remediate, then re-verify.
   - `Approve with flags` / `Approve`: Surface any architectural `Flag` items and proceed to step 5.

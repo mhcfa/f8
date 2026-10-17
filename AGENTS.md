@@ -16,11 +16,11 @@
 ## Core principles
 
 - **Single source of truth**: Centralize shared definitions; zero logic or type duplication across crates or passes.
-- **Predictable core IR**: One canonical representation per concept. Isolate syntactic sugar and ergonomics to outer adapters/DSL.
+- **Predictable core IR**: Strictly one canonical representation per concept. Zero magic fallbacks or syntactic sugar in core; isolate ergonomics and convenience to outer adapters.
 - **Pure data flow**: Explicit inputs and outputs; zero global mutable state or hidden side effects.
 - **Strong typing**: Explicit enums, interned IDs, and typed structs; ban stringly-typed heuristics.
 - **Root-cause correctness & zero silent workarounds**: Fix defects at parser, IR, or schema origin. Never patch around compiler, typing, or toolchain friction with downstream band-aids, `# type: ignore`, lossy `.ok()`, or unverified casts.
-- **Greenfield rigor**: Ban compatibility shims, `#[deprecated]` aliases, dead code, commented-out tombstones, premature abstractions, and `todo!()`/`unimplemented!()` stubs. Update callers in-place.
+- **Greenfield rigor**: No compatibility shims, `#[deprecated]` aliases, dead code, commented-out tombstones, premature abstractions, and `todo!()`/`unimplemented!()` stubs. Update callers in-place.
 
 ## Code standards & verification
 
@@ -47,7 +47,21 @@
   - `uv run pyright`
   - `uv run pytest`
 
-## Writing & git conventions
+## Writing style
 
-- **Telegraphic style**: Concise, high-density prose across docs, specs, docstrings, and commits. Favor bulleted lists with bold prefix labels and structured tables; omit filler.
-- **Conventional commits**: `<type>(<scope>): <summary>` (`feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `perf`), imperative mood, lowercase summary, no trailing period, followed by a blank line and contiguous `- ` bullets.
+Applies to documentation, specs, docstrings, and commit messages.
+
+- **Telegraphic and high-density**:
+  - Prioritize conciseness, density, and clarity over conversational grammar or narrative prose.
+  - Favor bulleted lists, sentence fragments, structured tables.
+  - Eliminate conversational pleasantries, introductory filler, and redundant conclusions.
+  - Sentence case for list items and bold prefix labels.
+- **No document hyperlinks**: Reference workspace documents and code files by backticked filename.
+- **No LaTeX math notation**: Avoid `$$...$$`, `$...$`, `\frac`, or `\text` notation across all specifications and documentation unless specifically requested.
+
+## Git conventions
+
+- **Conventional commits**: Follow `<type>(<scope>): <summary>`.
+  - Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `perf`.
+  - Scopes: `cli`, `schemas`, `templates`, `tests`, `docs`, `config`, `ingest`.
+  - Format: Imperative mood, lowercase, no trailing period. Blank line before body. Contiguous hyphen bullets (`- `).
