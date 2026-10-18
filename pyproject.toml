@@ -6,8 +6,14 @@ build-backend = "maturin"
 name = "f8"
 version = "0.1.0"
 description = "Financial modeling engine with compiler verification and live Excel formulas"
+readme = "README.md"
+license = "AGPL-3.0-only"
+authors = [{ name = "Michael (Chencheng) Hu, CFA" }]
 requires-python = ">=3.12"
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/mhcfa/f8"
 
 [dependency-groups]
 dev = [
