@@ -18,10 +18,10 @@ my_model/
 ```
 
 ### Invariants
-- **Strictly one table per file**: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/`.
-- **Logical table references**: Sheets in `f8.json` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`), never filesystem paths.
-- **Global table ID uniqueness**: Every table `id` must be globally unique across the workbook.
-- **Decoupled file discovery**: The project loader discovers all `tables/*.json` files and indexes them by internal `id`. Filenames are decoupled from table IDs.
+- Strictly one table per file: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/`.
+- Logical table references: Sheets in `f8.json` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`), never filesystem paths.
+- Global table ID uniqueness: Every table `id` must be globally unique across the workbook.
+- Decoupled file discovery: The project loader discovers all `tables/*.json` files and indexes them by internal `id`. Filenames are decoupled from table IDs.
 
 ---
 
@@ -60,9 +60,9 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
 ```
 
 ### Manifest Properties
-- **`model_name`** (`string`, required): Model title used in metadata and workbook document properties.
-- **`theme`** (`string`, optional, default `"corporate_navy"`): Built-in theme name or relative path to a custom theme JSON file.
-- **`sheets`** (`array`, required): Ordered list of worksheet definitions:
+- `model_name` (`string`, required): Model title used in metadata and workbook document properties.
+- `theme` (`string`, optional, default `"corporate_navy"`): Built-in theme name or relative path to a custom theme JSON file.
+- `sheets` (`array`, required): Ordered list of worksheet definitions:
   - `name` (`string`, required): Worksheet tab label. Must be unique across the workbook.
   - `tab_color` (`string`, optional): Hex color code starting with `#` (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`).
   - `freeze_panes` (`object`, optional): `{ "row": u32, "col": u32 }` physical worksheet row and column split lines.
@@ -137,11 +137,11 @@ Each table file defines an orthogonal 2D calculation matrix with explicit column
 Columns are declared in `table.columns` as either calculable data columns or spacing gutters.
 
 ### 4.1. Data Columns (`kind: "data"`)
-- **`id`** (`string`, required): Column identifier (`ColId`), referenced in formula coordinates (e.g. `"2024E"`).
-- **`role`** (`"measure"` | `"descriptor"`, optional, default `"measure"`):
+- `id` (`string`, required): Column identifier (`ColId`), referenced in formula coordinates (e.g. `"2024E"`).
+- `role` (`"measure"` | `"descriptor"`, optional, default `"measure"`):
   - `measure`: Numerical quantities, time periods, and calculation outputs. Row vector formulas (`row.expr`) broadcast across all measure columns.
   - `descriptor`: Row labels, line item descriptions, units, or metadata stubs. Descriptors are strictly isolated from vector broadcasting and temporal offsets (`col.prev` / `col.next`).
-- **`headers`** (`array of strings`, optional): Multi-tier column header labels.
+- `headers` (`array of strings`, optional): Multi-tier column header labels.
   - *Center across selection*: Adjacent columns sharing identical upper-tier labels center automatically across the span without cell merging (FAST financial modeling standard).
   - *Bottom alignment*: When columns declare differing header array lengths, headers are bottom-aligned so the bottom tier always holds the primary metric label while upper tiers remain blank.
   - *Zero headers*: Omitting `headers` allocates zero physical header rows.
@@ -159,15 +159,15 @@ Rows are declared in `table.rows` in their exact vertical display order.
 
 ### 5.1. Data Rows (`kind: "data"`)
 Calculable rows containing values, vector formulas, or individual cell overrides:
-- **`id`** (`string`, required): Row identifier (`RowId`), referenced in formula coordinates (e.g. `"revenue"`).
-- **`expr`** (`string`, optional): Row-wide vector formula broadcasting across all measure columns.
-- **`style`**, **`format`**, **`decimals`**, **`currency`**, **`highlight`**: Row-level default presentation attributes.
-- **`cells`** (`object`, optional): Map of column IDs (`ColId`) to cell inputs.
+- `id` (`string`, required): Row identifier (`RowId`), referenced in formula coordinates (e.g. `"revenue"`).
+- `expr` (`string`, optional): Row-wide vector formula broadcasting across all measure columns.
+- `style`, `format`, `decimals`, `currency`, `highlight`: Row-level default presentation attributes.
+- `cells` (`object`, optional): Map of column IDs (`ColId`) to cell inputs.
 
 ### 5.2. Section Header Rows (`kind: "section_header"`)
 Visual divider banners organizing line items into logical financial sections:
-- **`title`** (`string`, required): Header label displayed across the table width.
-- **`indent`** (`integer`, optional, default `0`): Typographic indent level ($0 \le N \le 3$).
+- `title` (`string`, required): Header label displayed across the table width.
+- `indent` (`integer`, optional, default `0`): Typographic indent level ($0 \le N \le 3$).
 - Section headers contain zero calculable cells and do not interrupt vector formulas across data rows.
 
 ### 5.3. Row Gutters (`kind: "gutter"`)
@@ -185,9 +185,9 @@ Tables can opt into outline folding via `"collapsible": true`. When enabled, all
 
 Every key under `data_row.cells` refers strictly to a declared data column identifier (`ColId`). Each entry represents one 0D coordinate point:
 
-1. **Literal value**: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
-2. **Point formula override**: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
-3. **Detailed override**:
+1. Literal value: Number (`100000.0`, `42`), string (`"Total Revenue"`), boolean (`true`, `false`), or explicit empty (`null`).
+2. Point formula override: `{ "expr": "IncomeStatement[\"revenue\", col.prev] * 1.08" }`.
+3. Detailed override:
    ```json
    {
      "value": 85000,
@@ -205,16 +205,16 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 
 ## 7. Core Validation Invariants
 
-1. **1:1 physical mapping**: Declared rows and columns map 1:1 to physical spreadsheet coordinates. The compiler never synthesizes phantom rows or unaddressed stub columns.
-2. **Single source of truth**:
+1. 1:1 physical mapping: Declared rows and columns map 1:1 to physical spreadsheet coordinates. The compiler never synthesizes phantom rows or unaddressed stub columns.
+2. Single source of truth:
    - `id`: Immutable programmatic identifier used in formulas and ASTs.
    - `headers` / descriptor cell: Display text rendered in headers and row stubs.
    - Physical coordinates: Computed deterministically by the spatial layout engine.
-3. **Three-tier specificity lattice**:
+3. Three-tier specificity lattice:
    $$\text{Cell override (0D point)} > \text{Vector rule (1D row or column)} > \text{Explicit null}$$
-4. **Zero silent ambiguity**: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, compilation halts with `AmbiguousExpressionConflict`.
-5. **Zero silent blanks**: Every measure cell must resolve to a value, formula override, vector formula, or explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`.
-6. **Descriptor boundary isolation**: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing data rows and measure columns, and never evaluate across descriptor columns.
+4. Zero silent ambiguity: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, compilation halts with `AmbiguousExpressionConflict`.
+5. Zero silent blanks: Every measure cell must resolve to a value, formula override, vector formula, or explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`.
+6. Descriptor boundary isolation: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing data rows and measure columns, and never evaluate across descriptor columns.
 
 ---
 

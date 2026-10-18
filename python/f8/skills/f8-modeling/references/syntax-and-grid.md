@@ -32,21 +32,21 @@ All cell references require explicit 2D coordinates in bracket syntax:
 
 ### Syntax Invariants
 
-- **Table identifiers**: Bare identifiers before the bracket (e.g. `Table[...]`, `IncomeStatement[...]`). Quoted names (`"Table"[...]`) raise `FormulaParseError`.
-- **Quoted keys**: Row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @col]`, `["tax_rate", "val"]`). Bare identifiers inside brackets raise `FormulaParseError` (`ParseError::UnquotedCoordinateKey`).
-- **Explicit axis specifiers**: Active coordinates require `@col` or `@row`. Bare `@` raises `FormulaParseError` (`ParseError::RetiredBareAt`).
-- **No dot notation**: Dot access (`Table.revenue`, `Table.revenue[@col]`) raises `FormulaParseError`.
-- **Uppercase identifiers**: Built-in functions (`SUM`, `AVERAGE`, `IF`, `MIN`, `MAX`, `XLOOKUP`, `NPV`, etc.) and boolean literals (`TRUE`, `FALSE`) must be uppercase. Lowercase identifiers raise `FormulaParseError`.
-- **No null literal**: The `null` literal is prohibited in formulas and raises `FormulaParseError`.
-- **Algebraic precedence**:
+- Table identifiers: Bare identifiers before the bracket (e.g. `Table[...]`, `IncomeStatement[...]`). Quoted names (`"Table"[...]`) raise `FormulaParseError`.
+- Quoted keys: Row and column keys inside brackets must be double-quoted strings (e.g. `["revenue", @col]`, `["tax_rate", "val"]`). Bare identifiers inside brackets raise `FormulaParseError` (`ParseError::UnquotedCoordinateKey`).
+- Explicit axis specifiers: Active coordinates require `@col` or `@row`. Bare `@` raises `FormulaParseError` (`ParseError::RetiredBareAt`).
+- No dot notation: Dot access (`Table.revenue`, `Table.revenue[@col]`) raises `FormulaParseError`.
+- Uppercase identifiers: Built-in functions (`SUM`, `AVERAGE`, `IF`, `MIN`, `MAX`, `XLOOKUP`, `NPV`, etc.) and boolean literals (`TRUE`, `FALSE`) must be uppercase. Lowercase identifiers raise `FormulaParseError`.
+- No null literal: The `null` literal is prohibited in formulas and raises `FormulaParseError`.
+- Algebraic precedence:
   1. Exponentiation (`^`, tier 5, right-associative)
   2. Unary prefix (`+`, `-`, tier 4, right-associative)
   3. Multiplicative (`*`, `/`, tier 3, left-associative)
   4. Additive (`+`, `-`, tier 2, left-associative)
   5. Relational comparisons (`=`, `<>`, `<`, `<=`, `>`, `>=`, tier 1, left-associative; equality is `=`, inequality is `<>`).
-- **Omitted arguments**: Positional parameters are omitted via `_` (e.g. `PMT(rate, nper, pv, _, type)`). Restricted to function argument lists; using `_` in arithmetic or coordinate selectors raises `FormulaParseError`.
-- **Slice ordering**: Range slices (`"k1".."k2"`) must follow declared table axis order (`start_index <= end_index`). Inverted ranges raise `ReferenceResolutionError`.
-- **Temporal bounds**: `col.prev` and `col.next` navigate measure columns only, automatically skipping descriptor columns. Offsets extending outside table bounds raise `ReferenceResolutionError`.
+- Omitted arguments: Positional parameters are omitted via `_` (e.g. `PMT(rate, nper, pv, _, type)`). Restricted to function argument lists; using `_` in arithmetic or coordinate selectors raises `FormulaParseError`.
+- Slice ordering: Range slices (`"k1".."k2"`) must follow declared table axis order (`start_index <= end_index`). Inverted ranges raise `ReferenceResolutionError`.
+- Temporal bounds: `col.prev` and `col.next` navigate measure columns only, automatically skipping descriptor columns. Offsets extending outside table bounds raise `ReferenceResolutionError`.
 
 ---
 
@@ -78,10 +78,10 @@ table.add_column(
 
 ### Headers and Formatting Defaults
 
-- **Single vs. multi-tier headers**: Provide `header="Title"` for single-tier or `headers=["FY 2024", "Q1"]` for stacked tiers (mutually exclusive; specifying both raises `ValueError`).
-- **Multi-tier bottom alignment**: When columns have unequal header depths, columns with fewer headers are padded with blank super-headers at the top so metric labels align to the bottom tier.
-- **Column defaults and conflicts**: Column-level `format`, `decimals`, `currency`, and `style` apply when the row does not specify them. Differing row and column values without a 0D cell override raise conflict errors (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
-- **Fluent chaining**: Returns `Table` to support method chaining.
+- Single vs. multi-tier headers: Provide `header="Title"` for single-tier or `headers=["FY 2024", "Q1"]` for stacked tiers (mutually exclusive; specifying both raises `ValueError`).
+- Multi-tier bottom alignment: When columns have unequal header depths, columns with fewer headers are padded with blank super-headers at the top so metric labels align to the bottom tier.
+- Column defaults and conflicts: Column-level `format`, `decimals`, `currency`, and `style` apply when the row does not specify them. Differing row and column values without a 0D cell override raise conflict errors (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
+- Fluent chaining: Returns `Table` to support method chaining.
 
 ```python
 table.add_column("line_item", role="descriptor", header="Line Item")
@@ -92,8 +92,8 @@ table.add_column("2024Q2", role="measure", headers=["FY 2024", "Q2"], format="cu
 ### Column Vector Formulas (Vertical Expansion)
 
 When `expr` is provided on `table.add_column(...)`, it evaluates down across all data rows from top to bottom.
-- **Active row addressing**: References active row via `@row` and relative offsets via `row.prev` / `row.next`.
-- **Cross-sectional modeling**: Standard for Cap Tables, Trading Comps, and Portfolio Schedules where rows represent entities and columns represent computed metrics.
+- Active row addressing: References active row via `@row` and relative offsets via `row.prev` / `row.next`.
+- Cross-sectional modeling: Standard for Cap Tables, Trading Comps, and Portfolio Schedules where rows represent entities and columns represent computed metrics.
 
 ```python
 table.add_column(
@@ -130,10 +130,10 @@ table.add_row(
 ### Row Vector Formulas (Horizontal Expansion)
 
 When `expr` is provided on `table.add_row(...)`, it evaluates across all `measure` columns from left to right.
-- **Active column addressing**: References active column via `@col` and temporal lags via `col.prev` / `col.next`.
-- **Descriptor isolation**: Never broadcasts across `role="descriptor"` columns.
-- **Timeline modeling**: Standard for P&L, Balance Sheet, and Cash Flow statements.
-- **Base period anchor**: Because `col.prev` at the first measure column has no predecessor, provide its base value explicitly in `cells`.
+- Active column addressing: References active column via `@col` and temporal lags via `col.prev` / `col.next`.
+- Descriptor isolation: Never broadcasts across `role="descriptor"` columns.
+- Timeline modeling: Standard for P&L, Balance Sheet, and Cash Flow statements.
+- Base period anchor: Because `col.prev` at the first measure column has no predecessor, provide its base value explicitly in `cells`.
 
 ```python
 table.add_row(
@@ -151,16 +151,16 @@ table.add_row(
 
 Cell coordinates resolve through a deterministic 3-tier specificity lattice:
 
-1. **Tier 1 (0D point cell override)**:
+1. Tier 1 (0D point cell override):
    Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
-2. **Tier 2 (1D vector rules: row XOR col)**:
-   - **Vector formulas**: `row.expr` XOR `col.expr`. Intersecting row and column expressions without a 0D cell override raise `SpecificationError` (`AmbiguousExpressionConflict`).
-   - **Vector conflicts**: Differing row and column `format`, `decimals`, or `currency` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
-   - **Symmetrical 2D border composition**: Rows control horizontal borders (`style="subtotal"` thin top; `style="total"` thin top and double-bottom); columns control vertical borders. Row `"total"` + Column `"total"` composes into a 2D accounting total box (`is_bold=True`). Setting `style="data"` on a 0D cell override resets both axes to standard data.
-   - **Highlight propagation**: Cells inherit highlight if either row or column has `highlight=True`, unless explicitly overridden by `highlight=False` on a 0D cell override.
-3. **Tier 3 (Descriptor boundaries and unassigned cells)**:
-   - **Descriptor isolation**: Vector formulas never broadcast across descriptor columns (`role="descriptor"`).
-   - **Unassigned cell enforcement**: Every calculable measure cell requires an explicit value, vector formula, or cell override. Unassigned measure coordinates raise `SpecificationError` (`UnassignedCell`). Descriptor cells lacking an explicit label also raise `SpecificationError` (`UnassignedCell`).
+2. Tier 2 (1D vector rules: row XOR col):
+   - Vector formulas: `row.expr` XOR `col.expr`. Intersecting row and column expressions without a 0D cell override raise `SpecificationError` (`AmbiguousExpressionConflict`).
+   - Vector conflicts: Differing row and column `format`, `decimals`, or `currency` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
+   - Symmetrical 2D border composition: Rows control horizontal borders (`style="subtotal"` thin top; `style="total"` thin top and double-bottom); columns control vertical borders. Row `"total"` + Column `"total"` composes into a 2D accounting total box (`is_bold=True`). Setting `style="data"` on a 0D cell override resets both axes to standard data.
+   - Highlight propagation: Cells inherit highlight if either row or column has `highlight=True`, unless explicitly overridden by `highlight=False` on a 0D cell override.
+3. Tier 3 (Descriptor boundaries and unassigned cells):
+   - Descriptor isolation: Vector formulas never broadcast across descriptor columns (`role="descriptor"`).
+   - Unassigned cell enforcement: Every calculable measure cell requires an explicit value, vector formula, or cell override. Unassigned measure coordinates raise `SpecificationError` (`UnassignedCell`). Descriptor cells lacking an explicit label also raise `SpecificationError` (`UnassignedCell`).
 
 ---
 
@@ -184,13 +184,13 @@ class Cell:
     note: str | None = None
 ```
 
-- **Payload exclusivity**: Must specify either `value` or `expr`, never both (raises `ValueError` in Python, `SpecificationError` in compiler).
-- **Allowed values**: `CellValueLiteral = float | int | str | bool | None`.
-- **Indentation constraint**: `indent: int` restricted to descriptor cells (`role="descriptor"`). Setting `indent > 0` on a measure cell raises `SpecificationError` (`InvalidIndentOnMeasureCell`).
-- **Currency constraint**: Permitted only when effective format is `"currency"`. Specifying on other presets raises `SpecificationError` (`InvalidCurrencyForPreset`).
-- **Precision constraint**: Permitted only on numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`, `integer`). Specifying on `date` or `text` raises `SpecificationError` (`InvalidPrecisionForPreset`). Decimals cannot exceed 14 (`PrecisionOutOfBounds`).
-- **Highlight**: Boolean flag (`highlight=True`) applying visual fill styling to callout drivers or summary outputs.
-- **0D note isolation**: Free-form audit comment attached to a discrete coordinate. Notes never broadcast across rows or columns; vector-generated cells have `note=None`.
+- Payload exclusivity: Must specify either `value` or `expr`, never both (raises `ValueError` in Python, `SpecificationError` in compiler).
+- Allowed values: `CellValueLiteral = float | int | str | bool | None`.
+- Indentation constraint: `indent: int` restricted to descriptor cells (`role="descriptor"`). Setting `indent > 0` on a measure cell raises `SpecificationError` (`InvalidIndentOnMeasureCell`).
+- Currency constraint: Permitted only when effective format is `"currency"`. Specifying on other presets raises `SpecificationError` (`InvalidCurrencyForPreset`).
+- Precision constraint: Permitted only on numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`, `integer`). Specifying on `date` or `text` raises `SpecificationError` (`InvalidPrecisionForPreset`). Decimals cannot exceed 14 (`PrecisionOutOfBounds`).
+- Highlight: Boolean flag (`highlight=True`) applying visual fill styling to callout drivers or summary outputs.
+- 0D note isolation: Free-form audit comment attached to a discrete coordinate. Notes never broadcast across rows or columns; vector-generated cells have `note=None`.
 
 ### Input Types for `cells`
 
@@ -280,16 +280,16 @@ table.add_row_gutter() -> Table
 table.add_column_gutter() -> Table
 ```
 
-- **Row gutter**: Consumes 1 physical row sized to `theme.metrics.gutter_row_height` (9.0 pt) with zero calculation cells.
-- **Column gutter**: Consumes 1 physical column sized to `theme.metrics.gutter_col_width` with zero calculation cells.
+- Row gutter: Consumes 1 physical row sized to `theme.metrics.gutter_row_height` (9.0 pt) with zero calculation cells.
+- Column gutter: Consumes 1 physical column sized to `theme.metrics.gutter_col_width` with zero calculation cells.
 - Vector formulas automatically skip gutter rows and columns.
 
 ### Worksheet Margins and Spacing
 
-- **Default margins**: Row 0 reserved as top gutter; Col 0 (Column A) reserved as left gutter. Primary table starts at cell `B2` (`col: 1, row: 1`).
-- **Vertical stacking**: Multiple tables on a single worksheet stack vertically in declared order, separated automatically by 2 blank gutter rows.
-- **Table banners**: Tables with `title` or `subtitle` emit banner rows followed by an 8.0 pt buffer gutter before column headers.
-- **Width arbitration**: Sheet-wide column widths arbitrate across stacked tables, accounting for indentation (`indent * 2` chars) and enforcing `theme.metrics.min_col_width` (12.0 chars) on measure columns.
+- Default margins: Row 0 reserved as top gutter; Col 0 (Column A) reserved as left gutter. Primary table starts at cell `B2` (`col: 1, row: 1`).
+- Vertical stacking: Multiple tables on a single worksheet stack vertically in declared order, separated automatically by 2 blank gutter rows.
+- Table banners: Tables with `title` or `subtitle` emit banner rows followed by an 8.0 pt buffer gutter before column headers.
+- Width arbitration: Sheet-wide column widths arbitrate across stacked tables, accounting for indentation (`indent * 2` chars) and enforcing `theme.metrics.min_col_width` (12.0 chars) on measure columns.
 
 ### Layout Sequencing Pattern
 
@@ -330,7 +330,7 @@ Row and column styles control accounting borders and typography:
 - `style="data"` (default): Standard data row/column.
 - `style="subtotal"`: Top thin line separator for subtotals.
 - `style="total"`: Top thin line and bottom double-underline for grand totals (renders bold typography).
-- **Orthogonal 2D composition**: Row styles control horizontal borders; column styles control vertical borders. Row `"total"` + Column `"total"` composes into a complete 2D accounting total box.
+- Orthogonal 2D composition: Row styles control horizontal borders; column styles control vertical borders. Row `"total"` + Column `"total"` composes into a complete 2D accounting total box.
 
 ### Currency Codes (`CurrencyCode`)
 

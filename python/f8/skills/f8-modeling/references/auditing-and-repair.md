@@ -51,13 +51,13 @@ tree = compiled.precedents_of("Operations", "ebitda", "2024E", recursive=True)
 
 Contracts defined in `f8.types`:
 
-- **`ModelSummary`**: Top-level model metrics:
+- `ModelSummary`: Top-level model metrics:
   - `model_name`: Declared model identifier.
   - `theme_name`: Applied visual theme.
   - `sheets`: List of `SheetSummary` entries (`name`, `tables`, `total_cells`).
   - Total counters: `total_sheets`, `total_tables`, `total_cells`, `total_drivers`, `total_formulas`.
   - Subordinate `TableSummary` entries in `sheets[*].tables`: `id`, `title`, `row_count`, `col_count`, `cell_count`, `driver_count`, `formula_count`.
-- **`CellInspection`**: Comprehensive single-cell audit record:
+- `CellInspection`: Comprehensive single-cell audit record:
   - `coordinate`: `CellCoordinate` dictionary (`table`, `row`, `col`).
   - `sheet`: Parent worksheet identifier.
   - `physical_address`: Canonical worksheet address (e.g. `"Financials!C14"`).
@@ -72,18 +72,18 @@ Contracts defined in `f8.types`:
   - `note`: Author note string or `None`.
   - `precedents`: Immediate incoming `CellNeighborInspection` records (`cell_id`, `sheet_address`, `value`, `formatted_value`).
   - `dependents`: Immediate outgoing `CellNeighborInspection` records (`cell_id`, `sheet_address`, `value`, `formatted_value`).
-- **`DependencyTree`**: Calculation dependency tree:
+- `DependencyTree`: Calculation dependency tree:
   - `root`: `CellCoordinate` dictionary (`table`, `row`, `col`).
   - `direct_count`: Immediate 1-hop dependencies.
   - `transitive_count`: Total unique cells reached across all calculation tiers (`direct_count` when `recursive=False`).
   - `nodes`: List of `DependencyNode` entries (`cell_id`, `sheet_address`, `value`, `formatted_value`, `excel_formula`, `is_pruned`, `children`). When `recursive=True`, `is_pruned` breaks circular paths and eliminates duplicate subtrees.
-- **`TableInspection`**: 2D table grid metadata:
+- `TableInspection`: 2D table grid metadata:
   - `table_id`, `title`, `subtitle`: Table identifiers and display headers.
   - `sheet`: Parent worksheet identifier.
   - `columns`: List of `ColumnInspection` records (`id`, `headers`, `is_gutter`, `is_descriptor`, `style`).
   - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`, `style`).
   - `cells`: Dictionary keyed by canonical coordinate string (`'Table["row", "col"]'`) mapping to `TableCellInfo`.
-- **`SheetInspection`**: Physical worksheet grid layout:
+- `SheetInspection`: Physical worksheet grid layout:
   - `sheet_id`, `title`: Worksheet identifiers.
   - `tables`: List of placed table identifiers.
   - `min_col`, `max_col`, `min_row`, `max_row`: 0-indexed physical grid bounding box.
@@ -151,10 +151,10 @@ Returned by `auditor.cell(row, col)` and `compiled.inspect_table(table_id)["cell
 
 ### Coordinate Lookup Error Semantics
 
-- **Absent coordinate (`KeyError`)**: Calling `auditor.cell(row, col)`, `auditor.value(row, col)`, `auditor.num(row, col)`, `auditor.formatted(row, col)`, `auditor.row_values(row, cols)`, `auditor.row_nums(row, cols)`, `auditor.to_markdown(rows=..., cols=...)`, or `auditor[row, col]` with non-existent row or column IDs raises `KeyError`.
-- **Non-numeric value (`TypeError`)**: Calling `compiled.num(...)`, `auditor.num(row, col)`, or `auditor.row_nums(row, cols)` on a cell that evaluated to text, boolean, `None` (empty), or an Excel error raises `TypeError`.
-- **Invalid index key (`TypeError`)**: Bracket indexing `auditor[key]` expects a 2-tuple `(row, col)`. Passing non-tuple or non-string elements raises `TypeError`.
-- **Unassigned cell (`None`)**: A calculable coordinate declared within table bounds but unassigned evaluates to `None`.
+- Absent coordinate (`KeyError`): Calling `auditor.cell(row, col)`, `auditor.value(row, col)`, `auditor.num(row, col)`, `auditor.formatted(row, col)`, `auditor.row_values(row, cols)`, `auditor.row_nums(row, cols)`, `auditor.to_markdown(rows=..., cols=...)`, or `auditor[row, col]` with non-existent row or column IDs raises `KeyError`.
+- Non-numeric value (`TypeError`): Calling `compiled.num(...)`, `auditor.num(row, col)`, or `auditor.row_nums(row, cols)` on a cell that evaluated to text, boolean, `None` (empty), or an Excel error raises `TypeError`.
+- Invalid index key (`TypeError`): Bracket indexing `auditor[key]` expects a 2-tuple `(row, col)`. Passing non-tuple or non-string elements raises `TypeError`.
+- Unassigned cell (`None`): A calculable coordinate declared within table bounds but unassigned evaluates to `None`.
 
 ### Cell Value Unboxing and Error Codes
 
@@ -206,11 +206,11 @@ markdown_str = auditor.to_markdown(
 | `"expr"`             | Raw declarative `f8` DSL expressions or literal values                                           |
 | `"addresses"`        | Physical worksheet cell coordinates (e.g. `"D7"`)                                                |
 
-- **Single-row GFM headers**: Multi-tier column headers are flattened into a single valid GFM header row joined with `": "` (e.g. `"Historical Actuals: 2023A"`).
-- **Row and column subsetting**: Pass `rows=[...]` and/or `cols=[...]` to render a focused slice. Descriptor columns are automatically retained alongside `cols`. When `rows` is specified, section headers are omitted by default unless `include_section_headers=True`.
-- **Summary row bolding**: Rows with `style="subtotal"` or `style="total"` automatically bold all non-empty cells (`**...**`).
-- **Coordinate ID suffixes (`show_ids`)**: Defaults to `False` for clean report publishing. Set `show_ids=True` during debugging to append `[{col_id}]` and `[{row_id}]` when display text differs from coordinate IDs.
-- **IPython / Quarto display**: Both `TableAuditor` and `MarkdownTable` implement `_repr_markdown_()` for direct rendering in Jupyter and Quarto without `Markdown(...)` wrappers. Unrecognized `view` raises `ValueError`.
+- Single-row GFM headers: Multi-tier column headers are flattened into a single valid GFM header row joined with `": "` (e.g. `"Historical Actuals: 2023A"`).
+- Row and column subsetting: Pass `rows=[...]` and/or `cols=[...]` to render a focused slice. Descriptor columns are automatically retained alongside `cols`. When `rows` is specified, section headers are omitted by default unless `include_section_headers=True`.
+- Summary row bolding: Rows with `style="subtotal"` or `style="total"` automatically bold all non-empty cells (`**...**`).
+- Coordinate ID suffixes (`show_ids`): Defaults to `False` for clean report publishing. Set `show_ids=True` during debugging to append `[{col_id}]` and `[{row_id}]` when display text differs from coordinate IDs.
+- IPython / Quarto display: Both `TableAuditor` and `MarkdownTable` implement `_repr_markdown_()` for direct rendering in Jupyter and Quarto without `Markdown(...)` wrappers. Unrecognized `view` raises `ValueError`.
 
 ### Tabular Dictionary Export and DataFrame Ingestion
 
@@ -291,41 +291,41 @@ Inspect typed attributes to determine failure level (model, table, vector axis, 
 
 ### Circular Dependencies (`CycleDetectedError`)
 
-- **Diagnostic attributes**: `err.cycle` contains ordered path of coordinates forming the loop (e.g. `['T["a", "2024E"]', 'T["b", "2024E"]', 'T["a", "2024E"]']`).
-- **Inspection rules**:
+- Diagnostic attributes: `err.cycle` contains ordered path of coordinates forming the loop (e.g. `['T["a", "2024E"]', 'T["b", "2024E"]', 'T["a", "2024E"]']`).
+- Inspection rules:
   - Check whether the cycle is a single-cell self-reference (e.g. `T["a", @col] + 1`).
   - Check whether mutual references across measure columns lack temporal boundaries.
-- **Remediation**:
+- Remediation:
   - Convert intra-period active column references (`@col`) to temporal lags (`col.prev` or `col.prev(k)`).
   - Provide an explicit exogenous base-period value in `cells` on the first measure column when using `col.prev`.
   - Break circular chains by introducing an intermediate driver or state variable.
 
 ### Reference Failures (`ReferenceResolutionError`)
 
-- **Diagnostic attributes**:
+- Diagnostic attributes:
   - `err.coordinate`: Origin cell coordinate where resolution halted.
   - `err.target_table`: Referenced table identifier.
   - `err.row`: Referenced row identifier.
   - `err.col`: Referenced column identifier.
-- **Inspection rules**:
+- Inspection rules:
   - If `err.target_table` does not match declared tables, verify table spelling or registration order.
   - If `err.row` or `err.col` is populated, check whether ID exists in target table.
   - If `err.target_table` is populated but `err.row` and `err.col` are `None`, check for inverted range slices (`"2025E".."2023A"`) or unregistered tables.
   - If `err.target_table`, `row`, and `col` are all `None`, check for out-of-bounds temporal navigation (`col.prev` on first measure column without base override, or `col.next` on final measure column).
-- **Remediation**:
+- Remediation:
   - Correct coordinate keys to match declared table, row, and column IDs.
   - Ensure range slices follow declared axis order: `Table["row", "start".."end"]`.
   - Supply base-period override in `cells={"start_col": <value>}` to terminate `col.prev` lags.
 
 ### Formula Grammar Failures (`FormulaParseError`)
 
-- **Diagnostic attributes**:
+- Diagnostic attributes:
   - `err.table`: Table containing invalid formula.
   - `err.row`: Row identifier if failure occurred on row vector formula or 0D override.
   - `err.col`: Column identifier if failure occurred on column vector formula or 0D override.
   - `err.token_offset`: Character index where parsing failed (`None` on unexpected EOF).
-- **Inspection rules**: Check `err.token_offset` in source expression to locate invalid token.
-- **Remediation**:
+- Inspection rules: Check `err.token_offset` in source expression to locate invalid token.
+- Remediation:
   - Enclose coordinate keys in double quotes: `Table["row", @col]` instead of `Table[row, @col]`.
   - Ensure table identifier is bare: `Table[...]` instead of `"Table"[...]`.
   - Uppercase all function names (`SUM`, `AVERAGE`, `IF`, `NPV`) and booleans (`TRUE`, `FALSE`).
@@ -335,32 +335,32 @@ Inspect typed attributes to determine failure level (model, table, vector axis, 
 
 ### Model Constraint Violations (`SpecificationError`)
 
-- **Diagnostic attributes**:
+- Diagnostic attributes:
   - `err.table`: Associated table identifier (`None` if model or sheet constraint).
   - `err.reason`: Explanation of constraint failure.
-- **Inspection rules**:
-  - **Unassigned cell**: Measure cell lacks row expression, column expression, and 0D override; or descriptor cell lacks a label.
-  - **Vector conflict**: Intersecting row and column both define expressions (`row.expr` XOR `col.expr`), or conflicting `format`/`decimals`/`currency` without 0D override.
-  - **Invalid formatting options**: `indent` specified on measure cell, `currency` specified on non-currency preset, or `decimals` specified on non-numeric preset or exceeding 14.
-  - **Duplicate identifiers**: Colliding table, sheet, row, or column IDs.
-- **Remediation**:
+- Inspection rules:
+  - Unassigned cell: Measure cell lacks row expression, column expression, and 0D override; or descriptor cell lacks a label.
+  - Vector conflict: Intersecting row and column both define expressions (`row.expr` XOR `col.expr`), or conflicting `format`/`decimals`/`currency` without 0D override.
+  - Invalid formatting options: `indent` specified on measure cell, `currency` specified on non-currency preset, or `decimals` specified on non-numeric preset or exceeding 14.
+  - Duplicate identifiers: Colliding table, sheet, row, or column IDs.
+- Remediation:
   - Supply missing values in `cells` or provide vector expressions covering all measure columns.
   - Add 0D `Cell` override to disambiguate intersecting vector formulas or formatting conflicts.
   - Move indentation from rows/measure cells to descriptor cells: `cells={"line_item": Cell("Title", indent=1)}`.
 
 ### Inspection Failures (`InspectionError`)
 
-- **Diagnostic attributes**: `err.entity` (identifier string of missing entity or unparseable coordinate).
-- **Inspection rules**: Triggered during post-compile inspection when requesting unregistered table, non-existent worksheet, unpopulated cell coordinate, or passing malformed coordinate string.
-- **Remediation**:
+- Diagnostic attributes: `err.entity` (identifier string of missing entity or unparseable coordinate).
+- Inspection rules: Triggered during post-compile inspection when requesting unregistered table, non-existent worksheet, unpopulated cell coordinate, or passing malformed coordinate string.
+- Remediation:
   - Check `compiled.summary()` to verify declared sheet and table identifiers.
   - Check `auditor.rows` and `auditor.columns` to verify valid keys before looking up cells.
   - Ensure coordinate strings match standard syntax: `'Table["row", "col"]'` or use 3 positional arguments: `compiled.inspect_cell("Table", "row", "col")`.
 
 ### Emission Failures (`EmissionError`)
 
-- **Diagnostic attributes**: `err.message` (OS I/O error or OpenXML packaging failure details).
-- **Inspection rules**: Triggered during `compiled.save(path)` or `compiled.emit_workbook()` when filesystem write permissions are denied, target file is locked by Excel, or path targets an existing directory.
-- **Remediation**:
+- Diagnostic attributes: `err.message` (OS I/O error or OpenXML packaging failure details).
+- Inspection rules: Triggered during `compiled.save(path)` or `compiled.emit_workbook()` when filesystem write permissions are denied, target file is locked by Excel, or path targets an existing directory.
+- Remediation:
   - Ensure destination workbook file is closed and unlocked in Microsoft Excel or other viewers.
   - Verify filesystem write permissions for destination path.

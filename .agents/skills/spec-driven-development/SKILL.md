@@ -10,12 +10,12 @@ description: >-
 
 ## Core rules
 
-- **Truth hierarchy**:
-  1. **Code, types & tests**: Authoritative truth for behavior, data structures, and edge cases.
-  2. **Reference docs** (`docs/`): System architecture (`docs/architecture.md`), DSL schemas (`docs/dsl/`), and function catalog (`docs/functions/catalog.md`).
-  3. **Draft specs** (`docs/specs/drafts/`): Ephemeral execution contracts for active work.
-- **Autonomous increments**: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
-- **Spec custody**: Draft specs (`docs/specs/drafts/`) are authored and deleted exclusively by the Lead Orchestrator. Subagents never edit, move, or delete spec files.
+- Truth hierarchy:
+  1. Code, types & tests: Authoritative truth for behavior, data structures, and edge cases.
+  2. Reference docs (`docs/`): System architecture (`docs/architecture.md`), DSL schemas (`docs/dsl/`), and function catalog (`docs/functions/catalog.md`).
+  3. Draft specs (`docs/specs/drafts/`): Ephemeral execution contracts for active work.
+- Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
+- Spec custody: Draft specs (`docs/specs/drafts/`) are authored and deleted exclusively by the Lead Orchestrator. Subagents never edit, move, or delete spec files.
 
 ## Tri-Agent Workflow
 
@@ -40,7 +40,7 @@ description: >-
 ### 4. Review (Reviewer Subagent)
 
 - Dispatch an independent subagent in the shared workspace instructing it to run the `review-implementation` skill against the target draft spec and current git diff.
-- **Verdict handling**:
+- Verdict handling:
   - `Changes required`: Re-dispatch the Implementer with the findings to remediate, then re-verify.
   - `Approve with flags` / `Approve`: Surface any architectural `Flag` items and proceed to step 5.
 
@@ -59,14 +59,14 @@ date: YYYY-MM-DD
 
 ## Problem & Scope
 
-- **Problem**: Core limitation, defect, or missing capability addressed.
-- **In-scope**: Concrete deliverables and behavioral changes.
-- **Out-of-scope**: Deferred capabilities and deliberately avoided patterns.
+- Problem: Core limitation, defect, or missing capability addressed.
+- In-scope: Concrete deliverables and behavioral changes.
+- Out-of-scope: Deferred capabilities and deliberately avoided patterns.
 
 ## Design & Invariants
 
-- **Decisions & rationale**: Chosen architecture, compiler pass, or data structure and why it was chosen over alternatives.
-- **Invariants**: Domain invariants, compiler guarantees, and phase boundaries preserved.
+- Decisions & rationale: Chosen architecture, compiler pass, or data structure and why it was chosen over alternatives.
+- Invariants: Domain invariants, compiler guarantees, and phase boundaries preserved.
 
 ## Data Contracts
 
@@ -74,13 +74,13 @@ Compact type signatures or schema definitions for new/modified AST nodes, IR str
 
 ## Acceptance Criteria
 
-- **Scenario 1: <Nominal Behavior>**
-  - **Given** <precondition> / **When** <action> / **Then** <expected outcome>
-- **Scenario 2: <Error / Boundary Case>**
-  - **Given** <precondition> / **When** <invalid/boundary input> / **Then** <structured error/outcome>
+- Scenario 1: <Nominal Behavior>
+  - Given <precondition> / When <action> / Then <expected outcome>
+- Scenario 2: <Error / Boundary Case>
+  - Given <precondition> / When <invalid/boundary input> / Then <structured error/outcome>
 
 ## Tasks
 
-1. **<Task title>**: <Implementation details and affected file paths>.
-2. **Verification gate**: Run verification suite from `AGENTS.md`.
+1. <Task title>: <Implementation details and affected file paths>.
+2. Verification gate: Run verification suite from `AGENTS.md`.
 ```
