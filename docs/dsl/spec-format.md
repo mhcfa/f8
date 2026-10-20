@@ -167,14 +167,14 @@ Calculable rows containing values, vector formulas, or individual cell overrides
 ### 5.2. Section Header Rows (`kind: "section_header"`)
 Visual divider banners organizing line items into logical financial sections:
 - `title` (`string`, required): Header label displayed across the table width.
-- `indent` (`integer`, optional, default `0`): Typographic indent level ($0 \le N \le 3$).
+- `indent` (`integer`, optional, default `0`): Typographic indent level (`0 <= N <= 3`).
 - Section headers contain zero calculable cells and do not interrupt vector formulas across data rows.
 
 ### 5.3. Row Gutters (`kind: "gutter"`)
 Vertical blank spacing rows (default 9.0 pt height) between logical sections. Gutters have no ID and contain no cells.
 
 ### 5.4. Typographic Indentation
-Descriptor cells and section headers accept an optional `indent` level ($0 \le N \le 3$). Indentation applies directly to individual descriptor cells as a typographic cell indent. It has zero effect on row height, calculation graphs, or measure columns. Setting `indent` on a measure cell produces a validation error (`InvalidIndentOnMeasureCell`).
+Descriptor cells and section headers accept an optional `indent` level (`0 <= N <= 3`). Indentation applies directly to individual descriptor cells as a typographic cell indent. It has zero effect on row height, calculation graphs, or measure columns. Setting `indent` on a measure cell produces a validation error (`InvalidIndentOnMeasureCell`).
 
 ### 5.5. Table Collapsing (`collapsible`)
 Tables can opt into outline folding via `"collapsible": true`. When enabled, all body rows collapse into the table title banner using spreadsheet outline groups.
@@ -211,7 +211,7 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
    - `headers` / descriptor cell: Display text rendered in headers and row stubs.
    - Physical coordinates: Computed deterministically by the spatial layout engine.
 3. Three-tier specificity lattice:
-   $$\text{Cell override (0D point)} > \text{Vector rule (1D row or column)} > \text{Explicit null}$$
+   `Cell override (0D point) > Vector rule (1D row or column) > Explicit null`
 4. Zero silent ambiguity: If both a row rule (`row.expr`) and a column rule (`col.expr`) target the same measure cell without an explicit cell override, compilation halts with `AmbiguousExpressionConflict`.
 5. Zero silent blanks: Every measure cell must resolve to a value, formula override, vector formula, or explicit `null`. Unassigned measure cells halt compilation with `UnassignedCellError`.
 6. Descriptor boundary isolation: Vector formulas (`row.expr`, `col.expr`) broadcast strictly across opposing data rows and measure columns, and never evaluate across descriptor columns.
@@ -220,9 +220,9 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
 
 ## 8. Related Documentation
 
-- [Python Modeling Skill](../../python/f8/skills/f8-modeling/SKILL.md): Practical end-to-end workflow for authoring financial models in Python.
-- [Addressing Syntax](./addressing.md): Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
-- [Formula Grammar](./grammar.md): Formal EBNF expression grammar and operator precedence.
-- [Semantic Formatting & Themes](./formatting.md): Format preset catalog, conflict resolution, and workbook themes.
-- [Modeling Patterns & Archetypes](./patterns.md): Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
-- [Architecture Overview](../architecture.md): Compilation pipeline, spatial layout planning, and column width arbitration.
+- `python/f8/skills/f8-modeling/SKILL.md`: Practical end-to-end workflow for authoring financial models in Python.
+- `docs/dsl/addressing.md`: Formula reference coordinates (`Table[row, col]`, `@col`, `@row`, `col.prev`, `row.prev`).
+- `docs/dsl/grammar.md`: Formal EBNF expression grammar and operator precedence.
+- `docs/dsl/formatting.md`: Format preset catalog, conflict resolution, and workbook themes.
+- `docs/dsl/patterns.md`: Canonical 2D patterns (Income Statement, Cap Table, Cross-Footing, Comps, Debt Schedule).
+- `docs/architecture.md`: Compilation pipeline, spatial layout planning, and column width arbitration.

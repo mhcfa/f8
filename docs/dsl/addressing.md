@@ -15,8 +15,8 @@ This document defines the reference addressing syntax used in f8 formulas and sp
 - Relative axis navigation (`RelativeOffset`):
   - `col.prev(k)` / `col.next(k)` navigate strictly across `measure` columns, bypassing gutters and halting at descriptor boundaries.
   - `row.prev(k)` / `row.next(k)` navigate strictly across calculable data rows, bypassing section headers and gutters.
-  - Offset parameter `(k)` defaults to `1` when omitted (`col.prev` $\equiv$ `col.prev(1)`).
-- Inclusive range intervals: All coordinate ranges (`["col_a".."col_b"]` and `["row_a".."row_b"]`) are inclusive closed intervals ($[a, b]$) and must follow declared declaration order.
+  - Offset parameter `(k)` defaults to `1` when omitted (`col.prev` == `col.prev(1)`).
+- Inclusive range intervals: All coordinate ranges (`["col_a".."col_b"]` and `["row_a".."row_b"]`) are inclusive closed intervals (`[a, b]`) and must follow declared declaration order.
 - Zero implicit broadcasting: Aggregations across rows or columns require explicit slice bounds (e.g. `["2024E".."2028E"]`).
 
 ---
@@ -45,8 +45,8 @@ flowchart TD
 
 References a coordinate tracking the cell currently being evaluated.
 
-- Active column (`@col`): Tracks the evaluating column index $c$. Lowers to relative column references (e.g. `=C10 - C11`).
-- Active row (`@row`): Tracks the evaluating row index $r$. Lowers to relative row references (e.g. `=C5 * D5`).
+- Active column (`@col`): Tracks the evaluating column index `c`. Lowers to relative column references (e.g. `=C10 - C11`).
+- Active row (`@row`): Tracks the evaluating row index `r`. Lowers to relative row references (e.g. `=C5 * D5`).
 
 ### 3.2. Specific Coordinate Cell
 
@@ -107,4 +107,4 @@ Lowers to a 2D rectangular range (e.g. `=SUM($C$14:$G$18)`).
   - Dynamic coordinates (`@col`, `@row`, `col.prev`, `row.prev`) emit relative coordinates so formulas track active cells.
   - Static coordinates (explicit keys and slice bounds) emit absolute coordinates (`$`).
 
-See [Formula Grammar](./grammar.md) for the complete EBNF specification.
+See `docs/dsl/grammar.md` for the complete EBNF specification.

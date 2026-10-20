@@ -328,7 +328,7 @@ Precedence: `Cell override > (Row rule XOR Column rule) > Table default > Model 
 Row and column styles control accounting borders and typography:
 
 - `style="data"` (default): Standard data row/column.
-- `style="subtotal"`: Top thin line separator for subtotals.
+- `style="subtotal"`: Top thin line separator for subtotals (renders bold typography).
 - `style="total"`: Top thin line and bottom double-underline for grand totals (renders bold typography).
 - Orthogonal 2D composition: Row styles control horizontal borders; column styles control vertical borders. Row `"total"` + Column `"total"` composes into a complete 2D accounting total box.
 

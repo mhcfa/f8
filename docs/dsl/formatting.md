@@ -44,7 +44,7 @@ Structural presentation (bold typography, accounting underline rules) is declare
 pub enum SemanticStyle {
     #[default]
     Data,      // Standard data cells (normal font, default borders)
-    Subtotal,  // Intermediate summary (single thin border)
+    Subtotal,  // Intermediate summary (bold + single thin border)
     Total,     // Final bottom-line summary (bold + double underline)
 }
 ```
@@ -54,7 +54,7 @@ pub enum SemanticStyle {
 | Style | Row Application | Column Application | Cell Override Application |
 | :--- | :--- | :--- | :--- |
 | `data` | Standard row typography and borders | Standard column typography and borders | Resets/suppresses summary borders (e.g. memo or descriptor cells on total rows) |
-| `subtotal` | Top thin border | Left thin border (separating timeline or segments) | Top thin border |
+| `subtotal` | Bold text + top thin border | Bold text + left thin border (separating timeline or segments) | Bold text + top thin border |
 | `total` | Bold text + top thin border + bottom double underline | Bold text + left thin border + right double border | Bold text + top thin border + bottom double underline |
 
 ### 3.2. Visual Emphasis (`highlight`)
@@ -74,7 +74,7 @@ Numeric precision is an orthogonal property decoupled from the format preset:
 - Numeric applicability: `decimals` applies strictly to decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-decimal presets (`integer`, `date`, `text`) ignore `decimals` during resolution and trigger a validation error (`InvalidPrecisionForPreset`) if explicitly configured.
 
 ### 4.1. Symmetrical Usage in Specifications
-The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](./spec-format.md#4-column-elements-horizontal-grid-structure), [`RowSpec`](./spec-format.md#5-row-elements-vertical-grid-structure), and point-level [`DetailedCellInput`](./spec-format.md#6-cell-input-syntax-cells):
+The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on `ColumnSpec`, `RowSpec`, and point-level `DetailedCellInput` (see `docs/dsl/spec-format.md`):
 
 ```json
 {
@@ -103,27 +103,27 @@ The `style`, `highlight`, `format`, and `decimals` properties are symmetrically 
 
 ## 5. Property Resolution Lattice & Precedence
 
-Every coordinate $(r, c)$ resolves its effective format preset, precision, structural style, and highlight state through the deterministic 3-tier specificity lattice:
+Every coordinate `(r, c)` resolves its effective format preset, precision, structural style, and highlight state through the deterministic 3-tier specificity lattice:
 
-$$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \text{Default Fallback}$$
+`Point Override (Cell) > Vector Rule (Row or Column) > Default Fallback`
 
 ### 5.1. Number format resolution
 1. Cell format override (Tier 1): An explicit `format` declared on `CellInput` always wins.
 2. Descriptor boundary: Descriptor columns (`role: "descriptor"`) isolate text formatting. Measure formats (`currency`, `percentage`, etc.) never broadcast to descriptor columns.
-3. Measure vector conflict: If measure column $c$ and row $r$ specify differing format presets (e.g. `row.format: "currency"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
+3. Measure vector conflict: If measure column `c` and row `r` specify differing format presets (e.g. `row.format: "currency"` and `col.format: "percentage"`), compilation halts with `FormatConflictError` unless resolved by an explicit cell format override.
 4. Single vector format: If only the row or only the column specifies a format preset, that preset applies across the measure cells.
 5. Default fallback: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.
 
 ### 5.2. Precision (`decimals`) resolution
-1. Numeric applicability: `decimals` resolution applies strictly to decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-decimal presets (`integer`, `date`, `text`) have no fractional precision concept and always resolve `decimals: None`. Supported fractional precision is bounded to $0 \le N \le 14$ (exceeding 14 raises `PrecisionOutOfBounds`).
+1. Numeric applicability: `decimals` resolution applies strictly to decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-decimal presets (`integer`, `date`, `text`) have no fractional precision concept and always resolve `decimals: None`. Supported fractional precision is bounded to `0 <= N <= 14` (exceeding 14 raises `PrecisionOutOfBounds`).
 2. Cell decimals override (Tier 1): An explicit `decimals` declared on `CellInput` always wins.
-3. Measure vector conflict: If measure column $c$ and row $r$ specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
+3. Measure vector conflict: If measure column `c` and row `r` specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
 4. Single vector decimals: If only the row or only the column specifies `decimals`, that precision applies.
 5. Theme default fallback: Unspecified decimals fall back to the active theme's configured default for the resolved `FormatPreset` (e.g. 0 for `currency` and `number`, 1 for `percentage` and `multiple`, 0 for `basis_points`).
 
 ### 5.3. Currency resolution & 3-tier specificity lattice
 Monetary denominations use canonical 3-letter lowercase ISO codes (`CurrencyCode`, e.g. `"usd"`, `"eur"`, `"gbp"`, `"jpy"`, `"chf"`) and resolve via a deterministic 3-tier specificity lattice:
-$$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \text{Table Default (defaults to USD)}$$
+`Point Override (Cell) > Vector Rule (Row or Column) > Table Default (defaults to USD)`
 
 1. Cell override (Tier 1): An explicit `currency` code (e.g. `"currency": "eur"`) on `DetailedCellInput` always takes precedence for that coordinate.
 2. Vector rule (Tier 2): Declaring `currency` on a `ColumnSpec` or `RowSpec` applies across measure cells (e.g. an FX conversion table with an `eur_amount` column). If a measure row and measure column declare differing currencies without a cell override, compilation halts with a currency conflict error.
@@ -134,21 +134,21 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 ### 5.4. Style resolution & symmetrical 2D border composition
 
 In a 2D matrix, rows and columns do not compete for a single border style. Instead, they govern orthogonal geometric axes:
-- **Rows** govern the **horizontal axis** ($\text{top}$ and $\text{bottom}$ edges).
-- **Columns** govern the **vertical axis** ($\text{left}$ and $\text{right}$ edges).
-- **Cell overrides** act as the point-level escape hatch to reset or enforce styles.
+- Rows: govern the horizontal axis (`top` and `bottom` edges).
+- Columns: govern the vertical axis (`left` and `right` edges).
+- Cell overrides: act as the point-level escape hatch to reset or enforce styles.
 
 #### 5.4.1. Resolution algorithm
-For coordinate $(r, c)$, the effective `(horizontal, vertical)` structural style pair resolves as follows:
+For coordinate `(r, c)`, the effective `(horizontal, vertical)` structural style pair resolves as follows:
 
 1. Explicit cell reset: If `cell.style == Some(SemanticStyle::Data)`, both horizontal and vertical summary rules are suppressed:
-   $$(\text{horizontal}, \text{vertical}) = (\text{Data}, \text{Data})$$
+   `(horizontal, vertical) = (Data, Data)`
    This provides the clean escape hatch for descriptor columns or memo cells on total rows (e.g. preventing double underlines under line item names).
 2. Explicit cell summary rule: If `cell.style == Some(s)` where `s` is `Subtotal` or `Total`:
-   $$\text{horizontal} = s, \quad \text{vertical} = \text{col.style.unwrap\_or(Data)}$$
+   `horizontal = s, vertical = col.style.unwrap_or(Data)`
    The cell applies the explicit horizontal summary rule while preserving column boundaries.
 3. Vector rules (default): When `cell.style` is `None`:
-   $$\text{horizontal} = \text{row.style.unwrap\_or(Data)}, \quad \text{vertical} = \text{col.style.unwrap\_or(Data)}$$
+   `horizontal = row.style.unwrap_or(Data), vertical = col.style.unwrap_or(Data)`
 
 #### 5.4.2. Symmetrical border and summary composition & emission
 During OpenXML emission (Pass 6b), the emitter maps `(horizontal, vertical)` through the active `Theme`:
@@ -156,16 +156,16 @@ During OpenXML emission (Pass 6b), the emitter maps `(horizontal, vertical)` thr
 | Coordinate Scenario | Resolved `horizontal` | Resolved `vertical` | Applied Excel Borders | Fill & Typography | Typical Rendered Appearance |
 | :--- | :---: | :---: | :--- | :--- | :--- |
 | **Standard Data Cell** | `Data` | `Data` | None | `data_fill`, `data_text` (or `input_text` / `formula_text`), Normal weight | Standard data values |
-| **Row Subtotal** *(e.g. Gross Profit)* | `Subtotal` | `Data` | **Top**: `subtotal_border_top` | `subtotal_fill`, `subtotal_text`, Normal weight | Intermediate section subtotal |
+| **Row Subtotal** *(e.g. Gross Profit)* | `Subtotal` | `Data` | **Top**: `subtotal_border_top` | `subtotal_fill`, `subtotal_text`, **Bold** | Intermediate section subtotal |
 | **Row Total** *(e.g. Net Income)* | `Total` | `Data` | **Top**: `total_border_top`<br>**Bottom**: `total_border_bottom` (`total_border_color`) | `total_fill`, `total_text`, **Bold** | Institutional accounting total line |
-| **Column Subtotal** *(e.g. Segment divider)* | `Data` | `Subtotal` | **Left**: `col_subtotal_border_left` | `subtotal_fill`, `subtotal_text`, Normal weight | Vertical section dividing line |
+| **Column Subtotal** *(e.g. Segment divider)* | `Data` | `Subtotal` | **Left**: `col_subtotal_border_left` | `subtotal_fill`, `subtotal_text`, **Bold** | Vertical section dividing line |
 | **Column Total** *(e.g. FY Total column)* | `Data` | `Total` | **Left**: `col_total_border_left`<br>**Right**: `col_total_border_right` (`total_border_color`) | `total_fill`, `total_text`, **Bold** | Vertical total summary column |
 | **Intersection (Grand Total / Punchline)** | `Total` | `Total` | **Top/Left**: Thin, **Bottom/Right**: Double (`total_border_color`) | `total_fill`, `total_text`, **Bold** | **Framed accounting total box** |
 | **Descriptor / Memo on Total Row** *(with `style: "data"`)* | `Data` | `Data` | None | `data_fill`, `data_text`, Normal weight | Clean label without unwanted underlines |
 
 #### 5.4.3. Font weight composition
-A cell renders with **bold typography** if either axis demands total styling:
-$$\text{is\_bold} = (\text{horizontal} == \text{SemanticStyle::Total}) \lor (\text{vertical} == \text{SemanticStyle::Total})$$
+A cell renders with **bold typography** if either axis demands subtotal or total styling:
+`is_bold = horizontal in (Subtotal, Total) or vertical in (Subtotal, Total)`
 
 #### 5.4.4. Fill, text color, and border orthogonality
 - Summary vs data shading: Standard data cells apply `theme.palette.data_fill` and `data_text`. Subtotals apply `subtotal_fill` and `subtotal_text`. Totals apply `total_fill` and `total_text`.
@@ -174,7 +174,7 @@ $$\text{is\_bold} = (\text{horizontal} == \text{SemanticStyle::Total}) \lor (\te
 Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `horizontal: Total` and `highlight: true` (e.g. an acquisition IRR punchline cell), rendering both the accent highlight background fill and the accounting double underline without schema collision.
 
 #### 5.4.5. Highlight resolution
-$$\text{effective\_highlight} = \text{cell.highlight.unwrap\_or}(\text{row.highlight} \lor \text{col.highlight})$$
+`effective_highlight = cell.highlight.unwrap_or(row.highlight or col.highlight)`
 A point override `highlight: false` explicitly un-highlights a cell even if its row or column has `highlight: true`.
 
 ---
@@ -246,15 +246,15 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "table_title_fill": "#1B365D",
     "table_title_text": "#FFFFFF",
     "table_subtitle_text": "#4B5563",
-    "super_header_fill": "#2C4D75",
-    "super_header_text": "#FFFFFF",
-    "col_header_fill": "#F0F4F8",
-    "col_header_text": "#1B365D",
+    "super_header_fill": "#ced4da",
+    "super_header_text": "#000000",
+    "col_header_fill": "none",
+    "col_header_text": "#000000",
     "section_header_fill": "none",
-    "section_header_text": "#1B365D",
+    "section_header_text": "#000000",
     "data_fill": "none",
-    "data_text": "#1F2937",
-    "subtotal_fill": "#F7F9FC",
+    "data_text": "#000000",
+    "subtotal_fill": "none",
     "subtotal_text": "#000000",
     "total_fill": "none",
     "total_text": "#000000",
@@ -269,7 +269,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
   },
   "borders": {
     "table_title_border_bottom": "none",
-    "super_header_border_bottom": "thick",
+    "super_header_border_bottom": "none",
     "header_border_bottom": "thin",
     "descriptor_border_right": "none",
     "subtotal_border_top": "thin",
@@ -303,7 +303,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
 
 Themes declare format pattern templates utilizing `{dec}` and `{sym}` placeholders. During OpenXML compilation, the emitter dynamically synthesizes the concrete format string by globally replacing all occurrences:
 - `decimals == 0`: `{dec}` expands to empty string `""` (e.g. `$#,##0_);($#,##0);"-"_)`, `#,##0_);(#,##0);"-"_)`).
-- `decimals > 0`: `{dec}` expands to `.` followed by $N$ zeros (e.g. for `decimals: 2`, `{dec}` $\rightarrow$ `.00`, yielding `$#,##0.00_);($#,##0.00);"-"_)`). Maximum supported decimal precision is $N \le 14$ (in table specs, precision exceeding 14 raises `PrecisionOutOfBounds`; in theme configurations or expansions, exceeding 14 raises `ThemePrecisionOutOfBounds`).
+- `decimals > 0`: `{dec}` expands to `.` followed by `N` zeros (e.g. for `decimals: 2`, `{dec}` -> `.00`, yielding `$#,##0.00_);($#,##0.00);"-"_)`). Maximum supported decimal precision is `N <= 14` (in table specs, precision exceeding 14 raises `PrecisionOutOfBounds`; in theme configurations or expansions, exceeding 14 raises `ThemePrecisionOutOfBounds`).
 - `{sym}`: Expands to the display symbol of the resolved `CurrencyCode` (defaulting to `CurrencyCode::Usd` / `"$"` if omitted). Standard single-character symbols (`$`, `€`, `£`, `¥`) substitute directly; multi-character codes and non-ASCII glyphs (`CHF`, `kr`, `C$`, `A$`, `₹`) are safely wrapped in double quotes (e.g. `"\"CHF\""`, `"\"₹\""`) to prevent collision with Excel format syntax tokens.
 
 This completely eliminates combinatorial mask explosion while giving model authors arbitrary precision control across any numerical preset and seamless international currency localization.
@@ -318,4 +318,4 @@ This guarantees that changing themes re-skins the emitted workbook completely an
 
 ---
 
-See [Specification Format](./spec-format.md) for schema usage and [Architecture Overview](../architecture.md) for spatial layout coordinate and metric assignment.
+See `docs/dsl/spec-format.md` for schema usage and `docs/architecture.md` for spatial layout coordinate and metric assignment.

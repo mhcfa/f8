@@ -38,6 +38,6 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 
 ## Reference Index
 
-- [references/syntax-and-grid.md](references/syntax-and-grid.md): 2D coordinate grammar, active axes (`@col`, `@row`), temporal offsets (`col.prev`, `col.next`), slice syntax, column roles, section headers, row gutters, and styling presets.
-- [references/functions.md](references/functions.md): 44 built-in Excel functions, signatures, defaults, criteria syntax, day-count conventions, and argument omission rules.
-- [references/auditing-and-repair.md](references/auditing-and-repair.md): `CompiledModel` and `TableAuditor` inspection, markdown/DataFrame export, precedent/dependent trees, and structured exception diagnostics.
+- `references/syntax-and-grid.md`: 2D coordinate grammar, active axes (`@col`, `@row`), temporal offsets (`col.prev`, `col.next`), slice syntax, column roles, section headers, row gutters, and styling presets.
+- `references/functions.md`: 44 built-in Excel functions, signatures, defaults, criteria syntax, day-count conventions, and argument omission rules.
+- `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` inspection, markdown/DataFrame export, precedent/dependent trees, and structured exception diagnostics.

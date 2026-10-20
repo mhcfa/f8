@@ -60,7 +60,7 @@ f8 standardizes exclusively on modern plural `*IFS` signatures with paired trail
 
 | Function | Min args | Max args  | Variadic rule | Description                                                                        |
 | :------- | :------- | :-------- | :------------ | :--------------------------------------------------------------------------------- |
-| `NPV`    | 2        | Unlimited | `Single`      | Net present value for periodic cash flows starting at $t=1$                        |
+| `NPV`    | 2        | Unlimited | `Single`      | Net present value for periodic cash flows starting at `t = 1`                      |
 | `XNPV`   | 3        | 3         | `None`        | Net present value for non-periodic cash flows with specific dates                  |
 | `IRR`    | 1        | 2         | `None`        | Internal rate of return for periodic cash flows (`values`, `[guess]`)              |
 | `XIRR`   | 2        | 3         | `None`        | Internal rate of return for non-periodic cash flows (`values`, `dates`, `[guess]`) |
@@ -71,20 +71,20 @@ f8 standardizes exclusively on modern plural `*IFS` signatures with paired trail
 ### 4.1. Periodic vs. Non-Periodic Discounting (`NPV` vs. `XNPV`)
 
 - `NPV(rate, value1, [value2], ...)`:
-  - Treats cash flows as occurring at periodic intervals starting at $t=1$:
-    $$\text{NPV}(r, v_1, v_2, \dots) = \sum_{i=1}^n \frac{v_i}{(1 + r)^i}$$
+  - Treats cash flows as occurring at periodic intervals starting at `t = 1`:
+    `NPV(r, v_1, ..., v_n) = sum_{i=1..n} v_i / (1 + r)^i`
   - Period 0 initial outlays must be added outside the formula: `=initial_outlay + NPV(rate, cash_flows)`.
 - `XNPV(rate, values, dates)`:
   - Uses exact Actual/365 year fractions:
-    $$\text{XNPV}(r, \mathbf{v}, \mathbf{d}) = \sum_{i=1}^n \frac{v_i}{(1 + r)^{(d_i - d_1) / 365.0}}$$
-  - Constraints: `values` and `dates` must share equal length. Dates must satisfy $d_i \ge d_1$. Rate $r \le -1.0$ returns `ExcelError::Num`.
+    `XNPV(r, v, d) = sum_{i=1..n} v_i / (1 + r)^((d_i - d_1) / 365.0)`
+  - Constraints: `values` and `dates` must share equal length. Dates must satisfy `d_i >= d_1`. Rate `r <= -1.0` returns `ExcelError::Num`.
 - `XIRR(values, dates, [guess])`:
-  - Solves $\text{XNPV}(r, \mathbf{v}, \mathbf{d}) = 0$ via Newton-Raphson iteration (default guess: `0.10`).
+  - Solves `XNPV(r, v, d) = 0` via Newton-Raphson iteration (default guess: `0.10`).
   - Cash flows must contain at least one positive and one negative value; otherwise returns `ExcelError::Num`.
 
 ### 4.2. Annuity Calculations (`PMT`, `IPMT`, `PPMT`)
 
-- Sign convention: Cash outflows are negative; inflows are positive. For a loan borrowing $+pv$, `PMT` evaluates to a negative periodic debt service amount.
+- Sign convention: Cash outflows are negative; inflows are positive. For a loan borrowing `+pv`, `PMT` evaluates to a negative periodic debt service amount.
 - Payment timing (`type`): `0` (or omitted) indicates payment at period end; `1` indicates payment at period start.
 - Defaults: `fv = 0.0`, `type = 0`.
 ---
@@ -143,6 +143,6 @@ Excel represents dates as floating-point day counts where serial day `1.0` is `1
 To guarantee bit-for-bit Excel calculation parity, f8 strictly reproduces the historical Lotus 1-2-3 / Excel leap year bug:
 
 - Serial day 60.0: Treats `1900-02-29` as serial day `60.0`, even though 1900 was not a leap year in the Gregorian calendar.
-- Offset on modern dates: All serial dates on or after March 1, 1900 carry a $+1$ offset relative to true astronomical day counts, causing the Unix epoch (`1970-01-01`) to map to serial day `25569.0` rather than `25568.0`.
+- Offset on modern dates: All serial dates on or after March 1, 1900 carry a `+1` offset relative to true astronomical day counts, causing the Unix epoch (`1970-01-01`) to map to serial day `25569.0` rather than `25568.0`.
 - Day count conventions (`YEARFRAC` basis): Supports `0` (US 30/360 NASD, default), `1` (Actual/Actual), `2` (Actual/360), `3` (Actual/365), and `4` (European 30E/360). Values outside `0..=4` evaluate to `#NUM!`.
-See [Architecture Overview](../architecture.md) for evaluator calculation rules and [Formula Grammar](../dsl/grammar.md) for formula expressions.
+See `docs/architecture.md` for evaluator calculation rules and `docs/dsl/grammar.md` for formula expressions.
