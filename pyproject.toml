@@ -3,17 +3,33 @@ requires = ["maturin>=1.8,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "f8"
-version = "0.1.0"
+name = "f8-engine"
+dynamic = ["version"]
 description = "Financial modeling engine with compiler verification and live Excel formulas"
 readme = "README.md"
 license = "AGPL-3.0-only"
 authors = [{ name = "Michael (Chencheng) Hu, CFA" }]
 requires-python = ">=3.12"
+keywords = ["excel", "financial-modeling", "spreadsheet", "xlsx", "compiler"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Typing :: Typed",
+]
 dependencies = []
 
 [project.urls]
+Homepage = "https://github.com/mhcfa/f8"
 Repository = "https://github.com/mhcfa/f8"
+Issues = "https://github.com/mhcfa/f8/issues"
 
 [project.scripts]
 f8 = "f8.cli:main"
@@ -30,6 +46,7 @@ dev = [
 manifest-path = "crates/f8-python/Cargo.toml"
 python-source = "python"
 module-name = "f8._core"
+strip = true
 
 [tool.uv]
 cache-keys = [
