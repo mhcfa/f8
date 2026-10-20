@@ -41,7 +41,6 @@ pub fn format_accounting_number(
         };
     }
 
-    let is_neg = val < 0.0 && val.abs() > 1e-9;
     let abs_val = val.abs();
 
     let dec = match format {
@@ -70,6 +69,11 @@ pub fn format_accounting_number(
     } else {
         format_with_commas(scaled_val, dec)
     };
+
+    let is_non_zero = formatted_num
+        .chars()
+        .any(|c| c.is_ascii_digit() && c != '0');
+    let is_neg = val < 0.0 && is_non_zero;
 
     match format {
         Some(FormatPreset::Currency) => {
@@ -238,6 +242,16 @@ mod tests {
         assert_eq!(
             format_accounting_number(2024.5, Some(FormatPreset::Number), Some(1), None),
             "2,024.5"
+        );
+
+        // Near-zero negative values rounding to zero at target decimal precision
+        assert_eq!(
+            format_accounting_number(-0.05, Some(FormatPreset::Currency), Some(0), None),
+            "$0"
+        );
+        assert_eq!(
+            format_accounting_number(-0.001, Some(FormatPreset::Number), Some(2), None),
+            "0.00"
         );
     }
 }
