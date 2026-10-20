@@ -905,7 +905,7 @@ impl TableSpec {
             }
 
             if let (Some(format), Some(decimals)) = (data_col.format, data_col.decimals)
-                && !format.is_numeric()
+                && !format.supports_decimals()
             {
                 return Err(ModelError::InvalidPrecisionForPreset {
                     table: self.id.clone(),
@@ -962,7 +962,7 @@ impl TableSpec {
             }
 
             if let (Some(format), Some(decimals)) = (data_row.format, data_row.decimals)
-                && !format.is_numeric()
+                && !format.supports_decimals()
             {
                 return Err(ModelError::InvalidPrecisionForPreset {
                     table: self.id.clone(),
@@ -1050,7 +1050,7 @@ impl TableSpec {
                         });
                     }
                     if let (Some(format), Some(decimals)) = (d.format, d.decimals)
-                        && !format.is_numeric()
+                        && !format.supports_decimals()
                     {
                         return Err(ModelError::InvalidPrecisionForPreset {
                             table: self.id.clone(),

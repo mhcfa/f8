@@ -476,6 +476,25 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_row() {
         }
         other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
     }
+
+    table.rows[0] = table.rows[0]
+        .clone()
+        .with_format(Some(FormatPreset::Integer))
+        .with_decimals(Some(0));
+    let err = table.validate().unwrap_err();
+    match err {
+        ModelError::InvalidPrecisionForPreset {
+            context,
+            preset,
+            decimals,
+            ..
+        } => {
+            assert!(context.contains("row 'row_1'"));
+            assert_eq!(preset, FormatPreset::Integer);
+            assert_eq!(decimals, 0);
+        }
+        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
+    }
 }
 
 #[test]

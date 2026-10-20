@@ -12,8 +12,6 @@ pub mod ir;
 pub mod layout;
 pub mod lowering;
 
-use std::borrow::Cow;
-
 pub use compiled::{
     CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel, DependencyNode,
     DependencyTree, InspectionError, ModelSummary, RowInspection, SheetCellInspection,
@@ -37,14 +35,6 @@ use crate::model::theme::Theme;
 /// High-level compiler driver orchestrating compilation passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Compiler;
-
-/// Internal compilation artifacts prepared for workbook binary emission.
-struct EmissionContext<'a> {
-    grid: ir::cell::CellGrid,
-    layout_map: layout::LayoutMap,
-    lowered_map: lowering::LoweredFormulaMap,
-    effective_evaluated: Cow<'a, EvaluatedModel>,
-}
 
 impl Compiler {
     /// Compiles and topologically evaluates a model specification into an in-memory evaluated model.
@@ -122,42 +112,6 @@ impl Compiler {
         Ok(lowered_map)
     }
 
-    /// Prepares artifacts for workbook emission: validates specifications, evaluates model if required,
-    /// expands IR grid, computes spatial layout, and lowers formula expressions.
-    fn prepare_emission_context<'a>(
-        manifest: &ProjectManifest,
-        tables: &[TableSpec],
-        theme: &Theme,
-        evaluated: Option<&'a EvaluatedModel>,
-    ) -> Result<EmissionContext<'a>, CompilerError> {
-        manifest.validate()?;
-        for table in tables {
-            table.validate()?;
-        }
-
-        let effective_evaluated = match evaluated {
-            Some(eval) => Cow::Borrowed(eval),
-            None => Cow::Owned(Self::evaluate(manifest, tables)?),
-        };
-
-        let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
-        let layout_map = layout::LayoutPlanner::plan(
-            manifest,
-            tables,
-            &grid,
-            theme,
-            Some(&effective_evaluated),
-        )?;
-        let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, &layout_map)?;
-
-        Ok(EmissionContext {
-            grid,
-            layout_map,
-            lowered_map,
-            effective_evaluated,
-        })
-    }
-
     /// Compiles a complete model specification and theme through Passes 1–6a into a [`CompiledModel`].
     ///
     /// Uses the default standard Excel function registry.
@@ -213,9 +167,6 @@ impl Compiler {
 
     /// Compiles a model specification and theme into an in-memory `.xlsx` workbook byte buffer.
     ///
-    /// If `evaluated` is `None`, this method automatically compiles and evaluates the model to
-    /// pre-populate formula calculation result caches `<v>` or freeze concrete values in a single pass.
-    ///
     /// # Errors
     /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
     /// formula lowering, or binary emission fails.
@@ -223,27 +174,9 @@ impl Compiler {
         manifest: &ProjectManifest,
         tables: &[TableSpec],
         theme: &Theme,
-        evaluated: Option<&EvaluatedModel>,
         options: &EmissionOptions,
     ) -> Result<Vec<u8>, CompilerError> {
-        if let Some(eval) = evaluated {
-            let ctx = Self::prepare_emission_context(manifest, tables, theme, Some(eval))?;
-
-            let buffer = emission::WorkbookEmitter::emit_to_buffer(
-                manifest,
-                tables,
-                &ctx.grid,
-                &ctx.layout_map,
-                &ctx.lowered_map,
-                theme,
-                Some(&ctx.effective_evaluated),
-                options,
-            )?;
-
-            Ok(buffer)
-        } else {
-            let compiled = Self::compile(manifest, tables, theme)?;
-            compiled.emit_workbook(options)
-        }
+        let compiled = Self::compile(manifest, tables, theme)?;
+        compiled.emit_workbook(options)
     }
 }

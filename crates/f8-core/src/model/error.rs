@@ -7,7 +7,7 @@ use super::id::{ColId, RowId, TableId};
 #[derive(Debug, Error)]
 pub enum ModelError {
     #[error(
-        "Table '{table}': {context} specifies decimals ({decimals}) for non-numeric preset '{preset}'"
+        "Table '{table}': {context} specifies decimals ({decimals}) for preset '{preset}' which does not support decimals"
     )]
     InvalidPrecisionForPreset {
         table: TableId,

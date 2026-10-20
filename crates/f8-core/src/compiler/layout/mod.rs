@@ -546,6 +546,9 @@ fn formatted_number_estimate(n: f64, format: Option<FormatPreset>) -> usize {
     if !n.is_finite() {
         return 4; // NaN, Inf
     }
+    if matches!(format, Some(FormatPreset::Date)) {
+        return 10; // "yyyy-mm-dd"
+    }
 
     let is_negative = n < 0.0;
     let abs_n = n.abs();
@@ -556,6 +559,10 @@ fn formatted_number_estimate(n: f64, format: Option<FormatPreset>) -> usize {
     } else {
         (abs_n.log10().floor() as usize) + 1
     };
+
+    if matches!(format, Some(FormatPreset::Integer)) {
+        return int_digits + if is_negative { 2 } else { 0 };
+    }
 
     // Commas count (1 comma per 3 digits over 3)
     let commas = if int_digits > 3 {

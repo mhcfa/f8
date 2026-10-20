@@ -40,7 +40,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
 1. Ingest & Parse (`f8_core::model`):
    - Deserializes JSON specifications into strongly typed AST structures.
    - Validates schema invariants: unique sheet/table/axis IDs, non-empty dimensions, non-empty subtitles.
-   - Validates formatting invariants: maximum 14 decimal places (`decimals <= 14`), precision allowed only on numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`), currency symbols allowed only on `currency` preset, valid 6-character hex colors (`#RRGGBB`), and positive finite layout metrics.
+   - Validates formatting invariants: maximum 14 decimal places (`decimals <= 14`), precision allowed only on decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`), currency symbols allowed only on `currency` preset, valid 6-character hex colors (`#RRGGBB`), and positive finite layout metrics.
 2. Grid Expansion & Formula Parsing (`f8_core::compiler::ir`):
    - Expands tables into discrete cells identified by `CellId { table, row, col }`.
    - Parses formula strings into `Expr` AST nodes via recursive-descent Pratt parser.

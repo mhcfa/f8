@@ -188,7 +188,7 @@ class Cell:
 - Allowed values: `CellValueLiteral = float | int | str | bool | None`.
 - Indentation constraint: `indent: int` restricted to descriptor cells (`role="descriptor"`). Setting `indent > 0` on a measure cell raises `SpecificationError` (`InvalidIndentOnMeasureCell`).
 - Currency constraint: Permitted only when effective format is `"currency"`. Specifying on other presets raises `SpecificationError` (`InvalidCurrencyForPreset`).
-- Precision constraint: Permitted only on numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`, `integer`). Specifying on `date` or `text` raises `SpecificationError` (`InvalidPrecisionForPreset`). Decimals cannot exceed 14 (`PrecisionOutOfBounds`).
+- Precision constraint: Permitted only on decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Specifying on `integer`, `date`, or `text` raises `SpecificationError` (`InvalidPrecisionForPreset`). Decimals cannot exceed 14 (`PrecisionOutOfBounds`).
 - Highlight: Boolean flag (`highlight=True`) applying visual fill styling to callout drivers or summary outputs.
 - 0D note isolation: Free-form audit comment attached to a discrete coordinate. Notes never broadcast across rows or columns; vector-generated cells have `note=None`.
 

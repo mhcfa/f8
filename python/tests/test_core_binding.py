@@ -132,7 +132,7 @@ def test_scenario_3_cell_inspection_flexible_coordinates(
     assert cell_3args == cell_1arg
     assert cell_3args["physical_address"] == "Operations!C7"
     assert cell_3args["evaluated_value"] == {"Number": 60.0}
-    assert cell_3args["formatted_value"] == "$60.0"
+    assert cell_3args["formatted_value"] == "$60"
     assert cell_3args["is_formula"] is True
     assert cell_3args["excel_formula"] is not None
     assert len(cell_3args["precedents"]) == 2
@@ -186,7 +186,7 @@ def test_scenario_5_model_and_sheet_summary_inspection(
     assert table_insp["columns"][0]["style"] == "data"
     assert table_insp["rows"][0]["style"] == "data"
     rev_cell = table_insp["cells"]['OPERATIONS["revenue", "2024E"]']
-    assert rev_cell["formatted_value"] == "$100.0"
+    assert rev_cell["formatted_value"] == "$100"
     assert rev_cell["value"] == {"Number": 100.0}
     assert rev_cell["format"] == "currency"
 

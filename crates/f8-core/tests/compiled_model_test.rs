@@ -43,7 +43,7 @@ fn test_scenario_2_zero_redundancy_emission() {
     assert!(buffer.len() > 1000);
 
     // Verify emission via Compiler facade produces matching buffer
-    let compiler_buffer = Compiler::emit_workbook(&manifest, &tables, &theme, None, &options)
+    let compiler_buffer = Compiler::emit_workbook(&manifest, &tables, &theme, &options)
         .expect("Compiler facade emission must succeed");
     assert_eq!(buffer.len(), compiler_buffer.len());
 }
@@ -281,6 +281,12 @@ fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
                 .expr("-50.0")
                 .build(),
         );
+        table.rows.push(
+            fixtures::RowBuilder::line_item("unformatted_fee", "Advisory Fee")
+                .format(FormatPreset::Currency)
+                .expr("100.0")
+                .build(),
+        );
     }
     let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
     let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
@@ -312,6 +318,57 @@ fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
         ))
         .expect("interest_expense cell must exist");
     assert_eq!(interest_cell.formatted_value.as_deref(), Some("($50.0)"));
+
+    // Verify theme default currency_decimals (0 in corporate_navy, 2 in custom theme)
+    assert_eq!(
+        compiled
+            .cell_formatted(
+                &TableId::from("IncomeStatement"),
+                &RowId::from("unformatted_fee"),
+                &ColId::from("y2023a")
+            )
+            .unwrap(),
+        "$100"
+    );
+    let mut custom_theme = theme.clone();
+    custom_theme.number_formats.defaults.currency_decimals = 2;
+    let custom_compiled = Compiler::compile(&manifest, &tables, &custom_theme)
+        .expect("Compilation with custom theme must succeed");
+    assert_eq!(
+        custom_compiled
+            .cell_formatted(
+                &TableId::from("IncomeStatement"),
+                &RowId::from("unformatted_fee"),
+                &ColId::from("y2023a")
+            )
+            .unwrap(),
+        "$100.00"
+    );
+
+    // Verify LBO Timeline date & integer formatting in CompiledModel
+    let (lbo_manifest, lbo_tables) = fixtures::lbo::build_lbo_model("base");
+    let lbo_compiled =
+        Compiler::compile(&lbo_manifest, &lbo_tables, &theme).expect("LBO must compile");
+    assert_eq!(
+        lbo_compiled
+            .cell_formatted(
+                &TableId::from("Timeline"),
+                &RowId::from("date"),
+                &ColId::from("y0")
+            )
+            .unwrap(),
+        "2024-12-31"
+    );
+    assert_eq!(
+        lbo_compiled
+            .cell_formatted(
+                &TableId::from("Timeline"),
+                &RowId::from("year"),
+                &ColId::from("y5")
+            )
+            .unwrap(),
+        "2029"
+    );
 }
 
 #[test]

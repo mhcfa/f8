@@ -318,6 +318,19 @@ impl PaletteConfig {
 }
 
 impl NumberFormatsConfig {
+    /// Returns the configured default fractional precision for a numeric format preset.
+    #[must_use]
+    pub const fn default_decimals(&self, preset: FormatPreset) -> Option<u32> {
+        match preset {
+            FormatPreset::Currency => Some(self.defaults.currency_decimals),
+            FormatPreset::Number => Some(self.defaults.number_decimals),
+            FormatPreset::Percentage => Some(self.defaults.percentage_decimals),
+            FormatPreset::Multiple => Some(self.defaults.multiple_decimals),
+            FormatPreset::BasisPoints => Some(self.defaults.basis_points_decimals),
+            FormatPreset::Date | FormatPreset::Text | FormatPreset::Integer => None,
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ModelError> {
         let numeric_templates = [
             (FormatPreset::Currency, &self.currency),
@@ -380,7 +393,7 @@ impl Theme {
     /// - If `decimals` is `None`, the preset's default precision from `number_formats.defaults` is used.
     /// - For numeric presets, `{dec}` is expanded dynamically.
     /// - For `currency`, `{sym}` expands to `currency.unwrap_or_default().excel_symbol()`.
-    /// - For non-numeric presets (`date`, `text`), the static template is returned.
+    /// - For presets without dynamic precision (`date`, `text`, `integer`), the static template is returned.
     pub fn resolve_number_format(
         &self,
         preset: FormatPreset,

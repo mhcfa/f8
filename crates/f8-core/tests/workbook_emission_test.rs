@@ -95,7 +95,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
     };
 
     let buffer =
-        Compiler::emit_workbook(&manifest, &[is_table, sum_table], &theme, None, &options).unwrap();
+        Compiler::emit_workbook(&manifest, &[is_table, sum_table], &theme, &options).unwrap();
 
     // 1. Non-empty byte buffer
     assert!(!buffer.is_empty());
@@ -141,7 +141,7 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
     let theme = Theme::corporate_navy();
     let options = EmissionOptions::default();
 
-    let buffer = Compiler::emit_workbook(&manifest, &[table], &theme, None, &options).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &theme, &options).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
 
@@ -198,14 +198,8 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
     };
 
     let theme = Theme::corporate_navy();
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table],
-        &theme,
-        None,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
     let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
@@ -270,14 +264,8 @@ fn test_scenario_4_single_cell_super_header_safety() {
     let theme = Theme::corporate_navy();
 
     // Must compile without error (specifically avoiding XlsxError::MergeRangeSingleCell)
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table],
-        &theme,
-        None,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
     let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
@@ -325,13 +313,10 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
     };
 
     let theme = Theme::corporate_navy();
-    let evaluated = Compiler::evaluate(&manifest, std::slice::from_ref(&table)).unwrap();
-
     let buffer = Compiler::emit_workbook(
         &manifest,
         std::slice::from_ref(&table),
         &theme,
-        Some(&evaluated),
         &EmissionOptions::default(),
     )
     .unwrap();
@@ -381,21 +366,15 @@ fn test_scenario_6_values_only_freezing_mode() {
 
     let theme = Theme::corporate_navy();
 
-    // 1. Test with automatic fallback evaluation (evaluated: None)
+    // 1. Test via Compiler::emit_workbook
     let options = EmissionOptions {
         values_only: true,
         omit_formula_cache: false,
         title: None,
         author: None,
     };
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        std::slice::from_ref(&table),
-        &theme,
-        None,
-        &options,
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, std::slice::from_ref(&table), &theme, &options).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
 
@@ -406,16 +385,9 @@ fn test_scenario_6_values_only_freezing_mode() {
     assert!(sheet_xml.contains("<v>250</v>"));
     assert!(sheet_xml.contains("<v>500</v>"));
 
-    // 2. Test with explicitly supplied evaluated model
-    let evaluated = Compiler::evaluate(&manifest, std::slice::from_ref(&table)).unwrap();
-    let buffer2 = Compiler::emit_workbook(
-        &manifest,
-        std::slice::from_ref(&table),
-        &theme,
-        Some(&evaluated),
-        &options,
-    )
-    .unwrap();
+    // 2. Test via CompiledModel::emit_workbook
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table), &theme).unwrap();
+    let buffer2 = compiled.emit_workbook(&options).unwrap();
 
     let sheet2_xml = read_zip_entry(&buffer2, "xl/worksheets/sheet1.xml");
     assert!(!sheet2_xml.contains("<f>"));
@@ -523,7 +495,6 @@ fn test_scenario_8_collapsible_row_group_outlining() {
         &manifest,
         &[table.clone()],
         &theme,
-        None,
         &EmissionOptions::default(),
     )
     .unwrap();
@@ -550,7 +521,6 @@ fn test_scenario_8_collapsible_row_group_outlining() {
         &manifest,
         &[collapsible_table],
         &theme,
-        None,
         &EmissionOptions::default(),
     )
     .unwrap();
@@ -593,14 +563,8 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
         let _ = std::fs::remove_file(&target_file);
     }
 
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table],
-        &theme,
-        None,
-        &EmissionOptions::default(),
-    )
-    .expect("failed to emit workbook");
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default())
+        .expect("failed to emit workbook");
 
     std::fs::write(&target_file, &buffer).expect("failed to write workbook to disk");
     assert!(target_file.exists());
@@ -740,14 +704,8 @@ fn test_scenario_11_audit_note_attachment() {
     };
 
     let theme = Theme::corporate_navy();
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table],
-        &theme,
-        None,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
 
     let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
     assert!(comments_xml.contains("Audit checked by Senior Associate"));
@@ -795,14 +753,8 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
     };
 
     let theme = Theme::corporate_navy();
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table],
-        &theme,
-        None,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
 
     let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
     assert!(comments_xml.contains("Section level annotation"));
@@ -842,14 +794,8 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
     };
 
     let theme = Theme::corporate_navy();
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table],
-        &theme,
-        None,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
 
     let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
     assert!(

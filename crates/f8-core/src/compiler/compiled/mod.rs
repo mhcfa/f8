@@ -23,7 +23,7 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::{LayoutMap, coordinate_to_a1};
 use crate::compiler::lowering::LoweredFormulaMap;
-use crate::model::format::SemanticStyle;
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
@@ -188,7 +188,7 @@ impl CompiledModel {
             .evaluated
             .get_cell(&cell_id)
             .unwrap_or(&CellValue::Empty);
-        Ok(format_cell_value(
+        Ok(self.format_value(
             evaluated_value,
             cell_node.format,
             cell_node.decimals,
@@ -230,7 +230,7 @@ impl CompiledModel {
         };
 
         let excel_formula = self.lowered_map.get(&cell_id).map(ToString::to_string);
-        let formatted_value = Some(crate::value::format_cell_value(
+        let formatted_value = Some(self.format_value(
             &evaluated_value,
             cell_node.format,
             cell_node.decimals,
@@ -389,7 +389,7 @@ impl CompiledModel {
                     .cloned()
                     .unwrap_or(CellValue::Empty);
 
-                let formatted_value = Some(format_cell_value(
+                let formatted_value = Some(self.format_value(
                     &value,
                     cell_node.format,
                     cell_node.decimals,
@@ -787,9 +787,8 @@ impl CompiledModel {
                                         .map_or((None, None, None), |n| {
                                             (n.format, n.decimals, n.currency)
                                         });
-                                    let formatted_value = Some(crate::value::format_cell_value(
-                                        &value, format, decimals, currency,
-                                    ));
+                                    let formatted_value =
+                                        Some(self.format_value(&value, format, decimals, currency));
                                     let (formula_expr, excel_formula) = match cell_node
                                         .map(|n| &n.payload)
                                     {
@@ -1125,6 +1124,18 @@ impl CompiledModel {
         }
     }
 
+    fn format_value(
+        &self,
+        value: &CellValue,
+        format: Option<FormatPreset>,
+        decimals: Option<u32>,
+        currency: Option<CurrencyCode>,
+    ) -> String {
+        let effective_decimals =
+            decimals.or_else(|| format.and_then(|f| self.theme.number_formats.default_decimals(f)));
+        format_cell_value(value, format, effective_decimals, currency)
+    }
+
     fn get_node_display_metadata(
         &self,
         cell_id: &CellId,
@@ -1141,7 +1152,7 @@ impl CompiledModel {
                 .get(cell_id)
                 .map(|cell| (cell.format, cell.decimals, cell.currency))
                 .unwrap_or((None, None, None));
-            crate::value::format_cell_value(v, format, decimals, currency)
+            self.format_value(v, format, decimals, currency)
         });
         let excel_formula = self.lowered_map.get(cell_id).map(ToString::to_string);
         (sheet_address, value, formatted_value, excel_formula)

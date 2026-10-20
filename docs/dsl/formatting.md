@@ -9,7 +9,7 @@ f8 enforces complete decoupling between calculation logic and visual styling:
 - Orthogonal visual axes: Presentation decomposes cleanly into four independent, composable axes:
   1. Structural style (`style`): Borders, summary rules, and bold typography (`data`, `subtotal`, `total`).
   2. Visual emphasis (`highlight`): Background fill tint and text accenting (`true` / `false`).
-  3. Semantic format family (`format`): Unit/data kind (`currency`, `number`, `percentage`, `multiple`, `basis_points`, `date`, `text`).
+  3. Semantic format family (`format`): Unit/data kind (`currency`, `number`, `integer`, `percentage`, `multiple`, `basis_points`, `date`, `text`).
   4. Display precision (`decimals`): Explicit count of fractional decimal places (e.g. `0`, `1`, `2`, `4`), independent of format kind.
 - Symmetrical 2D matrix engine: Formatting and styling rules apply symmetrically across columns, rows, and individual cell overrides.
 - Deterministic OpenXML emission: Themes translate semantic presets and dynamic precision into institutional-grade formatting rules and accounting styles upon `.xlsx` emission.
@@ -25,6 +25,7 @@ The `format` property on columns, rows, or cell overrides accepts strictly enume
 | :--- | :--- | :---: | :--- | :--- |
 | `currency` | Monetary amounts | `0` | `$1,250,000` / `(125,000)` / `-` | Accounting currency with parentheses for negatives and dash for zero |
 | `number` | Discrete counts, shares, standard numbers | `0` | `1,000` / `(500)` / `-` | Comma-separated accounting number with negative parentheses |
+| `integer` | Undelimited whole integers (years, IDs) | N/A | `2024` / `(42)` / `-` | Whole integer without thousand separators |
 | `percentage` | Rates, margins, and return metrics | `1` | `12.5%` | Standard percentage formatting |
 | `multiple` | Valuation and leverage multiples | `1` | `12.4x` | Ratio with trailing lowercase `x` |
 | `basis_points` | Spread and yield differences | `0` | `125 bps` | Integer with trailing `bps` suffix |
@@ -69,9 +70,8 @@ Visual emphasis (soft accent background fill tint and text color) is completely 
 
 Numeric precision is an orthogonal property decoupled from the format preset:
 - Separation of unit and precision: `currency` represents monetary formatting, while `decimals` controls whether it renders as whole dollars (`$1,250,000` with `decimals: 0`), EPS/cents (`$1.25` with `decimals: 2`), or cap table share prices (`$0.0125` with `decimals: 4`).
-- Unified numeric formatting: Replaces rigid legacy presets (`integer`, `decimal`, `currency_decimal`) with pure `format: "number"` or `format: "currency"` paired with optional `decimals`.
 - Theme defaults: When `decimals` is omitted, the compiler defaults to the active theme's standard precision for that preset (`currency` -> 0, `number` -> 0, `percentage` -> 1, `multiple` -> 1, `basis_points` -> 0).
-- Numeric applicability: `decimals` applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) ignore `decimals` or trigger a validation error (`InvalidPrecisionForPresetError`) if explicitly configured.
+- Numeric applicability: `decimals` applies strictly to decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-decimal presets (`integer`, `date`, `text`) ignore `decimals` during resolution and trigger a validation error (`InvalidPrecisionForPreset`) if explicitly configured.
 
 ### 4.1. Symmetrical Usage in Specifications
 The `style`, `highlight`, `format`, and `decimals` properties are symmetrically available on [`ColumnSpec`](./spec-format.md#4-column-elements-horizontal-grid-structure), [`RowSpec`](./spec-format.md#5-row-elements-vertical-grid-structure), and point-level [`DetailedCellInput`](./spec-format.md#6-cell-input-syntax-cells):
@@ -115,7 +115,7 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 5. Default fallback: Unspecified numbers default to general numeric presentation; unspecified text defaults to standard string alignment.
 
 ### 5.2. Precision (`decimals`) resolution
-1. Numeric applicability: `decimals` resolution applies strictly to numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-numeric presets (`date`, `text`) have no precision concept and always resolve `decimals: None`. Supported fractional precision is bounded to $0 \le N \le 14$ (exceeding 14 raises `PrecisionOutOfBounds`).
+1. Numeric applicability: `decimals` resolution applies strictly to decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`). Non-decimal presets (`integer`, `date`, `text`) have no fractional precision concept and always resolve `decimals: None`. Supported fractional precision is bounded to $0 \le N \le 14$ (exceeding 14 raises `PrecisionOutOfBounds`).
 2. Cell decimals override (Tier 1): An explicit `decimals` declared on `CellInput` always wins.
 3. Measure vector conflict: If measure column $c$ and row $r$ specify differing `decimals` (e.g. `row.decimals: 2` and `col.decimals: 0`), compilation halts with `DecimalsConflictError` unless resolved by an explicit cell override.
 4. Single vector decimals: If only the row or only the column specifies `decimals`, that precision applies.
@@ -128,7 +128,7 @@ $$\text{Point Override (Cell)} \succ \text{Vector Rule (Row or Column)} \succ \t
 1. Cell override (Tier 1): An explicit `currency` code (e.g. `"currency": "eur"`) on `DetailedCellInput` always takes precedence for that coordinate.
 2. Vector rule (Tier 2): Declaring `currency` on a `ColumnSpec` or `RowSpec` applies across measure cells (e.g. an FX conversion table with an `eur_amount` column). If a measure row and measure column declare differing currencies without a cell override, compilation halts with a currency conflict error.
 3. Table default (Tier 3): Declaring `currency` on `TableSpec` sets the default currency for all currency cells within that table (e.g. a European subsidiary cash flow statement). If omitted, the table defaults to `"usd"`.
-4. Preset isolation: Only cells resolving `format == Some(FormatPreset::Currency)` receive a resolved currency. All other presets (`number`, `percentage`, `multiple`, `basis_points`, `date`, `text`) resolve `currency: None`.
+4. Preset isolation: Only cells resolving `format == Some(FormatPreset::Currency)` receive a resolved currency. All other presets (`number`, `integer`, `percentage`, `multiple`, `basis_points`, `date`, `text`) resolve `currency: None`.
 5. Descriptor boundary: Descriptor columns isolate calculation axes, resolve `currency: None`, and never trigger vector currency conflicts.
 
 ### 5.4. Style resolution & symmetrical 2D border composition
@@ -287,6 +287,7 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "basis_points": "#,##0{dec}\" bps\"",
     "date": "yyyy-mm-dd",
     "text": "@",
+    "integer": "0;(-0);\"-\"_)",
     "defaults": {
       "currency_decimals": 0,
       "number_decimals": 0,

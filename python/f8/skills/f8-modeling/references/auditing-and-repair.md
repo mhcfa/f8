@@ -341,7 +341,7 @@ Inspect typed attributes to determine failure level (model, table, vector axis, 
 - Inspection rules:
   - Unassigned cell: Measure cell lacks row expression, column expression, and 0D override; or descriptor cell lacks a label.
   - Vector conflict: Intersecting row and column both define expressions (`row.expr` XOR `col.expr`), or conflicting `format`/`decimals`/`currency` without 0D override.
-  - Invalid formatting options: `indent` specified on measure cell, `currency` specified on non-currency preset, or `decimals` specified on non-numeric preset or exceeding 14.
+  - Invalid formatting options: `indent` specified on measure cell, `currency` specified on non-currency preset, or `decimals` specified on non-decimal preset (`integer`, `date`, `text`) or exceeding 14.
   - Duplicate identifiers: Colliding table, sheet, row, or column IDs.
 - Remediation:
   - Supply missing values in `cells` or provide vector expressions covering all measure columns.
