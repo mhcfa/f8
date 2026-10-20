@@ -51,6 +51,7 @@ pub fn compile<'py>(
 
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     register_exceptions(m)?;
     m.add_class::<PyCompiledModel>()?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;

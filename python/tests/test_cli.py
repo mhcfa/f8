@@ -7,6 +7,7 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+import f8
 import pytest
 from f8.cli import GUIDE_TOPICS, main
 
@@ -196,3 +197,16 @@ def test_module_runner_subprocess_execution() -> None:
     assert "functions" in result.stdout
     assert "audit" in result.stdout
     assert "all" in result.stdout
+
+
+@pytest.mark.parametrize("flag", ["--version", "-V"])
+def test_version_flag_outputs_package_version(
+    flag: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify --version and -V print the Cargo workspace version and exit with 0."""
+    with pytest.raises(SystemExit) as exc_info:
+        main([flag])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"f8 {f8.__version__}"
+    assert len(f8.__version__.split(".")) >= 3

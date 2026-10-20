@@ -15,6 +15,8 @@ from f8.types import (
     ThemeInput,
 )
 
+__version__: str
+
 def compile(
     manifest: ManifestInput,
     tables: Sequence[TableInput],

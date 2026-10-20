@@ -9,6 +9,7 @@ from f8._core import (
     InspectionError,
     ReferenceResolutionError,
     SpecificationError,
+    __version__,
     compile,
 )
 from f8.audit import MarkdownTable, TableAuditor, unbox_cell_value
@@ -60,6 +61,7 @@ from f8.types import (
 )
 
 __all__ = [
+    "__version__",
     "compile",
     "compile_project",
     "CompiledModel",
