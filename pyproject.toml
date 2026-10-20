@@ -15,6 +15,9 @@ dependencies = []
 [project.urls]
 Repository = "https://github.com/mhcfa/f8"
 
+[project.scripts]
+f8 = "f8.cli:main"
+
 [dependency-groups]
 dev = [
     "maturin>=1.8",
