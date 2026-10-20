@@ -2,20 +2,121 @@
 
 Financial modeling engine with compiler verification and live Excel formulas.
 
+## Why f8
+
+I am a CFA charterholder working primarily on private company M&A and project finance, domains that live in complex, bespoke Excel financial models.
+
+Spreadsheets have always suffered from fragile manual work, silent copy-paste errors, and no version control.
+
+When AI emerged, I found that AI agents struggle to manipulate Excel effectively (whether via OpenXML, openpyxl, Office.js, or GUI), primarily because of:
+
+- Brittle coordinates: Spreadsheets force agents to reason in spatial coordinates rather than semantics; inserting a single row shifts every downstream reference.
+- No verification loop: Standard spreadsheet libraries do not evaluate formulas, so an agent has to inspect the `.xlsx` file just to get feedback.
+
+Yet the industry is stubborn: Excel remains the non-negotiable deliverable.
+
+`f8` brings software engineering rigor and AI-native ergonomics to traditional financial modeling. The `.xlsx` workbook becomes a compiled artifact rather than a hand-edited canvas.
+
+- Semantic 2D modeling: Author models in code using readable coordinates; `f8` handles spatial layout and lowers logic into native Excel formulas.
+- Compiler-enforced rigor: A 6-pass Rust compiler verifies grid completeness (zero unassigned cells or ambiguous formula overlaps) and enforces a strict DAG via Tarjan cycle detection before a file is ever written.
+- Closed-loop AI verification: `f8` evaluates formulas in memory with 100% Excel parity (yes, even the 1900 leap day bug in Excel) so AI agents can audit calculated tables, trace precedent/dependent trees, verify accounting checks, and self-heal errors in milliseconds. This also means the model is directly testable in Python.
+- End-to-end fundamental workflow in code: Keep data ingestion, domain modeling, automated auditing, and live `.xlsx` emission in version-controlled code with full AI agent assistance.
+
+## Getting started
+
+Install from PyPI (package name is `f8-engine`, imported as `f8`):
+
+```bash
+pip install f8-engine
+# or
+uv add f8-engine
+```
+
+If you are working with an AI coding agent, `f8` ships with a bundled modeling skill and CLI reference you can drop straight into your workspace:
+
+```bash
+f8 agent init    # scaffolds .agents/skills/f8-modeling/
+f8 guide --all   # streams the full DSL, function, and auditing guide to stdout
+```
+
+## Quick look
+
+```python
+from f8 import Model
+
+model = Model("Operating Forecast")
+sheet = model.add_sheet("Summary")
+
+pnl = sheet.add_table("PnL", "Three-Year Projection", "($ in millions)")
+pnl.add_column("item", role="descriptor", header="Line Item")
+for year in ["2025A", "2026E", "2027E"]:
+    pnl.add_column(year, header=year, format="currency", decimals=1)
+
+pnl.add_row(
+    "revenue",
+    cells={"item": "Revenue", "2025A": 100.0},
+    expr='PnL["revenue", col.prev] * 1.25',
+)
+pnl.add_row(
+    "cogs",
+    cells={"item": "Cost of Revenue"},
+    expr='PnL["revenue", @col] * 0.30',
+)
+pnl.add_row(
+    "gross_profit",
+    cells={"item": "Gross Profit"},
+    expr='PnL["revenue", @col] - PnL["cogs", @col]',
+    style="total",
+)
+
+compiled = model.compile()
+
+# Audit evaluated values in memory (or pass view="formulas" to inspect lowered Excel formulas)
+print(compiled.table("PnL").to_markdown())
+
+# Emit a live .xlsx workbook with native Excel formulas and styling
+compiled.save("forecast.xlsx")
+```
+
+Output:
+
+```markdown
+| Line Item        |     2025A |     2026E |      2027E |
+| :--------------- | --------: | --------: | ---------: |
+| Revenue          |    $100.0 |    $125.0 |     $156.2 |
+| Cost of Revenue  |     $30.0 |     $37.5 |      $46.9 |
+| **Gross Profit** | **$70.0** | **$87.5** | **$109.4** |
+```
+
+## Trade-offs
+
+`f8` treats code as the single source of truth, and `.xlsx` is just an output. So there are some trade-offs to consider:
+
+| What you gain                                     | What you lose                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------------- |
+| Clean structure and strict schema                 | Hidden mistakes no one notices                                      |
+| Git                                               | `Model_v14_Final_(2).xlsx`                                          |
+| Instant DAG and completeness verification in Rust | The opportunity to mess up your model right before a client meeting |
+| Superior AI modeling                              | Being an Excel Ninja                                                |
+| Readable semantic code and logic                  | The joy of hunting down a hidden `#REF!` at 2 AM                    |
+
+Jokes aside, there are just so many benefits to writing models in code. The only real downsides I can think of are:
+
+1. You can't do whatever you want when it comes to layout in the emitted workbook; everything has to be structured. But you wouldn't want your spreadsheet to be a mess anyway, right?
+2. You have to learn some Python. But that is largely solved by AI now.
+3. Constantly re-compiling just to peek at the Excel workbook can be a bit annoying, so we provide in-memory inspection methods in Python. Once you get used to `print()`, you don't need to open the `.xlsx` all the time (or just ask AI to do it).
+4. There are no circular references or iterative solvers (as per FAST Standard Section 2.01). There is a closed-form formula that solves the revolver circularity problem without circular references anyway (and don't worry, AI knows it).
+
 ## Architecture
 
-The f8 architecture separates declarative model specification, intermediate representation expansion, dependency graph cycle detection, topological evaluation, spatial layout planning, formula lowering, and OpenXML binary emission into distinct compiler passes.
+Under the hood, `f8` is a Python SDK (`python/f8/`) backed by a 6-pass Rust compiler (`crates/f8-core/`):
+
+`Spec -> IR Expansion -> DAG & Cycle Check -> Topological Evaluation -> Spatial Layout -> Formula Lowering -> .xlsx Emission`
 
 - Architecture overview: `docs/architecture.md`
 - 2D matrix DSL reference: `docs/dsl/spec-format.md`
 - Standard function catalog: `docs/functions/catalog.md`
 - Python modeling skill: `python/f8/skills/f8-modeling/SKILL.md`
-- Spec-driven development skill: `.agents/skills/spec-driven-development/SKILL.md`
-
-## Workspace crates
-
-- `crates/f8-core`: Pure compiler engine, IR data models, evaluator, and OpenXML emitter.
-- `crates/f8-python`: PyO3 C-ABI native extension bridging the core compiler into Python.
 
 ## License
 

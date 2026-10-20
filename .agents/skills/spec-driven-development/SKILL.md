@@ -28,7 +28,8 @@ description: >-
 
 - Create `docs/specs/drafts/YYYY-MM-DD-<feature-name>.md` using the template below.
 - Define data structures, signatures, invariants, and `Given / When / Then` acceptance criteria (1:1 testable) without repeating file lists across sections.
-- Cite source paths via backtick code spans (e.g. `crates/f8-core/src/compiler/mod.rs`); reserve markdown links for stable `docs/` files.
+- Cite source paths via backtick code spans; reserve markdown links for stable `docs/` files.
+- Align with human engineer before execution.
 
 ### 3. Implement (Implementer Subagent)
 
