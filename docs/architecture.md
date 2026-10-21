@@ -134,7 +134,7 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
   - Handles operating system and filesystem I/O (`save()`).
   - Releases Python GIL (`py.allow_threads`) during compilation and emission.
   - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell`).
-  - Table auditor (`TableAuditor`): dictionary conversions (`to_dict(orient="dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`to_markdown()`), Jupyter display protocol (`_repr_markdown_`).
+  - Table auditor (`TableAuditor`): dictionary conversions (`to_dict(orient="records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`to_markdown()`), Jupyter display protocol (`_repr_markdown_`).
 
 ## 5. Technology Stack
 

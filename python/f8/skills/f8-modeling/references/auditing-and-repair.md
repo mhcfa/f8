@@ -154,7 +154,7 @@ Returned by `auditor.cell(row, col)` and `compiled.inspect_table(table_id)["cell
 - Absent coordinate (`KeyError`): Calling `auditor.cell(row, col)`, `auditor.value(row, col)`, `auditor.num(row, col)`, `auditor.formatted(row, col)`, `auditor.row_values(row, cols)`, `auditor.row_nums(row, cols)`, `auditor.to_markdown(rows=..., cols=...)`, or `auditor[row, col]` with non-existent row or column IDs raises `KeyError`.
 - Non-numeric value (`TypeError`): Calling `compiled.num(...)`, `auditor.num(row, col)`, or `auditor.row_nums(row, cols)` on a cell that evaluated to text, boolean, `None` (empty), or an Excel error raises `TypeError`.
 - Invalid index key (`TypeError`): Bracket indexing `auditor[key]` expects a 2-tuple `(row, col)`. Passing non-tuple or non-string elements raises `TypeError`.
-- Unassigned cell (`None`): A calculable coordinate declared within table bounds but unassigned evaluates to `None`.
+- Empty cell (`None`): A calculable coordinate explicitly assigned `None` (`CellValue::Empty`) evaluates to `None`.
 
 ### Cell Value Unboxing and Error Codes
 
@@ -214,7 +214,7 @@ markdown_str = auditor.to_markdown(
 
 ### Tabular Dictionary Export and DataFrame Ingestion
 
-Exports rectangular matrices mapping unassigned cells to `None`:
+Exports rectangular matrices mapping empty cells to `None`:
 
 ```python
 data = auditor.to_dict(orient="records")

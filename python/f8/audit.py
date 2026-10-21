@@ -289,7 +289,7 @@ class TableAuditor:
     ):
         """Exports evaluated tabular data to standard dictionary layouts.
 
-        Guarantees uniform rectangular output across all orientations, mapping unassigned
+        Guarantees uniform rectangular output across all orientations, mapping empty
         cells to None.
         """
         if orient == "records":
