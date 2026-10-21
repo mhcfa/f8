@@ -2,6 +2,7 @@
 name = "f8-python"
 version.workspace = true
 edition.workspace = true
+description.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

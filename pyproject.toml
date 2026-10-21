@@ -28,6 +28,7 @@ dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/mhcfa/f8"
+Documentation = "https://github.com/mhcfa/f8/tree/main/docs"
 Repository = "https://github.com/mhcfa/f8"
 Issues = "https://github.com/mhcfa/f8/issues"
 

@@ -2,10 +2,12 @@
 name = "f8-core"
 version.workspace = true
 edition.workspace = true
+description.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 publish = false
+exclude = ["tests/**"]
 
 [dependencies]
 indexmap.workspace = true
