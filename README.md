@@ -88,6 +88,15 @@ Output:
 | **Gross Profit** | **$70.0** | **$87.5** | **$109.4** |
 ```
 
+## Sample deliverables
+
+Inspect compiled deliverables generated from a real-world model:
+
+- [costco_financial_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/costco_financial_model.xlsx): Compiled financial model with live Excel formulas.
+- [costco_valuation_report.pdf](https://github.com/mhcfa/f8/releases/latest/download/costco_valuation_report.pdf): Valuation report rendered directly from the compiled `f8` model using Quarto, Typst, and Matplotlib.
+
+> Disclaimer: Sample deliverables are AI-generated technical demonstrations and do not constitute financial analysis or investment advice.
+
 ## Trade-offs
 
 `f8` treats code as the single source of truth, and `.xlsx` is just an output. So there are some trade-offs to consider:
