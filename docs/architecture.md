@@ -4,10 +4,10 @@ Deterministic financial model compiler treating spreadsheets as compiled binary 
 
 ## 1. Core Philosophy & Architectural Invariants
 
-- Code as single source of truth: Declarative JSON project specs (`f8.json` + `tables/*.json`).
+- Code as single source of truth: Declarative Python DSL and structured specifications.
 - Explicit core data structures: Exactly one canonical representation per concept. Zero implicit fallbacks, hidden defaults, or syntactic magic in core engine.
 - Agent-first intermediate representation (IR): Orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic verification over typing brevity. Ergonomic scaffolding isolated to Python SDK.
-- Pure in-memory calculation: Engine (`crates/f8-core`) operates 100% in-memory with in-memory `.xlsx` generation. Zero filesystem I/O in core; disk reads and writes isolated to outer Python adapters (`python/f8`).
+- Pure in-memory calculation: Engine (`crates/f8-core`) operates 100% in-memory with in-memory `.xlsx` generation. Zero filesystem I/O in core; disk writes (`.xlsx` emission via `save()`) isolated to outer Python bindings (`crates/f8-python`).
 - Orthogonal 2D matrix paradigm: General `R x C` table matrix. Columns represent time series, categories, or metrics. Every cell `Table[row, col]` is a first-class calculation node.
 - Excel as compile artifact: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - 100% Excel calculation and syntax parity: Exact calculation parity for supported and future functions, IEEE-754 normalization, mixed-type comparison ranking (`Number < Text < Boolean`), Excel error bubbling, and 1900 leap day bug reproduction.
@@ -131,7 +131,7 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
   - Enforces explicit JSON schema invariants with zero dynamic fallbacks.
 - Adapter / tooling layer (`python/f8` + `crates/f8-python`):
   - Bridge between human/agent workflows and the core compiler.
-  - Handles operating system and filesystem I/O: loads `f8.json` + `tables/*.json` from disk, writes `.xlsx` files to disk (`save()`).
+  - Handles operating system and filesystem I/O (`save()`).
   - Releases Python GIL (`py.allow_threads`) during compilation and emission.
   - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell`).
   - Table auditor (`TableAuditor`): dictionary conversions (`to_dict(orient="dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`to_markdown()`), Jupyter display protocol (`_repr_markdown_`).
@@ -147,7 +147,7 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
 | **Function catalog**  | Extensible trait registry      | Built-in Excel function implementations                                      |
 | **Workbook emitter**  | `rust_xlsxwriter`              | Native OpenXML `.xlsx` generation with live formulas and deduplicated styles |
 | **Python bridge**     | `pyo3`, `maturin`, `pythonize` | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
-| **Python SDK**        | Python 3.12+ (`uv`)            | Fluent builder DSL, disk loader, table auditor, bundled agent skills         |
+| **Python SDK**        | Python 3.12+ (`uv`)            | Fluent builder DSL, table auditor, bundled agent skills                      |
 
 ## 6. Workspace Architecture
 
@@ -169,7 +169,7 @@ f8/
 │       └── src/                # Compiler bridge, PyCompiledModel, Serde marshaling, & error mapping
 │
 ├── python/                     # Python SDK package
-│   └── f8/                     # Fluent builder, project disk I/O, TableAuditor, CLI, & skills
+│   └── f8/                     # Fluent builder, TableAuditor, CLI, & skills
 │
 └── docs/                       # Architecture, DSL reference, catalog, & task specs
     ├── dsl/                    # Specification format, addressing, grammar, formatting, patterns

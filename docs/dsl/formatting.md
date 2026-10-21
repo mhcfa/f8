@@ -183,9 +183,9 @@ A point override `highlight: false` explicitly un-highlights a cell even if its 
 
 f8 supports pluggable, external workbook themes inspired by modern IDE and editor color themes (e.g. VS Code, TextMate). The visual identity of an emitted workbook is completely isolated into standalone theme configurations.
 
-### 6.1. Manifest theme declaration
+### 6.1. Theme declaration
 
-The root workbook manifest (`f8.json`) declares the active `theme` either by referencing a built-in preset or a relative file path to a custom theme JSON. If omitted, it defaults to `"corporate_navy"`:
+`Model(name="...", theme=...)` configures the active workbook theme either by referencing a built-in preset name (`str`) or by passing a custom theme dictionary (`Mapping[str, object]`). If omitted, it defaults to `"corporate_navy"`:
 
 ```json
 {
@@ -195,22 +195,12 @@ The root workbook manifest (`f8.json`) declares the active `theme` either by ref
 }
 ```
 
-Or pointing to an external custom theme file:
-
-```json
-{
-  "model_name": "Project Titan LBO",
-  "theme": "./themes/firm_brand.json",
-  "sheets": []
-}
-```
-
 ### 6.2. Built-in theme
 
 f8 provides `corporate_navy` as its built-in institutional theme:
 - `corporate_navy`: Institutional private equity and investment banking style with deep navy headers, underlined section titles on transparent backgrounds, crisp thin borders, and classic blue inputs.
 
-Additional or custom themes can be loaded via external JSON theme files (see below).
+Custom themes can be supplied in-memory via `Model(theme=custom_theme_dict)` in Python or `Theme::from_json_str` in Rust (see schema below).
 
 ### 6.3. Theme JSON configuration schema
 

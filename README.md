@@ -81,11 +81,11 @@ compiled.save("forecast.xlsx")
 Output:
 
 ```markdown
-| Line Item        |     2025A |     2026E |      2027E |
-| :--------------- | --------: | --------: | ---------: |
-| Revenue          |    $100.0 |    $125.0 |     $156.2 |
-| Cost of Revenue  |     $30.0 |     $37.5 |      $46.9 |
-| **Gross Profit** | **$70.0** | **$87.5** | **$109.4** |
+| Line Item       |  2025A |  2026E |  2027E |
+| :-------------- | -----: | -----: | -----: |
+| Revenue         | $100.0 | $125.0 | $156.2 |
+| Cost of Revenue |  $30.0 |  $37.5 |  $46.9 |
+| Gross Profit    |  $70.0 |  $87.5 | $109.4 |
 ```
 
 ## Trade-offs
@@ -95,17 +95,18 @@ Output:
 | What you gain                                     | What you lose                                                       |
 | ------------------------------------------------- | ------------------------------------------------------------------- |
 | Clean structure and strict schema                 | Hidden mistakes no one notices                                      |
-| Git                                               | `Model_v14_Final_(2).xlsx`                                          |
+| Git and line-by-line diffs                        | `Model_v14_Final_(2).xlsx` and guessing what changed since v13      |
 | Instant DAG and completeness verification in Rust | The opportunity to mess up your model right before a client meeting |
 | Superior AI modeling                              | Being an Excel Ninja                                                |
 | Readable semantic code and logic                  | The joy of hunting down a hidden `#REF!` at 2 AM                    |
 
-Jokes aside, there are just so many benefits to writing models in code. The only real downsides I can think of are:
+Jokes aside, writing models in code gives you 40 years of software infrastructure out of the box, line-by-line `git diff` reviews, automated `pytest` checks, reusable modules, and parametric loops. The only real downsides I can think of are:
 
 1. You can't do whatever you want when it comes to layout in the emitted workbook; everything has to be structured. But you wouldn't want your spreadsheet to be a mess anyway, right?
 2. You have to learn some Python. But that is largely solved by AI now.
 3. Constantly re-compiling just to peek at the Excel workbook can be a bit annoying, so we provide in-memory inspection methods in Python. Once you get used to `print()`, you don't need to open the `.xlsx` all the time (or just ask AI to do it).
 4. There are no circular references or iterative solvers (as per FAST Standard Section 2.01). There is a closed-form formula that solves the revolver circularity problem without circular references anyway (and don't worry, AI knows it).
+5. There is no native Excel chart emission yet (on roadmap), and no Pivot Tables. But since you are already in Python, `pandas` or `polars` handles data aggregation much better.
 
 ## Architecture
 

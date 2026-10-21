@@ -1,31 +1,24 @@
 # Specification Format & 2D Grid
 
-This document defines f8's declarative multi-file JSON specification schemas, 2D grid structure, axis roles, cell input syntax, and validation invariants.
+This document defines f8's declarative specification schemas, 2D grid structure, axis roles, cell input syntax, and validation invariants.
 
 ---
 
-## 1. Project Directory Architecture
+## 1. Specification Hierarchy
 
-A f8 model project is structured as a directory separating workbook containers from standalone calculation tables:
+An f8 model specification separates workbook container metadata from standalone calculation tables (`Model.__f8_spec__() -> (ProjectManifest, list[TableSpec])`):
 
-```text
-my_model/
-├── f8.json                  # Root manifest: metadata, theme, and sheet layout
-└── tables/                    # Standalone table calculation specifications
-    ├── assumptions.json
-    ├── income_statement.json
-    └── balance_sheet.json
-```
+- `ProjectManifest`: Workbook-level metadata (`model_name`), active theme selection (`theme`), and ordered worksheet containers (`sheets`).
+- `TableSpec`: Standalone 2D calculation matrices (`id`, `columns`, `rows`, formulas).
 
 ### Invariants
-- Strictly one table per file: Table definitions (`id`, `columns`, `rows`, formulas) reside in separate JSON files under `tables/`.
-- Logical table references: Sheets in `f8.json` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`), never filesystem paths.
+- Decoupled table definitions: Table definitions (`id`, `columns`, `rows`, formulas) are defined independently and assigned to worksheets by logical identifier.
+- Logical table references: Sheets in `ProjectManifest` reference tables purely by logical identifier (`TableId`, e.g. `"IncomeStatement"`).
 - Global table ID uniqueness: Every table `id` must be globally unique across the workbook.
-- Decoupled file discovery: The project loader discovers all `tables/*.json` files and indexes them by internal `id`. Filenames are decoupled from table IDs.
 
 ---
 
-## 2. Project Manifest Schema (`f8.json`)
+## 2. Project Manifest Schema (`ProjectManifest`)
 
 The root manifest defines workbook-level metadata, pluggable theme selection, and sheet containers:
 
@@ -61,7 +54,7 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
 
 ### Manifest Properties
 - `model_name` (`string`, required): Model title used in metadata and workbook document properties.
-- `theme` (`string`, optional, default `"corporate_navy"`): Built-in theme name or relative path to a custom theme JSON file.
+- `theme` (`string`, optional, default `"corporate_navy"`): Built-in theme name (or custom theme name when a custom `Theme` dictionary is supplied to `Model(theme=...)`).
 - `sheets` (`array`, required): Ordered list of worksheet definitions:
   - `name` (`string`, required): Worksheet tab label. Must be unique across the workbook.
   - `tab_color` (`string`, optional): Hex color code starting with `#` (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`).
@@ -71,9 +64,9 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
 
 ---
 
-## 3. Table Specification Schema (`tables/*.json`)
+## 3. Table Specification Schema (`TableSpec`)
 
-Each table file defines an orthogonal 2D calculation matrix with explicit columns and rows:
+Each table specification defines an orthogonal 2D calculation matrix with explicit columns and rows:
 
 ```json
 {
