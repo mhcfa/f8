@@ -201,6 +201,7 @@ class Table:
         currency: CurrencyCode | None = None,
         expr: str | None = None,
     ) -> Table:
+        """Appends a data or descriptor column specification to the table."""
         if header is not None and headers is not None:
             raise ValueError("Cannot specify both 'header' and 'headers'")
         if id in self._col_ids:
@@ -229,6 +230,7 @@ class Table:
         return self
 
     def add_column_gutter(self) -> Table:
+        """Appends an empty visual spacing gutter column to the table."""
         self._columns.append(_GutterColumn())
         return self
 
@@ -243,6 +245,7 @@ class Table:
         decimals: int | None = None,
         currency: CurrencyCode | None = None,
     ) -> Table:
+        """Appends a data row with optional cell values and 1D vector expression."""
         if id in self._row_ids:
             raise ValueError(f"Row '{id}' already exists in table '{self.id}'")
 
@@ -263,6 +266,7 @@ class Table:
         return self
 
     def add_row_gutter(self) -> Table:
+        """Appends an empty visual spacing gutter row to the table."""
         self._rows.append(_GutterRow())
         return self
 
@@ -272,6 +276,7 @@ class Table:
         indent: int | None = None,
         note: str | None = None,
     ) -> Table:
+        """Appends a non-calculable section header divider row to the table."""
         self._rows.append(_SectionHeaderRow(title=title, indent=indent, note=note))
         return self
 
@@ -290,6 +295,7 @@ class Table:
         indent: int | None = None,
         note: str | None = None,
     ) -> Table:
+        """Sets or merges a 0D cell override at `(row, col)`."""
         if row not in self._data_rows:
             raise KeyError(f"Row '{row}' does not exist in table '{self.id}'")
 
@@ -438,6 +444,7 @@ class Table:
         return self
 
     def __f8_spec__(self) -> TableSpecDict:
+        """Serializes the table into a canonical `TableSpecDict` payload."""
         cols_spec: list[ColumnSpecDict] = []
         for col in self._columns:
             if isinstance(col, _GutterColumn):
@@ -553,6 +560,7 @@ class Sheet:
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
     ) -> Table:
+        """Creates and appends a new `Table` to this worksheet."""
         if self._model is not None:
             for s in self._model.sheets:
                 for t in s.tables:
@@ -576,6 +584,7 @@ class Sheet:
         return table
 
     def get_table(self, id: str) -> Table:
+        """Looks up a `Table` on this worksheet by its `id`."""
         for table in self._tables:
             if table.id == id:
                 return table
@@ -583,9 +592,11 @@ class Sheet:
 
     @property
     def tables(self) -> list[Table]:
+        """Ordered list of tables belonging to this worksheet."""
         return list(self._tables)
 
     def __f8_spec__(self) -> SheetSpecDict:
+        """Serializes the worksheet into a canonical `SheetSpecDict` payload."""
         spec: SheetSpecDict = {
             "name": self.name,
             "show_gridlines": self.show_gridlines,
@@ -617,6 +628,7 @@ class Model:
         show_gridlines: bool = True,
         freeze_panes: tuple[int, int] | None = None,
     ) -> Sheet:
+        """Creates and appends a new `Sheet` to the model."""
         if name in self._sheet_names:
             raise ValueError(f"Sheet '{name}' already exists in model '{self.name}'")
 
@@ -632,12 +644,14 @@ class Model:
         return sheet
 
     def get_sheet(self, name: str) -> Sheet:
+        """Looks up a `Sheet` in the model by `name`."""
         for sheet in self._sheets:
             if sheet.name == name:
                 return sheet
         raise KeyError(f"Sheet '{name}' not found in model '{self.name}'")
 
     def get_table(self, id: str) -> Table:
+        """Looks up a `Table` across all worksheets in the model by `id`."""
         for sheet in self._sheets:
             for table in sheet.tables:
                 if table.id == id:
@@ -646,13 +660,16 @@ class Model:
 
     @property
     def sheets(self) -> list[Sheet]:
+        """Ordered list of worksheets in the model."""
         return list(self._sheets)
 
     @property
     def tables(self) -> list[Table]:
+        """Ordered list of all tables across all worksheets in the model."""
         return [table for sheet in self._sheets for table in sheet.tables]
 
     def __f8_spec__(self) -> tuple[ProjectManifestDict, list[TableSpecDict]]:
+        """Serializes the model into `(ProjectManifestDict, list[TableSpecDict])`."""
         manifest: ProjectManifestDict = {
             "model_name": self.name,
             "theme": self.theme,
@@ -662,6 +679,7 @@ class Model:
         return manifest, tables
 
     def compile(self) -> CompiledModel:
+        """Compiles, verifies, and evaluates the model into a `CompiledModel`."""
         manifest, tables = self.__f8_spec__()
         return core_compile(manifest, tables)
 

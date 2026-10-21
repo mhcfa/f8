@@ -11,13 +11,48 @@ use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 
-create_exception!(_core, F8Error, PyException);
-create_exception!(_core, CycleDetectedError, F8Error);
-create_exception!(_core, ReferenceResolutionError, F8Error);
-create_exception!(_core, SpecificationError, F8Error);
-create_exception!(_core, FormulaParseError, F8Error);
-create_exception!(_core, InspectionError, F8Error);
-create_exception!(_core, EmissionError, F8Error);
+create_exception!(
+    _core,
+    F8Error,
+    PyException,
+    "Base exception for all f8 compiler, evaluation, inspection, and emission errors."
+);
+create_exception!(
+    _core,
+    CycleDetectedError,
+    F8Error,
+    "Raised when the dependency graph contains a circular cell reference."
+);
+create_exception!(
+    _core,
+    ReferenceResolutionError,
+    F8Error,
+    "Raised when a formula coordinate or range reference cannot be resolved."
+);
+create_exception!(
+    _core,
+    SpecificationError,
+    F8Error,
+    "Raised when a model manifest or table specification violates schema or IR invariants."
+);
+create_exception!(
+    _core,
+    FormulaParseError,
+    F8Error,
+    "Raised when an f8 DSL expression fails lexical or syntactic parsing."
+);
+create_exception!(
+    _core,
+    InspectionError,
+    F8Error,
+    "Raised when an inspected sheet, table, or cell coordinate does not exist."
+);
+create_exception!(
+    _core,
+    EmissionError,
+    F8Error,
+    "Raised when OpenXML (.xlsx) workbook generation or file I/O fails."
+);
 
 pub fn register_exceptions(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("F8Error", m.py().get_type::<F8Error>())?;

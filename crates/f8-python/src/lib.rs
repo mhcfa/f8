@@ -9,6 +9,7 @@ use pyo3::prelude::*;
 use crate::error::{map_compiler_error, map_pythonize_error, register_exceptions};
 use crate::model::PyCompiledModel;
 
+/// Compiles a project manifest and table specifications into an evaluated `CompiledModel`.
 #[pyfunction]
 #[pyo3(signature = (manifest, tables))]
 pub fn compile<'py>(
@@ -29,6 +30,7 @@ pub fn compile<'py>(
     Ok(PyCompiledModel::new(compiled))
 }
 
+/// Native Rust compiler bindings (`f8._core`).
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
