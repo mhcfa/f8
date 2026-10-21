@@ -41,9 +41,9 @@ description: >-
 - [ ] Pure data flow (`Blocker`): Explicit inputs and outputs; zero hidden or shared mutable state.
 - [ ] Root-cause correctness (`Blocker`): Defects fixed at origin (parser, IR, schema); zero downstream band-aids or test-specific branches.
 
-### 2. Greenfield Rigor
+### 2. Code Hygiene & Boundary Rigor
 
-- [ ] Zero compatibility shims or stubs (`Blocker`): No `#[deprecated]`, legacy aliases, transition wrappers, `todo!()`, `unimplemented!()`, or silent workarounds. Callers updated in-place.
+- [ ] Zero unrequested shims or stubs (`Blocker`): No `#[deprecated]`, transition wrappers, `todo!()`, `unimplemented!()`, or silent workarounds in `f8-core` or `f8-python`. Public Python SDK (`f8.__all__`) deprecations permitted only when explicitly specified in the target spec.
 - [ ] Zero dead or speculative code (`Minor`): No commented-out tombstones, unused functions/imports, or single-use premature trait/generic abstractions.
 
 ### 3. Rust Standards (2024 Edition)

@@ -4,7 +4,7 @@
 
 - `crates/f8-core/`: Rust calculation engine. 6 compiler passes (IR, DAG/SCC, evaluator, layout, lowering, emitter) and `CompiledModel` facade.
 - `crates/f8-python/`: PyO3 native extension (`f8._core`, `abi3-py312`). Deserializes via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.
-- `python/f8/`: Python SDK (`Model`, `Table`, `Cell`, `TableAuditor`), project disk I/O, synchronized `.pyi` stubs (`_core.pyi`), and bundled `f8-modeling` skill.
+- `python/f8/`: Python SDK (`Model`, `Table`, `Cell`, `TableAuditor`), synchronized `.pyi` stubs (`_core.pyi`), and bundled `f8-modeling` skill.
 - `docs/`: Reference docs (`architecture.md`, `dsl/`, `functions/catalog.md`) and active task specs (`docs/specs/drafts/`).
 
 ## Workflow
@@ -20,7 +20,7 @@
 - Pure data flow: Explicit inputs and outputs; zero global mutable state or hidden side effects.
 - Strong typing: Explicit enums, interned IDs, and typed structs; ban stringly-typed heuristics.
 - Root-cause correctness & zero silent workarounds: Fix defects at parser, IR, or schema origin. Never patch around compiler, typing, or toolchain friction with downstream band-aids, `# type: ignore`, lossy `.ok()`, or unverified casts.
-- Greenfield rigor: No compatibility shims, `#[deprecated]` aliases, dead code, commented-out tombstones, premature abstractions, and `todo!()`/`unimplemented!()` stubs. Update callers in-place.
+- Zero unrequested shims: No `#[deprecated]`, compatibility wrappers, dead code, commented-out tombstones, premature abstractions, or `todo!()`/`unimplemented!()` stubs. Update callers in-place; only add public Python (`f8.__all__`) deprecation warnings when explicitly required by the user or spec, keeping `f8-core` and `f8-python` strictly shim-free.
 
 ## Code standards & verification
 
