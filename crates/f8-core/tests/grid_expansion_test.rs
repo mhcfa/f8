@@ -224,7 +224,7 @@ fn test_scenario_5_actionable_formula_parse_error_diagnostic() {
 fn test_scenario_6_end_to_end_workbook_orchestration() {
     let manifest = ProjectManifest {
         model_name: "LBO_Model".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Summary".to_string(),
@@ -369,7 +369,7 @@ fn test_expand_multi_tier_column_with_vector_rules() {
 fn test_expand_workbook_unassigned_table_rejected() {
     let manifest = ProjectManifest {
         model_name: "Test".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Summary".to_string(),
             tab_color: None,

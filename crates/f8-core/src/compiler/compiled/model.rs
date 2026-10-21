@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::compiler::ir::id::CellId;
-use crate::model::format::{CurrencyCode, FormatPreset};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::value::CellValue;
 
@@ -70,7 +70,7 @@ pub struct CellInspection {
     pub physical_address: String,
     /// Topologically evaluated runtime value.
     pub evaluated_value: CellValue,
-    /// Pre-formatted runtime value string (e.g. `"$ 115.0"`, `"15.0%"`).
+    /// Pre-formatted runtime value string (e.g. `"$115.0"`, `"15.0%"`).
     #[serde(default)]
     pub formatted_value: Option<String>,
     /// Formatting preset if assigned.
@@ -106,7 +106,7 @@ pub struct CellNeighborInspection {
     pub sheet_address: String,
     /// Evaluated runtime value if available.
     pub value: Option<CellValue>,
-    /// Pre-formatted runtime value string (e.g. `"$ 115.0"`, `"15.0%"`).
+    /// Pre-formatted runtime value string (e.g. `"$115.0"`, `"15.0%"`).
     pub formatted_value: Option<String>,
 }
 
@@ -183,6 +183,8 @@ pub struct ColumnInspection {
     pub is_gutter: bool,
     /// `true` if this column is a descriptor axis (carrying row/item labels).
     pub is_descriptor: bool,
+    /// Structural presentation style if this is a data column.
+    pub style: Option<SemanticStyle>,
 }
 
 /// Row inspection metadata.
@@ -198,6 +200,8 @@ pub struct RowInspection {
     pub is_gutter: bool,
     /// Typography indentation level.
     pub indent: u8,
+    /// Structural presentation style if this is a calculable data row.
+    pub style: Option<SemanticStyle>,
 }
 
 /// Cell-level audit information within a table inspection view.
@@ -245,7 +249,7 @@ pub struct DependencyNode {
     pub sheet_address: String,
     /// Evaluated runtime value.
     pub value: Option<CellValue>,
-    /// Pre-formatted runtime value string (e.g. `"$ 182.4"`, `"15.0%"`).
+    /// Pre-formatted runtime value string (e.g. `"$182.4"`, `"15.0%"`).
     #[serde(default)]
     pub formatted_value: Option<String>,
     /// Lowered Excel formula string if applicable.

@@ -3,6 +3,61 @@ use serde::{Deserialize, Serialize};
 use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset};
 
+/// Theme specification inside a project manifest: either a built-in theme name or an inline custom theme.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ThemeSpec {
+    Name(String),
+    Custom(Box<Theme>),
+}
+
+impl Default for ThemeSpec {
+    fn default() -> Self {
+        Self::Name(Theme::DEFAULT_NAME.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ThemeSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ThemeSpecVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ThemeSpecVisitor {
+            type Value = ThemeSpec;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a built-in theme name string or a custom theme map")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(ThemeSpec::Name(v.to_string()))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(ThemeSpec::Name(v))
+            }
+
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let theme = Theme::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(ThemeSpec::Custom(Box::new(theme)))
+            }
+        }
+
+        deserializer.deserialize_any(ThemeSpecVisitor)
+    }
+}
+
 /// Complete visual styling, typography, dimensions, palette, borders, and number format specification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Theme {
@@ -16,6 +71,10 @@ pub struct Theme {
     pub number_formats: NumberFormatsConfig,
 }
 
+fn default_section_header_underline() -> bool {
+    true
+}
+
 /// Font family and point sizes for workbook hierarchy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypographyConfig {
@@ -26,6 +85,8 @@ pub struct TypographyConfig {
     pub col_header_size: f64,
     pub section_header_size: f64,
     pub data_size: f64,
+    #[serde(default = "default_section_header_underline")]
+    pub section_header_underline: bool,
 }
 
 impl Default for TypographyConfig {
@@ -38,6 +99,7 @@ impl Default for TypographyConfig {
             col_header_size: 10.0,
             section_header_size: 10.0,
             data_size: 10.0,
+            section_header_underline: true,
         }
     }
 }
@@ -67,8 +129,8 @@ impl Default for MetricsConfig {
             gutter_row_height: 9.0,
             gutter_col_width: 3.0,
             title_gutter_row_height: 8.0,
-            char_width_multiplier: 1.15,
-            col_padding: 2.0,
+            char_width_multiplier: 1.0,
+            col_padding: 1.0,
             min_col_width: 12.0,
         }
     }
@@ -136,7 +198,7 @@ impl Default for BordersConfig {
     fn default() -> Self {
         Self {
             table_title_border_bottom: BorderStyle::None,
-            super_header_border_bottom: BorderStyle::Thick,
+            super_header_border_bottom: BorderStyle::None,
             header_border_bottom: BorderStyle::Thin,
             descriptor_border_right: BorderStyle::None,
             subtotal_border_top: BorderStyle::Thin,
@@ -173,7 +235,7 @@ impl Default for NumberFormatsConfig {
         Self {
             currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)".to_string(),
             number: "#,##0{dec}_);(#,##0{dec});\"-\"_)".to_string(),
-            percentage: "0{dec}%".to_string(),
+            percentage: "0{dec}%_);(0{dec}%);\"-\"_)".to_string(),
             multiple: "0{dec}\"x\"".to_string(),
             basis_points: "#,##0{dec}\" bps\"".to_string(),
             date: "yyyy-mm-dd".to_string(),
@@ -311,6 +373,19 @@ impl PaletteConfig {
 }
 
 impl NumberFormatsConfig {
+    /// Returns the configured default fractional precision for a numeric format preset.
+    #[must_use]
+    pub const fn default_decimals(&self, preset: FormatPreset) -> Option<u32> {
+        match preset {
+            FormatPreset::Currency => Some(self.defaults.currency_decimals),
+            FormatPreset::Number => Some(self.defaults.number_decimals),
+            FormatPreset::Percentage => Some(self.defaults.percentage_decimals),
+            FormatPreset::Multiple => Some(self.defaults.multiple_decimals),
+            FormatPreset::BasisPoints => Some(self.defaults.basis_points_decimals),
+            FormatPreset::Date | FormatPreset::Text | FormatPreset::Integer => None,
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ModelError> {
         let numeric_templates = [
             (FormatPreset::Currency, &self.currency),
@@ -330,19 +405,10 @@ impl NumberFormatsConfig {
             return Err(ModelError::MissingCurrencySymbolPlaceholder);
         }
 
-        let default_precisions = [
-            (FormatPreset::Currency, self.defaults.currency_decimals),
-            (FormatPreset::Number, self.defaults.number_decimals),
-            (FormatPreset::Percentage, self.defaults.percentage_decimals),
-            (FormatPreset::Multiple, self.defaults.multiple_decimals),
-            (
-                FormatPreset::BasisPoints,
-                self.defaults.basis_points_decimals,
-            ),
-        ];
-
-        for (preset, decimals) in default_precisions {
-            if decimals > 14 {
+        for (preset, _) in numeric_templates {
+            if let Some(decimals) = self.default_decimals(preset)
+                && decimals > 14
+            {
                 return Err(ModelError::ThemePrecisionOutOfBounds {
                     preset,
                     decimals,
@@ -373,40 +439,27 @@ impl Theme {
     /// - If `decimals` is `None`, the preset's default precision from `number_formats.defaults` is used.
     /// - For numeric presets, `{dec}` is expanded dynamically.
     /// - For `currency`, `{sym}` expands to `currency.unwrap_or_default().excel_symbol()`.
-    /// - For non-numeric presets (`date`, `text`), the static template is returned.
+    /// - For presets without dynamic precision (`date`, `text`, `integer`), the static template is returned.
     pub fn resolve_number_format(
         &self,
         preset: FormatPreset,
         decimals: Option<u32>,
         currency: Option<CurrencyCode>,
     ) -> Result<String, ModelError> {
-        let (template, default_dec) = match preset {
+        let template = match preset {
             FormatPreset::Date => return Ok(self.number_formats.date.clone()),
             FormatPreset::Text => return Ok(self.number_formats.text.clone()),
             FormatPreset::Integer => return Ok(self.number_formats.integer.clone()),
-            FormatPreset::Currency => (
-                &self.number_formats.currency,
-                self.number_formats.defaults.currency_decimals,
-            ),
-            FormatPreset::Number => (
-                &self.number_formats.number,
-                self.number_formats.defaults.number_decimals,
-            ),
-            FormatPreset::Percentage => (
-                &self.number_formats.percentage,
-                self.number_formats.defaults.percentage_decimals,
-            ),
-            FormatPreset::Multiple => (
-                &self.number_formats.multiple,
-                self.number_formats.defaults.multiple_decimals,
-            ),
-            FormatPreset::BasisPoints => (
-                &self.number_formats.basis_points,
-                self.number_formats.defaults.basis_points_decimals,
-            ),
+            FormatPreset::Currency => &self.number_formats.currency,
+            FormatPreset::Number => &self.number_formats.number,
+            FormatPreset::Percentage => &self.number_formats.percentage,
+            FormatPreset::Multiple => &self.number_formats.multiple,
+            FormatPreset::BasisPoints => &self.number_formats.basis_points,
         };
 
-        let dec = decimals.unwrap_or(default_dec);
+        let dec = decimals
+            .or_else(|| self.number_formats.default_decimals(preset))
+            .unwrap_or(0);
         if dec > 14 {
             return Err(ModelError::ThemePrecisionOutOfBounds {
                 preset,
@@ -430,33 +483,16 @@ impl Theme {
         Ok(expanded)
     }
 
-    /// Parses a theme from a JSON string and validates its internal invariants.
-    ///
-    /// # Errors
-    /// Returns [`ModelError::ThemeParseError`] if deserialization fails, or validation errors
-    /// if colors, metrics, or format templates are invalid.
-    pub fn from_json_str(s: &str) -> Result<Self, ModelError> {
-        let theme: Theme =
-            serde_json::from_str(s).map_err(|source| ModelError::ThemeParseError { source })?;
-        theme.validate()?;
-        Ok(theme)
-    }
-
     /// Resolves a built-in theme by name ("corporate_navy").
     ///
     /// # Errors
     /// Returns [`ModelError::ThemeNotFound`] if the theme name does not match any built-in theme.
     pub fn resolve_builtin(name: &str) -> Result<Self, ModelError> {
-        Self::built_in(name).ok_or_else(|| ModelError::ThemeNotFound {
-            name: name.to_string(),
-        })
-    }
-
-    /// Looks up a statically embedded built-in theme by name.
-    pub fn built_in(name: &str) -> Option<Self> {
         match name {
-            Self::DEFAULT_NAME => Some(Self::corporate_navy()),
-            _ => None,
+            Self::DEFAULT_NAME => Ok(Self::corporate_navy()),
+            _ => Err(ModelError::ThemeNotFound {
+                name: name.to_string(),
+            }),
         }
     }
 
@@ -471,15 +507,15 @@ impl Theme {
                 table_title_fill: "#1B365D".to_string(),
                 table_title_text: "#FFFFFF".to_string(),
                 table_subtitle_text: "#4B5563".to_string(),
-                super_header_fill: "#2C4D75".to_string(),
-                super_header_text: "#FFFFFF".to_string(),
-                col_header_fill: "#F0F4F8".to_string(),
-                col_header_text: "#1B365D".to_string(),
-                section_header_fill: "#F7F9FC".to_string(),
-                section_header_text: "#1B365D".to_string(),
+                super_header_fill: "#ced4da".to_string(),
+                super_header_text: "#000000".to_string(),
+                col_header_fill: "none".to_string(),
+                col_header_text: "#000000".to_string(),
+                section_header_fill: "none".to_string(),
+                section_header_text: "#000000".to_string(),
                 data_fill: "none".to_string(),
-                data_text: "#1F2937".to_string(),
-                subtotal_fill: "#F7F9FC".to_string(),
+                data_text: "#000000".to_string(),
+                subtotal_fill: "none".to_string(),
                 subtotal_text: "#000000".to_string(),
                 total_fill: "none".to_string(),
                 total_text: "#000000".to_string(),

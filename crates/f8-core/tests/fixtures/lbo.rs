@@ -447,8 +447,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 .cell_formula("y0", "DATE(2024, 12, 31)")
                 .build(),
             RowBuilder::line_item("year", "Calendar Year")
-                .format(FormatPreset::Number)
-                .decimals(0)
+                .format(FormatPreset::Integer)
                 .expr("YEAR(Timeline[\"date\", @col])")
                 .build(),
             RowBuilder::line_item("days", "Period Elapsed Days")
@@ -673,7 +672,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
     let manifest = ProjectManifest {
         model_name: "ProjectTitanLBO".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Summary".to_string(),

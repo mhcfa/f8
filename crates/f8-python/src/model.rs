@@ -4,6 +4,8 @@ use f8_core::compiler::CompiledModel;
 use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::error::CompilerError;
 use f8_core::model::id::{SheetId, TableId};
+use f8_core::value::CellValue;
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -11,6 +13,18 @@ use crate::error::{
     make_emission_error, map_compiler_error, map_inspection_error, map_pythonize_error,
 };
 
+fn apply_unit_suffix(formatted: String, unit: &str) -> String {
+    if formatted.is_empty() || unit.is_empty() {
+        return formatted;
+    }
+    if let Some(stem) = formatted.strip_suffix(')') {
+        format!("{stem}{unit})")
+    } else {
+        format!("{formatted}{unit}")
+    }
+}
+
+/// Compiled, verified, and evaluated financial model ready for auditing and `.xlsx` emission.
 #[pyclass(name = "CompiledModel")]
 pub struct PyCompiledModel {
     pub(crate) inner: CompiledModel,
@@ -29,6 +43,7 @@ enum SaveError {
 
 #[pymethods]
 impl PyCompiledModel {
+    /// Emits and writes the compiled OpenXML (`.xlsx`) workbook to `path`.
     #[pyo3(signature = (path, options = None))]
     pub fn save<'py>(
         &self,
@@ -78,6 +93,8 @@ impl PyCompiledModel {
 
         Ok(())
     }
+
+    /// Emits the compiled OpenXML (`.xlsx`) workbook into an in-memory `bytes` buffer.
     #[pyo3(signature = (options = None))]
     pub fn emit_workbook<'py>(
         &self,
@@ -97,11 +114,91 @@ impl PyCompiledModel {
         Ok(PyBytes::new(py, &bytes))
     }
 
+    /// Returns high-level structural and cell classification statistics for the model.
     pub fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let res = self.inner.summary();
         pythonize::pythonize(py, &res).map_err(|e| map_pythonize_error(py, e))
     }
 
+    /// Returns the unboxed scalar value (`float | str | bool | None`) for a cell coordinate.
+    #[pyo3(signature = (target, row = None, col = None))]
+    pub fn value<'py>(
+        &self,
+        py: Python<'py>,
+        target: &str,
+        row: Option<&str>,
+        col: Option<&str>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let cell_id = self
+            .inner
+            .parse_coordinate(target, row, col)
+            .map_err(|e| map_inspection_error(py, &e))?;
+
+        let val = self
+            .inner
+            .cell_value(&cell_id.table, &cell_id.row, &cell_id.col)
+            .map_err(|e| map_inspection_error(py, &e))?;
+
+        match val {
+            CellValue::Number(n) => Ok(n.into_pyobject(py)?.into_any()),
+            CellValue::Text(s) => Ok(s.into_pyobject(py)?.into_any()),
+            CellValue::Boolean(b) => Ok(b.into_pyobject(py)?.to_owned().into_any()),
+            CellValue::Empty => Ok(py.None().into_bound(py)),
+            CellValue::Error(e) => Ok(e.as_str().into_pyobject(py)?.into_any()),
+        }
+    }
+
+    /// Returns the evaluated numeric cell value as a `float` (raises `TypeError` otherwise).
+    #[pyo3(signature = (target, row = None, col = None))]
+    pub fn num(
+        &self,
+        py: Python<'_>,
+        target: &str,
+        row: Option<&str>,
+        col: Option<&str>,
+    ) -> PyResult<f64> {
+        let cell_id = self
+            .inner
+            .parse_coordinate(target, row, col)
+            .map_err(|e| map_inspection_error(py, &e))?;
+
+        let val = self
+            .inner
+            .cell_value(&cell_id.table, &cell_id.row, &cell_id.col)
+            .map_err(|e| map_inspection_error(py, &e))?;
+
+        match val {
+            CellValue::Number(n) => Ok(n),
+            other => Err(PyTypeError::new_err(format!(
+                "Cell {cell_id} did not evaluate to a float (got {other:?})"
+            ))),
+        }
+    }
+
+    /// Returns the formatted display string for a coordinate with an optional unit suffix.
+    #[pyo3(signature = (target, row = None, col = None, *, unit = ""))]
+    pub fn formatted(
+        &self,
+        py: Python<'_>,
+        target: &str,
+        row: Option<&str>,
+        col: Option<&str>,
+        unit: &str,
+    ) -> PyResult<String> {
+        let cell_id = self
+            .inner
+            .parse_coordinate(target, row, col)
+            .map_err(|e| map_inspection_error(py, &e))?;
+
+        let formatted = self
+            .inner
+            .cell_formatted(&cell_id.table, &cell_id.row, &cell_id.col)
+            .map_err(|e| map_inspection_error(py, &e))?;
+
+        Ok(apply_unit_suffix(formatted, unit))
+    }
+
+    /// Returns the cell inspection payload including formulas, formatting, and neighbors.
     #[pyo3(signature = (target, row = None, col = None))]
     pub fn inspect_cell<'py>(
         &self,
@@ -123,6 +220,7 @@ impl PyCompiledModel {
         pythonize::pythonize(py, &inspection).map_err(|e| map_pythonize_error(py, e))
     }
 
+    /// Returns the raw 2D `TableInspection` dictionary for `table`.
     #[pyo3(signature = (table,))]
     pub fn inspect_table<'py>(&self, py: Python<'py>, table: &str) -> PyResult<Bound<'py, PyAny>> {
         let table_id = TableId::from(table);
@@ -134,6 +232,16 @@ impl PyCompiledModel {
         pythonize::pythonize(py, &inspection).map_err(|e| map_pythonize_error(py, e))
     }
 
+    /// Returns a high-level `TableAuditor` wrapper for inspecting and exporting `table`.
+    #[pyo3(signature = (table,))]
+    pub fn table<'py>(&self, py: Python<'py>, table: &str) -> PyResult<Bound<'py, PyAny>> {
+        let raw = self.inspect_table(py, table)?;
+        let audit_mod = py.import("f8.audit")?;
+        let auditor_cls = audit_mod.getattr("TableAuditor")?;
+        auditor_cls.call1((raw,))
+    }
+
+    /// Returns the physical grid `SheetInspection` dictionary for `sheet`.
     #[pyo3(signature = (sheet,))]
     pub fn inspect_sheet<'py>(&self, py: Python<'py>, sheet: &str) -> PyResult<Bound<'py, PyAny>> {
         let sheet_id = SheetId::from(sheet);
@@ -145,6 +253,7 @@ impl PyCompiledModel {
         pythonize::pythonize(py, &inspection).map_err(|e| map_pythonize_error(py, e))
     }
 
+    /// Traces direct or recursive upstream precedent cells for the target coordinate.
     #[pyo3(signature = (target, row = None, col = None, recursive = false))]
     pub fn precedents_of<'py>(
         &self,
@@ -167,6 +276,7 @@ impl PyCompiledModel {
         pythonize::pythonize(py, &tree).map_err(|e| map_pythonize_error(py, e))
     }
 
+    /// Traces direct or recursive downstream dependent cells for the target coordinate.
     #[pyo3(signature = (target, row = None, col = None, recursive = false))]
     pub fn dependents_of<'py>(
         &self,

@@ -338,7 +338,7 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
 
     let manifest = ProjectManifest {
         model_name: "TradingCompsAndTargetValuation".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Trading_Comps".to_string(),
             tab_color: None,

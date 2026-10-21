@@ -94,7 +94,7 @@ fn test_compiler_facade_error_propagation() {
     // 1. ModelError propagation (duplicate sheet name)
     let duplicate_sheet_manifest = ProjectManifest {
         model_name: "InvalidModel".to_string(),
-        theme: "classic".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "SameSheet".to_string(),
@@ -123,7 +123,7 @@ fn test_compiler_facade_error_propagation() {
     // 2. IrError propagation (manifest references non-existent table)
     let missing_table_manifest = ProjectManifest {
         model_name: "MissingTable".to_string(),
-        theme: "classic".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -156,7 +156,7 @@ fn test_compiler_facade_error_propagation() {
 
     let cyclic_manifest = ProjectManifest {
         model_name: "CyclicModel".to_string(),
-        theme: "classic".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -193,7 +193,7 @@ fn test_compiler_facade_error_propagation() {
 
     let sum_manifest = ProjectManifest {
         model_name: "SumModel".to_string(),
-        theme: "classic".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,

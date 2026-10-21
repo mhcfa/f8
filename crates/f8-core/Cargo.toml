@@ -2,18 +2,22 @@
 name = "f8-core"
 version.workspace = true
 edition.workspace = true
+description.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+publish = false
+exclude = ["tests/**"]
 
 [dependencies]
 indexmap.workspace = true
 petgraph.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 rust_xlsxwriter.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 zip.workspace = true
 
 [lints]

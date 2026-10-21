@@ -16,12 +16,12 @@ use serde::{Deserialize, Serialize};
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
-use crate::model::format::{FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, ProjectManifest};
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
-use crate::value::CellValue;
+use crate::value::{CellValue, format_accounting_number};
 
 /// Semantic styling role assigned to a physical coordinate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -473,12 +473,20 @@ impl ColumnArbitrationContext<'_> {
                         CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
                     let cell_node = self.grid.get(&cell_id);
                     let format = cell_node.and_then(|n| n.format);
+                    let decimals = cell_node.and_then(|n| n.decimals).or_else(|| {
+                        format.and_then(|f| self.theme.number_formats.default_decimals(f))
+                    });
+                    let currency = cell_node.and_then(|n| n.currency);
 
                     let mut char_len =
                         match (self.evaluated.and_then(|e| e.get_cell(&cell_id)), cell_node) {
-                            (Some(val), _) => cell_value_string_length(val, format),
+                            (Some(val), _) => {
+                                cell_value_string_length(val, format, decimals, currency)
+                            }
                             (None, Some(node)) => match &node.payload {
-                                CellPayload::Literal(lit) => literal_value_length(lit, format),
+                                CellPayload::Literal(lit) => {
+                                    literal_value_length(lit, format, decimals, currency)
+                                }
                                 CellPayload::Formula(_) => 0,
                             },
                             (None, None) => 0,
@@ -509,10 +517,15 @@ impl ColumnArbitrationContext<'_> {
     }
 }
 
-fn literal_value_length(lit: &ValueLiteral, format: Option<FormatPreset>) -> usize {
+fn literal_value_length(
+    lit: &ValueLiteral,
+    format: Option<FormatPreset>,
+    decimals: Option<u32>,
+    currency: Option<CurrencyCode>,
+) -> usize {
     match lit {
         ValueLiteral::String(s) => s.chars().count(),
-        ValueLiteral::Number(n) => formatted_number_estimate(*n, format),
+        ValueLiteral::Number(n) => formatted_number_estimate(*n, format, decimals, currency),
         ValueLiteral::Boolean(b) => {
             if *b {
                 4
@@ -525,10 +538,15 @@ fn literal_value_length(lit: &ValueLiteral, format: Option<FormatPreset>) -> usi
 }
 
 /// Computes the approximate character length of an evaluated `CellValue`.
-fn cell_value_string_length(val: &CellValue, format: Option<FormatPreset>) -> usize {
+fn cell_value_string_length(
+    val: &CellValue,
+    format: Option<FormatPreset>,
+    decimals: Option<u32>,
+    currency: Option<CurrencyCode>,
+) -> usize {
     match val {
         CellValue::Text(s) => s.chars().count(),
-        CellValue::Number(n) => formatted_number_estimate(*n, format),
+        CellValue::Number(n) => formatted_number_estimate(*n, format, decimals, currency),
         CellValue::Boolean(b) => {
             if *b {
                 4
@@ -541,64 +559,23 @@ fn cell_value_string_length(val: &CellValue, format: Option<FormatPreset>) -> us
     }
 }
 
-/// Provides an institutional width estimate for formatted numbers including commas and symbols.
-fn formatted_number_estimate(n: f64, format: Option<FormatPreset>) -> usize {
+/// Provides an institutional width estimate for formatted numbers using accounting typography and trailing alignment space.
+fn formatted_number_estimate(
+    n: f64,
+    format: Option<FormatPreset>,
+    decimals: Option<u32>,
+    currency: Option<CurrencyCode>,
+) -> usize {
     if !n.is_finite() {
         return 4; // NaN, Inf
     }
-
-    let is_negative = n < 0.0;
-    let abs_n = n.abs();
-
-    // Integer digits count
-    let int_digits = if abs_n < 1.0 {
-        1
-    } else {
-        (abs_n.log10().floor() as usize) + 1
-    };
-
-    // Commas count (1 comma per 3 digits over 3)
-    let commas = if int_digits > 3 {
-        (int_digits - 1) / 3
-    } else {
-        0
-    };
-
-    let mut base_len = int_digits + commas;
-
-    match format {
-        Some(FormatPreset::Currency) => {
-            base_len += 2; // "$ " prefix
-            base_len += 3; // ".00"
-            if is_negative {
-                base_len += 2; // "()"
-            }
-        }
-        Some(FormatPreset::Percentage) => {
-            base_len += 3; // ".0%"
-            if is_negative {
-                base_len += 1; // "-"
-            }
-        }
-        Some(FormatPreset::Multiple) => {
-            base_len += 3; // ".0x"
-            if is_negative {
-                base_len += 1; // "-"
-            }
-        }
-        Some(FormatPreset::BasisPoints) => {
-            base_len += 4; // " bps"
-            if is_negative {
-                base_len += 1; // "-"
-            }
-        }
-        _ => {
-            base_len += 3; // ".00" default decimals
-            if is_negative {
-                base_len += 2; // "()" or "-"
-            }
-        }
-    }
-
-    base_len
+    let formatted = format_accounting_number(n, format, decimals, currency);
+    let trailing_pad = usize::from(
+        !formatted.ends_with(')')
+            && matches!(
+                format,
+                Some(FormatPreset::Currency | FormatPreset::Number | FormatPreset::Percentage)
+            ),
+    );
+    formatted.chars().count() + trailing_pad
 }

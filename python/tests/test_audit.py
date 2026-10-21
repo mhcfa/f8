@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from f8 import (
     Cell,
     CompiledModel,
     InspectionError,
+    MarkdownTable,
     Model,
     SplitDict,
     TableAuditor,
-    compile_project,
     unbox_cell_value,
 )
 
@@ -118,7 +116,7 @@ def test_scenario_2_unboxed_scalar_cell_lookups() -> None:
     assert cell_info.get("formula_expr") == 'Performance["revenue", col.prev] * 1.15'
     assert cell_info.get("excel_formula") == "=C7*1.15"
     assert cell_info.get("physical_a1") == "D7"
-    assert cell_info.get("formatted_value") == "$ 115.0"
+    assert cell_info.get("formatted_value") == "$115.0"
 
     # Division by zero evaluation produces canonical #DIV/0!
     assert table.value("div_zero", "2024E") == "#DIV/0!"
@@ -216,9 +214,15 @@ def test_scenario_7_visual_markdown_grid_rendering() -> None:
     table = compiled.table("Performance")
 
     # Values mode
+    from operator import methodcaller
+
+    repr_markdown = methodcaller("_repr_markdown_")
     md_values = table.to_markdown(view="values")
+    assert isinstance(md_values, MarkdownTable)
     assert isinstance(md_values, str)
     assert md_values.endswith("\n")
+    assert repr_markdown(md_values) == str(md_values)
+    assert repr_markdown(table) == str(md_values)
 
     # Check header and alignment rows
     lines = [line for line in md_values.split("\n") if line]
@@ -235,9 +239,10 @@ def test_scenario_7_visual_markdown_grid_rendering() -> None:
     # Check indentation for cogs line item
     assert any("  Cost of Goods Sold" in line for line in lines)
 
-    # Check pre-formatted values with currency
-    assert any("$ 100.0" in line for line in lines)
-    assert any("$ 115.0" in line for line in lines)
+    # Check pre-formatted values with currency (no internal space) and em-dash for empty cells
+    assert any("$100.0" in line for line in lines)
+    assert any("$115.0" in line for line in lines)
+    assert any("Sparse Line" in line and "—" in line for line in lines)
 
     # Formulas mode
     md_formulas = table.to_markdown(view="formulas")
@@ -260,6 +265,7 @@ def test_scenario_8_dimension_and_metadata_introspection() -> None:
     assert table.subtitle == "($ in Millions)"
     assert table.sheet == "Financials"
     assert table.columns == ["line_item", "2023A", "2024E", "2025E"]
+    assert table.measure_columns == ["2023A", "2024E", "2025E"]
     assert table.rows == ["revenue", "cogs", "gross_profit", "div_zero", "sparse_row"]
     assert table.shape == (5, 4)
     assert len(table) == 5
@@ -299,54 +305,158 @@ def test_invalid_orient_and_view_mode_validation() -> None:
         table.to_markdown(view="invalid")  # pyright: ignore[reportArgumentType]
 
 
-def test_scenario_9_fixture_template_auditing() -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    templates_dir = repo_root / "crates" / "f8-cli" / "templates"
+def test_scenario_9_multi_tier_header_and_section_auditing() -> None:
+    model = Model(name="ThreeStatementModel", theme="corporate_navy")
+    sheet = model.add_sheet("Model")
+    inc = sheet.add_table("IncomeStatement", title="Income Statement", currency="USD")
+    inc.add_column("line_item", role="descriptor", header="Line Item")
+    inc.add_column(
+        "y2023a",
+        role="measure",
+        headers=["Historical Actuals", "2023A"],
+        format="currency",
+        decimals=1,
+    )
+    inc.add_column(
+        "y2024e",
+        role="measure",
+        headers=["Forecast Projections", "2024E"],
+        format="currency",
+        decimals=1,
+    )
+    inc.add_column(
+        "y2025e",
+        role="measure",
+        headers=["Forecast Projections", "2025E"],
+        format="currency",
+        decimals=1,
+    )
 
-    if not templates_dir.is_dir():
-        pytest.skip("Templates directory not found")
+    inc.add_section_header("Operating Expenses")
+    inc.add_row(
+        "revenue",
+        cells={"line_item": "Revenue", "y2023a": 100.0},
+        expr='IncomeStatement["revenue", col.prev] * 1.10',
+        format="currency",
+        decimals=1,
+    )
+    inc.add_row(
+        "sga",
+        cells={"line_item": Cell("Salaries & SG&A Overhead", indent=1), "y2023a": 30.0},
+        expr='IncomeStatement["sga", col.prev] * 1.05',
+        format="currency",
+        decimals=1,
+    )
+    inc.add_row(
+        "net_income",
+        cells={"line_item": "Net Income"},
+        expr='IncomeStatement["revenue", @col] - IncomeStatement["sga", @col]',
+        style="total",
+        format="currency",
+        decimals=1,
+    )
 
-    # Three-statement model audit
-    three_stmt = compile_project(templates_dir / "three-statement")
-    is_table = three_stmt.table("IncomeStatement")
+    compiled = model.compile()
+    is_table = compiled.table("IncomeStatement")
     assert isinstance(is_table, TableAuditor)
     assert is_table.sheet == "Model"
-    assert is_table.shape == (8, 5)  # 8 calculable data rows, 5 columns
-    assert is_table.columns == ["line_item", "y2023a", "y2024e", "y2025e", "y2026e"]
-    assert "revenue" in is_table.rows
-    assert "net_income" in is_table.rows
+    assert is_table.shape == (3, 4)
+    assert is_table.columns == ["line_item", "y2023a", "y2024e", "y2025e"]
+    assert is_table.measure_columns == ["y2023a", "y2024e", "y2025e"]
+    assert is_table.rows == ["revenue", "sga", "net_income"]
 
-    # Tabular exports on three-statement
     records = is_table.to_dict("records")
-    assert len(records) == 8
+    assert len(records) == 3
     assert all(list(r.keys()) == is_table.columns for r in records)
     assert records[0]["line_item"] == "Revenue"
     assert records[0]["y2023a"] == 100.0
 
     split_data = is_table.to_dict("split")
     assert split_data["columns"] == is_table.columns
-    assert len(split_data["data"]) == 8
-    assert len(split_data["data"][0]) == 5
+    assert len(split_data["data"]) == 3
+    assert len(split_data["data"][0]) == 4
 
-    # Markdown rendering on three-statement with stacked headers & sections
     md = is_table.to_markdown("values")
-    assert "Historical Actuals" in md
-    assert "Forecast Projections" in md
+    assert isinstance(md, MarkdownTable)
+    lines = [line for line in md.split("\n") if line]
+    # Single flattened GFM header row before alignment row
+    assert "Historical Actuals: 2023A" in lines[0]
+    assert "Forecast Projections: 2024E" in lines[0]
+    assert ":---" in lines[1] and "---:" in lines[1]
+    assert "[y2023a]" not in md
+    assert "[net_income]" not in md
     assert "**Operating Expenses**" in md
-    assert "Salaries & SG&A Overhead" in md
+    assert "  Salaries & SG&A Overhead" in md
+    assert "**Net Income**" in md
+    assert "**$70.0**" in md
 
-    # LBO model audit
-    lbo = compile_project(templates_dir / "lbo")
-    scenarios = lbo.table("Scenarios")
-    assert isinstance(scenarios, TableAuditor)
-    assert scenarios.shape == (3, 5)
-    assert scenarios.columns == [
-        "scenario_name",
-        "case_id",
-        "rev_growth",
-        "ebitda_margin",
-        "exit_multiple",
-    ]
-    assert scenarios.rows == ["base", "bull", "bear"]
-    lbo_records = scenarios.to_dict("records")
-    assert len(lbo_records) == 3
+    # Subsetting rows and cols (retaining descriptor column and omitting section headers by default)
+    md_sub = is_table.to_markdown(rows=["revenue", "net_income"], cols=["y2023a", "y2025e"])
+    sub_lines = [line for line in md_sub.split("\n") if line]
+    assert len(sub_lines) == 4  # header + align + 2 rows
+    assert "Line Item" in sub_lines[0]
+    assert "Historical Actuals: 2023A" in sub_lines[0]
+    assert "Forecast Projections: 2025E" in sub_lines[0]
+    assert "2024E" not in md_sub
+    assert "**Operating Expenses**" not in md_sub
+    assert "Salaries" not in md_sub
+
+    # Subsetting rows with explicit include_section_headers=True
+    md_sub_sec = is_table.to_markdown(
+        rows=["revenue", "net_income"],
+        cols=["y2023a", "y2025e"],
+        include_section_headers=True,
+    )
+    assert "**Operating Expenses**" in md_sub_sec
+
+    # Unknown row or col in to_markdown raises KeyError
+    with pytest.raises(KeyError):
+        is_table.to_markdown(rows=["unknown_row"])
+    with pytest.raises(KeyError):
+        is_table.to_markdown(cols=["unknown_col"])
+
+    # show_ids=True appends [col_id] and [row_id] when display text differs from ID
+    md_ids = is_table.to_markdown(show_ids=True)
+    assert "Historical Actuals: 2023A [y2023a]" in md_ids
+    assert "Net Income [net_income]" in md_ids
+
+
+def test_scenario_10_auditor_scalar_and_vector_accessors() -> None:
+    compiled = _build_test_model()
+    table = compiled.table("Performance")
+
+    assert table.measure_columns == ["2023A", "2024E", "2025E"]
+
+    # Scalar num and formatted
+    assert table.num("revenue", "2024E") == pytest.approx(115.0)
+    assert table.formatted("revenue", "2024E") == "$115.0"
+    assert table.formatted("revenue", "2024E", unit="M") == "$115.0M"
+    assert table.formatted("sparse_row", "2024E", unit="M") == ""
+
+    with pytest.raises(TypeError):
+        table.num("revenue", "line_item")
+    with pytest.raises(TypeError):
+        table.num("sparse_row", "2024E")
+    with pytest.raises(TypeError):
+        table.num("div_zero", "2024E")
+    with pytest.raises(KeyError):
+        table.num("unknown", "2024E")
+    with pytest.raises(KeyError):
+        table.formatted("unknown", "2024E")
+
+    # 1D row_values and row_nums
+    assert table.row_values("revenue") == pytest.approx([100.0, 115.0, 132.25])
+    assert table.row_values("sparse_row") == [10.0, None, None]
+    assert table.row_nums("revenue") == pytest.approx([100.0, 115.0, 132.25])
+    assert table.row_nums("revenue", cols=["2023A", "2024E"]) == pytest.approx([100.0, 115.0])
+
+    with pytest.raises(TypeError):
+        table.row_nums("sparse_row")
+    with pytest.raises(TypeError):
+        table.row_nums("div_zero")
+    with pytest.raises(KeyError):
+        table.row_values("unknown_row")
+    with pytest.raises(KeyError):
+        table.row_nums("unknown_row")
+    with pytest.raises(KeyError):
+        table.row_nums("revenue", cols=["unknown_col"])

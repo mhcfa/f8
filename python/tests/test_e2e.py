@@ -5,7 +5,6 @@ Validates the complete lifecycle:
 - Multi-sheet institutional financial model construction via pure Python DSL.
 - Cross-table formula evaluation and temporal offset resolution.
 - Table auditing, scalar unboxing, structured dictionary export, and 2D Markdown rendering.
-- File system project export and 100% on-disk compilation parity.
 - OpenXML (.xlsx) workbook binary emission with live formulas and cached results.
 """
 
@@ -15,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from f8 import Cell, Model, compile_project
+from f8 import Cell, Model
 from f8.cli import main as cli_main
 
 
@@ -291,11 +290,22 @@ def test_scenario_2_e2e_model_compilation_and_table_auditing() -> None:
     cell_info = compiled.inspect_cell("income_statement", "net_income", "y2026e")
     assert cell_info.get("note") == "5-Year Strategic Exit Target Milestone"
 
+    # Verify fast-path compiled accessors
+    assert compiled.num("income_statement", "rev", "y2024e") == pytest.approx(143750.0)
+    assert compiled.formatted("income_statement", "rev", "y2024e", unit="K") == "$143,750K"
+    assert is_auditor.measure_columns == ["y2023a", "y2024e", "y2025e", "y2026e"]
+    assert is_auditor.row_nums("rev", cols=["y2023a", "y2024e"]) == pytest.approx(
+        [125000.0, 143750.0]
+    )
+
     # Verify Markdown rendering across views
     md_values = is_auditor.to_markdown(view="values")
-    assert "$ 125,000" in md_values
-    assert "$ 143,750" in md_values
+    assert "$125,000" in md_values
+    assert "$143,750" in md_values
     assert "**Gross Revenue & Cost of Sales**" in md_values
+    assert "**Gross Operating Profit**" in md_values
+    assert "**Net Consolidated Income**" in md_values
+    assert "Historical: 2023A" in md_values
 
     md_formulas = is_auditor.to_markdown(view="formulas")
     assert "=C8*(1+'Assumptions'!D8)" in md_formulas
@@ -312,44 +322,7 @@ def test_scenario_2_e2e_model_compilation_and_table_auditing() -> None:
     assert records[0]["y2023a"] == 125000.0
 
 
-def test_scenario_3_e2e_disk_export_and_compilation_parity(tmp_path: Path) -> None:
-    """Verifies that on-disk export and direct disk compilation match
-    in-memory results identically.
-    """
-    model = _build_institutional_lbo_model()
-    compiled_mem = model.compile()
-    is_mem = compiled_mem.table("income_statement")
-
-    # Export project to disk
-    proj_dir = tmp_path / "exported_lbo_project"
-    model.export_project(proj_dir)
-
-    manifest_file = proj_dir / "f8.json"
-    assert manifest_file.is_file()
-    assert (proj_dir / "tables" / "assumptions.json").is_file()
-    assert (proj_dir / "tables" / "income_statement.json").is_file()
-
-    # Compile directly from disk
-    compiled_disk = compile_project(proj_dir)
-    is_disk = compiled_disk.table("income_statement")
-
-    # 100% parity assertion across all rows, columns, values, and coordinates
-    for r in is_mem.rows:
-        for c in is_mem.columns:
-            mem_val = is_mem[r, c]
-            disk_val = is_disk[r, c]
-            assert mem_val == disk_val, f"Value mismatch at ({r}, {c})"
-
-            mem_addr = is_mem.address(r, c)
-            disk_addr = is_disk.address(r, c)
-            assert mem_addr == disk_addr, f"Address mismatch at ({r}, {c})"
-
-            mem_formula = is_mem.formula(r, c)
-            disk_formula = is_disk.formula(r, c)
-            assert mem_formula == disk_formula, f"Formula mismatch at ({r}, {c})"
-
-
-def test_scenario_4_e2e_openxml_workbook_emission_and_inspection(tmp_path: Path) -> None:
+def test_scenario_3_e2e_openxml_workbook_emission_and_inspection(tmp_path: Path) -> None:
     """Verifies OpenXML binary workbook synthesis, structure, live formulas, and cache results."""
     model = _build_institutional_lbo_model()
     compiled = model.compile()

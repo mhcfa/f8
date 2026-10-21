@@ -23,6 +23,7 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::{LayoutMap, coordinate_to_a1};
 use crate::compiler::lowering::LoweredFormulaMap;
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
@@ -147,6 +148,54 @@ impl CompiledModel {
         }
     }
 
+    /// Returns the topologically evaluated runtime value for an individual cell.
+    ///
+    /// # Errors
+    /// Returns [`InspectionError::CellNotFound`] if the cell coordinate does not exist.
+    pub fn cell_value(
+        &self,
+        table: &TableId,
+        row: &RowId,
+        col: &ColId,
+    ) -> Result<CellValue, InspectionError> {
+        let cell_id = CellId::new(table.clone(), row.clone(), col.clone());
+        if !self.grid.contains(&cell_id) {
+            return Err(InspectionError::CellNotFound(cell_id));
+        }
+        Ok(self
+            .evaluated
+            .get_cell(&cell_id)
+            .cloned()
+            .unwrap_or(CellValue::Empty))
+    }
+
+    /// Returns the pre-formatted display string for an individual cell.
+    ///
+    /// # Errors
+    /// Returns [`InspectionError::CellNotFound`] if the cell coordinate does not exist.
+    pub fn cell_formatted(
+        &self,
+        table: &TableId,
+        row: &RowId,
+        col: &ColId,
+    ) -> Result<String, InspectionError> {
+        let cell_id = CellId::new(table.clone(), row.clone(), col.clone());
+        let cell_node = self
+            .grid
+            .get(&cell_id)
+            .ok_or_else(|| InspectionError::CellNotFound(cell_id.clone()))?;
+        let evaluated_value = self
+            .evaluated
+            .get_cell(&cell_id)
+            .unwrap_or(&CellValue::Empty);
+        Ok(self.format_value(
+            evaluated_value,
+            cell_node.format,
+            cell_node.decimals,
+            cell_node.currency,
+        ))
+    }
+
     /// Inspects an individual cell by table, row, and column identifiers.
     ///
     /// # Errors
@@ -181,7 +230,7 @@ impl CompiledModel {
         };
 
         let excel_formula = self.lowered_map.get(&cell_id).map(ToString::to_string);
-        let formatted_value = Some(crate::value::format_cell_value(
+        let formatted_value = Some(self.format_value(
             &evaluated_value,
             cell_node.format,
             cell_node.decimals,
@@ -263,12 +312,14 @@ impl CompiledModel {
                     headers: d.headers.clone(),
                     is_gutter: false,
                     is_descriptor: d.role.is_descriptor(),
+                    style: Some(d.style.unwrap_or(SemanticStyle::Data)),
                 },
                 crate::model::table::ColumnSpec::Gutter => ColumnInspection {
                     id: None,
                     headers: Vec::new(),
                     is_gutter: true,
                     is_descriptor: false,
+                    style: None,
                 },
             })
             .collect();
@@ -294,6 +345,7 @@ impl CompiledModel {
                         is_section_header: false,
                         is_gutter: false,
                         indent,
+                        style: Some(d.style.unwrap_or(SemanticStyle::Data)),
                     }
                 }
                 crate::model::table::RowSpec::SectionHeader(s) => RowInspection {
@@ -302,6 +354,7 @@ impl CompiledModel {
                     is_section_header: true,
                     is_gutter: false,
                     indent: s.indent.unwrap_or(0),
+                    style: None,
                 },
                 crate::model::table::RowSpec::Gutter => RowInspection {
                     id: None,
@@ -309,6 +362,7 @@ impl CompiledModel {
                     is_section_header: false,
                     is_gutter: true,
                     indent: 0,
+                    style: None,
                 },
             })
             .collect();
@@ -335,7 +389,7 @@ impl CompiledModel {
                     .cloned()
                     .unwrap_or(CellValue::Empty);
 
-                let formatted_value = Some(format_cell_value(
+                let formatted_value = Some(self.format_value(
                     &value,
                     cell_node.format,
                     cell_node.decimals,
@@ -733,9 +787,8 @@ impl CompiledModel {
                                         .map_or((None, None, None), |n| {
                                             (n.format, n.decimals, n.currency)
                                         });
-                                    let formatted_value = Some(crate::value::format_cell_value(
-                                        &value, format, decimals, currency,
-                                    ));
+                                    let formatted_value =
+                                        Some(self.format_value(&value, format, decimals, currency));
                                     let (formula_expr, excel_formula) = match cell_node
                                         .map(|n| &n.payload)
                                     {
@@ -1071,6 +1124,18 @@ impl CompiledModel {
         }
     }
 
+    fn format_value(
+        &self,
+        value: &CellValue,
+        format: Option<FormatPreset>,
+        decimals: Option<u32>,
+        currency: Option<CurrencyCode>,
+    ) -> String {
+        let effective_decimals =
+            decimals.or_else(|| format.and_then(|f| self.theme.number_formats.default_decimals(f)));
+        format_cell_value(value, format, effective_decimals, currency)
+    }
+
     fn get_node_display_metadata(
         &self,
         cell_id: &CellId,
@@ -1087,7 +1152,7 @@ impl CompiledModel {
                 .get(cell_id)
                 .map(|cell| (cell.format, cell.decimals, cell.currency))
                 .unwrap_or((None, None, None));
-            crate::value::format_cell_value(v, format, decimals, currency)
+            self.format_value(v, format, decimals, currency)
         });
         let excel_formula = self.lowered_map.get(cell_id).map(ToString::to_string);
         (sheet_address, value, formatted_value, excel_formula)

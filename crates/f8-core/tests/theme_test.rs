@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use f8_core::model::{BorderStyle, CurrencyCode, FormatPreset, ModelError, ProjectManifest, Theme};
+use f8_core::model::{
+    BorderStyle, CurrencyCode, FormatPreset, ModelError, ProjectManifest, Theme, ThemeSpec,
+};
 
 #[test]
 fn test_scenario_1_builtin_theme_catalog_resolution() {
@@ -13,6 +15,8 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     // Verify typography and subtitle_size
     assert_eq!(theme.typography.subtitle_size, 9.0);
     assert!(theme.typography.title_size > theme.typography.data_size);
+    assert!(theme.typography.section_header_underline);
+    assert_eq!(theme.palette.section_header_fill, "none");
 
     // Verify metrics
     assert!(theme.metrics.gutter_row_height > 0.0);
@@ -25,13 +29,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
     assert_eq!(theme.borders.col_total_border_right, BorderStyle::Double);
 
-    // Verify Theme::built_in only recognizes corporate_navy
-    assert!(Theme::built_in("corporate_navy").is_some());
-    assert!(Theme::built_in("classic_green").is_none());
-    assert!(Theme::built_in("modern_slate").is_none());
-    assert!(Theme::built_in("minimal_monochrome").is_none());
-
-    // Verify removed preset themes are rejected when resolved without external file
+    // Verify removed preset themes are rejected when resolved
     let removed_themes = ["classic_green", "modern_slate", "minimal_monochrome"];
     for name in removed_themes {
         let err = Theme::resolve_builtin(name).unwrap_err();
@@ -62,7 +60,7 @@ fn test_scenario_2_dynamic_dec_and_sym_expansion_zero_decimals() {
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, Some(0), None)
         .expect("percentage format resolution failed");
-    assert_eq!(pct_mask, "0%");
+    assert_eq!(pct_mask, "0%_);(0%);\"-\"_)");
 
     // Multiple with zero decimals
     let mult_mask = theme
@@ -97,7 +95,7 @@ fn test_scenario_3_dynamic_dec_and_sym_expansion_positive_decimals_and_currency(
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, Some(1), None)
         .expect("percentage resolution failed");
-    assert_eq!(pct_mask, "0.0%");
+    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_)");
 
     // Number: 4 decimals
     let num_mask = theme
@@ -120,7 +118,7 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, None, None)
         .expect("default percentage resolution failed");
-    assert_eq!(pct_mask, "0.0%");
+    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_)");
 
     // Multiple default: 1 decimal
     let mult_mask = theme
@@ -237,10 +235,25 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
         }
     }"##;
 
-    let loaded = Theme::from_json_str(custom_theme_json).expect("failed to load custom theme");
+    let loaded: Theme =
+        serde_json::from_str(custom_theme_json).expect("failed to load custom theme");
+    loaded.validate().expect("custom theme should validate");
     assert_eq!(loaded.name, "firm_custom");
     assert_eq!(loaded.typography.font_family, "Calibri");
+    assert!(loaded.typography.section_header_underline);
     assert_eq!(loaded.number_formats.defaults.currency_decimals, 2);
+
+    // Also test inline custom theme inside ProjectManifest via ThemeSpec
+    let manifest_json = format!(
+        r#"{{"model_name": "CustomManifestModel", "theme": {custom_theme_json}, "sheets": []}}"#
+    );
+    let manifest: ProjectManifest = serde_json::from_str(&manifest_json)
+        .expect("failed to deserialize manifest with custom theme");
+    assert_eq!(manifest.theme, ThemeSpec::Custom(Box::new(loaded.clone())));
+    let resolved = manifest
+        .resolve_theme()
+        .expect("manifest custom theme should resolve and validate");
+    assert_eq!(resolved, loaded);
 }
 
 #[test]
@@ -313,14 +326,17 @@ fn test_scenario_8_rejection_of_nonexistent_theme() {
 
 #[test]
 fn test_scenario_9_manifest_theme_default_fallback() {
-    // 1. Manifest with omitted theme deserializes to "corporate_navy"
+    // 1. Manifest with omitted theme deserializes to ThemeSpec::Name("corporate_navy")
     let json = r#"{
         "model_name": "Test Model",
         "sheets": []
     }"#;
     let manifest: ProjectManifest =
         serde_json::from_str(json).expect("failed to deserialize manifest without theme");
-    assert_eq!(manifest.theme, "corporate_navy");
+    assert_eq!(
+        manifest.theme,
+        ThemeSpec::Name("corporate_navy".to_string())
+    );
 
     let resolved = manifest
         .resolve_theme()
@@ -339,6 +355,19 @@ fn test_scenario_9_manifest_theme_default_fallback() {
         .resolve_theme()
         .expect("failed to resolve empty theme from manifest");
     assert_eq!(resolved_empty.name, "corporate_navy");
+
+    // 3. Manifest with invalid custom theme fails resolve_theme()
+    let mut bad_theme = Theme::corporate_navy();
+    bad_theme.palette.table_title_fill = "invalid_hex".to_string();
+    let bad_manifest = ProjectManifest {
+        model_name: "BadThemeModel".to_string(),
+        theme: ThemeSpec::Custom(Box::new(bad_theme)),
+        sheets: vec![],
+    };
+    assert!(matches!(
+        bad_manifest.resolve_theme().unwrap_err(),
+        ModelError::InvalidThemeColor { ref field, .. } if field == "table_title_fill"
+    ));
 }
 
 #[test]
@@ -382,4 +411,102 @@ fn test_scenario_10_transparent_fill_validation() {
         ModelError::InvalidThemeColor { field, color }
             if field == "data_fill" && color == "blurry_blue"
     ));
+}
+
+#[test]
+fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
+    // 1. Built-in corporate_navy defaults
+    let theme = Theme::corporate_navy();
+    assert!(theme.typography.section_header_underline);
+    assert_eq!(theme.palette.section_header_fill, "none");
+
+    // 2. Deserializing theme JSON with section_header_underline: false
+    let json_false = r##"{
+        "name": "no_underline_theme",
+        "typography": {
+            "font_family": "Aptos",
+            "title_size": 14.0,
+            "subtitle_size": 9.0,
+            "super_header_size": 10.0,
+            "col_header_size": 10.0,
+            "section_header_size": 10.0,
+            "data_size": 10.0,
+            "section_header_underline": false
+        },
+        "metrics": {
+            "title_row_height": 24.0,
+            "header_row_height": 18.0,
+            "section_row_height": 18.0,
+            "data_row_height": 15.0,
+            "gutter_row_height": 9.0,
+            "gutter_col_width": 3.0,
+            "title_gutter_row_height": 8.0,
+            "char_width_multiplier": 1.15,
+            "col_padding": 2.0,
+            "min_col_width": 12.0
+        },
+        "palette": {
+            "table_title_fill": "#1B365D",
+            "table_title_text": "#FFFFFF",
+            "table_subtitle_text": "#4B5563",
+            "super_header_fill": "#2C4D75",
+            "super_header_text": "#FFFFFF",
+            "col_header_fill": "#F0F4F8",
+            "col_header_text": "#1B365D",
+            "section_header_fill": "none",
+            "section_header_text": "#1B365D",
+            "data_fill": "none",
+            "data_text": "#1F2937",
+            "subtotal_fill": "#F7F9FC",
+            "subtotal_text": "#000000",
+            "total_fill": "none",
+            "total_text": "#000000",
+            "input_text": "#0000FF",
+            "formula_text": "#000000",
+            "zebra_fill": "#FAFBFC",
+            "highlight_fill": "#FEF3C7",
+            "highlight_text": "#000000",
+            "gridline_color": "#E5E7EB",
+            "border_color": "#000000",
+            "total_border_color": "#1B365D"
+        },
+        "borders": {
+            "table_title_border_bottom": "none",
+            "super_header_border_bottom": "thick",
+            "header_border_bottom": "thin",
+            "descriptor_border_right": "none",
+            "subtotal_border_top": "thin",
+            "total_border_top": "thin",
+            "total_border_bottom": "double",
+            "col_subtotal_border_left": "thin",
+            "col_total_border_left": "thin",
+            "col_total_border_right": "double"
+        },
+        "number_formats": {
+            "currency": "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)",
+            "number": "#,##0{dec}_);(#,##0{dec});\"-\"_)",
+            "percentage": "0{dec}%",
+            "multiple": "0{dec}\"x\"",
+            "basis_points": "#,##0{dec}\" bps\"",
+            "date": "yyyy-mm-dd",
+            "text": "@",
+            "defaults": {
+                "currency_decimals": 0,
+                "number_decimals": 0,
+                "percentage_decimals": 1,
+                "multiple_decimals": 1,
+                "basis_points_decimals": 0
+            }
+        }
+    }"##;
+
+    let loaded_false: Theme = serde_json::from_str(json_false).expect("valid theme");
+    loaded_false.validate().expect("valid theme");
+    assert!(!loaded_false.typography.section_header_underline);
+
+    // 3. Deserializing theme JSON omitting section_header_underline defaults to true
+    let json_omitted = json_false.replace(",\n            \"section_header_underline\": false", "");
+    let loaded_omitted: Theme = serde_json::from_str(&json_omitted).expect("valid theme");
+    loaded_omitted.validate().expect("valid theme");
+    assert!(loaded_omitted.typography.section_header_underline);
 }

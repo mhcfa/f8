@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import cast
 
 from f8._core import CompiledModel
@@ -203,6 +201,7 @@ class Table:
         currency: CurrencyCode | None = None,
         expr: str | None = None,
     ) -> Table:
+        """Appends a data or descriptor column specification to the table."""
         if header is not None and headers is not None:
             raise ValueError("Cannot specify both 'header' and 'headers'")
         if id in self._col_ids:
@@ -231,6 +230,7 @@ class Table:
         return self
 
     def add_column_gutter(self) -> Table:
+        """Appends an empty visual spacing gutter column to the table."""
         self._columns.append(_GutterColumn())
         return self
 
@@ -245,6 +245,7 @@ class Table:
         decimals: int | None = None,
         currency: CurrencyCode | None = None,
     ) -> Table:
+        """Appends a data row with optional cell values and 1D vector expression."""
         if id in self._row_ids:
             raise ValueError(f"Row '{id}' already exists in table '{self.id}'")
 
@@ -265,6 +266,7 @@ class Table:
         return self
 
     def add_row_gutter(self) -> Table:
+        """Appends an empty visual spacing gutter row to the table."""
         self._rows.append(_GutterRow())
         return self
 
@@ -274,6 +276,7 @@ class Table:
         indent: int | None = None,
         note: str | None = None,
     ) -> Table:
+        """Appends a non-calculable section header divider row to the table."""
         self._rows.append(_SectionHeaderRow(title=title, indent=indent, note=note))
         return self
 
@@ -292,6 +295,7 @@ class Table:
         indent: int | None = None,
         note: str | None = None,
     ) -> Table:
+        """Sets or merges a 0D cell override at `(row, col)`."""
         if row not in self._data_rows:
             raise KeyError(f"Row '{row}' does not exist in table '{self.id}'")
 
@@ -439,7 +443,8 @@ class Table:
         )
         return self
 
-    def to_spec(self) -> TableSpecDict:
+    def __f8_spec__(self) -> TableSpecDict:
+        """Serializes the table into a canonical `TableSpecDict` payload."""
         cols_spec: list[ColumnSpecDict] = []
         for col in self._columns:
             if isinstance(col, _GutterColumn):
@@ -555,6 +560,7 @@ class Sheet:
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
     ) -> Table:
+        """Creates and appends a new `Table` to this worksheet."""
         if self._model is not None:
             for s in self._model.sheets:
                 for t in s.tables:
@@ -578,6 +584,7 @@ class Sheet:
         return table
 
     def get_table(self, id: str) -> Table:
+        """Looks up a `Table` on this worksheet by its `id`."""
         for table in self._tables:
             if table.id == id:
                 return table
@@ -585,9 +592,11 @@ class Sheet:
 
     @property
     def tables(self) -> list[Table]:
+        """Ordered list of tables belonging to this worksheet."""
         return list(self._tables)
 
-    def to_spec(self) -> SheetSpecDict:
+    def __f8_spec__(self) -> SheetSpecDict:
+        """Serializes the worksheet into a canonical `SheetSpecDict` payload."""
         spec: SheetSpecDict = {
             "name": self.name,
             "show_gridlines": self.show_gridlines,
@@ -606,7 +615,7 @@ class Sheet:
 class Model:
     """Fluent root container for financial models and specification synthesis."""
 
-    def __init__(self, name: str = "Model", theme: str = "corporate_navy") -> None:
+    def __init__(self, name: str = "Model", theme: ThemeInput = "corporate_navy") -> None:
         self.name = name
         self.theme = theme
         self._sheets: list[Sheet] = []
@@ -619,6 +628,7 @@ class Model:
         show_gridlines: bool = True,
         freeze_panes: tuple[int, int] | None = None,
     ) -> Sheet:
+        """Creates and appends a new `Sheet` to the model."""
         if name in self._sheet_names:
             raise ValueError(f"Sheet '{name}' already exists in model '{self.name}'")
 
@@ -634,12 +644,14 @@ class Model:
         return sheet
 
     def get_sheet(self, name: str) -> Sheet:
+        """Looks up a `Sheet` in the model by `name`."""
         for sheet in self._sheets:
             if sheet.name == name:
                 return sheet
         raise KeyError(f"Sheet '{name}' not found in model '{self.name}'")
 
     def get_table(self, id: str) -> Table:
+        """Looks up a `Table` across all worksheets in the model by `id`."""
         for sheet in self._sheets:
             for table in sheet.tables:
                 if table.id == id:
@@ -648,80 +660,28 @@ class Model:
 
     @property
     def sheets(self) -> list[Sheet]:
+        """Ordered list of worksheets in the model."""
         return list(self._sheets)
 
     @property
     def tables(self) -> list[Table]:
+        """Ordered list of all tables across all worksheets in the model."""
         return [table for sheet in self._sheets for table in sheet.tables]
 
-    def to_spec(self) -> tuple[ProjectManifestDict, list[TableSpecDict]]:
+    def __f8_spec__(self) -> tuple[ProjectManifestDict, list[TableSpecDict]]:
+        """Serializes the model into `(ProjectManifestDict, list[TableSpecDict])`."""
         manifest: ProjectManifestDict = {
             "model_name": self.name,
             "theme": self.theme,
-            "sheets": [sheet.to_spec() for sheet in self._sheets],
+            "sheets": [sheet.__f8_spec__() for sheet in self._sheets],
         }
-        tables: list[TableSpecDict] = [table.to_spec() for table in self.tables]
+        tables: list[TableSpecDict] = [table.__f8_spec__() for table in self.tables]
         return manifest, tables
 
-    def compile(self, theme: ThemeInput | None = None) -> CompiledModel:
-        manifest, tables = self.to_spec()
-        return core_compile(manifest, tables, theme=theme)
-
-    def export_project(
-        self,
-        dir_path: str | Path,
-        overwrite: bool = False,
-        indent: int = 2,
-    ) -> None:
-        """Export in-memory model to canonical multi-file JSON project directory.
-
-        Creates `<dir_path>/f8.json` and `<dir_path>/tables/<table_id>.json` for each table.
-
-        Args:
-            dir_path: Target directory path for project serialization.
-            overwrite: Whether to overwrite existing files in destination directory.
-            indent: Number of spaces for JSON indentation (default: 2).
-
-        Raises:
-            FileExistsError: If destination files already exist and overwrite is False.
-
-        Note:
-            When `overwrite=True`, existing table files with matching IDs are overwritten.
-            Orphaned table files from prior exports with differing IDs will remain on disk
-            unless manually pruned.
-        """
-        dest_dir = Path(dir_path)
-        manifest_file = dest_dir / "f8.json"
-        tables_dir = dest_dir / "tables"
-
-        manifest, table_specs = self.to_spec()
-
-        if not overwrite:
-            if manifest_file.exists():
-                msg = (
-                    f"Project manifest already exists at '{manifest_file}'. "
-                    "Use overwrite=True to replace."
-                )
-                raise FileExistsError(msg)
-            for table in self.tables:
-                table_file = tables_dir / f"{table.id}.json"
-                if table_file.exists():
-                    msg = (
-                        f"Table file already exists at '{table_file}'. "
-                        "Use overwrite=True to replace."
-                    )
-                    raise FileExistsError(msg)
-
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        tables_dir.mkdir(parents=True, exist_ok=True)
-
-        manifest_json = json.dumps(manifest, indent=indent) + "\n"
-        manifest_file.write_text(manifest_json, encoding="utf-8")
-
-        for table, spec in zip(self.tables, table_specs, strict=True):
-            table_file = tables_dir / f"{table.id}.json"
-            table_json = json.dumps(spec, indent=indent) + "\n"
-            table_file.write_text(table_json, encoding="utf-8")
+    def compile(self) -> CompiledModel:
+        """Compiles, verifies, and evaluates the model into a `CompiledModel`."""
+        manifest, tables = self.__f8_spec__()
+        return core_compile(manifest, tables)
 
 
 __all__ = ["Cell", "CellInputValue", "Model", "Sheet", "Table"]

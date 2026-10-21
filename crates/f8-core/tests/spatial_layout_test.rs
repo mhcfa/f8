@@ -48,7 +48,7 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -103,7 +103,7 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Model".to_string(),
             tab_color: None,
@@ -207,7 +207,7 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Summary".to_string(),
             tab_color: None,
@@ -257,7 +257,7 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Model".to_string(),
             tab_color: None,
@@ -342,7 +342,7 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
 
     let manifest = ProjectManifest {
         model_name: "MultiTable".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "StackedSheet".to_string(),
             tab_color: None,
@@ -421,7 +421,7 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
 
     let manifest = ProjectManifest {
         model_name: "WidthTest".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -442,8 +442,8 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let col_b_width = *sheet.col_widths.get(&1).unwrap();
     let col_c_width = *sheet.col_widths.get(&2).unwrap();
 
-    // Col B (descriptor) must be wide enough for the long label (58 chars * 1.15 + 2.0 = ~68.7)
-    assert!(col_b_width > 60.0);
+    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 1.0 = 58.0)
+    assert_eq!(col_b_width, 58.0);
 
     // Col C (measure) must be at least min_col_width (12.0)
     assert!(col_c_width >= theme.metrics.min_col_width);
@@ -468,7 +468,7 @@ fn test_scenario_7_full_style_role_propagation_to_physical_coordinates() {
 
     let manifest = ProjectManifest {
         model_name: "StyleTest".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -547,7 +547,7 @@ fn test_scenario_9_multi_tier_column_header_row_height_allocation() {
 
     let manifest = ProjectManifest {
         model_name: "MultiTierModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -594,7 +594,7 @@ fn test_scenario_10_rejection_of_unassigned_tables() {
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -634,7 +634,7 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
 
     let manifest = ProjectManifest {
         model_name: "FacadeModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Summary".to_string(),
             tab_color: Some("#1B365D".to_string()),
@@ -644,8 +644,7 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
         }],
     };
 
-    let theme = create_test_theme();
-    let layout = Compiler::plan_layout(&manifest, &[table], &theme, None).unwrap();
+    let layout = Compiler::plan_layout(&manifest, &[table], None).unwrap();
 
     let sheet = layout.get_sheet(&SheetId::from("Summary")).unwrap();
     assert_eq!(sheet.tab_color.as_deref(), Some("#1B365D"));
@@ -685,7 +684,7 @@ fn test_scenario_12_descriptor_indentation_tiers() {
 
     let manifest = ProjectManifest {
         model_name: "TestModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Model".to_string(),
             tab_color: None,
@@ -788,7 +787,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
 
     let manifest = ProjectManifest {
         model_name: "GutterModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Model".to_string(),
             tab_color: None,

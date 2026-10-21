@@ -15,5 +15,5 @@ pub use table::{
 };
 pub use theme::{
     BorderStyle, BordersConfig, FormatDefaults, MetricsConfig, NumberFormatsConfig, PaletteConfig,
-    Theme, TypographyConfig,
+    Theme, ThemeSpec, TypographyConfig,
 };

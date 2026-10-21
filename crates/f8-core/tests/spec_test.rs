@@ -3,7 +3,7 @@
 use f8_core::model::{
     AxisRole, CellInput, ColId, ColumnSpec, CurrencyCode, DetailedCellInput, FormatPreset,
     FreezePanes, ModelError, ProjectManifest, RowSpec, SectionHeaderRowSpec, SemanticStyle,
-    SheetSpec, TableId, TableSpec, ValueLiteral,
+    SheetSpec, TableId, TableSpec, ThemeSpec, ValueLiteral,
 };
 
 #[test]
@@ -29,7 +29,10 @@ fn test_scenario_1_deserialize_valid_manifest() {
 
     let manifest: ProjectManifest = serde_json::from_str(json_data).unwrap();
     assert_eq!(manifest.model_name, "LBO_Simple");
-    assert_eq!(manifest.theme, "corporate_navy");
+    assert_eq!(
+        manifest.theme,
+        ThemeSpec::Name("corporate_navy".to_string())
+    );
     assert_eq!(manifest.sheets.len(), 2);
     assert_eq!(manifest.sheets[0].name, "Summary");
     assert_eq!(
@@ -52,7 +55,7 @@ fn test_scenario_1_deserialize_valid_manifest() {
 fn test_manifest_duplicate_sheet_name_rejected() {
     let manifest = ProjectManifest {
         model_name: "Test".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Model".to_string(),
@@ -472,6 +475,25 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_row() {
         } => {
             assert!(context.contains("row 'row_1'"));
             assert_eq!(preset, FormatPreset::Text);
+            assert_eq!(decimals, 0);
+        }
+        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
+    }
+
+    table.rows[0] = table.rows[0]
+        .clone()
+        .with_format(Some(FormatPreset::Integer))
+        .with_decimals(Some(0));
+    let err = table.validate().unwrap_err();
+    match err {
+        ModelError::InvalidPrecisionForPreset {
+            context,
+            preset,
+            decimals,
+            ..
+        } => {
+            assert!(context.contains("row 'row_1'"));
+            assert_eq!(preset, FormatPreset::Integer);
             assert_eq!(decimals, 0);
         }
         other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),

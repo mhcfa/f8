@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Literal, cast, overload
 
 from f8.types import (
     CellScalarValue,
+    ColumnInspection,
+    RowInspection,
     SplitDict,
     TableCellInfo,
     TableInspection,
@@ -60,12 +62,29 @@ def unbox_cell_value(val: object) -> CellScalarValue:
     return str(val)
 
 
+def format_with_unit(formatted: str, unit: str = "") -> str:
+    """Applies a unit suffix to a pre-formatted accounting string, splicing inside closing ')'."""
+    if not formatted or not unit:
+        return formatted
+    if formatted.endswith(")"):
+        return f"{formatted[:-1]}{unit})"
+    return f"{formatted}{unit}"
+
+
+class MarkdownTable(str):
+    """GitHub-Flavored Markdown table string with IPython and Quarto display integration."""
+
+    def _repr_markdown_(self) -> str:
+        """Returns the raw GFM string for IPython/Jupyter/Quarto rich display."""
+        return str(self)
+
+
 class _RenderColumn:
     """Internal helper representing a column prepared for 2D visual rendering."""
 
-    def __init__(self, col_id: str | None, headers: list[str], is_descriptor: bool) -> None:
+    def __init__(self, col_id: str | None, header: str, is_descriptor: bool) -> None:
         self.id = col_id
-        self.headers = headers
+        self.header = header
         self.is_descriptor = is_descriptor
 
 
@@ -84,6 +103,13 @@ class TableAuditor:
             for c in raw.get("columns", [])
             if not c.get("is_gutter", False) and (cid := c.get("id")) is not None
         ]
+        self._measure_columns: list[str] = [
+            cid
+            for c in raw.get("columns", [])
+            if not c.get("is_gutter", False)
+            and not c.get("is_descriptor", False)
+            and (cid := c.get("id")) is not None
+        ]
         self._rows: list[str] = [
             rid
             for r in raw.get("rows", [])
@@ -91,6 +117,7 @@ class TableAuditor:
             and not r.get("is_section_header", False)
             and (rid := r.get("id")) is not None
         ]
+        self._row_set: set[str] = set(self._rows)
 
         self._cell_map: dict[tuple[str, str], TableCellInfo] = {}
         prefix = f'{self._id}["'
@@ -128,6 +155,11 @@ class TableAuditor:
         return list(self._columns)
 
     @property
+    def measure_columns(self) -> list[str]:
+        """Ordered list of non-gutter, non-descriptor measure column IDs."""
+        return list(self._measure_columns)
+
+    @property
     def rows(self) -> list[str]:
         """Ordered list of non-gutter, non-section data row IDs."""
         return list(self._rows)
@@ -160,6 +192,52 @@ class TableAuditor:
     def value(self, row: str, col: str) -> CellScalarValue:
         """Returns the unboxed scalar value for the coordinate."""
         return unbox_cell_value(self.cell(row, col).get("value"))
+
+    def num(self, row: str, col: str) -> float:
+        """Returns the evaluated numeric cell value as a float.
+
+        Raises:
+            KeyError: If coordinate does not exist in the table.
+            TypeError: If the cell value is not a number (e.g. text, boolean, None, or error).
+        """
+        val = self.value(row, col)
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            raise TypeError(
+                f"Cell ('{row}', '{col}') in table '{self._id}' did not evaluate to a float "
+                f"(got {val!r})"
+            )
+        return float(val)
+
+    def formatted(self, row: str, col: str, *, unit: str = "") -> str:
+        """Returns the pre-formatted display string with an optional unit suffix."""
+        cell_info = self.cell(row, col)
+        val_str = cell_info.get("formatted_value")
+        if val_str is None:
+            raw_val = unbox_cell_value(cell_info.get("value"))
+            val_str = str(raw_val) if raw_val is not None else ""
+        return format_with_unit(val_str, unit)
+
+    def row_values(
+        self,
+        row: str,
+        cols: Sequence[str] | None = None,
+    ) -> list[CellScalarValue]:
+        """Returns 1D list of unboxed scalar values across measure columns (or specified cols)."""
+        if row not in self._row_set:
+            raise KeyError(f"Row '{row}' not found in table '{self._id}'")
+        target_cols = self._measure_columns if cols is None else cols
+        return [self.value(row, col) for col in target_cols]
+
+    def row_nums(
+        self,
+        row: str,
+        cols: Sequence[str] | None = None,
+    ) -> list[float]:
+        """Returns 1D list of numeric float values across measure columns (or specified cols)."""
+        if row not in self._row_set:
+            raise KeyError(f"Row '{row}' not found in table '{self._id}'")
+        target_cols = self._measure_columns if cols is None else cols
+        return [self.num(row, col) for col in target_cols]
 
     def formula(self, row: str, col: str) -> str | None:
         """Returns the lowered Excel formula string, or None if driver/input."""
@@ -211,7 +289,7 @@ class TableAuditor:
     ):
         """Exports evaluated tabular data to standard dictionary layouts.
 
-        Guarantees uniform rectangular output across all orientations, mapping unassigned
+        Guarantees uniform rectangular output across all orientations, mapping empty
         cells to None.
         """
         if orient == "records":
@@ -272,13 +350,26 @@ class TableAuditor:
     def to_markdown(
         self,
         view: TableViewMode = "values",
-    ) -> str:
+        *,
+        rows: Sequence[str] | None = None,
+        cols: Sequence[str] | None = None,
+        include_section_headers: bool | None = None,
+        show_ids: bool = False,
+    ) -> MarkdownTable:
         """Renders an aligned GitHub-Flavored Markdown table representation.
 
         Args:
             view: One of 'values' (pre-formatted accounting typography), 'formulas'
                 (lowered Excel formulas), 'expr' (f8 DSL expressions), or 'addresses'
                 (physical sheet A1 coordinates).
+            rows: Optional subset of row IDs to include. When specified, section headers
+                are omitted by default unless include_section_headers=True.
+            cols: Optional subset of column IDs to include. Descriptor columns are
+                automatically retained.
+            include_section_headers: Whether to render section header divider rows.
+                Defaults to True when rows is None, and False when rows is specified.
+            show_ids: When True, appends [col_id] and [row_id] suffixes when display labels
+                differ from coordinate IDs. Defaults to False.
         """
         valid_views = ("values", "formulas", "expr", "addresses")
         if view not in valid_views:
@@ -287,45 +378,80 @@ class TableAuditor:
                 "Expected one of 'values', 'formulas', 'expr', 'addresses'."
             )
 
-        non_gutter_cols = [c for c in self._raw.get("columns", []) if not c.get("is_gutter", False)]
+        non_gutter_cols: list[ColumnInspection] = [
+            c for c in self._raw.get("columns", []) if not c.get("is_gutter", False)
+        ]
         if not non_gutter_cols:
-            return ""
+            return MarkdownTable("")
 
-        max_tiers = max((len(c.get("headers", [])) for c in non_gutter_cols), default=0)
-        max_tiers = max(max_tiers, 1)
+        col_spec_by_id: dict[str, ColumnInspection] = {
+            cid: c for c in non_gutter_cols if (cid := c.get("id")) is not None
+        }
+
+        if cols is None:
+            selected_cols = non_gutter_cols
+        else:
+            for cid in cols:
+                if cid not in col_spec_by_id:
+                    raise KeyError(f"Column '{cid}' not found in table '{self._id}'")
+            requested_col_set = set(cols)
+            selected_cols = [
+                c
+                for c in non_gutter_cols
+                if c.get("is_descriptor", False) and c.get("id") not in requested_col_set
+            ] + [col_spec_by_id[cid] for cid in cols]
+
+        if not selected_cols:
+            return MarkdownTable("")
+
+        raw_rows: list[RowInspection] = [
+            r for r in self._raw.get("rows", []) if not r.get("is_gutter", False)
+        ]
+        row_spec_by_id: dict[str, RowInspection] = {
+            rid: r
+            for r in raw_rows
+            if not r.get("is_section_header", False) and (rid := r.get("id")) is not None
+        }
+
+        if rows is None:
+            show_sections = True if include_section_headers is None else include_section_headers
+            selected_rows = [
+                r for r in raw_rows if show_sections or not r.get("is_section_header", False)
+            ]
+        else:
+            for rid in rows:
+                if rid not in row_spec_by_id:
+                    raise KeyError(f"Row '{rid}' not found in table '{self._id}'")
+            show_sections = False if include_section_headers is None else include_section_headers
+            if not show_sections:
+                selected_rows = [row_spec_by_id[rid] for rid in rows]
+            else:
+                requested_row_set = set(rows)
+                selected_rows = [
+                    r
+                    for r in raw_rows
+                    if r.get("is_section_header", False) or r.get("id") in requested_row_set
+                ]
 
         render_cols: list[_RenderColumn] = []
-        for c in non_gutter_cols:
+        for c in selected_cols:
             col_id = c.get("id")
             is_descriptor = c.get("is_descriptor", False)
-            raw_headers = c.get("headers", [])
-            k = len(raw_headers)
-            bottom_raw = raw_headers[-1] if k > 0 else (col_id or "")
+            non_empty_tiers = [h for h in c.get("headers", []) if h]
+            display_header = ": ".join(non_empty_tiers) if non_empty_tiers else (col_id or "")
 
-            if col_id:
-                if not bottom_raw:
-                    bottom_header = col_id
-                elif bottom_raw.lower() == col_id.lower():
-                    bottom_header = bottom_raw
-                else:
-                    bottom_header = f"{bottom_raw} [{col_id}]"
+            if show_ids and col_id and display_header.lower() != col_id.lower():
+                header_label = f"{display_header} [{col_id}]"
             else:
-                bottom_header = bottom_raw
+                header_label = display_header
 
-            pad = max_tiers - max(k, 1)
-            headers: list[str] = []
-            for tier_idx in range(max_tiers):
-                if tier_idx < pad:
-                    headers.append("")
-                elif tier_idx == max_tiers - 1:
-                    headers.append(bottom_header)
-                else:
-                    headers.append(raw_headers[tier_idx - pad])
+            render_cols.append(_RenderColumn(col_id, header_label, is_descriptor))
 
-            render_cols.append(_RenderColumn(col_id, headers, is_descriptor))
-
-        row_indent_map = {
-            r["id"]: r.get("indent", 0) for r in self._raw.get("rows", []) if r.get("id")
+        row_indent_map: dict[str, int] = {
+            rid: r.get("indent", 0) for rid, r in row_spec_by_id.items()
+        }
+        row_summary_map: dict[str, bool] = {
+            rid: r.get("style") in ("subtotal", "total") for rid, r in row_spec_by_id.items()
         }
 
         def get_cell_text(row_id: str, col: _RenderColumn) -> str:
@@ -333,11 +459,10 @@ class TableAuditor:
                 return ""
             coord = (row_id, col.id)
             cell_info = self._cell_map.get(coord)
-            if cell_info is None:
-                return ""
+            is_summary = row_summary_map.get(row_id, False)
 
-            val_str = cell_info.get("formatted_value") or ""
-            if not val_str:
+            val_str = (cell_info.get("formatted_value") or "") if cell_info is not None else ""
+            if not val_str and cell_info is not None:
                 raw_val = unbox_cell_value(cell_info.get("value"))
                 val_str = str(raw_val) if raw_val is not None else ""
 
@@ -345,33 +470,37 @@ class TableAuditor:
                 indent = row_indent_map.get(row_id, 0)
                 if not val_str:
                     label = row_id
-                elif val_str.lower() == row_id.lower():
-                    label = val_str
-                else:
+                elif show_ids and val_str.lower() != row_id.lower():
                     label = f"{val_str} [{row_id}]"
+                else:
+                    label = val_str
+                if is_summary and label:
+                    return f"{'  ' * indent}**{label}**"
                 return f"{'  ' * indent}{label}"
 
             if view == "values":
-                return val_str
-            if view == "formulas":
-                if cell_info.get("is_formula"):
-                    return cell_info.get("excel_formula") or val_str
-                return val_str
-            if view == "expr":
-                if cell_info.get("is_formula"):
-                    return cell_info.get("formula_expr") or ""
-                return val_str
-            if view == "addresses":
-                return cell_info.get("physical_a1", "")
-            return val_str
+                raw_text = val_str if val_str else "—"
+            elif view == "formulas":
+                if cell_info is not None and cell_info.get("is_formula"):
+                    raw_text = cell_info.get("excel_formula") or val_str
+                else:
+                    raw_text = val_str
+            elif view == "expr":
+                if cell_info is not None and cell_info.get("is_formula"):
+                    raw_text = cell_info.get("formula_expr") or ""
+                else:
+                    raw_text = val_str
+            else:
+                raw_text = cell_info.get("physical_a1", "") if cell_info is not None else ""
 
-        col_widths: list[int] = []
-        for col in render_cols:
-            max_h_len = max((len(h) for h in col.headers), default=0)
-            col_widths.append(max(max_h_len, 4))
+            if is_summary and raw_text:
+                return f"**{raw_text}**"
+            return raw_text
 
-        for r in self._raw.get("rows", []):
-            if r.get("is_gutter") or r.get("is_section_header"):
+        col_widths: list[int] = [max(len(col.header), 4) for col in render_cols]
+
+        for r in selected_rows:
+            if r.get("is_section_header"):
                 continue
             row_id = r.get("id")
             if not row_id:
@@ -383,14 +512,13 @@ class TableAuditor:
 
         out_lines: list[str] = []
 
-        # Stacked header tiers
-        for tier in range(max_tiers):
-            cells: list[str] = []
-            for col_idx, col in enumerate(render_cols):
-                h = col.headers[tier]
-                w = col_widths[col_idx]
-                cells.append(f" {h:<{w}} " if col.is_descriptor else f" {h:>{w}} ")
-            out_lines.append(f"|{'|'.join(cells)}|")
+        # Single flattened GFM header row
+        header_cells: list[str] = []
+        for col_idx, col in enumerate(render_cols):
+            h = col.header
+            w = col_widths[col_idx]
+            header_cells.append(f" {h:<{w}} " if col.is_descriptor else f" {h:>{w}} ")
+        out_lines.append(f"|{'|'.join(header_cells)}|")
 
         # Alignment row
         align_cells: list[str] = []
@@ -402,9 +530,7 @@ class TableAuditor:
         out_lines.append(f"|{'|'.join(align_cells)}|")
 
         # Data & section header rows
-        for r in self._raw.get("rows", []):
-            if r.get("is_gutter"):
-                continue
+        for r in selected_rows:
             if r.get("is_section_header"):
                 title = r.get("section_title") or ""
                 empty_cols = " |" * (len(render_cols) - 1)
@@ -420,4 +546,8 @@ class TableAuditor:
                 row_cells.append(f" {text:<{w}} " if col.is_descriptor else f" {text:>{w}} ")
             out_lines.append(f"|{'|'.join(row_cells)}|")
 
-        return "\n".join(out_lines) + "\n"
+        return MarkdownTable("\n".join(out_lines) + "\n")
+
+    def _repr_markdown_(self) -> str:
+        """IPython / Quarto rich Markdown representation hook."""
+        return str(self.to_markdown())

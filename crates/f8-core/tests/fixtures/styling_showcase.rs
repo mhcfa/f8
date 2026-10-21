@@ -1030,7 +1030,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // =========================================================================
     let manifest = ProjectManifest {
         model_name: "f8_Styling_Showcase".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Styling_Showcase".to_string(),

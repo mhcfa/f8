@@ -13,6 +13,8 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
+from f8._core import __version__
+
 GUIDE_TOPICS: dict[str, tuple[str, str]] = {
     "syntax": (
         "references/syntax-and-grid.md",
@@ -181,6 +183,12 @@ def _build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
     parser = argparse.ArgumentParser(
         prog="f8",
         description="F8 Financial Modeling SDK runner and agent onboarding helper.",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command")
 

@@ -199,7 +199,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
 
     let manifest = ProjectManifest {
         model_name: "f8Model".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Model".to_string(),
@@ -507,10 +507,9 @@ fn test_scenario_14_string_literal_escaping() {
 #[test]
 fn test_scenario_15_full_compiler_facade_integration() {
     let (manifest, tables) = create_comprehensive_model();
-    let theme = Theme::corporate_navy();
 
     // 1. Plan layout
-    let layout_map = Compiler::plan_layout(&manifest, &tables, &theme, None).unwrap();
+    let layout_map = Compiler::plan_layout(&manifest, &tables, None).unwrap();
 
     // 2. Lower formulas
     let formula_map = Compiler::lower_formulas(&manifest, &tables, &layout_map).unwrap();

@@ -7,7 +7,7 @@ use super::id::{ColId, RowId, TableId};
 #[derive(Debug, Error)]
 pub enum ModelError {
     #[error(
-        "Table '{table}': {context} specifies decimals ({decimals}) for non-numeric preset '{preset}'"
+        "Table '{table}': {context} specifies decimals ({decimals}) for preset '{preset}' which does not support decimals"
     )]
     InvalidPrecisionForPreset {
         table: TableId,
@@ -121,12 +121,6 @@ pub enum ModelError {
     #[error("Theme format template for 'currency' must contain '{{sym}}' placeholder")]
     MissingCurrencySymbolPlaceholder,
 
-    #[error("Failed to parse theme: {source}")]
-    ThemeParseError {
-        #[source]
-        source: serde_json::Error,
-    },
-
     #[error(
         "Theme format for '{preset}' specifies precision ({decimals}) exceeding maximum supported precision ({max})"
     )]
@@ -135,13 +129,4 @@ pub enum ModelError {
         decimals: u32,
         max: u32,
     },
-
-    #[error("Serialization / Deserialization error: {0}")]
-    Json(String),
-}
-
-impl From<serde_json::Error> for ModelError {
-    fn from(err: serde_json::Error) -> Self {
-        Self::Json(err.to_string())
-    }
 }

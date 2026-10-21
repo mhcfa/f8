@@ -1,4 +1,4 @@
-//! Shared model fixtures for end-to-end compiler testing and example exports.
+//! Shared model fixtures for end-to-end compiler testing.
 
 #![allow(dead_code)]
 

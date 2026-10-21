@@ -42,7 +42,7 @@ fn test_format_currency_presets() {
             Some(1),
             Some(CurrencyCode::Usd)
         ),
-        "$ 115.0"
+        "$115.0"
     );
 
     // Negative currency with parentheses
@@ -54,7 +54,7 @@ fn test_format_currency_presets() {
             Some(2),
             Some(CurrencyCode::Usd)
         ),
-        "($ 42.75)"
+        "($42.75)"
     );
 
     // EUR and GBP symbols
@@ -65,7 +65,7 @@ fn test_format_currency_presets() {
             Some(0),
             Some(CurrencyCode::Eur)
         ),
-        "€ 115"
+        "€115"
     );
     assert_eq!(
         format_cell_value(
@@ -74,7 +74,7 @@ fn test_format_currency_presets() {
             Some(0),
             Some(CurrencyCode::Gbp)
         ),
-        "£ 115"
+        "£115"
     );
 }
 

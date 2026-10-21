@@ -6,10 +6,10 @@ This document catalogs canonical financial modeling patterns in f8, demonstratin
 
 Because f8 treats both rows and columns as symmetrical first-class calculation axes, financial models do not require special table types. The direction of vector formulas (`expr`), axis roles (`measure` vs `descriptor`), and active coordinate tokens (`@col`, `@row`) naturally define the schedule shape:
 
-- **Horizontal schedules**: Row-driven calculations across time columns using `@col` and `col.prev`.
-- **Vertical schedules**: Column-driven calculations across line-item rows using `@row` and `row.prev`.
-- **Cross-footing matrices**: Two-dimensional calculations with explicit cell overrides at intersections.
-- **Transposed schedules**: Columns represent entities or scenarios; rows represent financial metrics.
+- Horizontal schedules: Row-driven calculations across time columns using `@col` and `col.prev`.
+- Vertical schedules: Column-driven calculations across line-item rows using `@row` and `row.prev`.
+- Cross-footing matrices: Two-dimensional calculations with explicit cell overrides at intersections.
+- Transposed schedules: Columns represent entities or scenarios; rows represent financial metrics.
 
 ---
 
@@ -80,9 +80,9 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
 ```
 
 ### Key behaviors
-- **Historical overrides vs forecast rules**: In `revenue`, `expr` defines forecast growth while historical years are supplied as explicit cell overrides (`"2021A": 85000`).
-- **Active column tracking**: In `cogs` and `gross_profit`, the formula references the evaluating column using `@col`.
-- **Descriptor isolation**: Because `line_item` and `unit` are declared with `role: "descriptor"`, row vector formulas and currency formats never broadcast to them.
+- Historical overrides vs forecast rules: In `revenue`, `expr` defines forecast growth while historical years are supplied as explicit cell overrides (`"2021A": 85000`).
+- Active column tracking: In `cogs` and `gross_profit`, the formula references the evaluating column using `@col`.
+- Descriptor isolation: Because `line_item` and `unit` are declared with `role: "descriptor"`, row vector formulas and currency formats never broadcast to them.
 
 ---
 
@@ -163,8 +163,8 @@ Formulas and formatting are column-driven. Rows supply data inputs, with point o
 ```
 
 ### Key behaviors
-- **Active row tracking**: Column formulas use `@row` (`CapTable[@row, "shares"]`) to bind to the evaluating row.
-- **Summary row overrides**: Row `total` supplies point formula overrides (`{ "expr": "SUM(...)" }`) that supersede the column vector formulas at the bottom line.
+- Active row tracking: Column formulas use `@row` (`CapTable[@row, "shares"]`) to bind to the evaluating row.
+- Summary row overrides: Row `total` supplies point formula overrides (`{ "expr": "SUM(...)" }`) that supersede the column vector formulas at the bottom line.
 
 ---
 
@@ -298,4 +298,4 @@ For vertical amortization schedules where rows represent time periods and column
 
 ---
 
-See [Specification Format](./spec-format.md) for schema syntax and [Addressing Syntax](./addressing.md) for coordinate lowering rules.
+See `docs/dsl/spec-format.md` for schema syntax and `docs/dsl/addressing.md` for coordinate lowering rules.

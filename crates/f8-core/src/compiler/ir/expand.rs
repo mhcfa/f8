@@ -252,9 +252,9 @@ fn resolve_decimals(
     col: &DataColumnSpec,
     table_id: &TableId,
 ) -> Result<Option<u32>, IrError> {
-    // Non-numeric presets have no precision concept and always resolve to None
+    // Presets that do not support fractional precision always resolve to None
     if let Some(format) = effective_format
-        && !format.is_numeric()
+        && !format.supports_decimals()
     {
         return Ok(None);
     }

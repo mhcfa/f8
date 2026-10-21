@@ -29,7 +29,7 @@ struct ParityCase {
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let manifest = ProjectManifest {
         model_name: "ExcelParityVerification".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "ParityVerification".to_string(),
             tab_color: None,

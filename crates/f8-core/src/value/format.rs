@@ -34,15 +34,22 @@ pub fn format_accounting_number(
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
 ) -> String {
-    let is_neg = val < 0.0 && val.abs() > 1e-9;
+    if matches!(format, Some(FormatPreset::Date)) {
+        return match crate::functions::date::serial::DateSerial::to_ymd(val) {
+            Ok(dt) => format!("{:04}-{:02}-{:02}", dt.year, dt.month, dt.day),
+            Err(e) => e.as_str().to_string(),
+        };
+    }
+
     let abs_val = val.abs();
 
     let dec = match format {
         Some(FormatPreset::Percentage) => decimals.unwrap_or(1) as usize,
         Some(FormatPreset::Multiple) => decimals.unwrap_or(1) as usize,
         Some(FormatPreset::BasisPoints) => decimals.unwrap_or(0) as usize,
-        Some(FormatPreset::Currency) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::Number | FormatPreset::Integer) => decimals.unwrap_or(0) as usize,
+        Some(FormatPreset::Currency) => decimals.unwrap_or(0) as usize,
+        Some(FormatPreset::Number) => decimals.unwrap_or(0) as usize,
+        Some(FormatPreset::Integer) => 0,
         _ => decimals
             .map(|d| d as usize)
             .unwrap_or(if abs_val.fract().abs() > 1e-6 { 1 } else { 0 }),
@@ -55,12 +62,7 @@ pub fn format_accounting_number(
         _ => (abs_val, ""),
     };
 
-    let is_integer_preset = matches!(format, Some(FormatPreset::Integer));
-    let is_year_heuristic = dec == 0
-        && matches!(format, Some(FormatPreset::Number) | None)
-        && abs_val.fract().abs() < 1e-6
-        && (1900.0..=2100.0).contains(&val);
-    let omit_commas = is_integer_preset || is_year_heuristic;
+    let omit_commas = matches!(format, Some(FormatPreset::Integer));
 
     let formatted_num = if omit_commas {
         format!("{scaled_val:.dec$}")
@@ -68,13 +70,18 @@ pub fn format_accounting_number(
         format_with_commas(scaled_val, dec)
     };
 
+    let is_non_zero = formatted_num
+        .chars()
+        .any(|c| c.is_ascii_digit() && c != '0');
+    let is_neg = val < 0.0 && is_non_zero;
+
     match format {
         Some(FormatPreset::Currency) => {
             let sym = currency.unwrap_or_default().symbol();
             if is_neg {
-                format!("({sym} {formatted_num})")
+                format!("({sym}{formatted_num})")
             } else {
-                format!("{sym} {formatted_num}")
+                format!("{sym}{formatted_num}")
             }
         }
         Some(FormatPreset::Percentage)
@@ -155,7 +162,7 @@ mod tests {
                 Some(2),
                 Some(CurrencyCode::Usd)
             ),
-            "$ 1,234.56"
+            "$1,234.56"
         );
         assert_eq!(
             format_accounting_number(
@@ -164,7 +171,7 @@ mod tests {
                 Some(2),
                 Some(CurrencyCode::Usd)
             ),
-            "($ 1,234.56)"
+            "($1,234.56)"
         );
 
         // Percentage
@@ -210,16 +217,41 @@ mod tests {
             "(42)"
         );
 
-        // Calendar year heuristic [1900..=2100] with 0 decimals (no commas)
+        // Currency default decimals (0)
+        assert_eq!(
+            format_accounting_number(1250.0, Some(FormatPreset::Currency), None, None),
+            "$1,250"
+        );
+
+        // Date preset (ISO YYYY-MM-DD and out-of-bounds error)
+        assert_eq!(
+            format_accounting_number(45657.0, Some(FormatPreset::Date), None, None),
+            "2024-12-31"
+        );
+        assert_eq!(
+            format_accounting_number(-1.0, Some(FormatPreset::Date), None, None),
+            "#NUM!"
+        );
+
+        // Number preset always uses commas; Integer preset omits commas
         assert_eq!(
             format_accounting_number(2029.0, Some(FormatPreset::Number), Some(0), None),
-            "2029"
+            "2,029"
         );
-        assert_eq!(format_accounting_number(1999.0, None, None, None), "1999");
-        // Numbers with fractional parts retain decimals and commas if outside integer
+        assert_eq!(format_accounting_number(1999.0, None, None, None), "1,999");
         assert_eq!(
             format_accounting_number(2024.5, Some(FormatPreset::Number), Some(1), None),
             "2,024.5"
+        );
+
+        // Near-zero negative values rounding to zero at target decimal precision
+        assert_eq!(
+            format_accounting_number(-0.05, Some(FormatPreset::Currency), Some(0), None),
+            "$0"
+        );
+        assert_eq!(
+            format_accounting_number(-0.001, Some(FormatPreset::Number), Some(2), None),
+            "0.00"
         );
     }
 }

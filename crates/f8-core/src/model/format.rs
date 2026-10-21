@@ -29,16 +29,15 @@ impl FormatPreset {
         }
     }
 
-    /// Returns true if this format preset represents numeric data.
-    pub const fn is_numeric(&self) -> bool {
+    /// Returns true if this format preset supports fractional decimal precision (`decimals`).
+    pub const fn supports_decimals(&self) -> bool {
         match self {
             Self::Currency
             | Self::Number
             | Self::Percentage
             | Self::Multiple
-            | Self::BasisPoints
-            | Self::Integer => true,
-            Self::Date | Self::Text => false,
+            | Self::BasisPoints => true,
+            Self::Integer | Self::Date | Self::Text => false,
         }
     }
 }

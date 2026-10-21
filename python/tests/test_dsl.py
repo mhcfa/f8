@@ -96,7 +96,7 @@ def test_scenario_3_explicit_0d_cell_indentation_via_cell_and_dict() -> None:
         },
     )
 
-    _manifest, tables = model.to_spec()
+    _manifest, tables = model.__f8_spec__()
     assert tables[0] == {
         "id": "T1",
         "title": "Table 1",
@@ -152,7 +152,7 @@ def test_scenario_4_symmetrical_column_and_row_spacing_gutters() -> None:
     table.add_row_gutter()
     table.add_row("r2", cells={"c1": 30.0, "c2": 40.0})
 
-    _manifest, tables = model.to_spec()
+    _manifest, tables = model.__f8_spec__()
     assert tables[0] == {
         "id": "T1",
         "title": "Table 1",
@@ -190,7 +190,7 @@ def test_scenario_5_point_cell_override_via_set_cell() -> None:
     # Positional None value override
     table.set_cell("rev", "c3", None)
 
-    _manifest, tables = model.to_spec()
+    _manifest, tables = model.__f8_spec__()
     assert tables[0] == {
         "id": "T1",
         "title": "Table 1",
@@ -333,7 +333,7 @@ def test_scenario_10_worksheet_freeze_panes_split_coordinates() -> None:
     table.add_column("c1", header="Col 1")
     table.add_row("r1", cells={"c1": 10.0})
 
-    manifest, _ = model.to_spec()
+    manifest, _ = model.__f8_spec__()
     assert manifest == {
         "model_name": "Model",
         "theme": "corporate_navy",
@@ -371,7 +371,7 @@ def test_currency_normalization() -> None:
         currency="JPY",
     )
 
-    _manifest, tables = model.to_spec()
+    _manifest, tables = model.__f8_spec__()
     assert tables[0] == {
         "id": "T1",
         "title": "Table 1",
@@ -413,3 +413,96 @@ def test_cell_input_value_runtime_evaluation() -> None:
     assert CellInputValue is BuilderCellInputValue
     assert TypesCellInputValue is BuilderCellInputValue
     assert BuilderCellInputValue.__value__ is not None
+
+
+def test_custom_theme_dict_on_model_init() -> None:
+    custom_theme: dict[str, object] = {
+        "name": "firm_custom",
+        "typography": {
+            "font_family": "Calibri",
+            "title_size": 16.0,
+            "subtitle_size": 10.0,
+            "super_header_size": 11.0,
+            "col_header_size": 11.0,
+            "section_header_size": 11.0,
+            "data_size": 11.0,
+        },
+        "metrics": {
+            "title_row_height": 26.0,
+            "header_row_height": 20.0,
+            "section_row_height": 20.0,
+            "data_row_height": 16.0,
+            "gutter_row_height": 10.0,
+            "gutter_col_width": 4.0,
+            "title_gutter_row_height": 9.0,
+            "char_width_multiplier": 1.2,
+            "col_padding": 2.5,
+            "min_col_width": 14.0,
+        },
+        "palette": {
+            "table_title_fill": "#2B4C7E",
+            "table_title_text": "#FFFFFF",
+            "table_subtitle_text": "#555555",
+            "super_header_fill": "#3B5C8E",
+            "super_header_text": "#FFFFFF",
+            "col_header_fill": "#EBF1F5",
+            "col_header_text": "#2B4C7E",
+            "section_header_fill": "#F5F8FA",
+            "section_header_text": "#2B4C7E",
+            "data_fill": "#FFFFFF",
+            "data_text": "#222222",
+            "subtotal_fill": "#F5F8FA",
+            "subtotal_text": "#2B4C7E",
+            "total_fill": "#EBF1F5",
+            "total_text": "#2B4C7E",
+            "input_text": "#002060",
+            "formula_text": "#000000",
+            "zebra_fill": "#FAFCFD",
+            "highlight_fill": "#FEF3C7",
+            "highlight_text": "#92400E",
+            "gridline_color": "#E5E7EB",
+            "border_color": "#D1D5DB",
+            "total_border_color": "#2B4C7E",
+        },
+        "borders": {
+            "table_title_border_bottom": "none",
+            "super_header_border_bottom": "thin",
+            "header_border_bottom": "thin",
+            "descriptor_border_right": "none",
+            "subtotal_border_top": "thin",
+            "total_border_top": "thin",
+            "total_border_bottom": "double",
+            "col_subtotal_border_left": "thin",
+            "col_total_border_left": "thin",
+            "col_total_border_right": "double",
+        },
+        "number_formats": {
+            "currency": '{sym}#,##0{dec}_);({sym}#,##0{dec});"-"_)',
+            "number": '#,##0{dec}_);(#,##0{dec});"-"_)',
+            "percentage": "0{dec}%",
+            "multiple": '0{dec}"x"',
+            "basis_points": '#,##0{dec}" bps"',
+            "date": "yyyy-mm-dd",
+            "text": "@",
+            "defaults": {
+                "currency_decimals": 2,
+                "number_decimals": 2,
+                "percentage_decimals": 2,
+                "multiple_decimals": 2,
+                "basis_points_decimals": 0,
+            },
+        },
+    }
+
+    model = Model(name="CustomThemeModel", theme=custom_theme)
+    sheet = model.add_sheet("Sheet1")
+    table = sheet.add_table("T1", title="Theme Table")
+    table.add_column("c1", header="C1", format="currency")
+    table.add_row("r1", cells={"c1": 100.0})
+
+    manifest, _ = model.__f8_spec__()
+    assert manifest["theme"] == custom_theme
+
+    compiled = model.compile()
+    assert compiled.summary()["theme_name"] == "firm_custom"
+    assert compiled.formatted("T1", "r1", "c1") == "$100.00"
