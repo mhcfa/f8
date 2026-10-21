@@ -47,6 +47,7 @@ dev = [
 manifest-path = "crates/f8-python/Cargo.toml"
 python-source = "python"
 module-name = "f8._core"
+include = ["LICENSE"]
 strip = true
 
 [tool.uv]
