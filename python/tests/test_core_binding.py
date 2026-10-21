@@ -12,6 +12,7 @@ from f8 import (
     ReferenceResolutionError,
     SpecificationError,
 )
+from f8._core import compile as core_compile
 from f8.types import (
     ProjectManifestDict,
     TableSpecDict,
@@ -98,7 +99,7 @@ def test_scenario_1_in_memory_compilation_and_emission(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     assert isinstance(compiled, CompiledModel)
     buffer = compiled.emit_workbook()
@@ -112,7 +113,7 @@ def test_scenario_2_emission_options_values_only(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     buffer = compiled.emit_workbook({"values_only": True})
     assert isinstance(buffer, bytes)
@@ -124,7 +125,7 @@ def test_scenario_3_cell_inspection_flexible_coordinates(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     cell_3args = compiled.inspect_cell("OPERATIONS", "gross_profit", "2024E")
     cell_1arg = compiled.inspect_cell('OPERATIONS["gross_profit", "2024E"]')
@@ -142,7 +143,7 @@ def test_scenario_4_dependency_tree_direct_and_recursive(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     tree = compiled.precedents_of("OPERATIONS", "ebitda", "2024E", recursive=True)
     assert tree["root"] == {"table": "OPERATIONS", "row": "ebitda", "col": "2024E"}
@@ -164,7 +165,7 @@ def test_scenario_5_model_and_sheet_summary_inspection(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     summary = compiled.summary()
     assert summary["model_name"] == "TestModel"
@@ -223,7 +224,7 @@ def test_scenario_6_cyclic_dependency_error() -> None:
     ]
 
     with pytest.raises(CycleDetectedError) as exc_info:
-        f8.compile(manifest, tables)
+        core_compile(manifest, tables)
 
     err = exc_info.value
     assert isinstance(err, CycleDetectedError)
@@ -261,7 +262,7 @@ def test_scenario_7_reference_resolution_error() -> None:
     ]
 
     with pytest.raises(ReferenceResolutionError) as exc_info:
-        f8.compile(manifest, tables)
+        core_compile(manifest, tables)
 
     err = exc_info.value
     assert isinstance(err, ReferenceResolutionError)
@@ -297,7 +298,7 @@ def test_scenario_8_formula_syntax_parse_error() -> None:
     ]
 
     with pytest.raises(FormulaParseError) as exc_info:
-        f8.compile(manifest, tables)
+        core_compile(manifest, tables)
 
     err = exc_info.value
     assert isinstance(err, FormulaParseError)
@@ -341,7 +342,7 @@ def test_scenario_9_specification_error() -> None:
     ]
 
     with pytest.raises(SpecificationError) as exc_info:
-        f8.compile(manifest, tables)
+        core_compile(manifest, tables)
 
     err = exc_info.value
     assert isinstance(err, SpecificationError)
@@ -355,7 +356,7 @@ def test_scenario_10_inspection_entity_not_found(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     with pytest.raises(InspectionError) as exc_info:
         compiled.inspect_cell("NONEXISTENT", "r", "c")
@@ -379,7 +380,7 @@ def test_scenario_11_save_workbook_str_and_path(
     tmp_path: Path,
 ) -> None:
     manifest, tables = sample_model
-    compiled = f8.compile(manifest, tables)
+    compiled = core_compile(manifest, tables)
 
     # Save via str path
     str_target = str(tmp_path / "model_str.xlsx")
@@ -473,7 +474,7 @@ def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
         ],
     }
 
-    compiled = f8.compile(manifest, [table])
+    compiled = core_compile(manifest, [table])
     assert isinstance(compiled, CompiledModel)
     summary = compiled.summary()
     assert summary["model_name"] == "TypedModel"

@@ -5,7 +5,6 @@ Validates the complete lifecycle:
 - Multi-sheet institutional financial model construction via pure Python DSL.
 - Cross-table formula evaluation and temporal offset resolution.
 - Table auditing, scalar unboxing, structured dictionary export, and 2D Markdown rendering.
-- File system project export and 100% on-disk compilation parity.
 - OpenXML (.xlsx) workbook binary emission with live formulas and cached results.
 """
 
@@ -15,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from f8 import Cell, Model, compile_project
+from f8 import Cell, Model
 from f8.cli import main as cli_main
 
 
@@ -323,44 +322,7 @@ def test_scenario_2_e2e_model_compilation_and_table_auditing() -> None:
     assert records[0]["y2023a"] == 125000.0
 
 
-def test_scenario_3_e2e_disk_export_and_compilation_parity(tmp_path: Path) -> None:
-    """Verifies that on-disk export and direct disk compilation match
-    in-memory results identically.
-    """
-    model = _build_institutional_lbo_model()
-    compiled_mem = model.compile()
-    is_mem = compiled_mem.table("income_statement")
-
-    # Export project to disk
-    proj_dir = tmp_path / "exported_lbo_project"
-    model.export_project(proj_dir)
-
-    manifest_file = proj_dir / "f8.json"
-    assert manifest_file.is_file()
-    assert (proj_dir / "tables" / "assumptions.json").is_file()
-    assert (proj_dir / "tables" / "income_statement.json").is_file()
-
-    # Compile directly from disk
-    compiled_disk = compile_project(proj_dir)
-    is_disk = compiled_disk.table("income_statement")
-
-    # 100% parity assertion across all rows, columns, values, and coordinates
-    for r in is_mem.rows:
-        for c in is_mem.columns:
-            mem_val = is_mem[r, c]
-            disk_val = is_disk[r, c]
-            assert mem_val == disk_val, f"Value mismatch at ({r}, {c})"
-
-            mem_addr = is_mem.address(r, c)
-            disk_addr = is_disk.address(r, c)
-            assert mem_addr == disk_addr, f"Address mismatch at ({r}, {c})"
-
-            mem_formula = is_mem.formula(r, c)
-            disk_formula = is_disk.formula(r, c)
-            assert mem_formula == disk_formula, f"Formula mismatch at ({r}, {c})"
-
-
-def test_scenario_4_e2e_openxml_workbook_emission_and_inspection(tmp_path: Path) -> None:
+def test_scenario_3_e2e_openxml_workbook_emission_and_inspection(tmp_path: Path) -> None:
     """Verifies OpenXML binary workbook synthesis, structure, live formulas, and cache results."""
     model = _build_institutional_lbo_model()
     compiled = model.compile()

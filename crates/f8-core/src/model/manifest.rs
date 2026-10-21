@@ -9,7 +9,7 @@ fn default_theme() -> String {
     Theme::DEFAULT_NAME.to_string()
 }
 
-/// Root project manifest deserialized from `f8.json`.
+/// Root workbook manifest defining model metadata, theme, and sheet ordering.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectManifest {
     pub model_name: String,
