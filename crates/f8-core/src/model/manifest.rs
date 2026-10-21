@@ -3,18 +3,14 @@ use serde::{Deserialize, Serialize};
 
 use super::error::ModelError;
 use super::id::TableId;
-use super::theme::Theme;
-
-fn default_theme() -> String {
-    Theme::DEFAULT_NAME.to_string()
-}
+use super::theme::{Theme, ThemeSpec};
 
 /// Root workbook manifest defining model metadata, theme, and sheet ordering.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectManifest {
     pub model_name: String,
-    #[serde(default = "default_theme")]
-    pub theme: String,
+    #[serde(default)]
+    pub theme: ThemeSpec,
     pub sheets: Vec<SheetSpec>,
 }
 
@@ -32,17 +28,27 @@ impl ProjectManifest {
         Ok(())
     }
 
-    /// Resolves the workbook theme from the built-in catalog, falling back to corporate navy if empty or omitted.
+    /// Resolves and validates the workbook theme from a built-in name or inline custom theme specification.
     ///
     /// # Errors
-    /// Returns [`ModelError::ThemeNotFound`] if the configured theme is not a known built-in theme.
+    /// Returns [`ModelError::ThemeNotFound`] if a named theme is not in the built-in catalog,
+    /// or theme validation errors if a custom theme violates palette, metric, or format invariants.
     pub fn resolve_theme(&self) -> Result<Theme, ModelError> {
-        let theme_name = if self.theme.trim().is_empty() {
-            Theme::DEFAULT_NAME
-        } else {
-            self.theme.trim()
-        };
-        Theme::resolve_builtin(theme_name)
+        match &self.theme {
+            ThemeSpec::Name(name) => {
+                let trimmed = name.trim();
+                let theme_name = if trimmed.is_empty() {
+                    Theme::DEFAULT_NAME
+                } else {
+                    trimmed
+                };
+                Theme::resolve_builtin(theme_name)
+            }
+            ThemeSpec::Custom(theme) => {
+                theme.validate()?;
+                Ok((**theme).clone())
+            }
+        }
     }
 }
 

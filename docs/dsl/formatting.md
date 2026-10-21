@@ -200,7 +200,7 @@ f8 supports pluggable, external workbook themes inspired by modern IDE and edito
 f8 provides `corporate_navy` as its built-in institutional theme:
 - `corporate_navy`: Institutional private equity and investment banking style with deep navy headers, underlined section titles on transparent backgrounds, crisp thin borders, and classic blue inputs.
 
-Custom themes can be supplied in-memory via `Model(theme=custom_theme_dict)` in Python or `Theme::from_json_str` in Rust (see schema below).
+Custom themes can be supplied in-memory via `Model(theme=custom_theme_dict)` in Python or `ThemeSpec::Custom` on `ProjectManifest` in Rust (see schema below).
 
 ### 6.3. Theme JSON configuration schema
 

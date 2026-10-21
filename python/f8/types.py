@@ -304,7 +304,7 @@ class ProjectManifestDict(TypedDict):
     """Complete project manifest specification dictionary."""
 
     model_name: str
-    theme: str
+    theme: ThemeInput
     sheets: list[SheetSpecDict]
 
 

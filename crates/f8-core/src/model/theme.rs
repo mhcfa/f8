@@ -3,6 +3,61 @@ use serde::{Deserialize, Serialize};
 use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset};
 
+/// Theme specification inside a project manifest: either a built-in theme name or an inline custom theme.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ThemeSpec {
+    Name(String),
+    Custom(Box<Theme>),
+}
+
+impl Default for ThemeSpec {
+    fn default() -> Self {
+        Self::Name(Theme::DEFAULT_NAME.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ThemeSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ThemeSpecVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ThemeSpecVisitor {
+            type Value = ThemeSpec;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a built-in theme name string or a custom theme map")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(ThemeSpec::Name(v.to_string()))
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(ThemeSpec::Name(v))
+            }
+
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let theme = Theme::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(ThemeSpec::Custom(Box::new(theme)))
+            }
+        }
+
+        deserializer.deserialize_any(ThemeSpecVisitor)
+    }
+}
+
 /// Complete visual styling, typography, dimensions, palette, borders, and number format specification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Theme {
@@ -350,19 +405,10 @@ impl NumberFormatsConfig {
             return Err(ModelError::MissingCurrencySymbolPlaceholder);
         }
 
-        let default_precisions = [
-            (FormatPreset::Currency, self.defaults.currency_decimals),
-            (FormatPreset::Number, self.defaults.number_decimals),
-            (FormatPreset::Percentage, self.defaults.percentage_decimals),
-            (FormatPreset::Multiple, self.defaults.multiple_decimals),
-            (
-                FormatPreset::BasisPoints,
-                self.defaults.basis_points_decimals,
-            ),
-        ];
-
-        for (preset, decimals) in default_precisions {
-            if decimals > 14 {
+        for (preset, _) in numeric_templates {
+            if let Some(decimals) = self.default_decimals(preset)
+                && decimals > 14
+            {
                 return Err(ModelError::ThemePrecisionOutOfBounds {
                     preset,
                     decimals,
@@ -400,33 +446,20 @@ impl Theme {
         decimals: Option<u32>,
         currency: Option<CurrencyCode>,
     ) -> Result<String, ModelError> {
-        let (template, default_dec) = match preset {
+        let template = match preset {
             FormatPreset::Date => return Ok(self.number_formats.date.clone()),
             FormatPreset::Text => return Ok(self.number_formats.text.clone()),
             FormatPreset::Integer => return Ok(self.number_formats.integer.clone()),
-            FormatPreset::Currency => (
-                &self.number_formats.currency,
-                self.number_formats.defaults.currency_decimals,
-            ),
-            FormatPreset::Number => (
-                &self.number_formats.number,
-                self.number_formats.defaults.number_decimals,
-            ),
-            FormatPreset::Percentage => (
-                &self.number_formats.percentage,
-                self.number_formats.defaults.percentage_decimals,
-            ),
-            FormatPreset::Multiple => (
-                &self.number_formats.multiple,
-                self.number_formats.defaults.multiple_decimals,
-            ),
-            FormatPreset::BasisPoints => (
-                &self.number_formats.basis_points,
-                self.number_formats.defaults.basis_points_decimals,
-            ),
+            FormatPreset::Currency => &self.number_formats.currency,
+            FormatPreset::Number => &self.number_formats.number,
+            FormatPreset::Percentage => &self.number_formats.percentage,
+            FormatPreset::Multiple => &self.number_formats.multiple,
+            FormatPreset::BasisPoints => &self.number_formats.basis_points,
         };
 
-        let dec = decimals.unwrap_or(default_dec);
+        let dec = decimals
+            .or_else(|| self.number_formats.default_decimals(preset))
+            .unwrap_or(0);
         if dec > 14 {
             return Err(ModelError::ThemePrecisionOutOfBounds {
                 preset,
@@ -450,33 +483,16 @@ impl Theme {
         Ok(expanded)
     }
 
-    /// Parses a theme from a JSON string and validates its internal invariants.
-    ///
-    /// # Errors
-    /// Returns [`ModelError::ThemeParseError`] if deserialization fails, or validation errors
-    /// if colors, metrics, or format templates are invalid.
-    pub fn from_json_str(s: &str) -> Result<Self, ModelError> {
-        let theme: Theme =
-            serde_json::from_str(s).map_err(|source| ModelError::ThemeParseError { source })?;
-        theme.validate()?;
-        Ok(theme)
-    }
-
     /// Resolves a built-in theme by name ("corporate_navy").
     ///
     /// # Errors
     /// Returns [`ModelError::ThemeNotFound`] if the theme name does not match any built-in theme.
     pub fn resolve_builtin(name: &str) -> Result<Self, ModelError> {
-        Self::built_in(name).ok_or_else(|| ModelError::ThemeNotFound {
-            name: name.to_string(),
-        })
-    }
-
-    /// Looks up a statically embedded built-in theme by name.
-    pub fn built_in(name: &str) -> Option<Self> {
         match name {
-            Self::DEFAULT_NAME => Some(Self::corporate_navy()),
-            _ => None,
+            Self::DEFAULT_NAME => Ok(Self::corporate_navy()),
+            _ => Err(ModelError::ThemeNotFound {
+                name: name.to_string(),
+            }),
         }
     }
 

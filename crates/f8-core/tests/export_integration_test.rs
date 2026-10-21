@@ -13,7 +13,6 @@ use std::path::Path;
 
 use f8_core::Compiler;
 use f8_core::compiler::emission::EmissionOptions;
-use f8_core::model::theme::Theme;
 
 mod fixtures;
 
@@ -40,11 +39,9 @@ fn has_zip_entry(buffer: &[u8], name: &str) -> bool {
 // ----------------------------------------------------------------------------
 #[test]
 fn test_models_emit_in_memory() {
-    let theme_navy = Theme::corporate_navy();
-
     // 1. Three-Statement Financial Model
     let (ts_manifest, ts_tables) = fixtures::three_statement::build_three_statement_model();
-    let ts_compiled = Compiler::compile(&ts_manifest, &ts_tables, &theme_navy)
+    let ts_compiled = Compiler::compile(&ts_manifest, &ts_tables)
         .expect("Three-statement model must compile cleanly");
 
     let live_options = EmissionOptions {
@@ -119,7 +116,7 @@ fn test_models_emit_in_memory() {
         omit_formula_cache: false,
     };
 
-    let lbo_buffer = Compiler::emit_workbook(&lbo_manifest, &lbo_tables, &theme_navy, &lbo_options)
+    let lbo_buffer = Compiler::emit_workbook(&lbo_manifest, &lbo_tables, &lbo_options)
         .expect("LBO model must emit to OpenXML buffer");
 
     assert_eq!(&lbo_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
@@ -173,13 +170,9 @@ fn test_models_emit_in_memory() {
         omit_formula_cache: false,
     };
 
-    let showcase_buffer = Compiler::emit_workbook(
-        &showcase_manifest,
-        &showcase_tables,
-        &theme_navy,
-        &showcase_options,
-    )
-    .expect("Styling showcase model must emit to OpenXML buffer");
+    let showcase_buffer =
+        Compiler::emit_workbook(&showcase_manifest, &showcase_tables, &showcase_options)
+            .expect("Styling showcase model must emit to OpenXML buffer");
 
     assert_eq!(&showcase_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
     assert!(has_zip_entry(&showcase_buffer, "xl/worksheets/sheet1.xml"));
@@ -225,7 +218,7 @@ fn test_models_emit_in_memory() {
 
     // 5. Excel Parity Verification Suite (All 44 Standard Functions)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
-    let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables, &theme_navy)
+    let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
     let parity_evaluated = &parity_compiled.evaluated;
 
@@ -305,7 +298,7 @@ fn test_models_emit_in_memory() {
         omit_formula_cache: false,
     };
 
-    let tc_buffer = Compiler::emit_workbook(&tc_manifest, &tc_tables, &theme_navy, &tc_options)
+    let tc_buffer = Compiler::emit_workbook(&tc_manifest, &tc_tables, &tc_options)
         .expect("Trading comps model must emit to OpenXML buffer");
 
     assert_eq!(&tc_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
@@ -344,8 +337,6 @@ fn test_export_xlsx_to_disk() {
     let _ = std::fs::remove_file(&ts_file);
     let _ = std::fs::remove_file(&lbo_file);
 
-    let theme = Theme::corporate_navy();
-
     // 1. Export Three-Statement Model
     let (ts_manifest, ts_tables) = fixtures::three_statement::build_three_statement_model();
     let ts_options = EmissionOptions {
@@ -355,7 +346,7 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    let ts_buf = Compiler::emit_workbook(&ts_manifest, &ts_tables, &theme, &ts_options)
+    let ts_buf = Compiler::emit_workbook(&ts_manifest, &ts_tables, &ts_options)
         .expect("Failed to emit Three-Statement model to buffer");
     std::fs::write(&ts_file, ts_buf).expect("Failed to write Three-Statement model to disk");
 
@@ -380,7 +371,7 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    let lbo_buf = Compiler::emit_workbook(&lbo_manifest, &lbo_tables, &theme, &lbo_options)
+    let lbo_buf = Compiler::emit_workbook(&lbo_manifest, &lbo_tables, &lbo_options)
         .expect("Failed to emit LBO model to buffer");
     std::fs::write(&lbo_file, lbo_buf).expect("Failed to write LBO model to disk");
 
@@ -414,13 +405,8 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    let sc_buf = Compiler::emit_workbook(
-        &showcase_manifest,
-        &showcase_tables,
-        &theme,
-        &showcase_options,
-    )
-    .expect("Failed to emit styling showcase model to buffer");
+    let sc_buf = Compiler::emit_workbook(&showcase_manifest, &showcase_tables, &showcase_options)
+        .expect("Failed to emit styling showcase model to buffer");
     std::fs::write(&sc_file, sc_buf).expect("Failed to write styling showcase model to disk");
 
     assert!(sc_file.exists());
@@ -442,9 +428,8 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: true,
     };
 
-    let parity_buf =
-        Compiler::emit_workbook(&parity_manifest, &parity_tables, &theme, &parity_options)
-            .expect("Failed to emit Excel parity verification model to buffer");
+    let parity_buf = Compiler::emit_workbook(&parity_manifest, &parity_tables, &parity_options)
+        .expect("Failed to emit Excel parity verification model to buffer");
     std::fs::write(&parity_file, parity_buf)
         .expect("Failed to write Excel parity verification model to disk");
 
@@ -477,7 +462,7 @@ fn test_export_xlsx_to_disk() {
         omit_formula_cache: false,
     };
 
-    let tc_buf = Compiler::emit_workbook(&tc_manifest, &tc_tables, &theme, &tc_options)
+    let tc_buf = Compiler::emit_workbook(&tc_manifest, &tc_tables, &tc_options)
         .expect("Failed to emit Trading Comps model to buffer");
     std::fs::write(&tc_file, tc_buf).expect("Failed to write Trading Comps model to disk");
 

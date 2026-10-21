@@ -296,7 +296,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
 
     let manifest = ProjectManifest {
         model_name: "ThreeStatementFinancialModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Model".to_string(),
             tab_color: Some("#1B365D".to_string()),

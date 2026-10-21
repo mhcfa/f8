@@ -54,7 +54,7 @@ The root manifest defines workbook-level metadata, pluggable theme selection, an
 
 ### Manifest Properties
 - `model_name` (`string`, required): Model title used in metadata and workbook document properties.
-- `theme` (`string`, optional, default `"corporate_navy"`): Built-in theme name (or custom theme name when a custom `Theme` dictionary is supplied to `Model(theme=...)`).
+- `theme` (`string | object`, optional, default `"corporate_navy"`): Built-in theme preset name (`ThemeSpec::Name`) or inline custom `Theme` configuration object (`ThemeSpec::Custom`).
 - `sheets` (`array`, required): Ordered list of worksheet definitions:
   - `name` (`string`, required): Worksheet tab label. Must be unique across the workbook.
   - `tab_color` (`string`, optional): Hex color code starting with `#` (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`).

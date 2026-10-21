@@ -252,7 +252,7 @@ fn test_scenario_6_disconnected_literal_cells_preserved() {
 fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
     let manifest = ProjectManifest {
         model_name: "EndToEndPipelineModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Summary".to_string(),

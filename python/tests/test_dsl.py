@@ -501,7 +501,7 @@ def test_custom_theme_dict_on_model_init() -> None:
     table.add_row("r1", cells={"c1": 100.0})
 
     manifest, _ = model.__f8_spec__()
-    assert manifest["theme"] == "firm_custom"
+    assert manifest["theme"] == custom_theme
 
     compiled = model.compile()
     assert compiled.summary()["theme_name"] == "firm_custom"

@@ -12,7 +12,6 @@ from f8.types import (
     SheetInspection,
     TableInput,
     TableInspection,
-    ThemeInput,
 )
 
 __version__: str
@@ -20,7 +19,6 @@ __version__: str
 def compile(
     manifest: ManifestInput,
     tables: Sequence[TableInput],
-    theme: ThemeInput | None = None,
 ) -> CompiledModel: ...
 
 class CompiledModel:

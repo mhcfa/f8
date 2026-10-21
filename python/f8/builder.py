@@ -653,14 +653,9 @@ class Model:
         return [table for sheet in self._sheets for table in sheet.tables]
 
     def __f8_spec__(self) -> tuple[ProjectManifestDict, list[TableSpecDict]]:
-        theme_name = (
-            self.theme
-            if isinstance(self.theme, str)
-            else str(self.theme.get("name", "corporate_navy"))
-        )
         manifest: ProjectManifestDict = {
             "model_name": self.name,
-            "theme": theme_name,
+            "theme": self.theme,
             "sheets": [sheet.__f8_spec__() for sheet in self._sheets],
         }
         tables: list[TableSpecDict] = [table.__f8_spec__() for table in self.tables]
@@ -668,7 +663,7 @@ class Model:
 
     def compile(self) -> CompiledModel:
         manifest, tables = self.__f8_spec__()
-        return core_compile(manifest, tables, theme=self.theme)
+        return core_compile(manifest, tables)
 
 
 __all__ = ["Cell", "CellInputValue", "Model", "Sheet", "Table"]

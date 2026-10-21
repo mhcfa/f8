@@ -93,7 +93,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
 
     let manifest = ProjectManifest {
         model_name: "CapTableAndExitWaterfall".to_string(),
-        theme: "classic".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Equity".to_string(),
             tab_color: None,

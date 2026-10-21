@@ -13,7 +13,6 @@ use std::time::Instant;
 
 use f8_core::Compiler;
 use f8_core::compiler::emission::EmissionOptions;
-use f8_core::model::theme::Theme;
 
 #[path = "../tests/fixtures/mod.rs"]
 mod fixtures;
@@ -42,7 +41,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╚══════════════════════════════════════════════════════════════════════╝\n");
     println!("Output directory: {}\n", canonical_out.display());
 
-    let theme_navy = Theme::corporate_navy();
     let start_all = Instant::now();
 
     // -------------------------------------------------------------------------
@@ -52,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ts_start = Instant::now();
     let (ts_manifest, ts_tables) = fixtures::three_statement::build_three_statement_model();
     let ts_file = canonical_out.join("three_statement_model.xlsx");
-    let ts_compiled = Compiler::compile(&ts_manifest, &ts_tables, &theme_navy)?;
+    let ts_compiled = Compiler::compile(&ts_manifest, &ts_tables)?;
 
     let ts_options = EmissionOptions {
         title: Some("Three-Statement Financial Model".to_string()),
@@ -112,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    let lbo_buf = Compiler::emit_workbook(&lbo_manifest, &lbo_tables, &theme_navy, &lbo_options)?;
+    let lbo_buf = Compiler::emit_workbook(&lbo_manifest, &lbo_tables, &lbo_options)?;
     fs::write(&lbo_file, lbo_buf)?;
 
     let lbo_meta = fs::metadata(&lbo_file)?;
@@ -139,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    let sc_buf = Compiler::emit_workbook(&sc_manifest, &sc_tables, &theme_navy, &sc_options)?;
+    let sc_buf = Compiler::emit_workbook(&sc_manifest, &sc_tables, &sc_options)?;
     fs::write(&sc_file, sc_buf)?;
 
     let sc_meta = fs::metadata(&sc_file)?;
@@ -166,12 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: true,
     };
 
-    let parity_buf = Compiler::emit_workbook(
-        &parity_manifest,
-        &parity_tables,
-        &theme_navy,
-        &parity_options,
-    )?;
+    let parity_buf = Compiler::emit_workbook(&parity_manifest, &parity_tables, &parity_options)?;
     fs::write(&parity_file, parity_buf)?;
 
     let parity_meta = fs::metadata(&parity_file)?;
@@ -198,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         omit_formula_cache: false,
     };
 
-    let tc_buf = Compiler::emit_workbook(&tc_manifest, &tc_tables, &theme_navy, &tc_options)?;
+    let tc_buf = Compiler::emit_workbook(&tc_manifest, &tc_tables, &tc_options)?;
     fs::write(&tc_file, tc_buf)?;
 
     let tc_meta = fs::metadata(&tc_file)?;

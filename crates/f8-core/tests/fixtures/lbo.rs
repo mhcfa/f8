@@ -672,7 +672,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
     let manifest = ProjectManifest {
         model_name: "ProjectTitanLBO".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Summary".to_string(),

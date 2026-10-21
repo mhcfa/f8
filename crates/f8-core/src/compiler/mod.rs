@@ -30,7 +30,6 @@ pub use lowering::{FormulaLowerer, LoweredFormulaMap, LoweringError};
 use crate::functions::registry::FunctionRegistry;
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::TableSpec;
-use crate::model::theme::Theme;
 
 /// High-level compiler driver orchestrating compilation passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -73,23 +72,23 @@ impl Compiler {
         Ok(evaluated_model)
     }
 
-    /// Plans the 2D spatial layout for a workbook model and theme (Pass 5).
+    /// Plans the 2D spatial layout for a workbook model (Pass 5).
     ///
     /// # Errors
-    /// Returns [`CompilerError`] if specification validation, IR expansion, or spatial layout planning encounters an error.
+    /// Returns [`CompilerError`] if specification validation, theme resolution, IR expansion, or spatial layout planning encounters an error.
     pub fn plan_layout(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
-        theme: &Theme,
         evaluated: Option<&EvaluatedModel>,
     ) -> Result<LayoutMap, CompilerError> {
         manifest.validate()?;
         for table in tables {
             table.validate()?;
         }
+        let theme = manifest.resolve_theme()?;
 
         let (_symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
-        let layout_map = layout::LayoutPlanner::plan(manifest, tables, &grid, theme, evaluated)?;
+        let layout_map = layout::LayoutPlanner::plan(manifest, tables, &grid, &theme, evaluated)?;
         Ok(layout_map)
     }
 
@@ -112,42 +111,40 @@ impl Compiler {
         Ok(lowered_map)
     }
 
-    /// Compiles a complete model specification and theme through Passes 1–6a into a [`CompiledModel`].
+    /// Compiles a complete model specification through Passes 1–6a into a [`CompiledModel`].
     ///
     /// Uses the default standard Excel function registry.
     ///
     /// # Errors
-    /// Returns [`CompilerError`] if specification validation, IR expansion, dependency graph construction,
+    /// Returns [`CompilerError`] if specification validation, theme resolution, IR expansion, dependency graph construction,
     /// in-memory topological calculation, 2D layout planning, or formula lowering fails.
     pub fn compile(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
-        theme: &Theme,
     ) -> Result<CompiledModel, CompilerError> {
-        Self::compile_with_registry(manifest, tables, theme, &FunctionRegistry::standard())
+        Self::compile_with_registry(manifest, tables, &FunctionRegistry::standard())
     }
 
-    /// Compiles a complete model specification and theme through Passes 1–6a using a custom function registry.
+    /// Compiles a complete model specification through Passes 1–6a using a custom function registry.
     ///
     /// # Errors
     /// Returns [`CompilerError`] if any compilation pass encounters an error.
     pub fn compile_with_registry(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
-        theme: &Theme,
         registry: &FunctionRegistry,
     ) -> Result<CompiledModel, CompilerError> {
         manifest.validate()?;
         for table in tables {
             table.validate()?;
         }
-        theme.validate()?;
+        let theme = manifest.resolve_theme()?;
 
         let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
         let graph = graph::DependencyGraph::from_grid(&grid, &symbol_table)?;
         let evaluated = eval::Evaluator::evaluate(&grid, &graph, &symbol_table, registry)?;
         let layout_map =
-            layout::LayoutPlanner::plan(manifest, tables, &grid, theme, Some(&evaluated))?;
+            layout::LayoutPlanner::plan(manifest, tables, &grid, &theme, Some(&evaluated))?;
         let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, &layout_map)?;
 
         let tables_map = tables.iter().map(|t| (t.id.clone(), t.clone())).collect();
@@ -155,7 +152,7 @@ impl Compiler {
         Ok(CompiledModel {
             manifest: manifest.clone(),
             tables: tables_map,
-            theme: theme.clone(),
+            theme,
             symbol_table,
             grid,
             graph,
@@ -165,18 +162,17 @@ impl Compiler {
         })
     }
 
-    /// Compiles a model specification and theme into an in-memory `.xlsx` workbook byte buffer.
+    /// Compiles a model specification into an in-memory `.xlsx` workbook byte buffer.
     ///
     /// # Errors
-    /// Returns [`CompilerError`] if specification validation, IR expansion, spatial layout,
+    /// Returns [`CompilerError`] if specification validation, theme resolution, IR expansion, spatial layout,
     /// formula lowering, or binary emission fails.
     pub fn emit_workbook(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
-        theme: &Theme,
         options: &EmissionOptions,
     ) -> Result<Vec<u8>, CompilerError> {
-        let compiled = Self::compile(manifest, tables, theme)?;
+        let compiled = Self::compile(manifest, tables)?;
         compiled.emit_workbook(options)
     }
 }

@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use f8_core::model::{BorderStyle, CurrencyCode, FormatPreset, ModelError, ProjectManifest, Theme};
+use f8_core::model::{
+    BorderStyle, CurrencyCode, FormatPreset, ModelError, ProjectManifest, Theme, ThemeSpec,
+};
 
 #[test]
 fn test_scenario_1_builtin_theme_catalog_resolution() {
@@ -27,13 +29,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
     assert_eq!(theme.borders.col_total_border_right, BorderStyle::Double);
 
-    // Verify Theme::built_in only recognizes corporate_navy
-    assert!(Theme::built_in("corporate_navy").is_some());
-    assert!(Theme::built_in("classic_green").is_none());
-    assert!(Theme::built_in("modern_slate").is_none());
-    assert!(Theme::built_in("minimal_monochrome").is_none());
-
-    // Verify removed preset themes are rejected when resolved without external file
+    // Verify removed preset themes are rejected when resolved
     let removed_themes = ["classic_green", "modern_slate", "minimal_monochrome"];
     for name in removed_themes {
         let err = Theme::resolve_builtin(name).unwrap_err();
@@ -239,11 +235,25 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
         }
     }"##;
 
-    let loaded = Theme::from_json_str(custom_theme_json).expect("failed to load custom theme");
+    let loaded: Theme =
+        serde_json::from_str(custom_theme_json).expect("failed to load custom theme");
+    loaded.validate().expect("custom theme should validate");
     assert_eq!(loaded.name, "firm_custom");
     assert_eq!(loaded.typography.font_family, "Calibri");
     assert!(loaded.typography.section_header_underline);
     assert_eq!(loaded.number_formats.defaults.currency_decimals, 2);
+
+    // Also test inline custom theme inside ProjectManifest via ThemeSpec
+    let manifest_json = format!(
+        r#"{{"model_name": "CustomManifestModel", "theme": {custom_theme_json}, "sheets": []}}"#
+    );
+    let manifest: ProjectManifest = serde_json::from_str(&manifest_json)
+        .expect("failed to deserialize manifest with custom theme");
+    assert_eq!(manifest.theme, ThemeSpec::Custom(Box::new(loaded.clone())));
+    let resolved = manifest
+        .resolve_theme()
+        .expect("manifest custom theme should resolve and validate");
+    assert_eq!(resolved, loaded);
 }
 
 #[test]
@@ -316,14 +326,17 @@ fn test_scenario_8_rejection_of_nonexistent_theme() {
 
 #[test]
 fn test_scenario_9_manifest_theme_default_fallback() {
-    // 1. Manifest with omitted theme deserializes to "corporate_navy"
+    // 1. Manifest with omitted theme deserializes to ThemeSpec::Name("corporate_navy")
     let json = r#"{
         "model_name": "Test Model",
         "sheets": []
     }"#;
     let manifest: ProjectManifest =
         serde_json::from_str(json).expect("failed to deserialize manifest without theme");
-    assert_eq!(manifest.theme, "corporate_navy");
+    assert_eq!(
+        manifest.theme,
+        ThemeSpec::Name("corporate_navy".to_string())
+    );
 
     let resolved = manifest
         .resolve_theme()
@@ -342,6 +355,19 @@ fn test_scenario_9_manifest_theme_default_fallback() {
         .resolve_theme()
         .expect("failed to resolve empty theme from manifest");
     assert_eq!(resolved_empty.name, "corporate_navy");
+
+    // 3. Manifest with invalid custom theme fails resolve_theme()
+    let mut bad_theme = Theme::corporate_navy();
+    bad_theme.palette.table_title_fill = "invalid_hex".to_string();
+    let bad_manifest = ProjectManifest {
+        model_name: "BadThemeModel".to_string(),
+        theme: ThemeSpec::Custom(Box::new(bad_theme)),
+        sheets: vec![],
+    };
+    assert!(matches!(
+        bad_manifest.resolve_theme().unwrap_err(),
+        ModelError::InvalidThemeColor { ref field, .. } if field == "table_title_fill"
+    ));
 }
 
 #[test]
@@ -474,11 +500,13 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
         }
     }"##;
 
-    let loaded_false = Theme::from_json_str(json_false).expect("valid theme");
+    let loaded_false: Theme = serde_json::from_str(json_false).expect("valid theme");
+    loaded_false.validate().expect("valid theme");
     assert!(!loaded_false.typography.section_header_underline);
 
     // 3. Deserializing theme JSON omitting section_header_underline defaults to true
     let json_omitted = json_false.replace(",\n            \"section_header_underline\": false", "");
-    let loaded_omitted = Theme::from_json_str(&json_omitted).expect("valid theme");
+    let loaded_omitted: Theme = serde_json::from_str(&json_omitted).expect("valid theme");
+    loaded_omitted.validate().expect("valid theme");
     assert!(loaded_omitted.typography.section_header_underline);
 }

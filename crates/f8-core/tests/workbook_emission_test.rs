@@ -67,7 +67,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
 
     let manifest = ProjectManifest {
         model_name: "MultiSheetModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![
             SheetSpec {
                 name: "Model".to_string(),
@@ -86,7 +86,6 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
         ],
     };
 
-    let theme = Theme::corporate_navy();
     let options = EmissionOptions {
         title: Some("Corporate Financial Model".to_string()),
         author: Some("Acme Corp".to_string()),
@@ -94,8 +93,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
         omit_formula_cache: false,
     };
 
-    let buffer =
-        Compiler::emit_workbook(&manifest, &[is_table, sum_table], &theme, &options).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[is_table, sum_table], &options).unwrap();
 
     // 1. Non-empty byte buffer
     assert!(!buffer.is_empty());
@@ -128,7 +126,7 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
 
     let manifest = ProjectManifest {
         model_name: "LayoutModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "MetricsSheet".to_string(),
             tab_color: Some("#1B365D".to_string()),
@@ -138,10 +136,9 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
     let options = EmissionOptions::default();
 
-    let buffer = Compiler::emit_workbook(&manifest, &[table], &theme, &options).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &options).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
 
@@ -187,7 +184,7 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
 
     let manifest = ProjectManifest {
         model_name: "HeaderModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Headers".to_string(),
             tab_color: None,
@@ -197,9 +194,7 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-    let buffer =
-        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
     let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
@@ -251,7 +246,7 @@ fn test_scenario_4_single_cell_super_header_safety() {
 
     let manifest = ProjectManifest {
         model_name: "SingleGroupModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "SingleGroup".to_string(),
             tab_color: None,
@@ -261,11 +256,8 @@ fn test_scenario_4_single_cell_super_header_safety() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-
     // Must compile without error (specifically avoiding XlsxError::MergeRangeSingleCell)
-    let buffer =
-        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
     let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
@@ -302,7 +294,7 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
 
     let manifest = ProjectManifest {
         model_name: "FormulaModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -312,11 +304,9 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
     let buffer = Compiler::emit_workbook(
         &manifest,
         std::slice::from_ref(&table),
-        &theme,
         &EmissionOptions::default(),
     )
     .unwrap();
@@ -354,7 +344,7 @@ fn test_scenario_6_values_only_freezing_mode() {
 
     let manifest = ProjectManifest {
         model_name: "FreezeModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "FreezeSheet".to_string(),
             tab_color: None,
@@ -364,8 +354,6 @@ fn test_scenario_6_values_only_freezing_mode() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-
     // 1. Test via Compiler::emit_workbook
     let options = EmissionOptions {
         values_only: true,
@@ -374,7 +362,7 @@ fn test_scenario_6_values_only_freezing_mode() {
         author: None,
     };
     let buffer =
-        Compiler::emit_workbook(&manifest, std::slice::from_ref(&table), &theme, &options).unwrap();
+        Compiler::emit_workbook(&manifest, std::slice::from_ref(&table), &options).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
 
@@ -386,7 +374,7 @@ fn test_scenario_6_values_only_freezing_mode() {
     assert!(sheet_xml.contains("<v>500</v>"));
 
     // 2. Test via CompiledModel::emit_workbook
-    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table), &theme).unwrap();
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
     let buffer2 = compiled.emit_workbook(&options).unwrap();
 
     let sheet2_xml = read_zip_entry(&buffer2, "xl/worksheets/sheet1.xml");
@@ -480,7 +468,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
 
     let manifest = ProjectManifest {
         model_name: "OutlineModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Outlines".to_string(),
             tab_color: None,
@@ -490,14 +478,8 @@ fn test_scenario_8_collapsible_row_group_outlining() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-    let buffer = Compiler::emit_workbook(
-        &manifest,
-        &[table.clone()],
-        &theme,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table.clone()], &EmissionOptions::default()).unwrap();
 
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
     let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
@@ -517,13 +499,9 @@ fn test_scenario_8_collapsible_row_group_outlining() {
     // Now emit with opt-in table-level collapsing enabled
     let mut collapsible_table = table;
     collapsible_table.collapsible = true;
-    let collapsible_buffer = Compiler::emit_workbook(
-        &manifest,
-        &[collapsible_table],
-        &theme,
-        &EmissionOptions::default(),
-    )
-    .unwrap();
+    let collapsible_buffer =
+        Compiler::emit_workbook(&manifest, &[collapsible_table], &EmissionOptions::default())
+            .unwrap();
 
     let coll_sheet_xml = read_zip_entry(&collapsible_buffer, "xl/worksheets/sheet1.xml");
     // Table body rows are grouped into level 1 under the title banner
@@ -544,7 +522,7 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
 
     let manifest = ProjectManifest {
         model_name: "DiskModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -554,7 +532,6 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
     let temp_dir = std::env::temp_dir();
     let target_file = temp_dir.join(format!("f8_test_{}.xlsx", std::process::id()));
 
@@ -563,7 +540,7 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
         let _ = std::fs::remove_file(&target_file);
     }
 
-    let buffer = Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default())
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default())
         .expect("failed to emit workbook");
 
     std::fs::write(&target_file, &buffer).expect("failed to write workbook to disk");
@@ -593,7 +570,7 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
 
     let manifest = ProjectManifest {
         model_name: "DiagModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "ModelSheet".to_string(),
             tab_color: None,
@@ -693,7 +670,7 @@ fn test_scenario_11_audit_note_attachment() {
 
     let manifest = ProjectManifest {
         model_name: "NoteModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "AuditSheet".to_string(),
             tab_color: None,
@@ -703,9 +680,7 @@ fn test_scenario_11_audit_note_attachment() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-    let buffer =
-        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
 
     let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
     assert!(comments_xml.contains("Audit checked by Senior Associate"));
@@ -742,7 +717,7 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
 
     let manifest = ProjectManifest {
         model_name: "NoteModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "AuditSheet".to_string(),
             tab_color: None,
@@ -752,9 +727,7 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-    let buffer =
-        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
 
     let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
     assert!(comments_xml.contains("Section level annotation"));
@@ -783,7 +756,7 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
 
     let manifest = ProjectManifest {
         model_name: "UnderlineModel".to_string(),
-        theme: "corporate_navy".to_string(),
+        theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
             tab_color: None,
@@ -793,9 +766,7 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
         }],
     };
 
-    let theme = Theme::corporate_navy();
-    let buffer =
-        Compiler::emit_workbook(&manifest, &[table], &theme, &EmissionOptions::default()).unwrap();
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
 
     let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
     assert!(

@@ -4,7 +4,7 @@ use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::ir::id::CellId;
 use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use f8_core::model::id::{ColId, RowId, TableId};
-use f8_core::model::theme::Theme;
+use f8_core::model::theme::{Theme, ThemeSpec};
 use f8_core::value::CellValue;
 use f8_core::{Compiler, InspectionError};
 
@@ -13,10 +13,9 @@ mod fixtures;
 #[test]
 fn test_scenario_1_single_pass_compilation() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme)
-        .expect("Single-pass compilation must succeed");
+    let compiled =
+        Compiler::compile(&manifest, &tables).expect("Single-pass compilation must succeed");
 
     assert_eq!(compiled.manifest.model_name, "ThreeStatementFinancialModel");
     assert_eq!(compiled.tables.len(), 4);
@@ -29,9 +28,8 @@ fn test_scenario_1_single_pass_compilation() {
 #[test]
 fn test_scenario_2_zero_redundancy_emission() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let options = EmissionOptions::default();
     let buffer = compiled
@@ -43,7 +41,7 @@ fn test_scenario_2_zero_redundancy_emission() {
     assert!(buffer.len() > 1000);
 
     // Verify emission via Compiler facade produces matching buffer
-    let compiler_buffer = Compiler::emit_workbook(&manifest, &tables, &theme, &options)
+    let compiler_buffer = Compiler::emit_workbook(&manifest, &tables, &options)
         .expect("Compiler facade emission must succeed");
     assert_eq!(buffer.len(), compiler_buffer.len());
 }
@@ -51,9 +49,8 @@ fn test_scenario_2_zero_redundancy_emission() {
 #[test]
 fn test_scenario_3_model_overview_summary() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let summary = compiled.summary();
     assert_eq!(summary.model_name, "ThreeStatementFinancialModel");
@@ -87,9 +84,8 @@ fn test_scenario_3_model_overview_summary() {
 #[test]
 fn test_scenario_4_cell_inspection_formula_and_literal() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let is_id = TableId::from("IncomeStatement");
 
@@ -165,9 +161,8 @@ fn test_scenario_4_cell_inspection_formula_and_literal() {
 #[test]
 fn test_scenario_5_missing_cell_inspection_error() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let err = compiled
         .inspect_cell(
@@ -196,9 +191,8 @@ fn test_scenario_6_table_matrix_inspection() {
             .columns
             .push(f8_core::model::table::ColumnSpec::gutter());
     }
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let is_id = TableId::from("IncomeStatement");
     let table_insp = compiled
@@ -288,8 +282,7 @@ fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
                 .build(),
         );
     }
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let assumptions_insp = compiled
         .inspect_table(&TableId::from("Assumptions"))
@@ -330,9 +323,11 @@ fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
             .unwrap(),
         "$100"
     );
-    let mut custom_theme = theme.clone();
+    let mut custom_theme = Theme::corporate_navy();
     custom_theme.number_formats.defaults.currency_decimals = 2;
-    let custom_compiled = Compiler::compile(&manifest, &tables, &custom_theme)
+    let mut custom_manifest = manifest.clone();
+    custom_manifest.theme = ThemeSpec::Custom(Box::new(custom_theme));
+    let custom_compiled = Compiler::compile(&custom_manifest, &tables)
         .expect("Compilation with custom theme must succeed");
     assert_eq!(
         custom_compiled
@@ -347,8 +342,7 @@ fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
 
     // Verify LBO Timeline date & integer formatting in CompiledModel
     let (lbo_manifest, lbo_tables) = fixtures::lbo::build_lbo_model("base");
-    let lbo_compiled =
-        Compiler::compile(&lbo_manifest, &lbo_tables, &theme).expect("LBO must compile");
+    let lbo_compiled = Compiler::compile(&lbo_manifest, &lbo_tables).expect("LBO must compile");
     assert_eq!(
         lbo_compiled
             .cell_formatted(
@@ -374,9 +368,8 @@ fn test_scenario_table_cell_formatted_value_synthesis_and_negative_numbers() {
 #[test]
 fn test_scenario_7_missing_table_inspection_error() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let err = compiled
         .inspect_table(&TableId::from("NonExistentTable"))
@@ -393,9 +386,8 @@ fn test_scenario_7_missing_table_inspection_error() {
 #[test]
 fn test_scenario_8_precedents_of_direct_and_recursive() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let ni_id = CellId::new(
         TableId::from("IncomeStatement"),
@@ -448,9 +440,8 @@ fn test_scenario_8_precedents_of_direct_and_recursive() {
 #[test]
 fn test_scenario_9_dependents_of_direct_and_recursive() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let growth_id = CellId::new(
         TableId::from("Assumptions"),
@@ -490,9 +481,8 @@ fn test_scenario_9_dependents_of_direct_and_recursive() {
 #[test]
 fn test_scenario_10_missing_cell_precedents_and_dependents_error() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let bad_cell = CellId::new(
         TableId::from("IncomeStatement"),
@@ -514,9 +504,8 @@ fn test_scenario_10_missing_cell_precedents_and_dependents_error() {
 #[test]
 fn test_scenario_11_dag_pruning_on_reconvergent_paths() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
 
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     // Net income depends directly on revenue, cogs, opex, tax, etc.
     // COGS also depends on revenue:
@@ -558,8 +547,7 @@ fn test_scenario_11_dag_pruning_on_reconvergent_paths() {
 #[test]
 fn test_scenario_parse_coordinate() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     // 1. 3 positional tokens
     let cell_1 = compiled
@@ -579,8 +567,7 @@ fn test_scenario_parse_coordinate() {
 #[test]
 fn test_scenario_inspect_sheet_success() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let sheet_id = f8_core::model::id::SheetId::from("Model");
     let sheet = compiled
@@ -664,8 +651,7 @@ fn test_scenario_inspect_sheet_success() {
 #[test]
 fn test_scenario_inspect_sheet_not_found() {
     let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
-    let theme = Theme::resolve_builtin(Theme::DEFAULT_NAME).expect("Theme should resolve");
-    let compiled = Compiler::compile(&manifest, &tables, &theme).expect("Compilation must succeed");
+    let compiled = Compiler::compile(&manifest, &tables).expect("Compilation must succeed");
 
     let err = compiled
         .inspect_sheet(&f8_core::model::id::SheetId::from("NonExistent"))
