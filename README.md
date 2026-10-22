@@ -2,25 +2,25 @@
 
 Financial modeling engine with compiler verification and live Excel formulas.
 
+## Who is f8 for
+
+1. **People who want AI to reliably build complex Excel models (financial and beyond)**: Give AI agents a semantic 2D DSL and compile-time verification to produce clean and error-free `.xlsx` workbooks with live formulas.
+2. **People doing financial analysis in pure code (no Excel required)**: Run row-by-row financial statements, corkscrew schedules, and cross-table dependency graphs in Python (where columnar DataFrames fall short), with `compiled.save("model.xlsx")` ready whenever a stakeholder asks for the spreadsheet.
+
 ## Why f8
 
-I am a CFA charterholder working primarily on private company M&A and project finance, domains that live in complex, bespoke Excel financial models.
+I am a CFA charterholder working in private M&A and project finance, where complex Excel models remain the non-negotiable deliverable despite fragile manual work, silent copy-paste errors, and zero version control.
 
-Spreadsheets have always suffered from fragile manual work, silent copy-paste errors, and no version control.
+AI agents struggle to manipulate raw spreadsheets (`openpyxl`, Office.js, or GUI) for two reasons:
 
-When AI emerged, I found that AI agents struggle to manipulate Excel effectively (whether via OpenXML, openpyxl, Office.js, or GUI), primarily because of:
+- Brittle coordinates: Agents must reason in spatial cell addresses (`C42:G42`) instead of domain semantics; inserting one row shifts every downstream reference.
+- No verification loop: Spreadsheet libraries do not evaluate formulas, leaving agents blind until the `.xlsx` file is opened and inspected.
 
-- Brittle coordinates: Spreadsheets force agents to reason in spatial coordinates rather than semantics; inserting a single row shifts every downstream reference.
-- No verification loop: Standard spreadsheet libraries do not evaluate formulas, so an agent has to inspect the `.xlsx` file just to get feedback.
+`f8` turns the `.xlsx` workbook into a compiled artifact rather than a hand-edited canvas:
 
-Yet the industry is stubborn: Excel remains the non-negotiable deliverable.
-
-`f8` brings software engineering rigor and AI-native ergonomics to traditional financial modeling. The `.xlsx` workbook becomes a compiled artifact rather than a hand-edited canvas.
-
-- Semantic 2D modeling: Author models in code using readable coordinates; `f8` handles spatial layout and lowers logic into native Excel formulas.
-- Compiler-enforced rigor: A 6-pass Rust compiler verifies grid completeness (zero unassigned cells or ambiguous formula overlaps) and enforces a strict DAG via Tarjan cycle detection before a file is ever written.
-- Closed-loop AI verification: `f8` evaluates formulas in memory with 100% Excel parity (yes, even the 1900 leap day bug in Excel) so AI agents can audit calculated tables, trace precedent/dependent trees, verify accounting checks, and self-heal errors in milliseconds. This also means the model is directly testable in Python.
-- End-to-end fundamental workflow in code: Keep data ingestion, domain modeling, automated auditing, and live `.xlsx` emission in version-controlled code with full AI agent assistance.
+- Semantic 2D modeling: Author models with readable table, row, and column identifiers; `f8` handles spatial layout and lowers logic into native Excel formulas.
+- Compiler-enforced rigor: A 6-pass Rust compiler verifies grid completeness (zero unassigned cells or formula overlaps) and enforces a strict DAG via Tarjan cycle detection.
+- Closed-loop verification: Evaluates formulas in memory with 100% Excel parity (including the 1900 leap day bug) so AI agents and `pytest` suites can audit tables, trace dependencies, and verify accounting checks in milliseconds.
 
 ## Getting started
 
@@ -74,7 +74,7 @@ compiled = model.compile()
 # Audit evaluated values in memory (or pass view="formulas" to inspect lowered Excel formulas)
 print(compiled.table("PnL").to_markdown())
 
-# Emit a live .xlsx workbook with native Excel formulas and styling
+# Emit a live .xlsx workbook with native Excel formulas and styling (you don't have to)
 compiled.save("forecast.xlsx")
 ```
 
