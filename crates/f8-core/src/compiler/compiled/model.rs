@@ -179,7 +179,9 @@ where
 pub struct ColumnInspection {
     /// Column identifier if this is a data column.
     pub id: Option<ColId>,
-    /// Multi-tier header labels.
+    /// Horizontal spanning group banner label if declared.
+    pub group: Option<String>,
+    /// Per-column stacked header labels.
     pub headers: Vec<String>,
     /// `true` if this column is a blank spacing gutter.
     pub is_gutter: bool,

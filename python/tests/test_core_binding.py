@@ -351,6 +351,25 @@ def test_scenario_9_specification_error() -> None:
     assert hasattr(err, "reason")
     assert "duplicate" in err.reason.lower()
 
+    # Empty column group raises SpecificationError with table attribute
+    empty_group_tables: list[dict[str, object]] = [
+        {
+            "id": "T",
+            "title": "Table",
+            "columns": [
+                {"kind": "data", "id": "desc", "role": "descriptor", "headers": ["Desc"]},
+                {"kind": "data", "id": "val", "group": "   ", "headers": ["Val"]},
+            ],
+            "rows": [
+                {"kind": "data", "id": "r1", "cells": {"desc": "1", "val": 1.0}},
+            ],
+        }
+    ]
+    with pytest.raises(SpecificationError) as exc_info_group:
+        core_compile(manifest, empty_group_tables)
+    assert exc_info_group.value.table == "T"
+    assert "group must not be empty" in exc_info_group.value.reason
+
 
 def test_scenario_10_inspection_entity_not_found(
     sample_model: SampleModelFixture,

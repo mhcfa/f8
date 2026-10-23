@@ -118,6 +118,7 @@ class ColumnInspection(TypedDict):
     """Column inspection metadata within a table view."""
 
     id: str | None
+    group: str | None
     headers: list[str]
     is_gutter: bool
     is_descriptor: bool
@@ -320,6 +321,7 @@ class DataColumnSpecDict(TypedDict, total=False):
     kind: Literal["data"]
     id: str
     role: AxisRole
+    group: str
     headers: list[str]
     style: SemanticStyle
     highlight: bool

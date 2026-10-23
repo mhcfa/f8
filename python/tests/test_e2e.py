@@ -37,16 +37,36 @@ def _build_institutional_lbo_model() -> Model:
     )
     assumptions_tbl.add_column("driver", role="descriptor", header="Operating Driver")
     assumptions_tbl.add_column(
-        "y2023a", role="measure", headers=["Historical", "2023A"], format="percentage", decimals=1
+        "y2023a",
+        role="measure",
+        group="Historical",
+        header="2023A",
+        format="percentage",
+        decimals=1,
     )
     assumptions_tbl.add_column(
-        "y2024e", role="measure", headers=["Forecast", "2024E"], format="percentage", decimals=1
+        "y2024e",
+        role="measure",
+        group="Forecast",
+        header="2024E",
+        format="percentage",
+        decimals=1,
     )
     assumptions_tbl.add_column(
-        "y2025e", role="measure", headers=["Forecast", "2025E"], format="percentage", decimals=1
+        "y2025e",
+        role="measure",
+        group="Forecast",
+        header="2025E",
+        format="percentage",
+        decimals=1,
     )
     assumptions_tbl.add_column(
-        "y2026e", role="measure", headers=["Forecast", "2026E"], format="percentage", decimals=1
+        "y2026e",
+        role="measure",
+        group="Forecast",
+        header="2026E",
+        format="percentage",
+        decimals=1,
     )
 
     assumptions_tbl.add_section_header("Top-Line Revenue Drivers")
@@ -117,16 +137,16 @@ def _build_institutional_lbo_model() -> Model:
     )
     is_tbl.add_column("line_item", role="descriptor", header="Financial Line Item")
     is_tbl.add_column(
-        "y2023a", role="measure", headers=["Historical", "2023A"], format="currency", decimals=0
+        "y2023a", role="measure", group="Historical", header="2023A", format="currency", decimals=0
     )
     is_tbl.add_column(
-        "y2024e", role="measure", headers=["Forecast", "2024E"], format="currency", decimals=0
+        "y2024e", role="measure", group="Forecast", header="2024E", format="currency", decimals=0
     )
     is_tbl.add_column(
-        "y2025e", role="measure", headers=["Forecast", "2025E"], format="currency", decimals=0
+        "y2025e", role="measure", group="Forecast", header="2025E", format="currency", decimals=0
     )
     is_tbl.add_column(
-        "y2026e", role="measure", headers=["Forecast", "2026E"], format="currency", decimals=0
+        "y2026e", role="measure", group="Forecast", header="2026E", format="currency", decimals=0
     )
 
     is_tbl.add_section_header("Gross Revenue & Cost of Sales")

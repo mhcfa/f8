@@ -62,6 +62,7 @@ table.add_column(
     role: AxisRole = "measure",
     header: str | None = None,
     headers: list[str] | None = None,
+    group: str | None = None,
     style: SemanticStyle | None = None,
     shade: Shade | None = None,
     highlight: bool | None = None,
@@ -77,17 +78,39 @@ table.add_column(
 - `role="descriptor"`: Metadata, line-item titles, unit descriptions, and audit notes. Excluded from vector formula expansion.
 - `role="measure"` (default): Quantitative timeline periods, scenario buckets, and numeric metrics. Vector formulas expand across measure columns from left to right.
 
-### Headers and Formatting Defaults
+### Headers, Group Banners, and Formatting Defaults
 
-- Single vs. multi-tier headers: Provide `header="Title"` for single-tier or `headers=["FY 2024", "Q1"]` for stacked tiers (mutually exclusive; specifying both raises `ValueError`).
-- Multi-tier bottom alignment: When columns have unequal header depths, columns with fewer headers are padded with blank super-headers at the top so metric labels align to the bottom tier.
+- Single vs. stacked per-column headers: Provide `header="Title"` for a 1-line header or `headers=["MRQ", "2012-03-31"]` for vertically stacked multi-line column headers (mutually exclusive; specifying both raises `ValueError`). Stacked `headers` render strictly within their own column without horizontal merging across neighbors, and every line participates in column width arbitration.
+- Group banners (`group`): Optional horizontal spanning banner on Tier 0 (`group="Quarterly Rollforward"`). Contiguous columns sharing an identical `group` string center across the span (`CenterAcross`) with `super_header_format`. Ungrouped columns (`group=None`) never receive `CenterAcross` on Tier 0, preventing banner bleed into adjacent columns. `group` text is excluded from single-column width arbitration. Empty or whitespace-only `group` strings raise `ValueError`.
+- Multi-tier bottom alignment: Total header depth is `max(len(headers), 1) + 1` when `group` is present, or `len(headers)` when ungrouped. Columns with fewer stacked lines are bottom-aligned so the final `headers` line always sits on the bottom header row with the column header underline.
 - Column defaults and conflicts: Column-level `format`, `decimals`, `currency`, and `style` apply when the row does not specify them. Differing row and column values without a 0D cell override raise conflict errors (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
 - Fluent chaining: Returns `Table` to support method chaining.
 
 ```python
 table.add_column("line_item", role="descriptor", header="Line Item")
-table.add_column("2024Q1", role="measure", headers=["FY 2024", "Q1"], format="currency", decimals=1)
-table.add_column("2024Q2", role="measure", headers=["FY 2024", "Q2"], format="currency", decimals=1)
+table.add_column(
+    "2024Q1",
+    role="measure",
+    group="FY 2024",
+    headers=["Q1", "2024-03-31"],
+    format="currency",
+    decimals=1,
+)
+table.add_column(
+    "2024Q2",
+    role="measure",
+    group="FY 2024",
+    headers=["Q2", "2024-06-30"],
+    format="currency",
+    decimals=1,
+)
+table.add_column(
+    "standalone",
+    role="measure",
+    headers=["Standalone", "at Close", "2024-06-30"],
+    format="currency",
+    decimals=1,
+)
 ```
 
 ### Column Vector Formulas (Vertical Expansion)

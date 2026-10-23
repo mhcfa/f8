@@ -67,6 +67,14 @@ impl ColumnSpec {
         }
     }
 
+    /// Returns the spanning group banner label if declared on a data column.
+    pub fn group(&self) -> Option<&str> {
+        match self {
+            Self::Data(d) => d.group(),
+            Self::Gutter => None,
+        }
+    }
+
     /// Returns the declared header hierarchy if this is a data column.
     pub fn headers(&self) -> Option<&[String]> {
         match self {
@@ -75,12 +83,28 @@ impl ColumnSpec {
         }
     }
 
-    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
-    pub fn bottom_header(&self) -> Option<&str> {
+    /// Returns the total vertical header tier count (stacked headers plus optional group banner).
+    pub fn header_depth(&self) -> usize {
         match self {
-            Self::Data(d) => d.bottom_header(),
-            Self::Gutter => None,
+            Self::Data(d) => d.header_depth(),
+            Self::Gutter => 0,
         }
+    }
+
+    /// Returns the maximum character length across per-column stacked headers (excluding group banner).
+    pub fn max_header_chars(&self) -> usize {
+        match self {
+            Self::Data(d) => d.max_header_chars(),
+            Self::Gutter => 0,
+        }
+    }
+
+    /// Builder method attaching a horizontal spanning group banner label.
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.group = Some(group.into());
+        }
+        self
     }
 
     /// Builder method attaching a single header label.
@@ -168,6 +192,8 @@ pub struct DataColumnSpec {
     pub id: ColId,
     #[serde(default)]
     pub role: AxisRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -192,6 +218,7 @@ impl DataColumnSpec {
         Self {
             id: id.into(),
             role: AxisRole::Measure,
+            group: None,
             headers: Vec::new(),
             style: None,
             highlight: None,
@@ -208,6 +235,7 @@ impl DataColumnSpec {
         Self {
             id: id.into(),
             role: AxisRole::Descriptor,
+            group: None,
             headers: vec![label.into()],
             style: None,
             highlight: None,
@@ -219,9 +247,33 @@ impl DataColumnSpec {
         }
     }
 
-    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
-    pub fn bottom_header(&self) -> Option<&str> {
-        self.headers.last().map(|s| s.as_str())
+    /// Returns the spanning group banner label if declared.
+    pub fn group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    /// Returns the total vertical header tier count (Tier 0 `group` banner plus at least one column header tier when grouped, or `headers.len()` when ungrouped).
+    pub fn header_depth(&self) -> usize {
+        if self.group.is_some() {
+            self.headers.len().max(1) + 1
+        } else {
+            self.headers.len()
+        }
+    }
+
+    /// Returns the maximum character length across per-column stacked headers (excluding `group`).
+    pub fn max_header_chars(&self) -> usize {
+        self.headers
+            .iter()
+            .map(|s| s.chars().count())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Builder method attaching a horizontal spanning group banner label.
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
+        self
     }
 
     /// Builder method attaching a single header label.
@@ -922,6 +974,15 @@ impl TableSpec {
 
             if !seen_cols.insert(&data_col.id) {
                 return Err(ModelError::DuplicateColumnId {
+                    table: self.id.clone(),
+                    column: data_col.id.clone(),
+                });
+            }
+
+            if let Some(group) = &data_col.group
+                && group.trim().is_empty()
+            {
+                return Err(ModelError::EmptyColumnGroup {
                     table: self.id.clone(),
                     column: data_col.id.clone(),
                 });

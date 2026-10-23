@@ -86,7 +86,8 @@ Each table specification defines an orthogonal 2D calculation matrix with explic
       "kind": "data",
       "id": "2024E",
       "role": "measure",
-      "headers": ["Forecast Projections", "2024E"],
+      "group": "Forecast Projections",
+      "headers": ["Year 1", "2024E"],
       "style": "data",
       "shade": "muted",
       "format": "currency",
@@ -135,10 +136,14 @@ Columns are declared in `table.columns` as either calculable data columns or spa
 - `role` (`"measure"` | `"descriptor"`, optional, default `"measure"`):
   - `measure`: Numerical quantities, time periods, and calculation outputs. Row vector formulas (`row.expr`) broadcast across all measure columns.
   - `descriptor`: Row labels, line item descriptions, units, or metadata stubs. Descriptors are strictly isolated from vector broadcasting and temporal offsets (`col.prev` / `col.next`).
-- `headers` (`array of strings`, optional): Multi-tier column header labels.
-  - *Center across selection*: Adjacent columns sharing identical upper-tier labels center automatically across the span without cell merging (FAST financial modeling standard).
-  - *Bottom alignment*: When columns declare differing header array lengths, headers are bottom-aligned so the bottom tier always holds the primary metric label while upper tiers remain blank.
-  - *Zero headers*: Omitting `headers` allocates zero physical header rows.
+- `group` (`string`, optional): Horizontal spanning group banner rendered on Tier 0 (`super_header_format`, `CenterAcross`).
+  - *Spanning runs*: Contiguous columns sharing an identical `group` string form a single horizontal banner run (leading cell receives text; trailing cells receive blank `CenterAcross` formatting). Ungrouped columns (`group: null`) never receive `CenterAcross` formatting on Tier 0, preventing banner bleed into adjacent columns.
+  - *Width exclusion*: `group` text is excluded from single-column width arbitration because banners span across columns or represent structural category labels.
+  - *Non-empty invariant*: Empty or whitespace-only `group` strings are rejected (`EmptyColumnGroup`).
+- `headers` (`array of strings`, optional): Per-column vertical stacked header lines (`col_header_upper_format` on upper lines; `col_header_format` with bottom border on the final line).
+  - *Strictly per-column*: Rendered cell-by-cell (`FormatAlign::Right` for measures, `FormatAlign::Left` for descriptors) without horizontal run-merging across adjacent columns.
+  - *Bottom alignment*: Header depth is `headers.len().max(1) + 1` when `group` is present, or `headers.len()` when ungrouped. Columns with fewer stacked lines are bottom-aligned within the header block so the final line always sits on the bottom header row (`t == total_tiers - 1`).
+  - *Zero headers*: Omitting both `group` and `headers` on all columns allocates zero physical header rows.
 
 ### 4.2. Column Gutters (`kind: "gutter"`)
 Spacing columns visually separate analytical periods or categories without dummy identifiers:

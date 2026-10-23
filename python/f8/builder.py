@@ -127,6 +127,7 @@ def _serialize_cell_input(
 class _DataColumn:
     id: str
     role: AxisRole
+    group: str | None
     headers: list[str]
     style: SemanticStyle | None
     highlight: bool | None
@@ -201,6 +202,7 @@ class Table:
         role: AxisRole = "measure",
         header: str | None = None,
         headers: list[str] | None = None,
+        group: str | None = None,
         style: SemanticStyle | None = None,
         highlight: bool | None = None,
         shade: Shade | None = None,
@@ -212,6 +214,8 @@ class Table:
         """Appends a data or descriptor column specification to the table."""
         if header is not None and headers is not None:
             raise ValueError("Cannot specify both 'header' and 'headers'")
+        if group is not None and not group.strip():
+            raise ValueError("Column 'group' cannot be empty")
         if id in self._col_ids:
             raise ValueError(f"Column '{id}' already exists in table '{self.id}'")
 
@@ -225,6 +229,7 @@ class Table:
         col = _DataColumn(
             id=id,
             role=role,
+            group=group,
             headers=norm_headers,
             style=style,
             highlight=highlight,
@@ -482,6 +487,8 @@ class Table:
                 "role": col.role,
                 "headers": list(col.headers),
             }
+            if col.group is not None:
+                data_col["group"] = col.group
             if col.style is not None:
                 data_col["style"] = col.style
             if col.highlight is not None:

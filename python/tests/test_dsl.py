@@ -235,6 +235,29 @@ def test_scenario_6_header_specification_validation() -> None:
     with pytest.raises(ValueError, match="both 'header' and 'headers'"):
         table.add_column("rev", header="Revenue", headers=["Financials", "Revenue"])
 
+    for invalid_group in ("", "   "):
+        with pytest.raises(ValueError, match="Column 'group' cannot be empty"):
+            table.add_column("rev", group=invalid_group, header="Revenue")
+
+    table.add_column("mrq", group="Historical", headers=["MRQ", "2012-03-31"])
+    table.add_column("standalone", headers=["Standalone", "at Close", "2012-12-31"])
+    spec = table.__f8_spec__()
+    assert spec.get("columns") == [
+        {
+            "kind": "data",
+            "id": "mrq",
+            "role": "measure",
+            "group": "Historical",
+            "headers": ["MRQ", "2012-03-31"],
+        },
+        {
+            "kind": "data",
+            "id": "standalone",
+            "role": "measure",
+            "headers": ["Standalone", "at Close", "2012-12-31"],
+        },
+    ]
+
 
 def test_scenario_7_duplicate_identifier_validation() -> None:
     model = Model()

@@ -267,7 +267,7 @@ impl LayoutPlanner {
                     .columns
                     .iter()
                     .filter_map(|col| match col {
-                        ColumnSpec::Data(d) => Some(d.headers.len()),
+                        ColumnSpec::Data(d) => Some(d.header_depth()),
                         ColumnSpec::Gutter => None,
                     })
                     .max()
@@ -474,11 +474,8 @@ impl ColumnArbitrationContext<'_> {
 
                 let mut table_max_chars: usize = 0;
 
-                // 1. Column header text length (bottom tier only)
-                let header_len = data_col
-                    .bottom_header()
-                    .map(|s| s.chars().count())
-                    .unwrap_or(0);
+                // 1. Column header text length (max across all stacked per-column header lines; excludes spanning group)
+                let header_len = data_col.max_header_chars();
                 table_max_chars = table_max_chars.max(header_len);
 
                 // 2. Row cells text length

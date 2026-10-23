@@ -221,61 +221,24 @@ impl WorkbookEmitter {
                         let tier_row = header_start_row + t as u32;
                         let is_bottom_tier = t == total_tiers - 1;
 
-                        if is_bottom_tier {
-                            // Bottom tier: emit cell-by-cell
-                            for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                                let col_idx = (placement.start_col + c_idx as u32) as u16;
-                                match col_spec {
-                                    ColumnSpec::Gutter => {
-                                        // Gutter column: blank unstyled cell across all header tiers
-                                    }
-                                    ColumnSpec::Data(d) => {
-                                        if let Some(label) = d.bottom_header() {
-                                            let is_desc = d.role.is_descriptor();
-                                            let fmt = format_cache.col_header_format(is_desc);
-                                            worksheet.write_string_with_format(
-                                                tier_row, col_idx, label, &fmt,
-                                            )?;
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // Super-header tier: CenterAcross contiguous identical runs
+                        // Step A (t == 0 Group Banners): CenterAcross contiguous runs with identical group label
+                        if t == 0 {
                             let mut col_idx = 0;
-                            while col_idx < table.columns.len() {
-                                let col_spec = &table.columns[col_idx];
-                                let label_opt = match col_spec {
+                            while let Some(col_spec) = table.columns.get(col_idx) {
+                                let group_opt = match col_spec {
+                                    ColumnSpec::Data(d) => d.group.as_deref(),
                                     ColumnSpec::Gutter => None,
-                                    ColumnSpec::Data(d) => {
-                                        let k_len = d.headers.len();
-                                        if t >= total_tiers - k_len {
-                                            let k = t - (total_tiers - k_len);
-                                            Some(&d.headers[k])
-                                        } else {
-                                            None
-                                        }
-                                    }
                                 };
 
-                                if let Some(label) = label_opt {
+                                if let Some(label) = group_opt {
                                     let start_c = col_idx;
                                     let mut end_c = col_idx;
-                                    while end_c + 1 < table.columns.len() {
-                                        let next_spec = &table.columns[end_c + 1];
-                                        let next_label_opt = match next_spec {
+                                    while let Some(next_spec) = table.columns.get(end_c + 1) {
+                                        let next_group = match next_spec {
+                                            ColumnSpec::Data(d) => d.group.as_deref(),
                                             ColumnSpec::Gutter => None,
-                                            ColumnSpec::Data(d) => {
-                                                let k_len = d.headers.len();
-                                                if t >= total_tiers - k_len {
-                                                    let k = t - (total_tiers - k_len);
-                                                    Some(&d.headers[k])
-                                                } else {
-                                                    None
-                                                }
-                                            }
                                         };
-                                        if next_label_opt == Some(label) {
+                                        if next_group == Some(label) {
                                             end_c += 1;
                                         } else {
                                             break;
@@ -302,6 +265,39 @@ impl WorkbookEmitter {
                                     col_idx = end_c + 1;
                                 } else {
                                     col_idx += 1;
+                                }
+                            }
+                        }
+
+                        // Step B (Per-column stacked headers across all t in 0..total_tiers)
+                        for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                            let col_idx = (placement.start_col + c_idx as u32) as u16;
+                            match col_spec {
+                                ColumnSpec::Gutter => {
+                                    // Gutter column: blank unstyled cell across all header tiers
+                                }
+                                ColumnSpec::Data(d) => {
+                                    if t == 0 && d.group.is_some() {
+                                        continue;
+                                    }
+                                    let k_len = d.headers.len();
+                                    let first_hdr_tier = total_tiers.saturating_sub(k_len);
+                                    let is_desc = d.role.is_descriptor();
+                                    let fmt = if is_bottom_tier {
+                                        format_cache.col_header_format(is_desc)
+                                    } else {
+                                        format_cache.col_header_upper_format(is_desc)
+                                    };
+
+                                    if let Some(label) =
+                                        t.checked_sub(first_hdr_tier).and_then(|k| d.headers.get(k))
+                                    {
+                                        worksheet.write_string_with_format(
+                                            tier_row, col_idx, label, &fmt,
+                                        )?;
+                                    } else if is_bottom_tier || format_cache.has_col_header_fill() {
+                                        worksheet.write_blank(tier_row, col_idx, &fmt)?;
+                                    }
                                 }
                             }
                         }

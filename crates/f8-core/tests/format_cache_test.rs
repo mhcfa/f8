@@ -382,6 +382,25 @@ fn test_scenario_6_structural_header_formats_and_alignments() {
         "Measure header must match borders.header_border_bottom: {col_meas_debug}"
     );
 
+    let col_upper_desc_fmt = cache.col_header_upper_format(true);
+    let col_upper_desc_debug = format!("{col_upper_desc_fmt:?}");
+    assert!(col_upper_desc_debug.contains("horizontal: Left"));
+    assert!(col_upper_desc_debug.contains("bold: true"));
+    assert!(
+        col_upper_desc_debug.contains("bottom_style: None"),
+        "Upper descriptor header must have no bottom border: {col_upper_desc_debug}"
+    );
+
+    let col_upper_meas_fmt = cache.col_header_upper_format(false);
+    let col_upper_meas_debug = format!("{col_upper_meas_fmt:?}");
+    assert!(col_upper_meas_debug.contains("horizontal: Right"));
+    assert!(col_upper_meas_debug.contains("bold: true"));
+    assert!(
+        col_upper_meas_debug.contains("bottom_style: None"),
+        "Upper measure header must have no bottom border: {col_upper_meas_debug}"
+    );
+    assert!(!cache.has_col_header_fill());
+
     let sec_fmt = cache.section_header_format(None);
     let sec_debug = format!("{sec_fmt:?}");
     assert!(sec_debug.contains("horizontal: Left"));

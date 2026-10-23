@@ -246,6 +246,7 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
                 ModelError::InvalidPrecisionForPreset { table, .. }
                 | ModelError::InvalidCurrencyForPreset { table, .. }
                 | ModelError::EmptyTableSubtitle { table }
+                | ModelError::EmptyColumnGroup { table, .. }
                 | ModelError::PrecisionOutOfBounds { table, .. }
                 | ModelError::UnknownCellColumn { table, .. }
                 | ModelError::MutuallyExclusiveCellPayload { table, .. }

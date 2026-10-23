@@ -437,8 +437,16 @@ class TableAuditor:
         for c in selected_cols:
             col_id = c.get("id")
             is_descriptor = c.get("is_descriptor", False)
-            non_empty_tiers = [h for h in c.get("headers", []) if h]
-            display_header = ": ".join(non_empty_tiers) if non_empty_tiers else (col_id or "")
+            stacked_header = " ".join(h for h in c.get("headers", []) if h)
+            group = c.get("group")
+            if group and stacked_header:
+                display_header = f"{group}: {stacked_header}"
+            elif group:
+                display_header = group
+            elif stacked_header:
+                display_header = stacked_header
+            else:
+                display_header = col_id or ""
 
             if show_ids and col_id and display_header.lower() != col_id.lower():
                 header_label = f"{display_header} [{col_id}]"

@@ -188,6 +188,8 @@ pub struct FormatCache {
     title_format: Format,
     subtitle_format: Format,
     super_header_format: Format,
+    col_header_upper_descriptor_format: Format,
+    col_header_upper_measure_format: Format,
     col_header_descriptor_format: Format,
     col_header_measure_format: Format,
     section_header_format: Format,
@@ -243,15 +245,17 @@ impl FormatCache {
         }
 
         // 4. Column Header (Descriptor - Left Aligned)
-        let mut col_header_descriptor_format = Format::new()
+        let mut col_header_upper_descriptor_format = Format::new()
             .set_font_name(&theme.typography.font_family)
             .set_font_size(theme.typography.col_header_size)
             .set_bold()
             .set_font_color(palette.col_header_text)
             .set_align(FormatAlign::Left);
         if let Some(fill) = palette.col_header_fill {
-            col_header_descriptor_format = col_header_descriptor_format.set_background_color(fill);
+            col_header_upper_descriptor_format =
+                col_header_upper_descriptor_format.set_background_color(fill);
         }
+        let mut col_header_descriptor_format = col_header_upper_descriptor_format.clone();
         if theme.borders.header_border_bottom != BorderStyle::None {
             col_header_descriptor_format = col_header_descriptor_format
                 .set_border_bottom(translate_border_style(theme.borders.header_border_bottom))
@@ -259,15 +263,17 @@ impl FormatCache {
         }
 
         // 5. Column Header (Measure - Right Aligned)
-        let mut col_header_measure_format = Format::new()
+        let mut col_header_upper_measure_format = Format::new()
             .set_font_name(&theme.typography.font_family)
             .set_font_size(theme.typography.col_header_size)
             .set_bold()
             .set_font_color(palette.col_header_text)
             .set_align(FormatAlign::Right);
         if let Some(fill) = palette.col_header_fill {
-            col_header_measure_format = col_header_measure_format.set_background_color(fill);
+            col_header_upper_measure_format =
+                col_header_upper_measure_format.set_background_color(fill);
         }
+        let mut col_header_measure_format = col_header_upper_measure_format.clone();
         if theme.borders.header_border_bottom != BorderStyle::None {
             col_header_measure_format = col_header_measure_format
                 .set_border_bottom(translate_border_style(theme.borders.header_border_bottom))
@@ -294,6 +300,8 @@ impl FormatCache {
             title_format,
             subtitle_format,
             super_header_format,
+            col_header_upper_descriptor_format,
+            col_header_upper_measure_format,
             col_header_descriptor_format,
             col_header_measure_format,
             section_header_format,
@@ -463,6 +471,16 @@ impl FormatCache {
         self.super_header_format.clone()
     }
 
+    /// Returns the upper-tier stacked column header format (descriptor or measure, without bottom border).
+    #[must_use]
+    pub fn col_header_upper_format(&self, is_descriptor: bool) -> Format {
+        if is_descriptor {
+            self.col_header_upper_descriptor_format.clone()
+        } else {
+            self.col_header_upper_measure_format.clone()
+        }
+    }
+
     /// Returns the column header format (descriptor or measure).
     #[must_use]
     pub fn col_header_format(&self, is_descriptor: bool) -> Format {
@@ -471,6 +489,12 @@ impl FormatCache {
         } else {
             self.col_header_measure_format.clone()
         }
+    }
+
+    /// Returns true if the theme defines a background fill for column headers.
+    #[must_use]
+    pub fn has_col_header_fill(&self) -> bool {
+        self.palette.col_header_fill.is_some()
     }
 
     /// Returns the section header format with optional indentation level.

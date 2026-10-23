@@ -69,8 +69,8 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
    - Arranges tables into 0-indexed physical grid coordinates (`LayoutMap`).
    - Sheet margins: Col 0 (Excel Col A) and Row 0 (Excel Row 1) reserved as blank gutters.
    - Table placement: primary table placed at `(col: 1, row: 1)` (Excel `B2`); stacked tables separated by 2 blank gutter rows.
-   - Vertical table anatomy: optional title banner, optional subtitle, title gutter, multi-tier column headers (bottom-aligned, height `H = max(headers.len())`), body rows.
-   - Sheet-wide column width arbitration: `max(chars * char_width_multiplier + col_padding, min_col_width)` computed across all stacked tables sharing each physical column. Indentation adds `indent * 2` character width padding.
+   - Vertical table anatomy: optional title banner, optional subtitle, title gutter, multi-tier column headers (Tier 0 `group` banners + bottom-aligned per-column `headers`, height `H = max(header_depth())`), body rows.
+   - Sheet-wide column width arbitration: `max(chars * char_width_multiplier + col_padding, min_col_width)` computed across all stacked tables sharing each physical column, measuring the longest line in `headers` (`max_header_chars()`, excluding `group` banners). Indentation adds `indent * 2` character width padding.
 6. Formula Lowering & Emission (`f8_core::compiler::lowering` & `f8_core::compiler::emission`):
    - Pass 6a (Lowering): translates AST `Expr` to Excel formula strings prefixed with `=`. Dynamic coordinates (`@col`, `@row`, `prev`, `next`) lowered to relative A1 coordinates; static keys lowered to `$` absolute coordinates. Cross-sheet references formatted as `'Sheet'!Address`.
    - Pass 6b (Emission): writes `.xlsx` byte buffers via `rust_xlsxwriter`.
