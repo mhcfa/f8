@@ -198,7 +198,9 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
             "total_text": "#2B4C7E",
             "input_text": "#002060",
             "formula_text": "#000000",
-            "zebra_fill": "#FAFCFD",
+            "shade_muted_fill": "#F8FAFC",
+            "shade_accent_fill": "#EFF6FF",
+            "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#92400E",
             "gridline_color": "#E5E7EB",
@@ -382,7 +384,9 @@ fn test_scenario_10_transparent_fill_validation() {
     theme.palette.section_header_fill = "none".to_string();
     theme.palette.super_header_fill = "none".to_string();
     theme.palette.table_title_fill = "none".to_string();
-    theme.palette.zebra_fill = "transparent".to_string();
+    theme.palette.shade_muted_fill = "transparent".to_string();
+    theme.palette.shade_accent_fill = "none".to_string();
+    theme.palette.shade_alt_fill = "transparent".to_string();
     theme.palette.highlight_fill = "none".to_string();
     theme.validate().expect("transparent fills should be valid");
 
@@ -463,7 +467,9 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
             "total_text": "#000000",
             "input_text": "#0000FF",
             "formula_text": "#000000",
-            "zebra_fill": "#FAFBFC",
+            "shade_muted_fill": "#F8FAFC",
+            "shade_accent_fill": "#EFF6FF",
+            "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#000000",
             "gridline_color": "#E5E7EB",
@@ -509,4 +515,27 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
     let loaded_omitted: Theme = serde_json::from_str(&json_omitted).expect("valid theme");
     loaded_omitted.validate().expect("valid theme");
     assert!(loaded_omitted.typography.section_header_underline);
+}
+
+#[test]
+fn test_scenario_12_shade_palette_defaults_and_validation() {
+    let theme = Theme::corporate_navy();
+    assert_eq!(theme.palette.shade_muted_fill, "#F8FAFC");
+    assert_eq!(theme.palette.shade_accent_fill, "#EFF6FF");
+    assert_eq!(theme.palette.shade_alt_fill, "#F1F5F9");
+
+    for field_name in ["shade_muted_fill", "shade_accent_fill", "shade_alt_fill"] {
+        let mut bad_theme = Theme::corporate_navy();
+        match field_name {
+            "shade_muted_fill" => bad_theme.palette.shade_muted_fill = "invalid".to_string(),
+            "shade_accent_fill" => bad_theme.palette.shade_accent_fill = "invalid".to_string(),
+            "shade_alt_fill" => bad_theme.palette.shade_alt_fill = "invalid".to_string(),
+            _ => unreachable!(),
+        }
+        assert!(matches!(
+            bad_theme.validate().unwrap_err(),
+            ModelError::InvalidThemeColor { ref field, ref color }
+                if field == field_name && color == "invalid"
+        ));
+    }
 }

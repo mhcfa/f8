@@ -6,7 +6,7 @@ pub mod table;
 pub mod theme;
 
 pub use error::ModelError;
-pub use format::{CurrencyCode, FormatPreset, SemanticStyle};
+pub use format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 pub use id::{ColId, RowId, SheetId, TableId};
 pub use manifest::{FreezePanes, ProjectManifest, SheetSpec};
 pub use table::{

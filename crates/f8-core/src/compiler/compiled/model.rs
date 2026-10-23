@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::compiler::ir::id::CellId;
-use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::value::CellValue;
 
@@ -81,6 +81,8 @@ pub struct CellInspection {
     pub currency: Option<CurrencyCode>,
     /// Visual highlight emphasis flag.
     pub is_highlight: bool,
+    /// Semantic background shade if assigned.
+    pub shade: Option<Shade>,
     /// Descriptor text indentation level.
     pub indent: u8,
     /// `true` if this cell is calculated by formula, `false` if constant literal.
@@ -185,6 +187,8 @@ pub struct ColumnInspection {
     pub is_descriptor: bool,
     /// Structural presentation style if this is a data column.
     pub style: Option<SemanticStyle>,
+    /// Semantic background shade if this is a data column.
+    pub shade: Option<Shade>,
 }
 
 /// Row inspection metadata.
@@ -202,6 +206,8 @@ pub struct RowInspection {
     pub indent: u8,
     /// Structural presentation style if this is a calculable data row.
     pub style: Option<SemanticStyle>,
+    /// Semantic background shade if this is a calculable data row.
+    pub shade: Option<Shade>,
 }
 
 /// Cell-level audit information within a table inspection view.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from f8 import Cell, CellInputValue, CompiledModel, Model, Sheet, Table
+from f8 import Cell, CellInputValue, CompiledModel, Model, Shade, Sheet, SpecificationError, Table
 
 
 def test_scenario_1_end_to_end_model_construction_and_compilation() -> None:
@@ -457,7 +457,9 @@ def test_custom_theme_dict_on_model_init() -> None:
             "total_text": "#2B4C7E",
             "input_text": "#002060",
             "formula_text": "#000000",
-            "zebra_fill": "#FAFCFD",
+            "shade_muted_fill": "#F8FAFC",
+            "shade_accent_fill": "#EFF6FF",
+            "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#92400E",
             "gridline_color": "#E5E7EB",
@@ -506,3 +508,114 @@ def test_custom_theme_dict_on_model_init() -> None:
     compiled = model.compile()
     assert compiled.summary()["theme_name"] == "firm_custom"
     assert compiled.formatted("T1", "r1", "c1") == "$100.00"
+
+
+def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
+    model = Model()
+    sheet = model.add_sheet("Sheet1")
+    table = sheet.add_table("T1", title="Shaded Table")
+    table.add_column("label", role="descriptor", header="Item")
+    table.add_column("2023a", header="2023A", shade="muted")
+    table.add_column("stub", header="Stub", shade="accent")
+    table.add_column("2024e", header="2024E")
+
+    table.add_row(
+        "rev",
+        cells={"label": "Revenue", "2023a": 100.0, "stub": 25.0, "2024e": 120.0},
+    )
+    table.add_row(
+        "kpi",
+        shade="alt",
+        cells={
+            "label": "KPI Band",
+            "2023a": Cell(10.0, shade="none"),
+            "stub": {"value": 12.0, "shade": "accent"},
+            "2024e": 15.0,
+        },
+    )
+    table.set_cell("rev", "2024e", shade="muted")
+
+    _manifest, tables = model.__f8_spec__()
+    assert tables[0] == {
+        "id": "T1",
+        "title": "Shaded Table",
+        "collapsible": False,
+        "columns": [
+            {
+                "kind": "data",
+                "id": "label",
+                "role": "descriptor",
+                "headers": ["Item"],
+            },
+            {
+                "kind": "data",
+                "id": "2023a",
+                "role": "measure",
+                "headers": ["2023A"],
+                "shade": "muted",
+            },
+            {
+                "kind": "data",
+                "id": "stub",
+                "role": "measure",
+                "headers": ["Stub"],
+                "shade": "accent",
+            },
+            {
+                "kind": "data",
+                "id": "2024e",
+                "role": "measure",
+                "headers": ["2024E"],
+            },
+        ],
+        "rows": [
+            {
+                "kind": "data",
+                "id": "rev",
+                "cells": {
+                    "label": "Revenue",
+                    "2023a": 100.0,
+                    "stub": 25.0,
+                    "2024e": {"value": 120.0, "shade": "muted"},
+                },
+            },
+            {
+                "kind": "data",
+                "id": "kpi",
+                "shade": "alt",
+                "cells": {
+                    "label": "KPI Band",
+                    "2023a": {"value": 10.0, "shade": "none"},
+                    "stub": {"value": 12.0, "shade": "accent"},
+                    "2024e": 15.0,
+                },
+            },
+        ],
+    }
+
+    compiled = model.compile()
+    table_insp = compiled.inspect_table("T1")
+    assert table_insp["columns"][0]["shade"] is None
+    assert table_insp["columns"][1]["shade"] == "muted"
+    assert table_insp["columns"][2]["shade"] == "accent"
+    assert table_insp["rows"][0]["shade"] is None
+    assert table_insp["rows"][1]["shade"] == "alt"
+
+    assert compiled.inspect_cell("T1", "rev", "2023a")["shade"] == "muted"
+    assert compiled.inspect_cell("T1", "rev", "stub")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "rev", "2024e")["shade"] == "muted"
+    assert compiled.inspect_cell("T1", "kpi", "label")["shade"] == "alt"
+    assert compiled.inspect_cell("T1", "kpi", "2023a")["shade"] is None
+    assert compiled.inspect_cell("T1", "kpi", "stub")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "kpi", "2024e")["shade"] == "alt"
+
+    # Symmetrical vector shade conflict raises SpecificationError
+    conflict_model = Model()
+    cs = conflict_model.add_sheet("S")
+    ct = cs.add_table("Conflict", title="Conflict")
+    shade_val: Shade = "accent"
+    ct.add_column("c1", header="C1", shade=shade_val)
+    ct.add_row("r1", shade="muted", cells={"c1": 1.0})
+    with pytest.raises(SpecificationError, match="shade conflict") as exc_info:
+        conflict_model.compile()
+    assert exc_info.value.table == "Conflict"

@@ -512,6 +512,7 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
             decimals: Some(2),
             style: None,
             highlight: None,
+            shade: None,
             note: None,
             currency: None,
             indent: None,

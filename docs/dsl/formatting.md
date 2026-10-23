@@ -6,11 +6,12 @@ This document specifies f8's semantic formatting system, preset catalog, structu
 
 f8 enforces complete decoupling between calculation logic and visual styling:
 - Semantic intent over raw masks: Model authors specify *what* data represents (`currency`, `number`, `percentage`, `multiple`), never raw Excel format strings (e.g. `$#,##0_);($#,##0);"-"_)`).
-- Orthogonal visual axes: Presentation decomposes cleanly into four independent, composable axes:
+- Orthogonal visual axes: Presentation decomposes cleanly into five independent, composable axes:
   1. Structural style (`style`): Borders, summary rules, and bold typography (`data`, `subtotal`, `total`).
-  2. Visual emphasis (`highlight`): Background fill tint and text accenting (`true` / `false`).
-  3. Semantic format family (`format`): Unit/data kind (`currency`, `number`, `integer`, `percentage`, `multiple`, `basis_points`, `date`, `text`).
-  4. Display precision (`decimals`): Explicit count of fractional decimal places (e.g. `0`, `1`, `2`, `4`), independent of format kind.
+  2. Visual emphasis (`highlight`): Callout background fill tint and text accenting (`true` / `false`).
+  3. Background zone shade (`shade`): Theme-backed subtle background fill presets (`none`, `muted`, `accent`, `alt`) for historical/stub/forecast columns or row bands without altering font color.
+  4. Semantic format family (`format`): Unit/data kind (`currency`, `number`, `integer`, `percentage`, `multiple`, `basis_points`, `date`, `text`).
+  5. Display precision (`decimals`): Explicit count of fractional decimal places (e.g. `0`, `1`, `2`, `4`), independent of format kind.
 - Symmetrical 2D matrix engine: Formatting and styling rules apply symmetrically across columns, rows, and individual cell overrides.
 - Deterministic OpenXML emission: Themes translate semantic presets and dynamic precision into institutional-grade formatting rules and accounting styles upon `.xlsx` emission.
 - Zero layout drift: Format rules never alter underlying floating-point precision or calculation semantics.
@@ -63,6 +64,26 @@ Visual emphasis (soft accent background fill tint and text color) is completely 
 - Row: `"highlight": true` tints the entire row across measure columns.
 - Column: `"highlight": true` tints the entire column down measure rows.
 - Cell: `"highlight": true` tints the individual cell coordinate.
+
+### 3.3. Background Zone Shade (`Shade`)
+
+Background zone shading (`shade`) applies subtle theme-managed fills to distinguish historical vs. stub vs. forecast columns or horizontal row bands without modifying cell text colors:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Shade {
+    #[default]
+    None,    // Unshaded default; point-level cell escape hatch
+    Muted,   // Subtle neutral slate fill (e.g. historical / actual columns)
+    Accent,  // Soft cool tint (e.g. stub / LTM / bridge columns)
+    Alt,     // Secondary contrast band (e.g. KPI / memo rows)
+}
+```
+
+- Body-cell scope: Column shading applies strictly to table body cells (column headers and super-headers remain styled via `col_header_fill` and `super_header_fill`).
+- Continuous row bands: Row shading applies across both `descriptor` and `measure` columns so horizontal bands span the full table width.
+- Point-level reset: Declaring `"shade": "none"` on a cell override clears any inherited row or column shade.
 
 ---
 
@@ -169,13 +190,21 @@ A cell renders with **bold typography** if either axis demands subtotal or total
 
 #### 5.4.4. Fill, text color, and border orthogonality
 - Summary vs data shading: Standard data cells apply `theme.palette.data_fill` and `data_text`. Subtotals apply `subtotal_fill` and `subtotal_text`. Totals apply `total_fill` and `total_text`.
+- Background zone shade (`shade`): Maps `Shade::Muted` -> `shade_muted_fill`, `Shade::Accent` -> `shade_accent_fill`, and `Shade::Alt` -> `shade_alt_fill`. Background fill precedence is:
+  `is_highlight > total_fill.or(shade_fill) > subtotal_fill.or(shade_fill) > shade_fill.or(data_fill)`
+  When `total_fill` or `subtotal_fill` is `"none"` (transparent), shaded columns continue seamlessly across subtotal and total rows; when a theme defines an opaque summary fill, the summary fill takes precedence over `shade_fill`. `shade` never alters cell font colors.
 - Financial hardcode color coding: In standard data cells, literal cell inputs (`ValueLiteral`) apply `theme.palette.input_text` (institutional blue, e.g. `#0000FF`), while calculated formula cells apply `theme.palette.formula_text` (standard black, e.g. `#000000`).
 - Visual emphasis (`highlight`): Declaring `highlight: true` overrides cell fills and text colors with `highlight_fill` and `highlight_text`.
-Because `style` and `highlight` are distinct orthogonal properties, they compose cleanly: a cell can have `horizontal: Total` and `highlight: true` (e.g. an acquisition IRR punchline cell), rendering both the accent highlight background fill and the accounting double underline without schema collision.
+Because `style`, `shade`, and `highlight` are distinct orthogonal properties, they compose cleanly: a table can apply `shade: "muted"` on historical columns, `style: "total"` on a summary row, and `highlight: true` on a punchline IRR cell without schema collision.
 
 #### 5.4.5. Highlight resolution
 `effective_highlight = cell.highlight.unwrap_or(row.highlight or col.highlight)`
 A point override `highlight: false` explicitly un-highlights a cell even if its row or column has `highlight: true`.
+
+#### 5.4.6. Shade resolution & symmetrical vector conflict
+1. Cell override (Tier 1): An explicit `shade` declared on `CellInput` always wins. Declaring `shade: "none"` resolves to `None`, clearing any row or column shade.
+2. Symmetrical vector rule (Tier 2): `row.shade` (spanning both descriptor and measure columns) and `col.shade` sit at the same vector tier. If a row and column specify differing active shades (`row_shade != col_shade`, where neither is `"none"`) without a cell override, compilation halts with `IrError::ShadeConflict` (`SpecificationError` in Python) to prevent unintentional crosshair/plaid table rendering. Identical shades (`row_shade == col_shade`) resolve without conflict.
+3. Default fallback: Unshaded (`None`).
 
 ---
 
@@ -250,7 +279,9 @@ Custom themes conform to a structured schema defining typography, palette, borde
     "total_text": "#000000",
     "input_text": "#0000FF",
     "formula_text": "#000000",
-    "zebra_fill": "#FAFBFC",
+    "shade_muted_fill": "#F8FAFC",
+    "shade_accent_fill": "#EFF6FF",
+    "shade_alt_fill": "#F1F5F9",
     "highlight_fill": "#FEF3C7",
     "highlight_text": "#000000",
     "gridline_color": "#E5E7EB",

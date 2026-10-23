@@ -277,6 +277,7 @@ impl CompiledModel {
             decimals: cell_node.decimals,
             currency: cell_node.currency,
             is_highlight: cell_node.is_highlight,
+            shade: cell_node.shade,
             indent: cell_node.indent,
             is_formula,
             formula_expr,
@@ -313,6 +314,7 @@ impl CompiledModel {
                     is_gutter: false,
                     is_descriptor: d.role.is_descriptor(),
                     style: Some(d.style.unwrap_or(SemanticStyle::Data)),
+                    shade: d.shade.filter(|s| !s.is_none()),
                 },
                 crate::model::table::ColumnSpec::Gutter => ColumnInspection {
                     id: None,
@@ -320,6 +322,7 @@ impl CompiledModel {
                     is_gutter: true,
                     is_descriptor: false,
                     style: None,
+                    shade: None,
                 },
             })
             .collect();
@@ -346,6 +349,7 @@ impl CompiledModel {
                         is_gutter: false,
                         indent,
                         style: Some(d.style.unwrap_or(SemanticStyle::Data)),
+                        shade: d.shade.filter(|s| !s.is_none()),
                     }
                 }
                 crate::model::table::RowSpec::SectionHeader(s) => RowInspection {
@@ -355,6 +359,7 @@ impl CompiledModel {
                     is_gutter: false,
                     indent: s.indent.unwrap_or(0),
                     style: None,
+                    shade: None,
                 },
                 crate::model::table::RowSpec::Gutter => RowInspection {
                     id: None,
@@ -363,6 +368,7 @@ impl CompiledModel {
                     is_gutter: true,
                     indent: 0,
                     style: None,
+                    shade: None,
                 },
             })
             .collect();

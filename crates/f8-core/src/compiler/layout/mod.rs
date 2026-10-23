@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
-use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, ProjectManifest};
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
@@ -32,17 +32,28 @@ pub struct StyleRole {
     pub vertical: SemanticStyle,
     /// Visual highlight emphasis.
     pub is_highlight: bool,
+    /// Semantic background shade.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
 }
 
 impl StyleRole {
-    /// Creates a default data styling role with no borders and no highlight.
+    /// Creates a default data styling role with no borders, no highlight, and no shade.
     #[must_use]
     pub const fn data() -> Self {
         Self {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: false,
+            shade: None,
         }
+    }
+
+    /// Builder method attaching a semantic background shade.
+    #[must_use]
+    pub const fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        self.shade = shade;
+        self
     }
 }
 
@@ -323,10 +334,15 @@ impl LayoutPlanner {
                                             horizontal: node.horizontal,
                                             vertical: node.vertical,
                                             is_highlight: node.is_highlight,
+                                            shade: node.shade,
                                         },
                                         node.indent,
                                     )
                                 } else {
+                                    let shade = data_row
+                                        .shade
+                                        .filter(|s| !s.is_none())
+                                        .or_else(|| data_col.shade.filter(|s| !s.is_none()));
                                     (
                                         StyleRole {
                                             horizontal: data_row
@@ -335,6 +351,7 @@ impl LayoutPlanner {
                                             vertical: data_col.style.unwrap_or(SemanticStyle::Data),
                                             is_highlight: data_row.highlight.unwrap_or(false)
                                                 || data_col.highlight.unwrap_or(false),
+                                            shade,
                                         },
                                         0,
                                     )

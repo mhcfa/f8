@@ -88,6 +88,7 @@ Each table specification defines an orthogonal 2D calculation matrix with explic
       "role": "measure",
       "headers": ["Forecast Projections", "2024E"],
       "style": "data",
+      "shade": "muted",
       "format": "currency",
       "decimals": 1,
       "currency": "usd",
@@ -154,7 +155,7 @@ Rows are declared in `table.rows` in their exact vertical display order.
 Calculable rows containing values, vector formulas, or individual cell overrides:
 - `id` (`string`, required): Row identifier (`RowId`), referenced in formula coordinates (e.g. `"revenue"`).
 - `expr` (`string`, optional): Row-wide vector formula broadcasting across all measure columns.
-- `style`, `format`, `decimals`, `currency`, `highlight`: Row-level default presentation attributes.
+- `style`, `shade`, `format`, `decimals`, `currency`, `highlight`: Row-level default presentation attributes.
 - `cells` (`object`, optional): Map of column IDs (`ColId`) to cell inputs.
 
 ### 5.2. Section Header Rows (`kind: "section_header"`)
@@ -188,11 +189,12 @@ Every key under `data_row.cells` refers strictly to a declared data column ident
      "format": "currency",
      "decimals": 2,
      "style": "total",
+     "shade": "none",
      "highlight": true,
      "indent": 1
    }
    ```
-   Setting `style: "data"` on an individual cell override acts as an explicit point escape hatch, suppressing inherited horizontal or vertical summary borders.
+   Setting `style: "data"` or `shade: "none"` on an individual cell override acts as an explicit point escape hatch, suppressing inherited summary borders or background shades.
 
 ---
 

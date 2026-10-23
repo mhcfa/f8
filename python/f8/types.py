@@ -83,6 +83,7 @@ class CellInspection(TypedDict):
     decimals: int | None
     currency: str | None
     is_highlight: bool
+    shade: Shade | None
     indent: int
     is_formula: bool
     formula_expr: str | None
@@ -121,6 +122,7 @@ class ColumnInspection(TypedDict):
     is_gutter: bool
     is_descriptor: bool
     style: SemanticStyle | None
+    shade: Shade | None
 
 
 class RowInspection(TypedDict):
@@ -132,6 +134,7 @@ class RowInspection(TypedDict):
     is_gutter: bool
     indent: int
     style: SemanticStyle | None
+    shade: Shade | None
 
 
 class TableCellInfo(TypedDict):
@@ -222,6 +225,8 @@ type FormatPreset = Literal[
 
 type SemanticStyle = Literal["data", "subtotal", "total"]
 
+type Shade = Literal["none", "muted", "accent", "alt"]
+
 type CurrencyCode = Literal[
     "USD",
     "EUR",
@@ -276,6 +281,7 @@ class DetailedCellDict(TypedDict, total=False):
     expr: str
     style: SemanticStyle
     highlight: bool
+    shade: Shade
     format: FormatPreset
     decimals: int
     currency: CurrencyCode
@@ -317,6 +323,7 @@ class DataColumnSpecDict(TypedDict, total=False):
     headers: list[str]
     style: SemanticStyle
     highlight: bool
+    shade: Shade
     format: FormatPreset
     decimals: int
     currency: CurrencyCode
@@ -339,6 +346,7 @@ class DataRowSpecDict(TypedDict, total=False):
     id: str
     style: SemanticStyle
     highlight: bool
+    shade: Shade
     format: FormatPreset
     decimals: int
     currency: CurrencyCode

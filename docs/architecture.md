@@ -49,7 +49,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
      - Conflicting row and column expressions halt compilation (`IrError::AmbiguousExpressionConflict`).
      - Unassigned calculable cells halt compilation (`IrError::UnassignedCell`).
    - Isolates `descriptor` columns: vector formulas never broadcast into descriptor columns.
-   - Resolves cell formatting, indentation, notes, and visual highlights.
+   - Resolves cell formatting, indentation, notes, visual highlights, and background zone shades (`row.shade` vs `col.shade`; conflicting active shades halt with `IrError::ShadeConflict`, while `shade: "none"` on a cell clears inherited shades).
    - Resolves cell currency: Point override > Vector rules (`row.currency` vs `col.currency`; conflicting codes halt with `IrError::CurrencyConflict`) > `table.currency` > default `usd`.
 3. Dependency Graph & SCC (`f8_core::compiler::graph`):
    - Resolves cell references: table-qualified keys (`Table[row, col]`), active coordinate selectors (`@col`, `@row`), and temporal offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`).

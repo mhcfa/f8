@@ -64,6 +64,7 @@ Contracts defined in `f8.types`:
   - `evaluated_value`: Evaluated runtime value dictionary (`CellValueDict`).
   - `formatted_value`: Formatted display string with accounting typography (e.g. `"$115.0"`).
   - `format`, `decimals`, `currency`: Typography preset and precision metadata.
+  - `shade`: Resolved background shade preset (`"muted"`, `"accent"`, `"alt"`, or `None`).
   - `is_highlight`: Visual fill emphasis flag.
   - `indent`: Descriptor indentation depth integer.
   - `is_formula`: `True` if calculated by formula, `False` if constant literal.
@@ -80,8 +81,8 @@ Contracts defined in `f8.types`:
 - `TableInspection`: 2D table grid metadata:
   - `table_id`, `title`, `subtitle`: Table identifiers and display headers.
   - `sheet`: Parent worksheet identifier.
-  - `columns`: List of `ColumnInspection` records (`id`, `headers`, `is_gutter`, `is_descriptor`, `style`).
-  - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`, `style`).
+  - `columns`: List of `ColumnInspection` records (`id`, `headers`, `is_gutter`, `is_descriptor`, `style`, `shade`).
+  - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`, `style`, `shade`).
   - `cells`: Dictionary keyed by canonical coordinate string (`'Table["row", "col"]'`) mapping to `TableCellInfo`.
 - `SheetInspection`: Physical worksheet grid layout:
   - `sheet_id`, `title`: Worksheet identifiers.

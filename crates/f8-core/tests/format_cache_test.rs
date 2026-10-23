@@ -5,7 +5,7 @@ use f8_core::compiler::emission::{
     translate_border_style,
 };
 use f8_core::compiler::layout::StyleRole;
-use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use f8_core::model::theme::{BorderStyle, Theme};
 use rust_xlsxwriter::{Color, FormatBorder};
 
@@ -196,11 +196,13 @@ fn test_scenario_4_subtotal_and_total_accounting_borders_and_colors() {
         horizontal: SemanticStyle::Subtotal,
         vertical: SemanticStyle::Data,
         is_highlight: false,
+        shade: None,
     };
     let total_role = StyleRole {
         horizontal: SemanticStyle::Total,
         vertical: SemanticStyle::Data,
         is_highlight: false,
+        shade: None,
     };
 
     let subtotal_key = CellFormatKey::new(
@@ -293,6 +295,7 @@ fn test_scenario_5_highlight_style_role_emphasis() {
         horizontal: SemanticStyle::Data,
         vertical: SemanticStyle::Data,
         is_highlight: true,
+        shade: None,
     };
     let key = CellFormatKey::new(
         highlight_role,
@@ -467,6 +470,7 @@ fn test_orthogonal_2d_total_box_borders() {
         horizontal: SemanticStyle::Total,
         vertical: SemanticStyle::Total,
         is_highlight: false,
+        shade: None,
     };
     let key = CellFormatKey::new(
         total_box_role,
@@ -589,6 +593,7 @@ fn test_transparent_summary_and_headers() {
             horizontal: SemanticStyle::Total,
             vertical: SemanticStyle::Data,
             is_highlight: false,
+            shade: None,
         },
         None,
         None,
@@ -640,6 +645,7 @@ fn test_input_text_color_overrides_everything() {
             horizontal: SemanticStyle::Total,
             vertical: SemanticStyle::Data,
             is_highlight: false,
+            shade: None,
         },
         Some(FormatPreset::Currency),
         Some(0),
@@ -673,6 +679,7 @@ fn test_input_text_color_overrides_everything() {
             horizontal: SemanticStyle::Total,
             vertical: SemanticStyle::Data,
             is_highlight: false,
+            shade: None,
         },
         Some(FormatPreset::Currency),
         Some(0),
@@ -694,6 +701,7 @@ fn test_input_text_color_overrides_everything() {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: true,
+            shade: None,
         },
         Some(FormatPreset::Number),
         Some(2),
@@ -719,6 +727,7 @@ fn test_input_text_color_overrides_everything() {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: true,
+            shade: None,
         },
         Some(FormatPreset::Number),
         Some(2),
@@ -740,6 +749,7 @@ fn test_input_text_color_overrides_everything() {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: true,
+            shade: None,
         },
         Some(FormatPreset::Text),
         None,
@@ -880,4 +890,183 @@ fn test_scenario_14_section_header_underline_and_fill_suppression() {
     hex_fill_theme.palette.section_header_fill = "#E0E0E0".to_string();
     let cache_hex = FormatCache::new(&hex_fill_theme).expect("valid theme");
     assert!(cache_hex.has_section_header_fill());
+}
+
+#[test]
+fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
+    let theme = Theme::corporate_navy();
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    let muted_color = format!(
+        "{:?}",
+        parse_hex_color("shade_muted_fill", &theme.palette.shade_muted_fill).unwrap()
+    );
+    let accent_color = format!(
+        "{:?}",
+        parse_hex_color("shade_accent_fill", &theme.palette.shade_accent_fill).unwrap()
+    );
+    let alt_color = format!(
+        "{:?}",
+        parse_hex_color("shade_alt_fill", &theme.palette.shade_alt_fill).unwrap()
+    );
+    let highlight_color = format!(
+        "{:?}",
+        parse_hex_color("highlight_fill", &theme.palette.highlight_fill).unwrap()
+    );
+    let input_color = format!(
+        "{:?}",
+        parse_hex_color("input_text", &theme.palette.input_text).unwrap()
+    );
+    let formula_color = format!(
+        "{:?}",
+        parse_hex_color("formula_text", &theme.palette.formula_text).unwrap()
+    );
+
+    // 1. Muted, Accent, and Alt shades on data cells
+    for (shade, expected_bg) in [
+        (Shade::Muted, &muted_color),
+        (Shade::Accent, &accent_color),
+        (Shade::Alt, &alt_color),
+    ] {
+        let input_key = CellFormatKey::new(
+            StyleRole::data().with_shade(Some(shade)),
+            Some(FormatPreset::Number),
+            Some(0),
+            None,
+            true,
+            false,
+            0,
+        );
+        let input_fmt = cache.get_cell_format(&input_key).expect("ok");
+        let input_debug = format!("{input_fmt:?}");
+        assert!(
+            input_debug.contains(&format!("background_color: {expected_bg}")),
+            "Expected shade fill {expected_bg} for {shade}: {input_debug}"
+        );
+        assert!(
+            input_debug.contains(&format!("color: {input_color}")),
+            "Shade must not alter input_text color: {input_debug}"
+        );
+
+        let formula_key = CellFormatKey::new(
+            StyleRole::data().with_shade(Some(shade)),
+            Some(FormatPreset::Number),
+            Some(0),
+            None,
+            false,
+            false,
+            0,
+        );
+        let formula_fmt = cache.get_cell_format(&formula_key).expect("ok");
+        let formula_debug = format!("{formula_fmt:?}");
+        assert!(
+            formula_debug.contains(&format!("background_color: {expected_bg}")),
+            "Expected shade fill {expected_bg} for {shade}: {formula_debug}"
+        );
+        assert!(
+            formula_debug.contains(&format!("color: {formula_color}")),
+            "Shade must not alter formula_text color: {formula_debug}"
+        );
+    }
+
+    // 2. Highlight always overrides shade
+    let highlight_shaded_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Data,
+            is_highlight: true,
+            shade: Some(Shade::Accent),
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let highlight_fmt = cache.get_cell_format(&highlight_shaded_key).expect("ok");
+    let highlight_debug = format!("{highlight_fmt:?}");
+    assert!(
+        highlight_debug.contains(&format!("background_color: {highlight_color}")),
+        "is_highlight must override shade: {highlight_debug}"
+    );
+
+    // 3. Transparent total_fill and subtotal_fill in corporate_navy fall back to shade_fill
+    let total_shaded_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+            shade: Some(Shade::Muted),
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let total_fmt = cache.get_cell_format(&total_shaded_key).expect("ok");
+    let total_debug = format!("{total_fmt:?}");
+    assert!(
+        total_debug.contains(&format!("background_color: {muted_color}")),
+        "Transparent total_fill must fall back to shade_fill: {total_debug}"
+    );
+
+    let subtotal_shaded_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Subtotal,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+            shade: Some(Shade::Accent),
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let subtotal_fmt = cache.get_cell_format(&subtotal_shaded_key).expect("ok");
+    let subtotal_debug = format!("{subtotal_fmt:?}");
+    assert!(
+        subtotal_debug.contains(&format!("background_color: {accent_color}")),
+        "Transparent subtotal_fill must fall back to shade_fill: {subtotal_debug}"
+    );
+
+    // 4. Opaque total_fill and subtotal_fill in custom theme override shade_fill
+    let mut opaque_theme = Theme::corporate_navy();
+    opaque_theme.palette.total_fill = "#D1D5DB".to_string();
+    opaque_theme.palette.subtotal_fill = "#E5E7EB".to_string();
+    let mut opaque_cache = FormatCache::new(&opaque_theme).expect("valid theme");
+    let opaque_total_color = format!(
+        "{:?}",
+        parse_hex_color("total_fill", &opaque_theme.palette.total_fill).unwrap()
+    );
+    let opaque_subtotal_color = format!(
+        "{:?}",
+        parse_hex_color("subtotal_fill", &opaque_theme.palette.subtotal_fill).unwrap()
+    );
+
+    let opaque_total_fmt = opaque_cache.get_cell_format(&total_shaded_key).expect("ok");
+    let opaque_total_debug = format!("{opaque_total_fmt:?}");
+    assert!(
+        opaque_total_debug.contains(&format!("background_color: {opaque_total_color}")),
+        "Opaque total_fill must override shade_fill: {opaque_total_debug}"
+    );
+
+    let opaque_subtotal_fmt = opaque_cache
+        .get_cell_format(&subtotal_shaded_key)
+        .expect("ok");
+    let opaque_subtotal_debug = format!("{opaque_subtotal_fmt:?}");
+    assert!(
+        opaque_subtotal_debug.contains(&format!("background_color: {opaque_subtotal_color}")),
+        "Opaque subtotal_fill must override shade_fill: {opaque_subtotal_debug}"
+    );
+
+    // 5. Column headers remain unshaded in corporate_navy
+    let col_header_desc = format!("{:?}", cache.col_header_format(true));
+    let col_header_meas = format!("{:?}", cache.col_header_format(false));
+    assert!(col_header_desc.contains("background_color: Default"));
+    assert!(col_header_meas.contains("background_color: Default"));
 }

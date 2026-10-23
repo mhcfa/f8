@@ -5,7 +5,7 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, FormatUnderline}
 
 use super::error::EmissionError;
 use crate::compiler::layout::StyleRole;
-use crate::model::format::{CurrencyCode, FormatPreset};
+use crate::model::format::{CurrencyCode, FormatPreset, Shade};
 use crate::model::theme::{BorderStyle, PaletteConfig, Theme};
 
 /// Parses a hexadecimal color string (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`) into a `rust_xlsxwriter::Color`.
@@ -94,7 +94,9 @@ struct ParsedPalette {
     total_text: Color,
     input_text: Color,
     formula_text: Color,
-    zebra_fill: Option<Color>,
+    shade_muted_fill: Option<Color>,
+    shade_accent_fill: Option<Color>,
+    shade_alt_fill: Option<Color>,
     highlight_fill: Option<Color>,
     highlight_text: Color,
     gridline_color: Color,
@@ -122,7 +124,9 @@ impl ParsedPalette {
             total_text: parse_hex_color("total_text", &p.total_text)?,
             input_text: parse_hex_color("input_text", &p.input_text)?,
             formula_text: parse_hex_color("formula_text", &p.formula_text)?,
-            zebra_fill: parse_fill_color("zebra_fill", &p.zebra_fill)?,
+            shade_muted_fill: parse_fill_color("shade_muted_fill", &p.shade_muted_fill)?,
+            shade_accent_fill: parse_fill_color("shade_accent_fill", &p.shade_accent_fill)?,
+            shade_alt_fill: parse_fill_color("shade_alt_fill", &p.shade_alt_fill)?,
             highlight_fill: parse_fill_color("highlight_fill", &p.highlight_fill)?,
             highlight_text: parse_hex_color("highlight_text", &p.highlight_text)?,
             gridline_color: parse_hex_color("gridline_color", &p.gridline_color)?,
@@ -328,15 +332,21 @@ impl FormatCache {
         };
 
         // 3. Background Fill Precedence:
-        // is_highlight > total > subtotal > data
+        // is_highlight > total (or shade) > subtotal (or shade) > shade > data
+        let shade_fill = match key.role.shade {
+            Some(Shade::Muted) => self.palette.shade_muted_fill,
+            Some(Shade::Accent) => self.palette.shade_accent_fill,
+            Some(Shade::Alt) => self.palette.shade_alt_fill,
+            Some(Shade::None) | None => None,
+        };
         let fill = if key.role.is_highlight {
             self.palette.highlight_fill
         } else if key.role.horizontal.is_total() || key.role.vertical.is_total() {
-            self.palette.total_fill
+            self.palette.total_fill.or(shade_fill)
         } else if key.role.horizontal.is_subtotal() || key.role.vertical.is_subtotal() {
-            self.palette.subtotal_fill
+            self.palette.subtotal_fill.or(shade_fill)
         } else {
-            self.palette.data_fill
+            shade_fill.or(self.palette.data_fill)
         };
         if let Some(fill_color) = fill {
             format = format.set_background_color(fill_color);

@@ -63,6 +63,7 @@ table.add_column(
     header: str | None = None,
     headers: list[str] | None = None,
     style: SemanticStyle | None = None,
+    shade: Shade | None = None,
     highlight: bool | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
@@ -120,6 +121,7 @@ table.add_row(
     cells: Mapping[str, CellInputValue] | None = None,
     expr: str | None = None,
     style: SemanticStyle | None = None,
+    shade: Shade | None = None,
     highlight: bool | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
@@ -155,8 +157,9 @@ Cell coordinates resolve through a deterministic 3-tier specificity lattice:
    Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
 2. Tier 2 (1D vector rules: row XOR col):
    - Vector formulas: `row.expr` XOR `col.expr`. Intersecting row and column expressions without a 0D cell override raise `SpecificationError` (`AmbiguousExpressionConflict`).
-   - Vector conflicts: Differing row and column `format`, `decimals`, or `currency` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
+   - Vector conflicts: Differing row and column `format`, `decimals`, `currency`, or `shade` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`, `ShadeConflict`).
    - Symmetrical 2D border composition: Rows control horizontal borders (`style="subtotal"` thin top; `style="total"` thin top and double-bottom); columns control vertical borders. Row `"total"` + Column `"total"` composes into a 2D accounting total box (`is_bold=True`). Setting `style="data"` on a 0D cell override resets both axes to standard data.
+   - Background shade propagation: Row or column `shade` (`"muted"`, `"accent"`, `"alt"`) tints body cells without altering font color. Row shades span both descriptor and measure columns. Setting `shade="none"` on a 0D cell override clears any inherited row or column shade.
    - Highlight propagation: Cells inherit highlight if either row or column has `highlight=True`, unless explicitly overridden by `highlight=False` on a 0D cell override.
 3. Tier 3 (Descriptor boundaries and unassigned cells):
    - Descriptor isolation: Vector formulas never broadcast across descriptor columns (`role="descriptor"`).
@@ -176,6 +179,7 @@ class Cell:
     value: CellValueLiteral | _Unset = _UNSET
     expr: str | None = None
     style: SemanticStyle | None = None
+    shade: Shade | None = None
     highlight: bool | None = None
     format: FormatPreset | None = None
     decimals: int | None = None
@@ -237,6 +241,7 @@ table.set_cell(
     value: CellValueLiteral | _Unset = _UNSET,
     expr: str | None = None,
     style: SemanticStyle | None = None,
+    shade: Shade | None = None,
     highlight: bool | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
@@ -323,7 +328,7 @@ Precedence: `Cell override > (Row rule XOR Column rule) > Table default > Model 
 | `"date"` | ISO date string | `2024-12-31` |
 | `"text"` | Plain text | `Sample` |
 
-### Semantic Styles (`SemanticStyle`)
+### Semantic Styles (`SemanticStyle`) and Background Shades (`Shade`)
 
 Row and column styles control accounting borders and typography:
 
@@ -331,6 +336,14 @@ Row and column styles control accounting borders and typography:
 - `style="subtotal"`: Top thin line separator for subtotals (renders bold typography).
 - `style="total"`: Top thin line and bottom double-underline for grand totals (renders bold typography).
 - Orthogonal 2D composition: Row styles control horizontal borders; column styles control vertical borders. Row `"total"` + Column `"total"` composes into a complete 2D accounting total box.
+
+Background shades (`Shade`) apply subtle theme-managed fills to table body cells without altering font colors:
+
+- `shade="muted"`: Subtle neutral slate fill (e.g. historical / actual periods).
+- `shade="accent"`: Soft cool tint (e.g. stub / LTM / pro-forma bridge columns).
+- `shade="alt"`: Secondary contrast band (e.g. KPI / memo rows).
+- `shade="none"`: Default unshaded state; clears inherited row or column shade on a 0D cell override.
+- Symmetrical conflict check: Differing active shades on a row and column without a cell override raise `SpecificationError` (`ShadeConflict`).
 
 ### Currency Codes (`CurrencyCode`)
 

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::error::ModelError;
-use super::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use super::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use super::id::{ColId, RowId, TableId};
 
 /// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
@@ -123,6 +123,14 @@ impl ColumnSpec {
         self
     }
 
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.shade = shade;
+        }
+        self
+    }
+
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         if let Self::Data(d) = &mut self {
@@ -167,6 +175,8 @@ pub struct DataColumnSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
@@ -185,6 +195,7 @@ impl DataColumnSpec {
             headers: Vec::new(),
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             currency: None,
@@ -200,6 +211,7 @@ impl DataColumnSpec {
             headers: vec![label.into()],
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             currency: None,
@@ -245,6 +257,12 @@ impl DataColumnSpec {
     /// Builder method attaching visual highlight emphasis.
     pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
         self.highlight = highlight;
+        self
+    }
+
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        self.shade = shade;
         self
     }
 
@@ -365,6 +383,8 @@ pub struct DetailedCellInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
@@ -442,6 +462,14 @@ impl CellInput {
         match self {
             Self::Literal(_) => None,
             Self::Detailed(d) => d.highlight,
+        }
+    }
+
+    /// Returns the semantic background shade override if present.
+    pub fn shade(&self) -> Option<Shade> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.shade,
         }
     }
 
@@ -585,6 +613,14 @@ impl RowSpec {
         self
     }
 
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.shade = shade;
+        }
+        self
+    }
+
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         if let Self::Data(d) = &mut self {
@@ -647,6 +683,8 @@ pub struct DataRowSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
@@ -665,6 +703,7 @@ impl DataRowSpec {
             id: id.into(),
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             currency: None,
@@ -688,6 +727,12 @@ impl DataRowSpec {
     /// Builder method attaching visual highlight emphasis.
     pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
         self.highlight = highlight;
+        self
+    }
+
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        self.shade = shade;
         self
     }
 
