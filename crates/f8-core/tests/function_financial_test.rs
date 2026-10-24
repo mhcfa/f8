@@ -619,6 +619,7 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("value")],
         rows: vec![
             RowSpec::new("loan_amount"),

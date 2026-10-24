@@ -16,6 +16,7 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::new("2023A"),
@@ -39,6 +40,7 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("metric"),
             ColumnSpec::new("rate"),
@@ -91,6 +93,7 @@ fn test_scenario_2_resolving_active_column_reference() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),

@@ -312,12 +312,17 @@ table.add_column_gutter() -> Table
 - Column gutter: Consumes 1 physical column sized to `theme.metrics.gutter_col_width` with zero calculation cells.
 - Vector formulas automatically skip gutter rows and columns.
 
-### Worksheet Margins and Spacing
+### Worksheet Margins, Table Placement, and Spacing
 
 - Default margins: Row 0 reserved as top gutter; Col 0 (Column A) reserved as left gutter. Primary table starts at cell `B2` (`col: 1, row: 1`).
-- Vertical stacking: Multiple tables on a single worksheet stack vertically in declared order, separated automatically by 2 blank gutter rows.
+- Table placement (`stack`, `right_of`, `below`, `gap`):
+  - Default `stack`: Tables without `right_of` or `below` stack vertically at `start_col = 1` (Column B) below the lowest preceding row on the worksheet, separated by `gap=2` blank gutter rows.
+  - Horizontal `right_of`: `sheet.add_table(..., right_of="TargetTable")` (or passing a `Table` instance) aligns `start_row` with `target.start_row` and places the table to the right separated by `gap=1` blank gutter column (`theme.metrics.gutter_col_width`).
+  - Vertical `below`: `sheet.add_table(..., below="TargetTable")` aligns `start_col` with `target.start_col` and places the table directly beneath `target` separated by `gap=2` blank gutter rows.
+  - Custom `gap`: Pass `gap: int >= 0` to override the default inter-table gutter count for `stack`, `right_of`, or `below`.
+  - Placement invariants: `right_of` and `below` are mutually exclusive (`ValueError`). Targets must be declared earlier on the same worksheet (`SpecificationError` via `InvalidPlacementTarget`), and table bounding boxes cannot overlap (`SpecificationError` via `TableOverlap`).
 - Table banners: Tables with `title` or `subtitle` emit banner rows followed by an 8.0 pt buffer gutter before column headers.
-- Width arbitration: Sheet-wide column widths arbitrate across stacked tables, accounting for indentation (`indent * 2` chars) and enforcing `theme.metrics.min_col_width` (12.0 chars) on measure columns.
+- Dimension arbitration: Sheet-wide column widths arbitrate across all tables spanning each physical column (accounting for `indent * 2` chars and enforcing `theme.metrics.min_col_width` of 12.0 chars on measure columns, with `gutter_col_width` for horizontal gap columns); shared physical rows take the maximum row height across horizontally adjacent tables.
 
 ### Layout Sequencing Pattern
 
@@ -396,6 +401,10 @@ table = sheet.add_table(
     subtitle: str | None = None,
     currency: CurrencyCode | None = None,
     collapsible: bool = False,
+    *,
+    right_of: str | Table | None = None,
+    below: str | Table | None = None,
+    gap: int | None = None,
 ) -> Table
 ```
 

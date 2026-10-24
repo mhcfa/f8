@@ -54,6 +54,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: is_cols,
         rows: is_rows,
     };
@@ -87,6 +88,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: cap_cols,
         rows: cap_rows,
     };
@@ -119,6 +121,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: bs_cols,
         rows: bs_rows,
     };
@@ -143,6 +146,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: cf_cols,
         rows: cf_rows,
     };
@@ -172,6 +176,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: ds_cols,
         rows: ds_rows,
     };
@@ -193,6 +198,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: assump_cols,
         rows: assump_rows,
     };

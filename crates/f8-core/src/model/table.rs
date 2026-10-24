@@ -858,6 +858,110 @@ impl Default for TableSpec {
     }
 }
 
+/// Default vertical inter-table gutter row count for `Stack` and `Below` placements.
+pub const DEFAULT_VERTICAL_TABLE_GAP: u32 = 2;
+
+/// Default horizontal inter-table gutter column count for `RightOf` placements.
+pub const DEFAULT_HORIZONTAL_TABLE_GAP: u32 = 1;
+
+const fn default_vertical_gap() -> u32 {
+    DEFAULT_VERTICAL_TABLE_GAP
+}
+
+const fn default_horizontal_gap() -> u32 {
+    DEFAULT_HORIZONTAL_TABLE_GAP
+}
+
+/// Relative 2D worksheet placement specification for a table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PlacementSpec {
+    /// Stacks the table at the left margin (`col = 1`) beneath all previously placed tables on the sheet.
+    Stack {
+        #[serde(default = "default_vertical_gap")]
+        gap: u32,
+    },
+    /// Places the table directly beneath `target`, left-aligned with `target.start_col`.
+    Below {
+        target: TableId,
+        #[serde(default = "default_vertical_gap")]
+        gap: u32,
+    },
+    /// Places the table directly to the right of `target`, top-aligned with `target.start_row`.
+    RightOf {
+        target: TableId,
+        #[serde(default = "default_horizontal_gap")]
+        gap: u32,
+    },
+}
+
+impl Default for PlacementSpec {
+    fn default() -> Self {
+        Self::Stack {
+            gap: DEFAULT_VERTICAL_TABLE_GAP,
+        }
+    }
+}
+
+impl PlacementSpec {
+    /// Creates a default vertical stack placement with 2 blank gutter rows.
+    #[must_use]
+    pub const fn stack() -> Self {
+        Self::Stack {
+            gap: DEFAULT_VERTICAL_TABLE_GAP,
+        }
+    }
+
+    /// Creates a vertical stack placement with a custom row gap.
+    #[must_use]
+    pub const fn stack_with_gap(gap: u32) -> Self {
+        Self::Stack { gap }
+    }
+
+    /// Creates a vertical placement aligned beneath `target` with 2 blank gutter rows.
+    pub fn below(target: impl Into<TableId>) -> Self {
+        Self::Below {
+            target: target.into(),
+            gap: DEFAULT_VERTICAL_TABLE_GAP,
+        }
+    }
+
+    /// Creates a vertical placement aligned beneath `target` with a custom row gap.
+    pub fn below_with_gap(target: impl Into<TableId>, gap: u32) -> Self {
+        Self::Below {
+            target: target.into(),
+            gap,
+        }
+    }
+
+    /// Creates a horizontal placement aligned to the right of `target` with 1 blank gutter column.
+    pub fn right_of(target: impl Into<TableId>) -> Self {
+        Self::RightOf {
+            target: target.into(),
+            gap: DEFAULT_HORIZONTAL_TABLE_GAP,
+        }
+    }
+
+    /// Creates a horizontal placement aligned to the right of `target` with a custom column gap.
+    pub fn right_of_with_gap(target: impl Into<TableId>, gap: u32) -> Self {
+        Self::RightOf {
+            target: target.into(),
+            gap,
+        }
+    }
+
+    /// Returns true if this is the default stack placement (`Stack { gap: 2 }`).
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        matches!(
+            self,
+            Self::Stack {
+                gap: DEFAULT_VERTICAL_TABLE_GAP
+            }
+        )
+    }
+}
+
 /// Table specification schema for standalone 2D calculation tables.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableSpec {
@@ -869,6 +973,8 @@ pub struct TableSpec {
     pub currency: Option<CurrencyCode>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub collapsible: bool,
+    #[serde(default, skip_serializing_if = "PlacementSpec::is_default")]
+    pub placement: PlacementSpec,
     pub columns: Vec<ColumnSpec>,
     pub rows: Vec<RowSpec>,
 }
@@ -882,6 +988,7 @@ impl TableSpec {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: PlacementSpec::default(),
             columns: Vec::new(),
             rows: Vec::new(),
         }
@@ -896,6 +1003,12 @@ impl TableSpec {
     /// Builder method setting whether the table is collapsible into its title banner.
     pub fn with_collapsible(mut self, collapsible: bool) -> Self {
         self.collapsible = collapsible;
+        self
+    }
+
+    /// Builder method setting the 2D relative table placement.
+    pub fn with_placement(mut self, placement: PlacementSpec) -> Self {
+        self.placement = placement;
         self
     }
 

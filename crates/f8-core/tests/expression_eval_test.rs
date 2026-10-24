@@ -24,6 +24,7 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("rate"),
             ColumnSpec::new("active"),
@@ -45,6 +46,7 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),

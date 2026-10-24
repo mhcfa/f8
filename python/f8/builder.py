@@ -12,6 +12,7 @@ from f8._core import CompiledModel
 from f8._core import compile as core_compile
 from f8.types import (
     AxisRole,
+    BelowPlacementSpecDict,
     CellValueLiteral,
     ColumnSpecDict,
     CurrencyCode,
@@ -22,11 +23,13 @@ from f8.types import (
     GutterColumnSpecDict,
     GutterRowSpecDict,
     ProjectManifestDict,
+    RightOfPlacementSpecDict,
     RowSpecDict,
     SectionHeaderRowSpecDict,
     SemanticStyle,
     Shade,
     SheetSpecDict,
+    StackPlacementSpecDict,
     TableSpecDict,
     ThemeInput,
 )
@@ -185,12 +188,24 @@ class Table:
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
         sheet: Sheet | None = None,
+        *,
+        right_of: str | Table | None = None,
+        below: str | Table | None = None,
+        gap: int | None = None,
     ) -> None:
+        if right_of is not None and below is not None:
+            raise ValueError("Cannot specify both 'right_of' and 'below'")
+        if gap is not None and gap < 0:
+            raise ValueError(f"Table 'gap' must be non-negative, got {gap}")
+
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.currency = currency
         self.collapsible = collapsible
+        self.right_of: str | None = right_of.id if isinstance(right_of, Table) else right_of
+        self.below: str | None = below.id if isinstance(below, Table) else below
+        self.gap: int | None = gap
         self._sheet = sheet
         self._columns: list[_ColumnItem] = []
         self._col_ids: set[str] = set()
@@ -558,6 +573,28 @@ class Table:
             table_spec["subtitle"] = self.subtitle
         if self.currency is not None:
             table_spec["currency"] = _normalize_currency(self.currency)
+        if self.right_of is not None:
+            right_of_spec: RightOfPlacementSpecDict = {
+                "kind": "right_of",
+                "target": self.right_of,
+            }
+            if self.gap is not None:
+                right_of_spec["gap"] = self.gap
+            table_spec["placement"] = right_of_spec
+        elif self.below is not None:
+            below_spec: BelowPlacementSpecDict = {
+                "kind": "below",
+                "target": self.below,
+            }
+            if self.gap is not None:
+                below_spec["gap"] = self.gap
+            table_spec["placement"] = below_spec
+        elif self.gap is not None:
+            stack_spec: StackPlacementSpecDict = {
+                "kind": "stack",
+                "gap": self.gap,
+            }
+            table_spec["placement"] = stack_spec
         return table_spec
 
 
@@ -596,6 +633,10 @@ class Sheet:
         subtitle: str | None = None,
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
+        *,
+        right_of: str | Table | None = None,
+        below: str | Table | None = None,
+        gap: int | None = None,
     ) -> Table:
         """Creates and appends a new `Table` to this worksheet."""
         if self._model is not None:
@@ -615,6 +656,9 @@ class Sheet:
             currency=currency,
             collapsible=collapsible,
             sheet=self,
+            right_of=right_of,
+            below=below,
+            gap=gap,
         )
         self._tables.append(table)
         self._table_ids.add(id)

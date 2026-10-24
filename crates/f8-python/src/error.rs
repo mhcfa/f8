@@ -1,4 +1,5 @@
 use f8_core::compiler::InspectionError as CoreInspectionError;
+use f8_core::compiler::LayoutError;
 use f8_core::compiler::error::CompilerError;
 use f8_core::compiler::eval::EvalError;
 use f8_core::compiler::graph::GraphError;
@@ -314,7 +315,16 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
         }
         CompilerError::Eval(EvalError::Resolve(resolve_err)) => map_resolve_error(py, resolve_err),
         CompilerError::Eval(_) => make_f8_error(py, message),
-        CompilerError::Layout(_) => make_specification_error(py, message.clone(), None, message),
+        CompilerError::Layout(layout_err) => {
+            let table = match layout_err {
+                LayoutError::UnassignedTable { table }
+                | LayoutError::UnknownTable { table, .. }
+                | LayoutError::InvalidPlacementTarget { table, .. } => Some(table.to_string()),
+                LayoutError::TableOverlap { second_table, .. } => Some(second_table.to_string()),
+                LayoutError::GridLimitExceeded { .. } => None,
+            };
+            make_specification_error(py, message.clone(), table, message)
+        }
         CompilerError::Lowering(LoweringError::Resolve(resolve_err)) => {
             map_resolve_error(py, resolve_err)
         }

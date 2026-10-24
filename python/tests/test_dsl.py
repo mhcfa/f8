@@ -751,3 +751,105 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
     with pytest.raises(SpecificationError, match="shade conflict") as exc_info:
         conflict_model.compile()
     assert exc_info.value.table == "Conflict"
+
+
+def test_scenario_12_table_placement_dsl_and_dashboard_layout() -> None:
+    model = Model(name="DashboardLayoutModel")
+    sheet = model.add_sheet("Dashboard")
+
+    # 1. Authoring validation: mutually exclusive right_of and below, or negative gap
+    with pytest.raises(ValueError, match="Cannot specify both 'right_of' and 'below'"):
+        sheet.add_table("Bad1", title="Bad", right_of="T1", below="T1")
+
+    with pytest.raises(ValueError, match="Cannot specify both 'right_of' and 'below'"):
+        Table("Bad2", title="Bad", right_of="T1", below="T1")
+
+    with pytest.raises(ValueError, match="Table 'gap' must be non-negative"):
+        sheet.add_table("Bad3", title="Bad", gap=-1)
+
+    with pytest.raises(ValueError, match="Table 'gap' must be non-negative"):
+        Table("Bad4", title="Bad", right_of="T1", gap=-2)
+
+    # 2. Dashboard authoring with Table object and str targets + custom gaps
+    t1 = sheet.add_table("T1", title="Tall Left Table")
+    t1.add_column("item", role="descriptor", header="Item")
+    t1.add_column("c1", header="2023A")
+    t1.add_column("c2", header="2024E")
+    for i in range(1, 10):
+        t1.add_row(f"r{i}", cells={"item": f"Row {i}", "c1": 10.0 * i, "c2": 20.0 * i})
+
+    # T2 placed right_of T1 (passing Table object)
+    t2 = sheet.add_table("T2", title="Top Right", right_of=t1)
+    t2.add_column("metric", role="descriptor", header="Metric")
+    t2.add_column("val", header="Value")
+    t2.add_row("m1", cells={"metric": "R1 2024E"}, expr='T1["r1", "c2"]')
+
+    # T3 placed below T2 (passing str ID and custom gap)
+    t3 = sheet.add_table("T3", title="Bottom Right", below="T2", gap=2)
+    t3.add_column("metric", role="descriptor", header="Metric")
+    t3.add_column("val", header="Value")
+    t3.add_row("m2", cells={"metric": "Double M1"}, expr='T2["m1", "val"] * 2')
+
+    # T4 stacked at sheet bottom with custom gap=3
+    t4 = sheet.add_table("T4", title="Full Width Bottom", gap=3)
+    t4.add_column("item", role="descriptor", header="Summary")
+    t4.add_column("total", header="Total")
+    t4.add_row("sum_row", cells={"item": "Combined"}, expr='T2["m1", "val"] + T3["m2", "val"]')
+
+    _manifest, tables_spec = model.__f8_spec__()
+    assert "placement" not in tables_spec[0]
+    assert tables_spec[1].get("placement") == {"kind": "right_of", "target": "T1"}
+    assert tables_spec[2].get("placement") == {"kind": "below", "target": "T2", "gap": 2}
+    assert tables_spec[3].get("placement") == {"kind": "stack", "gap": 3}
+
+    compiled = model.compile()
+    assert compiled.num("T2", "m1", "val") == pytest.approx(20.0)
+    assert compiled.num("T3", "m2", "val") == pytest.approx(40.0)
+    assert compiled.num("T4", "sum_row", "total") == pytest.approx(60.0)
+
+    # Verify physical coordinates and lowered formulas
+    assert compiled.table("T2").address("m1", "val") == "G5"
+    assert compiled.table("T2").formula("m1", "val") == "=$D$5"
+    assert compiled.table("T3").address("m2", "val") == "G11"
+    assert compiled.table("T3").formula("m2", "val") == "=$G$5*2"
+    assert compiled.table("T4").address("sum_row", "total") == "C20"
+    assert compiled.table("T4").formula("sum_row", "total") == "=$G$5+$G$11"
+
+    sheet_insp = compiled.inspect_sheet("Dashboard")
+    assert sheet_insp["min_col"] == 1
+    assert sheet_insp["max_col"] == 6
+    assert sheet_insp["min_row"] == 1
+    assert sheet_insp["max_row"] == 19
+    assert sheet_insp["col_widths"][4] == pytest.approx(3.0)
+
+    xlsx_bytes = compiled.emit_workbook()
+    assert xlsx_bytes.startswith(b"PK\x03\x04")
+
+    # 3. Invalid placement target raises SpecificationError with err.table
+    bad_target_model = Model()
+    bs = bad_target_model.add_sheet("S1")
+    bt = bs.add_table("OrphanTable", title="Orphan", right_of="MissingTarget")
+    bt.add_column("c1", header="C1")
+    bt.add_row("r1", cells={"c1": 1.0})
+    with pytest.raises(SpecificationError, match="invalid placement target") as target_exc:
+        bad_target_model.compile()
+    assert target_exc.value.table == "OrphanTable"
+
+    # 4. Overlapping tables raise SpecificationError with err.table == second_table.id
+    overlap_model = Model()
+    os_sheet = overlap_model.add_sheet("S1")
+    ot1 = os_sheet.add_table("Base", title="Base")
+    ot1.add_column("c1", header="C1")
+    ot1.add_row("r1", cells={"c1": 1.0})
+
+    ot2 = os_sheet.add_table("FirstRight", title="First", right_of=ot1)
+    ot2.add_column("c1", header="C1")
+    ot2.add_row("r1", cells={"c1": 2.0})
+
+    ot3 = os_sheet.add_table("CollidingRight", title="Second", right_of=ot1)
+    ot3.add_column("c1", header="C1")
+    ot3.add_row("r1", cells={"c1": 3.0})
+
+    with pytest.raises(SpecificationError, match="overlaps with table") as overlap_exc:
+        overlap_model.compile()
+    assert overlap_exc.value.table == "CollidingRight"

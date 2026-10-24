@@ -147,6 +147,7 @@ fn test_compiler_facade_error_propagation() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1")],
         rows: vec![
             RowSpec::new("r1").with_expr("CyclicTable[\"r2\", @col]"),
@@ -180,6 +181,7 @@ fn test_compiler_facade_error_propagation() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1")],
         rows: vec![
             RowSpec::new("r1").with_cells({

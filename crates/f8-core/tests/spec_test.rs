@@ -393,6 +393,7 @@ fn sample_table() -> TableSpec {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("col_1"), ColumnSpec::new("col_2")],
         rows: vec![
             RowSpec::new("row_1")
@@ -821,6 +822,71 @@ fn test_scenario_13_table_collapsible_serde() {
     // 5. Deserializing JSON with "collapsible": true yields collapsible == true
     let deserialized_coll: TableSpec = serde_json::from_str(&coll_json).unwrap();
     assert!(deserialized_coll.collapsible);
+}
+
+#[test]
+fn test_scenario_14_table_placement_serde() {
+    use f8_core::model::{DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP, PlacementSpec};
+
+    // 1. Default table has placement == Stack { gap: 2 } and omits "placement" from JSON
+    let table = TableSpec::new("T1", "Table 1");
+    assert_eq!(table.placement, PlacementSpec::stack());
+    assert!(table.placement.is_default());
+
+    let serialized = serde_json::to_string(&table).unwrap();
+    assert!(
+        !serialized.contains("placement"),
+        "default placement should be skipped during serialization"
+    );
+
+    let deserialized: TableSpec = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(deserialized.placement, PlacementSpec::stack());
+
+    // 2. Custom stack gap serializes and deserializes
+    let stack_gap_table = table
+        .clone()
+        .with_placement(PlacementSpec::stack_with_gap(4));
+    assert!(!stack_gap_table.placement.is_default());
+    let stack_json = serde_json::to_string(&stack_gap_table).unwrap();
+    assert!(stack_json.contains(r#""placement":{"kind":"stack","gap":4}"#));
+    let deser_stack: TableSpec = serde_json::from_str(&stack_json).unwrap();
+    assert_eq!(deser_stack.placement, PlacementSpec::stack_with_gap(4));
+
+    // 3. Below placement with default and explicit gap
+    let below_default: PlacementSpec = serde_json::from_str(r#"{"kind":"below","target":"T1"}"#)
+        .expect("deserialize below with default gap");
+    assert_eq!(
+        below_default,
+        PlacementSpec::below_with_gap("T1", DEFAULT_VERTICAL_TABLE_GAP)
+    );
+    assert_eq!(below_default, PlacementSpec::below("T1"));
+
+    let below_custom =
+        TableSpec::new("T2", "Table 2").with_placement(PlacementSpec::below_with_gap("T1", 0));
+    let below_json = serde_json::to_string(&below_custom).unwrap();
+    let deser_below: TableSpec = serde_json::from_str(&below_json).unwrap();
+    assert_eq!(
+        deser_below.placement,
+        PlacementSpec::below_with_gap("T1", 0)
+    );
+
+    // 4. RightOf placement with default and explicit gap
+    let right_default: PlacementSpec = serde_json::from_str(r#"{"kind":"right_of","target":"T1"}"#)
+        .expect("deserialize right_of with default gap");
+    assert_eq!(
+        right_default,
+        PlacementSpec::right_of_with_gap("T1", DEFAULT_HORIZONTAL_TABLE_GAP)
+    );
+    assert_eq!(right_default, PlacementSpec::right_of("T1"));
+
+    let right_custom =
+        TableSpec::new("T3", "Table 3").with_placement(PlacementSpec::right_of_with_gap("T1", 3));
+    let right_json = serde_json::to_string(&right_custom).unwrap();
+    let deser_right: TableSpec = serde_json::from_str(&right_json).unwrap();
+    assert_eq!(
+        deser_right.placement,
+        PlacementSpec::right_of_with_gap("T1", 3)
+    );
 }
 
 #[test]

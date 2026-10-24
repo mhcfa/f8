@@ -19,7 +19,7 @@ use crate::compiler::ir::id::CellId;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, ProjectManifest};
-use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
+use crate::model::table::{ColumnSpec, PlacementSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
 use crate::value::{CellValue, format_accounting_number};
 
@@ -205,24 +205,83 @@ impl LayoutPlanner {
             row_heights.insert(0, theme.metrics.gutter_row_height);
             col_widths.insert(0, theme.metrics.gutter_col_width);
 
-            let mut current_row: u32 = 1;
-            let start_col: u32 = 1; // Primary table starts at Column B
+            let mut sheet_placements: IndexMap<TableId, TablePlacement> = IndexMap::new();
+            let mut sheet_max_end_row: Option<u32> = None;
+            let mut sheet_max_end_col: u32 = 0;
 
             for (table_idx, table) in sheet_tables.iter().enumerate() {
-                // Inter-table gutters: separate stacked tables with 2 blank rows
-                if table_idx > 0 {
-                    row_heights.insert(current_row, theme.metrics.gutter_row_height);
-                    current_row += 1;
-                    row_heights.insert(current_row, theme.metrics.gutter_row_height);
-                    current_row += 1;
-                }
+                let (start_col, table_start_row) = match &table.placement {
+                    PlacementSpec::Stack { gap } => {
+                        if let Some(max_end_row) = sheet_max_end_row {
+                            let start_row = max_end_row.saturating_add(1).saturating_add(*gap);
+                            if start_row >= MAX_EXCEL_ROWS {
+                                return Err(LayoutError::GridLimitExceeded {
+                                    dimension: "rows",
+                                    max: MAX_EXCEL_ROWS,
+                                    actual: start_row,
+                                });
+                            }
+                            for r in (max_end_row + 1)..start_row {
+                                record_row_height(
+                                    &mut row_heights,
+                                    r,
+                                    theme.metrics.gutter_row_height,
+                                );
+                            }
+                            (1, start_row)
+                        } else {
+                            (1, 1)
+                        }
+                    }
+                    PlacementSpec::Below { target, gap } => {
+                        let target_placement = resolve_placement_target(
+                            &table.id,
+                            target,
+                            &sheet_id,
+                            table_idx,
+                            &sheet_spec.tables,
+                            &sheet_placements,
+                            tables,
+                        )?;
+                        let start_row = target_placement
+                            .end_row
+                            .saturating_add(1)
+                            .saturating_add(*gap);
+                        if start_row >= MAX_EXCEL_ROWS {
+                            return Err(LayoutError::GridLimitExceeded {
+                                dimension: "rows",
+                                max: MAX_EXCEL_ROWS,
+                                actual: start_row,
+                            });
+                        }
+                        for r in (target_placement.end_row + 1)..start_row {
+                            record_row_height(&mut row_heights, r, theme.metrics.gutter_row_height);
+                        }
+                        (target_placement.start_col, start_row)
+                    }
+                    PlacementSpec::RightOf { target, gap } => {
+                        let target_placement = resolve_placement_target(
+                            &table.id,
+                            target,
+                            &sheet_id,
+                            table_idx,
+                            &sheet_spec.tables,
+                            &sheet_placements,
+                            tables,
+                        )?;
+                        let start_col = target_placement
+                            .end_col
+                            .saturating_add(1)
+                            .saturating_add(*gap);
+                        (start_col, target_placement.start_row)
+                    }
+                };
 
-                let table_start_row = current_row;
                 let num_cols = table.columns.len() as u32;
                 if num_cols == 0 {
                     continue;
                 }
-                let end_col = start_col + num_cols - 1;
+                let end_col = start_col.saturating_add(num_cols - 1);
 
                 if end_col >= MAX_EXCEL_COLUMNS {
                     return Err(LayoutError::GridLimitExceeded {
@@ -232,10 +291,19 @@ impl LayoutPlanner {
                     });
                 }
 
+                let mut current_row = table_start_row;
+
                 // Table Title Row
                 let title_row = if !table.title.trim().is_empty() {
                     let r = current_row;
-                    row_heights.insert(r, theme.metrics.title_row_height);
+                    if r >= MAX_EXCEL_ROWS {
+                        return Err(LayoutError::GridLimitExceeded {
+                            dimension: "rows",
+                            max: MAX_EXCEL_ROWS,
+                            actual: r,
+                        });
+                    }
+                    record_row_height(&mut row_heights, r, theme.metrics.title_row_height);
                     current_row += 1;
                     Some(r)
                 } else {
@@ -245,7 +313,14 @@ impl LayoutPlanner {
                 // Table Subtitle Row
                 let subtitle_row = if table.subtitle.is_some() {
                     let r = current_row;
-                    row_heights.insert(r, theme.metrics.data_row_height);
+                    if r >= MAX_EXCEL_ROWS {
+                        return Err(LayoutError::GridLimitExceeded {
+                            dimension: "rows",
+                            max: MAX_EXCEL_ROWS,
+                            actual: r,
+                        });
+                    }
+                    record_row_height(&mut row_heights, r, theme.metrics.data_row_height);
                     current_row += 1;
                     Some(r)
                 } else {
@@ -255,7 +330,14 @@ impl LayoutPlanner {
                 // Title Buffer Gutter
                 let title_gutter_row = if title_row.is_some() || subtitle_row.is_some() {
                     let r = current_row;
-                    row_heights.insert(r, theme.metrics.title_gutter_row_height);
+                    if r >= MAX_EXCEL_ROWS {
+                        return Err(LayoutError::GridLimitExceeded {
+                            dimension: "rows",
+                            max: MAX_EXCEL_ROWS,
+                            actual: r,
+                        });
+                    }
+                    record_row_height(&mut row_heights, r, theme.metrics.title_gutter_row_height);
                     current_row += 1;
                     Some(r)
                 } else {
@@ -283,7 +365,11 @@ impl LayoutPlanner {
                                 actual: current_row,
                             });
                         }
-                        row_heights.insert(current_row, theme.metrics.header_row_height);
+                        record_row_height(
+                            &mut row_heights,
+                            current_row,
+                            theme.metrics.header_row_height,
+                        );
                         current_row += 1;
                     }
                     let header_end = current_row - 1;
@@ -305,15 +391,27 @@ impl LayoutPlanner {
 
                     match row_spec {
                         RowSpec::Gutter => {
-                            row_heights.insert(current_row, theme.metrics.gutter_row_height);
+                            record_row_height(
+                                &mut row_heights,
+                                current_row,
+                                theme.metrics.gutter_row_height,
+                            );
                             current_row += 1;
                         }
                         RowSpec::SectionHeader(_) => {
-                            row_heights.insert(current_row, theme.metrics.section_row_height);
+                            record_row_height(
+                                &mut row_heights,
+                                current_row,
+                                theme.metrics.section_row_height,
+                            );
                             current_row += 1;
                         }
                         RowSpec::Data(data_row) => {
-                            row_heights.insert(current_row, theme.metrics.data_row_height);
+                            record_row_height(
+                                &mut row_heights,
+                                current_row,
+                                theme.metrics.data_row_height,
+                            );
 
                             for (c_idx, col_spec) in table.columns.iter().enumerate() {
                                 let physical_col = start_col + (c_idx as u32);
@@ -378,32 +476,59 @@ impl LayoutPlanner {
                 let body_end_row = current_row.saturating_sub(1);
                 let table_end_row = body_end_row;
 
-                layout_tables.insert(
-                    table.id.clone(),
-                    TablePlacement {
-                        sheet: sheet_id.clone(),
-                        start_col,
-                        start_row: table_start_row,
-                        end_col,
-                        end_row: table_end_row,
-                        title_row,
-                        subtitle_row,
-                        title_gutter_row,
-                        header_row_range,
-                        body_row_range: (body_start_row, body_end_row),
-                    },
-                );
+                for (first_id, first_placement) in &sheet_placements {
+                    if first_placement.start_col <= end_col
+                        && start_col <= first_placement.end_col
+                        && first_placement.start_row <= table_end_row
+                        && table_start_row <= first_placement.end_row
+                    {
+                        return Err(LayoutError::TableOverlap {
+                            sheet: sheet_id,
+                            first_table: first_id.clone(),
+                            second_table: table.id.clone(),
+                        });
+                    }
+                }
+
+                let placement = TablePlacement {
+                    sheet: sheet_id.clone(),
+                    start_col,
+                    start_row: table_start_row,
+                    end_col,
+                    end_row: table_end_row,
+                    title_row,
+                    subtitle_row,
+                    title_gutter_row,
+                    header_row_range,
+                    body_row_range: (body_start_row, body_end_row),
+                };
+
+                sheet_max_end_row =
+                    Some(sheet_max_end_row.map_or(table_end_row, |m| m.max(table_end_row)));
+                sheet_max_end_col = sheet_max_end_col.max(end_col);
+                sheet_placements.insert(table.id.clone(), placement.clone());
+                layout_tables.insert(table.id.clone(), placement);
             }
 
-            // 3. Sheet-wide column width arbitration across stacked tables
+            if let Some(max_end_row) = sheet_max_end_row {
+                for r in 0..=max_end_row {
+                    row_heights
+                        .entry(r)
+                        .or_insert(theme.metrics.gutter_row_height);
+                }
+                row_heights.sort_keys();
+            }
+
+            // 3. Sheet-wide column width arbitration across 2D placed tables
             ColumnArbitrationContext {
                 tables: &sheet_tables,
+                placements: &sheet_placements,
                 grid,
                 layout_cells: &layout_cells,
                 theme,
                 evaluated,
             }
-            .arbitrate(start_col, &mut col_widths);
+            .arbitrate(sheet_max_end_col, &mut col_widths);
 
             layout_sheets.insert(
                 sheet_id.clone(),
@@ -426,9 +551,56 @@ impl LayoutPlanner {
     }
 }
 
-/// Context and read-only inputs for arbitrating sheet-wide column widths across stacked tables.
+fn record_row_height(row_heights: &mut IndexMap<u32, f64>, row: u32, height: f64) {
+    let existing = row_heights.get(&row).copied().unwrap_or(0.0);
+    row_heights.insert(row, existing.max(height));
+}
+
+fn resolve_placement_target<'a>(
+    table_id: &TableId,
+    target_id: &TableId,
+    sheet_id: &SheetId,
+    table_idx: usize,
+    sheet_table_ids: &[TableId],
+    sheet_placements: &'a IndexMap<TableId, TablePlacement>,
+    all_tables: &[TableSpec],
+) -> Result<&'a TablePlacement, LayoutError> {
+    if target_id == table_id {
+        return Err(LayoutError::InvalidPlacementTarget {
+            table: table_id.clone(),
+            target: target_id.clone(),
+            sheet: sheet_id.clone(),
+            reason: "table cannot reference itself",
+        });
+    }
+
+    if let Some(placement) = sheet_placements.get(target_id) {
+        return Ok(placement);
+    }
+
+    let reason = if sheet_table_ids
+        .get((table_idx + 1)..)
+        .is_some_and(|later| later.contains(target_id))
+    {
+        "target table is declared after this table on the same sheet"
+    } else if all_tables.iter().any(|t| t.id == *target_id) {
+        "target table is on a different sheet"
+    } else {
+        "target table does not exist"
+    };
+
+    Err(LayoutError::InvalidPlacementTarget {
+        table: table_id.clone(),
+        target: target_id.clone(),
+        sheet: sheet_id.clone(),
+        reason,
+    })
+}
+
+/// Context and read-only inputs for arbitrating sheet-wide column widths across placed tables.
 struct ColumnArbitrationContext<'a> {
     tables: &'a [&'a TableSpec],
+    placements: &'a IndexMap<TableId, TablePlacement>,
     grid: &'a CellGrid,
     layout_cells: &'a IndexMap<CellId, PhysicalCoordinate>,
     theme: &'a Theme,
@@ -436,28 +608,21 @@ struct ColumnArbitrationContext<'a> {
 }
 
 impl ColumnArbitrationContext<'_> {
-    /// Arbitrates sheet-wide column widths across all stacked tables sharing worksheet columns.
-    fn arbitrate(&self, start_col: u32, col_widths: &mut IndexMap<u32, f64>) {
-        let max_col_count = self
-            .tables
-            .iter()
-            .map(|t| t.columns.len() as u32)
-            .max()
-            .unwrap_or(0);
+    /// Arbitrates sheet-wide column widths across all tables sharing worksheet columns.
+    fn arbitrate(&self, sheet_max_end_col: u32, col_widths: &mut IndexMap<u32, f64>) {
+        for physical_col in 1..=sheet_max_end_col {
+            let has_data_col = self.tables.iter().any(|t| {
+                let Some(placement) = self.placements.get(&t.id) else {
+                    return false;
+                };
+                if physical_col < placement.start_col || physical_col > placement.end_col {
+                    return false;
+                }
+                let local_col_idx = (physical_col - placement.start_col) as usize;
+                matches!(t.columns.get(local_col_idx), Some(ColumnSpec::Data(_)))
+            });
 
-        for col_offset in 0..max_col_count {
-            let physical_col = start_col + col_offset;
-
-            // Check if every table occupying this column is a Gutter column
-            let all_gutter = self
-                .tables
-                .iter()
-                .all(|t| match t.columns.get(col_offset as usize) {
-                    Some(ColumnSpec::Gutter) | None => true,
-                    Some(ColumnSpec::Data(_)) => false,
-                });
-
-            if all_gutter {
+            if !has_data_col {
                 col_widths.insert(physical_col, self.theme.metrics.gutter_col_width);
                 continue;
             }
@@ -465,10 +630,14 @@ impl ColumnArbitrationContext<'_> {
             let mut max_chars_across_tables: usize = 0;
 
             for table in self.tables {
-                let Some(col_spec) = table.columns.get(col_offset as usize) else {
+                let Some(placement) = self.placements.get(&table.id) else {
                     continue;
                 };
-                let ColumnSpec::Data(data_col) = col_spec else {
+                if physical_col < placement.start_col || physical_col > placement.end_col {
+                    continue;
+                }
+                let local_col_idx = (physical_col - placement.start_col) as usize;
+                let Some(ColumnSpec::Data(data_col)) = table.columns.get(local_col_idx) else {
                     continue;
                 };
 

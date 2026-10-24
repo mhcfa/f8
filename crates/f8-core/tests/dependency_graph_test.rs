@@ -37,6 +37,7 @@ fn create_table(
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns,
         rows: row_specs,
     }
@@ -289,6 +290,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("value")],
         rows: vec![assumptions_row_tax, assumptions_row_base],
     };
@@ -317,6 +319,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2023A"), ColumnSpec::new("2024E")],
         rows: vec![forecast_row_rev, forecast_row_tax],
     };

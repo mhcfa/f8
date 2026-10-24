@@ -38,6 +38,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: Some("Key Operating Drivers & Macro Parameters".to_string()),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             build_descriptor_col("line_item", "Parameter"),
             build_measure_col_label("val", "Value"),
@@ -90,6 +91,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowBuilder::line_item("revenue", "Revenue")
@@ -157,6 +159,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowSpec::section_header("Operating Activities"),
@@ -229,6 +232,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: Some("($ in Millions)".to_string()),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols,
         rows: vec![
             // Assets

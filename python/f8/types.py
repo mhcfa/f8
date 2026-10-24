@@ -375,6 +375,32 @@ class GutterRowSpecDict(TypedDict):
 type RowSpecDict = DataRowSpecDict | SectionHeaderRowSpecDict | GutterRowSpecDict
 
 
+class StackPlacementSpecDict(TypedDict, total=False):
+    """Specification dictionary for vertical sheet-stack table placement."""
+
+    kind: Literal["stack"]
+    gap: int
+
+
+class BelowPlacementSpecDict(TypedDict, total=False):
+    """Specification dictionary for relative vertical table placement below a target table."""
+
+    kind: Literal["below"]
+    target: str
+    gap: int
+
+
+class RightOfPlacementSpecDict(TypedDict, total=False):
+    """Specification dictionary for relative horizontal table placement right of a target table."""
+
+    kind: Literal["right_of"]
+    target: str
+    gap: int
+
+
+type PlacementSpecDict = StackPlacementSpecDict | BelowPlacementSpecDict | RightOfPlacementSpecDict
+
+
 class TableSpecDict(TypedDict, total=False):
     """Specification dictionary for a complete financial table."""
 
@@ -383,6 +409,7 @@ class TableSpecDict(TypedDict, total=False):
     subtitle: str
     currency: CurrencyCode
     collapsible: bool
+    placement: PlacementSpecDict
     columns: list[ColumnSpecDict]
     rows: list[RowSpecDict]
 
