@@ -21,7 +21,7 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 
 ## Modeling Lifecycle
 
-1. Define: Build model hierarchy with explicit column roles, section headers, row gutters, and vector formulas.
+1. Define: Build model hierarchy (`Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)`) with explicit column roles, section headers, row gutters, and vector formulas. Pass `theme=Path("theme.json")` to load a workspace `theme.json` file; string arguments (e.g. `theme="corporate_navy"`) resolve strictly to compiled-in theme presets.
 2. Compile: Call `compiled = model.compile()` to parse formulas, lower coordinates, and build the DAG.
 3. Audit: Inspect tabular slices and cell calculations via `compiled.table(...)` and `compiled.inspect_cell(...)`.
 4. Self-heal: Catch typed `F8Error` exceptions (`CycleDetectedError`, `ReferenceResolutionError`, etc.) to diagnose and repair coordinates.
@@ -38,6 +38,6 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 
 ## Reference Index
 
-- `references/syntax-and-grid.md`: 2D coordinate grammar, active axes (`@col`, `@row`), temporal offsets (`col.prev`, `col.next`), slice syntax, column roles, section headers, row gutters, and styling presets.
+- `references/syntax-and-grid.md`: Model/sheet/table constructors, theme loading (`Path("theme.json")` vs built-in presets), 2D coordinate grammar, active axes (`@col`, `@row`), temporal offsets (`col.prev`, `col.next`), slice syntax, column roles, section headers, row gutters, and styling presets.
 - `references/functions.md`: 44 built-in Excel functions, signatures, defaults, criteria syntax, day-count conventions, and argument omission rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` inspection, markdown/DataFrame export, precedent/dependent trees, and structured exception diagnostics.

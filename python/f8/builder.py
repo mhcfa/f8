@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from f8._core import CompiledModel
@@ -647,12 +649,23 @@ class Sheet:
         return spec
 
 
+def _resolve_theme_input(theme: ThemeInput) -> Mapping[str, object] | str:
+    """Resolves a theme input into a built-in preset name or inline theme dictionary."""
+    if isinstance(theme, Path):
+        parsed: object = json.loads(theme.read_text(encoding="utf-8"))
+        if not isinstance(parsed, dict):
+            msg = f"Theme JSON file '{theme}' must contain a JSON object at root"
+            raise ValueError(msg)
+        return cast(dict[str, object], parsed)
+    return theme
+
+
 class Model:
     """Fluent root container for financial models and specification synthesis."""
 
     def __init__(self, name: str = "Model", theme: ThemeInput = "corporate_navy") -> None:
         self.name = name
-        self.theme = theme
+        self.theme: Mapping[str, object] | str = _resolve_theme_input(theme)
         self._sheets: list[Sheet] = []
         self._sheet_names: set[str] = set()
 

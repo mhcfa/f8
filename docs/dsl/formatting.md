@@ -214,7 +214,7 @@ f8 supports pluggable, external workbook themes inspired by modern IDE and edito
 
 ### 6.1. Theme declaration
 
-`Model(name="...", theme=...)` configures the active workbook theme either by referencing a built-in preset name (`str`) or by passing a custom theme dictionary (`Mapping[str, object]`). If omitted, it defaults to `"corporate_navy"`:
+`Model(name="...", theme=...)` configures the active workbook theme by referencing a built-in preset name (`str`), passing a JSON file path (`pathlib.Path`, e.g. `Path("theme.json")`), or passing a custom theme dictionary (`Mapping[str, object]`). If omitted, it defaults to `"corporate_navy"`:
 
 ```json
 {
@@ -229,7 +229,7 @@ f8 supports pluggable, external workbook themes inspired by modern IDE and edito
 f8 provides `corporate_navy` as its built-in institutional theme:
 - `corporate_navy`: Institutional private equity and investment banking style with deep navy headers, underlined section titles on transparent backgrounds, crisp thin borders, and classic blue inputs.
 
-Custom themes can be supplied in-memory via `Model(theme=custom_theme_dict)` in Python or `ThemeSpec::Custom` on `ProjectManifest` in Rust (see schema below).
+Custom themes can be supplied via `Model(theme=Path("theme.json"))` or `Model(theme=custom_theme_dict)` in Python, or `ThemeSpec::Custom` on `ProjectManifest` in Rust (see schema below). Note that passing a `str` (`theme="corporate_navy"`) always resolves the built-in preset in `f8-core`; pass a `Path` (`theme=Path("theme.json")`) or `Mapping` to load a workspace `theme.json` file.
 
 ### 6.3. Theme JSON configuration schema
 
