@@ -171,8 +171,7 @@ f8/
 ├── python/                     # Python SDK package
 │   └── f8/                     # Fluent builder, TableAuditor, CLI, & skills
 │
-└── docs/                       # Architecture, DSL reference, catalog, & task specs
-    ├── dsl/                    # Specification format, addressing, grammar, formatting, patterns
-    ├── functions/              # Excel function catalog
-    └── specs/                  # Task specifications
+└── docs/                       # Architecture overview & active task specs
+    ├── architecture.md         # Compiler pipeline, invariants, & inspection facade
+    └── specs/drafts/           # Ephemeral task specifications
 ```

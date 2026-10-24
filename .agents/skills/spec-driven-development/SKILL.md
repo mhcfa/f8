@@ -12,7 +12,7 @@ description: >-
 
 - Truth hierarchy:
   1. Code, types & tests: Authoritative truth for behavior, data structures, and edge cases.
-  2. Reference docs (`docs/`): System architecture (`docs/architecture.md`), DSL schemas (`docs/dsl/`), and function catalog (`docs/functions/catalog.md`).
+  2. Reference docs: System architecture (`docs/architecture.md`) and bundled modeling skill (`python/f8/skills/f8-modeling/`).
   3. Draft specs (`docs/specs/drafts/`): Ephemeral execution contracts for active work.
 - Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
 - Spec custody: Draft specs (`docs/specs/drafts/`) are authored and deleted exclusively by the Lead Orchestrator. Subagents never edit, move, or delete spec files.
@@ -28,7 +28,7 @@ description: >-
 
 - Create `docs/specs/drafts/YYYY-MM-DD-<feature-name>.md` using the template below.
 - Define data structures, signatures, invariants, and `Given / When / Then` acceptance criteria (1:1 testable) without repeating file lists across sections.
-- Cite source paths via backtick code spans; reserve markdown links for stable `docs/` files.
+- Cite workspace files and source paths via backtick code spans.
 - Align with human engineer before execution.
 
 ### 3. Implement (Implementer Subagent)
@@ -47,7 +47,7 @@ description: >-
 
 ### 5. Fold & Delete (Lead Orchestrator)
 
-- Reconcile lasting architectural, DSL, or function changes into `docs/architecture.md`, `docs/dsl/`, or `docs/functions/catalog.md`.
+- Reconcile lasting architectural, DSL, or function changes into `docs/architecture.md` or `python/f8/skills/f8-modeling/`.
 - Delete the completed draft spec from `docs/specs/drafts/` so zero stale specs remain in the working tree.
 
 ## Draft Spec Template
