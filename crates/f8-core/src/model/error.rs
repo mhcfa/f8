@@ -29,6 +29,9 @@ pub enum ModelError {
     #[error("Table '{table}': subtitle must not be empty or whitespace")]
     EmptyTableSubtitle { table: TableId },
 
+    #[error("Table '{table}': column '{column}' group must not be empty or whitespace")]
+    EmptyColumnGroup { table: TableId, column: ColId },
+
     #[error(
         "Table '{table}': {context} specifies decimals ({decimals}) exceeding maximum supported precision ({max})"
     )]

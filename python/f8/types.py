@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 if TYPE_CHECKING:
@@ -83,6 +84,7 @@ class CellInspection(TypedDict):
     decimals: int | None
     currency: str | None
     is_highlight: bool
+    shade: Shade | None
     indent: int
     is_formula: bool
     formula_expr: str | None
@@ -117,10 +119,12 @@ class ColumnInspection(TypedDict):
     """Column inspection metadata within a table view."""
 
     id: str | None
+    group: str | None
     headers: list[str]
     is_gutter: bool
     is_descriptor: bool
     style: SemanticStyle | None
+    shade: Shade | None
 
 
 class RowInspection(TypedDict):
@@ -132,6 +136,7 @@ class RowInspection(TypedDict):
     is_gutter: bool
     indent: int
     style: SemanticStyle | None
+    shade: Shade | None
 
 
 class TableCellInfo(TypedDict):
@@ -222,6 +227,8 @@ type FormatPreset = Literal[
 
 type SemanticStyle = Literal["data", "subtotal", "total"]
 
+type Shade = Literal["none", "muted", "accent", "alt"]
+
 type CurrencyCode = Literal[
     "USD",
     "EUR",
@@ -276,6 +283,7 @@ class DetailedCellDict(TypedDict, total=False):
     expr: str
     style: SemanticStyle
     highlight: bool
+    shade: Shade
     format: FormatPreset
     decimals: int
     currency: CurrencyCode
@@ -304,7 +312,7 @@ class ProjectManifestDict(TypedDict):
     """Complete project manifest specification dictionary."""
 
     model_name: str
-    theme: ThemeInput
+    theme: Mapping[str, object] | str
     sheets: list[SheetSpecDict]
 
 
@@ -314,9 +322,11 @@ class DataColumnSpecDict(TypedDict, total=False):
     kind: Literal["data"]
     id: str
     role: AxisRole
+    group: str
     headers: list[str]
     style: SemanticStyle
     highlight: bool
+    shade: Shade
     format: FormatPreset
     decimals: int
     currency: CurrencyCode
@@ -339,6 +349,7 @@ class DataRowSpecDict(TypedDict, total=False):
     id: str
     style: SemanticStyle
     highlight: bool
+    shade: Shade
     format: FormatPreset
     decimals: int
     currency: CurrencyCode
@@ -378,7 +389,7 @@ class TableSpecDict(TypedDict, total=False):
 
 type ManifestInput = Mapping[str, object]
 type TableInput = Mapping[str, object]
-type ThemeInput = Mapping[str, object] | str
+type ThemeInput = Mapping[str, object] | Path | str
 
 
 def __getattr__(name: str) -> object:

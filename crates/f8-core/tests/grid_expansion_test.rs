@@ -709,6 +709,7 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
             expr: None,
             style: Some(SemanticStyle::Data),
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             note: None,
@@ -756,6 +757,7 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
             expr: None,
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: Some(4),
             note: None,
@@ -838,6 +840,7 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
             expr: None,
             style: None,
             highlight: Some(false),
+            shade: None,
             format: None,
             decimals: None,
             note: None,
@@ -1303,4 +1306,134 @@ fn test_scenario_12_independent_indentation_across_multiple_descriptor_columns()
         .find(|c| c.id.col.as_str() == "amount")
         .unwrap();
     assert_eq!(amount_cell.indent, 0);
+}
+
+#[test]
+fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
+    use f8_core::model::format::Shade;
+
+    // 1. Column and row shade inheritance + row shade spanning descriptor and measure columns
+    let table = TableSpec {
+        id: TableId::from("ShadeTable"),
+        title: "Shade Table".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![
+            ColumnSpec::descriptor("label", "Line Item"),
+            ColumnSpec::new("2023a").with_shade(Some(Shade::Muted)),
+            ColumnSpec::new("stub").with_shade(Some(Shade::Accent)),
+            ColumnSpec::new("2024e"),
+        ],
+        rows: vec![
+            RowSpec::new("rev").with_expr("100").with_cells({
+                let mut map = IndexMap::new();
+                map.insert(ColId::from("label"), CellInput::string("Revenue"));
+                map
+            }),
+            RowSpec::new("kpi")
+                .with_shade(Some(Shade::Alt))
+                .with_expr("50")
+                .with_cells({
+                    let mut map = IndexMap::new();
+                    map.insert(ColId::from("label"), CellInput::string("KPI Band"));
+                    // Escape hatch: clear shade at (kpi, 2023a) and override to Accent at (kpi, stub)
+                    map.insert(
+                        ColId::from("2023a"),
+                        CellInput::Detailed(DetailedCellInput {
+                            value: Some(ValueLiteral::Number(45.0)),
+                            shade: Some(Shade::None),
+                            ..Default::default()
+                        }),
+                    );
+                    map.insert(
+                        ColId::from("stub"),
+                        CellInput::Detailed(DetailedCellInput {
+                            value: Some(ValueLiteral::Number(48.0)),
+                            shade: Some(Shade::Accent),
+                            ..Default::default()
+                        }),
+                    );
+                    map
+                }),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+    let cells = expand_table(&symbols, &table).unwrap();
+
+    let find_shade = |r: &str, c: &str| {
+        cells
+            .iter()
+            .find(|cell| cell.id.row.as_str() == r && cell.id.col.as_str() == c)
+            .unwrap()
+            .shade
+    };
+
+    // Row "rev" inherits column shades
+    assert_eq!(find_shade("rev", "label"), None);
+    assert_eq!(find_shade("rev", "2023a"), Some(Shade::Muted));
+    assert_eq!(find_shade("rev", "stub"), Some(Shade::Accent));
+    assert_eq!(find_shade("rev", "2024e"), None);
+
+    // Row "kpi" spans descriptor ("label") and measure ("2024e") with Shade::Alt,
+    // while point cell overrides at ("kpi", "2023a") -> None and ("kpi", "stub") -> Some(Shade::Accent)
+    assert_eq!(find_shade("kpi", "label"), Some(Shade::Alt));
+    assert_eq!(find_shade("kpi", "2023a"), None);
+    assert_eq!(find_shade("kpi", "stub"), Some(Shade::Accent));
+    assert_eq!(find_shade("kpi", "2024e"), Some(Shade::Alt));
+
+    // 2. Symmetrical vector shade conflict when row and col specify differing active shades without cell override
+    let conflict_table = TableSpec {
+        id: TableId::from("ConflictTable"),
+        title: "Conflict Table".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![ColumnSpec::new("c1").with_shade(Some(Shade::Accent))],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_shade(Some(Shade::Muted))
+                .with_expr("10"),
+        ],
+    };
+    let mut conflict_symbols = SymbolTable::new();
+    conflict_symbols
+        .register_table(SheetId::from("Model"), &conflict_table)
+        .unwrap();
+    let err = expand_table(&conflict_symbols, &conflict_table).unwrap_err();
+    assert!(matches!(
+        err,
+        IrError::ShadeConflict {
+            ref table,
+            ref row,
+            ref column,
+            row_shade: Shade::Muted,
+            col_shade: Shade::Accent,
+        } if table.as_str() == "ConflictTable" && row.as_str() == "r1" && column.as_str() == "c1"
+    ));
+
+    // 3. Matching row and col shades succeed without conflict
+    let matching_table = TableSpec {
+        id: TableId::from("MatchingTable"),
+        title: "Matching Table".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        columns: vec![ColumnSpec::new("c1").with_shade(Some(Shade::Muted))],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_shade(Some(Shade::Muted))
+                .with_expr("10"),
+        ],
+    };
+    let mut matching_symbols = SymbolTable::new();
+    matching_symbols
+        .register_table(SheetId::from("Model"), &matching_table)
+        .unwrap();
+    let matching_cells = expand_table(&matching_symbols, &matching_table).unwrap();
+    assert_eq!(matching_cells[0].shade, Some(Shade::Muted));
 }

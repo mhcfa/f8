@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from f8._core import CompiledModel
@@ -23,6 +25,7 @@ from f8.types import (
     RowSpecDict,
     SectionHeaderRowSpecDict,
     SemanticStyle,
+    Shade,
     SheetSpecDict,
     TableSpecDict,
     ThemeInput,
@@ -44,6 +47,7 @@ class Cell:
     expr: str | None = None
     style: SemanticStyle | None = None
     highlight: bool | None = None
+    shade: Shade | None = None
     format: FormatPreset | None = None
     decimals: int | None = None
     currency: CurrencyCode | None = None
@@ -74,6 +78,7 @@ def _serialize_cell_input(
         has_meta = (
             cell.style is not None
             or cell.highlight is not None
+            or cell.shade is not None
             or cell.format is not None
             or cell.decimals is not None
             or cell.currency is not None
@@ -90,6 +95,8 @@ def _serialize_cell_input(
                 d["style"] = cell.style
             if cell.highlight is not None:
                 d["highlight"] = cell.highlight
+            if cell.shade is not None:
+                d["shade"] = cell.shade
             if cell.format is not None:
                 d["format"] = cell.format
             if cell.decimals is not None:
@@ -122,9 +129,11 @@ def _serialize_cell_input(
 class _DataColumn:
     id: str
     role: AxisRole
+    group: str | None
     headers: list[str]
     style: SemanticStyle | None
     highlight: bool | None
+    shade: Shade | None
     format: FormatPreset | None
     decimals: int | None
     currency: CurrencyCode | None
@@ -145,6 +154,7 @@ class _DataRow:
     expr: str | None
     style: SemanticStyle | None
     highlight: bool | None
+    shade: Shade | None
     format: FormatPreset | None
     decimals: int | None
     currency: CurrencyCode | None
@@ -194,8 +204,10 @@ class Table:
         role: AxisRole = "measure",
         header: str | None = None,
         headers: list[str] | None = None,
+        group: str | None = None,
         style: SemanticStyle | None = None,
         highlight: bool | None = None,
+        shade: Shade | None = None,
         format: FormatPreset | None = None,
         decimals: int | None = None,
         currency: CurrencyCode | None = None,
@@ -204,6 +216,8 @@ class Table:
         """Appends a data or descriptor column specification to the table."""
         if header is not None and headers is not None:
             raise ValueError("Cannot specify both 'header' and 'headers'")
+        if group is not None and not group.strip():
+            raise ValueError("Column 'group' cannot be empty")
         if id in self._col_ids:
             raise ValueError(f"Column '{id}' already exists in table '{self.id}'")
 
@@ -217,9 +231,11 @@ class Table:
         col = _DataColumn(
             id=id,
             role=role,
+            group=group,
             headers=norm_headers,
             style=style,
             highlight=highlight,
+            shade=shade,
             format=format,
             decimals=decimals,
             currency=currency,
@@ -241,6 +257,7 @@ class Table:
         expr: str | None = None,
         style: SemanticStyle | None = None,
         highlight: bool | None = None,
+        shade: Shade | None = None,
         format: FormatPreset | None = None,
         decimals: int | None = None,
         currency: CurrencyCode | None = None,
@@ -256,6 +273,7 @@ class Table:
             expr=expr,
             style=style,
             highlight=highlight,
+            shade=shade,
             format=format,
             decimals=decimals,
             currency=currency,
@@ -289,6 +307,7 @@ class Table:
         expr: str | None = None,
         style: SemanticStyle | None = None,
         highlight: bool | None = None,
+        shade: Shade | None = None,
         format: FormatPreset | None = None,
         decimals: int | None = None,
         currency: CurrencyCode | None = None,
@@ -306,6 +325,7 @@ class Table:
         existing_expr: str | None = None
         existing_style: SemanticStyle | None = None
         existing_highlight: bool | None = None
+        existing_shade: Shade | None = None
         existing_format: FormatPreset | None = None
         existing_decimals: int | None = None
         existing_currency: CurrencyCode | None = None
@@ -319,6 +339,7 @@ class Table:
                 existing_expr = existing_cell.expr
                 existing_style = existing_cell.style
                 existing_highlight = existing_cell.highlight
+                existing_shade = existing_cell.shade
                 existing_format = existing_cell.format
                 existing_decimals = existing_cell.decimals
                 existing_currency = existing_cell.currency
@@ -329,6 +350,7 @@ class Table:
                 existing_expr = existing_cell.get("expr", None)
                 existing_style = existing_cell.get("style", None)
                 existing_highlight = existing_cell.get("highlight", None)
+                existing_shade = existing_cell.get("shade", None)
                 existing_format = existing_cell.get("format", None)
                 existing_decimals = existing_cell.get("decimals", None)
                 existing_currency = existing_cell.get("currency", None)
@@ -341,6 +363,7 @@ class Table:
         base_expr: str | None = None
         base_style: SemanticStyle | None = None
         base_highlight: bool | None = None
+        base_shade: Shade | None = None
         base_format: FormatPreset | None = None
         base_decimals: int | None = None
         base_currency: CurrencyCode | None = None
@@ -352,6 +375,7 @@ class Table:
             base_expr = cell.expr
             base_style = cell.style
             base_highlight = cell.highlight
+            base_shade = cell.shade
             base_format = cell.format
             base_decimals = cell.decimals
             base_currency = cell.currency
@@ -362,6 +386,7 @@ class Table:
             base_expr = cell.get("expr", None)
             base_style = cell.get("style", None)
             base_highlight = cell.get("highlight", None)
+            base_shade = cell.get("shade", None)
             base_format = cell.get("format", None)
             base_decimals = cell.get("decimals", None)
             base_currency = cell.get("currency", None)
@@ -406,6 +431,11 @@ class Table:
             if highlight is not None
             else (base_highlight if base_highlight is not None else existing_highlight)
         )
+        final_shade = (
+            shade
+            if shade is not None
+            else (base_shade if base_shade is not None else existing_shade)
+        )
         final_format = (
             format
             if format is not None
@@ -435,6 +465,7 @@ class Table:
             expr=final_expr,
             style=final_style,
             highlight=final_highlight,
+            shade=final_shade,
             format=final_format,
             decimals=final_decimals,
             currency=final_currency,
@@ -458,10 +489,14 @@ class Table:
                 "role": col.role,
                 "headers": list(col.headers),
             }
+            if col.group is not None:
+                data_col["group"] = col.group
             if col.style is not None:
                 data_col["style"] = col.style
             if col.highlight is not None:
                 data_col["highlight"] = col.highlight
+            if col.shade is not None:
+                data_col["shade"] = col.shade
             if col.format is not None:
                 data_col["format"] = col.format
             if col.decimals is not None:
@@ -500,6 +535,8 @@ class Table:
                     data_row["style"] = row.style
                 if row.highlight is not None:
                     data_row["highlight"] = row.highlight
+                if row.shade is not None:
+                    data_row["shade"] = row.shade
                 if row.format is not None:
                     data_row["format"] = row.format
                 if row.decimals is not None:
@@ -612,12 +649,23 @@ class Sheet:
         return spec
 
 
+def _resolve_theme_input(theme: ThemeInput) -> Mapping[str, object] | str:
+    """Resolves a theme input into a built-in preset name or inline theme dictionary."""
+    if isinstance(theme, Path):
+        parsed: object = json.loads(theme.read_text(encoding="utf-8"))
+        if not isinstance(parsed, dict):
+            msg = f"Theme JSON file '{theme}' must contain a JSON object at root"
+            raise ValueError(msg)
+        return cast(dict[str, object], parsed)
+    return theme
+
+
 class Model:
     """Fluent root container for financial models and specification synthesis."""
 
     def __init__(self, name: str = "Model", theme: ThemeInput = "corporate_navy") -> None:
         self.name = name
-        self.theme = theme
+        self.theme: Mapping[str, object] | str = _resolve_theme_input(theme)
         self._sheets: list[Sheet] = []
         self._sheet_names: set[str] = set()
 

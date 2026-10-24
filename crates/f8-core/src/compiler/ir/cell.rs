@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::error::IrError;
 use super::id::CellId;
 use crate::expr::ast::Expr;
-use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::table::ValueLiteral;
 
@@ -64,6 +64,9 @@ pub struct CellNode {
     pub vertical: SemanticStyle,
     /// Visual highlight emphasis flag.
     pub is_highlight: bool,
+    /// Semantic background shade if assigned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
     /// Descriptor text indentation level.
     #[serde(default)]
     pub indent: u8,
@@ -85,6 +88,7 @@ impl CellNode {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: false,
+            shade: None,
             indent: 0,
             payload,
             note: None,
@@ -119,6 +123,12 @@ impl CellNode {
     /// Builder method attaching visual highlight emphasis.
     pub fn with_highlight(mut self, is_highlight: bool) -> Self {
         self.is_highlight = is_highlight;
+        self
+    }
+
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        self.shade = shade;
         self
     }
 

@@ -36,6 +36,7 @@ If you are working with an AI coding agent, `f8` ships with a bundled modeling s
 
 ```bash
 f8 agent init    # scaffolds .agents/skills/f8-modeling/
+f8 theme init    # generates a customizable theme.json in the workspace root
 f8 guide --all   # streams the full DSL, function, and auditing guide to stdout
 ```
 
@@ -124,9 +125,10 @@ Under the hood, `f8` is a Python SDK (`python/f8/`) backed by a 6-pass Rust comp
 `Spec -> IR Expansion -> DAG & Cycle Check -> Topological Evaluation -> Spatial Layout -> Formula Lowering -> .xlsx Emission`
 
 - Architecture overview: `docs/architecture.md`
-- 2D matrix DSL reference: `docs/dsl/spec-format.md`
-- Standard function catalog: `docs/functions/catalog.md`
 - Python modeling skill: `python/f8/skills/f8-modeling/SKILL.md`
+- Syntax, grid, and formatting reference: `python/f8/skills/f8-modeling/references/syntax-and-grid.md`
+- Function reference: `python/f8/skills/f8-modeling/references/functions.md`
+- Auditing and repair reference: `python/f8/skills/f8-modeling/references/auditing-and-repair.md`
 
 ## License
 

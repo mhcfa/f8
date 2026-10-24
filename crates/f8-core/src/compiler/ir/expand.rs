@@ -4,7 +4,7 @@ use super::cell::{CellGrid, CellNode, CellPayload};
 use super::error::IrError;
 use super::id::CellId;
 use super::symbol::SymbolTable;
-use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{CellInput, ColumnSpec, DataColumnSpec, DataRowSpec, RowSpec, TableSpec};
@@ -90,6 +90,7 @@ pub fn expand_table(
             if let Some(cell_input) = row_data.cells.get(&col_data.id) {
                 let cell_style = cell_input.style();
                 let cell_highlight = cell_input.highlight();
+                let cell_shade = cell_input.shade();
                 let cell_format = cell_input.format();
                 let cell_decimals = cell_input.decimals();
                 let cell_currency = cell_input.currency();
@@ -140,6 +141,7 @@ pub fn expand_table(
                     resolve_style(cell_style, row_data.style, col_data.style);
                 let is_highlight =
                     resolve_highlight(cell_highlight, row_data.highlight, col_data.highlight);
+                let effective_shade = resolve_shade(cell_shade, row_data, col_data, &table.id)?;
 
                 let effective_note = cell_note.map(String::from);
 
@@ -150,6 +152,7 @@ pub fn expand_table(
                         .with_currency(effective_currency)
                         .with_style(horizontal, vertical)
                         .with_highlight(is_highlight)
+                        .with_shade(effective_shade)
                         .with_indent(cell_indent)
                         .with_note(effective_note),
                 );
@@ -202,6 +205,7 @@ pub fn expand_table(
             )?;
             let (horizontal, vertical) = resolve_style(None, row_data.style, col_data.style);
             let is_highlight = resolve_highlight(None, row_data.highlight, col_data.highlight);
+            let effective_shade = resolve_shade(None, row_data, col_data, &table.id)?;
 
             cells.push(
                 CellNode::new(cell_id, sheet_id.clone(), payload)
@@ -209,7 +213,8 @@ pub fn expand_table(
                     .with_decimals(effective_decimals)
                     .with_currency(effective_currency)
                     .with_style(horizontal, vertical)
-                    .with_highlight(is_highlight),
+                    .with_highlight(is_highlight)
+                    .with_shade(effective_shade),
             );
         }
     }
@@ -343,6 +348,37 @@ fn resolve_highlight(
 ) -> bool {
     cell_highlight
         .unwrap_or_else(|| row_highlight.unwrap_or(false) || col_highlight.unwrap_or(false))
+}
+
+/// Resolves semantic background shade according to the 3-Tier Specificity Lattice.
+///
+/// Unlike numeric formatting presets, row shades span across both descriptor and measure columns
+/// to form continuous horizontal visual bands. Point-level `Shade::None` clears any inherited shade.
+fn resolve_shade(
+    cell_shade: Option<Shade>,
+    row: &DataRowSpec,
+    col: &DataColumnSpec,
+    table_id: &TableId,
+) -> Result<Option<Shade>, IrError> {
+    if let Some(cs) = cell_shade {
+        return Ok(if cs.is_none() { None } else { Some(cs) });
+    }
+
+    let row_shade = row.shade.filter(|s| !s.is_none());
+    let col_shade = col.shade.filter(|s| !s.is_none());
+
+    match (row_shade, col_shade) {
+        (Some(rs), Some(cs)) if rs != cs => Err(IrError::ShadeConflict {
+            table: table_id.clone(),
+            row: row.id.clone(),
+            column: col.id.clone(),
+            row_shade: rs,
+            col_shade: cs,
+        }),
+        (Some(rs), _) => Ok(Some(rs)),
+        (_, Some(cs)) => Ok(Some(cs)),
+        (None, None) => Ok(None),
+    }
 }
 
 /// Expands a slice of table specifications into a populated `CellGrid`.

@@ -5,7 +5,7 @@
 - `crates/f8-core/`: Rust calculation engine. 6 compiler passes (IR, DAG/SCC, evaluator, layout, lowering, emitter) and `CompiledModel` facade.
 - `crates/f8-python/`: PyO3 native extension (`f8._core`, `abi3-py312`). Deserializes via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.
 - `python/f8/`: Python SDK (`Model`, `Table`, `Cell`, `TableAuditor`), synchronized `.pyi` stubs (`_core.pyi`), and bundled `f8-modeling` skill.
-- `docs/`: Reference docs (`architecture.md`, `dsl/`, `functions/catalog.md`) and active task specs (`docs/specs/drafts/`).
+- `docs/`: Architecture overview (`docs/architecture.md`) and active task specs (`docs/specs/drafts/`).
 
 ## Workflow
 

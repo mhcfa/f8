@@ -246,6 +246,7 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
                 ModelError::InvalidPrecisionForPreset { table, .. }
                 | ModelError::InvalidCurrencyForPreset { table, .. }
                 | ModelError::EmptyTableSubtitle { table }
+                | ModelError::EmptyColumnGroup { table, .. }
                 | ModelError::PrecisionOutOfBounds { table, .. }
                 | ModelError::UnknownCellColumn { table, .. }
                 | ModelError::MutuallyExclusiveCellPayload { table, .. }
@@ -298,7 +299,8 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
                 | IrError::UnassignedCell { table, .. }
                 | IrError::FormatConflict { table, .. }
                 | IrError::DecimalsConflict { table, .. }
-                | IrError::CurrencyConflict { table, .. } => Some(table.to_string()),
+                | IrError::CurrencyConflict { table, .. }
+                | IrError::ShadeConflict { table, .. } => Some(table.to_string()),
                 _ => None,
             };
             make_specification_error(py, message.clone(), table, message)

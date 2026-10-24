@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use super::error::ModelError;
-use super::format::{CurrencyCode, FormatPreset, SemanticStyle};
+use super::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use super::id::{ColId, RowId, TableId};
 
 /// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
@@ -67,6 +67,14 @@ impl ColumnSpec {
         }
     }
 
+    /// Returns the spanning group banner label if declared on a data column.
+    pub fn group(&self) -> Option<&str> {
+        match self {
+            Self::Data(d) => d.group(),
+            Self::Gutter => None,
+        }
+    }
+
     /// Returns the declared header hierarchy if this is a data column.
     pub fn headers(&self) -> Option<&[String]> {
         match self {
@@ -75,12 +83,28 @@ impl ColumnSpec {
         }
     }
 
-    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
-    pub fn bottom_header(&self) -> Option<&str> {
+    /// Returns the total vertical header tier count (stacked headers plus optional group banner).
+    pub fn header_depth(&self) -> usize {
         match self {
-            Self::Data(d) => d.bottom_header(),
-            Self::Gutter => None,
+            Self::Data(d) => d.header_depth(),
+            Self::Gutter => 0,
         }
+    }
+
+    /// Returns the maximum character length across per-column stacked headers (excluding group banner).
+    pub fn max_header_chars(&self) -> usize {
+        match self {
+            Self::Data(d) => d.max_header_chars(),
+            Self::Gutter => 0,
+        }
+    }
+
+    /// Builder method attaching a horizontal spanning group banner label.
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.group = Some(group.into());
+        }
+        self
     }
 
     /// Builder method attaching a single header label.
@@ -123,6 +147,14 @@ impl ColumnSpec {
         self
     }
 
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.shade = shade;
+        }
+        self
+    }
+
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         if let Self::Data(d) = &mut self {
@@ -160,12 +192,16 @@ pub struct DataColumnSpec {
     pub id: ColId,
     #[serde(default)]
     pub role: AxisRole,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<SemanticStyle>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,9 +218,11 @@ impl DataColumnSpec {
         Self {
             id: id.into(),
             role: AxisRole::Measure,
+            group: None,
             headers: Vec::new(),
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             currency: None,
@@ -197,9 +235,11 @@ impl DataColumnSpec {
         Self {
             id: id.into(),
             role: AxisRole::Descriptor,
+            group: None,
             headers: vec![label.into()],
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             currency: None,
@@ -207,9 +247,33 @@ impl DataColumnSpec {
         }
     }
 
-    /// Returns the bottom-tier metric header label if declared, or None if the column has no headers.
-    pub fn bottom_header(&self) -> Option<&str> {
-        self.headers.last().map(|s| s.as_str())
+    /// Returns the spanning group banner label if declared.
+    pub fn group(&self) -> Option<&str> {
+        self.group.as_deref()
+    }
+
+    /// Returns the total vertical header tier count (Tier 0 `group` banner plus at least one column header tier when grouped, or `headers.len()` when ungrouped).
+    pub fn header_depth(&self) -> usize {
+        if self.group.is_some() {
+            self.headers.len().max(1) + 1
+        } else {
+            self.headers.len()
+        }
+    }
+
+    /// Returns the maximum character length across per-column stacked headers (excluding `group`).
+    pub fn max_header_chars(&self) -> usize {
+        self.headers
+            .iter()
+            .map(|s| s.chars().count())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Builder method attaching a horizontal spanning group banner label.
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
+        self
     }
 
     /// Builder method attaching a single header label.
@@ -245,6 +309,12 @@ impl DataColumnSpec {
     /// Builder method attaching visual highlight emphasis.
     pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
         self.highlight = highlight;
+        self
+    }
+
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        self.shade = shade;
         self
     }
 
@@ -365,6 +435,8 @@ pub struct DetailedCellInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
@@ -442,6 +514,14 @@ impl CellInput {
         match self {
             Self::Literal(_) => None,
             Self::Detailed(d) => d.highlight,
+        }
+    }
+
+    /// Returns the semantic background shade override if present.
+    pub fn shade(&self) -> Option<Shade> {
+        match self {
+            Self::Literal(_) => None,
+            Self::Detailed(d) => d.shade,
         }
     }
 
@@ -585,6 +665,14 @@ impl RowSpec {
         self
     }
 
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        if let Self::Data(d) = &mut self {
+            d.shade = shade;
+        }
+        self
+    }
+
     /// Builder method attaching display precision.
     pub fn with_decimals(mut self, decimals: Option<u32>) -> Self {
         if let Self::Data(d) = &mut self {
@@ -647,6 +735,8 @@ pub struct DataRowSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub highlight: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shade: Option<Shade>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<FormatPreset>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decimals: Option<u32>,
@@ -665,6 +755,7 @@ impl DataRowSpec {
             id: id.into(),
             style: None,
             highlight: None,
+            shade: None,
             format: None,
             decimals: None,
             currency: None,
@@ -688,6 +779,12 @@ impl DataRowSpec {
     /// Builder method attaching visual highlight emphasis.
     pub fn with_highlight(mut self, highlight: Option<bool>) -> Self {
         self.highlight = highlight;
+        self
+    }
+
+    /// Builder method attaching a semantic background shade.
+    pub fn with_shade(mut self, shade: Option<Shade>) -> Self {
+        self.shade = shade;
         self
     }
 
@@ -877,6 +974,15 @@ impl TableSpec {
 
             if !seen_cols.insert(&data_col.id) {
                 return Err(ModelError::DuplicateColumnId {
+                    table: self.id.clone(),
+                    column: data_col.id.clone(),
+                });
+            }
+
+            if let Some(group) = &data_col.group
+                && group.trim().is_empty()
+            {
+                return Err(ModelError::EmptyColumnGroup {
                     table: self.id.clone(),
                     column: data_col.id.clone(),
                 });

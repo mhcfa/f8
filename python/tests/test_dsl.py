@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
-from f8 import Cell, CellInputValue, CompiledModel, Model, Sheet, Table
+from f8 import Cell, CellInputValue, CompiledModel, Model, Shade, Sheet, SpecificationError, Table
 
 
 def test_scenario_1_end_to_end_model_construction_and_compilation() -> None:
@@ -235,6 +236,29 @@ def test_scenario_6_header_specification_validation() -> None:
     with pytest.raises(ValueError, match="both 'header' and 'headers'"):
         table.add_column("rev", header="Revenue", headers=["Financials", "Revenue"])
 
+    for invalid_group in ("", "   "):
+        with pytest.raises(ValueError, match="Column 'group' cannot be empty"):
+            table.add_column("rev", group=invalid_group, header="Revenue")
+
+    table.add_column("mrq", group="Historical", headers=["MRQ", "2012-03-31"])
+    table.add_column("standalone", headers=["Standalone", "at Close", "2012-12-31"])
+    spec = table.__f8_spec__()
+    assert spec.get("columns") == [
+        {
+            "kind": "data",
+            "id": "mrq",
+            "role": "measure",
+            "group": "Historical",
+            "headers": ["MRQ", "2012-03-31"],
+        },
+        {
+            "kind": "data",
+            "id": "standalone",
+            "role": "measure",
+            "headers": ["Standalone", "at Close", "2012-12-31"],
+        },
+    ]
+
 
 def test_scenario_7_duplicate_identifier_validation() -> None:
     model = Model()
@@ -457,7 +481,9 @@ def test_custom_theme_dict_on_model_init() -> None:
             "total_text": "#2B4C7E",
             "input_text": "#002060",
             "formula_text": "#000000",
-            "zebra_fill": "#FAFCFD",
+            "shade_muted_fill": "#F8FAFC",
+            "shade_accent_fill": "#EFF6FF",
+            "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#92400E",
             "gridline_color": "#E5E7EB",
@@ -506,3 +532,222 @@ def test_custom_theme_dict_on_model_init() -> None:
     compiled = model.compile()
     assert compiled.summary()["theme_name"] == "firm_custom"
     assert compiled.formatted("T1", "r1", "c1") == "$100.00"
+
+
+def test_custom_theme_path_on_model_init(tmp_path: Path) -> None:
+    workspace_theme: dict[str, object] = {
+        "name": "corporate_navy",
+        "typography": {
+            "font_family": "Aptos",
+            "title_size": 10.0,
+            "subtitle_size": 9.0,
+            "super_header_size": 10.0,
+            "col_header_size": 10.0,
+            "section_header_size": 10.0,
+            "data_size": 10.0,
+            "section_header_underline": True,
+        },
+        "metrics": {
+            "title_row_height": 24.0,
+            "header_row_height": 18.0,
+            "section_row_height": 18.0,
+            "data_row_height": 15.0,
+            "gutter_row_height": 9.0,
+            "gutter_col_width": 3.0,
+            "title_gutter_row_height": 8.0,
+            "char_width_multiplier": 1.0,
+            "col_padding": 1.0,
+            "min_col_width": 16.0,
+        },
+        "palette": {
+            "table_title_fill": "#177",
+            "table_title_text": "#FFFFFF",
+            "table_subtitle_text": "#4B5563",
+            "super_header_fill": "#ced4da",
+            "super_header_text": "#000000",
+            "col_header_fill": "none",
+            "col_header_text": "#000000",
+            "section_header_fill": "none",
+            "section_header_text": "#000000",
+            "data_fill": "none",
+            "data_text": "#000000",
+            "subtotal_fill": "none",
+            "subtotal_text": "#000000",
+            "total_fill": "none",
+            "total_text": "#000000",
+            "input_text": "#0000FF",
+            "formula_text": "#000000",
+            "shade_muted_fill": "#F8FAFC",
+            "shade_accent_fill": "#EFF6FF",
+            "shade_alt_fill": "#F1F5F9",
+            "highlight_fill": "#FEF3C7",
+            "highlight_text": "#000000",
+            "gridline_color": "#E5E7EB",
+            "border_color": "#000000",
+            "total_border_color": "#1B365D",
+        },
+        "borders": {
+            "table_title_border_bottom": "none",
+            "super_header_border_bottom": "none",
+            "header_border_bottom": "thin",
+            "descriptor_border_right": "none",
+            "subtotal_border_top": "thin",
+            "total_border_top": "thin",
+            "total_border_bottom": "double",
+            "col_subtotal_border_left": "thin",
+            "col_total_border_left": "thin",
+            "col_total_border_right": "double",
+        },
+        "number_formats": {
+            "currency": '{sym}#,##0{dec}_);({sym}#,##0{dec});"-"_)',
+            "number": '#,##0{dec}_);(#,##0{dec});"-"_)',
+            "percentage": '0{dec}%_);(0{dec}%);"-"_)',
+            "multiple": '0{dec}"x"',
+            "basis_points": '#,##0{dec}" bps"',
+            "date": "yyyy-mm-dd",
+            "text": "@",
+            "integer": '0;(-0);"-"_)',
+            "defaults": {
+                "currency_decimals": 2,
+                "number_decimals": 0,
+                "percentage_decimals": 1,
+                "multiple_decimals": 1,
+                "basis_points_decimals": 0,
+            },
+        },
+    }
+    theme_path = tmp_path / "theme.json"
+    theme_path.write_text(json.dumps(workspace_theme), encoding="utf-8")
+
+    model = Model(name="WorkspaceThemeModel", theme=theme_path)
+    assert isinstance(model.theme, dict)
+    assert model.theme == workspace_theme
+
+    sheet = model.add_sheet("Sheet1")
+    table = sheet.add_table("T1", title="Theme Table")
+    table.add_column("c1", header="C1", format="currency")
+    table.add_row("r1", cells={"c1": 100.0})
+
+    manifest, _ = model.__f8_spec__()
+    assert manifest["theme"] == workspace_theme
+
+    compiled = model.compile()
+    assert compiled.summary()["theme_name"] == "corporate_navy"
+    assert compiled.formatted("T1", "r1", "c1") == "$100.00"
+    assert compiled.inspect_sheet("Sheet1")["col_widths"][1] == 16.0
+
+    invalid_theme_path = tmp_path / "invalid_theme.json"
+    invalid_theme_path.write_text("[1, 2, 3]", encoding="utf-8")
+    with pytest.raises(ValueError, match="must contain a JSON object at root"):
+        Model(name="InvalidTheme", theme=invalid_theme_path)
+
+
+def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
+    model = Model()
+    sheet = model.add_sheet("Sheet1")
+    table = sheet.add_table("T1", title="Shaded Table")
+    table.add_column("label", role="descriptor", header="Item")
+    table.add_column("2023a", header="2023A", shade="muted")
+    table.add_column("stub", header="Stub", shade="accent")
+    table.add_column("2024e", header="2024E")
+
+    table.add_row(
+        "rev",
+        cells={"label": "Revenue", "2023a": 100.0, "stub": 25.0, "2024e": 120.0},
+    )
+    table.add_row(
+        "kpi",
+        shade="alt",
+        cells={
+            "label": "KPI Band",
+            "2023a": Cell(10.0, shade="none"),
+            "stub": {"value": 12.0, "shade": "accent"},
+            "2024e": 15.0,
+        },
+    )
+    table.set_cell("rev", "2024e", shade="muted")
+
+    _manifest, tables = model.__f8_spec__()
+    assert tables[0] == {
+        "id": "T1",
+        "title": "Shaded Table",
+        "collapsible": False,
+        "columns": [
+            {
+                "kind": "data",
+                "id": "label",
+                "role": "descriptor",
+                "headers": ["Item"],
+            },
+            {
+                "kind": "data",
+                "id": "2023a",
+                "role": "measure",
+                "headers": ["2023A"],
+                "shade": "muted",
+            },
+            {
+                "kind": "data",
+                "id": "stub",
+                "role": "measure",
+                "headers": ["Stub"],
+                "shade": "accent",
+            },
+            {
+                "kind": "data",
+                "id": "2024e",
+                "role": "measure",
+                "headers": ["2024E"],
+            },
+        ],
+        "rows": [
+            {
+                "kind": "data",
+                "id": "rev",
+                "cells": {
+                    "label": "Revenue",
+                    "2023a": 100.0,
+                    "stub": 25.0,
+                    "2024e": {"value": 120.0, "shade": "muted"},
+                },
+            },
+            {
+                "kind": "data",
+                "id": "kpi",
+                "shade": "alt",
+                "cells": {
+                    "label": "KPI Band",
+                    "2023a": {"value": 10.0, "shade": "none"},
+                    "stub": {"value": 12.0, "shade": "accent"},
+                    "2024e": 15.0,
+                },
+            },
+        ],
+    }
+
+    compiled = model.compile()
+    table_insp = compiled.inspect_table("T1")
+    assert table_insp["columns"][0]["shade"] is None
+    assert table_insp["columns"][1]["shade"] == "muted"
+    assert table_insp["columns"][2]["shade"] == "accent"
+    assert table_insp["rows"][0]["shade"] is None
+    assert table_insp["rows"][1]["shade"] == "alt"
+
+    assert compiled.inspect_cell("T1", "rev", "2023a")["shade"] == "muted"
+    assert compiled.inspect_cell("T1", "rev", "stub")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "rev", "2024e")["shade"] == "muted"
+    assert compiled.inspect_cell("T1", "kpi", "label")["shade"] == "alt"
+    assert compiled.inspect_cell("T1", "kpi", "2023a")["shade"] is None
+    assert compiled.inspect_cell("T1", "kpi", "stub")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "kpi", "2024e")["shade"] == "alt"
+
+    # Symmetrical vector shade conflict raises SpecificationError
+    conflict_model = Model()
+    cs = conflict_model.add_sheet("S")
+    ct = cs.add_table("Conflict", title="Conflict")
+    shade_val: Shade = "accent"
+    ct.add_column("c1", header="C1", shade=shade_val)
+    ct.add_row("r1", shade="muted", cells={"c1": 1.0})
+    with pytest.raises(SpecificationError, match="shade conflict") as exc_info:
+        conflict_model.compile()
+    assert exc_info.value.table == "Conflict"

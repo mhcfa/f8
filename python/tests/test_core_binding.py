@@ -351,6 +351,25 @@ def test_scenario_9_specification_error() -> None:
     assert hasattr(err, "reason")
     assert "duplicate" in err.reason.lower()
 
+    # Empty column group raises SpecificationError with table attribute
+    empty_group_tables: list[dict[str, object]] = [
+        {
+            "id": "T",
+            "title": "Table",
+            "columns": [
+                {"kind": "data", "id": "desc", "role": "descriptor", "headers": ["Desc"]},
+                {"kind": "data", "id": "val", "group": "   ", "headers": ["Val"]},
+            ],
+            "rows": [
+                {"kind": "data", "id": "r1", "cells": {"desc": "1", "val": 1.0}},
+            ],
+        }
+    ]
+    with pytest.raises(SpecificationError) as exc_info_group:
+        core_compile(manifest, empty_group_tables)
+    assert exc_info_group.value.table == "T"
+    assert "group must not be empty" in exc_info_group.value.reason
+
 
 def test_scenario_10_inspection_entity_not_found(
     sample_model: SampleModelFixture,
@@ -622,7 +641,9 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
             "total_text": "#000000",
             "input_text": "#0000FF",
             "formula_text": "#000000",
-            "zebra_fill": "#FAFBFC",
+            "shade_muted_fill": "#F8FAFC",
+            "shade_accent_fill": "#EFF6FF",
+            "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#000000",
             "gridline_color": "#E5E7EB",
@@ -685,7 +706,9 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
         "total_text": "#000000",
         "input_text": "#0000FF",
         "formula_text": "#000000",
-        "zebra_fill": "#FAFBFC",
+        "shade_muted_fill": "#F8FAFC",
+        "shade_accent_fill": "#EFF6FF",
+        "shade_alt_fill": "#F1F5F9",
         "highlight_fill": "#FEF3C7",
         "highlight_text": "#000000",
         "gridline_color": "#E5E7EB",
