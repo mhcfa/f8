@@ -376,3 +376,30 @@ Accepts ISO 3-letter currency codes (case-insensitive):
 
 - Falls back to `"USD"` if unspecified on the table.
 - Permitted only on cells, rows, or columns with effective format `"currency"`. Specifying currency on non-currency presets raises `SpecificationError` (`InvalidCurrencyForPreset`).
+
+### Workbook Themes and Container Constructors (`Model`, `Sheet`, `Table`)
+
+```python
+model = f8.Model(
+    name: str = "Model",
+    theme: ThemeInput = "corporate_navy",
+)
+sheet = model.add_sheet(
+    name: str,
+    tab_color: str | None = None,
+    show_gridlines: bool = True,
+    freeze_panes: tuple[int, int] | None = None,
+) -> Sheet
+table = sheet.add_table(
+    id: str,
+    title: str,
+    subtitle: str | None = None,
+    currency: CurrencyCode | None = None,
+    collapsible: bool = False,
+) -> Table
+```
+
+- Theme input resolution (`ThemeInput = Mapping[str, object] | Path | str`):
+  - `str` (default `"corporate_navy"`): Resolves strictly to a compiled-in preset name in `f8-core`. Does not read files from disk.
+  - `Path` (e.g. `Path("theme.json")`): Reads and parses a custom JSON theme specification file into `model.theme` (`dict[str, object]`). Run `f8 theme init` (`-f` / `--force` to overwrite) to generate the default `corporate_navy` `theme.json` in the current directory. Use `Path("theme.json")` whenever a workspace `theme.json` is present, even if the file's `"name"` field is `"corporate_navy"`.
+  - `Mapping[str, object]`: Inline custom theme dictionary.

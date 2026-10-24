@@ -7,13 +7,14 @@ scaffolding agent skill directories into target workspaces.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-from f8._core import __version__
+from f8._core import __version__, default_theme
 
 GUIDE_TOPICS: dict[str, tuple[str, str]] = {
     "syntax": (
@@ -178,7 +179,31 @@ def _run_agent_init(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
+def _run_theme_init(args: argparse.Namespace) -> int:
+    """Handle the 'theme init' subcommand."""
+    target_file = Path("theme.json")
+
+    if target_file.is_dir():
+        sys.stderr.write(f"Error: Target path '{target_file}' is a directory.\n")
+        return 1
+
+    if target_file.exists() and not args.force:
+        sys.stderr.write(
+            f"Error: Target file '{target_file}' already exists. Use --force to overwrite.\n"
+        )
+        return 1
+
+    theme_data = default_theme()
+    target_file.write_text(json.dumps(theme_data, indent=2) + "\n", encoding="utf-8")
+    sys.stdout.write(f"Initialized theme specification in {target_file}\n")
+    return 0
+
+
+def _build_parser() -> tuple[
+    argparse.ArgumentParser,
+    argparse.ArgumentParser,
+    argparse.ArgumentParser,
+]:
     """Construct top-level and subcommand argument parsers."""
     parser = argparse.ArgumentParser(
         prog="f8",
@@ -243,7 +268,27 @@ def _build_parser() -> tuple[argparse.ArgumentParser, argparse.ArgumentParser]:
         help="Overwrite existing skill files if present.",
     )
 
-    return parser, agent_parser
+    # theme subcommand
+    theme_parser = subparsers.add_parser(
+        "theme",
+        help="Workbook theme configuration commands.",
+        description="Workbook theme configuration commands.",
+    )
+    theme_subparsers = theme_parser.add_subparsers(dest="theme_command")
+
+    theme_init_parser = theme_subparsers.add_parser(
+        "init",
+        help="Generate default theme.json in current directory.",
+        description="Generate a corporate_navy theme.json file in the current directory.",
+    )
+    theme_init_parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite existing theme.json if present.",
+    )
+
+    return parser, agent_parser, theme_parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -251,7 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    parser, agent_parser = _build_parser()
+    parser, agent_parser, theme_parser = _build_parser()
 
     if not argv:
         parser.print_help(sys.stdout)
@@ -265,6 +310,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if getattr(args, "agent_command", None) == "init":
             return _run_agent_init(args)
         agent_parser.print_help(sys.stdout)
+        return 0
+    if args.command == "theme":
+        if getattr(args, "theme_command", None) == "init":
+            return _run_theme_init(args)
+        theme_parser.print_help(sys.stdout)
         return 0
 
     parser.print_help(sys.stdout)
