@@ -21,7 +21,7 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 
 ## Modeling Lifecycle
 
-1. Define: Build model hierarchy (`Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)`) with explicit column roles, section headers, row gutters, and vector formulas. Pass `theme=Path("theme.json")` to load a workspace `theme.json` file; string arguments (e.g. `theme="corporate_navy"`) resolve strictly to compiled-in theme presets.
+1. Define: Build model hierarchy (`Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)`) with explicit column roles, section headers, row gutters, and vector formulas. Run `f8 theme init` to scaffold a customizable `theme.json` in the workspace root and pass `theme=Path("theme.json")` to load it; string arguments (e.g. `theme="corporate_navy"`) resolve strictly to compiled-in theme presets.
 2. Compile: Call `compiled = model.compile()` to parse formulas, lower coordinates, and build the DAG.
 3. Audit: Inspect tabular slices and cell calculations via `compiled.table(...)` and `compiled.inspect_cell(...)`.
 4. Self-heal: Catch typed `F8Error` exceptions (`CycleDetectedError`, `ReferenceResolutionError`, etc.) to diagnose and repair coordinates.

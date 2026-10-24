@@ -18,6 +18,9 @@ from f8.types import (
 
 __version__: str
 
+def default_theme() -> dict[str, object]:
+    """Returns the built-in `corporate_navy` theme specification dictionary."""
+
 def compile(
     manifest: ManifestInput,
     tables: Sequence[TableInput],

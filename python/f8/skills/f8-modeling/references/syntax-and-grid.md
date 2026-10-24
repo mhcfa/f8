@@ -401,5 +401,5 @@ table = sheet.add_table(
 
 - Theme input resolution (`ThemeInput = Mapping[str, object] | Path | str`):
   - `str` (default `"corporate_navy"`): Resolves strictly to a compiled-in preset name in `f8-core`. Does not read files from disk.
-  - `Path` (e.g. `Path("theme.json")`): Reads and parses a custom JSON theme specification file into `model.theme` (`dict[str, object]`). Use `Path("theme.json")` whenever a workspace `theme.json` is present, even if the file's `"name"` field is `"corporate_navy"`.
+  - `Path` (e.g. `Path("theme.json")`): Reads and parses a custom JSON theme specification file into `model.theme` (`dict[str, object]`). Run `f8 theme init` (`-f` / `--force` to overwrite) to generate the default `corporate_navy` `theme.json` in the current directory. Use `Path("theme.json")` whenever a workspace `theme.json` is present, even if the file's `"name"` field is `"corporate_navy"`.
   - `Mapping[str, object]`: Inline custom theme dictionary.

@@ -36,6 +36,7 @@ If you are working with an AI coding agent, `f8` ships with a bundled modeling s
 
 ```bash
 f8 agent init    # scaffolds .agents/skills/f8-modeling/
+f8 theme init    # generates a customizable theme.json in the workspace root
 f8 guide --all   # streams the full DSL, function, and auditing guide to stdout
 ```
 

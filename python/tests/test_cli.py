@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from importlib.resources import files
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import f8
 import pytest
+from f8._core import default_theme
 from f8.cli import GUIDE_TOPICS, main
 
 
@@ -20,6 +22,7 @@ def test_empty_invocation_prints_usage(capsys: pytest.CaptureFixture[str]) -> No
     assert "usage: f8" in captured.out
     assert "guide" in captured.out
     assert "agent" in captured.out
+    assert "theme" in captured.out
     assert captured.err == ""
 
 
@@ -29,6 +32,15 @@ def test_agent_subcommand_without_args_prints_help(capsys: pytest.CaptureFixture
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "usage: f8 agent" in captured.out
+    assert "init" in captured.out
+
+
+def test_theme_subcommand_without_args_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify calling f8 theme without sub-subcommand writes help to stdout and exits with 0."""
+    exit_code = main(["theme"])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "usage: f8 theme" in captured.out
     assert "init" in captured.out
 
 
@@ -210,3 +222,69 @@ def test_version_flag_outputs_package_version(
     captured = capsys.readouterr()
     assert captured.out.strip() == f"f8 {f8.__version__}"
     assert len(f8.__version__.split(".")) >= 3
+
+
+def test_theme_init_creates_theme_json_and_compiles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify f8 theme init generates theme.json in the current directory and compiles."""
+    monkeypatch.chdir(tmp_path)
+    exit_code = main(["theme", "init"])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Initialized theme specification in theme.json" in captured.out
+    assert captured.err == ""
+
+    theme_file = tmp_path / "theme.json"
+    assert theme_file.is_file()
+
+    parsed = json.loads(theme_file.read_text(encoding="utf-8"))
+    assert parsed == default_theme()
+    assert parsed["name"] == "corporate_navy"
+
+    model = f8.Model(name="ThemeInitModel", theme=Path("theme.json"))
+    sheet = model.add_sheet("Summary")
+    table = sheet.add_table("T1", title="Test")
+    table.add_column("c1", header="Col 1", format="currency")
+    table.add_row("r1", cells={"c1": 42.0})
+    compiled = model.compile()
+    assert compiled.summary()["theme_name"] == "corporate_navy"
+
+
+def test_theme_init_collision_without_force(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify f8 theme init refuses to overwrite existing theme.json without --force."""
+    monkeypatch.chdir(tmp_path)
+    theme_file = tmp_path / "theme.json"
+    theme_file.write_text('{"custom": true}\n', encoding="utf-8")
+
+    exit_code = main(["theme", "init"])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "already exists" in captured.err
+    assert "Use --force to overwrite" in captured.err
+    assert theme_file.read_text(encoding="utf-8") == '{"custom": true}\n'
+
+
+@pytest.mark.parametrize("flag", ["--force", "-f"])
+def test_theme_init_overwrite_with_force(
+    flag: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify f8 theme init overwrites existing theme.json when --force or -f is passed."""
+    monkeypatch.chdir(tmp_path)
+    theme_file = tmp_path / "theme.json"
+    theme_file.write_text('{"custom": true}\n', encoding="utf-8")
+
+    exit_code = main(["theme", "init", flag])
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Initialized theme specification in theme.json" in captured.out
+    assert json.loads(theme_file.read_text(encoding="utf-8")) == default_theme()

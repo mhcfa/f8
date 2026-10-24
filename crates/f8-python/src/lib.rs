@@ -4,10 +4,17 @@ pub mod model;
 use f8_core::compiler::Compiler;
 use f8_core::model::manifest::ProjectManifest;
 use f8_core::model::table::TableSpec;
+use f8_core::model::theme::Theme;
 use pyo3::prelude::*;
 
 use crate::error::{map_compiler_error, map_pythonize_error, register_exceptions};
 use crate::model::PyCompiledModel;
+
+/// Returns the built-in `corporate_navy` theme specification dictionary.
+#[pyfunction]
+pub fn default_theme<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    pythonize::pythonize(py, &Theme::corporate_navy()).map_err(|e| map_pythonize_error(py, e))
+}
 
 /// Compiles a project manifest and table specifications into an evaluated `CompiledModel`.
 #[pyfunction]
@@ -37,5 +44,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     register_exceptions(m)?;
     m.add_class::<PyCompiledModel>()?;
     m.add_function(wrap_pyfunction!(compile, m)?)?;
+    m.add_function(wrap_pyfunction!(default_theme, m)?)?;
     Ok(())
 }
