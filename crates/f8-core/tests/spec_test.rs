@@ -291,14 +291,42 @@ fn test_reject_primary_descriptor_deserialization() {
 
 #[test]
 fn test_multi_tier_column_headers_serde() {
-    let col = ColumnSpec::new("2024E").with_headers(["Forecast", "2024E"]);
+    let col = ColumnSpec::new("2024E")
+        .with_group("Forecast")
+        .with_headers(["Year 1", "2024E"]);
     let json = serde_json::to_string(&col).unwrap();
     let deserialized: ColumnSpec = serde_json::from_str(&json).unwrap();
     assert_eq!(col, deserialized);
+    assert_eq!(deserialized.group(), Some("Forecast"));
     assert_eq!(
         deserialized.headers(),
-        Some(&["Forecast".to_string(), "2024E".to_string()][..])
+        Some(&["Year 1".to_string(), "2024E".to_string()][..])
     );
+    assert_eq!(deserialized.header_depth(), 3);
+    assert_eq!(deserialized.max_header_chars(), 6);
+    assert_eq!(
+        ColumnSpec::new("c_group_only")
+            .with_group("Summary")
+            .header_depth(),
+        2
+    );
+    assert_eq!(ColumnSpec::gutter().header_depth(), 0);
+    assert_eq!(ColumnSpec::gutter().max_header_chars(), 0);
+}
+
+#[test]
+fn test_reject_empty_or_whitespace_column_group() {
+    for invalid_group in ["", "   "] {
+        let mut table = TableSpec::new("TestTable", "Title");
+        table.columns = vec![ColumnSpec::new("c1").with_group(invalid_group)];
+        table.rows = vec![RowSpec::new("r1")];
+        let err = table.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            ModelError::EmptyColumnGroup { table: t, column: c }
+            if t.as_str() == "TestTable" && c.as_str() == "c1"
+        ));
+    }
 }
 
 #[test]
@@ -512,6 +540,7 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
             decimals: Some(2),
             style: None,
             highlight: None,
+            shade: None,
             note: None,
             currency: None,
             indent: None,

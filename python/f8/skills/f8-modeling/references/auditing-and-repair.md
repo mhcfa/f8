@@ -64,6 +64,7 @@ Contracts defined in `f8.types`:
   - `evaluated_value`: Evaluated runtime value dictionary (`CellValueDict`).
   - `formatted_value`: Formatted display string with accounting typography (e.g. `"$115.0"`).
   - `format`, `decimals`, `currency`: Typography preset and precision metadata.
+  - `shade`: Resolved background shade preset (`"muted"`, `"accent"`, `"alt"`, or `None`).
   - `is_highlight`: Visual fill emphasis flag.
   - `indent`: Descriptor indentation depth integer.
   - `is_formula`: `True` if calculated by formula, `False` if constant literal.
@@ -80,8 +81,8 @@ Contracts defined in `f8.types`:
 - `TableInspection`: 2D table grid metadata:
   - `table_id`, `title`, `subtitle`: Table identifiers and display headers.
   - `sheet`: Parent worksheet identifier.
-  - `columns`: List of `ColumnInspection` records (`id`, `headers`, `is_gutter`, `is_descriptor`, `style`).
-  - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`, `style`).
+  - `columns`: List of `ColumnInspection` records (`id`, `group`, `headers`, `is_gutter`, `is_descriptor`, `style`, `shade`).
+  - `rows`: List of `RowInspection` records (`id`, `section_title`, `is_section_header`, `is_gutter`, `indent`, `style`, `shade`).
   - `cells`: Dictionary keyed by canonical coordinate string (`'Table["row", "col"]'`) mapping to `TableCellInfo`.
 - `SheetInspection`: Physical worksheet grid layout:
   - `sheet_id`, `title`: Worksheet identifiers.
@@ -206,7 +207,7 @@ markdown_str = auditor.to_markdown(
 | `"expr"`             | Raw declarative `f8` DSL expressions or literal values                                           |
 | `"addresses"`        | Physical worksheet cell coordinates (e.g. `"D7"`)                                                |
 
-- Single-row GFM headers: Multi-tier column headers are flattened into a single valid GFM header row joined with `": "` (e.g. `"Historical Actuals: 2023A"`).
+- Single-row GFM headers: Multi-line stacked `headers` are joined with `" "` and prefixed with `"{group}: "` when `group` is present (e.g. `"Historical Actuals: MRQ 2023A"` or `"Standalone at Close 2023A"`).
 - Row and column subsetting: Pass `rows=[...]` and/or `cols=[...]` to render a focused slice. Descriptor columns are automatically retained alongside `cols`. When `rows` is specified, section headers are omitted by default unless `include_section_headers=True`.
 - Summary row bolding: Rows with `style="subtotal"` or `style="total"` automatically bold all non-empty cells (`**...**`).
 - Coordinate ID suffixes (`show_ids`): Defaults to `False` for clean report publishing. Set `show_ids=True` during debugging to append `[{col_id}]` and `[{row_id}]` when display text differs from coordinate IDs.

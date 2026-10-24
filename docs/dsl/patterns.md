@@ -24,11 +24,11 @@ Formulas and formatting are primarily row-driven. Descriptor columns (`line_item
   "columns": [
     { "kind": "data", "id": "line_item", "role": "descriptor", "headers": ["Line Item"] },
     { "kind": "data", "id": "unit", "role": "descriptor", "headers": ["Unit"] },
-    { "kind": "data", "id": "2021A", "headers": ["Historical Actuals", "2021A"] },
-    { "kind": "data", "id": "2022A", "headers": ["Historical Actuals", "2022A"] },
-    { "kind": "data", "id": "2023A", "headers": ["Historical Actuals", "2023A"] },
-    { "kind": "data", "id": "2024E", "headers": ["Forecast Projections", "2024E"] },
-    { "kind": "data", "id": "2025E", "headers": ["Forecast Projections", "2025E"] }
+    { "kind": "data", "id": "2021A", "group": "Historical Actuals", "headers": ["2021A"] },
+    { "kind": "data", "id": "2022A", "group": "Historical Actuals", "headers": ["2022A"] },
+    { "kind": "data", "id": "2023A", "group": "Historical Actuals", "headers": ["2023A"] },
+    { "kind": "data", "id": "2024E", "group": "Forecast Projections", "headers": ["2024E"] },
+    { "kind": "data", "id": "2025E", "group": "Forecast Projections", "headers": ["2025E"] }
   ],
   "rows": [
     {

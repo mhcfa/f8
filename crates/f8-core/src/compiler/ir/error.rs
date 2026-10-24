@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use super::id::CellId;
-use crate::model::format::{CurrencyCode, FormatPreset};
+use crate::model::format::{CurrencyCode, FormatPreset, Shade};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 
 /// Errors encountered during intermediate representation construction and symbol registration.
@@ -100,6 +100,17 @@ pub enum IrError {
         column: ColId,
         row_currency: CurrencyCode,
         col_currency: CurrencyCode,
+    },
+
+    #[error(
+        "Table '{table}': shade conflict at row '{row}' ({row_shade}) and column '{column}' ({col_shade}) (hint: remove 'shade' from either row or column, or specify an explicit cell override)"
+    )]
+    ShadeConflict {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+        row_shade: Shade,
+        col_shade: Shade,
     },
 
     #[error("model validation error: {0}")]

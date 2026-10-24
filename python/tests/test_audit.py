@@ -313,21 +313,24 @@ def test_scenario_9_multi_tier_header_and_section_auditing() -> None:
     inc.add_column(
         "y2023a",
         role="measure",
-        headers=["Historical Actuals", "2023A"],
+        group="Historical Actuals",
+        header="2023A",
         format="currency",
         decimals=1,
     )
     inc.add_column(
         "y2024e",
         role="measure",
-        headers=["Forecast Projections", "2024E"],
+        group="Forecast Projections",
+        header="2024E",
         format="currency",
         decimals=1,
     )
     inc.add_column(
         "y2025e",
         role="measure",
-        headers=["Forecast Projections", "2025E"],
+        group="Forecast Projections",
+        header="2025E",
         format="currency",
         decimals=1,
     )
@@ -418,6 +421,31 @@ def test_scenario_9_multi_tier_header_and_section_auditing() -> None:
     # show_ids=True appends [col_id] and [row_id] when display text differs from ID
     md_ids = is_table.to_markdown(show_ids=True)
     assert "Historical Actuals: 2023A [y2023a]" in md_ids
+
+    # Verify group + multi-line stacked headers and ungrouped multi-line headers in to_markdown
+    lbo_model = Model(name="LboHeaders", theme="corporate_navy")
+    lbo_sheet = lbo_model.add_sheet("LBO")
+    lbo_tbl = lbo_sheet.add_table("Schedule", title="LBO Schedule")
+    lbo_tbl.add_column("label", role="descriptor", header="($ in millions)")
+    lbo_tbl.add_column("mrq", group="Historical", headers=["MRQ", "2012-03-31"])
+    lbo_tbl.add_column("standalone", headers=["Standalone", "at Close", "2012-12-31"])
+    lbo_tbl.add_column("group_only", group="Summary")
+    lbo_tbl.add_row(
+        "rev",
+        cells={"label": "Revenue", "mrq": 100.0, "standalone": 110.0, "group_only": 120.0},
+    )
+    lbo_compiled = lbo_model.compile()
+    lbo_insp = lbo_compiled.inspect_table("Schedule")
+    assert lbo_insp["columns"][0]["group"] is None
+    assert lbo_insp["columns"][1]["group"] == "Historical"
+    assert lbo_insp["columns"][1]["headers"] == ["MRQ", "2012-03-31"]
+    assert lbo_insp["columns"][2]["group"] is None
+    assert lbo_insp["columns"][2]["headers"] == ["Standalone", "at Close", "2012-12-31"]
+    lbo_md = lbo_compiled.table("Schedule").to_markdown()
+    lbo_header_line = lbo_md.split("\n")[0]
+    assert "Historical: MRQ 2012-03-31" in lbo_header_line
+    assert "Standalone at Close 2012-12-31" in lbo_header_line
+    assert "Summary" in lbo_header_line
     assert "Net Income [net_income]" in md_ids
 
 

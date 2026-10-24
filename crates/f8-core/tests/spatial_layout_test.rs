@@ -186,21 +186,31 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table
-        .columns
-        .push(ColumnSpec::new("2021A").with_headers(["Historical Periods", "2021A"]));
-    table
-        .columns
-        .push(ColumnSpec::new("2022A").with_headers(["Historical Periods", "2022A"]));
-    table
-        .columns
-        .push(ColumnSpec::new("2023A").with_headers(["Historical Periods", "2023A"]));
-    table
-        .columns
-        .push(ColumnSpec::new("2024E").with_headers(["Forecast Periods", "2024E"]));
-    table
-        .columns
-        .push(ColumnSpec::new("2025E").with_headers(["Forecast Periods", "2025E"]));
+    table.columns.push(
+        ColumnSpec::new("2021A")
+            .with_group("Historical Periods")
+            .with_header("2021A"),
+    );
+    table.columns.push(
+        ColumnSpec::new("2022A")
+            .with_group("Historical Periods")
+            .with_header("2022A"),
+    );
+    table.columns.push(
+        ColumnSpec::new("2023A")
+            .with_group("Historical Periods")
+            .with_header("2023A"),
+    );
+    table.columns.push(
+        ColumnSpec::new("2024E")
+            .with_group("Forecast Periods")
+            .with_header("2024E"),
+    );
+    table.columns.push(
+        ColumnSpec::new("2025E")
+            .with_group("Forecast Periods")
+            .with_header("2025E"),
+    );
 
     table.rows.push(RowSpec::new("metric"));
     populate_table_cells(&mut table);
@@ -902,4 +912,64 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
         ))
         .unwrap();
     assert_eq!(salaries_val.indent, 0);
+}
+
+#[test]
+fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration() {
+    let mut table = TableSpec::new("LboTimeline", "LBO Schedule");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("label", "($ in millions)"));
+    // 1-col group ("Historical", 10 chars) + 2-line headers ("MRQ", "2012-03-31" -> max 10 chars) -> depth 3
+    table.columns.push(
+        ColumnSpec::new("mrq")
+            .with_group("Historical")
+            .with_headers(["MRQ", "2012-03-31"]),
+    );
+    // Multi-col group ("Quarterly Rollforward Very Long Banner Title", 44 chars) + 2-line headers ("MRQ+1", "2012-06-30" -> max 10 chars)
+    table.columns.push(
+        ColumnSpec::new("mrq_1")
+            .with_group("Quarterly Rollforward Very Long Banner Title")
+            .with_headers(["MRQ+1", "2012-06-30"]),
+    );
+    // Ungrouped 3-line header where top line is longest ("Standalone Financial", 20 chars) -> depth 3
+    table
+        .columns
+        .push(ColumnSpec::new("standalone").with_headers([
+            "Standalone Financial",
+            "at Close",
+            "2012-12-31",
+        ]));
+
+    table.rows.push(RowSpec::new("rev"));
+    populate_table_cells(&mut table);
+
+    let manifest = ProjectManifest {
+        model_name: "LboWidthTest".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("LboTimeline")],
+        }],
+    };
+
+    let mut theme = create_test_theme();
+    theme.metrics.min_col_width = 8.0;
+    let (_sym, grid) = ir::expand_workbook(&manifest, &[table.clone()]).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
+
+    let placement = layout.get_table(&TableId::from("LboTimeline")).unwrap();
+    // Title at row 1, gutter at row 2, 3 header tiers at rows 3..=5
+    assert_eq!(placement.header_row_range, Some((3, 5)));
+    assert_eq!(placement.body_row_range, (6, 6));
+
+    let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
+    // Physical col 3 (mrq_1): group banner (44 chars) is excluded from single-column width arbitration;
+    // max_header_chars is "2012-06-30" (10 chars) -> width = 10 * 1.0 + 1.0 = 11.0
+    assert_eq!(sheet.col_widths.get(&3), Some(&11.0));
+    // Physical col 4 (standalone): upper line "Standalone Financial" (20 chars) is included -> width = 20 * 1.0 + 1.0 = 21.0
+    assert_eq!(sheet.col_widths.get(&4), Some(&21.0));
 }

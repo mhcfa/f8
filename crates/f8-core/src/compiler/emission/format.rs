@@ -5,7 +5,7 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, FormatUnderline}
 
 use super::error::EmissionError;
 use crate::compiler::layout::StyleRole;
-use crate::model::format::{CurrencyCode, FormatPreset};
+use crate::model::format::{CurrencyCode, FormatPreset, Shade};
 use crate::model::theme::{BorderStyle, PaletteConfig, Theme};
 
 /// Parses a hexadecimal color string (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`) into a `rust_xlsxwriter::Color`.
@@ -94,7 +94,9 @@ struct ParsedPalette {
     total_text: Color,
     input_text: Color,
     formula_text: Color,
-    zebra_fill: Option<Color>,
+    shade_muted_fill: Option<Color>,
+    shade_accent_fill: Option<Color>,
+    shade_alt_fill: Option<Color>,
     highlight_fill: Option<Color>,
     highlight_text: Color,
     gridline_color: Color,
@@ -122,7 +124,9 @@ impl ParsedPalette {
             total_text: parse_hex_color("total_text", &p.total_text)?,
             input_text: parse_hex_color("input_text", &p.input_text)?,
             formula_text: parse_hex_color("formula_text", &p.formula_text)?,
-            zebra_fill: parse_fill_color("zebra_fill", &p.zebra_fill)?,
+            shade_muted_fill: parse_fill_color("shade_muted_fill", &p.shade_muted_fill)?,
+            shade_accent_fill: parse_fill_color("shade_accent_fill", &p.shade_accent_fill)?,
+            shade_alt_fill: parse_fill_color("shade_alt_fill", &p.shade_alt_fill)?,
             highlight_fill: parse_fill_color("highlight_fill", &p.highlight_fill)?,
             highlight_text: parse_hex_color("highlight_text", &p.highlight_text)?,
             gridline_color: parse_hex_color("gridline_color", &p.gridline_color)?,
@@ -184,6 +188,8 @@ pub struct FormatCache {
     title_format: Format,
     subtitle_format: Format,
     super_header_format: Format,
+    col_header_upper_descriptor_format: Format,
+    col_header_upper_measure_format: Format,
     col_header_descriptor_format: Format,
     col_header_measure_format: Format,
     section_header_format: Format,
@@ -239,15 +245,17 @@ impl FormatCache {
         }
 
         // 4. Column Header (Descriptor - Left Aligned)
-        let mut col_header_descriptor_format = Format::new()
+        let mut col_header_upper_descriptor_format = Format::new()
             .set_font_name(&theme.typography.font_family)
             .set_font_size(theme.typography.col_header_size)
             .set_bold()
             .set_font_color(palette.col_header_text)
             .set_align(FormatAlign::Left);
         if let Some(fill) = palette.col_header_fill {
-            col_header_descriptor_format = col_header_descriptor_format.set_background_color(fill);
+            col_header_upper_descriptor_format =
+                col_header_upper_descriptor_format.set_background_color(fill);
         }
+        let mut col_header_descriptor_format = col_header_upper_descriptor_format.clone();
         if theme.borders.header_border_bottom != BorderStyle::None {
             col_header_descriptor_format = col_header_descriptor_format
                 .set_border_bottom(translate_border_style(theme.borders.header_border_bottom))
@@ -255,15 +263,17 @@ impl FormatCache {
         }
 
         // 5. Column Header (Measure - Right Aligned)
-        let mut col_header_measure_format = Format::new()
+        let mut col_header_upper_measure_format = Format::new()
             .set_font_name(&theme.typography.font_family)
             .set_font_size(theme.typography.col_header_size)
             .set_bold()
             .set_font_color(palette.col_header_text)
             .set_align(FormatAlign::Right);
         if let Some(fill) = palette.col_header_fill {
-            col_header_measure_format = col_header_measure_format.set_background_color(fill);
+            col_header_upper_measure_format =
+                col_header_upper_measure_format.set_background_color(fill);
         }
+        let mut col_header_measure_format = col_header_upper_measure_format.clone();
         if theme.borders.header_border_bottom != BorderStyle::None {
             col_header_measure_format = col_header_measure_format
                 .set_border_bottom(translate_border_style(theme.borders.header_border_bottom))
@@ -290,6 +300,8 @@ impl FormatCache {
             title_format,
             subtitle_format,
             super_header_format,
+            col_header_upper_descriptor_format,
+            col_header_upper_measure_format,
             col_header_descriptor_format,
             col_header_measure_format,
             section_header_format,
@@ -328,15 +340,21 @@ impl FormatCache {
         };
 
         // 3. Background Fill Precedence:
-        // is_highlight > total > subtotal > data
+        // is_highlight > total (or shade) > subtotal (or shade) > shade > data
+        let shade_fill = match key.role.shade {
+            Some(Shade::Muted) => self.palette.shade_muted_fill,
+            Some(Shade::Accent) => self.palette.shade_accent_fill,
+            Some(Shade::Alt) => self.palette.shade_alt_fill,
+            Some(Shade::None) | None => None,
+        };
         let fill = if key.role.is_highlight {
             self.palette.highlight_fill
         } else if key.role.horizontal.is_total() || key.role.vertical.is_total() {
-            self.palette.total_fill
+            self.palette.total_fill.or(shade_fill)
         } else if key.role.horizontal.is_subtotal() || key.role.vertical.is_subtotal() {
-            self.palette.subtotal_fill
+            self.palette.subtotal_fill.or(shade_fill)
         } else {
-            self.palette.data_fill
+            shade_fill.or(self.palette.data_fill)
         };
         if let Some(fill_color) = fill {
             format = format.set_background_color(fill_color);
@@ -453,6 +471,16 @@ impl FormatCache {
         self.super_header_format.clone()
     }
 
+    /// Returns the upper-tier stacked column header format (descriptor or measure, without bottom border).
+    #[must_use]
+    pub fn col_header_upper_format(&self, is_descriptor: bool) -> Format {
+        if is_descriptor {
+            self.col_header_upper_descriptor_format.clone()
+        } else {
+            self.col_header_upper_measure_format.clone()
+        }
+    }
+
     /// Returns the column header format (descriptor or measure).
     #[must_use]
     pub fn col_header_format(&self, is_descriptor: bool) -> Format {
@@ -461,6 +489,12 @@ impl FormatCache {
         } else {
             self.col_header_measure_format.clone()
         }
+    }
+
+    /// Returns true if the theme defines a background fill for column headers.
+    #[must_use]
+    pub fn has_col_header_fill(&self) -> bool {
+        self.palette.col_header_fill.is_some()
     }
 
     /// Returns the section header format with optional indentation level.

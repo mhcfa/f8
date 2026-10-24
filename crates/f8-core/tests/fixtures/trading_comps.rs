@@ -91,30 +91,36 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_gutter_col(),
         // Market Data (3 cols)
         ColumnSpec::new("share_price")
-            .with_headers(["Market Data", "Share Price"])
+            .with_group("Market Data")
+            .with_header("Share Price")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(2)),
         ColumnSpec::new("shares_out")
-            .with_headers(["Market Data", "Shares Out"])
+            .with_group("Market Data")
+            .with_header("Shares Out")
             .with_format(Some(FormatPreset::Number))
             .with_decimals(Some(1)),
         ColumnSpec::new("market_cap")
-            .with_headers(["Market Data", "Market Cap"])
+            .with_group("Market Data")
+            .with_header("Market Cap")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1))
             .with_expr("Comps[@row, \"share_price\"] * Comps[@row, \"shares_out\"]"),
         build_gutter_col(),
         // Balance Sheet (3 cols)
         ColumnSpec::new("cash")
-            .with_headers(["Balance Sheet", "Cash"])
+            .with_group("Balance Sheet")
+            .with_header("Cash")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1)),
         ColumnSpec::new("debt")
-            .with_headers(["Balance Sheet", "Total Debt"])
+            .with_group("Balance Sheet")
+            .with_header("Total Debt")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1)),
         ColumnSpec::new("ev")
-            .with_headers(["Balance Sheet", "Enterprise Value"])
+            .with_group("Balance Sheet")
+            .with_header("Enterprise Value")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1))
             .with_expr(
@@ -123,32 +129,38 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_gutter_col(),
         // Operating Metrics (3 cols)
         ColumnSpec::new("revenue")
-            .with_headers(["Operating Metrics", "LTM Revenue"])
+            .with_group("Operating Metrics")
+            .with_header("LTM Revenue")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1)),
         ColumnSpec::new("ebitda")
-            .with_headers(["Operating Metrics", "LTM EBITDA"])
+            .with_group("Operating Metrics")
+            .with_header("LTM EBITDA")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1)),
         ColumnSpec::new("ebitda_margin")
-            .with_headers(["Operating Metrics", "EBITDA Margin"])
+            .with_group("Operating Metrics")
+            .with_header("EBITDA Margin")
             .with_format(Some(FormatPreset::Percentage))
             .with_decimals(Some(1))
             .with_expr("Comps[@row, \"ebitda\"] / Comps[@row, \"revenue\"]"),
         build_gutter_col(),
         // Valuation Multiples (3 cols)
         ColumnSpec::new("ev_rev")
-            .with_headers(["Valuation Multiples", "EV / Rev"])
+            .with_group("Valuation Multiples")
+            .with_header("EV / Rev")
             .with_format(Some(FormatPreset::Multiple))
             .with_decimals(Some(1))
             .with_expr("Comps[@row, \"ev\"] / Comps[@row, \"revenue\"]"),
         ColumnSpec::new("ev_ebitda")
-            .with_headers(["Valuation Multiples", "EV / EBITDA"])
+            .with_group("Valuation Multiples")
+            .with_header("EV / EBITDA")
             .with_format(Some(FormatPreset::Multiple))
             .with_decimals(Some(1))
             .with_expr("Comps[@row, \"ev\"] / Comps[@row, \"ebitda\"]"),
         ColumnSpec::new("pe")
-            .with_headers(["Valuation Multiples", "P / E"])
+            .with_group("Valuation Multiples")
+            .with_header("P / E")
             .with_format(Some(FormatPreset::Multiple))
             .with_decimals(Some(1))
             .with_expr("Comps[@row, \"market_cap\"] / (Comps[@row, \"ebitda\"] * 0.75)"),

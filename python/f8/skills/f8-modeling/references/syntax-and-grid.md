@@ -62,7 +62,9 @@ table.add_column(
     role: AxisRole = "measure",
     header: str | None = None,
     headers: list[str] | None = None,
+    group: str | None = None,
     style: SemanticStyle | None = None,
+    shade: Shade | None = None,
     highlight: bool | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
@@ -76,17 +78,39 @@ table.add_column(
 - `role="descriptor"`: Metadata, line-item titles, unit descriptions, and audit notes. Excluded from vector formula expansion.
 - `role="measure"` (default): Quantitative timeline periods, scenario buckets, and numeric metrics. Vector formulas expand across measure columns from left to right.
 
-### Headers and Formatting Defaults
+### Headers, Group Banners, and Formatting Defaults
 
-- Single vs. multi-tier headers: Provide `header="Title"` for single-tier or `headers=["FY 2024", "Q1"]` for stacked tiers (mutually exclusive; specifying both raises `ValueError`).
-- Multi-tier bottom alignment: When columns have unequal header depths, columns with fewer headers are padded with blank super-headers at the top so metric labels align to the bottom tier.
+- Single vs. stacked per-column headers: Provide `header="Title"` for a 1-line header or `headers=["MRQ", "2012-03-31"]` for vertically stacked multi-line column headers (mutually exclusive; specifying both raises `ValueError`). Stacked `headers` render strictly within their own column without horizontal merging across neighbors, and every line participates in column width arbitration. Keep individual measure header lines concise (`<= 11` chars) by splitting multi-word phrases across `headers=[...]` and using standard financial abbreviations (`"Adj."`, `"Elim."`, `"Consol."`, `"Depr."`, `"Amort."`) for long words so measure columns stay aligned at `theme.metrics.min_col_width` (12.0).
+- Group banners (`group`): Optional horizontal spanning banner on Tier 0 (`group="Quarterly Rollforward"`). Contiguous columns sharing an identical `group` string center across the span (`CenterAcross`) with `super_header_format`. Ungrouped columns (`group=None`) never receive `CenterAcross` on Tier 0, preventing banner bleed into adjacent columns. `group` text is excluded from single-column width arbitration. Empty or whitespace-only `group` strings raise `ValueError`.
+- Multi-tier bottom alignment: Total header depth is `max(len(headers), 1) + 1` when `group` is present, or `len(headers)` when ungrouped. Columns with fewer stacked lines are bottom-aligned so the final `headers` line always sits on the bottom header row with the column header underline.
 - Column defaults and conflicts: Column-level `format`, `decimals`, `currency`, and `style` apply when the row does not specify them. Differing row and column values without a 0D cell override raise conflict errors (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
 - Fluent chaining: Returns `Table` to support method chaining.
 
 ```python
 table.add_column("line_item", role="descriptor", header="Line Item")
-table.add_column("2024Q1", role="measure", headers=["FY 2024", "Q1"], format="currency", decimals=1)
-table.add_column("2024Q2", role="measure", headers=["FY 2024", "Q2"], format="currency", decimals=1)
+table.add_column(
+    "2024Q1",
+    role="measure",
+    group="FY 2024",
+    headers=["Q1", "2024-03-31"],
+    format="currency",
+    decimals=1,
+)
+table.add_column(
+    "2024Q2",
+    role="measure",
+    group="FY 2024",
+    headers=["Q2", "2024-06-30"],
+    format="currency",
+    decimals=1,
+)
+table.add_column(
+    "standalone",
+    role="measure",
+    headers=["Standalone", "at Close", "2024-06-30"],
+    format="currency",
+    decimals=1,
+)
 ```
 
 ### Column Vector Formulas (Vertical Expansion)
@@ -120,6 +144,7 @@ table.add_row(
     cells: Mapping[str, CellInputValue] | None = None,
     expr: str | None = None,
     style: SemanticStyle | None = None,
+    shade: Shade | None = None,
     highlight: bool | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
@@ -155,8 +180,9 @@ Cell coordinates resolve through a deterministic 3-tier specificity lattice:
    Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
 2. Tier 2 (1D vector rules: row XOR col):
    - Vector formulas: `row.expr` XOR `col.expr`. Intersecting row and column expressions without a 0D cell override raise `SpecificationError` (`AmbiguousExpressionConflict`).
-   - Vector conflicts: Differing row and column `format`, `decimals`, or `currency` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`).
+   - Vector conflicts: Differing row and column `format`, `decimals`, `currency`, or `shade` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`, `ShadeConflict`).
    - Symmetrical 2D border composition: Rows control horizontal borders (`style="subtotal"` thin top; `style="total"` thin top and double-bottom); columns control vertical borders. Row `"total"` + Column `"total"` composes into a 2D accounting total box (`is_bold=True`). Setting `style="data"` on a 0D cell override resets both axes to standard data.
+   - Background shade propagation: Row or column `shade` (`"muted"`, `"accent"`, `"alt"`) tints body cells without altering font color. Row shades span both descriptor and measure columns. Setting `shade="none"` on a 0D cell override clears any inherited row or column shade.
    - Highlight propagation: Cells inherit highlight if either row or column has `highlight=True`, unless explicitly overridden by `highlight=False` on a 0D cell override.
 3. Tier 3 (Descriptor boundaries and unassigned cells):
    - Descriptor isolation: Vector formulas never broadcast across descriptor columns (`role="descriptor"`).
@@ -176,6 +202,7 @@ class Cell:
     value: CellValueLiteral | _Unset = _UNSET
     expr: str | None = None
     style: SemanticStyle | None = None
+    shade: Shade | None = None
     highlight: bool | None = None
     format: FormatPreset | None = None
     decimals: int | None = None
@@ -237,6 +264,7 @@ table.set_cell(
     value: CellValueLiteral | _Unset = _UNSET,
     expr: str | None = None,
     style: SemanticStyle | None = None,
+    shade: Shade | None = None,
     highlight: bool | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
@@ -323,7 +351,7 @@ Precedence: `Cell override > (Row rule XOR Column rule) > Table default > Model 
 | `"date"` | ISO date string | `2024-12-31` |
 | `"text"` | Plain text | `Sample` |
 
-### Semantic Styles (`SemanticStyle`)
+### Semantic Styles (`SemanticStyle`) and Background Shades (`Shade`)
 
 Row and column styles control accounting borders and typography:
 
@@ -331,6 +359,14 @@ Row and column styles control accounting borders and typography:
 - `style="subtotal"`: Top thin line separator for subtotals (renders bold typography).
 - `style="total"`: Top thin line and bottom double-underline for grand totals (renders bold typography).
 - Orthogonal 2D composition: Row styles control horizontal borders; column styles control vertical borders. Row `"total"` + Column `"total"` composes into a complete 2D accounting total box.
+
+Background shades (`Shade`) apply subtle theme-managed fills to table body cells without altering font colors:
+
+- `shade="muted"`: Subtle neutral slate fill (e.g. historical / actual periods).
+- `shade="accent"`: Soft cool tint (e.g. stub / LTM / pro-forma bridge columns).
+- `shade="alt"`: Secondary contrast band (e.g. KPI / memo rows).
+- `shade="none"`: Default unshaded state; clears inherited row or column shade on a 0D cell override.
+- Symmetrical conflict check: Differing active shades on a row and column without a cell override raise `SpecificationError` (`ShadeConflict`).
 
 ### Currency Codes (`CurrencyCode`)
 

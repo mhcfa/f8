@@ -15,10 +15,18 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
         build_descriptor_col("line_item", "Line Item"),
-        ColumnSpec::new("y2023a").with_headers(["Historical Actuals", "2023A"]),
-        ColumnSpec::new("y2024e").with_headers(["Forecast Projections", "2024E"]),
-        ColumnSpec::new("y2025e").with_headers(["Forecast Projections", "2025E"]),
-        ColumnSpec::new("y2026e").with_headers(["Forecast Projections", "2026E"]),
+        ColumnSpec::new("y2023a")
+            .with_group("Historical Actuals")
+            .with_header("2023A"),
+        ColumnSpec::new("y2024e")
+            .with_group("Forecast Projections")
+            .with_header("2024E"),
+        ColumnSpec::new("y2025e")
+            .with_group("Forecast Projections")
+            .with_header("2025E"),
+        ColumnSpec::new("y2026e")
+            .with_group("Forecast Projections")
+            .with_header("2026E"),
     ];
 
     // -------------------------------------------------------------------------

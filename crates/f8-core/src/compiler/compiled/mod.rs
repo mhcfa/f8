@@ -277,6 +277,7 @@ impl CompiledModel {
             decimals: cell_node.decimals,
             currency: cell_node.currency,
             is_highlight: cell_node.is_highlight,
+            shade: cell_node.shade,
             indent: cell_node.indent,
             is_formula,
             formula_expr,
@@ -309,17 +310,21 @@ impl CompiledModel {
             .map(|col| match col {
                 crate::model::table::ColumnSpec::Data(d) => ColumnInspection {
                     id: Some(d.id.clone()),
+                    group: d.group.clone(),
                     headers: d.headers.clone(),
                     is_gutter: false,
                     is_descriptor: d.role.is_descriptor(),
                     style: Some(d.style.unwrap_or(SemanticStyle::Data)),
+                    shade: d.shade.filter(|s| !s.is_none()),
                 },
                 crate::model::table::ColumnSpec::Gutter => ColumnInspection {
                     id: None,
+                    group: None,
                     headers: Vec::new(),
                     is_gutter: true,
                     is_descriptor: false,
                     style: None,
+                    shade: None,
                 },
             })
             .collect();
@@ -346,6 +351,7 @@ impl CompiledModel {
                         is_gutter: false,
                         indent,
                         style: Some(d.style.unwrap_or(SemanticStyle::Data)),
+                        shade: d.shade.filter(|s| !s.is_none()),
                     }
                 }
                 crate::model::table::RowSpec::SectionHeader(s) => RowInspection {
@@ -355,6 +361,7 @@ impl CompiledModel {
                     is_gutter: false,
                     indent: s.indent.unwrap_or(0),
                     style: None,
+                    shade: None,
                 },
                 crate::model::table::RowSpec::Gutter => RowInspection {
                     id: None,
@@ -363,6 +370,7 @@ impl CompiledModel {
                     is_gutter: true,
                     indent: 0,
                     style: None,
+                    shade: None,
                 },
             })
             .collect();
@@ -641,8 +649,10 @@ impl CompiledModel {
                             }
                             ColumnSpec::Data(d) => {
                                 let k_len = d.headers.len();
-                                let mut header_text = if t >= total_tiers - k_len {
-                                    let k = t - (total_tiers - k_len);
+                                let first_hdr_tier = total_tiers.saturating_sub(k_len);
+                                let mut header_text = if t == 0 && d.group.is_some() {
+                                    d.group.clone()
+                                } else if let Some(k) = t.checked_sub(first_hdr_tier) {
                                     d.headers.get(k).cloned()
                                 } else {
                                     None

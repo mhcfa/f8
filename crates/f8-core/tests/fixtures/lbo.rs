@@ -17,36 +17,24 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     // -------------------------------------------------------------------------
     let timeline_cols = vec![
         build_descriptor_col("line_item", "Line Item"),
-        ColumnSpec::new("y0").with_headers([
-            "Project Titan LBO",
-            "Transaction Close",
-            "Close (Y0)",
-        ]),
-        ColumnSpec::new("y1").with_headers([
-            "Project Titan LBO",
-            "5-Year Investment Horizon",
-            "2025 (Y1)",
-        ]),
-        ColumnSpec::new("y2").with_headers([
-            "Project Titan LBO",
-            "5-Year Investment Horizon",
-            "2026 (Y2)",
-        ]),
-        ColumnSpec::new("y3").with_headers([
-            "Project Titan LBO",
-            "5-Year Investment Horizon",
-            "2027 (Y3)",
-        ]),
-        ColumnSpec::new("y4").with_headers([
-            "Project Titan LBO",
-            "5-Year Investment Horizon",
-            "2028 (Y4)",
-        ]),
-        ColumnSpec::new("y5").with_headers([
-            "Project Titan LBO",
-            "5-Year Investment Horizon",
-            "2029 (Y5)",
-        ]),
+        ColumnSpec::new("y0")
+            .with_group("Project Titan LBO")
+            .with_headers(["Transaction Close", "Close (Y0)"]),
+        ColumnSpec::new("y1")
+            .with_group("Project Titan LBO")
+            .with_headers(["5-Year Investment Horizon", "2025 (Y1)"]),
+        ColumnSpec::new("y2")
+            .with_group("Project Titan LBO")
+            .with_headers(["5-Year Investment Horizon", "2026 (Y2)"]),
+        ColumnSpec::new("y3")
+            .with_group("Project Titan LBO")
+            .with_headers(["5-Year Investment Horizon", "2027 (Y3)"]),
+        ColumnSpec::new("y4")
+            .with_group("Project Titan LBO")
+            .with_headers(["5-Year Investment Horizon", "2028 (Y4)"]),
+        ColumnSpec::new("y5")
+            .with_group("Project Titan LBO")
+            .with_headers(["5-Year Investment Horizon", "2029 (Y5)"]),
     ];
 
     // -------------------------------------------------------------------------

@@ -89,6 +89,39 @@ impl fmt::Display for SemanticStyle {
     }
 }
 
+/// Semantic background shade presets supported by f8 models.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Shade {
+    #[default]
+    None,
+    Muted,
+    Accent,
+    Alt,
+}
+
+impl Shade {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Muted => "muted",
+            Self::Accent => "accent",
+            Self::Alt => "alt",
+        }
+    }
+
+    /// Returns true if this shade is `None`.
+    pub const fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
+impl fmt::Display for Shade {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Canonical 3-letter lowercase ISO 4217 currency codes supported by f8 models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

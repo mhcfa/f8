@@ -206,10 +206,21 @@ fn test_scenario_6_table_matrix_inspection() {
     assert_eq!(table_insp.rows.len(), 12);
     assert!(!table_insp.cells.is_empty());
 
-    // Verify column styles: data columns have Some(SemanticStyle::Data), gutter has None
+    // Verify column styles and groups: data columns have Some(SemanticStyle::Data), gutter has None
     assert_eq!(table_insp.columns[0].style, Some(SemanticStyle::Data));
+    assert_eq!(table_insp.columns[0].group, None);
     assert_eq!(table_insp.columns[1].style, Some(SemanticStyle::Data));
+    assert_eq!(
+        table_insp.columns[1].group.as_deref(),
+        Some("Historical Actuals")
+    );
+    assert_eq!(table_insp.columns[1].headers, vec!["2023A".to_string()]);
+    assert_eq!(
+        table_insp.columns[2].group.as_deref(),
+        Some("Forecast Projections")
+    );
     assert_eq!(table_insp.columns[5].style, None);
+    assert_eq!(table_insp.columns[5].group, None);
 
     // Verify row styles: data, subtotal, total, gutter, and section_header
     let rev_row = table_insp
@@ -607,6 +618,19 @@ fn test_scenario_inspect_sheet_success() {
         "Sheet inspection must include ColumnHeader cells"
     );
     assert!(has_data, "Sheet inspection must include Data cells");
+
+    // Verify ColumnHeader cells include both group banners (Tier 0) and metric headers (Tier 1)
+    let header_texts: Vec<&str> = sheet
+        .rows
+        .iter()
+        .flat_map(|r| &r.cells)
+        .filter(|c| c.kind == f8_core::compiler::compiled::SheetCellKind::ColumnHeader)
+        .filter_map(|c| c.formatted_value.as_deref())
+        .collect();
+    assert!(header_texts.contains(&"Historical Actuals"));
+    assert!(header_texts.contains(&"Forecast Projections"));
+    assert!(header_texts.contains(&"2023A"));
+    assert!(header_texts.contains(&"2024E"));
 
     // Verify data cell contains formula and physical address
     let formula_cell = sheet

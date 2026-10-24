@@ -169,15 +169,21 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
-    table
-        .columns
-        .push(ColumnSpec::new("2024E").with_headers(["Forecast Horizon", "2024E"]));
-    table
-        .columns
-        .push(ColumnSpec::new("2025E").with_headers(["Forecast Horizon", "2025E"]));
-    table
-        .columns
-        .push(ColumnSpec::new("2026E").with_headers(["Forecast Horizon", "2026E"]));
+    table.columns.push(
+        ColumnSpec::new("2024E")
+            .with_group("Forecast Horizon")
+            .with_header("2024E"),
+    );
+    table.columns.push(
+        ColumnSpec::new("2025E")
+            .with_group("Forecast Horizon")
+            .with_header("2025E"),
+    );
+    table.columns.push(
+        ColumnSpec::new("2026E")
+            .with_group("Forecast Horizon")
+            .with_header("2026E"),
+    );
 
     table.rows.push(RowSpec::new("revenue"));
     populate_table_cells(&mut table);
@@ -237,9 +243,11 @@ fn test_scenario_4_single_cell_super_header_safety() {
     table
         .columns
         .push(ColumnSpec::new("2023A").with_header("2023A"));
-    table
-        .columns
-        .push(ColumnSpec::new("2024E").with_headers(["Single Column Tier", "2024E"]));
+    table.columns.push(
+        ColumnSpec::new("2024E")
+            .with_group("Single Column Tier")
+            .with_header("2024E"),
+    );
 
     table.rows.push(RowSpec::new("revenue"));
     populate_table_cells(&mut table);
@@ -783,4 +791,184 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
         !sheet_xml.contains("r=\"C5\""),
         "Trailing measure column C5 must remain unwritten when section_header_fill is 'none': {sheet_xml}"
     );
+}
+
+#[test]
+fn test_scenario_14_lbo_timeline_group_banners_and_stacked_headers_no_center_across_bleed() {
+    let mut table = TableSpec::new("LboSchedule", "LBO Schedule");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("label", "($ in millions)"));
+    table.columns.push(
+        ColumnSpec::new("mrq")
+            .with_group("Historical")
+            .with_headers(["MRQ", "2012-03-31"]),
+    );
+    table.columns.push(
+        ColumnSpec::new("mrq_plus_1")
+            .with_group("Quarterly Rollforward")
+            .with_headers(["MRQ+1", "2012-06-30"]),
+    );
+    table.columns.push(
+        ColumnSpec::new("mrq_plus_2")
+            .with_group("Quarterly Rollforward")
+            .with_headers(["MRQ+2", "2012-09-30"]),
+    );
+    table.columns.push(
+        ColumnSpec::new("mrq_plus_3")
+            .with_group("Quarterly Rollforward")
+            .with_headers(["MRQ+3", "2012-12-31"]),
+    );
+    table.columns.push(
+        ColumnSpec::new("mrq_plus_4")
+            .with_group("Quarterly Rollforward")
+            .with_headers(["MRQ+4", "2013-03-31"]),
+    );
+    table
+        .columns
+        .push(ColumnSpec::new("standalone_close").with_headers([
+            "Standalone",
+            "at Close",
+            "2012-12-31",
+        ]));
+    table
+        .columns
+        .push(ColumnSpec::new("deal_adjustments").with_headers(["Deal", "Adjustments"]));
+    table
+        .columns
+        .push(ColumnSpec::new("pf_close").with_headers(["Pro Forma", "at Close", "2012-12-31"]));
+    table
+        .columns
+        .push(ColumnSpec::new("pf_close_adj").with_headers(["Adjusted", "at Close", "2012-12-31"]));
+    table
+        .columns
+        .push(ColumnSpec::new("stub_3q2013").with_headers(["3 Quarters", "Ending", "2013-09-30"]));
+    table.columns.push(
+        ColumnSpec::new("fy2014")
+            .with_group("Annual Projections")
+            .with_headers(["Year 2", "2014"]),
+    );
+    table.columns.push(
+        ColumnSpec::new("fy2015")
+            .with_group("Annual Projections")
+            .with_headers(["Year 3", "2015"]),
+    );
+    table.columns.push(ColumnSpec::new("unlabeled"));
+
+    table.rows.push(RowSpec::new("revenue"));
+    populate_table_cells(&mut table);
+
+    let manifest = ProjectManifest {
+        model_name: "LboHeaderModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "LBO".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("LboSchedule")],
+        }],
+    };
+
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[table.clone()], &EmissionOptions::default()).unwrap();
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+
+    assert!(!sheet_xml.contains("<mergeCell"));
+    assert!(styles_xml.contains("horizontal=\"centerContinuous\""));
+
+    // Extract style attribute s="..." for cell C4 (1-col group "Historical" using super_header_format)
+    let extract_cell_tag = |xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = xml.find(&needle)?;
+        let tag_start = xml[..start].rfind("<c ")?;
+        let tag_end = xml[start..].find('>')? + start + 1;
+        Some(xml[tag_start..tag_end].to_string())
+    };
+
+    // Row 4 is Tier 0 (Title at Row 2, Title Gutter at Row 3)
+    // C4 ("Historical") and D4..G4 ("Quarterly Rollforward") use super_header_format
+    let c4_tag = extract_cell_tag(&sheet_xml, "C4").expect("C4 must be written");
+    let d4_tag = extract_cell_tag(&sheet_xml, "D4").expect("D4 must be written");
+    let e4_tag = extract_cell_tag(&sheet_xml, "E4").expect("E4 must be written as blank in span");
+    assert!(c4_tag.contains("t=\"s\""));
+    assert!(d4_tag.contains("t=\"s\""));
+    assert!(!e4_tag.contains("t=\"s\""));
+
+    // H4 ("Standalone") is an ungrouped 3-line column header -> uses col_header_upper_format, NOT super_header_format
+    let h4_tag = extract_cell_tag(&sheet_xml, "H4").expect("H4 must be written");
+    assert!(h4_tag.contains("t=\"s\""));
+    // Extract style id s="..." from c4_tag and h4_tag and verify they differ
+    let get_style_attr = |tag: &str| -> String {
+        let s_idx = tag.find("s=\"").unwrap();
+        let rest = &tag[s_idx + 3..];
+        let end = rest.find('"').unwrap();
+        rest[..end].to_string()
+    };
+    let super_style_id = get_style_attr(&c4_tag);
+    let upper_col_style_id = get_style_attr(&h4_tag);
+    assert_ne!(
+        super_style_id, upper_col_style_id,
+        "Ungrouped Tier 0 header H4 must not use super_header_format (CenterAcross)"
+    );
+    assert_eq!(get_style_attr(&d4_tag), super_style_id);
+    assert_eq!(get_style_attr(&e4_tag), super_style_id);
+
+    // I4 (deal_adjustments on Tier 0) must be completely absent when col_header_fill is "none",
+    // preventing Standalone (H4) from bleeding across I4even if H4 had CenterAcross
+    assert!(
+        extract_cell_tag(&sheet_xml, "I4").is_none(),
+        "I4 must not be emitted when ungrouped and col_header_fill is transparent"
+    );
+
+    // Row 5 is Tier 1: J5 ("at Close" in pf_close) and K5 ("at Close" in pf_close_adj)
+    // Both must be emitted as string cells (t="s") with upper_col_style_id, never merged or blanked via CenterAcross!
+    let j5_tag = extract_cell_tag(&sheet_xml, "J5").expect("J5 must be written");
+    let k5_tag = extract_cell_tag(&sheet_xml, "K5").expect("K5 must be written");
+    assert!(j5_tag.contains("t=\"s\""));
+    assert!(k5_tag.contains("t=\"s\""));
+    assert_eq!(get_style_attr(&j5_tag), upper_col_style_id);
+    assert_eq!(get_style_attr(&k5_tag), upper_col_style_id);
+
+    // Row 6 is Tier 2 (bottom tier): O6 ("unlabeled" with 0 headers) is written as blank with bottom col_header_format
+    let o6_tag =
+        extract_cell_tag(&sheet_xml, "O6").expect("O6 must be written for continuous underline");
+    let h6_tag = extract_cell_tag(&sheet_xml, "H6").expect("H6 must be written");
+    let bottom_col_style_id = get_style_attr(&h6_tag);
+    assert_ne!(bottom_col_style_id, upper_col_style_id);
+    assert_eq!(get_style_attr(&o6_tag), bottom_col_style_id);
+
+    // Verify all labels exist in sharedStrings.xml
+    for expected in [
+        "Historical",
+        "Quarterly Rollforward",
+        "Annual Projections",
+        "Standalone",
+        "at Close",
+        "Deal",
+        "Adjustments",
+    ] {
+        assert!(
+            shared_strings.contains(expected),
+            "Missing {expected} in sharedStrings.xml"
+        );
+    }
+
+    // Also verify custom theme with solid col_header_fill writes blank with upper_col_style_id on I4
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.palette.col_header_fill = "#1B365D".to_string();
+    let custom_manifest = ProjectManifest {
+        model_name: "LboHeaderSolidFill".to_string(),
+        theme: f8_core::model::theme::ThemeSpec::Custom(Box::new(custom_theme)),
+        sheets: manifest.sheets,
+    };
+    let solid_buffer =
+        Compiler::emit_workbook(&custom_manifest, &[table], &EmissionOptions::default()).unwrap();
+    let solid_sheet_xml = read_zip_entry(&solid_buffer, "xl/worksheets/sheet1.xml");
+    let solid_i4_tag = extract_cell_tag(&solid_sheet_xml, "I4")
+        .expect("I4 must be written as styled blank when col_header_fill is solid");
+    let solid_h4_tag = extract_cell_tag(&solid_sheet_xml, "H4").unwrap();
+    assert_eq!(get_style_attr(&solid_i4_tag), get_style_attr(&solid_h4_tag));
 }

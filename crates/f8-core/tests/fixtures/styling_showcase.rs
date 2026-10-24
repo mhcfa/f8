@@ -29,17 +29,25 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // =========================================================================
     let t1_cols = vec![
         build_descriptor_col("line_item", "Financial Metric / Line Item"),
-        ColumnSpec::new("actual").with_headers(["Operating Performance", "2025A Actual"]),
-        ColumnSpec::new("budget").with_headers(["Operating Performance", "2026B Budget"]),
-        ColumnSpec::new("variance").with_headers(["Operating Performance", "Variance ($)"]),
+        ColumnSpec::new("actual")
+            .with_group("Operating Performance")
+            .with_header("2025A Actual"),
+        ColumnSpec::new("budget")
+            .with_group("Operating Performance")
+            .with_header("2026B Budget"),
+        ColumnSpec::new("variance")
+            .with_group("Operating Performance")
+            .with_header("Variance ($)"),
         build_gutter_col(),
         ColumnSpec::new("division_total")
-            .with_headers(["Consolidated Summary", "Division Total"])
+            .with_group("Consolidated Summary")
+            .with_header("Division Total")
             .with_style(Some(SemanticStyle::Subtotal))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
         ColumnSpec::new("consolidated_total")
-            .with_headers(["Consolidated Summary", "Consolidated Total"])
+            .with_group("Consolidated Summary")
+            .with_header("Consolidated Total")
             .with_style(Some(SemanticStyle::Total))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
@@ -212,29 +220,22 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     // =========================================================================
     let t2_cols = vec![
         build_descriptor_col("line_item", "Division / Department"),
-        ColumnSpec::new("q1_act").with_headers([
-            "Commercial Operations",
-            "Quarterly Performance",
-            "Q1 Actual",
-        ]),
-        ColumnSpec::new("q2_act").with_headers([
-            "Commercial Operations",
-            "Quarterly Performance",
-            "Q2 Actual",
-        ]),
-        ColumnSpec::new("q3_act").with_headers([
-            "Commercial Operations",
-            "Quarterly Performance",
-            "Q3 Actual",
-        ]),
-        ColumnSpec::new("q4_act").with_headers([
-            "Commercial Operations",
-            "Quarterly Performance",
-            "Q4 Actual",
-        ]),
+        ColumnSpec::new("q1_act")
+            .with_group("Commercial Operations")
+            .with_headers(["Quarterly Performance", "Q1 Actual"]),
+        ColumnSpec::new("q2_act")
+            .with_group("Commercial Operations")
+            .with_headers(["Quarterly Performance", "Q2 Actual"]),
+        ColumnSpec::new("q3_act")
+            .with_group("Commercial Operations")
+            .with_headers(["Quarterly Performance", "Q3 Actual"]),
+        ColumnSpec::new("q4_act")
+            .with_group("Commercial Operations")
+            .with_headers(["Quarterly Performance", "Q4 Actual"]),
         build_gutter_col(),
         ColumnSpec::new("fy_sum")
-            .with_headers(["Consolidated Reporting", "Full Year Total"])
+            .with_group("Consolidated Reporting")
+            .with_header("Full Year Total")
             .with_style(Some(SemanticStyle::Total))
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(0)),
