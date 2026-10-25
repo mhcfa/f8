@@ -179,7 +179,7 @@ table.add_row(
 Cell coordinates resolve through a deterministic 3-tier specificity lattice:
 
 1. Tier 1 (0D point cell override):
-   Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
+   Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` or `table.set_cells(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
 2. Tier 2 (1D vector rules: row XOR col):
    - Vector formulas: `row.expr` XOR `col.expr`. Intersecting row and column expressions without a 0D cell override raise `SpecificationError` (`AmbiguousExpressionConflict`).
    - Vector conflicts: Differing row and column `format`, `decimals`, `currency`, or `shade` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`, `ShadeConflict`).
@@ -254,11 +254,13 @@ table.add_row(
 )
 ```
 
-### Dynamic Coordinate Updates: `table.set_cell`
+### Dynamic Coordinate Updates: `table.set_cell` and `table.set_cells`
 
-Updates or patches existing cell coordinates without redefining the row:
+Updates or patches cell coordinates without redefining rows:
 
 ```python
+type AxisSelector = str | Iterable[str] | slice
+
 table.set_cell(
     row: str,
     col: str,
@@ -266,8 +268,24 @@ table.set_cell(
     value: CellValueLiteral | _Unset = _UNSET,
     expr: str | None = None,
     style: SemanticStyle | None = None,
-    shade: Shade | None = None,
     highlight: bool | None = None,
+    shade: Shade | None = None,
+    format: FormatPreset | None = None,
+    decimals: int | None = None,
+    currency: CurrencyCode | None = None,
+    indent: int | None = None,
+    note: str | None = None,
+) -> Table
+
+table.set_cells(
+    row: AxisSelector,
+    cols: AxisSelector,
+    cell: CellInputValue | _Unset = _UNSET,
+    value: CellValueLiteral | _Unset = _UNSET,
+    expr: str | None = None,
+    style: SemanticStyle | None = None,
+    highlight: bool | None = None,
+    shade: Shade | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
     currency: CurrencyCode | None = None,
@@ -276,8 +294,22 @@ table.set_cell(
 ) -> Table
 ```
 
+- Symmetrical axis selectors (`AxisSelector`): Accept a single ID (`str`), an explicit sequence of IDs (`Iterable[str]`), or an inclusive range (`slice(start, stop)`) on both `row` and `cols`.
+- Inclusive range slices (`slice(start, stop)`): Resolve across declared data rows or columns in declaration order, automatically skipping gutter rows, section headers, and gutter columns.
+- Selector validation: Unknown row or column IDs raise `KeyError`. Open-ended slices (`slice(None, "c2")`), stepped slices (`slice("c1", "c2", 1)`), inverted slices (`start_index > stop_index`), and empty iterables (`[]`) raise `ValueError`.
+- Atomic batch application: `table.set_cells` pre-validates all target `(row, col)` coordinates before mutating the table.
+
 ```python
+# 0D point update
 table.set_cell("revenue", "2024E", highlight=True, note="Revised Q3 forecast")
+
+# Multi-regime timeline row overrides (bridge columns + pre-close slice)
+table.set_cells("amort", ["standalone", "adj", "pf"], value=None)
+table.set_cells("amort", slice("q1", "q2"), expr="10.0")
+
+# 2D rectangular block assignment and metadata patching
+table.set_cells(slice("r1", "r2"), slice("c1", "c2"), value=5.0)
+table.set_cells(["r1", "r2"], "c2", shade="accent", note="patched")
 ```
 
 ---

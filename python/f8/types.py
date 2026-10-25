@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 if TYPE_CHECKING:
+    from f8.builder import AxisSelector as AxisSelector
     from f8.builder import CellInputValue as CellInputValue
 
 type CellValueDict = dict[str, object] | str
@@ -420,6 +421,10 @@ type ThemeInput = Mapping[str, object] | Path | str
 
 
 def __getattr__(name: str) -> object:
+    if name == "AxisSelector":
+        from f8.builder import AxisSelector
+
+        return AxisSelector
     if name == "CellInputValue":
         from f8.builder import CellInputValue
 
