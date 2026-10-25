@@ -196,6 +196,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![
                 ColumnSpec::descriptor("line_item", "Line Item"),
                 ColumnSpec::new("2023A"),

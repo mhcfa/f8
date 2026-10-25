@@ -906,6 +906,7 @@ fn test_end_to_end_formula_evaluation() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),

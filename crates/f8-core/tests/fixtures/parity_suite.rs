@@ -95,6 +95,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: Some("Baseline inputs for ranges, lookups, and cash flows".to_string()),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: seed_cols,
         rows: seed_rows,
     };
@@ -420,6 +421,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             subtitle: Some(subtitle.to_string()),
             currency: None,
             collapsible: false,
+            placement: f8_core::model::PlacementSpec::default(),
             columns: cols,
             rows,
         }

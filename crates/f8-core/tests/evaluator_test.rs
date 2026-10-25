@@ -17,6 +17,7 @@ fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec 
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
         rows,
     }

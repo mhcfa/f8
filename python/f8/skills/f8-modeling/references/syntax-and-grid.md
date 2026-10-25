@@ -26,7 +26,9 @@ All cell references require explicit 2D coordinates in bracket syntax:
 | **Row lead (1)** | `Table[row.next, "col"]` | Next data row | `Table[row.next, "col"]` |
 | **Row lead (k)** | `Table[row.next(k), "col"]` | `k` data rows ahead | `Table[row.next(2), "col"]` |
 | **Column slice** | `Table["row", "c1".."c2"]` | Continuous horizontal range across columns | `SUM(Rev["sales", "2023A".."2025E"])` |
+| **Expanding column slice** | `Table["row", "c1"..@col]` | Cumulative horizontal range from anchor to active/offset column | `SUM(Debt["amort", "2024E"..@col])` |
 | **Row slice (active col)** | `Table["r1".."r2", @col]` | Continuous vertical range across rows at active column | `SUM(Opex["r_and_d".."g_and_a", @col])` |
+| **Expanding row slice** | `Table["r1"..@row, @col]` | Cumulative vertical range from anchor to active/offset row | `SUM(Cohort["c1"..@row, @col])` |
 | **Row slice (fixed col)** | `Table["r1".."r2", "col"]` | Continuous vertical range across rows at fixed column | `SUM(Comps["apple".."google", "market_cap"])` |
 | **2D block slice** | `Table["r1".."r2", "c1".."c2"]` | Continuous 2D rectangular matrix range | `SUM(Matrix["r1".."r3", "2023A".."2025E"])` |
 
@@ -45,7 +47,7 @@ All cell references require explicit 2D coordinates in bracket syntax:
   4. Additive (`+`, `-`, tier 2, left-associative)
   5. Relational comparisons (`=`, `<>`, `<`, `<=`, `>`, `>=`, tier 1, left-associative; equality is `=`, inequality is `<>`).
 - Omitted arguments: Positional parameters are omitted via `_` (e.g. `PMT(rate, nper, pv, _, type)`). Restricted to function argument lists; using `_` in arithmetic or coordinate selectors raises `FormulaParseError`.
-- Slice ordering: Range slices (`"k1".."k2"`) must follow declared table axis order (`start_index <= end_index`). Inverted ranges raise `ReferenceResolutionError`.
+- Slice endpoints and ordering: Range slices (`start..end`) accept quoted keys, active coordinates (`@col`, `@row`), or relative offsets (`col.prev`, `col.prev(k)`, `col.next(k)`, `row.prev`, `row.prev(k)`, `row.next(k)`) on either endpoint (e.g. `"2024E"..@col`, `"2024E"..col.prev`, `col.prev(3)..@col`, `"c1"..@row`). Resolved bounds must follow declared table axis order (`start_index <= end_index`); inverted ranges raise `ReferenceResolutionError`.
 - Temporal bounds: `col.prev` and `col.next` navigate measure columns only, automatically skipping descriptor columns. Offsets extending outside table bounds raise `ReferenceResolutionError`.
 
 ---
@@ -177,7 +179,7 @@ table.add_row(
 Cell coordinates resolve through a deterministic 3-tier specificity lattice:
 
 1. Tier 1 (0D point cell override):
-   Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
+   Explicit cell inputs in `cells` (literal values, `Cell(value=...)`, `Cell(expr=...)`) and dynamic updates via `table.set_cell(...)` or `table.set_cells(...)` take highest precedence, overriding any row or column vector formula, format, decimals, or currency.
 2. Tier 2 (1D vector rules: row XOR col):
    - Vector formulas: `row.expr` XOR `col.expr`. Intersecting row and column expressions without a 0D cell override raise `SpecificationError` (`AmbiguousExpressionConflict`).
    - Vector conflicts: Differing row and column `format`, `decimals`, `currency`, or `shade` without a 0D cell override raise `SpecificationError` (`FormatConflict`, `DecimalsConflict`, `CurrencyConflict`, `ShadeConflict`).
@@ -252,11 +254,13 @@ table.add_row(
 )
 ```
 
-### Dynamic Coordinate Updates: `table.set_cell`
+### Dynamic Coordinate Updates: `table.set_cell` and `table.set_cells`
 
-Updates or patches existing cell coordinates without redefining the row:
+Updates or patches cell coordinates without redefining rows:
 
 ```python
+type AxisSelector = str | Iterable[str] | slice
+
 table.set_cell(
     row: str,
     col: str,
@@ -264,8 +268,24 @@ table.set_cell(
     value: CellValueLiteral | _Unset = _UNSET,
     expr: str | None = None,
     style: SemanticStyle | None = None,
-    shade: Shade | None = None,
     highlight: bool | None = None,
+    shade: Shade | None = None,
+    format: FormatPreset | None = None,
+    decimals: int | None = None,
+    currency: CurrencyCode | None = None,
+    indent: int | None = None,
+    note: str | None = None,
+) -> Table
+
+table.set_cells(
+    row: AxisSelector,
+    cols: AxisSelector,
+    cell: CellInputValue | _Unset = _UNSET,
+    value: CellValueLiteral | _Unset = _UNSET,
+    expr: str | None = None,
+    style: SemanticStyle | None = None,
+    highlight: bool | None = None,
+    shade: Shade | None = None,
     format: FormatPreset | None = None,
     decimals: int | None = None,
     currency: CurrencyCode | None = None,
@@ -274,8 +294,22 @@ table.set_cell(
 ) -> Table
 ```
 
+- Symmetrical axis selectors (`AxisSelector`): Accept a single ID (`str`), an explicit sequence of IDs (`Iterable[str]`), or an inclusive range (`slice(start, stop)`) on both `row` and `cols`.
+- Inclusive range slices (`slice(start, stop)`): Resolve across declared data rows or columns in declaration order, automatically skipping gutter rows, section headers, and gutter columns.
+- Selector validation: Unknown row or column IDs raise `KeyError`. Open-ended slices (`slice(None, "c2")`), stepped slices (`slice("c1", "c2", 1)`), inverted slices (`start_index > stop_index`), and empty iterables (`[]`) raise `ValueError`.
+- Atomic batch application: `table.set_cells` pre-validates all target `(row, col)` coordinates before mutating the table.
+
 ```python
+# 0D point update
 table.set_cell("revenue", "2024E", highlight=True, note="Revised Q3 forecast")
+
+# Multi-regime timeline row overrides (bridge columns + pre-close slice)
+table.set_cells("amort", ["standalone", "adj", "pf"], value=None)
+table.set_cells("amort", slice("q1", "q2"), expr="10.0")
+
+# 2D rectangular block assignment and metadata patching
+table.set_cells(slice("r1", "r2"), slice("c1", "c2"), value=5.0)
+table.set_cells(["r1", "r2"], "c2", shade="accent", note="patched")
 ```
 
 ---
@@ -312,12 +346,17 @@ table.add_column_gutter() -> Table
 - Column gutter: Consumes 1 physical column sized to `theme.metrics.gutter_col_width` with zero calculation cells.
 - Vector formulas automatically skip gutter rows and columns.
 
-### Worksheet Margins and Spacing
+### Worksheet Margins, Table Placement, and Spacing
 
 - Default margins: Row 0 reserved as top gutter; Col 0 (Column A) reserved as left gutter. Primary table starts at cell `B2` (`col: 1, row: 1`).
-- Vertical stacking: Multiple tables on a single worksheet stack vertically in declared order, separated automatically by 2 blank gutter rows.
+- Table placement (`stack`, `right_of`, `below`, `gap`):
+  - Default `stack`: Tables without `right_of` or `below` stack vertically at `start_col = 1` (Column B) below the lowest preceding row on the worksheet, separated by `gap=2` blank gutter rows.
+  - Horizontal `right_of`: `sheet.add_table(..., right_of="TargetTable")` (or passing a `Table` instance) aligns `start_row` with `target.start_row` and places the table to the right separated by `gap=1` blank gutter column (`theme.metrics.gutter_col_width`).
+  - Vertical `below`: `sheet.add_table(..., below="TargetTable")` aligns `start_col` with `target.start_col` and places the table directly beneath `target` separated by `gap=2` blank gutter rows.
+  - Custom `gap`: Pass `gap: int >= 0` to override the default inter-table gutter count for `stack`, `right_of`, or `below`.
+  - Placement invariants: `right_of` and `below` are mutually exclusive (`ValueError`). Targets must be declared earlier on the same worksheet (`SpecificationError` via `InvalidPlacementTarget`), and table bounding boxes cannot overlap (`SpecificationError` via `TableOverlap`).
 - Table banners: Tables with `title` or `subtitle` emit banner rows followed by an 8.0 pt buffer gutter before column headers.
-- Width arbitration: Sheet-wide column widths arbitrate across stacked tables, accounting for indentation (`indent * 2` chars) and enforcing `theme.metrics.min_col_width` (12.0 chars) on measure columns.
+- Dimension arbitration: Sheet-wide column widths arbitrate across all tables spanning each physical column (accounting for `indent * 2` chars and enforcing `theme.metrics.min_col_width` of 12.0 chars on measure columns, with `gutter_col_width` for horizontal gap columns); shared physical rows take the maximum row height across horizontally adjacent tables.
 
 ### Layout Sequencing Pattern
 
@@ -396,6 +435,10 @@ table = sheet.add_table(
     subtitle: str | None = None,
     currency: CurrencyCode | None = None,
     collapsible: bool = False,
+    *,
+    right_of: str | Table | None = None,
+    below: str | Table | None = None,
+    gap: int | None = None,
 ) -> Table
 ```
 

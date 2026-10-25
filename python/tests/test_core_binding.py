@@ -451,6 +451,7 @@ def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
         "subtitle": "Subtitle",
         "currency": "usd",
         "collapsible": False,
+        "placement": {"kind": "stack", "gap": 2},
         "columns": [
             {
                 "kind": "data",

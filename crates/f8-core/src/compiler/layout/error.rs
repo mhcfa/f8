@@ -15,6 +15,25 @@ pub enum LayoutError {
     #[error("table '{table}' referenced by sheet '{sheet}' was not found")]
     UnknownTable { table: TableId, sheet: SheetId },
 
+    /// Table specifies an invalid relative placement target.
+    #[error(
+        "table '{table}' on sheet '{sheet}' specifies invalid placement target '{target}': {reason}"
+    )]
+    InvalidPlacementTarget {
+        table: TableId,
+        target: TableId,
+        sheet: SheetId,
+        reason: &'static str,
+    },
+
+    /// Two tables on the same worksheet have overlapping 2D bounding boxes.
+    #[error("table '{second_table}' overlaps with table '{first_table}' on sheet '{sheet}'")]
+    TableOverlap {
+        sheet: SheetId,
+        first_table: TableId,
+        second_table: TableId,
+    },
+
     /// Layout placement exceeds physical Excel grid boundaries.
     #[error("layout placement exceeds Excel grid limit of {max} {dimension} (requested: {actual})")]
     GridLimitExceeded {

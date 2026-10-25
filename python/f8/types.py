@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict
 
 if TYPE_CHECKING:
+    from f8.builder import AxisSelector as AxisSelector
     from f8.builder import CellInputValue as CellInputValue
 
 type CellValueDict = dict[str, object] | str
@@ -375,6 +376,32 @@ class GutterRowSpecDict(TypedDict):
 type RowSpecDict = DataRowSpecDict | SectionHeaderRowSpecDict | GutterRowSpecDict
 
 
+class StackPlacementSpecDict(TypedDict, total=False):
+    """Specification dictionary for vertical sheet-stack table placement."""
+
+    kind: Literal["stack"]
+    gap: int
+
+
+class BelowPlacementSpecDict(TypedDict, total=False):
+    """Specification dictionary for relative vertical table placement below a target table."""
+
+    kind: Literal["below"]
+    target: str
+    gap: int
+
+
+class RightOfPlacementSpecDict(TypedDict, total=False):
+    """Specification dictionary for relative horizontal table placement right of a target table."""
+
+    kind: Literal["right_of"]
+    target: str
+    gap: int
+
+
+type PlacementSpecDict = StackPlacementSpecDict | BelowPlacementSpecDict | RightOfPlacementSpecDict
+
+
 class TableSpecDict(TypedDict, total=False):
     """Specification dictionary for a complete financial table."""
 
@@ -383,6 +410,7 @@ class TableSpecDict(TypedDict, total=False):
     subtitle: str
     currency: CurrencyCode
     collapsible: bool
+    placement: PlacementSpecDict
     columns: list[ColumnSpecDict]
     rows: list[RowSpecDict]
 
@@ -393,6 +421,10 @@ type ThemeInput = Mapping[str, object] | Path | str
 
 
 def __getattr__(name: str) -> object:
+    if name == "AxisSelector":
+        from f8.builder import AxisSelector
+
+        return AxisSelector
     if name == "CellInputValue":
         from f8.builder import CellInputValue
 

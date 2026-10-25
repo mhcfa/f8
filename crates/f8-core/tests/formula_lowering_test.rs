@@ -54,6 +54,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: is_cols,
         rows: is_rows,
     };
@@ -87,6 +88,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: cap_cols,
         rows: cap_rows,
     };
@@ -119,6 +121,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: bs_cols,
         rows: bs_rows,
     };
@@ -143,6 +146,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: cf_cols,
         rows: cf_rows,
     };
@@ -172,6 +176,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: ds_cols,
         rows: ds_rows,
     };
@@ -193,6 +198,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: assump_cols,
         rows: assump_rows,
     };
@@ -462,12 +468,12 @@ fn test_scenario_13_function_calls_with_omitted_positional_arguments() {
             Expr::Reference(TableRef {
                 table: TableId::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("revenue")),
-                col: ColSelector::Range(ColId::from("2024E"), ColId::from("2027E")),
+                col: ColSelector::Range("2024E".into(), "2027E".into()),
             }),
             Expr::Reference(TableRef {
                 table: TableId::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("cogs")),
-                col: ColSelector::Range(ColId::from("2024E"), ColId::from("2027E")),
+                col: ColSelector::Range("2024E".into(), "2027E".into()),
             }),
             Expr::Omitted,
             Expr::Literal(Literal::Number(0.0)),
@@ -625,4 +631,59 @@ fn test_scenario_17_power_operator_associativity_parenthesization() {
     let lowered =
         FormulaLowerer::lower_cell(&origin, &expr_left_pow, &symbol_table, &layout_map).unwrap();
     assert_eq!(lowered, "=(C6^C7)^2");
+}
+
+#[test]
+fn test_scenario_18_dynamic_expanding_range_lowering() {
+    let (manifest, tables) = create_comprehensive_model();
+    let theme = Theme::corporate_navy();
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    // IncomeStatement on sheet Model:
+    // "revenue" is row 6, "gross_profit" is row 8; "2024E" is col C, "2025E" is col D.
+    let origin_2024 = CellId::new("IncomeStatement", "gross_profit", "2024E");
+    let origin_2025 = CellId::new("IncomeStatement", "gross_profit", "2025E");
+
+    // 1. Expanding horizontal range "2024E"..@col at 2024E (1-cell anchor range) -> =SUM($C$6:C$6)
+    let expr_expand_col =
+        Expr::parse("SUM(IncomeStatement[\"revenue\", \"2024E\"..@col])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin_2024, &expr_expand_col, &symbol_table, &layout_map)
+            .unwrap(),
+        "=SUM($C$6:C$6)"
+    );
+
+    // 2. Expanding horizontal range "2024E"..@col at 2025E -> =SUM($C$6:D$6)
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin_2025, &expr_expand_col, &symbol_table, &layout_map)
+            .unwrap(),
+        "=SUM($C$6:D$6)"
+    );
+
+    // 3. Prior-period cumulative range "2024E"..col.prev at 2025E -> =SUM($C$6:C$6)
+    let expr_prior_col =
+        Expr::parse("SUM(IncomeStatement[\"revenue\", \"2024E\"..col.prev])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin_2025, &expr_prior_col, &symbol_table, &layout_map)
+            .unwrap(),
+        "=SUM($C$6:C$6)"
+    );
+
+    // 4. Expanding vertical range "revenue"..@row at ("gross_profit", "2024E") -> =SUM(C$6:C8)
+    let expr_expand_row = Expr::parse("SUM(IncomeStatement[\"revenue\"..@row, @col])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin_2024, &expr_expand_row, &symbol_table, &layout_map)
+            .unwrap(),
+        "=SUM(C$6:C8)"
+    );
+
+    // 5. Sliding horizontal window col.prev..@col at 2025E -> =SUM(C$6:D$6)
+    let expr_sliding_col =
+        Expr::parse("SUM(IncomeStatement[\"revenue\", col.prev..@col])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin_2025, &expr_sliding_col, &symbol_table, &layout_map)
+            .unwrap(),
+        "=SUM(C$6:D$6)"
+    );
 }

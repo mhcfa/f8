@@ -6,7 +6,17 @@ import json
 from pathlib import Path
 
 import pytest
-from f8 import Cell, CellInputValue, CompiledModel, Model, Shade, Sheet, SpecificationError, Table
+from f8 import (
+    AxisSelector,
+    Cell,
+    CellInputValue,
+    CompiledModel,
+    Model,
+    Shade,
+    Sheet,
+    SpecificationError,
+    Table,
+)
 
 
 def test_scenario_1_end_to_end_model_construction_and_compilation() -> None:
@@ -222,13 +232,15 @@ def test_scenario_5_point_cell_override_via_set_cell() -> None:
         ],
     }
 
-    # Non-existent row raises KeyError
+    # Non-existent row or column raises KeyError
     with pytest.raises(KeyError, match="Row 'missing' does not exist"):
         table.set_cell(row="missing", col="c1", value=10.0)
+    with pytest.raises(KeyError, match="Column 'missing' does not exist"):
+        table.set_cell(row="rev", col="missing", value=10.0)
 
     # Creating a new cell without value or expr raises ValueError
     with pytest.raises(ValueError, match="either 'value' or 'expr'"):
-        table.set_cell(row="rev", col="c_new", note="Invalid")
+        table.set_cell(row="existing", col="c2", note="Invalid")
 
 
 def test_scenario_6_header_specification_validation() -> None:
@@ -751,3 +763,271 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
     with pytest.raises(SpecificationError, match="shade conflict") as exc_info:
         conflict_model.compile()
     assert exc_info.value.table == "Conflict"
+
+
+def test_scenario_12_table_placement_dsl_and_dashboard_layout() -> None:
+    model = Model(name="DashboardLayoutModel")
+    sheet = model.add_sheet("Dashboard")
+
+    # 1. Authoring validation: mutually exclusive right_of and below, or negative gap
+    with pytest.raises(ValueError, match="Cannot specify both 'right_of' and 'below'"):
+        sheet.add_table("Bad1", title="Bad", right_of="T1", below="T1")
+
+    with pytest.raises(ValueError, match="Cannot specify both 'right_of' and 'below'"):
+        Table("Bad2", title="Bad", right_of="T1", below="T1")
+
+    with pytest.raises(ValueError, match="Table 'gap' must be non-negative"):
+        sheet.add_table("Bad3", title="Bad", gap=-1)
+
+    with pytest.raises(ValueError, match="Table 'gap' must be non-negative"):
+        Table("Bad4", title="Bad", right_of="T1", gap=-2)
+
+    # 2. Dashboard authoring with Table object and str targets + custom gaps
+    t1 = sheet.add_table("T1", title="Tall Left Table")
+    t1.add_column("item", role="descriptor", header="Item")
+    t1.add_column("c1", header="2023A")
+    t1.add_column("c2", header="2024E")
+    for i in range(1, 10):
+        t1.add_row(f"r{i}", cells={"item": f"Row {i}", "c1": 10.0 * i, "c2": 20.0 * i})
+
+    # T2 placed right_of T1 (passing Table object)
+    t2 = sheet.add_table("T2", title="Top Right", right_of=t1)
+    t2.add_column("metric", role="descriptor", header="Metric")
+    t2.add_column("val", header="Value")
+    t2.add_row("m1", cells={"metric": "R1 2024E"}, expr='T1["r1", "c2"]')
+
+    # T3 placed below T2 (passing str ID and custom gap)
+    t3 = sheet.add_table("T3", title="Bottom Right", below="T2", gap=2)
+    t3.add_column("metric", role="descriptor", header="Metric")
+    t3.add_column("val", header="Value")
+    t3.add_row("m2", cells={"metric": "Double M1"}, expr='T2["m1", "val"] * 2')
+
+    # T4 stacked at sheet bottom with custom gap=3
+    t4 = sheet.add_table("T4", title="Full Width Bottom", gap=3)
+    t4.add_column("item", role="descriptor", header="Summary")
+    t4.add_column("total", header="Total")
+    t4.add_row("sum_row", cells={"item": "Combined"}, expr='T2["m1", "val"] + T3["m2", "val"]')
+
+    _manifest, tables_spec = model.__f8_spec__()
+    assert "placement" not in tables_spec[0]
+    assert tables_spec[1].get("placement") == {"kind": "right_of", "target": "T1"}
+    assert tables_spec[2].get("placement") == {"kind": "below", "target": "T2", "gap": 2}
+    assert tables_spec[3].get("placement") == {"kind": "stack", "gap": 3}
+
+    compiled = model.compile()
+    assert compiled.num("T2", "m1", "val") == pytest.approx(20.0)
+    assert compiled.num("T3", "m2", "val") == pytest.approx(40.0)
+    assert compiled.num("T4", "sum_row", "total") == pytest.approx(60.0)
+
+    # Verify physical coordinates and lowered formulas
+    assert compiled.table("T2").address("m1", "val") == "G5"
+    assert compiled.table("T2").formula("m1", "val") == "=$D$5"
+    assert compiled.table("T3").address("m2", "val") == "G11"
+    assert compiled.table("T3").formula("m2", "val") == "=$G$5*2"
+    assert compiled.table("T4").address("sum_row", "total") == "C20"
+    assert compiled.table("T4").formula("sum_row", "total") == "=$G$5+$G$11"
+
+    sheet_insp = compiled.inspect_sheet("Dashboard")
+    assert sheet_insp["min_col"] == 1
+    assert sheet_insp["max_col"] == 6
+    assert sheet_insp["min_row"] == 1
+    assert sheet_insp["max_row"] == 19
+    assert sheet_insp["col_widths"][4] == pytest.approx(3.0)
+
+    xlsx_bytes = compiled.emit_workbook()
+    assert xlsx_bytes.startswith(b"PK\x03\x04")
+
+    # 3. Invalid placement target raises SpecificationError with err.table
+    bad_target_model = Model()
+    bs = bad_target_model.add_sheet("S1")
+    bt = bs.add_table("OrphanTable", title="Orphan", right_of="MissingTarget")
+    bt.add_column("c1", header="C1")
+    bt.add_row("r1", cells={"c1": 1.0})
+    with pytest.raises(SpecificationError, match="invalid placement target") as target_exc:
+        bad_target_model.compile()
+    assert target_exc.value.table == "OrphanTable"
+
+    # 4. Overlapping tables raise SpecificationError with err.table == second_table.id
+    overlap_model = Model()
+    os_sheet = overlap_model.add_sheet("S1")
+    ot1 = os_sheet.add_table("Base", title="Base")
+    ot1.add_column("c1", header="C1")
+    ot1.add_row("r1", cells={"c1": 1.0})
+
+    ot2 = os_sheet.add_table("FirstRight", title="First", right_of=ot1)
+    ot2.add_column("c1", header="C1")
+    ot2.add_row("r1", cells={"c1": 2.0})
+
+    ot3 = os_sheet.add_table("CollidingRight", title="Second", right_of=ot1)
+    ot3.add_column("c1", header="C1")
+    ot3.add_row("r1", cells={"c1": 3.0})
+
+    with pytest.raises(SpecificationError, match="overlaps with table") as overlap_exc:
+        overlap_model.compile()
+    assert overlap_exc.value.table == "CollidingRight"
+
+
+def test_axis_selector_runtime_evaluation() -> None:
+    from f8.builder import AxisSelector as BuilderAxisSelector
+    from f8.types import AxisSelector as TypesAxisSelector
+
+    assert AxisSelector is BuilderAxisSelector
+    assert TypesAxisSelector is BuilderAxisSelector
+    assert BuilderAxisSelector.__value__ is not None
+
+
+def test_set_cells_scenario_1_multi_regime_timeline_row_authoring() -> None:
+    model = Model()
+    sheet = model.add_sheet("Schedule")
+    table = sheet.add_table("T", title="Multi-Regime Schedule")
+    table.add_column("line_item", role="descriptor", header="Line Item")
+    table.add_column("standalone", role="measure", header="Standalone")
+    table.add_column("adj", role="measure", header="Adj.")
+    table.add_column("pf", role="measure", header="PF")
+    table.add_column_gutter()
+    table.add_column("q1", role="measure", header="Q1")
+    table.add_column_gutter()
+    table.add_column("q2", role="measure", header="Q2")
+    table.add_column("fy1", role="measure", header="FY1")
+    table.add_column("fy2", role="measure", header="FY2")
+
+    table.add_row(
+        "amort",
+        cells={"line_item": "Amortization"},
+        expr='T["amort", col.prev] * 2',
+    )
+    table.set_cells("amort", ["standalone", "adj", "pf"], value=None)
+    table.set_cells("amort", slice("q1", "q2"), expr="10.0")
+
+    compiled = model.compile()
+    assert compiled.value("T", "amort", "standalone") is None
+    assert compiled.value("T", "amort", "adj") is None
+    assert compiled.value("T", "amort", "pf") is None
+    assert compiled.inspect_cell("T", "amort", "standalone")["evaluated_value"] == "Empty"
+    assert compiled.inspect_cell("T", "amort", "adj")["evaluated_value"] == "Empty"
+    assert compiled.inspect_cell("T", "amort", "pf")["evaluated_value"] == "Empty"
+    assert compiled.num("T", "amort", "q1") == pytest.approx(10.0)
+    assert compiled.num("T", "amort", "q2") == pytest.approx(10.0)
+    assert compiled.num("T", "amort", "fy1") == pytest.approx(20.0)
+    assert compiled.num("T", "amort", "fy2") == pytest.approx(40.0)
+
+
+def test_set_cells_scenario_2_2d_rectangular_block_and_metadata_patching() -> None:
+    model = Model()
+    sheet = model.add_sheet("Matrix")
+    table = sheet.add_table("T1", title="Block Matrix")
+    table.add_column("c1", header="C1")
+    table.add_column_gutter()
+    table.add_column("c2", header="C2")
+    table.add_column("c3", header="C3")
+
+    table.add_row("r1", cells={"c3": 1.0})
+    table.add_section_header("Section Divider")
+    table.add_row_gutter()
+    table.add_row("r2", cells={"c3": 2.0})
+    table.add_row("r3", cells={"c1": 3.0, "c2": 3.0, "c3": 3.0})
+
+    table.set_cells(slice("r1", "r2"), slice("c1", "c2"), value=5.0)
+    table.set_cells(["r1", "r2"], "c2", shade="accent", note="patched")
+
+    _manifest, tables = model.__f8_spec__()
+    rows_spec = [r for r in tables[0].get("rows", []) if r.get("kind") == "data"]
+    assert rows_spec[0] == {
+        "kind": "data",
+        "id": "r1",
+        "cells": {
+            "c1": 5.0,
+            "c2": {"value": 5.0, "shade": "accent", "note": "patched"},
+            "c3": 1.0,
+        },
+    }
+    assert rows_spec[1] == {
+        "kind": "data",
+        "id": "r2",
+        "cells": {
+            "c1": 5.0,
+            "c2": {"value": 5.0, "shade": "accent", "note": "patched"},
+            "c3": 2.0,
+        },
+    }
+    assert rows_spec[2] == {
+        "kind": "data",
+        "id": "r3",
+        "cells": {"c1": 3.0, "c2": 3.0, "c3": 3.0},
+    }
+
+    compiled = model.compile()
+    assert compiled.num("T1", "r1", "c1") == pytest.approx(5.0)
+    assert compiled.num("T1", "r2", "c1") == pytest.approx(5.0)
+    assert compiled.inspect_cell("T1", "r1", "c2")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "r1", "c2")["note"] == "patched"
+    assert compiled.inspect_cell("T1", "r2", "c2")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "r2", "c2")["note"] == "patched"
+
+
+def test_set_cells_scenario_3_selector_validation_and_atomic_failure() -> None:
+    table = Table("T1", title="Validation Table")
+    table.add_column("c1", header="C1")
+    table.add_column("c2", header="C2")
+    table.add_row("r1", cells={"c1": 10.0})
+    table.add_row("r2", cells={"c1": 20.0, "c2": 30.0})
+
+    # Unknown row or column ID (via str, Iterable, or slice endpoint) raises KeyError
+    with pytest.raises(KeyError, match="Row 'missing_row' does not exist"):
+        table.set_cells("missing_row", "c1", value=1.0)
+    with pytest.raises(KeyError, match="Row 'missing_row' does not exist"):
+        table.set_cells(["r1", "missing_row"], "c1", value=1.0)
+    with pytest.raises(KeyError, match="Row 'missing_row' does not exist"):
+        table.set_cells(slice("missing_row", "r2"), "c1", value=1.0)
+    with pytest.raises(KeyError, match="Row 'missing_row' does not exist"):
+        table.set_cells(slice("r1", "missing_row"), "c1", value=1.0)
+
+    with pytest.raises(KeyError, match="Column 'missing_col' does not exist"):
+        table.set_cells("r1", "missing_col", value=1.0)
+    with pytest.raises(KeyError, match="Column 'missing_col' does not exist"):
+        table.set_cells("r1", ["c1", "missing_col"], value=1.0)
+    with pytest.raises(KeyError, match="Column 'missing_col' does not exist"):
+        table.set_cells("r1", slice("missing_col", "c2"), value=1.0)
+    with pytest.raises(KeyError, match="Column 'missing_col' does not exist"):
+        table.set_cells("r1", slice("c1", "missing_col"), value=1.0)
+
+    # Inverted slice raises ValueError
+    with pytest.raises(ValueError, match="Inverted column slice"):
+        table.set_cells("r1", slice("c2", "c1"), value=1.0)
+    with pytest.raises(ValueError, match="Inverted row slice"):
+        table.set_cells(slice("r2", "r1"), "c1", value=1.0)
+
+    # Open-ended slice raises ValueError
+    with pytest.raises(ValueError, match="non-None string 'start' and 'stop'"):
+        table.set_cells("r1", slice(None, "c2"), value=1.0)
+    with pytest.raises(ValueError, match="non-None string 'start' and 'stop'"):
+        table.set_cells("r1", slice("c1", None), value=1.0)
+    with pytest.raises(ValueError, match="non-None string 'start' and 'stop'"):
+        table.set_cells(slice(None, "r2"), "c1", value=1.0)
+    with pytest.raises(ValueError, match="non-None string 'start' and 'stop'"):
+        table.set_cells(slice("r1", None), "c1", value=1.0)
+
+    # Stepped slice raises ValueError
+    with pytest.raises(ValueError, match="cannot specify a step"):
+        table.set_cells("r1", slice("c1", "c2", 1), value=1.0)
+    with pytest.raises(ValueError, match="cannot specify a step"):
+        table.set_cells(slice("r1", "r2", 1), "c1", value=1.0)
+
+    # Empty iterable raises ValueError
+    with pytest.raises(ValueError, match="Row selector iterable cannot be empty"):
+        table.set_cells([], "c1", value=1.0)
+    with pytest.raises(ValueError, match="Column selector iterable cannot be empty"):
+        table.set_cells("r1", [], value=1.0)
+
+    # Atomic failure: ("r1", "c1") has 10.0 and ("r1", "c2") is unpopulated
+    with pytest.raises(ValueError, match="must specify either 'value' or 'expr'"):
+        table.set_cells("r1", ["c1", "c2"], note="missing payload")
+
+    # Verify ("r1", "c1") was left completely unmutated without the note
+    spec = table.__f8_spec__()
+    rows_spec = [r for r in spec.get("rows", []) if r.get("kind") == "data"]
+    assert rows_spec[0] == {
+        "kind": "data",
+        "id": "r1",
+        "cells": {"c1": 10.0},
+    }

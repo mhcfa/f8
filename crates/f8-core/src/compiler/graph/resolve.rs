@@ -4,7 +4,9 @@ use super::error::ResolveError;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::{SymbolTable, TableMetadata};
-use crate::expr::ast::{ColSelector, Expr, RelativeOffset, RowSelector, TableRef};
+use crate::expr::ast::{
+    ColEndpoint, ColSelector, Expr, RelativeOffset, RowEndpoint, RowSelector, TableRef,
+};
 use crate::model::id::{ColId, RowId};
 
 /// Recursively collects all table references present within a formula expression AST.
@@ -32,6 +34,70 @@ fn collect_refs_recursive<'a>(expr: &'a Expr, out: &mut Vec<&'a TableRef>) {
     }
 }
 
+/// Resolves an explicit row key to its 0-based index and canonical [`RowId`] in `target_table.rows`.
+fn resolve_row_key<'a>(
+    origin: &CellId,
+    target_table: &'a TableMetadata,
+    row_id: &RowId,
+) -> Result<(usize, &'a RowId), ResolveError> {
+    target_table.rows.get_full(row_id).ok_or_else(|| {
+        ResolveError::unknown_row(origin, target_table.table_id.clone(), row_id.clone())
+    })
+}
+
+/// Resolves a relative row offset (`row.prev`, `row.next`) to its 0-based index and [`RowId`] in `target_table.rows`.
+fn resolve_row_offset<'a>(
+    origin: &CellId,
+    target_table: &'a TableMetadata,
+    origin_table: &TableMetadata,
+    offset: RelativeOffset,
+) -> Result<(usize, &'a RowId), ResolveError> {
+    let origin_idx = origin_table.rows.get_index_of(&origin.row).ok_or_else(|| {
+        ResolveError::unknown_row(origin, origin_table.table_id.clone(), origin.row.clone())
+    })?;
+
+    let signed_offset = match offset {
+        RelativeOffset::Prev(k) => -(k as i32),
+        RelativeOffset::Next(k) => k as i32,
+    };
+    let target_idx = match offset {
+        RelativeOffset::Prev(k) => origin_idx
+            .checked_sub(k as usize)
+            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
+        RelativeOffset::Next(k) => origin_idx
+            .checked_add(k as usize)
+            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
+    };
+
+    let target_row_id = origin_table
+        .rows
+        .get_index(target_idx)
+        .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?;
+    resolve_row_key(origin, target_table, target_row_id)
+}
+
+/// Resolves a single row endpoint to its 0-based index and canonical [`RowId`] in `target_table.rows`.
+fn resolve_row_endpoint<'a>(
+    origin: &CellId,
+    target_table: &'a TableMetadata,
+    origin_table: &TableMetadata,
+    endpoint: &RowEndpoint,
+) -> Result<(usize, &'a RowId), ResolveError> {
+    match endpoint {
+        RowEndpoint::Active => target_table.rows.get_full(&origin.row).ok_or_else(|| {
+            ResolveError::active_row_mismatch(
+                origin,
+                target_table.table_id.clone(),
+                origin.row.clone(),
+            )
+        }),
+        RowEndpoint::Key(row_id) => resolve_row_key(origin, target_table, row_id),
+        RowEndpoint::Offset(offset) => {
+            resolve_row_offset(origin, target_table, origin_table, *offset)
+        }
+    }
+}
+
 /// Resolves a row selector against target and origin table metadata.
 pub(crate) fn resolve_row_selector(
     origin: &CellId,
@@ -41,110 +107,134 @@ pub(crate) fn resolve_row_selector(
 ) -> Result<Vec<RowId>, ResolveError> {
     match row_selector {
         RowSelector::Active => {
-            if !target_table.rows.contains(&origin.row) {
-                return Err(ResolveError::active_row_mismatch(
-                    origin,
-                    target_table.table_id.clone(),
-                    origin.row.clone(),
-                ));
-            }
-            Ok(vec![origin.row.clone()])
+            let (_, id) =
+                resolve_row_endpoint(origin, target_table, origin_table, &RowEndpoint::Active)?;
+            Ok(vec![id.clone()])
         }
         RowSelector::Key(row_id) => {
-            if !target_table.rows.contains(row_id) {
-                return Err(ResolveError::unknown_row(
-                    origin,
-                    target_table.table_id.clone(),
-                    row_id.clone(),
-                ));
-            }
-            Ok(vec![row_id.clone()])
+            let (_, id) = resolve_row_key(origin, target_table, row_id)?;
+            Ok(vec![id.clone()])
+        }
+        RowSelector::Offset(offset) => {
+            let (_, id) = resolve_row_offset(origin, target_table, origin_table, *offset)?;
+            Ok(vec![id.clone()])
         }
         RowSelector::Range(start, end) => {
-            let start_idx = target_table.rows.get_index_of(start).ok_or_else(|| {
-                ResolveError::unknown_row(origin, target_table.table_id.clone(), start.clone())
-            })?;
-            let end_idx = target_table.rows.get_index_of(end).ok_or_else(|| {
-                ResolveError::unknown_row(origin, target_table.table_id.clone(), end.clone())
-            })?;
+            let (start_idx, start_id) =
+                resolve_row_endpoint(origin, target_table, origin_table, start)?;
+            let (end_idx, end_id) = resolve_row_endpoint(origin, target_table, origin_table, end)?;
 
             if start_idx > end_idx {
                 return Err(ResolveError::inverted_range(
                     origin,
                     target_table.table_id.clone(),
-                    start.to_string(),
-                    end.to_string(),
+                    start_id.to_string(),
+                    end_id.to_string(),
                 ));
             }
 
-            Ok(target_table.rows[start_idx..=end_idx]
-                .iter()
-                .cloned()
-                .collect())
+            let slice = target_table
+                .rows
+                .get_range(start_idx..=end_idx)
+                .ok_or_else(|| {
+                    ResolveError::inverted_range(
+                        origin,
+                        target_table.table_id.clone(),
+                        start_id.to_string(),
+                        end_id.to_string(),
+                    )
+                })?;
+
+            Ok(slice.iter().cloned().collect())
         }
-        RowSelector::Offset(offset) => match offset {
-            RelativeOffset::Prev(k) => {
-                let origin_idx = origin_table.rows.get_index_of(&origin.row).ok_or_else(|| {
-                    ResolveError::unknown_row(
-                        origin,
-                        origin_table.table_id.clone(),
-                        origin.row.clone(),
-                    )
-                })?;
+    }
+}
 
-                let k_usize = *k as usize;
-                if origin_idx < k_usize {
-                    return Err(ResolveError::temporal_offset_out_of_bounds(
-                        origin,
-                        -(*k as i32),
-                    ));
-                }
+/// Resolves an explicit column key to its 0-based index and canonical [`ColId`] in `target_table.columns`.
+fn resolve_col_key<'a>(
+    origin: &CellId,
+    target_table: &'a TableMetadata,
+    col_id: &ColId,
+) -> Result<(usize, &'a ColId), ResolveError> {
+    let idx = target_table
+        .column_index
+        .get(col_id)
+        .copied()
+        .ok_or_else(|| {
+            ResolveError::unknown_column(origin, target_table.table_id.clone(), col_id.clone())
+        })?;
+    let col = target_table.columns.get(idx).ok_or_else(|| {
+        ResolveError::unknown_column(origin, target_table.table_id.clone(), col_id.clone())
+    })?;
+    Ok((idx, &col.id))
+}
 
-                let target_idx = origin_idx - k_usize;
-                let target_row_id = origin_table.rows[target_idx].clone();
+/// Resolves a relative column offset (`col.prev`, `col.next`) to its 0-based index and [`ColId`] in `target_table.columns`.
+fn resolve_col_offset<'a>(
+    origin: &CellId,
+    target_table: &'a TableMetadata,
+    origin_table: &TableMetadata,
+    offset: RelativeOffset,
+) -> Result<(usize, &'a ColId), ResolveError> {
+    let signed_offset = match offset {
+        RelativeOffset::Prev(k) => -(k as i32),
+        RelativeOffset::Next(k) => k as i32,
+    };
+    let origin_measure_idx = origin_table
+        .measure_columns
+        .iter()
+        .position(|c| c == &origin.col)
+        .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?;
 
-                if !target_table.rows.contains(&target_row_id) {
-                    return Err(ResolveError::unknown_row(
+    let target_measure_idx = match offset {
+        RelativeOffset::Prev(k) => origin_measure_idx
+            .checked_sub(k as usize)
+            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
+        RelativeOffset::Next(k) => origin_measure_idx
+            .checked_add(k as usize)
+            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
+    };
+
+    let target_col_id = origin_table
+        .measure_columns
+        .get(target_measure_idx)
+        .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?;
+    resolve_col_key(origin, target_table, target_col_id)
+}
+
+/// Resolves a single column endpoint to its 0-based index and canonical [`ColId`] in `target_table.columns`.
+fn resolve_col_endpoint<'a>(
+    origin: &CellId,
+    target_table: &'a TableMetadata,
+    origin_table: &TableMetadata,
+    endpoint: &ColEndpoint,
+) -> Result<(usize, &'a ColId), ResolveError> {
+    match endpoint {
+        ColEndpoint::Active => {
+            let idx = target_table
+                .column_index
+                .get(&origin.col)
+                .copied()
+                .ok_or_else(|| {
+                    ResolveError::active_column_mismatch(
                         origin,
                         target_table.table_id.clone(),
-                        target_row_id,
-                    ));
-                }
-
-                Ok(vec![target_row_id])
-            }
-            RelativeOffset::Next(k) => {
-                let origin_idx = origin_table.rows.get_index_of(&origin.row).ok_or_else(|| {
-                    ResolveError::unknown_row(
-                        origin,
-                        origin_table.table_id.clone(),
-                        origin.row.clone(),
+                        origin.col.clone(),
                     )
                 })?;
-
-                let k_usize = *k as usize;
-                let target_idx = match origin_idx.checked_add(k_usize) {
-                    Some(idx) if idx < origin_table.rows.len() => idx,
-                    _ => {
-                        return Err(ResolveError::temporal_offset_out_of_bounds(
-                            origin, *k as i32,
-                        ));
-                    }
-                };
-
-                let target_row_id = origin_table.rows[target_idx].clone();
-
-                if !target_table.rows.contains(&target_row_id) {
-                    return Err(ResolveError::unknown_row(
-                        origin,
-                        target_table.table_id.clone(),
-                        target_row_id,
-                    ));
-                }
-
-                Ok(vec![target_row_id])
-            }
-        },
+            let col = target_table.columns.get(idx).ok_or_else(|| {
+                ResolveError::active_column_mismatch(
+                    origin,
+                    target_table.table_id.clone(),
+                    origin.col.clone(),
+                )
+            })?;
+            Ok((idx, &col.id))
+        }
+        ColEndpoint::Key(col_id) => resolve_col_key(origin, target_table, col_id),
+        ColEndpoint::Offset(offset) => {
+            resolve_col_offset(origin, target_table, origin_table, *offset)
+        }
     }
 }
 
@@ -157,119 +247,46 @@ pub(crate) fn resolve_col_selector(
 ) -> Result<Vec<ColId>, ResolveError> {
     match col_selector {
         ColSelector::Active => {
-            if !target_table.column_index.contains_key(&origin.col) {
-                return Err(ResolveError::active_column_mismatch(
-                    origin,
-                    target_table.table_id.clone(),
-                    origin.col.clone(),
-                ));
-            }
-            Ok(vec![origin.col.clone()])
+            let (_, id) =
+                resolve_col_endpoint(origin, target_table, origin_table, &ColEndpoint::Active)?;
+            Ok(vec![id.clone()])
         }
         ColSelector::Key(col_id) => {
-            if !target_table.column_index.contains_key(col_id) {
-                return Err(ResolveError::unknown_column(
-                    origin,
-                    target_table.table_id.clone(),
-                    col_id.clone(),
-                ));
-            }
-            Ok(vec![col_id.clone()])
+            let (_, id) = resolve_col_key(origin, target_table, col_id)?;
+            Ok(vec![id.clone()])
+        }
+        ColSelector::Offset(offset) => {
+            let (_, id) = resolve_col_offset(origin, target_table, origin_table, *offset)?;
+            Ok(vec![id.clone()])
         }
         ColSelector::Range(start, end) => {
-            let start_idx = target_table
-                .column_index
-                .get(start)
-                .copied()
-                .ok_or_else(|| {
-                    ResolveError::unknown_column(
-                        origin,
-                        target_table.table_id.clone(),
-                        start.clone(),
-                    )
-                })?;
-            let end_idx = target_table.column_index.get(end).copied().ok_or_else(|| {
-                ResolveError::unknown_column(origin, target_table.table_id.clone(), end.clone())
-            })?;
+            let (start_idx, start_id) =
+                resolve_col_endpoint(origin, target_table, origin_table, start)?;
+            let (end_idx, end_id) = resolve_col_endpoint(origin, target_table, origin_table, end)?;
 
             if start_idx > end_idx {
                 return Err(ResolveError::inverted_range(
                     origin,
                     target_table.table_id.clone(),
-                    start.to_string(),
-                    end.to_string(),
+                    start_id.to_string(),
+                    end_id.to_string(),
                 ));
             }
 
-            let cols = target_table.columns[start_idx..=end_idx]
-                .iter()
-                .map(|c| c.id.clone())
-                .collect();
-            Ok(cols)
+            let slice = target_table
+                .columns
+                .get(start_idx..=end_idx)
+                .ok_or_else(|| {
+                    ResolveError::inverted_range(
+                        origin,
+                        target_table.table_id.clone(),
+                        start_id.to_string(),
+                        end_id.to_string(),
+                    )
+                })?;
+
+            Ok(slice.iter().map(|c| c.id.clone()).collect())
         }
-        ColSelector::Offset(offset) => match offset {
-            RelativeOffset::Prev(k) => {
-                let origin_measure_idx = origin_table
-                    .measure_columns
-                    .iter()
-                    .position(|c| c == &origin.col)
-                    .ok_or_else(|| {
-                        ResolveError::temporal_offset_out_of_bounds(origin, -(*k as i32))
-                    })?;
-
-                let k_usize = *k as usize;
-                if origin_measure_idx < k_usize {
-                    return Err(ResolveError::temporal_offset_out_of_bounds(
-                        origin,
-                        -(*k as i32),
-                    ));
-                }
-
-                let target_measure_idx = origin_measure_idx - k_usize;
-                let target_col_id = origin_table.measure_columns[target_measure_idx].clone();
-
-                if !target_table.column_index.contains_key(&target_col_id) {
-                    return Err(ResolveError::unknown_column(
-                        origin,
-                        target_table.table_id.clone(),
-                        target_col_id,
-                    ));
-                }
-
-                Ok(vec![target_col_id])
-            }
-            RelativeOffset::Next(k) => {
-                let origin_measure_idx = origin_table
-                    .measure_columns
-                    .iter()
-                    .position(|c| c == &origin.col)
-                    .ok_or_else(|| {
-                        ResolveError::temporal_offset_out_of_bounds(origin, *k as i32)
-                    })?;
-
-                let k_usize = *k as usize;
-                let target_measure_idx = match origin_measure_idx.checked_add(k_usize) {
-                    Some(idx) if idx < origin_table.measure_columns.len() => idx,
-                    _ => {
-                        return Err(ResolveError::temporal_offset_out_of_bounds(
-                            origin, *k as i32,
-                        ));
-                    }
-                };
-
-                let target_col_id = origin_table.measure_columns[target_measure_idx].clone();
-
-                if !target_table.column_index.contains_key(&target_col_id) {
-                    return Err(ResolveError::unknown_column(
-                        origin,
-                        target_table.table_id.clone(),
-                        target_col_id,
-                    ));
-                }
-
-                Ok(vec![target_col_id])
-            }
-        },
     }
 }
 
@@ -425,6 +442,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("2024E")],
             rows: vec![RowSpec::new("rev")],
         };
