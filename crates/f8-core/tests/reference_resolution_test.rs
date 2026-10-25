@@ -2,7 +2,9 @@
 
 use f8_core::compiler::graph::{ResolveError, resolve_cell_dependencies, resolve_table_ref};
 use f8_core::compiler::ir::{CellGrid, CellId, SymbolTable, expand_table};
-use f8_core::expr::ast::{ColSelector, RelativeOffset, RowSelector, TableRef};
+use f8_core::expr::ast::{
+    ColEndpoint, ColSelector, RelativeOffset, RowEndpoint, RowSelector, TableRef,
+};
 use f8_core::model::id::{ColId, RowId, SheetId, TableId};
 use f8_core::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
 use indexmap::IndexMap;
@@ -198,7 +200,7 @@ fn test_scenario_6_resolving_closed_horizontal_column_range() {
     let table_ref = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Range(ColId::from("2024E"), ColId::from("2026E")),
+        ColSelector::Range("2024E".into(), "2026E".into()),
     );
 
     let resolved = resolve_table_ref(&origin, &table_ref, &symbols).expect("resolves ok");
@@ -216,7 +218,7 @@ fn test_scenario_7_inverted_range_slice_rejected() {
     let table_ref = TableRef::new(
         "IncomeStatement",
         RowSelector::Key(RowId::from("rev")),
-        ColSelector::Range(ColId::from("2026E"), ColId::from("2024E")),
+        ColSelector::Range("2026E".into(), "2024E".into()),
     );
 
     let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
@@ -228,7 +230,7 @@ fn test_scenario_7_inverted_range_slice_rejected() {
     // Row inverted range
     let row_table_ref = TableRef::new(
         "IncomeStatement",
-        RowSelector::Range(RowId::from("sga"), RowId::from("rev")),
+        RowSelector::Range("sga".into(), "rev".into()),
         ColSelector::Key(ColId::from("2024E")),
     );
     let row_err = resolve_table_ref(&origin, &row_table_ref, &symbols).unwrap_err();
@@ -272,8 +274,8 @@ fn test_scenario_9_resolving_2d_block_range() {
     // 2 rows (cogs, sga) x 3 columns (2024E, 2025E, 2026E) = 6 cells
     let ref_2d = TableRef::new(
         "IncomeStatement",
-        RowSelector::Range(RowId::from("cogs"), RowId::from("sga")),
-        ColSelector::Range(ColId::from("2024E"), ColId::from("2026E")),
+        RowSelector::Range("cogs".into(), "sga".into()),
+        ColSelector::Range("2024E".into(), "2026E".into()),
     );
 
     let resolved = resolve_table_ref(&origin, &ref_2d, &symbols).expect("resolves 2d block");
@@ -416,7 +418,7 @@ fn test_scenario_row_ranges_and_col_next_happy_path() {
     // Row range "cogs".."ebit" -> ["cogs", "sga", "ebit"]
     let ref_range = TableRef::new(
         "IncomeStatement",
-        RowSelector::Range(RowId::from("cogs"), RowId::from("ebit")),
+        RowSelector::Range("cogs".into(), "ebit".into()),
         ColSelector::Key(ColId::from("2024E")),
     );
     let resolved_range =
@@ -436,4 +438,162 @@ fn test_scenario_row_ranges_and_col_next_happy_path() {
         resolve_table_ref(&origin, &ref_col_next, &symbols).expect("resolves col.next");
     assert_eq!(resolved_col_next.len(), 1);
     assert_eq!(resolved_col_next[0].col, ColId::from("2025E"));
+}
+
+#[test]
+fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let mut symbols = SymbolTable::new();
+    let cols = vec![
+        ColumnSpec::new("close"),
+        ColumnSpec::new("2024E"),
+        ColumnSpec::new("2025E"),
+        ColumnSpec::new("2026E"),
+    ];
+
+    let mut sched_cells = IndexMap::new();
+    sched_cells.insert(ColId::from("close"), CellInput::number(0.0));
+    sched_cells.insert(ColId::from("2024E"), CellInput::number(10.0));
+    sched_cells.insert(ColId::from("2025E"), CellInput::number(15.0));
+    sched_cells.insert(ColId::from("2026E"), CellInput::number(20.0));
+
+    let mut cum_cells = IndexMap::new();
+    cum_cells.insert(ColId::from("close"), CellInput::number(0.0));
+
+    let mut prior_cum_cells = IndexMap::new();
+    prior_cum_cells.insert(ColId::from("close"), CellInput::number(0.0));
+    prior_cum_cells.insert(ColId::from("2024E"), CellInput::number(0.0));
+
+    let debt_table = TableSpec {
+        id: TableId::from("Debt"),
+        title: "Debt Schedule".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: cols,
+        rows: vec![
+            RowSpec::new("sched").with_cells(sched_cells),
+            RowSpec::new("cum_sched")
+                .with_cells(cum_cells)
+                .with_expr("SUM(Debt[\"sched\", \"2024E\"..@col])"),
+            RowSpec::new("prior_cum")
+                .with_cells(prior_cum_cells)
+                .with_expr("SUM(Debt[\"sched\", \"2024E\"..col.prev])"),
+        ],
+    };
+
+    symbols
+        .register_table(SheetId::from("Model"), &debt_table)
+        .expect("register debt_table ok");
+
+    // Scenario 4: Dynamic range inversion and out-of-bounds rejection
+    let ref_prior_cum = TableRef::new(
+        "Debt",
+        RowSelector::Key(RowId::from("sched")),
+        ColSelector::Range(
+            ColEndpoint::from("2024E"),
+            ColEndpoint::Offset(RelativeOffset::Prev(1)),
+        ),
+    );
+    // Placed on "2024E": col.prev resolves to "close" (index 0) < "2024E" (index 1) -> InvertedRange
+    let origin_2024 = CellId::new("Debt", "prior_cum", "2024E");
+    let err_inv = resolve_table_ref(&origin_2024, &ref_prior_cum, &symbols).unwrap_err();
+    assert_eq!(
+        err_inv,
+        ResolveError::inverted_range(&origin_2024, "Debt", "2024E", "close")
+    );
+
+    // Placed on "close": col.prev underflows -> TemporalOffsetOutOfBounds(-1)
+    let origin_close = CellId::new("Debt", "prior_cum", "close");
+    let err_oob = resolve_table_ref(&origin_close, &ref_prior_cum, &symbols).unwrap_err();
+    assert_eq!(
+        err_oob,
+        ResolveError::temporal_offset_out_of_bounds(&origin_close, -1)
+    );
+
+    // Dynamic row range resolution: "sched"..@row
+    let ref_row_expand = TableRef::new(
+        "Debt",
+        RowSelector::Range(RowEndpoint::from("sched"), RowEndpoint::Active),
+        ColSelector::Active,
+    );
+    let resolved_row =
+        resolve_table_ref(&origin_2024, &ref_row_expand, &symbols).expect("resolves row expand");
+    assert_eq!(resolved_row.len(), 3);
+    assert_eq!(resolved_row[0], CellId::new("Debt", "sched", "2024E"));
+    assert_eq!(resolved_row[1], CellId::new("Debt", "cum_sched", "2024E"));
+    assert_eq!(resolved_row[2], CellId::new("Debt", "prior_cum", "2024E"));
+
+    // Scenarios 2 & 3: Compile and evaluate full model
+    let manifest = ProjectManifest {
+        model_name: "DebtTest".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Model".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Debt")],
+        }],
+    };
+    let compiled = Compiler::compile(&manifest, &[debt_table]).expect("compile ok");
+
+    // Scenario 2: cum_sched evaluates to [0.0, 10.0, 25.0, 45.0]
+    let debt_id = TableId::from("Debt");
+    let cum_row = RowId::from("cum_sched");
+    let prior_row = RowId::from("prior_cum");
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &cum_row, &ColId::from("close"))
+            .unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &cum_row, &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(10.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &cum_row, &ColId::from("2025E"))
+            .unwrap(),
+        CellValue::Number(25.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &cum_row, &ColId::from("2026E"))
+            .unwrap(),
+        CellValue::Number(45.0)
+    );
+
+    // Scenario 3: prior_cum evaluates to 10.0 at 2025E and 25.0 at 2026E
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &prior_row, &ColId::from("close"))
+            .unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &prior_row, &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &prior_row, &ColId::from("2025E"))
+            .unwrap(),
+        CellValue::Number(10.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&debt_id, &prior_row, &ColId::from("2026E"))
+            .unwrap(),
+        CellValue::Number(25.0)
+    );
 }

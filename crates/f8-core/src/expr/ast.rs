@@ -201,6 +201,112 @@ pub enum RelativeOffset {
     Next(u32),
 }
 
+impl RelativeOffset {
+    /// Formats the relative offset prefixed with the given axis identifier (`"row"` or `"col"`).
+    pub(crate) fn fmt_with_axis(self, axis: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Prev(1) => write!(f, "{axis}.prev"),
+            Self::Prev(k) => write!(f, "{axis}.prev({k})"),
+            Self::Next(1) => write!(f, "{axis}.next"),
+            Self::Next(k) => write!(f, "{axis}.next({k})"),
+        }
+    }
+}
+
+/// Single-coordinate endpoint on the row axis.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RowEndpoint {
+    /// Active evaluation row: `@row`.
+    Active,
+    /// Explicit row key: `"revenue"`.
+    Key(RowId),
+    /// Relative row offset: `row.prev`, `row.next(2)`.
+    Offset(RelativeOffset),
+}
+
+impl RowEndpoint {
+    /// Returns `true` if this endpoint tracks the active evaluation row or a relative offset.
+    #[must_use]
+    pub const fn is_dynamic(&self) -> bool {
+        matches!(self, Self::Active | Self::Offset(_))
+    }
+}
+
+impl From<RowId> for RowEndpoint {
+    fn from(id: RowId) -> Self {
+        Self::Key(id)
+    }
+}
+
+impl From<&str> for RowEndpoint {
+    fn from(s: &str) -> Self {
+        Self::Key(RowId::from(s))
+    }
+}
+
+impl From<RelativeOffset> for RowEndpoint {
+    fn from(offset: RelativeOffset) -> Self {
+        Self::Offset(offset)
+    }
+}
+
+impl fmt::Display for RowEndpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Active => write!(f, "@row"),
+            Self::Key(k) => write!(f, "\"{k}\""),
+            Self::Offset(offset) => offset.fmt_with_axis("row", f),
+        }
+    }
+}
+
+/// Single-coordinate endpoint on the column axis.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ColEndpoint {
+    /// Active evaluation column: `@col`.
+    Active,
+    /// Explicit column key: `"2024E"`.
+    Key(ColId),
+    /// Relative column offset: `col.prev`, `col.next(2)`.
+    Offset(RelativeOffset),
+}
+
+impl ColEndpoint {
+    /// Returns `true` if this endpoint tracks the active evaluation column or a relative offset.
+    #[must_use]
+    pub const fn is_dynamic(&self) -> bool {
+        matches!(self, Self::Active | Self::Offset(_))
+    }
+}
+
+impl From<ColId> for ColEndpoint {
+    fn from(id: ColId) -> Self {
+        Self::Key(id)
+    }
+}
+
+impl From<&str> for ColEndpoint {
+    fn from(s: &str) -> Self {
+        Self::Key(ColId::from(s))
+    }
+}
+
+impl From<RelativeOffset> for ColEndpoint {
+    fn from(offset: RelativeOffset) -> Self {
+        Self::Offset(offset)
+    }
+}
+
+impl fmt::Display for ColEndpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Active => write!(f, "@col"),
+            Self::Key(k) => write!(f, "\"{k}\""),
+            Self::Offset(offset) => offset.fmt_with_axis("col", f),
+        }
+    }
+}
+
 /// Row coordinate selector within a table reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RowSelector {
@@ -208,10 +314,38 @@ pub enum RowSelector {
     Active,
     /// Explicit single row key: `["revenue"]`.
     Key(RowId),
-    /// Explicit row range slice: `["r_and_d".."g_and_a"]`.
-    Range(RowId, RowId),
+    /// Row range slice: `["r_and_d".."g_and_a"]`, `["c1"..@row]`.
+    Range(RowEndpoint, RowEndpoint),
     /// Relative row offset: `row.prev`, `row.next(2)`.
     Offset(RelativeOffset),
+}
+
+impl RowSelector {
+    /// Returns `true` if this selector is a range slice (`start..end`).
+    #[must_use]
+    pub const fn is_range(&self) -> bool {
+        matches!(self, Self::Range(_, _))
+    }
+
+    /// Returns `(start_dynamic, end_dynamic)` indicating whether each endpoint is dynamic.
+    #[must_use]
+    pub const fn dynamic_bounds(&self) -> (bool, bool) {
+        match self {
+            Self::Active | Self::Offset(_) => (true, true),
+            Self::Key(_) => (false, false),
+            Self::Range(start, end) => (start.is_dynamic(), end.is_dynamic()),
+        }
+    }
+}
+
+impl From<RowEndpoint> for RowSelector {
+    fn from(ep: RowEndpoint) -> Self {
+        match ep {
+            RowEndpoint::Active => Self::Active,
+            RowEndpoint::Key(k) => Self::Key(k),
+            RowEndpoint::Offset(o) => Self::Offset(o),
+        }
+    }
 }
 
 impl fmt::Display for RowSelector {
@@ -219,11 +353,8 @@ impl fmt::Display for RowSelector {
         match self {
             Self::Active => write!(f, "@row"),
             Self::Key(k) => write!(f, "\"{k}\""),
-            Self::Range(a, b) => write!(f, "\"{a}\"..\"{b}\""),
-            Self::Offset(RelativeOffset::Prev(1)) => write!(f, "row.prev"),
-            Self::Offset(RelativeOffset::Prev(k)) => write!(f, "row.prev({k})"),
-            Self::Offset(RelativeOffset::Next(1)) => write!(f, "row.next"),
-            Self::Offset(RelativeOffset::Next(k)) => write!(f, "row.next({k})"),
+            Self::Range(a, b) => write!(f, "{a}..{b}"),
+            Self::Offset(offset) => offset.fmt_with_axis("row", f),
         }
     }
 }
@@ -235,10 +366,38 @@ pub enum ColSelector {
     Active,
     /// Explicit column key: `["value"]`, `["2024E"]`.
     Key(ColId),
-    /// Explicit column range slice: `["2024E".."2028E"]`.
-    Range(ColId, ColId),
+    /// Column range slice: `["2024E".."2028E"]`, `["2024E"..@col]`.
+    Range(ColEndpoint, ColEndpoint),
     /// Relative column offset: `col.prev`, `col.next(2)`.
     Offset(RelativeOffset),
+}
+
+impl ColSelector {
+    /// Returns `true` if this selector is a range slice (`start..end`).
+    #[must_use]
+    pub const fn is_range(&self) -> bool {
+        matches!(self, Self::Range(_, _))
+    }
+
+    /// Returns `(start_dynamic, end_dynamic)` indicating whether each endpoint is dynamic.
+    #[must_use]
+    pub const fn dynamic_bounds(&self) -> (bool, bool) {
+        match self {
+            Self::Active | Self::Offset(_) => (true, true),
+            Self::Key(_) => (false, false),
+            Self::Range(start, end) => (start.is_dynamic(), end.is_dynamic()),
+        }
+    }
+}
+
+impl From<ColEndpoint> for ColSelector {
+    fn from(ep: ColEndpoint) -> Self {
+        match ep {
+            ColEndpoint::Active => Self::Active,
+            ColEndpoint::Key(k) => Self::Key(k),
+            ColEndpoint::Offset(o) => Self::Offset(o),
+        }
+    }
 }
 
 impl fmt::Display for ColSelector {
@@ -246,11 +405,8 @@ impl fmt::Display for ColSelector {
         match self {
             Self::Active => write!(f, "@col"),
             Self::Key(k) => write!(f, "\"{k}\""),
-            Self::Range(a, b) => write!(f, "\"{a}\"..\"{b}\""),
-            Self::Offset(RelativeOffset::Prev(1)) => write!(f, "col.prev"),
-            Self::Offset(RelativeOffset::Prev(k)) => write!(f, "col.prev({k})"),
-            Self::Offset(RelativeOffset::Next(1)) => write!(f, "col.next"),
-            Self::Offset(RelativeOffset::Next(k)) => write!(f, "col.next({k})"),
+            Self::Range(a, b) => write!(f, "{a}..{b}"),
+            Self::Offset(offset) => offset.fmt_with_axis("col", f),
         }
     }
 }

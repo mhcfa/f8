@@ -17,9 +17,7 @@ use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::LayoutMap;
-use crate::expr::ast::{
-    BinaryOp, ColSelector, Expr, Literal, RelativeOffset, RowSelector, TableRef, UnaryOp,
-};
+use crate::expr::ast::{BinaryOp, Expr, Literal, TableRef, UnaryOp};
 
 /// Deterministic map of lowered Excel formula strings indexed by [`CellId`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -96,24 +94,19 @@ impl FormulaLowerer {
     }
 }
 
-/// Returns `true` if the column selector is dynamic (tracks active evaluation column or relative offset).
-fn is_col_dynamic(col_sel: &ColSelector) -> bool {
-    matches!(
-        col_sel,
-        ColSelector::Active
-            | ColSelector::Offset(RelativeOffset::Prev(_))
-            | ColSelector::Offset(RelativeOffset::Next(_))
-    )
-}
-
-/// Returns `true` if the row selector is dynamic (tracks active evaluation row or relative offset).
-fn is_row_dynamic(row_sel: &RowSelector) -> bool {
-    matches!(
-        row_sel,
-        RowSelector::Active
-            | RowSelector::Offset(RelativeOffset::Prev(_))
-            | RowSelector::Offset(RelativeOffset::Next(_))
-    )
+/// Computes `(col_pinned, row_pinned)` for a single range endpoint.
+///
+/// Static `Key` endpoints are pinned (`$`) on their respective axis, except for 1D horizontal
+/// static-column ranges on a dynamic row (e.g. `Table[@row, "c1".."c2"]` -> `B18:C18`),
+/// where `pin_static_col_on_dynamic_row` is `false`.
+fn range_endpoint_pinning(
+    col_dynamic: bool,
+    row_dynamic: bool,
+    pin_static_col_on_dynamic_row: bool,
+) -> (bool, bool) {
+    let col_pinned = !col_dynamic && (!row_dynamic || pin_static_col_on_dynamic_row);
+    let row_pinned = !row_dynamic;
+    (col_pinned, row_pinned)
 }
 
 /// Lowers a semantic table reference into a concrete Excel coordinate or range string.
@@ -160,16 +153,12 @@ pub fn lower_table_ref(
         target_table: target_ref.table.clone(),
     })?;
 
-    let col_dynamic = is_col_dynamic(&target_ref.col);
-    let row_dynamic = is_row_dynamic(&target_ref.row);
-    let is_range = rows.len() > 1 || cols.len() > 1;
+    let is_row_range = target_ref.row.is_range();
+    let is_col_range = target_ref.col.is_range();
+    let is_range = is_row_range || is_col_range;
 
-    let (col_pinned, row_pinned) = match (col_dynamic, row_dynamic) {
-        (true, true) => (false, false),
-        (true, false) => (false, rows.len() > 1),
-        (false, true) => (false, false),
-        (false, false) => (true, true),
-    };
+    let (start_col_dyn, end_col_dyn) = target_ref.col.dynamic_bounds();
+    let (start_row_dyn, end_row_dyn) = target_ref.row.dynamic_bounds();
 
     let top_left_id = CellId::new(
         target_ref.table.clone(),
@@ -182,6 +171,12 @@ pub fn lower_table_ref(
         .ok_or(LoweringError::MissingCellCoordinate { cell: top_left_id })?;
 
     if is_range {
+        let pin_static_col_on_dynamic_row = is_row_range || start_col_dyn || end_col_dyn;
+        let start_pinned =
+            range_endpoint_pinning(start_col_dyn, start_row_dyn, pin_static_col_on_dynamic_row);
+        let end_pinned =
+            range_endpoint_pinning(end_col_dyn, end_row_dyn, pin_static_col_on_dynamic_row);
+
         let bottom_right_id =
             CellId::new(target_ref.table.clone(), last_row.clone(), last_col.clone());
         let bottom_right_coord =
@@ -196,17 +191,18 @@ pub fn lower_table_ref(
             &top_left_coord.sheet,
             (top_left_coord.col, top_left_coord.row),
             (bottom_right_coord.col, bottom_right_coord.row),
-            col_pinned,
-            row_pinned,
+            start_pinned,
+            end_pinned,
             origin_sheet,
         ))
     } else {
+        let pinned = !start_col_dyn && !start_row_dyn;
         Ok(address::format_single_cell(
             &top_left_coord.sheet,
             top_left_coord.col,
             top_left_coord.row,
-            col_pinned,
-            row_pinned,
+            pinned,
+            pinned,
             origin_sheet,
         ))
     }

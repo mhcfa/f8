@@ -26,7 +26,9 @@ All cell references require explicit 2D coordinates in bracket syntax:
 | **Row lead (1)** | `Table[row.next, "col"]` | Next data row | `Table[row.next, "col"]` |
 | **Row lead (k)** | `Table[row.next(k), "col"]` | `k` data rows ahead | `Table[row.next(2), "col"]` |
 | **Column slice** | `Table["row", "c1".."c2"]` | Continuous horizontal range across columns | `SUM(Rev["sales", "2023A".."2025E"])` |
+| **Expanding column slice** | `Table["row", "c1"..@col]` | Cumulative horizontal range from anchor to active/offset column | `SUM(Debt["amort", "2024E"..@col])` |
 | **Row slice (active col)** | `Table["r1".."r2", @col]` | Continuous vertical range across rows at active column | `SUM(Opex["r_and_d".."g_and_a", @col])` |
+| **Expanding row slice** | `Table["r1"..@row, @col]` | Cumulative vertical range from anchor to active/offset row | `SUM(Cohort["c1"..@row, @col])` |
 | **Row slice (fixed col)** | `Table["r1".."r2", "col"]` | Continuous vertical range across rows at fixed column | `SUM(Comps["apple".."google", "market_cap"])` |
 | **2D block slice** | `Table["r1".."r2", "c1".."c2"]` | Continuous 2D rectangular matrix range | `SUM(Matrix["r1".."r3", "2023A".."2025E"])` |
 
@@ -45,7 +47,7 @@ All cell references require explicit 2D coordinates in bracket syntax:
   4. Additive (`+`, `-`, tier 2, left-associative)
   5. Relational comparisons (`=`, `<>`, `<`, `<=`, `>`, `>=`, tier 1, left-associative; equality is `=`, inequality is `<>`).
 - Omitted arguments: Positional parameters are omitted via `_` (e.g. `PMT(rate, nper, pv, _, type)`). Restricted to function argument lists; using `_` in arithmetic or coordinate selectors raises `FormulaParseError`.
-- Slice ordering: Range slices (`"k1".."k2"`) must follow declared table axis order (`start_index <= end_index`). Inverted ranges raise `ReferenceResolutionError`.
+- Slice endpoints and ordering: Range slices (`start..end`) accept quoted keys, active coordinates (`@col`, `@row`), or relative offsets (`col.prev`, `col.prev(k)`, `col.next(k)`, `row.prev`, `row.prev(k)`, `row.next(k)`) on either endpoint (e.g. `"2024E"..@col`, `"2024E"..col.prev`, `col.prev(3)..@col`, `"c1"..@row`). Resolved bounds must follow declared table axis order (`start_index <= end_index`); inverted ranges raise `ReferenceResolutionError`.
 - Temporal bounds: `col.prev` and `col.next` navigate measure columns only, automatically skipping descriptor columns. Offsets extending outside table bounds raise `ReferenceResolutionError`.
 
 ---

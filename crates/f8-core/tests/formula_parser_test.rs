@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use f8_core::expr::{
-    BinaryOp, ColSelector, Expr, ParseError, RelativeOffset, RowSelector, TableRef,
+    BinaryOp, ColEndpoint, ColSelector, Expr, ParseError, RelativeOffset, RowEndpoint, RowSelector,
+    TableRef,
 };
 use f8_core::model::id::{ColId, RowId, TableId};
 
@@ -87,7 +88,7 @@ fn test_nested_functions_and_logical_operators() {
                 sum_args[0],
                 Expr::Reference(TableRef::new(
                     TableId::new("Opex"),
-                    RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
+                    RowSelector::Range("r_and_d".into(), "g_and_a".into()),
                     ColSelector::Active,
                 ))
             );
@@ -239,4 +240,90 @@ fn test_syntax_errors_actionable_diagnostics() {
     // Reject retired bare '@'
     let bare_at_err = Expr::parse("IncomeStatement[\"revenue\", @]").unwrap_err();
     assert_eq!(bare_at_err, ParseError::RetiredBareAt { offset: 27 });
+}
+
+#[test]
+fn test_dynamic_range_slice_parsing_and_display_roundtrip() {
+    let cases = [
+        (
+            "SUM(Debt[\"amort\", \"2024E\"..@col])",
+            Expr::FunctionCall {
+                name: "SUM".to_string(),
+                args: vec![Expr::Reference(TableRef::new(
+                    "Debt",
+                    RowSelector::Key(RowId::new("amort")),
+                    ColSelector::Range(ColEndpoint::from("2024E"), ColEndpoint::Active),
+                ))],
+            },
+        ),
+        (
+            "SUM(Debt[\"amort\", \"2024E\"..col.prev])",
+            Expr::FunctionCall {
+                name: "SUM".to_string(),
+                args: vec![Expr::Reference(TableRef::new(
+                    "Debt",
+                    RowSelector::Key(RowId::new("amort")),
+                    ColSelector::Range(
+                        ColEndpoint::from("2024E"),
+                        ColEndpoint::Offset(RelativeOffset::Prev(1)),
+                    ),
+                ))],
+            },
+        ),
+        (
+            "SUM(Debt[\"amort\", col.prev(2)..@col])",
+            Expr::FunctionCall {
+                name: "SUM".to_string(),
+                args: vec![Expr::Reference(TableRef::new(
+                    "Debt",
+                    RowSelector::Key(RowId::new("amort")),
+                    ColSelector::Range(
+                        ColEndpoint::Offset(RelativeOffset::Prev(2)),
+                        ColEndpoint::Active,
+                    ),
+                ))],
+            },
+        ),
+        (
+            "SUM(Cohort[\"c1\"..@row, @col])",
+            Expr::FunctionCall {
+                name: "SUM".to_string(),
+                args: vec![Expr::Reference(TableRef::new(
+                    "Cohort",
+                    RowSelector::Range(RowEndpoint::from("c1"), RowEndpoint::Active),
+                    ColSelector::Active,
+                ))],
+            },
+        ),
+        (
+            "SUM(Cohort[row.prev(2)..row.next, @col..col.next(2)])",
+            Expr::FunctionCall {
+                name: "SUM".to_string(),
+                args: vec![Expr::Reference(TableRef::new(
+                    "Cohort",
+                    RowSelector::Range(
+                        RowEndpoint::Offset(RelativeOffset::Prev(2)),
+                        RowEndpoint::Offset(RelativeOffset::Next(1)),
+                    ),
+                    ColSelector::Range(
+                        ColEndpoint::Active,
+                        ColEndpoint::Offset(RelativeOffset::Next(2)),
+                    ),
+                ))],
+            },
+        ),
+    ];
+
+    for (formula, expected) in cases {
+        let parsed = Expr::parse(formula).expect("should parse dynamic range formula");
+        assert_eq!(parsed, expected);
+        let displayed = parsed.to_string();
+        assert_eq!(displayed, formula);
+        assert_eq!(Expr::parse(&displayed).unwrap(), expected);
+    }
+
+    // Chained ranges and open-ended slices must fail to parse
+    assert!(Expr::parse("SUM(Debt[\"amort\", \"2024E\"..\"2025E\"..@col])").is_err());
+    assert!(Expr::parse("SUM(Debt[\"amort\", \"2024E\"..])").is_err());
+    assert!(Expr::parse("SUM(Debt[\"amort\", ..@col])").is_err());
 }
