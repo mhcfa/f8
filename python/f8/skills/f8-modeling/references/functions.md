@@ -1,23 +1,27 @@
 # Function Reference
 
-Signatures, parameter semantics, default values, argument omission, and error modes for the 44 built-in Excel functions in `f8`.
+Signatures, parameter defaults, argument omission (`_`), criteria matching rules, and domain error modes for the 44 built-in Excel functions in `f8`.
 
 ---
 
-## 1. Syntax Invariants and Call Rules
+## 1. Call Rules, Argument Omission, and Error Semantics
 
-- Parity vs. runtime behaviors: 100% calculation parity with Excel (IEEE 754 precision, type coercion, criteria wildcards, domain error codes). Excludes dynamic arrays (`#SPILL!`), implicit intersection, and volatile non-deterministic functions (`TODAY()`, `RAND()`).
-- Uppercase identifiers: Built-in function names must be uppercase (`SUM`, `AVERAGE`, `IF`, `XLOOKUP`). Lowercase identifiers raise `FormulaParseError`.
-- Compile-time validation: Misspelled or unknown functions raise `F8Error` at compile time rather than evaluating to `#NAME?`.
-- Argument omission (`_`): Optional positional parameters are omitted via `_` (e.g. `PMT(rate, nper, pv, _, 1)` or `IF(test, true_val, _)`). Omitted arguments resolve to their parameter default value (or remain omitted for lazy parameters like `XLOOKUP`'s `if_not_found`).
-- Required parameters: Required parameters cannot be omitted (`ABS(_)`, `IF(_, 10, 20)` raise `F8Error::CannotOmitRequiredArgument`).
-- Grammatical confinement: `_` is strictly confined to function call argument lists (`Argument = Expression | OmittedArg`). Using `_` in arithmetic (`1 + _`) or coordinate selectors (`Table[_, @col]`) raises `FormulaParseError`.
-- Excel calculation errors:
-  - `#DIV/0!`: Division by zero (`AVERAGE` on empty range, `r = -1.0` in `NPV`, `nper = 0` in `PMT`, or `AVERAGEIFS` with zero matches).
-  - `#VALUE!`: Type coercion failure, dimension mismatch in `SUMPRODUCT`/`*IFS`/`XLOOKUP`, supplying 2D matrix to `XLOOKUP`/`XMATCH`, omitting `col_num` on 2D matrix in `INDEX`, combining wildcard matching with binary search, or supplying zero logical values to `AND`/`OR`.
-  - `#REF!`: Out-of-bounds coordinate reference or empty range in `INDEX`.
-  - `#NUM!`: Convergence failure in `IRR`/`XIRR`, discount rate `r <= -1.0` in `XNPV`, fewer than 2 cash flows or missing sign alternation in `IRR`/`XIRR`, period `per < 1` or `per > nper` in `IPMT`/`PPMT`, empty numeric input in `MEDIAN`, invalid `basis` outside `0..=4` in `YEARFRAC`, or serial date outside `0.0..=2958465.0`.
-  - `#N/A`: Unmatched lookup in `XLOOKUP`/`XMATCH` without fallback, unsatisfied conditions in `IFS`, or unmatched case in `SWITCH` without default.
+- Calculation parity: IEEE 754 `f64` arithmetic (`-0.0` normalized to `0.0`), Excel scalar type coercion, criteria wildcards, and domain error propagation. Excludes dynamic array spilling (`#SPILL!`), implicit intersection, and volatile functions (`TODAY()`, `RAND()`).
+- Compile-time validation (raises `F8Error` during `model.compile()` Pass 4 when the call is evaluated; skipped inside untaken lazy branches):
+  - Unknown function name (`UnknownFunction`).
+  - Argument count below minimum or above maximum (`TooFewArguments`, `TooManyArguments`).
+  - Odd trailing argument count in pair-variadic functions (`IFS`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS` -> `InvalidVariadicPairs`).
+  - Omitting a required parameter with `_` (`CannotOmitRequiredArgument`).
+- Argument omission (`_`):
+  - Optional positional parameters can be omitted via `_` (`PMT(rate, nper, pv, _, 1)` or `XLOOKUP(k, look, ret, _, -1)`). Omitting a required parameter with `_` fails at compile time (`CannotOmitRequiredArgument`).
+  - Omitted parameters bind to their declared default value (or remain omitted for lazy fallback parameters like `XLOOKUP`'s `if_not_found`).
+  - In lowered Excel formulas, `_` emits an empty positional argument (`=PMT(C5,C6,C7,,1)`).
+- Runtime Excel error values (returned as cell values and propagated through dependent formulas):
+  - `#DIV/0!`: `x / 0`, `0 ^ -k`, `AVERAGE` on range with no numbers, `AVERAGEIFS` with zero matches, `r = -1.0` in `NPV`, or `nper = 0` in `PMT`/`PPMT`.
+  - `#VALUE!`: Multi-cell range slice evaluated in scalar context (`1 + Table["r1".."r2", @col]`), uncoercible text scalar in numeric operation, range dimension mismatch in `SUMPRODUCT`/`*IFS`/`XLOOKUP`, 2D matrix passed to `XLOOKUP`/`XMATCH`, omitting `col_num` on 2D matrix in `INDEX`, combining wildcard `match_mode = 2` with binary `search_mode = 2` or `-2`, `index_num < 1` or `> N` in `CHOOSE`, or zero logical inputs in `AND`/`OR`.
+  - `#REF!`: Out-of-bounds `row_num` or `col_num` (`< 1` or exceeding slice dimensions) in `INDEX`.
+  - `#NUM!`: Negative base with fractional exponent (`(-2) ^ 0.5`), `NaN`/`Inf` overflow, `MEDIAN` with zero numeric inputs, `IRR`/`XIRR` with `< 2` cash flows, missing sign alternation, or non-convergence, `XNPV` with `rate <= -1.0`, unequal array lengths or dates preceding the initial date (`d_i < d_1`) in `XNPV`/`XIRR`, `per < 1` or `per > nper` in `IPMT`/`PPMT` (or `nper <= 0` in `IPMT`), `basis` outside `0..=4` in `YEARFRAC`, or date serial outside `0.0..=2958465.0`.
+  - `#N/A`: Unmatched lookup in `XLOOKUP` (without `if_not_found`) or `XMATCH`, no true condition in `IFS`, or unmatched value in `SWITCH` (without `default`).
 
 ---
 
@@ -25,33 +29,33 @@ Signatures, parameter semantics, default values, argument omission, and error mo
 
 | Function     | Signature                                                                                  | Semantics                                                                                                                                                     |
 | :----------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ABS`        | `ABS(number)`                                                                              | Absolute value. Text scalars return `#VALUE!`; booleans convert to `1.0`/`0.0`; empty cells evaluate to `0.0`.                                                |
-| `SUM`        | `SUM(number1, [number2], ...)`                                                             | Sums numbers across scalars and range slices. Text, booleans, and empty cells in ranges are ignored; direct text scalars return `#VALUE!`.                    |
-| `AVERAGE`    | `AVERAGE(number1, [number2], ...)`                                                         | Arithmetic mean. Range text and booleans are ignored; empty ranges return `#DIV/0!`.                                                                          |
-| `COUNT`      | `COUNT(value1, [value2], ...)`                                                             | Counts numeric cells. In ranges, only numbers are counted; in direct scalars, numbers and booleans count as 1.                                                |
-| `COUNTA`     | `COUNTA(value1, [value2], ...)`                                                            | Counts non-empty cells (numbers, text, booleans, errors). Ignores only empty cells.                                                                           |
-| `MAX`        | `MAX(number1, [number2], ...)`                                                             | Maximum numeric value. Ignores non-numbers in ranges; empty ranges return `0.0`. Direct text scalars return `#VALUE!`.                                        |
-| `MIN`        | `MIN(number1, [number2], ...)`                                                             | Minimum numeric value. Ignores non-numbers in ranges; empty ranges return `0.0`. Direct text scalars return `#VALUE!`.                                        |
-| `MEDIAN`     | `MEDIAN(number1, [number2], ...)`                                                          | Median value of numeric inputs. Ignores non-numeric cells in ranges; empty ranges or inputs with no numeric values return `#NUM!`.                            |
-| `ROUND`      | `ROUND(number, num_digits)`                                                                | Commercial rounding (half-away-from-zero) to `num_digits` places. Negative digits round left of the decimal.                                                  |
-| `ROUNDUP`    | `ROUNDUP(number, num_digits)`                                                              | Rounds away from zero to `num_digits` places.                                                                                                                 |
-| `ROUNDDOWN`  | `ROUNDDOWN(number, num_digits)`                                                            | Truncates toward zero to `num_digits` places.                                                                                                                 |
-| `SUMPRODUCT` | `SUMPRODUCT(array1, [array2], ...)`                                                        | Multiplies corresponding elements across matching range slices and sums products. Non-numeric entries count as `0.0`; mismatched dimensions return `#VALUE!`. |
-| `SUMIFS`     | `SUMIFS(sum_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)`         | Sums cells in `sum_range` satisfying all criteria pairs. Range dimension mismatches return `#VALUE!`. Returns `0.0` if no cells match.                        |
-| `COUNTIFS`   | `COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2], ...)`                  | Counts cells satisfying all criteria pairs. Range dimension mismatches return `#VALUE!`. Returns `0.0` if no cells match.                                     |
-| `AVERAGEIFS` | `AVERAGEIFS(average_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)` | Arithmetic mean of cells in `average_range` satisfying all criteria pairs. Returns `#DIV/0!` if no cells match; mismatched dimensions return `#VALUE!`.       |
-| `MINIFS`     | `MINIFS(min_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)`         | Minimum value in `min_range` matching all criteria pairs. Returns `0.0` if no cells match; mismatched dimensions return `#VALUE!`.                            |
-| `MAXIFS`     | `MAXIFS(max_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)`         | Maximum value in `max_range` matching all criteria pairs. Returns `0.0` if no cells match; mismatched dimensions return `#VALUE!`.                            |
+| `ABS`        | `ABS(number)`                                                                              | Absolute value. Text scalars return `#VALUE!`; booleans coerce to `1.0`/`0.0`; empty cells coerce to `0.0`.                                                   |
+| `SUM`        | `SUM(number1, [number2], ...)`                                                             | Sums numbers across scalars and range slices. Text, booleans, and empty cells in cell/range references are ignored; direct non-reference booleans coerce (`1.0`/`0.0`); direct uncoercible text returns `#VALUE!`. |
+| `AVERAGE`    | `AVERAGE(number1, [number2], ...)`                                                         | Arithmetic mean. Text, booleans, and empty cells in cell/range references are ignored; returns `#DIV/0!` if count of numeric values is 0.                    |
+| `COUNT`      | `COUNT(value1, [value2], ...)`                                                             | Counts numeric values (ignores errors). In cell/range references, only numbers are counted; in direct non-reference scalar arguments, numbers and booleans count. |
+| `COUNTA`     | `COUNTA(value1, [value2], ...)`                                                            | Counts non-empty cells (numbers, text including `""`, booleans, errors). Ignores only `Empty` (`None`) cells.                                                 |
+| `MAX`        | `MAX(number1, [number2], ...)`                                                             | Maximum numeric value (`0.0` if no numeric values are present). Ignores non-numbers in cell/range references; direct uncoercible text returns `#VALUE!`.     |
+| `MIN`        | `MIN(number1, [number2], ...)`                                                             | Minimum numeric value (`0.0` if no numeric values are present). Ignores non-numbers in cell/range references; direct uncoercible text returns `#VALUE!`.     |
+| `MEDIAN`     | `MEDIAN(number1, [number2], ...)`                                                          | Median of numeric inputs (averages middle two on even count). Ignores non-numbers in cell/range references; returns `#NUM!` if no numeric values are present. |
+| `ROUND`      | `ROUND(number, num_digits)`                                                                | Commercial rounding (half-away-from-zero) to `trunc(num_digits)` decimal places. Negative `num_digits` rounds left of the decimal point.                      |
+| `ROUNDUP`    | `ROUNDUP(number, num_digits)`                                                              | Rounds away from zero to `trunc(num_digits)` decimal places.                                                                                                  |
+| `ROUNDDOWN`  | `ROUNDDOWN(number, num_digits)`                                                            | Truncates toward zero to `trunc(num_digits)` decimal places.                                                                                                  |
+| `SUMPRODUCT` | `SUMPRODUCT(array1, [array2], ...)`                                                        | Element-wise product and sum across equal-dimension 1D/2D ranges (no scalar broadcasting across multi-cell ranges; mismatched dimensions return `#VALUE!`). Non-numeric cells in ranges are treated as `0.0`. |
+| `SUMIFS`     | `SUMIFS(sum_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)`         | Sums numeric cells in `sum_range` matching all `(criteria_range, criteria)` pairs. Returns `0.0` if no cells match; mismatched range dimensions return `#VALUE!`. |
+| `COUNTIFS`   | `COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2], ...)`                  | Counts cells matching all `(criteria_range, criteria)` pairs. Returns `0.0` if no cells match; mismatched range dimensions return `#VALUE!`.                  |
+| `AVERAGEIFS` | `AVERAGEIFS(average_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)` | Mean of numeric cells in `average_range` matching all criteria pairs. Returns `#DIV/0!` if no numeric cells match; mismatched dimensions return `#VALUE!`.    |
+| `MINIFS`     | `MINIFS(min_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)`         | Minimum numeric value in `min_range` matching all criteria pairs (`0.0` if no numeric cells match; `#VALUE!` on dimension mismatch).                          |
+| `MAXIFS`     | `MAXIFS(max_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...)`         | Maximum numeric value in `max_range` matching all criteria pairs (`0.0` if no numeric cells match; `#VALUE!` on dimension mismatch).                          |
 
-### Criteria Syntax (`*IFS`)
+### Conditional Aggregation Criteria (`*IFS`)
 
-Conditional aggregation functions accept criterion strings, numbers, or boolean targets:
+Each `criteria` argument accepts a number, boolean, string literal, or single-cell coordinate reference (note: `&` string concatenation is not supported in the formula grammar):
 
-- Comparison operators: String expressions with relational operators: `">0"`, `">=100"`, `"<0"`, `"<>0"`.
-- Exact matching: Direct numeric, text, or boolean match: `10`, `"Active"`, `"=Approved"`. ASCII case-insensitive.
-- Blank and non-blank sentinels: `""` or `"="` matches blank/empty cells; `"<>"` matches non-blank cells. Empty cell references evaluate to numeric `0`.
-- Wildcard matching: Text matching supporting `?` (single character) and `*` (zero or more characters): `"Tech*"` or `"?024"`. Escape literal wildcards via `~*`, `~?`, `~~`.
-- Dynamic expressions: Concatenated criteria: `">=" & Assumptions["hurdle", "val"]`.
+- Relational operator strings: Prefix with `">="`, `"<="`, `"<>"`, `">"`, `"<"`, or `"="` followed by a numeric, boolean, error, or text target (`">0"`, `">=100"`, `"<>0"`, `"> 10"`). Relational `<, <=, >, >=` with a numeric target match only numeric cells (text cells evaluate to false), whereas numeric `=` and `<>` also match text cells in `criteria_range` that parse to the target number, and boolean `=` and `<>` (`TRUE`, `"TRUE"`, `"=FALSE"`) also match text cells `"true"`/`"false"` (case-insensitive).
+- Exact matching: Direct number (`10` or `"10"`), boolean (`TRUE` or `"TRUE"`), error (`"#DIV/0!"`), or ASCII case-insensitive text (`"Active"`, `"=Approved"`). Plain strings with leading or trailing spaces (`" 10"`, `"  DeptA"`) preserve whitespace and match strictly as text.
+- Blank and non-blank sentinels: `""` or `"="` matches empty cells (`None` or `""`); `"<>"` matches non-blank cells (`"<> "` matches any cell except a single space `" "`). A direct reference to an empty cell (`None`) used as a `criteria` argument evaluates to numeric `0` (`=0`).
+- Wildcards (`=` and `<>` text criteria): `?` matches any single character, `*` matches zero or more characters (`"Tech*"`, `"?est"`). Escape literal characters via `~?`, `~*`, `~~`.
+- Conditional error bubbling: Errors in `criteria_range` are ignored unless matched by an error criterion; errors in target aggregation ranges (`sum_range`, `average_range`, `min_range`, `max_range`) propagate only for cells that satisfy all criteria.
 
 ---
 
@@ -59,15 +63,15 @@ Conditional aggregation functions accept criterion strings, numbers, or boolean 
 
 | Function  | Signature                                                                  | Semantics                                                                                                                                                    |
 | :-------- | :------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `IF`      | `IF(logical_test, value_if_true, [value_if_false])`                        | Short-circuiting branch. Evaluates only selected branch. `value_if_false` defaults to `FALSE`.                                                               |
-| `IFS`     | `IFS(logical_test1, value_if_true1, [logical_test2, value_if_true2], ...)` | Evaluates condition-value pairs in order with short-circuiting. Requires an even number of arguments (>= 2). Returns `#N/A` if no condition matches.         |
-| `IFERROR` | `IFERROR(value, value_if_error)`                                           | Short-circuiting fallback. Evaluates and returns `value_if_error` only if `value` evaluates to an error.                                                     |
-| `IFNA`    | `IFNA(value, value_if_na)`                                                 | Short-circuiting fallback strictly for `#N/A`. Propagates other errors without evaluating fallback.                                                          |
-| `AND`     | `AND(logical1, [logical2], ...)`                                           | Logical conjunction across scalars and ranges. `0` = false, non-zero = true. Ignores empty/text. Returns `#VALUE!` if no logical values are present.         |
-| `OR`      | `OR(logical1, [logical2], ...)`                                            | Logical disjunction across scalars and ranges. Ignores empty/text. Returns `#VALUE!` if no logical values are present.                                       |
-| `NOT`     | `NOT(logical)`                                                             | Inverts truth value: `NOT(TRUE)` -> `FALSE`, `NOT(0)` -> `TRUE`. Non-boolean/numeric strings return `#VALUE!`.                                               |
-| `CHOOSE`  | `CHOOSE(index_num, value1, [value2], ...)`                                 | Evaluates choice at 1-based `index_num` with short-circuiting. Out-of-bounds index (`< 1` or `> N`) or non-numeric index returns `#VALUE!`.                  |
-| `SWITCH`  | `SWITCH(expression, value1, result1, [value2, result2], ..., [default])`   | Compares `expression` against values using case-insensitive Excel equality. Short-circuits matching result; returns trailing default or `#N/A` if unhandled. |
+| `IF`      | `IF(logical_test, value_if_true, [value_if_false])`                        | Short-circuiting branch: evaluates only the taken branch (referencing an `Empty` cell in a taken branch preserves `Empty`). `value_if_true` is required; `value_if_false` defaults to `FALSE` (whether omitted or passed `_`). Numbers coerce (`0.0` -> false, non-zero -> true). |
+| `IFS`     | `IFS(logical_test1, value_if_true1, [logical_test2, value_if_true2], ...)` | Evaluates `(test, value)` pairs left-to-right with short-circuiting (referencing an `Empty` cell preserves `Empty`). Requires even argument count (`>= 2`). Returns `#N/A` if no condition is true. |
+| `IFERROR` | `IFERROR(value, value_if_error)`                                           | Short-circuiting error trap: evaluates and returns `value_if_error` only if `value` evaluates to any Excel error (referencing an `Empty` cell preserves `Empty`). |
+| `IFNA`    | `IFNA(value, value_if_na)`                                                 | Short-circuiting `#N/A` trap: evaluates `value_if_na` only if `value` is `#N/A` (referencing an `Empty` cell preserves `Empty`); other errors propagate without evaluating `value_if_na`. |
+| `AND`     | `AND(logical1, [logical2], ...)`                                           | Logical conjunction across scalars and ranges. Cell/range references ignore text and empty cells; direct scalar arguments coerce `"TRUE"`/`"FALSE"` (case-insensitive) to `bool`, `Empty` to `FALSE`, and return `#VALUE!` on other strings. Returns `#VALUE!` if no logical/numeric values are present. |
+| `OR`      | `OR(logical1, [logical2], ...)`                                            | Logical disjunction across scalars and ranges. Cell/range references ignore text and empty cells; direct scalar arguments coerce `"TRUE"`/`"FALSE"` (case-insensitive) to `bool`, `Empty` to `FALSE`, and return `#VALUE!` on other strings. Returns `#VALUE!` if no logical/numeric values are present. |
+| `NOT`     | `NOT(logical)`                                                             | Logical negation (`NOT(TRUE)` -> `FALSE`, `NOT(0)` -> `TRUE`, `Empty` coerces to `FALSE` so `NOT` returns `TRUE`). Uncoercible text scalars return `#VALUE!`. |
+| `CHOOSE`  | `CHOOSE(index_num, value1, [value2], ...)`                                 | Evaluates and returns choice at 1-based `trunc(index_num)` with short-circuiting (referencing an `Empty` cell preserves `Empty`). Returns `#VALUE!` if `index_num < 1` or `> N`. |
+| `SWITCH`  | `SWITCH(expression, value1, result1, [value2, result2], ..., [default])`   | Matches `expression` against `value_i` using case-insensitive Excel equality, short-circuiting the matched `result_i` (referencing an `Empty` cell preserves `Empty`). Odd trailing argument acts as `default`; returns `#N/A` if unmatched without `default`. |
 
 ---
 
@@ -75,76 +79,28 @@ Conditional aggregation functions accept criterion strings, numbers, or boolean 
 
 | Function | Signature                                 | Semantics                                                                                                                                                                                                                           |
 | :------- | :---------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NPV`    | `NPV(rate, value1, [value2], ...)`        | Net present value of periodic cash flows starting at `t=1`: `sum(CF_t / (1 + r)^t)`. Range text and blanks are ignored. Returns `#DIV/0!` if `r = -1.0`.                                                                            |
-| `XNPV`   | `XNPV(rate, values, dates)`               | Net present value for non-periodic cash flows scheduled on dates: `sum(CF_i / (1 + r)^((d_i - d_1)/365))`. Requires `r > -1.0` (rate `<= -1.0` returns `#NUM!`), equal vector lengths (`>= 1`), and monotonic dates (`d_i >= d_1`). |
-| `IRR`    | `IRR(values, [guess])`                    | Internal rate of return for periodic cash flows via Newton-Raphson iteration. Default `guess` is `0.10`. Requires at least 2 cash flows with sign alternation, else `#NUM!`.                                                        |
-| `XIRR`   | `XIRR(values, dates, [guess])`            | Internal rate of return for date-scheduled cash flows using Actual/365. Default `guess` is `0.10`. Requires equal array lengths (`>= 2`), monotonic dates (`d_i >= d_1`), and sign alternation, else `#NUM!`.                       |
-| `PMT`    | `PMT(rate, nper, pv, [fv], [type])`       | Constant periodic payment for annuity. Default `fv` is `0.0`, default `type` is `0` (end of period; non-zero for beginning). Supports `rate = 0.0` linear amortization; returns `#DIV/0!` if `nper = 0.0`.                          |
-| `IPMT`   | `IPMT(rate, per, nper, pv, [fv], [type])` | Interest portion of payment for period `per`. Returns `0.0` if `rate = 0.0`. Requires `1 <= per <= nper`, else `#NUM!`.                                                                                                             |
-| `PPMT`   | `PPMT(rate, per, nper, pv, [fv], [type])` | Principal repayment portion of payment for period `per`. Requires `1 <= per <= nper`, else `#NUM!`. Satisfies `PMT = IPMT + PPMT`.                                                                                                  |
-
-### Financial Modeling Patterns
-
-```python
-from f8 import Cell
-
-# Monthly loan payment with omitted optional parameters
-table.add_row(
-    "debt_service",
-    cells={"line_item": "Monthly Debt Service"},
-    expr='PMT(Assumptions["rate", @col] / 12, Assumptions["tenor_months", @col], -DebtSchedule["principal", @col], _, 0)',
-    format="currency",
-    decimals=0,
-)
-
-# Project NPV using cost of capital driver
-table.add_row(
-    "npv",
-    cells={
-        "line_item": "Project NPV",
-        "metric": Cell(expr='NPV(Assumptions["wacc", "val"], CashFlows["fcf", "2024E".."2028E"])'),
-    },
-    format="currency",
-    decimals=1,
-)
-```
+| `NPV`    | `NPV(rate, value1, [value2], ...)`        | Periodic net present value starting at `t = 1`: `sum(CF_t / (1 + rate)^t)`. Range text, booleans, and empty cells are ignored; direct scalar arguments coerce booleans (`1.0`/`0.0`) and empty cells (`0.0`), and return `#VALUE!` on uncoercible text. Returns `#DIV/0!` if `rate = -1.0` (or denominator underflows to `0.0`); `rate < -1.0` is allowed (integer exponents); float overflow returns `#NUM!`. |
+| `XNPV`   | `XNPV(rate, values, dates)`               | Exact-date net present value using Actual/365: `sum(CF_i / (1 + rate)^((d_i - d_1) / 365))`. Coerces all cells in `values` and `dates` (`Empty` -> `0.0`, booleans -> `1.0`/`0.0`, text -> `#VALUE!`). Requires `rate > -1.0`, equal array lengths (`>= 1`), and `trunc(d_i) >= trunc(d_1)` (violations return `#NUM!`). |
+| `IRR`    | `IRR(values, [guess])`                    | Periodic internal rate of return via Newton-Raphson (max 100 iterations, tolerance `1e-9`, default `guess = 0.10`, clamped `> -1.0`). Range cells ignore empty/text/boolean cells; direct scalar arguments coerce booleans/empty and return `#VALUE!` on text. Requires `>= 2` cash flows with at least one positive and one negative value, else `#NUM!`. |
+| `XIRR`   | `XIRR(values, dates, [guess])`            | Exact-date internal rate of return using Actual/365 (max 100 iterations, tolerance `1e-9`, default `guess = 0.10`, clamped `> -1.0`). Coerces all cells in `values` and `dates` (`Empty` -> `0.0`, booleans -> `1.0`/`0.0`, text -> `#VALUE!`). Requires equal array lengths (`>= 2`), `trunc(d_i) >= trunc(d_1)`, and sign alternation, else `#NUM!`. |
+| `PMT`    | `PMT(rate, nper, pv, [fv], [type])`       | Constant annuity payment (`fv` default `0.0`; `type` default `0` for end-of-period, non-zero for beginning-of-period). Supports `rate = 0.0`; returns `#DIV/0!` if `nper = 0.0`.                                                    |
+| `IPMT`   | `IPMT(rate, per, nper, pv, [fv], [type])` | Interest component of annuity payment in period `per` (`fv` default `0.0`, `type` default `0`). Returns `0.0` when `rate = 0.0`; returns `#NUM!` if `per < 1`, `per > nper`, or `nper <= 0`.                                         |
+| `PPMT`   | `PPMT(rate, per, nper, pv, [fv], [type])` | Principal component of annuity payment in period `per` (`PMT - IPMT`; `fv` default `0.0`, `type` default `0`). Returns `#DIV/0!` if `nper = 0.0`; returns `#NUM!` if `per < 1` or `per > nper`.                                     |
 
 ---
 
 ## 5. Lookup and Reference Functions (3)
 
-| Function  | Signature                                                                                        | Semantics                                                                                                                                                                                                                                                                                   |
-| :-------- | :----------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `XLOOKUP` | `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])` | Searches 1D `lookup_array` for `lookup_value` and returns corresponding item from 1D `return_array`. Default `match_mode` is `0` (exact); default `search_mode` is `1` (first-to-last). If omitted without `if_not_found`, returns `#N/A`. 2D ranges or length mismatches return `#VALUE!`. |
-| `XMATCH`  | `XMATCH(lookup_value, lookup_array, [match_mode], [search_mode])`                                | Returns 1-based relative position of `lookup_value` in 1D `lookup_array`. Returns `#N/A` if no match; 2D arrays return `#VALUE!`.                                                                                                                                                           |
-| `INDEX`   | `INDEX(array, row_num, [col_num])`                                                               | Returns cell value at 1-based `row_num` and `col_num` within a 1D or 2D range. On 1D vectors, omitting `col_num` resolves along primary axis; on 2D matrices, omitting `col_num` returns `#VALUE!`. Out-of-bounds indices return `#REF!`.                                                   |
+| Function  | Signature                                                                                        | Semantics                                                                                                                                                                                                                                                            |
+| :-------- | :----------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `XLOOKUP` | `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])` | Searches 1D `lookup_array` for `lookup_value` and returns corresponding element from equal-length 1D `return_array` (orientation-independent; preserves `Empty` if matched cell is empty). Default `match_mode = 0`, `search_mode = 1`. Unmatched lookup returns `if_not_found` (lazily evaluated) or `#N/A` if omitted. 2D arrays or length mismatches return `#VALUE!`. |
+| `XMATCH`  | `XMATCH(lookup_value, lookup_array, [match_mode], [search_mode])`                                | Returns 1-based index of `lookup_value` in 1D `lookup_array` (default `match_mode = 0`, `search_mode = 1`). Returns `#N/A` if unmatched; 2D arrays return `#VALUE!`.                                                                                                 |
+| `INDEX`   | `INDEX(array, row_num, [col_num])`                                                               | Returns element at 1-based `trunc(row_num)` and `trunc(col_num)` within a 1D or 2D range (preserves `Empty` if target cell is empty). On 1D vectors, omitting `col_num` (or passing `1`) indexes along the vector axis; on 2D matrices, omitting `col_num` returns `#VALUE!`. Out-of-bounds indices return `#REF!`. |
 
-### Match and Search Modes
+### `match_mode` and `search_mode` (`XLOOKUP`, `XMATCH`)
 
-- `match_mode`:
-  - `0` (default): Exact match.
-  - `-1`: Exact match or next smaller item.
-  - `1`: Exact match or next larger item.
-  - `2`: Wildcard match (`*`, `?`, `~`).
-- `search_mode`:
-  - `1` (default): First-to-last (top/left to bottom/right).
-  - `-1`: Reverse search (last-to-first).
-  - `2`: Binary search on ascending sorted array.
-  - `-2`: Binary search on descending sorted array.
-- Lookup typing and dimension rules:
-  - Strict type equality: Numeric values never match numeric text strings (e.g. `10` does not match `"10"`); `Empty` only matches `Empty`.
-  - Wildcard and binary search incompatibility: Combining wildcard mode (`match_mode = 2`) with binary search (`search_mode = 2` or `-2`) returns `#VALUE!`.
-  - 1D vector constraint: `lookup_array` and `return_array` must be 1D slices of matching length (orientation-independent). 2D matrices return `#VALUE!`.
-
-```python
-table.add_row(
-    "growth_rate",
-    cells={"line_item": "Revenue Growth Rate"},
-    expr='XLOOKUP(Assumptions["active_scenario", "val"], Scenarios["id", "base".."bull"], Scenarios["growth", "base".."bull"])',
-    format="percentage",
-    decimals=1,
-)
-```
+- `match_mode`: `0` (default) = exact match (ASCII case-insensitive for text; strict type isolation so numeric `10` never matches text `"10"`, and `Empty` matches only `Empty`); `-1` = exact or next smaller; `1` = exact or next larger; `2` = wildcard match (`*`, `?`, `~`).
+- `search_mode`: `1` (default) = first-to-last; `-1` = last-to-first; `2` = binary search ascending; `-2` = binary search descending. Combining `match_mode = 2` with `search_mode = 2` or `-2` returns `#VALUE!`.
 
 ---
 
@@ -152,21 +108,21 @@ table.add_row(
 
 | Function   | Signature                                 | Semantics                                                                                                                                                                                                                    |
 | :--------- | :---------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATE`     | `DATE(year, month, day)`                  | Constructs Excel serial date (`0.0 <= serial <= 2958465.0`). Years `0 <= y <= 1899` map to `y + 1900`. Handles month/day rollover and Excel 1900 leap year bug (`1900-02-29` -> `60.0`). Dates outside range return `#NUM!`. |
-| `EDATE`    | `EDATE(start_date, months)`               | Shifts `start_date` by `months` calendar months, preserving day-of-month or pinning to final valid day of target month.                                                                                                      |
-| `EOMONTH`  | `EOMONTH(start_date, months)`             | Returns serial date for final day of the month `months` before or after `start_date`.                                                                                                                                        |
-| `YEARFRAC` | `YEARFRAC(start_date, end_date, [basis])` | Fraction of a year between two dates based on day-count convention. Default `basis` is `0` (US 30/360). Order-independent. Basis outside `0..=4` returns `#NUM!`.                                                            |
-| `YEAR`     | `YEAR(serial_number)`                     | Extracts 4-digit calendar year (1900–9999) from serial date. Fractional day times truncated.                                                                                                                                 |
-| `MONTH`    | `MONTH(serial_number)`                    | Extracts calendar month (1–12) from serial date.                                                                                                                                                                             |
-| `DAY`      | `DAY(serial_number)`                      | Extracts day of the month (1–31) from serial date.                                                                                                                                                                           |
-| `DAYS`     | `DAYS(end_date, start_date)`              | Number of calendar days between two dates (`end_date.trunc() - start_date.trunc()`). Note: `end_date` is first parameter.                                                                                                    |
+| `DATE`     | `DATE(year, month, day)`                  | Constructs Excel serial date (`0.0 <= serial <= 2958465.0`, corresponding to `1900-01-00`..`9999-12-31`). Years `0 <= y <= 1899` map to `y + 1900`. Normalizes month/day rollovers and preserves Excel's 1900 leap-year bug (`1900-02-29` -> `60.0`). Out-of-range dates return `#NUM!`. |
+| `EDATE`    | `EDATE(start_date, months)`               | Shifts `start_date` by `trunc(months)` calendar months, clamping end-of-month overflow to the final valid day of the target month.                                                                                           |
+| `EOMONTH`  | `EOMONTH(start_date, months)`             | Returns serial date for the last day of the month `trunc(months)` before or after `start_date`.                                                                                                                              |
+| `YEARFRAC` | `YEARFRAC(start_date, end_date, [basis])` | Year fraction between `start_date` and `end_date` (order-independent; truncates fractional time). Default `basis = 0`. `basis` outside `0..=4` returns `#NUM!`.                                                              |
+| `YEAR`     | `YEAR(serial_number)`                     | Extracts 4-digit year (`1900..=9999`) from serial date.                                                                                                                                                                      |
+| `MONTH`    | `MONTH(serial_number)`                    | Extracts month (`1..=12`) from serial date.                                                                                                                                                                                  |
+| `DAY`      | `DAY(serial_number)`                      | Extracts day of month (`1..=31`) from serial date.                                                                                                                                                                           |
+| `DAYS`     | `DAYS(end_date, start_date)`              | Signed day difference `trunc(end_date) - trunc(start_date)`. Note parameter order: `end_date` first, `start_date` second.                                                                                                    |
 
-### Day-Count Conventions (`YEARFRAC`)
+### `YEARFRAC` Day-Count Basis (`0..=4`)
 
-| Basis            | Day-count convention | Standard financial application                         |
-| :--------------- | :------------------- | :----------------------------------------------------- |
-| `0` (or omitted) | US (NASD) 30/360     | Corporate bonds, US agency debt                        |
-| `1`              | Actual/Actual        | US Treasury bonds, sovereign debt                      |
-| `2`              | Actual/360           | Money market instruments, commercial paper, SOFR/LIBOR |
-| `3`              | Actual/365           | UK Gilts, commonwealth money markets                   |
-| `4`              | European 30/360      | Eurobonds, European corporate issues                   |
+| `basis`          | Convention            | Denominator / Day-Count Rule                                                                 |
+| :--------------- | :-------------------- | :------------------------------------------------------------------------------------------- |
+| `0` (or omitted) | US (NASD) 30/360      | 30-day months / 360-day year with US end-of-February and 31st-of-month adjustment rules      |
+| `1`              | Actual/Actual (AFB)   | Exact elapsed days divided by actual days in year (`365` or `366` based on leap-year rules)  |
+| `2`              | Actual/360            | Exact elapsed days divided by `360.0`                                                        |
+| `3`              | Actual/365            | Exact elapsed days divided by `365.0`                                                        |
+| `4`              | European 30/360       | 30-day months / 360-day year where any 31st day of month is clamped to `30`                  |

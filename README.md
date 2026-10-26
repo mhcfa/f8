@@ -1,6 +1,6 @@
 # f8
 
-Financial modeling engine with compiler verification and live Excel formulas.
+Author, verify, and automate financial models with code and AI agents, compiled into live Excel workbooks.
 
 ## Who is f8 for
 
@@ -45,35 +45,36 @@ f8 guide --all   # streams the full DSL, function, and auditing guide to stdout
 ```python
 from f8 import Model
 
+years = ["2025A", "2026E", "2027E"]
+capex = {"2025A": 25.0, "2026E": 30.0, "2027E": 35.0}
+depr = {"2025A": -15.0, "2026E": -18.0, "2027E": -22.0}
+
 model = Model("Operating Forecast")
 sheet = model.add_sheet("Summary")
 
-pnl = sheet.add_table("PnL", "Three-Year Projection", "($ in millions)")
-pnl.add_column("item", role="descriptor", header="Line Item")
-for year in ["2025A", "2026E", "2027E"]:
-    pnl.add_column(year, header=year, format="currency", decimals=1)
+ppe = sheet.add_table("PPE", "PP&E Corkscrew Schedule", "($ in millions)")
+ppe.add_column("item", role="descriptor", header="Line Item")
+for year in years:
+    ppe.add_column(year, header=year, format="currency", decimals=1)
 
-pnl.add_row(
-    "revenue",
-    cells={"item": "Revenue", "2025A": 100.0},
-    expr='PnL["revenue", col.prev] * 1.25',
+ppe.add_row(
+    "beg_balance",
+    cells={"item": "Beginning Balance", "2025A": 100.0},
+    expr='PPE["end_balance", col.prev]',
 )
-pnl.add_row(
-    "cogs",
-    cells={"item": "Cost of Revenue"},
-    expr='PnL["revenue", @col] * 0.30',
-)
-pnl.add_row(
-    "gross_profit",
-    cells={"item": "Gross Profit"},
-    expr='PnL["revenue", @col] - PnL["cogs", @col]',
+ppe.add_row("capex", cells={"item": "Capital Expenditures", **capex})
+ppe.add_row("depreciation", cells={"item": "Depreciation", **depr})
+ppe.add_row(
+    "end_balance",
+    cells={"item": "Ending Balance"},
+    expr='SUM(PPE["beg_balance".."depreciation", @col])',
     style="total",
 )
 
 compiled = model.compile()
 
 # Audit evaluated values in memory (or pass view="formulas" to inspect lowered Excel formulas)
-print(compiled.table("PnL").to_markdown())
+print(compiled.table("PPE").to_markdown())
 
 # Emit a live .xlsx workbook with native Excel formulas and styling (you don't have to)
 compiled.save("forecast.xlsx")
@@ -82,11 +83,12 @@ compiled.save("forecast.xlsx")
 Output:
 
 ```markdown
-| Line Item        |     2025A |     2026E |      2027E |
-| :--------------- | --------: | --------: | ---------: |
-| Revenue          |    $100.0 |    $125.0 |     $156.2 |
-| Cost of Revenue  |     $30.0 |     $37.5 |      $46.9 |
-| **Gross Profit** | **$70.0** | **$87.5** | **$109.4** |
+| Line Item            |      2025A |      2026E |      2027E |
+| :------------------- | ---------: | ---------: | ---------: |
+| Beginning Balance    |     $100.0 |     $110.0 |     $122.0 |
+| Capital Expenditures |      $25.0 |      $30.0 |      $35.0 |
+| Depreciation         |    ($15.0) |    ($18.0) |    ($22.0) |
+| **Ending Balance**   | **$110.0** | **$122.0** | **$135.0** |
 ```
 
 ## Sample deliverables

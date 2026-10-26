@@ -81,9 +81,9 @@ class CellInspection(TypedDict):
     physical_address: str
     evaluated_value: CellValueDict
     formatted_value: str | None
-    format: str | None
+    format: FormatPreset | None
     decimals: int | None
-    currency: str | None
+    currency: CurrencyCode | None
     is_highlight: bool
     shade: Shade | None
     indent: int
@@ -149,9 +149,9 @@ class TableCellInfo(TypedDict):
     formula_expr: str | None
     excel_formula: str | None
     physical_a1: str
-    format: str | None
+    format: FormatPreset | None
     decimals: int | None
-    currency: str | None
+    currency: CurrencyCode | None
 
 
 class TableInspection(TypedDict):
