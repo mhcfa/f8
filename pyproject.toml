@@ -60,6 +60,10 @@ cache-keys = [
     { file = "crates/f8-core/src/**/*.rs" },
 ]
 
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
