@@ -283,7 +283,7 @@ table.add_column_gutter() -> Table
 - Table banners and collapsing:
   - Non-empty `title` emits a full-width title banner row (`start_col..=end_col`). `subtitle` emits a subtitle row beneath `title` (passing an empty or whitespace-only `subtitle=""` raises `SpecificationError`; use `subtitle=None` to omit). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title=""` (with `subtitle=None`) omits both banner and buffer gutter so column headers start at `start_row`.
   - `collapsible=True`: Groups physical rows `start_row + 1..=end_row` in Excel outline with summary symbols above (`group_symbols_above(True)`).
-- Column width arbitration: Each physical worksheet column takes the maximum width across all tables spanning that column, computed as `round(max(max_chars * char_width_multiplier + col_padding, min_col_width), 2)` (default `min_col_width=12.0`, where `max_chars` spans per-column header lines—excluding spanning `group`—and data cells with `indent * 2` plus `+1` alignment-space character on non-negative `"currency"`, `"number"`, and `"percentage"` values; gutter-only columns use `gutter_col_width=3.0`).
+- Column width arbitration: Each physical worksheet column takes the maximum width across all tables spanning that column, computed as `round(max(max_chars * char_width_multiplier + col_padding, min_col_width), 2)` (default `col_padding=0.0`, `min_col_width=12.0`, where `max_chars` spans per-column header lines—excluding spanning `group`—and data cells with `indent * 2` plus `+1` alignment-space character on formatted values with trailing alignment spaces; gutter-only columns use `gutter_col_width=3.0`).
 
 ---
 

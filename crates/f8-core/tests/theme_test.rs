@@ -13,6 +13,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     theme.validate().expect("built-in theme should be valid");
 
     // Verify typography and subtitle_size
+    assert_eq!(theme.typography.title_size, 12.0);
     assert_eq!(theme.typography.subtitle_size, 9.0);
     assert!(theme.typography.title_size > theme.typography.data_size);
     assert!(theme.typography.section_header_underline);
@@ -22,7 +23,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert!(theme.metrics.gutter_row_height > 0.0);
     assert!(theme.metrics.gutter_col_width > 0.0);
     assert!(theme.metrics.title_gutter_row_height > 0.0);
-    assert!(theme.metrics.col_padding > 0.0);
+    assert_eq!(theme.metrics.col_padding, 0.0);
     assert!(theme.metrics.min_col_width > 0.0);
 
     // Verify borders
@@ -66,13 +67,13 @@ fn test_scenario_2_dynamic_dec_and_sym_expansion_zero_decimals() {
     let mult_mask = theme
         .resolve_number_format(FormatPreset::Multiple, Some(0), None)
         .expect("multiple format resolution failed");
-    assert_eq!(mult_mask, "0\"x\"");
+    assert_eq!(mult_mask, "0\"x\"_);(0\"x\");\"-\"_)");
 
     // BasisPoints with zero decimals
     let bps_mask = theme
         .resolve_number_format(FormatPreset::BasisPoints, Some(0), None)
         .expect("basis points format resolution failed");
-    assert_eq!(bps_mask, "#,##0\" bps\"");
+    assert_eq!(bps_mask, "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_)");
 }
 
 #[test]
@@ -124,7 +125,7 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let mult_mask = theme
         .resolve_number_format(FormatPreset::Multiple, None, None)
         .expect("default multiple resolution failed");
-    assert_eq!(mult_mask, "0.0\"x\"");
+    assert_eq!(mult_mask, "0.0\"x\"_);(0.0\"x\");\"-\"_)");
 
     // Number default: 0 decimals
     let num_mask = theme
@@ -136,7 +137,7 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let bps_mask = theme
         .resolve_number_format(FormatPreset::BasisPoints, None, None)
         .expect("default basis points resolution failed");
-    assert_eq!(bps_mask, "#,##0\" bps\"");
+    assert_eq!(bps_mask, "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_)");
 }
 
 #[test]
@@ -151,7 +152,12 @@ fn test_scenario_5_non_numeric_presets_ignore_decimals_and_currency() {
     let text_mask = theme
         .resolve_number_format(FormatPreset::Text, Some(2), Some(CurrencyCode::Eur))
         .expect("text format resolution failed");
-    assert_eq!(text_mask, "@");
+    assert_eq!(text_mask, "@_)");
+
+    let int_mask = theme
+        .resolve_number_format(FormatPreset::Integer, Some(2), Some(CurrencyCode::Eur))
+        .expect("integer format resolution failed");
+    assert_eq!(int_mask, "0_);(-0);\"-\"_)");
 }
 
 #[test]
@@ -277,6 +283,9 @@ fn test_scenario_7_rejection_of_invalid_theme_configurations() {
     ));
 
     let mut theme = Theme::corporate_navy();
+    theme.metrics.col_padding = 0.0;
+    assert!(theme.validate().is_ok());
+
     theme.metrics.col_padding = -1.0;
     assert!(matches!(
         theme.validate().unwrap_err(),

@@ -452,8 +452,8 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let col_b_width = *sheet.col_widths.get(&1).unwrap();
     let col_c_width = *sheet.col_widths.get(&2).unwrap();
 
-    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 1.0 = 58.0)
-    assert_eq!(col_b_width, 58.0);
+    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 0.0 = 57.0)
+    assert_eq!(col_b_width, 57.0);
 
     // Col C (measure) must be at least min_col_width (12.0)
     assert!(col_c_width >= theme.metrics.min_col_width);
@@ -968,10 +968,10 @@ fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration()
 
     let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
     // Physical col 3 (mrq_1): group banner (44 chars) is excluded from single-column width arbitration;
-    // max_header_chars is "2012-06-30" (10 chars) -> width = 10 * 1.0 + 1.0 = 11.0
-    assert_eq!(sheet.col_widths.get(&3), Some(&11.0));
-    // Physical col 4 (standalone): upper line "Standalone Financial" (20 chars) is included -> width = 20 * 1.0 + 1.0 = 21.0
-    assert_eq!(sheet.col_widths.get(&4), Some(&21.0));
+    // max_header_chars is "2012-06-30" (10 chars) -> width = 10 * 1.0 + 0.0 = 10.0
+    assert_eq!(sheet.col_widths.get(&3), Some(&10.0));
+    // Physical col 4 (standalone): upper line "Standalone Financial" (20 chars) is included -> width = 20 * 1.0 + 0.0 = 20.0
+    assert_eq!(sheet.col_widths.get(&4), Some(&20.0));
 }
 
 #[test]

@@ -707,7 +707,10 @@ fn literal_value_length(
     currency: Option<CurrencyCode>,
 ) -> usize {
     match lit {
-        ValueLiteral::String(s) => s.chars().count(),
+        ValueLiteral::String(s) => {
+            let trailing_pad = usize::from(format == Some(FormatPreset::Text));
+            s.chars().count() + trailing_pad
+        }
         ValueLiteral::Number(n) => formatted_number_estimate(*n, format, decimals, currency),
         ValueLiteral::Boolean(b) => {
             if *b {
@@ -728,7 +731,10 @@ fn cell_value_string_length(
     currency: Option<CurrencyCode>,
 ) -> usize {
     match val {
-        CellValue::Text(s) => s.chars().count(),
+        CellValue::Text(s) => {
+            let trailing_pad = usize::from(format == Some(FormatPreset::Text));
+            s.chars().count() + trailing_pad
+        }
         CellValue::Number(n) => formatted_number_estimate(*n, format, decimals, currency),
         CellValue::Boolean(b) => {
             if *b {
@@ -757,7 +763,14 @@ fn formatted_number_estimate(
         !formatted.ends_with(')')
             && matches!(
                 format,
-                Some(FormatPreset::Currency | FormatPreset::Number | FormatPreset::Percentage)
+                Some(
+                    FormatPreset::Currency
+                        | FormatPreset::Number
+                        | FormatPreset::Percentage
+                        | FormatPreset::Multiple
+                        | FormatPreset::BasisPoints
+                        | FormatPreset::Integer
+                )
             ),
     );
     formatted.chars().count() + trailing_pad
