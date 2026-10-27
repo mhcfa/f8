@@ -58,6 +58,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns,
         rows: vec![
             make_shareholder_row("founders", 4_000_000.0, 0.001),
@@ -78,6 +79,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
         subtitle: None,
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("val")],
         rows: vec![
             RowSpec::new("exit_valuation")

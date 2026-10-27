@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -12,6 +12,7 @@ from f8._core import CompiledModel
 from f8._core import compile as core_compile
 from f8.types import (
     AxisRole,
+    BelowPlacementSpecDict,
     CellValueLiteral,
     ColumnSpecDict,
     CurrencyCode,
@@ -22,11 +23,13 @@ from f8.types import (
     GutterColumnSpecDict,
     GutterRowSpecDict,
     ProjectManifestDict,
+    RightOfPlacementSpecDict,
     RowSpecDict,
     SectionHeaderRowSpecDict,
     SemanticStyle,
     Shade,
     SheetSpecDict,
+    StackPlacementSpecDict,
     TableSpecDict,
     ThemeInput,
 )
@@ -64,6 +67,7 @@ class Cell:
 
 
 type CellInputValue = CellValueLiteral | Cell | DetailedCellDict
+type AxisSelector = str | Iterable[str] | slice
 
 
 def _normalize_currency(currency: str) -> CurrencyCode:
@@ -185,12 +189,24 @@ class Table:
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
         sheet: Sheet | None = None,
+        *,
+        right_of: str | Table | None = None,
+        below: str | Table | None = None,
+        gap: int | None = None,
     ) -> None:
+        if right_of is not None and below is not None:
+            raise ValueError("Cannot specify both 'right_of' and 'below'")
+        if gap is not None and gap < 0:
+            raise ValueError(f"Table 'gap' must be non-negative, got {gap}")
+
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.currency = currency
         self.collapsible = collapsible
+        self.right_of: str | None = right_of.id if isinstance(right_of, Table) else right_of
+        self.below: str | None = below.id if isinstance(below, Table) else below
+        self.gap: int | None = gap
         self._sheet = sheet
         self._columns: list[_ColumnItem] = []
         self._col_ids: set[str] = set()
@@ -298,7 +314,78 @@ class Table:
         self._rows.append(_SectionHeaderRow(title=title, indent=indent, note=note))
         return self
 
-    def set_cell(
+    def _resolve_row_selector(self, selector: AxisSelector) -> list[str]:
+        if isinstance(selector, str):
+            if selector not in self._data_rows:
+                raise KeyError(f"Row '{selector}' does not exist in table '{self.id}'")
+            return [selector]
+
+        if isinstance(selector, slice):
+            if selector.step is not None:
+                raise ValueError("Row slice selector cannot specify a step")
+            if not isinstance(selector.start, str) or not isinstance(selector.stop, str):
+                raise ValueError(
+                    "Row slice selector requires non-None string 'start' and 'stop' bounds"
+                )
+            if selector.start not in self._data_rows:
+                raise KeyError(f"Row '{selector.start}' does not exist in table '{self.id}'")
+            if selector.stop not in self._data_rows:
+                raise KeyError(f"Row '{selector.stop}' does not exist in table '{self.id}'")
+            data_row_ids = [r.id for r in self._rows if isinstance(r, _DataRow)]
+            start_idx = data_row_ids.index(selector.start)
+            stop_idx = data_row_ids.index(selector.stop)
+            if start_idx > stop_idx:
+                msg = (
+                    f"Inverted row slice '{selector.start}'..'{selector.stop}' in table '{self.id}'"
+                )
+                raise ValueError(msg)
+            return data_row_ids[start_idx : stop_idx + 1]
+
+        row_ids = list(selector)
+        if not row_ids:
+            raise ValueError("Row selector iterable cannot be empty")
+        for row_id in row_ids:
+            if row_id not in self._data_rows:
+                raise KeyError(f"Row '{row_id}' does not exist in table '{self.id}'")
+        return row_ids
+
+    def _resolve_col_selector(self, selector: AxisSelector) -> list[str]:
+        if isinstance(selector, str):
+            if selector not in self._col_ids:
+                raise KeyError(f"Column '{selector}' does not exist in table '{self.id}'")
+            return [selector]
+
+        if isinstance(selector, slice):
+            if selector.step is not None:
+                raise ValueError("Column slice selector cannot specify a step")
+            if not isinstance(selector.start, str) or not isinstance(selector.stop, str):
+                raise ValueError(
+                    "Column slice selector requires non-None string 'start' and 'stop' bounds"
+                )
+            if selector.start not in self._col_ids:
+                raise KeyError(f"Column '{selector.start}' does not exist in table '{self.id}'")
+            if selector.stop not in self._col_ids:
+                raise KeyError(f"Column '{selector.stop}' does not exist in table '{self.id}'")
+            data_col_ids = [c.id for c in self._columns if isinstance(c, _DataColumn)]
+            start_idx = data_col_ids.index(selector.start)
+            stop_idx = data_col_ids.index(selector.stop)
+            if start_idx > stop_idx:
+                msg = (
+                    f"Inverted column slice '{selector.start}'..'{selector.stop}' "
+                    f"in table '{self.id}'"
+                )
+                raise ValueError(msg)
+            return data_col_ids[start_idx : stop_idx + 1]
+
+        col_ids = list(selector)
+        if not col_ids:
+            raise ValueError("Column selector iterable cannot be empty")
+        for col_id in col_ids:
+            if col_id not in self._col_ids:
+                raise KeyError(f"Column '{col_id}' does not exist in table '{self.id}'")
+        return col_ids
+
+    def _resolve_cell_override(
         self,
         row: str,
         col: str,
@@ -313,11 +400,7 @@ class Table:
         currency: CurrencyCode | None = None,
         indent: int | None = None,
         note: str | None = None,
-    ) -> Table:
-        """Sets or merges a 0D cell override at `(row, col)`."""
-        if row not in self._data_rows:
-            raise KeyError(f"Row '{row}' does not exist in table '{self.id}'")
-
+    ) -> Cell:
         target_row = self._data_rows[row]
         has_existing = col in target_row.cells
 
@@ -460,7 +543,7 @@ class Table:
             note if note is not None else (base_note if base_note is not None else existing_note)
         )
 
-        target_row.cells[col] = Cell(
+        return Cell(
             value=final_val,
             expr=final_expr,
             style=final_style,
@@ -472,6 +555,89 @@ class Table:
             indent=final_indent,
             note=final_note,
         )
+
+    def set_cell(
+        self,
+        row: str,
+        col: str,
+        cell: CellInputValue | _Unset = _UNSET,
+        value: CellValueLiteral | _Unset = _UNSET,
+        expr: str | None = None,
+        style: SemanticStyle | None = None,
+        highlight: bool | None = None,
+        shade: Shade | None = None,
+        format: FormatPreset | None = None,
+        decimals: int | None = None,
+        currency: CurrencyCode | None = None,
+        indent: int | None = None,
+        note: str | None = None,
+    ) -> Table:
+        """Sets or merges a 0D cell override at `(row, col)`."""
+        if row not in self._data_rows:
+            raise KeyError(f"Row '{row}' does not exist in table '{self.id}'")
+        if col not in self._col_ids:
+            raise KeyError(f"Column '{col}' does not exist in table '{self.id}'")
+
+        self._data_rows[row].cells[col] = self._resolve_cell_override(
+            row=row,
+            col=col,
+            cell=cell,
+            value=value,
+            expr=expr,
+            style=style,
+            highlight=highlight,
+            shade=shade,
+            format=format,
+            decimals=decimals,
+            currency=currency,
+            indent=indent,
+            note=note,
+        )
+        return self
+
+    def set_cells(
+        self,
+        row: AxisSelector,
+        cols: AxisSelector,
+        cell: CellInputValue | _Unset = _UNSET,
+        value: CellValueLiteral | _Unset = _UNSET,
+        expr: str | None = None,
+        style: SemanticStyle | None = None,
+        highlight: bool | None = None,
+        shade: Shade | None = None,
+        format: FormatPreset | None = None,
+        decimals: int | None = None,
+        currency: CurrencyCode | None = None,
+        indent: int | None = None,
+        note: str | None = None,
+    ) -> Table:
+        """Sets or merges 0D cell overrides across resolved `(row, cols)` coordinates."""
+        row_ids = self._resolve_row_selector(row)
+        col_ids = self._resolve_col_selector(cols)
+
+        updates: list[tuple[str, str, Cell]] = []
+        for r_id in row_ids:
+            for c_id in col_ids:
+                resolved = self._resolve_cell_override(
+                    row=r_id,
+                    col=c_id,
+                    cell=cell,
+                    value=value,
+                    expr=expr,
+                    style=style,
+                    highlight=highlight,
+                    shade=shade,
+                    format=format,
+                    decimals=decimals,
+                    currency=currency,
+                    indent=indent,
+                    note=note,
+                )
+                updates.append((r_id, c_id, resolved))
+
+        for r_id, c_id, resolved_cell in updates:
+            self._data_rows[r_id].cells[c_id] = resolved_cell
+
         return self
 
     def __f8_spec__(self) -> TableSpecDict:
@@ -558,6 +724,28 @@ class Table:
             table_spec["subtitle"] = self.subtitle
         if self.currency is not None:
             table_spec["currency"] = _normalize_currency(self.currency)
+        if self.right_of is not None:
+            right_of_spec: RightOfPlacementSpecDict = {
+                "kind": "right_of",
+                "target": self.right_of,
+            }
+            if self.gap is not None:
+                right_of_spec["gap"] = self.gap
+            table_spec["placement"] = right_of_spec
+        elif self.below is not None:
+            below_spec: BelowPlacementSpecDict = {
+                "kind": "below",
+                "target": self.below,
+            }
+            if self.gap is not None:
+                below_spec["gap"] = self.gap
+            table_spec["placement"] = below_spec
+        elif self.gap is not None:
+            stack_spec: StackPlacementSpecDict = {
+                "kind": "stack",
+                "gap": self.gap,
+            }
+            table_spec["placement"] = stack_spec
         return table_spec
 
 
@@ -596,6 +784,10 @@ class Sheet:
         subtitle: str | None = None,
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
+        *,
+        right_of: str | Table | None = None,
+        below: str | Table | None = None,
+        gap: int | None = None,
     ) -> Table:
         """Creates and appends a new `Table` to this worksheet."""
         if self._model is not None:
@@ -615,6 +807,9 @@ class Sheet:
             currency=currency,
             collapsible=collapsible,
             sheet=self,
+            right_of=right_of,
+            below=below,
+            gap=gap,
         )
         self._tables.append(table)
         self._table_ids.add(id)
@@ -732,4 +927,4 @@ class Model:
         return core_compile(manifest, tables)
 
 
-__all__ = ["Cell", "CellInputValue", "Model", "Sheet", "Table"]
+__all__ = ["AxisSelector", "Cell", "CellInputValue", "Model", "Sheet", "Table"]

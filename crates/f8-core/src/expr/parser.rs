@@ -1,5 +1,6 @@
 use crate::expr::ast::{
-    BinaryOp, ColSelector, Expr, Literal, RelativeOffset, RowSelector, TableRef, UnaryOp,
+    BinaryOp, ColEndpoint, ColSelector, Expr, Literal, RelativeOffset, RowEndpoint, RowSelector,
+    TableRef, UnaryOp,
 };
 use crate::expr::error::ParseError;
 use crate::model::id::{ColId, RowId};
@@ -792,10 +793,80 @@ fn parse_bracket_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Exp
     Ok(Expr::Reference(TableRef::new(table, row, col)))
 }
 
-fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseError> {
+fn parse_relative_offset(
+    stream: &mut TokenStream<'_>,
+    is_row: bool,
+) -> Result<RelativeOffset, ParseError> {
+    let dot_expected = if is_row {
+        "'.' after 'row'"
+    } else {
+        "'.' after 'col'"
+    };
+    let _ = stream.expect(&Token::Dot, dot_expected)?;
+
+    let is_prev = match stream.peek_token() {
+        Some(Token::Ident("prev")) => true,
+        Some(Token::Ident("next")) => false,
+        Some(other) => {
+            let err_offset = stream.current_offset();
+            let found = other.to_string();
+            return Err(ParseError::UnexpectedToken {
+                expected: "'prev' or 'next'",
+                found,
+                offset: err_offset,
+            });
+        }
+        None => {
+            return Err(ParseError::UnexpectedEof {
+                expected: "'prev' or 'next'",
+            });
+        }
+    };
+    stream.advance();
+
+    let expected_rparen = match (is_row, is_prev) {
+        (true, true) => "')' after row.prev offset",
+        (true, false) => "')' after row.next offset",
+        (false, true) => "')' after col.prev offset",
+        (false, false) => "')' after col.next offset",
+    };
+
+    let k = if stream.peek_token() == Some(&Token::LParen) {
+        stream.advance();
+        let k = match stream.consume() {
+            Some(num_st) => match num_st.token {
+                Token::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as u32,
+                ref other => {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "integer offset",
+                        found: other.to_string(),
+                        offset: num_st.offset,
+                    });
+                }
+            },
+            None => {
+                return Err(ParseError::UnexpectedEof {
+                    expected: expected_rparen,
+                });
+            }
+        };
+        let _ = stream.expect(&Token::RParen, expected_rparen)?;
+        k
+    } else {
+        1
+    };
+
+    if is_prev {
+        Ok(RelativeOffset::Prev(k))
+    } else {
+        Ok(RelativeOffset::Next(k))
+    }
+}
+
+fn parse_row_endpoint(stream: &mut TokenStream<'_>) -> Result<RowEndpoint, ParseError> {
     let Some(st) = stream.peek() else {
         return Err(ParseError::UnexpectedEof {
-            expected: "row selector ('@row', quoted string key, 'row.prev', 'row.next', or 'rows.<group>')",
+            expected: "row selector ('@row', quoted string key, 'row.prev', or 'row.next')",
         });
     };
 
@@ -803,99 +874,16 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
     match &st.token {
         Token::AtRow => {
             stream.advance();
-            Ok(RowSelector::Active)
+            Ok(RowEndpoint::Active)
         }
         Token::Ident("row") => {
             stream.advance();
-            // Expect '.'
-            let _ = stream.expect(&Token::Dot, "'.' after 'row'")?;
-
-            // Expect 'prev' or 'next'
-            let is_prev = match stream.peek_token() {
-                Some(Token::Ident("prev")) => true,
-                Some(Token::Ident("next")) => false,
-                Some(other) => {
-                    let err_offset = stream.current_offset();
-                    let found = other.to_string();
-                    return Err(ParseError::UnexpectedToken {
-                        expected: "'prev' or 'next'",
-                        found,
-                        offset: err_offset,
-                    });
-                }
-                None => {
-                    return Err(ParseError::UnexpectedEof {
-                        expected: "'prev' or 'next'",
-                    });
-                }
-            };
-            stream.advance();
-
-            // Check for optional (k)
-            if stream.peek_token() == Some(&Token::LParen) {
-                stream.advance();
-                let k = match stream.consume() {
-                    Some(num_st) => match num_st.token {
-                        Token::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as u32,
-                        ref other => {
-                            return Err(ParseError::UnexpectedToken {
-                                expected: "integer offset",
-                                found: other.to_string(),
-                                offset: num_st.offset,
-                            });
-                        }
-                    },
-                    None => {
-                        let expected = if is_prev {
-                            "')' after row.prev offset"
-                        } else {
-                            "')' after row.next offset"
-                        };
-                        return Err(ParseError::UnexpectedEof { expected });
-                    }
-                };
-
-                let expected_rparen = if is_prev {
-                    "')' after row.prev offset"
-                } else {
-                    "')' after row.next offset"
-                };
-                let _ = stream.expect(&Token::RParen, expected_rparen)?;
-
-                if is_prev {
-                    Ok(RowSelector::Offset(RelativeOffset::Prev(k)))
-                } else {
-                    Ok(RowSelector::Offset(RelativeOffset::Next(k)))
-                }
-            } else if is_prev {
-                Ok(RowSelector::Offset(RelativeOffset::Prev(1)))
-            } else {
-                Ok(RowSelector::Offset(RelativeOffset::Next(1)))
-            }
+            Ok(RowEndpoint::Offset(parse_relative_offset(stream, true)?))
         }
-        Token::String(key1) => {
-            let key1 = key1.clone();
+        Token::String(key) => {
+            let key = key.clone();
             stream.advance();
-            if stream.peek_token() == Some(&Token::DotDot) {
-                stream.advance();
-                match stream.consume() {
-                    Some(key2_st) => match &key2_st.token {
-                        Token::String(key2) => {
-                            Ok(RowSelector::Range(RowId::new(key1), RowId::new(key2)))
-                        }
-                        other => Err(ParseError::UnexpectedToken {
-                            expected: "closing row range key string",
-                            found: other.to_string(),
-                            offset: key2_st.offset,
-                        }),
-                    },
-                    None => Err(ParseError::UnexpectedEof {
-                        expected: "closing row range key string",
-                    }),
-                }
-            } else {
-                Ok(RowSelector::Key(RowId::new(key1)))
-            }
+            Ok(RowEndpoint::Key(RowId::new(key)))
         }
         Token::Ident(bare) => {
             let found = (*bare).to_string();
@@ -910,7 +898,61 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
         other => {
             let found = other.to_string();
             Err(ParseError::UnexpectedToken {
-                expected: "row selector ('@row', quoted string key, 'row.prev', 'row.next', or 'rows.<group>')",
+                expected: "row selector ('@row', quoted string key, 'row.prev', or 'row.next')",
+                found,
+                offset,
+            })
+        }
+    }
+}
+
+fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseError> {
+    let start = parse_row_endpoint(stream)?;
+    if stream.peek_token() == Some(&Token::DotDot) {
+        stream.advance();
+        let end = parse_row_endpoint(stream)?;
+        Ok(RowSelector::Range(start, end))
+    } else {
+        Ok(RowSelector::from(start))
+    }
+}
+
+fn parse_col_endpoint(stream: &mut TokenStream<'_>) -> Result<ColEndpoint, ParseError> {
+    let Some(st) = stream.peek() else {
+        return Err(ParseError::UnexpectedEof {
+            expected: "column selector ('@col', quoted string key, 'col.prev', or 'col.next')",
+        });
+    };
+
+    let offset = st.offset;
+    match &st.token {
+        Token::AtCol => {
+            stream.advance();
+            Ok(ColEndpoint::Active)
+        }
+        Token::Ident("col") => {
+            stream.advance();
+            Ok(ColEndpoint::Offset(parse_relative_offset(stream, false)?))
+        }
+        Token::String(key) => {
+            let key = key.clone();
+            stream.advance();
+            Ok(ColEndpoint::Key(ColId::new(key)))
+        }
+        Token::Ident(bare) => {
+            let found = (*bare).to_string();
+            stream.advance();
+            Err(ParseError::UnquotedCoordinateKey { found, offset })
+        }
+        Token::Number(num) => {
+            let found = num.to_string();
+            stream.advance();
+            Err(ParseError::UnquotedCoordinateKey { found, offset })
+        }
+        other => {
+            let found = other.to_string();
+            Err(ParseError::UnexpectedToken {
+                expected: "column selector ('@col', quoted string key, 'col.prev', or 'col.next')",
                 found,
                 offset,
             })
@@ -919,128 +961,13 @@ fn parse_row_spec(stream: &mut TokenStream<'_>) -> Result<RowSelector, ParseErro
 }
 
 fn parse_col_spec(stream: &mut TokenStream<'_>) -> Result<ColSelector, ParseError> {
-    let Some(st) = stream.peek() else {
-        return Err(ParseError::UnexpectedEof {
-            expected: "column selector ('@col', quoted string key, 'col.prev', 'col.next', or 'cols.<group>')",
-        });
-    };
-
-    let offset = st.offset;
-    match &st.token {
-        Token::AtCol => {
-            stream.advance();
-            Ok(ColSelector::Active)
-        }
-        Token::Ident("col") => {
-            stream.advance();
-            // Expect '.'
-            let _ = stream.expect(&Token::Dot, "'.' after 'col'")?;
-
-            // Expect 'prev' or 'next'
-            let is_prev = match stream.peek_token() {
-                Some(Token::Ident("prev")) => true,
-                Some(Token::Ident("next")) => false,
-                Some(other) => {
-                    let err_offset = stream.current_offset();
-                    let found = other.to_string();
-                    return Err(ParseError::UnexpectedToken {
-                        expected: "'prev' or 'next'",
-                        found,
-                        offset: err_offset,
-                    });
-                }
-                None => {
-                    return Err(ParseError::UnexpectedEof {
-                        expected: "'prev' or 'next'",
-                    });
-                }
-            };
-            stream.advance();
-
-            // Check for optional (k)
-            if stream.peek_token() == Some(&Token::LParen) {
-                stream.advance();
-                let k = match stream.consume() {
-                    Some(num_st) => match num_st.token {
-                        Token::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as u32,
-                        ref other => {
-                            return Err(ParseError::UnexpectedToken {
-                                expected: "integer offset",
-                                found: other.to_string(),
-                                offset: num_st.offset,
-                            });
-                        }
-                    },
-                    None => {
-                        let expected = if is_prev {
-                            "')' after col.prev offset"
-                        } else {
-                            "')' after col.next offset"
-                        };
-                        return Err(ParseError::UnexpectedEof { expected });
-                    }
-                };
-
-                let expected_rparen = if is_prev {
-                    "')' after col.prev offset"
-                } else {
-                    "')' after col.next offset"
-                };
-                let _ = stream.expect(&Token::RParen, expected_rparen)?;
-
-                if is_prev {
-                    Ok(ColSelector::Offset(RelativeOffset::Prev(k)))
-                } else {
-                    Ok(ColSelector::Offset(RelativeOffset::Next(k)))
-                }
-            } else if is_prev {
-                Ok(ColSelector::Offset(RelativeOffset::Prev(1)))
-            } else {
-                Ok(ColSelector::Offset(RelativeOffset::Next(1)))
-            }
-        }
-        Token::String(key1) => {
-            let key1 = key1.clone();
-            stream.advance();
-            if stream.peek_token() == Some(&Token::DotDot) {
-                stream.advance();
-                match stream.consume() {
-                    Some(key2_st) => match &key2_st.token {
-                        Token::String(key2) => {
-                            Ok(ColSelector::Range(ColId::new(key1), ColId::new(key2)))
-                        }
-                        other => Err(ParseError::UnexpectedToken {
-                            expected: "closing column range key string",
-                            found: other.to_string(),
-                            offset: key2_st.offset,
-                        }),
-                    },
-                    None => Err(ParseError::UnexpectedEof {
-                        expected: "closing column range key string",
-                    }),
-                }
-            } else {
-                Ok(ColSelector::Key(ColId::new(key1)))
-            }
-        }
-        Token::Ident(bare) => {
-            let found = (*bare).to_string();
-            stream.advance();
-            Err(ParseError::UnquotedCoordinateKey { found, offset })
-        }
-        Token::Number(num) => {
-            let found = num.to_string();
-            stream.advance();
-            Err(ParseError::UnquotedCoordinateKey { found, offset })
-        }
-        other => {
-            let found = other.to_string();
-            Err(ParseError::UnexpectedToken {
-                expected: "column selector ('@col', quoted string key, 'col.prev', 'col.next', or 'cols.<group>')",
-                found,
-                offset,
-            })
-        }
+    let start = parse_col_endpoint(stream)?;
+    if stream.peek_token() == Some(&Token::DotDot) {
+        stream.advance();
+        let end = parse_col_endpoint(stream)?;
+        Ok(ColSelector::Range(start, end))
+    } else {
+        Ok(ColSelector::from(start))
     }
 }
 
@@ -1324,7 +1251,7 @@ mod tests {
                 args: vec![Expr::Reference(TableRef::new(
                     TableId::new("IncomeStatement"),
                     RowSelector::Key(RowId::new("revenue")),
-                    ColSelector::Range(ColId::new("2024E"), ColId::new("2028E")),
+                    ColSelector::Range("2024E".into(), "2028E".into()),
                 ))],
             }
         );
@@ -1335,7 +1262,7 @@ mod tests {
             v_slice,
             Expr::Reference(TableRef::new(
                 TableId::new("Opex"),
-                RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
+                RowSelector::Range("r_and_d".into(), "g_and_a".into()),
                 ColSelector::Active,
             ))
         );
@@ -1358,8 +1285,8 @@ mod tests {
             block2d,
             Expr::Reference(TableRef::new(
                 TableId::new("Opex"),
-                RowSelector::Range(RowId::new("r_and_d"), RowId::new("g_and_a")),
-                ColSelector::Range(ColId::new("2024E"), ColId::new("2028E")),
+                RowSelector::Range("r_and_d".into(), "g_and_a".into()),
+                ColSelector::Range("2024E".into(), "2028E".into()),
             ))
         );
     }

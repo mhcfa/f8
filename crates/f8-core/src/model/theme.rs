@@ -93,7 +93,7 @@ impl Default for TypographyConfig {
     fn default() -> Self {
         Self {
             font_family: "Aptos".to_string(),
-            title_size: 14.0,
+            title_size: 12.0,
             subtitle_size: 9.0,
             super_header_size: 10.0,
             col_header_size: 10.0,
@@ -130,7 +130,7 @@ impl Default for MetricsConfig {
             gutter_col_width: 3.0,
             title_gutter_row_height: 8.0,
             char_width_multiplier: 1.0,
-            col_padding: 1.0,
+            col_padding: 0.0,
             min_col_width: 12.0,
         }
     }
@@ -214,7 +214,7 @@ impl Default for BordersConfig {
 }
 
 fn default_integer_format() -> String {
-    "0;(-0);\"-\"_)".to_string()
+    "0_);(-0);\"-\"_)".to_string()
 }
 
 /// Number format templates and default precisions across all semantic presets.
@@ -238,10 +238,10 @@ impl Default for NumberFormatsConfig {
             currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)".to_string(),
             number: "#,##0{dec}_);(#,##0{dec});\"-\"_)".to_string(),
             percentage: "0{dec}%_);(0{dec}%);\"-\"_)".to_string(),
-            multiple: "0{dec}\"x\"".to_string(),
-            basis_points: "#,##0{dec}\" bps\"".to_string(),
+            multiple: "0{dec}\"x\"_);(0{dec}\"x\");\"-\"_)".to_string(),
+            basis_points: "#,##0{dec}\" bps\"_);(#,##0{dec}\" bps\");\"-\"_)".to_string(),
             date: "yyyy-mm-dd".to_string(),
-            text: "@".to_string(),
+            text: "@_)".to_string(),
             integer: default_integer_format(),
             defaults: FormatDefaults::default(),
         }
@@ -294,6 +294,17 @@ fn validate_metric(metric: &str, value: f64) -> Result<(), ModelError> {
     }
 }
 
+fn validate_non_negative_metric(metric: &str, value: f64) -> Result<(), ModelError> {
+    if !value.is_finite() || value < 0.0 {
+        Err(ModelError::InvalidThemeMetric {
+            metric: metric.to_string(),
+            value,
+        })
+    } else {
+        Ok(())
+    }
+}
+
 impl TypographyConfig {
     pub fn validate(&self) -> Result<(), ModelError> {
         validate_metric("title_size", self.title_size)?;
@@ -316,7 +327,7 @@ impl MetricsConfig {
         validate_metric("gutter_col_width", self.gutter_col_width)?;
         validate_metric("title_gutter_row_height", self.title_gutter_row_height)?;
         validate_metric("char_width_multiplier", self.char_width_multiplier)?;
-        validate_metric("col_padding", self.col_padding)?;
+        validate_non_negative_metric("col_padding", self.col_padding)?;
         validate_metric("min_col_width", self.min_col_width)?;
         Ok(())
     }

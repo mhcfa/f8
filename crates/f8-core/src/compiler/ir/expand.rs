@@ -459,6 +459,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![
                 ColumnSpec::descriptor("param", "Parameter"),
                 ColumnSpec::new("val"),
@@ -529,6 +530,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1").with_expr("1")],
         };
@@ -548,6 +550,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1").with_expr("1 + * 2")],
         };
@@ -565,6 +568,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1").with_expr("10")],
         };
@@ -586,6 +590,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![RowSpec::new("r1").with_expr("200")],
         };
@@ -612,6 +617,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![RowSpec::new("r1").with_expr("200").with_cells(cells)],
         };
@@ -633,6 +639,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1")],
         };
@@ -656,6 +663,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![
                 RowSpec::new("r1")
@@ -696,6 +704,7 @@ mod tests {
             subtitle: None,
             currency: None,
             collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![
                 RowSpec::new("r1")

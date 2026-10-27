@@ -246,6 +246,7 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitle: Some("Enterprise Value and Operational Trading Multiples ($ in Millions, except share price)".to_string()),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: comps_cols,
         rows: comps_rows,
     };
@@ -344,6 +345,7 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
         ),
         currency: None,
         collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
         columns: target_val_cols,
         rows: target_val_rows,
     };

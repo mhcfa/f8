@@ -337,7 +337,7 @@ fn test_scenario_6_structural_header_formats_and_alignments() {
     let title_fmt = cache.title_format();
     let title_debug = format!("{title_fmt:?}");
     assert!(title_debug.contains(r#"name: "Aptos""#));
-    assert!(title_debug.contains(r#"size: "14""#));
+    assert!(title_debug.contains(r#"size: "12""#));
     assert!(title_debug.contains("bold: true"));
     assert!(title_debug.contains("horizontal: Left"));
 

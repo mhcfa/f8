@@ -52,12 +52,12 @@ pub fn format_range(
     sheet: &SheetId,
     start: (u32, u32),
     end: (u32, u32),
-    col_pinned: bool,
-    row_pinned: bool,
+    start_pinned: (bool, bool),
+    end_pinned: (bool, bool),
     origin_sheet: &SheetId,
 ) -> String {
-    let start_addr = format_cell_address(start.0, start.1, col_pinned, row_pinned);
-    let end_addr = format_cell_address(end.0, end.1, col_pinned, row_pinned);
+    let start_addr = format_cell_address(start.0, start.1, start_pinned.0, start_pinned.1);
+    let end_addr = format_cell_address(end.0, end.1, end_pinned.0, end_pinned.1);
     if sheet == origin_sheet {
         format!("{start_addr}:{end_addr}")
     } else {
@@ -100,16 +100,48 @@ mod tests {
         let sheet_b = SheetId::new("Data");
 
         assert_eq!(
-            format_range(&sheet_a, (2, 9), (6, 9), true, true, &sheet_a),
+            format_range(
+                &sheet_a,
+                (2, 9),
+                (6, 9),
+                (true, true),
+                (true, true),
+                &sheet_a
+            ),
             "$C$10:$G$10"
         );
         assert_eq!(
-            format_range(&sheet_a, (2, 13), (2, 17), false, true, &sheet_a),
+            format_range(
+                &sheet_a,
+                (2, 13),
+                (2, 17),
+                (false, true),
+                (false, true),
+                &sheet_a
+            ),
             "C$14:C$18"
         );
         assert_eq!(
-            format_range(&sheet_b, (2, 13), (6, 17), true, true, &sheet_a),
+            format_range(
+                &sheet_b,
+                (2, 13),
+                (6, 17),
+                (true, true),
+                (true, true),
+                &sheet_a
+            ),
             "'Data'!$C$14:$G$18"
+        );
+        assert_eq!(
+            format_range(
+                &sheet_a,
+                (2, 5),
+                (2, 5),
+                (true, true),
+                (false, true),
+                &sheet_a
+            ),
+            "$C$6:C$6"
         );
     }
 

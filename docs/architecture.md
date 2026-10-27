@@ -52,7 +52,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
    - Resolves cell formatting, indentation, notes, visual highlights, and background zone shades (`row.shade` vs `col.shade`; conflicting active shades halt with `IrError::ShadeConflict`, while `shade: "none"` on a cell clears inherited shades).
    - Resolves cell currency: Point override > Vector rules (`row.currency` vs `col.currency`; conflicting codes halt with `IrError::CurrencyConflict`) > `table.currency` > default `usd`.
 3. Dependency Graph & SCC (`f8_core::compiler::graph`):
-   - Resolves cell references: table-qualified keys (`Table[row, col]`), active coordinate selectors (`@col`, `@row`), and temporal offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`).
+   - Resolves cell references: table-qualified keys (`Table[row, col]`), active coordinate selectors (`@col`, `@row`), temporal offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`), and static or dynamic range slices (`start..end` with key, active, or offset endpoints).
    - Column offset semantics: steps strictly across data measure columns, skipping gutters and descriptor columns.
    - Row offset semantics: steps strictly across data rows, skipping gutters and section headers.
    - Cycle detection: executes Tarjan's Strongly Connected Components (SCC) on `petgraph::DiGraph`. Cycles halt compilation with exact cycle trace (`StrictDagHandler`).
@@ -68,11 +68,11 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
 5. Spatial Layout Planning (`f8_core::compiler::layout`):
    - Arranges tables into 0-indexed physical grid coordinates (`LayoutMap`).
    - Sheet margins: Col 0 (Excel Col A) and Row 0 (Excel Row 1) reserved as blank gutters.
-   - Table placement: primary table placed at `(col: 1, row: 1)` (Excel `B2`); stacked tables separated by 2 blank gutter rows.
+   - Table placement (`PlacementSpec`): primary table placed at `(col: 1, row: 1)` (Excel `B2`); subsequent tables placed via `stack` (`start_col = 1`, `gap = 2` gutter rows below sheet max row), `below` (`start_col = target.start_col`, `gap = 2` gutter rows below `target`), or `right_of` (`start_row = target.start_row`, `gap = 1` gutter column right of `target`). Validates declaration-order same-sheet targets (`LayoutError::InvalidPlacementTarget`) and disjoint 2D bounding boxes (`LayoutError::TableOverlap`).
    - Vertical table anatomy: optional title banner, optional subtitle, title gutter, multi-tier column headers (Tier 0 `group` banners + bottom-aligned per-column `headers`, height `H = max(header_depth())`), body rows.
-   - Sheet-wide column width arbitration: `max(chars * char_width_multiplier + col_padding, min_col_width)` computed across all stacked tables sharing each physical column, measuring the longest line in `headers` (`max_header_chars()`, excluding `group` banners). Indentation adds `indent * 2` character width padding.
+   - Sheet-wide dimension arbitration: `col_widths` computed as `max(chars * char_width_multiplier + col_padding, min_col_width)` across all tables spanning each physical column (`1..=sheet_max_end_col`), measuring the longest line in `headers` (`max_header_chars()`, excluding `group` banners), with `indent * 2` character padding and `gutter_col_width` for horizontal gap/gutter columns; `row_heights` arbitrated via `f64::max` across tables sharing physical rows.
 6. Formula Lowering & Emission (`f8_core::compiler::lowering` & `f8_core::compiler::emission`):
-   - Pass 6a (Lowering): translates AST `Expr` to Excel formula strings prefixed with `=`. Dynamic coordinates (`@col`, `@row`, `prev`, `next`) lowered to relative A1 coordinates; static keys lowered to `$` absolute coordinates. Cross-sheet references formatted as `'Sheet'!Address`.
+   - Pass 6a (Lowering): translates AST `Expr` to Excel formula strings prefixed with `=`. Dynamic coordinates (`@col`, `@row`, `prev`, `next`) lowered to relative A1 coordinates; static keys lowered to `$` absolute coordinates; range slices lowered with per-endpoint `$` pinning (e.g. expanding slices `"start"..@col` -> `$C$6:C$6`). Cross-sheet references formatted as `'Sheet'!Address`.
    - Pass 6b (Emission): writes `.xlsx` byte buffers via `rust_xlsxwriter`.
    - Format deduplication: OpenXML `<cellXfs>` synthesized and cached via `FormatCache`.
    - Color precedence: literal inputs styled with `input_text` (blue) overriding highlight/total fills; formula cells styled with `formula_text` (black); descriptors styled with `data_text`.

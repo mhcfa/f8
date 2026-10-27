@@ -12,7 +12,7 @@ from f8._core import (
     __version__,
 )
 from f8.audit import MarkdownTable, TableAuditor, unbox_cell_value
-from f8.builder import Cell, CellInputValue, Model, Sheet, Table
+from f8.builder import AxisSelector, Cell, CellInputValue, Model, Sheet, Table
 from f8.types import (
     AxisRole,
     CellCoordinate,
@@ -64,6 +64,7 @@ __all__ = [
     "InspectionError",
     "EmissionError",
     "AxisRole",
+    "AxisSelector",
     "CellCoordinate",
     "CellInputValue",
     "CellInspection",

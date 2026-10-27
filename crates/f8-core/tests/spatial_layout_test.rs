@@ -9,8 +9,8 @@ use f8_core::model::format::SemanticStyle;
 use f8_core::model::id::{ColId, SheetId, TableId};
 use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use f8_core::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
-    ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, PlacementSpec, RowSpec, SectionHeaderRowSpec,
+    TableSpec, ValueLiteral,
 };
 use f8_core::model::theme::Theme;
 
@@ -452,8 +452,8 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let col_b_width = *sheet.col_widths.get(&1).unwrap();
     let col_c_width = *sheet.col_widths.get(&2).unwrap();
 
-    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 1.0 = 58.0)
-    assert_eq!(col_b_width, 58.0);
+    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 0.0 = 57.0)
+    assert_eq!(col_b_width, 57.0);
 
     // Col C (measure) must be at least min_col_width (12.0)
     assert!(col_c_width >= theme.metrics.min_col_width);
@@ -968,8 +968,578 @@ fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration()
 
     let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
     // Physical col 3 (mrq_1): group banner (44 chars) is excluded from single-column width arbitration;
-    // max_header_chars is "2012-06-30" (10 chars) -> width = 10 * 1.0 + 1.0 = 11.0
-    assert_eq!(sheet.col_widths.get(&3), Some(&11.0));
-    // Physical col 4 (standalone): upper line "Standalone Financial" (20 chars) is included -> width = 20 * 1.0 + 1.0 = 21.0
-    assert_eq!(sheet.col_widths.get(&4), Some(&21.0));
+    // max_header_chars is "2012-06-30" (10 chars) -> width = 10 * 1.0 + 0.0 = 10.0
+    assert_eq!(sheet.col_widths.get(&3), Some(&10.0));
+    // Physical col 4 (standalone): upper line "Standalone Financial" (20 chars) is included -> width = 20 * 1.0 + 0.0 = 20.0
+    assert_eq!(sheet.col_widths.get(&4), Some(&20.0));
+}
+
+#[test]
+fn test_scenario_15_horizontal_side_by_side_placement_and_formula_lowering() {
+    let mut t1 = TableSpec::new("T1", "Left Table");
+    t1.columns.push(ColumnSpec::descriptor("item", "Item"));
+    t1.columns
+        .push(ColumnSpec::new("2023A").with_header("2023A"));
+    t1.columns
+        .push(ColumnSpec::new("2024E").with_header("2024E"));
+    t1.rows.push(RowSpec::new("rev"));
+    populate_table_cells(&mut t1);
+
+    let mut t2 = TableSpec::new("T2", "Right Table").with_placement(PlacementSpec::right_of("T1"));
+    t2.columns.push(ColumnSpec::descriptor("metric", "Metric"));
+    t2.columns.push(ColumnSpec::new("val").with_header("Value"));
+    t2.rows.push(
+        RowSpec::new("doubled")
+            .with_cell("metric", CellInput::string("Doubled 2024E"))
+            .with_cell("val", CellInput::formula(r#"T1["rev", "2024E"] * 2"#)),
+    );
+    t2.rows.push(
+        RowSpec::new("tripled")
+            .with_cell("metric", CellInput::string("From T2"))
+            .with_cell("val", CellInput::formula(r#"T2["doubled", "val"] * 1.5"#)),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "SideBySideModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dashboard".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T1"), TableId::from("T2")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[t1, t2]).unwrap();
+    let theme = create_test_theme();
+
+    let p1 = compiled.layout_map.get_table(&TableId::from("T1")).unwrap();
+    assert_eq!(p1.start_col, 1);
+    assert_eq!(p1.end_col, 3);
+    assert_eq!(p1.start_row, 1);
+
+    let p2 = compiled.layout_map.get_table(&TableId::from("T2")).unwrap();
+    assert_eq!(p2.start_col, 5);
+    assert_eq!(p2.end_col, 6);
+    assert_eq!(p2.start_row, 1);
+
+    // Physical column 4 is the 1-col horizontal gap -> receives gutter_col_width
+    let sheet_layout = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("Dashboard"))
+        .unwrap();
+    assert_eq!(
+        sheet_layout.col_widths.get(&4),
+        Some(&theme.metrics.gutter_col_width)
+    );
+
+    // T2["doubled", "val"] is at col 6 (G), row 4 (Excel row 5 -> G5)
+    let doubled_cell_id = f8_core::compiler::ir::id::CellId::new("T2", "doubled", "val");
+    let doubled_coord = compiled.layout_map.get_cell(&doubled_cell_id).unwrap();
+    assert_eq!(doubled_coord.col, 6);
+    assert_eq!(doubled_coord.row, 4);
+    assert_eq!(doubled_coord.a1, "G5");
+
+    // T2["tripled", "val"] references T2["doubled", "val"] -> lowers to G5
+    let tripled_cell_id = f8_core::compiler::ir::id::CellId::new("T2", "tripled", "val");
+    let tripled_coord = compiled.layout_map.get_cell(&tripled_cell_id).unwrap();
+    assert_eq!(tripled_coord.a1, "G6");
+    assert_eq!(
+        compiled.lowered_map.get(&tripled_cell_id),
+        Some("=$G$5*1.5")
+    );
+    assert_eq!(compiled.lowered_map.get(&doubled_cell_id), Some("=$D$5*2"));
+}
+
+#[test]
+fn test_scenario_16_asymmetric_dashboard_placement_and_sheet_inspection() {
+    // Tall T1: rows 1..=12 (title + title_gutter + 1 header + 9 data rows = 12 rows), cols 1..=3
+    let mut t1 = TableSpec::new("T1", "Tall Left Table");
+    t1.columns.push(ColumnSpec::descriptor("item", "Item"));
+    t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t1.columns.push(ColumnSpec::new("c2").with_header("C2"));
+    for i in 1..=9 {
+        t1.rows.push(RowSpec::new(format!("r{i}")));
+    }
+    populate_table_cells(&mut t1);
+
+    // Short T2: right_of("T1"), rows 1..=4 (title + title_gutter + 1 header + 1 data row = 4 rows), cols 5..=6
+    let mut t2 = TableSpec::new("T2", "Top Right").with_placement(PlacementSpec::right_of("T1"));
+    t2.columns.push(ColumnSpec::descriptor("k", "Key"));
+    t2.columns.push(ColumnSpec::new("v").with_header("Val"));
+    t2.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t2);
+
+    // Short T3: below("T2"), rows 7..=10, cols 5..=6
+    let mut t3 = TableSpec::new("T3", "Bottom Right").with_placement(PlacementSpec::below("T2"));
+    t3.columns.push(ColumnSpec::descriptor("k", "Key"));
+    t3.columns.push(ColumnSpec::new("v").with_header("Val"));
+    t3.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t3);
+
+    // Full-width T4: stack(), placed at start_col = 1, start_row = 15 (2 gutter rows below max(12, 10) = 12)
+    let mut t4 = TableSpec::new("T4", "Bottom Full Width").with_placement(PlacementSpec::stack());
+    for i in 1..=6 {
+        t4.columns
+            .push(ColumnSpec::new(format!("c{i}")).with_header(format!("C{i}")));
+    }
+    t4.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t4);
+
+    let manifest = ProjectManifest {
+        model_name: "DashboardModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+                TableId::from("T4"),
+            ],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[t1, t2, t3, t4]).unwrap();
+
+    let p1 = compiled.layout_map.get_table(&TableId::from("T1")).unwrap();
+    assert_eq!(
+        (p1.start_col, p1.end_col, p1.start_row, p1.end_row),
+        (1, 3, 1, 12)
+    );
+
+    let p2 = compiled.layout_map.get_table(&TableId::from("T2")).unwrap();
+    assert_eq!(
+        (p2.start_col, p2.end_col, p2.start_row, p2.end_row),
+        (5, 6, 1, 4)
+    );
+
+    let p3 = compiled.layout_map.get_table(&TableId::from("T3")).unwrap();
+    assert_eq!(
+        (p3.start_col, p3.end_col, p3.start_row, p3.end_row),
+        (5, 6, 7, 10)
+    );
+
+    let p4 = compiled.layout_map.get_table(&TableId::from("T4")).unwrap();
+    assert_eq!(
+        (p4.start_col, p4.end_col, p4.start_row, p4.end_row),
+        (1, 6, 15, 18)
+    );
+
+    let sheet_insp = compiled.inspect_sheet(&SheetId::from("Summary")).unwrap();
+    assert_eq!(sheet_insp.min_col, 1);
+    assert_eq!(sheet_insp.max_col, 6);
+    assert_eq!(sheet_insp.min_row, 1);
+    assert_eq!(sheet_insp.max_row, 18);
+
+    let xlsx_bytes = compiled
+        .emit_workbook(&f8_core::compiler::EmissionOptions::default())
+        .unwrap();
+    assert!(xlsx_bytes.starts_with(b"PK\x03\x04"));
+}
+
+#[test]
+fn test_scenario_17_custom_gap_overrides() {
+    let mut t1 = TableSpec::new("T1", "Base");
+    t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t1.columns.push(ColumnSpec::new("c2").with_header("C2"));
+    t1.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t1);
+
+    // T2: right_of("T1") with gap = 0 -> start_col = 2 + 1 + 0 = 3
+    let mut t2 = TableSpec::new("T2", "Adjacent Right")
+        .with_placement(PlacementSpec::right_of_with_gap("T1", 0));
+    t2.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t2.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t2);
+
+    // T3: right_of("T2") with gap = 3 -> start_col = 3 + 1 + 3 = 7 (cols 4, 5, 6 are gap columns)
+    let mut t3 =
+        TableSpec::new("T3", "Far Right").with_placement(PlacementSpec::right_of_with_gap("T2", 3));
+    t3.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t3.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t3);
+
+    // T4: below("T1") with gap = 4 -> T1 ends at row 4, so T4 starts at 4 + 1 + 4 = 9
+    let mut t4 =
+        TableSpec::new("T4", "Below Gap 4").with_placement(PlacementSpec::below_with_gap("T1", 4));
+    t4.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t4.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t4);
+
+    // T5: stack_with_gap(1) -> T4 ends at row 12, so T5 starts at 12 + 1 + 1 = 14
+    let mut t5 =
+        TableSpec::new("T5", "Stack Gap 1").with_placement(PlacementSpec::stack_with_gap(1));
+    t5.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t5.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t5);
+
+    let manifest = ProjectManifest {
+        model_name: "GapModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+                TableId::from("T4"),
+                TableId::from("T5"),
+            ],
+        }],
+    };
+
+    let theme = create_test_theme();
+    let tables = vec![t1, t2, t3, t4, t5];
+    let (_sym, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    assert_eq!(layout.get_table(&TableId::from("T2")).unwrap().start_col, 3);
+    assert_eq!(layout.get_table(&TableId::from("T3")).unwrap().start_col, 7);
+    assert_eq!(layout.get_table(&TableId::from("T4")).unwrap().start_row, 9);
+    assert_eq!(
+        layout.get_table(&TableId::from("T5")).unwrap().start_row,
+        14
+    );
+
+    let sheet_layout = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
+    for gap_col in 4..=6 {
+        assert_eq!(
+            sheet_layout.col_widths.get(&gap_col),
+            Some(&theme.metrics.gutter_col_width)
+        );
+    }
+}
+
+#[test]
+fn test_scenario_18_2d_column_width_and_row_height_arbitration() {
+    // T1 at cols 1..=2, rows 1..=10
+    let mut t1 = TableSpec::new("T1", "Left Table");
+    t1.columns.push(ColumnSpec::descriptor("item", "Item"));
+    t1.columns.push(ColumnSpec::new("val").with_header("Val"));
+    for i in 1..=7 {
+        t1.rows.push(RowSpec::new(format!("r{i}")));
+    }
+    populate_table_cells(&mut t1);
+
+    // T2 right_of("T1") at cols 4..=5, rows 1..=4 with short text in col 4
+    let mut t2 = TableSpec::new("T2", "Right Top").with_placement(PlacementSpec::right_of("T1"));
+    t2.columns.push(ColumnSpec::descriptor("desc", "Short"));
+    t2.columns.push(ColumnSpec::new("val").with_header("Val"));
+    t2.rows
+        .push(RowSpec::new("r1").with_cell("desc", CellInput::string("Brief")));
+    populate_table_cells(&mut t2);
+
+    // T3 below("T2") at cols 4..=5, rows 7..=10 with much wider text in col 4
+    let mut t3 = TableSpec::new("T3", "Right Bottom").with_placement(PlacementSpec::below("T2"));
+    t3.columns.push(ColumnSpec::descriptor("desc", "Short"));
+    t3.columns.push(ColumnSpec::new("val").with_header("Val"));
+    let wide_label = "Extremely Wide Descriptor Label In Right Column Four";
+    t3.rows
+        .push(RowSpec::new("r1").with_cell("desc", CellInput::string(wide_label)));
+    populate_table_cells(&mut t3);
+
+    let manifest = ProjectManifest {
+        model_name: "Arbitration2D".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+            ],
+        }],
+    };
+
+    let theme = create_test_theme();
+    let tables = vec![t1, t2, t3];
+    let (_sym, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
+
+    // Col 3 is the horizontal gap between T1 (1..=2) and T2/T3 (4..=5)
+    assert_eq!(
+        sheet.col_widths.get(&3),
+        Some(&theme.metrics.gutter_col_width)
+    );
+
+    // Col 4 is arbitrated across T2 and T3 -> reflects wide_label from T3
+    let expected_col4 = (wide_label.chars().count() as f64 * theme.metrics.char_width_multiplier
+        + theme.metrics.col_padding)
+        .max(theme.metrics.min_col_width);
+    assert_eq!(sheet.col_widths.get(&4), Some(&expected_col4));
+
+    // Row 5 and 6: T1 has Data rows (data_row_height = 16.0) while T3's inter-table gutter has gutter_row_height (9.0)
+    // Must retain max(16.0, 9.0) = 16.0
+    assert_eq!(
+        sheet.row_heights.get(&5),
+        Some(&theme.metrics.data_row_height)
+    );
+    assert_eq!(
+        sheet.row_heights.get(&6),
+        Some(&theme.metrics.data_row_height)
+    );
+
+    // Row 7: T1 has Data row (16.0) while T3 has Title row (title_row_height = 26.0)
+    // Must retain max(16.0, 26.0) = 26.0
+    assert_eq!(
+        sheet.row_heights.get(&7),
+        Some(&theme.metrics.title_row_height)
+    );
+
+    // Verify row_heights keys are ordered ascending 0..=10
+    let row_keys: Vec<u32> = sheet.row_heights.keys().copied().collect();
+    let expected_keys: Vec<u32> = (0..=10).collect();
+    assert_eq!(row_keys, expected_keys);
+}
+
+#[test]
+fn test_scenario_19_invalid_placement_target_rejected() {
+    let theme = create_test_theme();
+
+    let make_simple_table = |id: &str, placement: PlacementSpec| -> TableSpec {
+        let mut t = TableSpec::new(id, id).with_placement(placement);
+        t.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t.rows.push(RowSpec::new("r1"));
+        populate_table_cells(&mut t);
+        t
+    };
+
+    // 1. Non-existent target
+    {
+        let t1 = make_simple_table("T1", PlacementSpec::right_of("Ghost"));
+        let manifest = ProjectManifest {
+            model_name: "M".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "S1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("T1")],
+            }],
+        };
+        let err = LayoutPlanner::plan(&manifest, &[t1], &ir::cell::CellGrid::new(), &theme, None)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
+                if table.as_str() == "T1" && target.as_str() == "Ghost" && sheet.as_str() == "S1"
+        ));
+    }
+
+    // 2. Target on a different worksheet
+    {
+        let t1 = make_simple_table("T1", PlacementSpec::stack());
+        let t2 = make_simple_table("T2", PlacementSpec::below("T1"));
+        let manifest = ProjectManifest {
+            model_name: "M".to_string(),
+            theme: Default::default(),
+            sheets: vec![
+                SheetSpec {
+                    name: "S1".to_string(),
+                    tab_color: None,
+                    freeze_panes: None,
+                    show_gridlines: true,
+                    tables: vec![TableId::from("T1")],
+                },
+                SheetSpec {
+                    name: "S2".to_string(),
+                    tab_color: None,
+                    freeze_panes: None,
+                    show_gridlines: true,
+                    tables: vec![TableId::from("T2")],
+                },
+            ],
+        };
+        let err = LayoutPlanner::plan(
+            &manifest,
+            &[t1, t2],
+            &ir::cell::CellGrid::new(),
+            &theme,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
+                if table.as_str() == "T2" && target.as_str() == "T1" && sheet.as_str() == "S2"
+        ));
+    }
+
+    // 3. Target declared later on the same worksheet
+    {
+        let t1 = make_simple_table("T1", PlacementSpec::right_of("T2"));
+        let t2 = make_simple_table("T2", PlacementSpec::stack());
+        let manifest = ProjectManifest {
+            model_name: "M".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "S1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("T1"), TableId::from("T2")],
+            }],
+        };
+        let err = LayoutPlanner::plan(
+            &manifest,
+            &[t1, t2],
+            &ir::cell::CellGrid::new(),
+            &theme,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
+                if table.as_str() == "T1" && target.as_str() == "T2" && sheet.as_str() == "S1"
+        ));
+    }
+
+    // 4. Self-reference (target == table.id)
+    {
+        let t1 = make_simple_table("T1", PlacementSpec::below("T1"));
+        let manifest = ProjectManifest {
+            model_name: "M".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "S1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("T1")],
+            }],
+        };
+        let err = LayoutPlanner::plan(&manifest, &[t1], &ir::cell::CellGrid::new(), &theme, None)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
+                if table.as_str() == "T1" && target.as_str() == "T1" && sheet.as_str() == "S1"
+        ));
+    }
+}
+
+#[test]
+fn test_scenario_20_overlapping_table_bounding_boxes_rejected() {
+    let theme = create_test_theme();
+
+    // Case 1: Two tables both anchored right_of("T1") with identical gap
+    {
+        let mut t1 = TableSpec::new("T1", "T1");
+        t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t1.rows.push(RowSpec::new("r1"));
+
+        let mut t2 = TableSpec::new("T2", "T2").with_placement(PlacementSpec::right_of("T1"));
+        t2.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t2.rows.push(RowSpec::new("r1"));
+
+        let mut t3 = TableSpec::new("T3", "T3").with_placement(PlacementSpec::right_of("T1"));
+        t3.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t3.rows.push(RowSpec::new("r1"));
+
+        let manifest = ProjectManifest {
+            model_name: "OverlapModel".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "S1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![
+                    TableId::from("T1"),
+                    TableId::from("T2"),
+                    TableId::from("T3"),
+                ],
+            }],
+        };
+
+        let err = LayoutPlanner::plan(
+            &manifest,
+            &[t1, t2, t3],
+            &ir::cell::CellGrid::new(),
+            &theme,
+            None,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            LayoutError::TableOverlap {
+                ref sheet,
+                ref first_table,
+                ref second_table,
+            } if sheet.as_str() == "S1" && first_table.as_str() == "T2" && second_table.as_str() == "T3"
+        ));
+    }
+
+    // Case 2: Wide table placed below("T1") colliding with taller T2 to the right of T1
+    {
+        // T1: 1 col, 1 data row (rows 1..=4, col 1..=1)
+        let mut t1 = TableSpec::new("T1", "T1");
+        t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t1.rows.push(RowSpec::new("r1"));
+
+        // T2: right_of("T1"), 1 col, 6 data rows (rows 1..=9, col 3..=3)
+        let mut t2 = TableSpec::new("T2", "T2").with_placement(PlacementSpec::right_of("T1"));
+        t2.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        for i in 1..=6 {
+            t2.rows.push(RowSpec::new(format!("r{i}")));
+        }
+
+        // T3: below("T1"), 4 cols (cols 1..=4, rows 7..=10) -> intersects T2 at col 3, rows 7..=9
+        let mut t3 = TableSpec::new("T3", "T3").with_placement(PlacementSpec::below("T1"));
+        for i in 1..=4 {
+            t3.columns
+                .push(ColumnSpec::new(format!("c{i}")).with_header(format!("C{i}")));
+        }
+        t3.rows.push(RowSpec::new("r1"));
+
+        let manifest = ProjectManifest {
+            model_name: "OverlapModel2".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "S1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![
+                    TableId::from("T1"),
+                    TableId::from("T2"),
+                    TableId::from("T3"),
+                ],
+            }],
+        };
+
+        let err = LayoutPlanner::plan(
+            &manifest,
+            &[t1, t2, t3],
+            &ir::cell::CellGrid::new(),
+            &theme,
+            None,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            LayoutError::TableOverlap {
+                ref sheet,
+                ref first_table,
+                ref second_table,
+            } if sheet.as_str() == "S1" && first_table.as_str() == "T2" && second_table.as_str() == "T3"
+        ));
+    }
 }
