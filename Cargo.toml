@@ -28,3 +28,5 @@ pythonize = "0.24"
 [workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
+wildcard_imports = "deny"
+fn_params_excessive_bools = "warn"
