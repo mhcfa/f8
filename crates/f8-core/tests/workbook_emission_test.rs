@@ -7,6 +7,7 @@ use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::layout::LayoutPlanner;
 use f8_core::compiler::lowering::FormulaLowerer;
 use f8_core::compiler::{Compiler, ir};
+use f8_core::model::format::{SemanticStyle, Shade};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use f8_core::model::table::{
@@ -971,4 +972,145 @@ fn test_scenario_14_lbo_timeline_group_banners_and_stacked_headers_no_center_acr
         .expect("I4 must be written as styled blank when col_header_fill is solid");
     let solid_h4_tag = extract_cell_tag(&solid_sheet_xml, "H4").unwrap();
     assert_eq!(get_style_attr(&solid_i4_tag), get_style_attr(&solid_h4_tag));
+}
+
+// ----------------------------------------------------------------------------
+// Scenario 15: Column Gutter Row Formatting and Header Border Continuity
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() {
+    let mut table = TableSpec::new("GutterFormatting", "Gutter Test");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("line_item", "Line Item"));
+    table.columns.push(ColumnSpec::gutter());
+    table
+        .columns
+        .push(ColumnSpec::new("c1").with_header("2024"));
+    table
+        .columns
+        .push(ColumnSpec::new("c2").with_header("2025"));
+
+    table.rows.push(RowSpec::new("rev"));
+    table
+        .rows
+        .push(RowSpec::new("total").with_style(Some(SemanticStyle::Total)));
+    table
+        .rows
+        .push(RowSpec::new("subtotal").with_style(Some(SemanticStyle::Subtotal)));
+    table
+        .rows
+        .push(RowSpec::new("shaded").with_shade(Some(Shade::Muted)));
+
+    populate_table_cells(&mut table);
+
+    let manifest = ProjectManifest {
+        model_name: "GutterFormattingModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("GutterFormatting")],
+        }],
+    };
+
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+
+    let extract_cell_tag = |xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = xml.find(&needle)?;
+        let tag_start = xml[..start].rfind("<c ")?;
+        let tag_end = xml[start..].find('>')? + start + 1;
+        Some(xml[tag_start..tag_end].to_string())
+    };
+
+    let get_style_attr = |tag: &str| -> usize {
+        let s_idx = tag.find("s=\"").unwrap();
+        let rest = &tag[s_idx + 3..];
+        let end = rest.find('"').unwrap();
+        rest[..end].parse::<usize>().unwrap()
+    };
+
+    // Header bottom tier is row 4:
+    // C4 is the column gutter cell on the bottom header tier -> must be emitted with bottom border
+    let c4_tag = extract_cell_tag(&sheet_xml, "C4")
+        .expect("C4 (gutter on header tier) must be emitted with header bottom border");
+    assert!(
+        extract_cell_tag(&sheet_xml, "D4").is_some(),
+        "D4 must be written"
+    );
+    assert!(!c4_tag.contains("t=\"s\""), "C4 gutter must be blank");
+
+    // Row 5 is unstyled data row ("rev"):
+    // C5 is the column gutter on standard data row -> must be omitted to keep XLSX compact
+    assert!(
+        extract_cell_tag(&sheet_xml, "C5").is_none(),
+        "C5 (gutter on standard data row) must not be emitted"
+    );
+
+    // Row 6 is Total row:
+    // C6 is the column gutter on Total row -> must be emitted as blank with Total accounting borders
+    let c6_tag = extract_cell_tag(&sheet_xml, "C6")
+        .expect("C6 (gutter on Total row) must be emitted with accounting borders");
+    assert!(!c6_tag.contains("t=\"s\""), "C6 gutter must be blank");
+
+    // Row 7 is Subtotal row:
+    // C7 is the column gutter on Subtotal row -> must be emitted as blank with Subtotal accounting borders
+    let c7_tag = extract_cell_tag(&sheet_xml, "C7")
+        .expect("C7 (gutter on Subtotal row) must be emitted with Subtotal border");
+    assert!(!c7_tag.contains("t=\"s\""), "C7 gutter must be blank");
+
+    // Row 8 is Shaded row:
+    // C8 is the column gutter on Muted shade row -> must be emitted as blank with background fill
+    let c8_tag = extract_cell_tag(&sheet_xml, "C8")
+        .expect("C8 (gutter on Shaded row) must be emitted with background shade");
+    assert!(!c8_tag.contains("t=\"s\""), "C8 gutter must be blank");
+
+    // Verify borderId on C6 style in styles.xml points to a border with double bottom
+    let c6_style_id = get_style_attr(&c6_tag);
+    // Find <xf ...> at index c6_style_id within <cellXfs>
+    let cell_xfs_start = styles_xml.find("<cellXfs").expect("<cellXfs> not found");
+    let cell_xfs_end = styles_xml[cell_xfs_start..].find("</cellXfs>").unwrap() + cell_xfs_start;
+    let cell_xfs_xml = &styles_xml[cell_xfs_start..cell_xfs_end];
+
+    let mut target_border_id: Option<usize> = None;
+    for (current_idx, xf) in cell_xfs_xml.split("<xf ").skip(1).enumerate() {
+        if current_idx == c6_style_id {
+            if let Some(b_idx) = xf.find("borderId=\"") {
+                let rest = &xf[b_idx + 10..];
+                let end = rest.find('"').unwrap();
+                target_border_id = Some(rest[..end].parse::<usize>().unwrap());
+            }
+            break;
+        }
+    }
+
+    let border_id =
+        target_border_id.expect("borderId attribute must exist on Total gutter cell xf");
+    // Verify that the border at border_id in <borders> contains double bottom
+    let borders_start = styles_xml.find("<borders").expect("<borders> not found");
+    let borders_end = styles_xml[borders_start..].find("</borders>").unwrap() + borders_start;
+    let borders_xml = &styles_xml[borders_start..borders_end];
+
+    let mut found_double_bottom = false;
+    for (b_idx, b) in borders_xml
+        .split("<border>")
+        .skip(1)
+        .chain(borders_xml.split("<border ").skip(1))
+        .enumerate()
+    {
+        if b_idx == border_id {
+            found_double_bottom =
+                b.contains("<bottom style=\"double\">") || b.contains("style=\"double\"");
+            break;
+        }
+    }
+    assert!(
+        found_double_bottom,
+        "Total gutter cell border must contain double bottom style"
+    );
 }
