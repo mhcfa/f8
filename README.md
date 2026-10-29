@@ -93,10 +93,19 @@ Output:
 
 ## Sample deliverables
 
-Inspect compiled deliverables generated from a real-world model:
+Inspect compiled deliverables generated from real-world models:
 
 - [costco_financial_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/costco_financial_model.xlsx): Compiled financial model with live Excel formulas.
 - [costco_valuation_report.pdf](https://github.com/mhcfa/f8/releases/latest/download/costco_valuation_report.pdf): Valuation report rendered directly from the compiled `f8` model using Quarto, Typst, and Matplotlib.
+- [lbo_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/lbo_model.xlsx): Multi-sheet leveraged buyout (LBO) model with transaction structuring, debt waterfall, and returns analysis.
+
+### LBO model demo
+
+Complete model repo: https://github.com/mhcfa/f8-demo
+
+![LBO Executive Dashboard](https://github.com/mhcfa/f8/releases/latest/download/lbo-dashboard.png)
+
+![LBO Transaction Balance Sheet Bridge](https://github.com/mhcfa/f8/releases/latest/download/lbo-transaction.png)
 
 > Disclaimer: Sample deliverables are AI-generated technical demonstrations and do not constitute financial analysis or investment advice.
 
