@@ -12,8 +12,9 @@ use super::format::{CellFormatKey, FormatCache, parse_hex_color};
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
-use crate::compiler::layout::LayoutMap;
+use crate::compiler::layout::{LayoutMap, StyleRole};
 use crate::compiler::lowering::LoweredFormulaMap;
+use crate::model::format::SemanticStyle;
 use crate::model::id::SheetId;
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
@@ -274,7 +275,15 @@ impl WorkbookEmitter {
                             let col_idx = (placement.start_col + c_idx as u32) as u16;
                             match col_spec {
                                 ColumnSpec::Gutter => {
-                                    // Gutter column: blank unstyled cell across all header tiers
+                                    // Gutter column: continue header bottom border and fill across gutter
+                                    if is_bottom_tier || format_cache.has_col_header_fill() {
+                                        let fmt = if is_bottom_tier {
+                                            format_cache.col_header_format(false)
+                                        } else {
+                                            format_cache.col_header_upper_format(false)
+                                        };
+                                        worksheet.write_blank(tier_row, col_idx, &fmt)?;
+                                    }
                                 }
                                 ColumnSpec::Data(d) => {
                                     if t == 0 && d.group.is_some() {
@@ -349,10 +358,36 @@ impl WorkbookEmitter {
                             }
                         }
                         RowSpec::Data(row_data) => {
-                            for col_spec in &table.columns {
-                                let ColumnSpec::Data(col_data) = col_spec else {
-                                    // Column gutter: remains blank without borders
-                                    continue;
+                            for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                                let col_data = match col_spec {
+                                    ColumnSpec::Data(d) => d,
+                                    ColumnSpec::Gutter => {
+                                        // Gutter column: continue row formatting (horizontal borders, shade, highlight)
+                                        let role = StyleRole {
+                                            horizontal: row_data
+                                                .style
+                                                .unwrap_or(SemanticStyle::Data),
+                                            vertical: SemanticStyle::Data,
+                                            is_highlight: row_data.highlight.unwrap_or(false),
+                                            shade: row_data.shade.filter(|s| !s.is_none()),
+                                        };
+
+                                        if role != StyleRole::data() {
+                                            let format_key = CellFormatKey::new(
+                                                role, None, None, None, false, false, 0,
+                                            );
+                                            let cell_format =
+                                                format_cache.get_cell_format(&format_key)?;
+                                            let phys_col =
+                                                (placement.start_col + c_idx as u32) as u16;
+                                            worksheet.write_blank(
+                                                current_phys_row,
+                                                phys_col,
+                                                &cell_format,
+                                            )?;
+                                        }
+                                        continue;
+                                    }
                                 };
 
                                 let cell_id = CellId::new(
