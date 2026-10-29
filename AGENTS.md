@@ -32,7 +32,7 @@
 - Deterministic ordering: `IndexMap` / `IndexSet` over `HashMap` / `HashSet` wherever layout, IR, or serialization order matters.
 - Memory efficiency: Borrowed slices (`&str`, `&[T]`) or `Cow` over unnecessary cloning in compiler passes.
 - Import discipline: Ban glob imports (`use foo::*;`) in non-test code (`wildcard_imports = "deny"`). Deterministic import order: standard library (`std::*`), external crates, crate-local modules.
-- Enum boundary discipline: Internal compiler AST/IR and pass enums must remain exhaustive for compiler-verified pass coverage; apply `#[non_exhaustive]` only to public facade enums designed for external extension.
+- Exhaustive pattern matching: Match AST, IR, and domain enums explicitly; ban wildcard catch-alls (`_ =>`) in compiler passes and PyO3 bridges so adding variants triggers compile-time exhaustiveness checks across the workspace.
 - Verification:
   - `cargo test`
   - `cargo clippy --all-targets -- -D warnings`
