@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::ast::Expr;
 use f8_core::functions::traits::{EvalContext, FunctionArg};

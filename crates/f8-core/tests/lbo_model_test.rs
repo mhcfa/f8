@@ -3,7 +3,7 @@
 //! Serves as f8's canonical anchoring model benchmark across the compiler pipeline:
 //! Pass 4 (Topological Evaluation), Pass 5 (Spatial Layout), and Pass 6 (Formula Lowering & Emission).
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::Compiler;
 use f8_core::model::id::{ColId, RowId, TableId};

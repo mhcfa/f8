@@ -126,7 +126,7 @@ fn format_with_commas(val: f64, decimals: usize) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 mod tests {
     use super::*;
     use crate::value::error::ExcelError;

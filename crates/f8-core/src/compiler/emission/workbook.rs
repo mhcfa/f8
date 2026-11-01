@@ -81,7 +81,7 @@ impl WorkbookEmitter {
     /// # Errors
     /// Returns [`EmissionError`] if any worksheet, table, or cell coordinate is missing
     /// from the spatial layout, or if an OpenXML format or packaging error occurs.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "explicit pass outputs")]
     pub fn emit_to_buffer(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
@@ -107,7 +107,7 @@ impl WorkbookEmitter {
     }
 
     /// Assembles an OpenXML workbook with worksheets, formatting, outlines, and cells.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, reason = "explicit pass outputs")]
     fn assemble_workbook(
         manifest: &ProjectManifest,
         tables: &[TableSpec],

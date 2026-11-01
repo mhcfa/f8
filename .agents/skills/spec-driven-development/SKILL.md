@@ -10,45 +10,50 @@ description: >-
 
 ## Core rules
 
-- Truth hierarchy:
-  1. Code, types & tests: Authoritative truth for behavior, data structures, and edge cases.
+- Truth hierarchy (describes current behavior):
+  1. Code, types & tests: Authoritative for behavior, data structures, and edge cases.
   2. Reference docs: System architecture (`docs/architecture.md`) and bundled modeling skill (`python/f8/skills/f8-modeling/`).
-  3. Draft specs (`docs/specs/drafts/`): Ephemeral execution contracts for active work.
+  3. Draft specs (`docs/specs/drafts/`): Intended delta for active work, not current behavior. A spec that conflicts with code is expected; a spec that conflicts with `docs/architecture.md` invariants must be escalated to the user.
 - Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
-- Spec custody: Draft specs (`docs/specs/drafts/`) are authored and deleted exclusively by the Lead Orchestrator. Subagents never edit, move, or delete spec files.
+- Spec custody: Only the Lead Orchestrator authors, amends, and deletes draft specs. Subagents never edit, move, or delete spec files.
+- Commit custody: Subagents leave changes uncommitted. Lead Orchestrator commits after step 5.
 
 ## Tri-Agent Workflow
 
 ### 1. Explore & align (Lead Orchestrator)
 
 - Ground designs in existing Rust/Python modules, AST/IR types, and `docs/architecture.md`.
-- Surface candidate approaches with explicit trade-offs and align with the user before coding when requirements are ambiguous.
+- Surface candidate approaches with explicit trade-offs.
 
 ### 2. Specify (Lead Orchestrator)
 
 - Create `docs/specs/drafts/YYYY-MM-DD-<feature-name>.md` using the template below.
 - Define data structures, signatures, invariants, and `Given / When / Then` acceptance criteria (1:1 testable) without repeating file lists across sections.
 - Cite workspace files and source paths via backtick code spans.
-- Align with human engineer before execution.
+- Get user approval of the spec before step 3.
 
 ### 3. Implement (Implementer Subagent)
 
-- Dispatch an isolated subagent in the shared workspace instructing it to:
-  - Implement strictly to the target draft spec and `AGENTS.md` (zero scope creep; never edit or delete the draft spec).
-  - Run and pass the `AGENTS.md` verification suite (Rust always; Python when touching `crates/f8-python` or `python/`).
-  - Clean up any temporary scratch files and return a concise summary of changed files and verification results.
+- Dispatch a fresh-context subagent in the same workspace instructing it to:
+  - Implement the target draft spec under `AGENTS.md`. No scope beyond the spec; never edit or delete the spec.
+  - On spec gaps, contradictions, or infeasibility: stop and report to the Lead Orchestrator instead of improvising. Lead amends the spec (re-aligning with the user if scope or design changes) and re-dispatches.
+  - Pass the `AGENTS.md` verification suite.
+  - Leave changes uncommitted, remove scratch files, and return a concise summary of changed files and verification results.
 
 ### 4. Review (Reviewer Subagent)
 
-- Dispatch an independent subagent in the shared workspace instructing it to run the `review-implementation` skill against the target draft spec and current git diff.
+- Dispatch a fresh-context subagent in the same workspace instructing it to run the `review-implementation` skill against the target draft spec and the uncommitted diff.
 - Verdict handling:
-  - `Changes required`: Re-dispatch the Implementer with the findings to remediate, then re-verify.
-  - `Approve with flags` / `Approve`: Surface any architectural `Flag` items and proceed to step 5.
+  - `Changes required`: Re-dispatch the Implementer with the findings, then re-run review with a fresh Reviewer. After 2 failed cycles, escalate to the user.
+  - `Approve with flags`: Resolve each `Flag` (decide directly, or ask the user when it affects scope, public API, or architecture) before step 5.
+  - `Approve`: Proceed to step 5.
+  - `Minor` findings (any verdict): Batch into one Implementer remediation pass, or waive explicitly with a reason.
 
-### 5. Fold & Delete (Lead Orchestrator)
+### 5. Fold, delete & commit (Lead Orchestrator)
 
-- Reconcile lasting architectural, DSL, or function changes into `docs/architecture.md` or `python/f8/skills/f8-modeling/`.
-- Delete the completed draft spec from `docs/specs/drafts/` so zero stale specs remain in the working tree.
+- Reconcile lasting architectural, DSL, or function changes into `docs/architecture.md` or `python/f8/skills/f8-modeling/` (start from the Reviewer's docs-impact flags).
+- Delete the completed draft spec from `docs/specs/drafts/`; no stale specs remain in the working tree.
+- Commit per `AGENTS.md` git conventions.
 
 ## Draft Spec Template
 

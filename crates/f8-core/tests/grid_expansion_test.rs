@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::ir::{
     CellId, CellPayload, IrError, SymbolTable, expand_grid, expand_table, expand_workbook,

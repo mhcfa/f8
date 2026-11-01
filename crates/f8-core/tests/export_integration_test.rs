@@ -6,7 +6,7 @@
 //! - `test_models_emit_in_memory`: Runs during normal `cargo test` in RAM with zero disk writes.
 //! - `test_export_xlsx_to_disk`: Marked `#[ignore]`, only executed when explicitly invoked.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use std::io::Read;
 use std::path::Path;

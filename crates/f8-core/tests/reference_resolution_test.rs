@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::graph::{ResolveError, resolve_cell_dependencies, resolve_table_ref};
 use f8_core::compiler::ir::{CellGrid, CellId, SymbolTable, expand_table};

@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef};
 use f8_core::functions::{

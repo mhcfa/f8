@@ -2,7 +2,7 @@
 //!
 //! Covers `XLOOKUP`, `XMATCH`, and `INDEX` conforming to Excel calculation parity.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::eval::eval_expr;
 use f8_core::compiler::ir::id::CellId;
