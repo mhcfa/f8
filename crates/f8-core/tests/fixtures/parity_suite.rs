@@ -485,7 +485,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                         CellValue::Number(n) => CellInput::number(*n),
                         CellValue::Boolean(b) => CellInput::boolean(*b),
                         CellValue::Text(s) => CellInput::string(s),
-                        _ => CellInput::number(0.0),
+                        CellValue::Empty | CellValue::Error(_) => CellInput::number(0.0),
                     };
                     d.cells.insert(ColId::from("f8_val"), literal_input);
                 }

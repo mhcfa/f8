@@ -40,7 +40,9 @@ impl Expr {
         match self {
             Self::Binary { op, .. } => Some(op.precedence()),
             Self::Unary { op, .. } => Some(op.precedence()),
-            _ => None,
+            Self::Literal(_) | Self::Reference(_) | Self::FunctionCall { .. } | Self::Omitted => {
+                None
+            }
         }
     }
 }

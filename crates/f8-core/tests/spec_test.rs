@@ -471,19 +471,18 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_column() {
         .with_decimals(Some(2));
 
     let err = table.validate().unwrap_err();
-    match err {
-        ModelError::InvalidPrecisionForPreset {
-            context,
-            preset,
-            decimals,
-            ..
-        } => {
-            assert!(context.contains("column 'col_1'"));
-            assert_eq!(preset, FormatPreset::Date);
-            assert_eq!(decimals, 2);
-        }
-        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
-    }
+    let ModelError::InvalidPrecisionForPreset {
+        context,
+        preset,
+        decimals,
+        ..
+    } = err
+    else {
+        panic!("expected InvalidPrecisionForPreset, got {err:?}");
+    };
+    assert!(context.contains("column 'col_1'"));
+    assert_eq!(preset, FormatPreset::Date);
+    assert_eq!(decimals, 2);
 }
 
 #[test]
@@ -495,38 +494,36 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_row() {
         .with_decimals(Some(0));
 
     let err = table.validate().unwrap_err();
-    match err {
-        ModelError::InvalidPrecisionForPreset {
-            context,
-            preset,
-            decimals,
-            ..
-        } => {
-            assert!(context.contains("row 'row_1'"));
-            assert_eq!(preset, FormatPreset::Text);
-            assert_eq!(decimals, 0);
-        }
-        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
-    }
+    let ModelError::InvalidPrecisionForPreset {
+        context,
+        preset,
+        decimals,
+        ..
+    } = err
+    else {
+        panic!("expected InvalidPrecisionForPreset, got {err:?}");
+    };
+    assert!(context.contains("row 'row_1'"));
+    assert_eq!(preset, FormatPreset::Text);
+    assert_eq!(decimals, 0);
 
     table.rows[0] = table.rows[0]
         .clone()
         .with_format(Some(FormatPreset::Integer))
         .with_decimals(Some(0));
     let err = table.validate().unwrap_err();
-    match err {
-        ModelError::InvalidPrecisionForPreset {
-            context,
-            preset,
-            decimals,
-            ..
-        } => {
-            assert!(context.contains("row 'row_1'"));
-            assert_eq!(preset, FormatPreset::Integer);
-            assert_eq!(decimals, 0);
-        }
-        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
-    }
+    let ModelError::InvalidPrecisionForPreset {
+        context,
+        preset,
+        decimals,
+        ..
+    } = err
+    else {
+        panic!("expected InvalidPrecisionForPreset, got {err:?}");
+    };
+    assert!(context.contains("row 'row_1'"));
+    assert_eq!(preset, FormatPreset::Integer);
+    assert_eq!(decimals, 0);
 }
 
 #[test]
@@ -549,19 +546,18 @@ fn test_scenario_5_reject_non_numeric_preset_with_decimals_cell() {
     );
 
     let err = table.validate().unwrap_err();
-    match err {
-        ModelError::InvalidPrecisionForPreset {
-            context,
-            preset,
-            decimals,
-            ..
-        } => {
-            assert!(context.contains("row 'row_1', column 'col_1'"));
-            assert_eq!(preset, FormatPreset::Text);
-            assert_eq!(decimals, 2);
-        }
-        other => panic!("expected InvalidPrecisionForPreset, got {other:?}"),
-    }
+    let ModelError::InvalidPrecisionForPreset {
+        context,
+        preset,
+        decimals,
+        ..
+    } = err
+    else {
+        panic!("expected InvalidPrecisionForPreset, got {err:?}");
+    };
+    assert!(context.contains("row 'row_1', column 'col_1'"));
+    assert_eq!(preset, FormatPreset::Text);
+    assert_eq!(decimals, 2);
 }
 
 #[test]

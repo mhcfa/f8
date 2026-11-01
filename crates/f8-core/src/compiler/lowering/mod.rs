@@ -288,7 +288,7 @@ fn format_binary_operand(
         Expr::Unary { op: child_op, .. } => {
             is_right || child_op.precedence() < parent_op.precedence()
         }
-        _ => false,
+        Expr::Literal(_) | Expr::Reference(_) | Expr::FunctionCall { .. } | Expr::Omitted => false,
     };
 
     if wrap {

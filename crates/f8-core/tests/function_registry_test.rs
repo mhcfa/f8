@@ -36,7 +36,10 @@ impl EvalContext for MockEvalContext {
             Expr::Literal(Literal::Boolean(b)) => Ok(CellValue::Boolean(*b)),
             Expr::Literal(Literal::String(s)) => Ok(CellValue::Text(s.clone())),
             Expr::Omitted => Ok(CellValue::Empty),
-            _ => Ok(CellValue::Number(100.0)),
+            Expr::Reference(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. } => Ok(CellValue::Number(100.0)),
         }
     }
 

@@ -85,7 +85,9 @@ impl ExcelFunction for IfFunction {
         } else {
             match &args[2] {
                 FunctionArg::Omitted => Ok(CellValue::Boolean(false)),
-                other => eval_branch_arg(other, self.name(), ctx),
+                other @ (FunctionArg::Scalar(_)
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)) => eval_branch_arg(other, self.name(), ctx),
             }
         }
     }

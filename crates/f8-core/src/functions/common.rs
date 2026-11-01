@@ -452,6 +452,8 @@ pub fn extract_scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
     match arg {
         FunctionArg::Scalar(val) => val.coerce_to_number(),
         FunctionArg::Array { values, .. } if values.len() == 1 => values[0].coerce_to_number(),
-        _ => Err(ExcelError::Value),
+        FunctionArg::Array { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+            Err(ExcelError::Value)
+        }
     }
 }

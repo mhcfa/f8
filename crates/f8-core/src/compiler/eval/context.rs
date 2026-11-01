@@ -51,7 +51,12 @@ impl<'a> EvalContext for CellEvalContext<'a> {
         )
         .map_err(|err| match err {
             EvalError::Function { source, .. } => *source,
-            other => FunctionError::EvaluationFailure {
+            other @ (EvalError::CellNotFound(_)
+            | EvalError::UnevaluatedDependency(_)
+            | EvalError::Resolve(_)
+            | EvalError::UnexpectedOmitted(_)
+            | EvalError::TableNotFound(_)
+            | EvalError::RowNotFound { .. }) => FunctionError::EvaluationFailure {
                 function: "eval_expr",
                 message: other.to_string(),
             },
@@ -84,7 +89,11 @@ impl<'a> EvalContext for CellEvalContext<'a> {
 
                 Ok((slice.rows, slice.cols, values))
             }
-            _ => {
+            Expr::Literal(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. }
+            | Expr::Omitted => {
                 let val = self.eval_expr(expr)?;
                 Ok((1, 1, vec![val]))
             }

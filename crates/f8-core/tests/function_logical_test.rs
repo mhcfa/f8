@@ -35,7 +35,11 @@ impl EvalContext for MockContext {
             Expr::Literal(f8_core::expr::ast::Literal::Number(n)) => Ok(CellValue::Number(*n)),
             Expr::Literal(f8_core::expr::ast::Literal::String(s)) => Ok(CellValue::Text(s.clone())),
             Expr::Literal(f8_core::expr::ast::Literal::Boolean(b)) => Ok(CellValue::Boolean(*b)),
-            _ => Ok(CellValue::Number(999.0)),
+            Expr::Reference(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. }
+            | Expr::Omitted => Ok(CellValue::Number(999.0)),
         }
     }
 }

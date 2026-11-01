@@ -172,12 +172,10 @@ fn test_scenario_5_missing_cell_inspection_error() {
         )
         .expect_err("Missing cell must return an error");
 
-    match err {
-        InspectionError::CellNotFound(id) => {
-            assert_eq!(id.row.as_str(), "nonexistent_row");
-        }
-        other => panic!("Expected CellNotFound, got: {other:?}"),
-    }
+    let InspectionError::CellNotFound(id) = err else {
+        panic!("Expected CellNotFound, got: {err:?}");
+    };
+    assert_eq!(id.row.as_str(), "nonexistent_row");
 }
 
 #[test]
@@ -386,12 +384,10 @@ fn test_scenario_7_missing_table_inspection_error() {
         .inspect_table(&TableId::from("NonExistentTable"))
         .expect_err("Missing table must return an error");
 
-    match err {
-        InspectionError::TableNotFound(id) => {
-            assert_eq!(id.as_str(), "NonExistentTable");
-        }
-        other => panic!("Expected TableNotFound, got: {other:?}"),
-    }
+    let InspectionError::TableNotFound(id) = err else {
+        panic!("Expected TableNotFound, got: {err:?}");
+    };
+    assert_eq!(id.as_str(), "NonExistentTable");
 }
 
 #[test]

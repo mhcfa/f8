@@ -80,7 +80,20 @@ impl<'a> Token<'a> {
             Self::Lte => Some(BinaryOp::Lte),
             Self::Gt => Some(BinaryOp::Gt),
             Self::Gte => Some(BinaryOp::Gte),
-            _ => None,
+            Self::Number(_)
+            | Self::String(_)
+            | Self::Boolean(_)
+            | Self::Ident(_)
+            | Self::Underscore
+            | Self::LParen
+            | Self::RParen
+            | Self::LBracket
+            | Self::RBracket
+            | Self::Comma
+            | Self::Dot
+            | Self::DotDot
+            | Self::AtCol
+            | Self::AtRow => None,
         }
     }
 }
@@ -681,7 +694,24 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
                 }),
             }
         }
-        other => {
+        other @ (Token::Underscore
+        | Token::RParen
+        | Token::LBracket
+        | Token::RBracket
+        | Token::Comma
+        | Token::Dot
+        | Token::DotDot
+        | Token::AtCol
+        | Token::AtRow
+        | Token::Star
+        | Token::Slash
+        | Token::Caret
+        | Token::Eq
+        | Token::NotEq
+        | Token::Lt
+        | Token::Lte
+        | Token::Gt
+        | Token::Gte) => {
             let found = other.to_string();
             Err(ParseError::UnexpectedToken {
                 expected: "expression",
@@ -834,16 +864,20 @@ fn parse_relative_offset(
     let k = if stream.peek_token() == Some(&Token::LParen) {
         stream.advance();
         let k = match stream.consume() {
-            Some(num_st) => match num_st.token {
-                Token::Number(n) if n.fract() == 0.0 && n >= 0.0 => n as u32,
-                ref other => {
+            Some(num_st) => {
+                if let Token::Number(n) = num_st.token
+                    && n.fract() == 0.0
+                    && n >= 0.0
+                {
+                    n as u32
+                } else {
                     return Err(ParseError::UnexpectedToken {
                         expected: "integer offset",
-                        found: other.to_string(),
+                        found: num_st.token.to_string(),
                         offset: num_st.offset,
                     });
                 }
-            },
+            }
             None => {
                 return Err(ParseError::UnexpectedEof {
                     expected: expected_rparen,
@@ -895,7 +929,27 @@ fn parse_row_endpoint(stream: &mut TokenStream<'_>) -> Result<RowEndpoint, Parse
             stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
-        other => {
+        other @ (Token::Boolean(_)
+        | Token::Underscore
+        | Token::LParen
+        | Token::RParen
+        | Token::LBracket
+        | Token::RBracket
+        | Token::Comma
+        | Token::Dot
+        | Token::DotDot
+        | Token::AtCol
+        | Token::Plus
+        | Token::Minus
+        | Token::Star
+        | Token::Slash
+        | Token::Caret
+        | Token::Eq
+        | Token::NotEq
+        | Token::Lt
+        | Token::Lte
+        | Token::Gt
+        | Token::Gte) => {
             let found = other.to_string();
             Err(ParseError::UnexpectedToken {
                 expected: "row selector ('@row', quoted string key, 'row.prev', or 'row.next')",
@@ -949,7 +1003,27 @@ fn parse_col_endpoint(stream: &mut TokenStream<'_>) -> Result<ColEndpoint, Parse
             stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
-        other => {
+        other @ (Token::Boolean(_)
+        | Token::Underscore
+        | Token::LParen
+        | Token::RParen
+        | Token::LBracket
+        | Token::RBracket
+        | Token::Comma
+        | Token::Dot
+        | Token::DotDot
+        | Token::AtRow
+        | Token::Plus
+        | Token::Minus
+        | Token::Star
+        | Token::Slash
+        | Token::Caret
+        | Token::Eq
+        | Token::NotEq
+        | Token::Lt
+        | Token::Lte
+        | Token::Gt
+        | Token::Gte) => {
             let found = other.to_string();
             Err(ParseError::UnexpectedToken {
                 expected: "column selector ('@col', quoted string key, 'col.prev', or 'col.next')",
@@ -1119,27 +1193,25 @@ mod tests {
     #[test]
     fn test_function_calls() {
         let expr = parse_expr_str("IF(Assumptions[\"flag\", \"active\"] = 1, 100, 0)").unwrap();
-        match expr {
-            Expr::FunctionCall { name, args } => {
-                assert_eq!(name, "IF");
-                assert_eq!(args.len(), 3);
-                assert_eq!(
-                    args[0],
-                    Expr::Binary {
-                        op: BinaryOp::Eq,
-                        left: Box::new(Expr::Reference(TableRef::new(
-                            "Assumptions",
-                            RowSelector::Key(RowId::new("flag")),
-                            ColSelector::Key(ColId::new("active")),
-                        ))),
-                        right: Box::new(Expr::number(1.0)),
-                    }
-                );
-                assert_eq!(args[1], Expr::number(100.0));
-                assert_eq!(args[2], Expr::number(0.0));
+        let Expr::FunctionCall { name, args } = expr else {
+            panic!("Expected FunctionCall, got {expr:?}");
+        };
+        assert_eq!(name, "IF");
+        assert_eq!(args.len(), 3);
+        assert_eq!(
+            args[0],
+            Expr::Binary {
+                op: BinaryOp::Eq,
+                left: Box::new(Expr::Reference(TableRef::new(
+                    "Assumptions",
+                    RowSelector::Key(RowId::new("flag")),
+                    ColSelector::Key(ColId::new("active")),
+                ))),
+                right: Box::new(Expr::number(1.0)),
             }
-            other => panic!("Expected FunctionCall, got {other:?}"),
-        }
+        );
+        assert_eq!(args[1], Expr::number(100.0));
+        assert_eq!(args[2], Expr::number(0.0));
 
         let nullary = parse_expr_str("PI()").unwrap();
         assert_eq!(
@@ -1295,81 +1367,68 @@ mod tests {
     fn test_reject_dot_access() {
         // Dot access with active column
         let err_dot = parse_expr_str("IncomeStatement.revenue[@col]").unwrap_err();
-        match err_dot {
-            ParseError::UnexpectedToken { found, offset, .. } => {
-                assert_eq!(found, ".");
-                assert_eq!(offset, 15);
-            }
-            other => panic!("Expected UnexpectedToken for dot, got {other:?}"),
-        }
+        let ParseError::UnexpectedToken { found, offset, .. } = err_dot else {
+            panic!("Expected UnexpectedToken for dot, got {err_dot:?}");
+        };
+        assert_eq!(found, ".");
+        assert_eq!(offset, 15);
 
         // Dot access with row identifier only
         let err_dot_bare = parse_expr_str("IncomeStatement.revenue").unwrap_err();
-        match err_dot_bare {
-            ParseError::UnexpectedToken { found, offset, .. } => {
-                assert_eq!(found, ".");
-                assert_eq!(offset, 15);
-            }
-            other => panic!("Expected UnexpectedToken for dot, got {other:?}"),
-        }
+        let ParseError::UnexpectedToken { found, offset, .. } = err_dot_bare else {
+            panic!("Expected UnexpectedToken for dot, got {err_dot_bare:?}");
+        };
+        assert_eq!(found, ".");
+        assert_eq!(offset, 15);
     }
 
     #[test]
     fn test_reject_unquoted_coordinate_keys() {
         let err1 = parse_expr_str("IncomeStatement[\"revenue\", 2024E]").unwrap_err();
-        match err1 {
-            ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "2024E"),
-            other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
-        }
+        let ParseError::UnquotedCoordinateKey { found, .. } = err1 else {
+            panic!("Expected UnquotedCoordinateKey, got {err1:?}");
+        };
+        assert_eq!(found, "2024E");
 
         let err2 = parse_expr_str("Opex[r_and_d, @col]").unwrap_err();
-        match err2 {
-            ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "r_and_d"),
-            other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
-        }
+        let ParseError::UnquotedCoordinateKey { found, .. } = err2 else {
+            panic!("Expected UnquotedCoordinateKey, got {err2:?}");
+        };
+        assert_eq!(found, "r_and_d");
     }
 
     #[test]
     fn test_reject_lowercase_function_name() {
         let err = parse_expr_str("sum(1, 2)").unwrap_err();
-        match err {
-            ParseError::InvalidFunctionName { name, .. } => assert_eq!(name, "sum"),
-            other => panic!("Expected InvalidFunctionName, got {other:?}"),
-        }
+        let ParseError::InvalidFunctionName { name, .. } = err else {
+            panic!("Expected InvalidFunctionName, got {err:?}");
+        };
+        assert_eq!(name, "sum");
     }
 
     #[test]
     fn test_reject_bare_identifiers() {
         // Bare table identifier without access operator
         let err_table = parse_expr_str("IncomeStatement").unwrap_err();
-        match err_table {
-            ParseError::UnexpectedToken { found, .. } => assert_eq!(found, "IncomeStatement"),
-            other => panic!("Expected UnexpectedToken, got {other:?}"),
-        }
+        let ParseError::UnexpectedToken { found, .. } = err_table else {
+            panic!("Expected UnexpectedToken, got {err_table:?}");
+        };
+        assert_eq!(found, "IncomeStatement");
     }
 
     #[test]
     fn test_keyword_boundary_validation() {
         // col.prevent should not parse as col.prev
         let err = parse_expr_str("Table[\"row\", col.prevent]").unwrap_err();
-        match err {
-            ParseError::UnexpectedToken { .. } => {}
-            other => panic!("Expected unexpected token error, got {other:?}"),
-        }
+        assert!(matches!(err, ParseError::UnexpectedToken { .. }));
 
         // row.prevent should not parse as row.prev
         let err_row = parse_expr_str("Table[row.prevent, \"col\"]").unwrap_err();
-        match err_row {
-            ParseError::UnexpectedToken { .. } => {}
-            other => panic!("Expected unexpected token error, got {other:?}"),
-        }
+        assert!(matches!(err_row, ParseError::UnexpectedToken { .. }));
 
         // col.nextly should not parse as col.next
         let err = parse_expr_str("Table[\"row\", col.nextly]").unwrap_err();
-        match err {
-            ParseError::UnexpectedToken { .. } => {}
-            other => panic!("Expected unexpected token error, got {other:?}"),
-        }
+        assert!(matches!(err, ParseError::UnexpectedToken { .. }));
 
         // Bare @ is retired
         let err_at = parse_expr_str("Table[\"row\", @]").unwrap_err();

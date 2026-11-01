@@ -40,7 +40,11 @@ impl EvalContext for MockContext {
             Expr::Literal(Literal::Number(n)) => Ok(CellValue::Number(*n)),
             Expr::Literal(Literal::String(s)) => Ok(CellValue::Text(s.clone())),
             Expr::Literal(Literal::Boolean(b)) => Ok(CellValue::Boolean(*b)),
-            _ => Ok(CellValue::Text("FallbackEvaluated".into())),
+            Expr::Reference(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. }
+            | Expr::Omitted => Ok(CellValue::Text("FallbackEvaluated".into())),
         }
     }
 

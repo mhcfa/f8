@@ -12,46 +12,43 @@ fn test_complex_formula_expression_parsing() {
     let input = "(IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]) / IncomeStatement[\"revenue\", @col]";
     let expr = Expr::parse(input).expect("Should parse valid margin formula");
 
-    match expr {
-        Expr::Binary { op, left, right } => {
-            assert_eq!(op, BinaryOp::Div);
-            match *left {
-                Expr::Binary {
-                    op: sub_op,
-                    left: sub_left,
-                    right: sub_right,
-                } => {
-                    assert_eq!(sub_op, BinaryOp::Sub);
-                    assert_eq!(
-                        *sub_left,
-                        Expr::Reference(TableRef::new(
-                            "IncomeStatement",
-                            RowSelector::Key(RowId::new("revenue")),
-                            ColSelector::Active
-                        ))
-                    );
-                    assert_eq!(
-                        *sub_right,
-                        Expr::Reference(TableRef::new(
-                            "IncomeStatement",
-                            RowSelector::Key(RowId::new("cogs")),
-                            ColSelector::Active
-                        ))
-                    );
-                }
-                other => panic!("Expected subtraction in numerator, got {other:?}"),
-            }
-            assert_eq!(
-                *right,
-                Expr::Reference(TableRef::new(
-                    "IncomeStatement",
-                    RowSelector::Key(RowId::new("revenue")),
-                    ColSelector::Active
-                ))
-            );
-        }
-        other => panic!("Expected division at root, got {other:?}"),
-    }
+    let Expr::Binary { op, left, right } = expr else {
+        panic!("Expected division at root, got {expr:?}");
+    };
+    assert_eq!(op, BinaryOp::Div);
+    let Expr::Binary {
+        op: sub_op,
+        left: sub_left,
+        right: sub_right,
+    } = *left
+    else {
+        panic!("Expected subtraction in numerator, got {left:?}");
+    };
+    assert_eq!(sub_op, BinaryOp::Sub);
+    assert_eq!(
+        *sub_left,
+        Expr::Reference(TableRef::new(
+            "IncomeStatement",
+            RowSelector::Key(RowId::new("revenue")),
+            ColSelector::Active
+        ))
+    );
+    assert_eq!(
+        *sub_right,
+        Expr::Reference(TableRef::new(
+            "IncomeStatement",
+            RowSelector::Key(RowId::new("cogs")),
+            ColSelector::Active
+        ))
+    );
+    assert_eq!(
+        *right,
+        Expr::Reference(TableRef::new(
+            "IncomeStatement",
+            RowSelector::Key(RowId::new("revenue")),
+            ColSelector::Active
+        ))
+    );
 }
 
 #[test]
@@ -208,34 +205,32 @@ fn test_syntax_errors_actionable_diagnostics() {
 
     // Bare coordinate key
     let bare_key = Expr::parse("Table[\"row\", unquoted_col]").unwrap_err();
-    match bare_key {
-        ParseError::UnquotedCoordinateKey { found, .. } => assert_eq!(found, "unquoted_col"),
-        other => panic!("Expected UnquotedCoordinateKey, got {other:?}"),
-    }
+    let ParseError::UnquotedCoordinateKey { found, .. } = bare_key else {
+        panic!("Expected UnquotedCoordinateKey, got {bare_key:?}");
+    };
+    assert_eq!(found, "unquoted_col");
 
     // Lowercase function
     let lowercase = Expr::parse("sum(1, 2)").unwrap_err();
-    match lowercase {
-        ParseError::InvalidFunctionName { name, .. } => assert_eq!(name, "sum"),
-        other => panic!("Expected InvalidFunctionName, got {other:?}"),
-    }
+    let ParseError::InvalidFunctionName { name, .. } = lowercase else {
+        panic!("Expected InvalidFunctionName, got {lowercase:?}");
+    };
+    assert_eq!(name, "sum");
 
     // Trailing junk
     let trailing = Expr::parse("1 + 2 garbage").unwrap_err();
-    match trailing {
-        ParseError::TrailingInput { trailing, .. } => assert_eq!(trailing, "garbage"),
-        other => panic!("Expected TrailingInput, got {other:?}"),
-    }
+    let ParseError::TrailingInput { trailing, .. } = trailing else {
+        panic!("Expected TrailingInput, got {trailing:?}");
+    };
+    assert_eq!(trailing, "garbage");
 
     // Reject legacy dot-access
     let dot_err = Expr::parse("IncomeStatement.revenue[@col]").unwrap_err();
-    match dot_err {
-        ParseError::UnexpectedToken { found, offset, .. } => {
-            assert_eq!(found, ".");
-            assert_eq!(offset, 15);
-        }
-        other => panic!("Expected UnexpectedToken for dot-access, got {other:?}"),
-    }
+    let ParseError::UnexpectedToken { found, offset, .. } = dot_err else {
+        panic!("Expected UnexpectedToken for dot-access, got {dot_err:?}");
+    };
+    assert_eq!(found, ".");
+    assert_eq!(offset, 15);
 
     // Reject retired bare '@'
     let bare_at_err = Expr::parse("IncomeStatement[\"revenue\", @]").unwrap_err();

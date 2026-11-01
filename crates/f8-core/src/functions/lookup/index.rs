@@ -79,7 +79,9 @@ impl ExcelFunction for IndexFunction {
                 }
                 (1, 1, std::slice::from_ref(val))
             }
-            _ => return Ok(CellValue::Error(ExcelError::Value)),
+            FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(CellValue::Error(ExcelError::Value));
+            }
         };
 
         if rows == 0 || cols == 0 || values.is_empty() {
