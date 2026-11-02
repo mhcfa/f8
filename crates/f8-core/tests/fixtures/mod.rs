@@ -1,6 +1,6 @@
 //! Shared model fixtures for end-to-end compiler testing.
 
-#![allow(dead_code)]
+#![allow(dead_code, reason = "shared fixtures; each test crate uses a subset")]
 
 pub mod lbo;
 pub mod parity_suite;

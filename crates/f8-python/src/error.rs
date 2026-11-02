@@ -260,7 +260,13 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
                 | ModelError::DuplicateTableId { table }
                 | ModelError::EmptyColumns { table }
                 | ModelError::EmptyRows { table } => Some(table.to_string()),
-                _ => None,
+                ModelError::DuplicateSheetName { .. }
+                | ModelError::ThemeNotFound { .. }
+                | ModelError::InvalidThemeColor { .. }
+                | ModelError::InvalidThemeMetric { .. }
+                | ModelError::MissingDecimalPlaceholder { .. }
+                | ModelError::MissingCurrencySymbolPlaceholder
+                | ModelError::ThemePrecisionOutOfBounds { .. } => None,
             };
             make_specification_error(py, message.clone(), table, message)
         }
@@ -302,7 +308,9 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
                 | IrError::DecimalsConflict { table, .. }
                 | IrError::CurrencyConflict { table, .. }
                 | IrError::ShadeConflict { table, .. } => Some(table.to_string()),
-                _ => None,
+                IrError::UnknownSheet { .. } | IrError::FormulaParse { .. } | IrError::Model(_) => {
+                    None
+                }
             };
             make_specification_error(py, message.clone(), table, message)
         }

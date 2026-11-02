@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use indexmap::IndexMap;
 
@@ -292,18 +292,18 @@ fn test_scenario_7_standalone_omitted_argument_rejection() {
         right: Box::new(Expr::Omitted),
     };
     let err1 = eval_expr(&expr1, &origin, &memo, &symbols, &registry).unwrap_err();
-    match err1 {
-        EvalError::UnexpectedOmitted(cell) => assert_eq!(*cell, origin),
-        other => panic!("expected UnexpectedOmitted, got {other:?}"),
-    }
+    let EvalError::UnexpectedOmitted(cell) = err1 else {
+        panic!("expected UnexpectedOmitted, got {err1:?}");
+    };
+    assert_eq!(*cell, origin);
 
     // Standalone _
     let expr2 = Expr::Omitted;
     let err2 = eval_expr(&expr2, &origin, &memo, &symbols, &registry).unwrap_err();
-    match err2 {
-        EvalError::UnexpectedOmitted(cell) => assert_eq!(*cell, origin),
-        other => panic!("expected UnexpectedOmitted, got {other:?}"),
-    }
+    let EvalError::UnexpectedOmitted(cell) = err2 else {
+        panic!("expected UnexpectedOmitted, got {err2:?}");
+    };
+    assert_eq!(*cell, origin);
 }
 
 #[test]
@@ -314,12 +314,10 @@ fn test_unevaluated_dependency_error() {
 
     let expr = Expr::parse("IncomeStatement[\"rev\", @col] + 10").expect("valid expr");
     let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
-    match err {
-        EvalError::UnevaluatedDependency(target) => {
-            assert_eq!(*target, CellId::new("IncomeStatement", "rev", "2024E"));
-        }
-        other => panic!("expected UnevaluatedDependency, got {other:?}"),
-    }
+    let EvalError::UnevaluatedDependency(target) = err else {
+        panic!("expected UnevaluatedDependency, got {err:?}");
+    };
+    assert_eq!(*target, CellId::new("IncomeStatement", "rev", "2024E"));
 }
 
 #[test]

@@ -131,7 +131,9 @@ fn collect_criteria_pairs<'a>(
             FunctionArg::Array {
                 rows, cols, values, ..
             } => (*rows, *cols, values.as_slice()),
-            _ => return Ok(None),
+            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(None);
+            }
         };
 
         if cr_rows != expected_rows || cr_cols != expected_cols {
@@ -207,7 +209,9 @@ impl ExcelFunction for SumifsFunction {
             FunctionArg::Array {
                 rows, cols, values, ..
             } => (*rows, *cols, values.as_slice()),
-            _ => return Ok(CellValue::Error(ExcelError::Value)),
+            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(CellValue::Error(ExcelError::Value));
+            }
         };
 
         let Some(pairs) =
@@ -222,7 +226,7 @@ impl ExcelFunction for SumifsFunction {
                 match cell {
                     CellValue::Error(e) => return Ok(CellValue::Error(*e)),
                     CellValue::Number(n) => sum += *n,
-                    _ => {} // Text, empty, boolean ignored in sum_range
+                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {} // Text, empty, boolean ignored in sum_range
                 }
             }
         }
@@ -277,7 +281,9 @@ impl ExcelFunction for CountifsFunction {
 
         let (cr1_rows, cr1_cols) = match &args[0] {
             FunctionArg::Array { rows, cols, .. } => (*rows, *cols),
-            _ => return Ok(CellValue::Error(ExcelError::Value)),
+            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(CellValue::Error(ExcelError::Value));
+            }
         };
 
         let Some(pairs) = collect_criteria_pairs(self.name(), args, 0, cr1_rows, cr1_cols, ctx)?
@@ -345,7 +351,9 @@ impl ExcelFunction for AverageifsFunction {
             FunctionArg::Array {
                 rows, cols, values, ..
             } => (*rows, *cols, values.as_slice()),
-            _ => return Ok(CellValue::Error(ExcelError::Value)),
+            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(CellValue::Error(ExcelError::Value));
+            }
         };
 
         let Some(pairs) =
@@ -365,7 +373,7 @@ impl ExcelFunction for AverageifsFunction {
                         sum += *n;
                         count += 1;
                     }
-                    _ => {} // Text, empty, boolean ignored in average_range
+                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {} // Text, empty, boolean ignored in average_range
                 }
             }
         }
@@ -426,7 +434,9 @@ impl ExcelFunction for MinifsFunction {
             FunctionArg::Array {
                 rows, cols, values, ..
             } => (*rows, *cols, values.as_slice()),
-            _ => return Ok(CellValue::Error(ExcelError::Value)),
+            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(CellValue::Error(ExcelError::Value));
+            }
         };
 
         let Some(pairs) =
@@ -444,7 +454,7 @@ impl ExcelFunction for MinifsFunction {
                     CellValue::Number(n) => {
                         min_val = Some(min_val.map_or(*n, |m| f64::min(m, *n)));
                     }
-                    _ => {}
+                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
                 }
             }
         }
@@ -501,7 +511,9 @@ impl ExcelFunction for MaxifsFunction {
             FunctionArg::Array {
                 rows, cols, values, ..
             } => (*rows, *cols, values.as_slice()),
-            _ => return Ok(CellValue::Error(ExcelError::Value)),
+            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                return Ok(CellValue::Error(ExcelError::Value));
+            }
         };
 
         let Some(pairs) =
@@ -519,7 +531,7 @@ impl ExcelFunction for MaxifsFunction {
                     CellValue::Number(n) => {
                         max_val = Some(max_val.map_or(*n, |m| f64::max(m, *n)));
                     }
-                    _ => {}
+                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
                 }
             }
         }

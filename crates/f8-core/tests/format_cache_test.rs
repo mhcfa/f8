@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::emission::{
     CellFormatKey, EmissionError, FormatCache, parse_fill_color, parse_hex_color,

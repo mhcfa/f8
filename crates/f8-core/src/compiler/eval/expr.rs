@@ -85,7 +85,10 @@ pub fn eval_expr(
 
             let normalized = match result {
                 CellValue::Number(n) => CellValue::Number(normalize_zero(n)),
-                other => other,
+                other @ (CellValue::Text(_)
+                | CellValue::Boolean(_)
+                | CellValue::Empty
+                | CellValue::Error(_)) => other,
             };
             Ok(normalized)
         }
@@ -162,7 +165,12 @@ fn eval_arithmetic_op(
             }
             lhs.powf(rhs)
         }
-        _ => unreachable!("non-arithmetic operator passed to eval_arithmetic_op"),
+        BinaryOp::Eq
+        | BinaryOp::NotEq
+        | BinaryOp::Lt
+        | BinaryOp::Lte
+        | BinaryOp::Gt
+        | BinaryOp::Gte => unreachable!("non-arithmetic operator passed to eval_arithmetic_op"),
     };
 
     if result.is_nan() || result.is_infinite() {
@@ -194,7 +202,9 @@ fn eval_comparison_op(
         BinaryOp::Lte => ord != Ordering::Greater,
         BinaryOp::Gt => ord == Ordering::Greater,
         BinaryOp::Gte => ord != Ordering::Less,
-        _ => unreachable!("non-comparison operator passed to eval_comparison_op"),
+        BinaryOp::Pow | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Add | BinaryOp::Sub => {
+            unreachable!("non-comparison operator passed to eval_comparison_op")
+        }
     };
 
     Ok(CellValue::Boolean(outcome))

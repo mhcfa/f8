@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::ir::{
     CellId, CellPayload, IrError, SymbolTable, expand_grid, expand_table, expand_workbook,
@@ -212,13 +212,11 @@ fn test_scenario_5_actionable_formula_parse_error_diagnostic() {
         .expect("registration succeeds");
 
     let err = expand_table(&symbols, &table).unwrap_err();
-    match err {
-        IrError::FormulaParse { table, row, .. } => {
-            assert_eq!(table, TableId::from("IncomeStatement"));
-            assert_eq!(row, Some(RowId::from("bad_calc")));
-        }
-        other => panic!("expected IrError::FormulaParse, got {other:?}"),
-    }
+    let IrError::FormulaParse { table, row, .. } = err else {
+        panic!("expected IrError::FormulaParse, got {err:?}");
+    };
+    assert_eq!(table, TableId::from("IncomeStatement"));
+    assert_eq!(row, Some(RowId::from("bad_calc")));
 }
 
 #[test]
@@ -305,13 +303,11 @@ fn test_scenario_7_reject_table_not_in_symbol_table() {
     let symbols = SymbolTable::new();
 
     let err = expand_table(&symbols, &table).unwrap_err();
-    match err {
-        IrError::UnknownTable { table, context } => {
-            assert_eq!(table, TableId::from("UnknownTable"));
-            assert_eq!(context, "grid expansion");
-        }
-        other => panic!("expected IrError::UnknownTable, got {other:?}"),
-    }
+    let IrError::UnknownTable { table, context } = err else {
+        panic!("expected IrError::UnknownTable, got {err:?}");
+    };
+    assert_eq!(table, TableId::from("UnknownTable"));
+    assert_eq!(context, "grid expansion");
 }
 
 #[test]
@@ -398,13 +394,11 @@ fn test_expand_workbook_unassigned_table_rejected() {
     );
 
     let err = expand_workbook(&manifest, &[table1, table2]).unwrap_err();
-    match err {
-        IrError::UnknownTable { table, context } => {
-            assert_eq!(table, TableId::from("OrphanTable"));
-            assert!(context.contains("unassigned table"));
-        }
-        other => panic!("expected IrError::UnknownTable, got {other:?}"),
-    }
+    let IrError::UnknownTable { table, context } = err else {
+        panic!("expected IrError::UnknownTable, got {err:?}");
+    };
+    assert_eq!(table, TableId::from("OrphanTable"));
+    assert!(context.contains("unassigned table"));
 }
 
 #[test]
@@ -625,16 +619,15 @@ fn test_column_formula_parse_error_diagnostic() {
         .unwrap();
 
     let err = expand_table(&symbols, &table).unwrap_err();
-    match &err {
-        IrError::FormulaParse {
-            table, row, column, ..
-        } => {
-            assert_eq!(table.as_str(), "BadColTable");
-            assert_eq!(*row, None);
-            assert_eq!(column.as_ref().map(|c| c.as_str()), Some("bad_col"));
-        }
-        other => panic!("expected FormulaParse error, got {other:?}"),
-    }
+    let IrError::FormulaParse {
+        table, row, column, ..
+    } = &err
+    else {
+        panic!("expected FormulaParse error, got {err:?}");
+    };
+    assert_eq!(table.as_str(), "BadColTable");
+    assert_eq!(*row, None);
+    assert_eq!(column.as_ref().map(|c| c.as_str()), Some("bad_col"));
 
     let err_msg = err.to_string();
     assert!(err_msg.contains("col 'bad_col'"));
@@ -822,22 +815,21 @@ fn test_scenario_4_measure_vector_precision_conflict_rejected() {
         .unwrap();
 
     let err = expand_table(&symbols, &table).unwrap_err();
-    match err {
-        IrError::DecimalsConflict {
-            table,
-            row,
-            column,
-            row_decimals,
-            col_decimals,
-        } => {
-            assert_eq!(table.as_str(), "ConflictTable");
-            assert_eq!(row.as_str(), "r1");
-            assert_eq!(column.as_str(), "c1");
-            assert_eq!(row_decimals, 2);
-            assert_eq!(col_decimals, 0);
-        }
-        other => panic!("expected DecimalsConflict, got {other:?}"),
-    }
+    let IrError::DecimalsConflict {
+        table,
+        row,
+        column,
+        row_decimals,
+        col_decimals,
+    } = err
+    else {
+        panic!("expected DecimalsConflict, got {err:?}");
+    };
+    assert_eq!(table.as_str(), "ConflictTable");
+    assert_eq!(row.as_str(), "r1");
+    assert_eq!(column.as_str(), "c1");
+    assert_eq!(row_decimals, 2);
+    assert_eq!(col_decimals, 0);
 }
 
 #[test]

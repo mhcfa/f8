@@ -34,7 +34,7 @@ impl CellValue {
     pub fn as_number(&self) -> Option<f64> {
         match self {
             Self::Number(n) => Some(*n),
-            _ => None,
+            Self::Text(_) | Self::Boolean(_) | Self::Empty | Self::Error(_) => None,
         }
     }
 
@@ -43,7 +43,7 @@ impl CellValue {
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             Self::Boolean(b) => Some(*b),
-            _ => None,
+            Self::Number(_) | Self::Text(_) | Self::Empty | Self::Error(_) => None,
         }
     }
 
@@ -52,7 +52,7 @@ impl CellValue {
     pub fn as_text(&self) -> Option<&str> {
         match self {
             Self::Text(s) => Some(s.as_str()),
-            _ => None,
+            Self::Number(_) | Self::Boolean(_) | Self::Empty | Self::Error(_) => None,
         }
     }
 
@@ -73,7 +73,7 @@ impl CellValue {
     pub fn as_error(&self) -> Option<ExcelError> {
         match self {
             Self::Error(e) => Some(*e),
-            _ => None,
+            Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty => None,
         }
     }
 

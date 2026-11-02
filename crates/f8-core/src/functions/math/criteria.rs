@@ -120,10 +120,12 @@ impl Criterion {
                     op,
                     target: CriteriaTarget::Empty,
                 },
-                _ => Self {
-                    op,
-                    target: CriteriaTarget::Text(String::new()),
-                },
+                ComparisonOp::Lt | ComparisonOp::LtEq | ComparisonOp::Gt | ComparisonOp::GtEq => {
+                    Self {
+                        op,
+                        target: CriteriaTarget::Text(String::new()),
+                    }
+                }
             };
         }
 
@@ -187,7 +189,7 @@ impl Criterion {
                 .into_iter()
                 .filter_map(|t| match t {
                     WildcardToken::Char(c) => Some(c),
-                    _ => None,
+                    WildcardToken::AnySingle | WildcardToken::AnyZeroOrMore => None,
                 })
                 .collect();
             return Self {
@@ -211,7 +213,10 @@ impl Criterion {
                 match self.op {
                     ComparisonOp::Eq => is_empty,
                     ComparisonOp::NotEq => !is_empty,
-                    _ => false,
+                    ComparisonOp::Lt
+                    | ComparisonOp::LtEq
+                    | ComparisonOp::Gt
+                    | ComparisonOp::GtEq => false,
                 }
             }
             CriteriaTarget::Number(target_n) => match cell {
@@ -261,22 +266,33 @@ impl Criterion {
                         self.op == ComparisonOp::NotEq
                     }
                 }
-                _ => self.op == ComparisonOp::NotEq,
+                CellValue::Number(_) | CellValue::Empty | CellValue::Error(_) => {
+                    self.op == ComparisonOp::NotEq
+                }
             },
             CriteriaTarget::Error(target_e) => match cell {
                 CellValue::Error(cell_e) => match self.op {
                     ComparisonOp::Eq => cell_e == target_e,
                     ComparisonOp::NotEq => cell_e != target_e,
-                    _ => false,
+                    ComparisonOp::Lt
+                    | ComparisonOp::LtEq
+                    | ComparisonOp::Gt
+                    | ComparisonOp::GtEq => false,
                 },
-                _ => self.op == ComparisonOp::NotEq,
+                CellValue::Number(_)
+                | CellValue::Text(_)
+                | CellValue::Boolean(_)
+                | CellValue::Empty => self.op == ComparisonOp::NotEq,
             },
             CriteriaTarget::Text(target_s) => match cell {
                 CellValue::Text(cell_s) => {
                     let ord = compare_ascii_case_insensitive(cell_s, target_s);
                     self.op.matches_ordering(ord)
                 }
-                _ => self.op == ComparisonOp::NotEq,
+                CellValue::Number(_)
+                | CellValue::Boolean(_)
+                | CellValue::Empty
+                | CellValue::Error(_) => self.op == ComparisonOp::NotEq,
             },
             CriteriaTarget::Wildcard(tokens) => match cell {
                 CellValue::Text(cell_s) => {
@@ -284,10 +300,16 @@ impl Criterion {
                     match self.op {
                         ComparisonOp::Eq => matched,
                         ComparisonOp::NotEq => !matched,
-                        _ => false,
+                        ComparisonOp::Lt
+                        | ComparisonOp::LtEq
+                        | ComparisonOp::Gt
+                        | ComparisonOp::GtEq => false,
                     }
                 }
-                _ => self.op == ComparisonOp::NotEq,
+                CellValue::Number(_)
+                | CellValue::Boolean(_)
+                | CellValue::Empty
+                | CellValue::Error(_) => self.op == ComparisonOp::NotEq,
             },
         }
     }

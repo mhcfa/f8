@@ -5,7 +5,7 @@
 //! - Summary benchmark rows (`mean`, `median`, `max`, `min`) aggregating vertical slices with Excel parity.
 //! - Secondary `TargetValuation` benchmarking table resolving cross-table references and implied valuations.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::Compiler;
 use f8_core::model::id::{ColId, RowId, TableId};

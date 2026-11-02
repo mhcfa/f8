@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 description = "Financial modeling engine with compiler verification and live Excel formulas"
 authors = ["Michael (Chencheng) Hu, CFA"]
@@ -29,4 +29,9 @@ pythonize = "0.24"
 unwrap_used = "deny"
 expect_used = "deny"
 wildcard_imports = "deny"
+wildcard_enum_match_arm = "deny"
+allow_attributes_without_reason = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
 fn_params_excessive_bools = "warn"

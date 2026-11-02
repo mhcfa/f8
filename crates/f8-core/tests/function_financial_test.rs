@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::eval::eval_expr;
 use f8_core::compiler::ir::id::CellId;
@@ -450,9 +450,8 @@ fn test_scenario_5_xirr_non_periodic_solver() {
     ];
     let trunc_res = xirr_func.evaluate(&trunc_args, &ctx).unwrap();
     if let CellValue::Number(rate) = trunc_res {
-        let expected_rate = match multi_res {
-            CellValue::Number(r) => r,
-            _ => unreachable!(),
+        let CellValue::Number(expected_rate) = multi_res else {
+            unreachable!();
         };
         assert!(
             (rate - expected_rate).abs() < 1e-9,
@@ -535,7 +534,7 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
     let nper = 120.0;
     let pv = 10000.0;
 
-    let pmt_val = match pmt_func
+    let res = pmt_func
         .evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(rate)),
@@ -544,10 +543,9 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
             ],
             &ctx,
         )
-        .unwrap()
-    {
-        CellValue::Number(n) => n,
-        other => panic!("Expected Number, got {other:?}"),
+        .unwrap();
+    let CellValue::Number(pmt_val) = res else {
+        panic!("Expected Number, got {res:?}");
     };
 
     // Amortization invariant for Type 0:

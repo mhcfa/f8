@@ -26,7 +26,10 @@ impl MatchMode {
     pub fn parse(val: &CellValue) -> Result<Self, ExcelError> {
         match val {
             CellValue::Empty => Ok(Self::Exact),
-            _ => {
+            CellValue::Number(_)
+            | CellValue::Text(_)
+            | CellValue::Boolean(_)
+            | CellValue::Error(_) => {
                 let n = val.coerce_to_number()?;
                 if !n.is_finite() {
                     return Err(ExcelError::Value);
@@ -63,7 +66,10 @@ impl SearchMode {
     pub fn parse(val: &CellValue) -> Result<Self, ExcelError> {
         match val {
             CellValue::Empty => Ok(Self::FirstToLast),
-            _ => {
+            CellValue::Number(_)
+            | CellValue::Text(_)
+            | CellValue::Boolean(_)
+            | CellValue::Error(_) => {
                 let n = val.coerce_to_number()?;
                 if !n.is_finite() {
                     return Err(ExcelError::Value);
@@ -117,7 +123,7 @@ pub fn extract_1d_slice<'a>(arg: &'a FunctionArg<'_>) -> Result<&'a [CellValue],
             }
             Ok(std::slice::from_ref(val))
         }
-        _ => Err(ExcelError::Value),
+        FunctionArg::Lazy(_) | FunctionArg::Omitted => Err(ExcelError::Value),
     }
 }
 
@@ -185,7 +191,10 @@ fn find_linear_forward(
                 }
                 Ok(None)
             }
-            _ => {
+            CellValue::Number(_)
+            | CellValue::Boolean(_)
+            | CellValue::Empty
+            | CellValue::Error(_) => {
                 for (i, cell) in slice.iter().enumerate() {
                     if lookup_eq(cell, lookup_val) {
                         return Ok(Some(i));
@@ -280,7 +289,10 @@ fn find_linear_reverse(
                 }
                 Ok(None)
             }
-            _ => {
+            CellValue::Number(_)
+            | CellValue::Boolean(_)
+            | CellValue::Empty
+            | CellValue::Error(_) => {
                 for (i, cell) in slice.iter().enumerate().rev() {
                     if lookup_eq(cell, lookup_val) {
                         return Ok(Some(i));
@@ -515,7 +527,7 @@ fn find_binary_descending(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test code")]
 mod tests {
     use super::*;
 

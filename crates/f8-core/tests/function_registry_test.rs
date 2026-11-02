@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef};
 use f8_core::functions::{
@@ -36,7 +36,10 @@ impl EvalContext for MockEvalContext {
             Expr::Literal(Literal::Boolean(b)) => Ok(CellValue::Boolean(*b)),
             Expr::Literal(Literal::String(s)) => Ok(CellValue::Text(s.clone())),
             Expr::Omitted => Ok(CellValue::Empty),
-            _ => Ok(CellValue::Number(100.0)),
+            Expr::Reference(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. } => Ok(CellValue::Number(100.0)),
         }
     }
 

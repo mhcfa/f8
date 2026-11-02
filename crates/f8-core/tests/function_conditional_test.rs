@@ -3,7 +3,7 @@
 //! Covers `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, and `MAXIFS` conforming to
 //! Excel calculation parity and criteria semantics.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::ast::Expr;
 use f8_core::functions::{

@@ -79,7 +79,10 @@ impl EvaluatedModel {
             .iter()
             .filter_map(|(id, val)| match val {
                 CellValue::Error(err) => Some((id, err)),
-                _ => None,
+                CellValue::Number(_)
+                | CellValue::Text(_)
+                | CellValue::Boolean(_)
+                | CellValue::Empty => None,
             })
             .collect()
     }
@@ -130,7 +133,7 @@ impl<'a> IntoIterator for &'a EvaluatedModel {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 mod tests {
     use super::*;
     use crate::model::id::SheetId;

@@ -169,7 +169,10 @@ impl PyCompiledModel {
 
         match val {
             CellValue::Number(n) => Ok(n),
-            other => Err(PyTypeError::new_err(format!(
+            other @ (CellValue::Text(_)
+            | CellValue::Boolean(_)
+            | CellValue::Empty
+            | CellValue::Error(_)) => Err(PyTypeError::new_err(format!(
                 "Cell {cell_id} did not evaluate to a float (got {other:?})"
             ))),
         }

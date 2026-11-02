@@ -1041,16 +1041,16 @@ impl TableSpec {
     /// Returns the column specification for a column ID if found.
     pub fn get_column(&self, id: &ColId) -> Option<&DataColumnSpec> {
         self.columns.iter().find_map(|c| match c {
-            ColumnSpec::Data(d) if &d.id == id => Some(d),
-            _ => None,
+            ColumnSpec::Data(d) => (&d.id == id).then_some(d),
+            ColumnSpec::Gutter => None,
         })
     }
 
     /// Returns the row specification for a row ID if found.
     pub fn get_row(&self, id: &RowId) -> Option<&DataRowSpec> {
         self.rows.iter().find_map(|r| match r {
-            RowSpec::Data(d) if &d.id == id => Some(d),
-            _ => None,
+            RowSpec::Data(d) => (&d.id == id).then_some(d),
+            RowSpec::SectionHeader(_) | RowSpec::Gutter => None,
         })
     }
 

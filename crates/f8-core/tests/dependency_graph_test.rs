@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::compiler::graph::{DependencyGraph, GraphError};
 use f8_core::compiler::ir::{CellId, SymbolTable, expand_grid, expand_workbook};
