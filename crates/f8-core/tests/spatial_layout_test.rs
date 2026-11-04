@@ -452,8 +452,8 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let col_b_width = *sheet.col_widths.get(&1).unwrap();
     let col_c_width = *sheet.col_widths.get(&2).unwrap();
 
-    // Col B (descriptor) must be wide enough for the long label (57 chars * 1.0 + 0.0 = 57.0)
-    assert_eq!(col_b_width, 57.0);
+    // Col B (descriptor) has a 57-char label, clamped to max_col_width (50.0)
+    assert_eq!(col_b_width, theme.metrics.max_col_width);
 
     // Col C (measure) must be at least min_col_width (12.0)
     assert!(col_c_width >= theme.metrics.min_col_width);
@@ -1275,10 +1275,10 @@ fn test_scenario_18_2d_column_width_and_row_height_arbitration() {
         Some(&theme.metrics.gutter_col_width)
     );
 
-    // Col 4 is arbitrated across T2 and T3 -> reflects wide_label from T3
+    // Col 4 is arbitrated across T2 and T3 -> reflects wide_label from T3 (clamped to max_col_width)
     let expected_col4 = (wide_label.chars().count() as f64 * theme.metrics.char_width_multiplier
         + theme.metrics.col_padding)
-        .max(theme.metrics.min_col_width);
+        .clamp(theme.metrics.min_col_width, theme.metrics.max_col_width);
     assert_eq!(sheet.col_widths.get(&4), Some(&expected_col4));
 
     // Row 5 and 6: T1 has Data rows (data_row_height = 16.0) while T3's inter-table gutter has gutter_row_height (9.0)
@@ -1542,4 +1542,191 @@ fn test_scenario_20_overlapping_table_bounding_boxes_rejected() {
             } if sheet.as_str() == "S1" && first_table.as_str() == "T2" && second_table.as_str() == "T3"
         ));
     }
+}
+
+#[test]
+fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
+    let mut table = TableSpec::new("WrapTable", "Text Wrapping");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Description"));
+    table
+        .columns
+        .push(ColumnSpec::new("notes").with_header("Notes"));
+
+    let long_120 = "A".repeat(120);
+    let exact_50 = "B".repeat(50);
+    let over_51 = "C".repeat(51);
+
+    // Row 1: 120-char descriptor text -> 3 lines (45.0), short measure
+    table.rows.push(
+        RowSpec::new("r_long")
+            .with_cell("desc", CellInput::string(long_120))
+            .with_cell("notes", CellInput::string("Short note")),
+    );
+    // Row 2: short descriptor (<= max_col_width, no \n) -> unwrapped (15.0)
+    table.rows.push(
+        RowSpec::new("r_short")
+            .with_cell("desc", CellInput::string("Brief description"))
+            .with_cell("notes", CellInput::string("OK")),
+    );
+    // Row 3: exact 50-char boundary -> unwrapped (15.0)
+    table.rows.push(
+        RowSpec::new("r_exact_50")
+            .with_cell("desc", CellInput::string(exact_50))
+            .with_cell("notes", CellInput::string("OK")),
+    );
+    // Row 4: 51-char measure text -> 2 lines (30.0)
+    table.rows.push(
+        RowSpec::new("r_over_51")
+            .with_cell("desc", CellInput::string("Item"))
+            .with_cell("notes", CellInput::string(over_51)),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "WrapModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("WrapTable")],
+        }],
+    };
+
+    let theme = create_test_theme();
+    let (_sym, grid) = ir::expand_workbook(&manifest, std::slice::from_ref(&table)).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
+
+    let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
+    // Both columns have cells > 50 chars -> clamped to max_col_width (50.0)
+    assert_eq!(sheet.col_widths.get(&1), Some(&50.0));
+    assert_eq!(sheet.col_widths.get(&2), Some(&50.0));
+
+    // Row 1 (physical row 4): 120 chars -> ceil(120 / 50) = 3 lines -> 45.0
+    let long_desc = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "WrapTable",
+            "r_long",
+            "desc",
+        ))
+        .unwrap();
+    let long_notes = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "WrapTable",
+            "r_long",
+            "notes",
+        ))
+        .unwrap();
+    assert!(long_desc.wrap_text);
+    assert!(!long_notes.wrap_text);
+    assert_eq!(sheet.row_heights.get(&long_desc.row), Some(&45.0));
+
+    // Row 2 (physical row 5): short text -> wrap_text = false, height = 15.0
+    let short_desc = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "WrapTable",
+            "r_short",
+            "desc",
+        ))
+        .unwrap();
+    assert!(!short_desc.wrap_text);
+    assert_eq!(sheet.row_heights.get(&short_desc.row), Some(&15.0));
+
+    // Row 3 (physical row 6): exact 50 chars -> wrap_text = false, height = 15.0
+    let exact_desc = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "WrapTable",
+            "r_exact_50",
+            "desc",
+        ))
+        .unwrap();
+    assert!(!exact_desc.wrap_text);
+    assert_eq!(sheet.row_heights.get(&exact_desc.row), Some(&15.0));
+
+    // Row 4 (physical row 7): 51 chars in measure column -> wrap_text = true, height = 30.0
+    let over_notes = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "WrapTable",
+            "r_over_51",
+            "notes",
+        ))
+        .unwrap();
+    assert!(over_notes.wrap_text);
+    assert_eq!(sheet.row_heights.get(&over_notes.row), Some(&30.0));
+}
+
+#[test]
+fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
+    let mut table = TableSpec::new("NewlineTable", "Newline Wrapping");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Description"));
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+
+    // Row 1: "Line one\nLine two breakdown" (8 chars, 18 chars) -> longest segment is 18 chars, 2 lines
+    table.rows.push(
+        RowSpec::new("r_two_lines")
+            .with_cell("desc", CellInput::string("Line one\nLine two breakdown"))
+            .with_cell("val", CellInput::number(100.0)),
+    );
+
+    // Row 2: Explicit newline where second segment also wraps ("Header:\n" + 60 chars -> 1 + 2 = 3 lines)
+    let mixed_multiline = format!("Header:\n{}", "X".repeat(60));
+    table.rows.push(
+        RowSpec::new("r_mixed")
+            .with_cell("desc", CellInput::string("Normal"))
+            .with_cell("val", CellInput::string(mixed_multiline)),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "NewlineModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("NewlineTable")],
+        }],
+    };
+
+    let theme = create_test_theme();
+    let (_sym, grid) = ir::expand_workbook(&manifest, std::slice::from_ref(&table)).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
+
+    let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
+    // Col 1 ("desc"): longest segment across rows is "Line two breakdown" (18 chars), not full string length (27 chars)
+    assert_eq!(sheet.col_widths.get(&1), Some(&18.0));
+    // Col 2 ("val"): second segment is 60 chars -> clamped to 50.0
+    assert_eq!(sheet.col_widths.get(&2), Some(&50.0));
+
+    let two_line_cell = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "NewlineTable",
+            "r_two_lines",
+            "desc",
+        ))
+        .unwrap();
+    assert!(two_line_cell.wrap_text);
+    assert_eq!(
+        sheet.row_heights.get(&two_line_cell.row),
+        Some(&(2.0 * theme.metrics.data_row_height))
+    );
+
+    let mixed_cell = layout
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "NewlineTable",
+            "r_mixed",
+            "val",
+        ))
+        .unwrap();
+    assert!(mixed_cell.wrap_text);
+    assert_eq!(
+        sheet.row_heights.get(&mixed_cell.row),
+        Some(&(3.0 * theme.metrics.data_row_height))
+    );
 }

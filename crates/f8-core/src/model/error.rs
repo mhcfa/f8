@@ -118,6 +118,14 @@ pub enum ModelError {
     #[error("Invalid theme metric '{metric}': expected positive finite value, found {value}")]
     InvalidThemeMetric { metric: String, value: f64 },
 
+    #[error(
+        "Invalid theme column width bounds: max_col_width ({max_col_width}) must be greater than or equal to min_col_width ({min_col_width})"
+    )]
+    InvalidColWidthBounds {
+        min_col_width: f64,
+        max_col_width: f64,
+    },
+
     #[error("Theme format template for '{preset}' must contain '{{dec}}' placeholder")]
     MissingDecimalPlaceholder { preset: FormatPreset },
 

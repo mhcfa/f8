@@ -264,6 +264,7 @@ pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
                 | ModelError::ThemeNotFound { .. }
                 | ModelError::InvalidThemeColor { .. }
                 | ModelError::InvalidThemeMetric { .. }
+                | ModelError::InvalidColWidthBounds { .. }
                 | ModelError::MissingDecimalPlaceholder { .. }
                 | ModelError::MissingCurrencySymbolPlaceholder
                 | ModelError::ThemePrecisionOutOfBounds { .. } => None,

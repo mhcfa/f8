@@ -720,3 +720,16 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
     bad_manifest: dict[str, object] = {**manifest, "theme": bad_theme}
     with pytest.raises(SpecificationError, match="table_title_fill"):
         core_compile(bad_manifest, tables)
+
+    # 5. max_col_width < min_col_width in custom theme raises SpecificationError
+    base_metrics = custom_theme["metrics"]
+    assert isinstance(base_metrics, dict)
+    inverted_metrics: dict[str, object] = {
+        **base_metrics,
+        "min_col_width": 12.0,
+        "max_col_width": 10.0,
+    }
+    inverted_theme: dict[str, object] = {**custom_theme, "metrics": inverted_metrics}
+    inverted_manifest: dict[str, object] = {**manifest, "theme": inverted_theme}
+    with pytest.raises(SpecificationError, match="max_col_width"):
+        core_compile(inverted_manifest, tables)

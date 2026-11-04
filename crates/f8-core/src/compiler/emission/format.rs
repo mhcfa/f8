@@ -153,6 +153,8 @@ pub struct CellFormatKey {
     pub is_descriptor: bool,
     /// Descriptor indentation level.
     pub indent: u8,
+    /// Whether the cell requires multi-line text wrapping.
+    pub wrap_text: bool,
 }
 
 impl CellFormatKey {
@@ -175,7 +177,15 @@ impl CellFormatKey {
             is_input,
             is_descriptor,
             indent,
+            wrap_text: false,
         }
+    }
+
+    /// Builder method enabling or disabling text wrapping on the cell format.
+    #[must_use]
+    pub const fn with_wrap_text(mut self, wrap_text: bool) -> Self {
+        self.wrap_text = wrap_text;
+        self
     }
 }
 
@@ -328,7 +338,7 @@ impl FormatCache {
             format = format.set_bold();
         }
 
-        // 2. Alignment & Indentation (Descriptor Left with optional indent, Measure Right)
+        // 2. Alignment, Indentation, and Wrapping (Descriptor Left with optional indent, Measure Right, VerticalCenter)
         format = if key.is_descriptor {
             let mut fmt = format.set_align(FormatAlign::Left);
             if key.indent > 0 {
@@ -337,7 +347,12 @@ impl FormatCache {
             fmt
         } else {
             format.set_align(FormatAlign::Right)
-        };
+        }
+        .set_align(FormatAlign::VerticalCenter);
+
+        if key.wrap_text {
+            format = format.set_text_wrap();
+        }
 
         // 3. Background Fill Precedence:
         // is_highlight > total (or shade) > subtotal (or shade) > shade > data

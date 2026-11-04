@@ -104,6 +104,10 @@ impl Default for TypographyConfig {
     }
 }
 
+fn default_max_col_width() -> f64 {
+    50.0
+}
+
 /// Physical row heights, column character widths, gutters, and margins.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricsConfig {
@@ -117,6 +121,8 @@ pub struct MetricsConfig {
     pub char_width_multiplier: f64,
     pub col_padding: f64,
     pub min_col_width: f64,
+    #[serde(default = "default_max_col_width")]
+    pub max_col_width: f64,
 }
 
 impl Default for MetricsConfig {
@@ -132,6 +138,7 @@ impl Default for MetricsConfig {
             char_width_multiplier: 1.0,
             col_padding: 0.0,
             min_col_width: 12.0,
+            max_col_width: default_max_col_width(),
         }
     }
 }
@@ -329,6 +336,13 @@ impl MetricsConfig {
         validate_metric("char_width_multiplier", self.char_width_multiplier)?;
         validate_non_negative_metric("col_padding", self.col_padding)?;
         validate_metric("min_col_width", self.min_col_width)?;
+        validate_metric("max_col_width", self.max_col_width)?;
+        if self.max_col_width < self.min_col_width {
+            return Err(ModelError::InvalidColWidthBounds {
+                min_col_width: self.min_col_width,
+                max_col_width: self.max_col_width,
+            });
+        }
         Ok(())
     }
 }

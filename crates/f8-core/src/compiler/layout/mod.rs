@@ -20,7 +20,7 @@ use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, ProjectManifest};
 use crate::model::table::{ColumnSpec, PlacementSpec, RowSpec, TableSpec, ValueLiteral};
-use crate::model::theme::Theme;
+use crate::model::theme::{MetricsConfig, Theme};
 use crate::value::{CellValue, format_accounting_number};
 
 /// Semantic styling role assigned to a physical coordinate.
@@ -72,6 +72,9 @@ pub struct PhysicalCoordinate {
     pub style_role: StyleRole,
     /// Descriptor text indentation level.
     pub indent: u8,
+    /// Whether this cell requires multi-line text wrapping.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wrap_text: bool,
 }
 
 /// Physical bounding box and structural row offsets for a table on a worksheet.
@@ -464,6 +467,7 @@ impl LayoutPlanner {
                                         a1,
                                         style_role,
                                         indent,
+                                        wrap_text: false,
                                     },
                                 );
                             }
@@ -524,11 +528,11 @@ impl LayoutPlanner {
                 tables: &sheet_tables,
                 placements: &sheet_placements,
                 grid,
-                layout_cells: &layout_cells,
+                layout_cells: &mut layout_cells,
                 theme,
                 evaluated,
             }
-            .arbitrate(sheet_max_end_col, &mut col_widths);
+            .arbitrate(sheet_max_end_col, &mut col_widths, &mut row_heights);
 
             layout_sheets.insert(
                 sheet_id.clone(),
@@ -597,19 +601,24 @@ fn resolve_placement_target<'a>(
     })
 }
 
-/// Context and read-only inputs for arbitrating sheet-wide column widths across placed tables.
+/// Context and inputs for arbitrating sheet-wide column widths and cell text wrapping across placed tables.
 struct ColumnArbitrationContext<'a> {
     tables: &'a [&'a TableSpec],
     placements: &'a IndexMap<TableId, TablePlacement>,
     grid: &'a CellGrid,
-    layout_cells: &'a IndexMap<CellId, PhysicalCoordinate>,
+    layout_cells: &'a mut IndexMap<CellId, PhysicalCoordinate>,
     theme: &'a Theme,
     evaluated: Option<&'a EvaluatedModel>,
 }
 
 impl ColumnArbitrationContext<'_> {
-    /// Arbitrates sheet-wide column widths across all tables sharing worksheet columns.
-    fn arbitrate(&self, sheet_max_end_col: u32, col_widths: &mut IndexMap<u32, f64>) {
+    /// Arbitrates sheet-wide column widths, cell text wrapping, and multi-line row heights across all tables sharing worksheet columns.
+    fn arbitrate(
+        &mut self,
+        sheet_max_end_col: u32,
+        col_widths: &mut IndexMap<u32, f64>,
+        row_heights: &mut IndexMap<u32, f64>,
+    ) {
         for physical_col in 1..=sheet_max_end_col {
             let has_data_col = self.tables.iter().any(|t| {
                 let Some(placement) = self.placements.get(&t.id) else {
@@ -647,7 +656,7 @@ impl ColumnArbitrationContext<'_> {
                 let header_len = data_col.max_header_chars();
                 table_max_chars = table_max_chars.max(header_len);
 
-                // 2. Row cells text length
+                // 2. Row cells text length and multi-line wrapping
                 for row in &table.rows {
                     let RowSpec::Data(data_row) = row else {
                         continue;
@@ -660,25 +669,41 @@ impl ColumnArbitrationContext<'_> {
                         format.and_then(|f| self.theme.number_formats.default_decimals(f))
                     });
                     let currency = cell_node.and_then(|n| n.currency);
+                    let indent = self.layout_cells.get(&cell_id).map_or(0, |c| c.indent);
 
-                    let mut char_len =
+                    let (char_len, lines) =
                         match (self.evaluated.and_then(|e| e.get_cell(&cell_id)), cell_node) {
-                            (Some(val), _) => {
-                                cell_value_string_length(val, format, decimals, currency)
-                            }
+                            (Some(val), _) => measure_cell_value(
+                                val,
+                                format,
+                                decimals,
+                                currency,
+                                indent,
+                                &self.theme.metrics,
+                            ),
                             (None, Some(node)) => match &node.payload {
-                                CellPayload::Literal(lit) => {
-                                    literal_value_length(lit, format, decimals, currency)
-                                }
-                                CellPayload::Formula(_) => 0,
+                                CellPayload::Literal(lit) => measure_literal_value(
+                                    lit,
+                                    format,
+                                    decimals,
+                                    currency,
+                                    indent,
+                                    &self.theme.metrics,
+                                ),
+                                CellPayload::Formula(_) => (usize::from(indent) * 2, 1),
                             },
-                            (None, None) => 0,
+                            (None, None) => (usize::from(indent) * 2, 1),
                         };
 
-                    if let Some(coord) = self.layout_cells.get(&cell_id)
-                        && coord.indent > 0
+                    if lines > 1
+                        && let Some(coord) = self.layout_cells.get_mut(&cell_id)
                     {
-                        char_len += (coord.indent as usize) * 2;
+                        coord.wrap_text = true;
+                        record_row_height(
+                            row_heights,
+                            coord.row,
+                            (lines as f64) * self.theme.metrics.data_row_height,
+                        );
                     }
 
                     table_max_chars = table_max_chars.max(char_len);
@@ -687,11 +712,14 @@ impl ColumnArbitrationContext<'_> {
                 max_chars_across_tables = max_chars_across_tables.max(table_max_chars);
             }
 
-            // Apply theme font multiplier and padding, enforcing min_col_width
+            // Apply theme font multiplier and padding, clamping to [min_col_width, max_col_width]
             let computed_width = (max_chars_across_tables as f64
                 * self.theme.metrics.char_width_multiplier
                 + self.theme.metrics.col_padding)
-                .max(self.theme.metrics.min_col_width);
+                .clamp(
+                    self.theme.metrics.min_col_width,
+                    self.theme.metrics.max_col_width,
+                );
 
             let final_width = (computed_width * 100.0).round() / 100.0;
             let existing = col_widths.get(&physical_col).copied().unwrap_or(0.0);
@@ -700,51 +728,72 @@ impl ColumnArbitrationContext<'_> {
     }
 }
 
-fn literal_value_length(
+fn measure_text_segments(
+    s: &str,
+    format: Option<FormatPreset>,
+    indent: u8,
+    metrics: &MetricsConfig,
+) -> (usize, usize) {
+    let trailing_pad = usize::from(format == Some(FormatPreset::Text));
+    let indent_chars = usize::from(indent) * 2;
+    let mut max_chars = 0;
+    let mut total_lines = 0;
+
+    for segment in s.split('\n') {
+        let seg_chars = segment.chars().count() + trailing_pad + indent_chars;
+        max_chars = max_chars.max(seg_chars);
+        let seg_lines = if seg_chars == 0 {
+            1
+        } else {
+            let seg_width =
+                (seg_chars as f64) * metrics.char_width_multiplier + metrics.col_padding;
+            ((seg_width / metrics.max_col_width).ceil() as usize).max(1)
+        };
+        total_lines += seg_lines;
+    }
+
+    (max_chars, total_lines)
+}
+
+fn measure_literal_value(
     lit: &ValueLiteral,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
-) -> usize {
+    indent: u8,
+    metrics: &MetricsConfig,
+) -> (usize, usize) {
+    let indent_chars = usize::from(indent) * 2;
     match lit {
-        ValueLiteral::String(s) => {
-            let trailing_pad = usize::from(format == Some(FormatPreset::Text));
-            s.chars().count() + trailing_pad
-        }
-        ValueLiteral::Number(n) => formatted_number_estimate(*n, format, decimals, currency),
-        ValueLiteral::Boolean(b) => {
-            if *b {
-                4
-            } else {
-                5
-            }
-        }
-        ValueLiteral::Null => 0,
+        ValueLiteral::String(s) => measure_text_segments(s, format, indent, metrics),
+        ValueLiteral::Number(n) => (
+            formatted_number_estimate(*n, format, decimals, currency) + indent_chars,
+            1,
+        ),
+        ValueLiteral::Boolean(b) => ((if *b { 4 } else { 5 }) + indent_chars, 1),
+        ValueLiteral::Null => (indent_chars, 1),
     }
 }
 
-/// Computes the approximate character length of an evaluated `CellValue`.
-fn cell_value_string_length(
+/// Computes the horizontal character demand and wrapped line count of an evaluated `CellValue`.
+fn measure_cell_value(
     val: &CellValue,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
-) -> usize {
+    indent: u8,
+    metrics: &MetricsConfig,
+) -> (usize, usize) {
+    let indent_chars = usize::from(indent) * 2;
     match val {
-        CellValue::Text(s) => {
-            let trailing_pad = usize::from(format == Some(FormatPreset::Text));
-            s.chars().count() + trailing_pad
-        }
-        CellValue::Number(n) => formatted_number_estimate(*n, format, decimals, currency),
-        CellValue::Boolean(b) => {
-            if *b {
-                4
-            } else {
-                5
-            }
-        }
-        CellValue::Error(e) => e.to_string().chars().count(),
-        CellValue::Empty => 0,
+        CellValue::Text(s) => measure_text_segments(s, format, indent, metrics),
+        CellValue::Number(n) => (
+            formatted_number_estimate(*n, format, decimals, currency) + indent_chars,
+            1,
+        ),
+        CellValue::Boolean(b) => ((if *b { 4 } else { 5 }) + indent_chars, 1),
+        CellValue::Error(e) => (e.to_string().chars().count() + indent_chars, 1),
+        CellValue::Empty => (indent_chars, 1),
     }
 }
 

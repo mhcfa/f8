@@ -1114,3 +1114,61 @@ fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() 
         "Total gutter cell border must contain double bottom style"
     );
 }
+
+// ----------------------------------------------------------------------------
+// Scenario 16: OpenXML wrapText and VerticalCenter Emission
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
+    let mut table = TableSpec::new("WrapEmission", "Text Wrapping Emission");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Description"));
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+
+    let long_text = "W".repeat(120);
+    table.rows.push(
+        RowSpec::new("r_wrapped")
+            .with_cell("desc", CellInput::string(long_text))
+            .with_cell("val", CellInput::number(42.0)),
+    );
+    table.rows.push(
+        RowSpec::new("r_unwrapped")
+            .with_cell("desc", CellInput::string("Short label"))
+            .with_cell("val", CellInput::number(99.0)),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "WrapEmissionModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("WrapEmission")],
+        }],
+    };
+
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+
+    // Data cell alignments include vertical="center" and wrapped cell format includes wrapText="1"
+    assert!(
+        styles_xml.contains("vertical=\"center\""),
+        "styles.xml must include vertical=\"center\" on data cells: {styles_xml}"
+    );
+    assert!(
+        styles_xml.contains("wrapText=\"1\""),
+        "styles.xml must include wrapText=\"1\" on wrapped data cells: {styles_xml}"
+    );
+
+    // Row heights remain automatic in worksheet XML (no customHeight="1")
+    assert!(
+        !sheet_xml.contains("customHeight=\"1\""),
+        "sheet1.xml must leave row heights automatic: {sheet_xml}"
+    );
+}

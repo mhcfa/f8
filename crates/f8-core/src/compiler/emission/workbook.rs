@@ -413,7 +413,8 @@ impl WorkbookEmitter {
                                     is_input,
                                     is_descriptor,
                                     coord.indent,
-                                );
+                                )
+                                .with_wrap_text(coord.wrap_text);
                                 let cell_format = format_cache.get_cell_format(&format_key)?;
 
                                 if options.values_only {

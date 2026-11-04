@@ -1089,3 +1089,57 @@ fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
     assert!(col_header_desc.contains("background_color: Default"));
     assert!(col_header_meas.contains("background_color: Default"));
 }
+
+#[test]
+fn test_scenario_16_vertical_center_alignment_and_text_wrap() {
+    let theme = Theme::corporate_navy();
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    let unwrapped_key = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Text),
+        None,
+        None,
+        true,
+        true,
+        0,
+    );
+    assert!(!unwrapped_key.wrap_text);
+
+    let wrapped_key = unwrapped_key.clone().with_wrap_text(true);
+    assert!(wrapped_key.wrap_text);
+
+    let unwrapped_fmt = cache.get_cell_format(&unwrapped_key).expect("ok");
+    let wrapped_fmt = cache.get_cell_format(&wrapped_key).expect("ok");
+
+    let unwrapped_debug = format!("{unwrapped_fmt:?}");
+    let wrapped_debug = format!("{wrapped_fmt:?}");
+
+    assert!(
+        unwrapped_debug.contains("horizontal: Left"),
+        "Unwrapped descriptor must be left-aligned: {unwrapped_debug}"
+    );
+    assert!(
+        unwrapped_debug.contains("vertical: VerticalCenter"),
+        "Unwrapped cell must be vertically centered: {unwrapped_debug}"
+    );
+    assert!(
+        unwrapped_debug.contains("text_wrap: false"),
+        "Unwrapped cell must have text_wrap false: {unwrapped_debug}"
+    );
+
+    assert!(
+        wrapped_debug.contains("horizontal: Left"),
+        "Wrapped descriptor must be left-aligned: {wrapped_debug}"
+    );
+    assert!(
+        wrapped_debug.contains("vertical: VerticalCenter"),
+        "Wrapped cell must be vertically centered: {wrapped_debug}"
+    );
+    assert!(
+        wrapped_debug.contains("text_wrap: true"),
+        "Wrapped cell must have text_wrap true: {wrapped_debug}"
+    );
+
+    assert_eq!(cache.len(), 2);
+}

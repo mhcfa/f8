@@ -25,6 +25,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert!(theme.metrics.title_gutter_row_height > 0.0);
     assert_eq!(theme.metrics.col_padding, 0.0);
     assert!(theme.metrics.min_col_width > 0.0);
+    assert_eq!(theme.metrics.max_col_width, 50.0);
 
     // Verify borders
     assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
@@ -547,4 +548,39 @@ fn test_scenario_12_shade_palette_defaults_and_validation() {
                 if field == field_name && color == "invalid"
         ));
     }
+}
+
+#[test]
+fn test_scenario_13_max_col_width_defaults_and_validation() {
+    // 1. Default corporate_navy max_col_width is 50.0
+    let mut theme = Theme::corporate_navy();
+    assert_eq!(theme.metrics.max_col_width, 50.0);
+
+    // 2. Equal boundary (max_col_width == min_col_width) is valid
+    theme.metrics.max_col_width = theme.metrics.min_col_width;
+    theme
+        .validate()
+        .expect("max_col_width == min_col_width should be valid");
+
+    // 3. Non-positive or non-finite max_col_width rejected with InvalidThemeMetric
+    for invalid_val in [0.0, -10.0, f64::NAN, f64::INFINITY] {
+        let mut bad_theme = Theme::corporate_navy();
+        bad_theme.metrics.max_col_width = invalid_val;
+        assert!(matches!(
+            bad_theme.validate().unwrap_err(),
+            ModelError::InvalidThemeMetric { ref metric, .. } if metric == "max_col_width"
+        ));
+    }
+
+    // 4. max_col_width < min_col_width rejected with InvalidColWidthBounds
+    let mut inverted_theme = Theme::corporate_navy();
+    inverted_theme.metrics.min_col_width = 12.0;
+    inverted_theme.metrics.max_col_width = 10.0;
+    assert!(matches!(
+        inverted_theme.validate().unwrap_err(),
+        ModelError::InvalidColWidthBounds {
+            min_col_width,
+            max_col_width,
+        } if min_col_width == 12.0 && max_col_width == 10.0
+    ));
 }
