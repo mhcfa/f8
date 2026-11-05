@@ -95,7 +95,6 @@ struct ParsedPalette {
     input_text: Color,
     formula_text: Color,
     shade_muted_fill: Option<Color>,
-    shade_accent_fill: Option<Color>,
     shade_alt_fill: Option<Color>,
     highlight_fill: Option<Color>,
     highlight_text: Color,
@@ -125,7 +124,6 @@ impl ParsedPalette {
             input_text: parse_hex_color("input_text", &p.input_text)?,
             formula_text: parse_hex_color("formula_text", &p.formula_text)?,
             shade_muted_fill: parse_fill_color("shade_muted_fill", &p.shade_muted_fill)?,
-            shade_accent_fill: parse_fill_color("shade_accent_fill", &p.shade_accent_fill)?,
             shade_alt_fill: parse_fill_color("shade_alt_fill", &p.shade_alt_fill)?,
             highlight_fill: parse_fill_color("highlight_fill", &p.highlight_fill)?,
             highlight_text: parse_hex_color("highlight_text", &p.highlight_text)?,
@@ -358,7 +356,6 @@ impl FormatCache {
         // is_highlight > total (or shade) > subtotal (or shade) > shade > data
         let shade_fill = match key.role.shade {
             Some(Shade::Muted) => self.palette.shade_muted_fill,
-            Some(Shade::Accent) => self.palette.shade_accent_fill,
             Some(Shade::Alt) => self.palette.shade_alt_fill,
             Some(Shade::None) | None => None,
         };

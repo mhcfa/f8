@@ -627,8 +627,8 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
         "palette": {
             "table_title_fill": "#1B365D",
             "table_title_text": "#FFFFFF",
-            "table_subtitle_text": "#4B5563",
-            "super_header_fill": "#ced4da",
+            "table_subtitle_text": "#45556C",
+            "super_header_fill": "#E2E8F0",
             "super_header_text": "#000000",
             "col_header_fill": "none",
             "col_header_text": "#000000",
@@ -643,11 +643,10 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
             "input_text": "#0000FF",
             "formula_text": "#000000",
             "shade_muted_fill": "#F8FAFC",
-            "shade_accent_fill": "#EFF6FF",
             "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#000000",
-            "gridline_color": "#E5E7EB",
+            "gridline_color": "#E2E8F0",
             "border_color": "#000000",
             "total_border_color": "#1B365D",
         },
@@ -692,8 +691,8 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
     palette_dict: dict[str, object] = {
         "table_title_fill": "not_a_hex",
         "table_title_text": "#FFFFFF",
-        "table_subtitle_text": "#4B5563",
-        "super_header_fill": "#ced4da",
+        "table_subtitle_text": "#45556C",
+        "super_header_fill": "#E2E8F0",
         "super_header_text": "#000000",
         "col_header_fill": "none",
         "col_header_text": "#000000",
@@ -708,11 +707,10 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
         "input_text": "#0000FF",
         "formula_text": "#000000",
         "shade_muted_fill": "#F8FAFC",
-        "shade_accent_fill": "#EFF6FF",
         "shade_alt_fill": "#F1F5F9",
         "highlight_fill": "#FEF3C7",
         "highlight_text": "#000000",
-        "gridline_color": "#E5E7EB",
+        "gridline_color": "#E2E8F0",
         "border_color": "#000000",
         "total_border_color": "#1B365D",
     }
@@ -733,3 +731,14 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
     inverted_manifest: dict[str, object] = {**manifest, "theme": inverted_theme}
     with pytest.raises(SpecificationError, match="max_col_width"):
         core_compile(inverted_manifest, tables)
+
+    # 6. Rejection of removed shade_accent_fill in theme palette
+    accent_palette = {
+        **palette_dict,
+        "table_title_fill": "#1B365D",
+        "shade_accent_fill": "#EFF6FF",
+    }
+    accent_theme = {**custom_theme, "palette": accent_palette}
+    accent_manifest = {**manifest, "theme": accent_theme}
+    with pytest.raises(SpecificationError, match="shade_accent_fill"):
+        core_compile(accent_manifest, tables)

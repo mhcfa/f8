@@ -96,7 +96,6 @@ pub enum Shade {
     #[default]
     None,
     Muted,
-    Accent,
     Alt,
 }
 
@@ -105,7 +104,6 @@ impl Shade {
         match self {
             Self::None => "none",
             Self::Muted => "muted",
-            Self::Accent => "accent",
             Self::Alt => "alt",
         }
     }

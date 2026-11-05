@@ -316,7 +316,6 @@ Applies theme palette background fill to body cells without changing font color 
 
 - `"none"`: No background shade; clears inherited row/column shade when set on a 0D cell override.
 - `"muted"`: Maps to `theme.palette.shade_muted_fill` (`#F8FAFC` in `corporate_navy`).
-- `"accent"`: Maps to `theme.palette.shade_accent_fill` (`#EFF6FF` in `corporate_navy`).
 - `"alt"`: Maps to `theme.palette.shade_alt_fill` (`#F1F5F9` in `corporate_navy`).
 
 ### Currency Codes (`CurrencyCode`)

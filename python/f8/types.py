@@ -228,7 +228,7 @@ type FormatPreset = Literal[
 
 type SemanticStyle = Literal["data", "subtotal", "total"]
 
-type Shade = Literal["none", "muted", "accent", "alt"]
+type Shade = Literal["none", "muted", "alt"]
 
 type CurrencyCode = Literal[
     "USD",

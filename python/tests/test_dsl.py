@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 from f8 import (
@@ -494,7 +495,6 @@ def test_custom_theme_dict_on_model_init() -> None:
             "input_text": "#002060",
             "formula_text": "#000000",
             "shade_muted_fill": "#F8FAFC",
-            "shade_accent_fill": "#EFF6FF",
             "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#92400E",
@@ -574,8 +574,8 @@ def test_custom_theme_path_on_model_init(tmp_path: Path) -> None:
         "palette": {
             "table_title_fill": "#177",
             "table_title_text": "#FFFFFF",
-            "table_subtitle_text": "#4B5563",
-            "super_header_fill": "#ced4da",
+            "table_subtitle_text": "#45556C",
+            "super_header_fill": "#E2E8F0",
             "super_header_text": "#000000",
             "col_header_fill": "none",
             "col_header_text": "#000000",
@@ -590,11 +590,10 @@ def test_custom_theme_path_on_model_init(tmp_path: Path) -> None:
             "input_text": "#0000FF",
             "formula_text": "#000000",
             "shade_muted_fill": "#F8FAFC",
-            "shade_accent_fill": "#EFF6FF",
             "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#000000",
-            "gridline_color": "#E5E7EB",
+            "gridline_color": "#E2E8F0",
             "border_color": "#000000",
             "total_border_color": "#1B365D",
         },
@@ -660,7 +659,7 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
     table = sheet.add_table("T1", title="Shaded Table")
     table.add_column("label", role="descriptor", header="Item")
     table.add_column("2023a", header="2023A", shade="muted")
-    table.add_column("stub", header="Stub", shade="accent")
+    table.add_column("stub", header="Stub", shade="alt")
     table.add_column("2024e", header="2024E")
 
     table.add_row(
@@ -673,7 +672,7 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
         cells={
             "label": "KPI Band",
             "2023a": Cell(10.0, shade="none"),
-            "stub": {"value": 12.0, "shade": "accent"},
+            "stub": {"value": 12.0, "shade": "muted"},
             "2024e": 15.0,
         },
     )
@@ -703,7 +702,7 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
                 "id": "stub",
                 "role": "measure",
                 "headers": ["Stub"],
-                "shade": "accent",
+                "shade": "alt",
             },
             {
                 "kind": "data",
@@ -730,7 +729,7 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
                 "cells": {
                     "label": "KPI Band",
                     "2023a": {"value": 10.0, "shade": "none"},
-                    "stub": {"value": 12.0, "shade": "accent"},
+                    "stub": {"value": 12.0, "shade": "muted"},
                     "2024e": 15.0,
                 },
             },
@@ -741,28 +740,37 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
     table_insp = compiled.inspect_table("T1")
     assert table_insp["columns"][0]["shade"] is None
     assert table_insp["columns"][1]["shade"] == "muted"
-    assert table_insp["columns"][2]["shade"] == "accent"
+    assert table_insp["columns"][2]["shade"] == "alt"
     assert table_insp["rows"][0]["shade"] is None
     assert table_insp["rows"][1]["shade"] == "alt"
 
     assert compiled.inspect_cell("T1", "rev", "2023a")["shade"] == "muted"
-    assert compiled.inspect_cell("T1", "rev", "stub")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "rev", "stub")["shade"] == "alt"
     assert compiled.inspect_cell("T1", "rev", "2024e")["shade"] == "muted"
     assert compiled.inspect_cell("T1", "kpi", "label")["shade"] == "alt"
     assert compiled.inspect_cell("T1", "kpi", "2023a")["shade"] is None
-    assert compiled.inspect_cell("T1", "kpi", "stub")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "kpi", "stub")["shade"] == "muted"
     assert compiled.inspect_cell("T1", "kpi", "2024e")["shade"] == "alt"
 
     # Symmetrical vector shade conflict raises SpecificationError
     conflict_model = Model()
     cs = conflict_model.add_sheet("S")
     ct = cs.add_table("Conflict", title="Conflict")
-    shade_val: Shade = "accent"
+    shade_val: Shade = "alt"
     ct.add_column("c1", header="C1", shade=shade_val)
     ct.add_row("r1", shade="muted", cells={"c1": 1.0})
     with pytest.raises(SpecificationError, match="shade conflict") as exc_info:
         conflict_model.compile()
     assert exc_info.value.table == "Conflict"
+
+    # Rejection of removed "accent" shade in column, row, or cell
+    bad_model = Model()
+    bs = bad_model.add_sheet("BadSheet")
+    bt = bs.add_table("BadTable", title="Bad")
+    bt.add_column("c1", header="C1", shade=cast(Shade, "accent"))
+    bt.add_row("r1", cells={"c1": 1.0})
+    with pytest.raises(SpecificationError, match="accent"):
+        bad_model.compile()
 
 
 def test_scenario_12_table_placement_dsl_and_dashboard_layout() -> None:
@@ -928,7 +936,7 @@ def test_set_cells_scenario_2_2d_rectangular_block_and_metadata_patching() -> No
     table.add_row("r3", cells={"c1": 3.0, "c2": 3.0, "c3": 3.0})
 
     table.set_cells(slice("r1", "r2"), slice("c1", "c2"), value=5.0)
-    table.set_cells(["r1", "r2"], "c2", shade="accent", note="patched")
+    table.set_cells(["r1", "r2"], "c2", shade="alt", note="patched")
 
     _manifest, tables = model.__f8_spec__()
     rows_spec = [r for r in tables[0].get("rows", []) if r.get("kind") == "data"]
@@ -937,7 +945,7 @@ def test_set_cells_scenario_2_2d_rectangular_block_and_metadata_patching() -> No
         "id": "r1",
         "cells": {
             "c1": 5.0,
-            "c2": {"value": 5.0, "shade": "accent", "note": "patched"},
+            "c2": {"value": 5.0, "shade": "alt", "note": "patched"},
             "c3": 1.0,
         },
     }
@@ -946,7 +954,7 @@ def test_set_cells_scenario_2_2d_rectangular_block_and_metadata_patching() -> No
         "id": "r2",
         "cells": {
             "c1": 5.0,
-            "c2": {"value": 5.0, "shade": "accent", "note": "patched"},
+            "c2": {"value": 5.0, "shade": "alt", "note": "patched"},
             "c3": 2.0,
         },
     }
@@ -959,9 +967,9 @@ def test_set_cells_scenario_2_2d_rectangular_block_and_metadata_patching() -> No
     compiled = model.compile()
     assert compiled.num("T1", "r1", "c1") == pytest.approx(5.0)
     assert compiled.num("T1", "r2", "c1") == pytest.approx(5.0)
-    assert compiled.inspect_cell("T1", "r1", "c2")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "r1", "c2")["shade"] == "alt"
     assert compiled.inspect_cell("T1", "r1", "c2")["note"] == "patched"
-    assert compiled.inspect_cell("T1", "r2", "c2")["shade"] == "accent"
+    assert compiled.inspect_cell("T1", "r2", "c2")["shade"] == "alt"
     assert compiled.inspect_cell("T1", "r2", "c2")["note"] == "patched"
 
 

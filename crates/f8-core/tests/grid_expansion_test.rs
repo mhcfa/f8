@@ -1338,7 +1338,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
         columns: vec![
             ColumnSpec::descriptor("label", "Line Item"),
             ColumnSpec::new("2023a").with_shade(Some(Shade::Muted)),
-            ColumnSpec::new("stub").with_shade(Some(Shade::Accent)),
+            ColumnSpec::new("stub").with_shade(Some(Shade::Alt)),
             ColumnSpec::new("2024e"),
         ],
         rows: vec![
@@ -1353,7 +1353,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
                 .with_cells({
                     let mut map = IndexMap::new();
                     map.insert(ColId::from("label"), CellInput::string("KPI Band"));
-                    // Escape hatch: clear shade at (kpi, 2023a) and override to Accent at (kpi, stub)
+                    // Escape hatch: clear shade at (kpi, 2023a) and override to Muted at (kpi, stub)
                     map.insert(
                         ColId::from("2023a"),
                         CellInput::Detailed(DetailedCellInput {
@@ -1366,7 +1366,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
                         ColId::from("stub"),
                         CellInput::Detailed(DetailedCellInput {
                             value: Some(ValueLiteral::Number(48.0)),
-                            shade: Some(Shade::Accent),
+                            shade: Some(Shade::Muted),
                             ..Default::default()
                         }),
                     );
@@ -1392,14 +1392,14 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
     // Row "rev" inherits column shades
     assert_eq!(find_shade("rev", "label"), None);
     assert_eq!(find_shade("rev", "2023a"), Some(Shade::Muted));
-    assert_eq!(find_shade("rev", "stub"), Some(Shade::Accent));
+    assert_eq!(find_shade("rev", "stub"), Some(Shade::Alt));
     assert_eq!(find_shade("rev", "2024e"), None);
 
     // Row "kpi" spans descriptor ("label") and measure ("2024e") with Shade::Alt,
-    // while point cell overrides at ("kpi", "2023a") -> None and ("kpi", "stub") -> Some(Shade::Accent)
+    // while point cell overrides at ("kpi", "2023a") -> None and ("kpi", "stub") -> Some(Shade::Muted)
     assert_eq!(find_shade("kpi", "label"), Some(Shade::Alt));
     assert_eq!(find_shade("kpi", "2023a"), None);
-    assert_eq!(find_shade("kpi", "stub"), Some(Shade::Accent));
+    assert_eq!(find_shade("kpi", "stub"), Some(Shade::Muted));
     assert_eq!(find_shade("kpi", "2024e"), Some(Shade::Alt));
 
     // 2. Symmetrical vector shade conflict when row and col specify differing active shades without cell override
@@ -1410,7 +1410,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
-        columns: vec![ColumnSpec::new("c1").with_shade(Some(Shade::Accent))],
+        columns: vec![ColumnSpec::new("c1").with_shade(Some(Shade::Alt))],
         rows: vec![
             RowSpec::new("r1")
                 .with_shade(Some(Shade::Muted))
@@ -1429,7 +1429,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
             ref row,
             ref column,
             row_shade: Shade::Muted,
-            col_shade: Shade::Accent,
+            col_shade: Shade::Alt,
         } if table.as_str() == "ConflictTable" && row.as_str() == "r1" && column.as_str() == "c1"
     ));
 

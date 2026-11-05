@@ -18,6 +18,9 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert!(theme.typography.title_size > theme.typography.data_size);
     assert!(theme.typography.section_header_underline);
     assert_eq!(theme.palette.section_header_fill, "none");
+    assert_eq!(theme.palette.table_subtitle_text, "#45556C");
+    assert_eq!(theme.palette.super_header_fill, "#E2E8F0");
+    assert_eq!(theme.palette.gridline_color, "#E2E8F0");
 
     // Verify metrics
     assert!(theme.metrics.gutter_row_height > 0.0);
@@ -206,7 +209,6 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
             "input_text": "#002060",
             "formula_text": "#000000",
             "shade_muted_fill": "#F8FAFC",
-            "shade_accent_fill": "#EFF6FF",
             "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#92400E",
@@ -395,7 +397,6 @@ fn test_scenario_10_transparent_fill_validation() {
     theme.palette.super_header_fill = "none".to_string();
     theme.palette.table_title_fill = "none".to_string();
     theme.palette.shade_muted_fill = "transparent".to_string();
-    theme.palette.shade_accent_fill = "none".to_string();
     theme.palette.shade_alt_fill = "transparent".to_string();
     theme.palette.highlight_fill = "none".to_string();
     theme.validate().expect("transparent fills should be valid");
@@ -478,7 +479,6 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
             "input_text": "#0000FF",
             "formula_text": "#000000",
             "shade_muted_fill": "#F8FAFC",
-            "shade_accent_fill": "#EFF6FF",
             "shade_alt_fill": "#F1F5F9",
             "highlight_fill": "#FEF3C7",
             "highlight_text": "#000000",
@@ -531,14 +531,12 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
 fn test_scenario_12_shade_palette_defaults_and_validation() {
     let theme = Theme::corporate_navy();
     assert_eq!(theme.palette.shade_muted_fill, "#F8FAFC");
-    assert_eq!(theme.palette.shade_accent_fill, "#EFF6FF");
     assert_eq!(theme.palette.shade_alt_fill, "#F1F5F9");
 
-    for field_name in ["shade_muted_fill", "shade_accent_fill", "shade_alt_fill"] {
+    for field_name in ["shade_muted_fill", "shade_alt_fill"] {
         let mut bad_theme = Theme::corporate_navy();
         match field_name {
             "shade_muted_fill" => bad_theme.palette.shade_muted_fill = "invalid".to_string(),
-            "shade_accent_fill" => bad_theme.palette.shade_accent_fill = "invalid".to_string(),
             "shade_alt_fill" => bad_theme.palette.shade_alt_fill = "invalid".to_string(),
             _ => unreachable!(),
         }
@@ -583,4 +581,23 @@ fn test_scenario_13_max_col_width_defaults_and_validation() {
             max_col_width,
         } if min_col_width == 12.0 && max_col_width == 10.0
     ));
+}
+
+#[test]
+fn test_scenario_14_rejection_of_removed_shade_accent() {
+    // 1. Shade deserialization rejects "accent"
+    let err = serde_json::from_str::<f8_core::model::Shade>("\"accent\"").unwrap_err();
+    assert!(err.to_string().contains("unknown variant `accent`"));
+
+    // 2. PaletteConfig deserialization rejects unknown field "shade_accent_fill"
+    let mut palette_val = serde_json::to_value(Theme::corporate_navy().palette).unwrap();
+    palette_val.as_object_mut().unwrap().insert(
+        "shade_accent_fill".to_string(),
+        serde_json::Value::String("#EFF6FF".to_string()),
+    );
+    let err = serde_json::from_value::<f8_core::model::PaletteConfig>(palette_val).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("unknown field `shade_accent_fill`")
+    );
 }

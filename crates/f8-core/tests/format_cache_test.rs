@@ -920,10 +920,6 @@ fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
         "{:?}",
         parse_hex_color("shade_muted_fill", &theme.palette.shade_muted_fill).unwrap()
     );
-    let accent_color = format!(
-        "{:?}",
-        parse_hex_color("shade_accent_fill", &theme.palette.shade_accent_fill).unwrap()
-    );
     let alt_color = format!(
         "{:?}",
         parse_hex_color("shade_alt_fill", &theme.palette.shade_alt_fill).unwrap()
@@ -941,12 +937,8 @@ fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
         parse_hex_color("formula_text", &theme.palette.formula_text).unwrap()
     );
 
-    // 1. Muted, Accent, and Alt shades on data cells
-    for (shade, expected_bg) in [
-        (Shade::Muted, &muted_color),
-        (Shade::Accent, &accent_color),
-        (Shade::Alt, &alt_color),
-    ] {
+    // 1. Muted and Alt shades on data cells
+    for (shade, expected_bg) in [(Shade::Muted, &muted_color), (Shade::Alt, &alt_color)] {
         let input_key = CellFormatKey::new(
             StyleRole::data().with_shade(Some(shade)),
             Some(FormatPreset::Number),
@@ -994,7 +986,7 @@ fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
             horizontal: SemanticStyle::Data,
             vertical: SemanticStyle::Data,
             is_highlight: true,
-            shade: Some(Shade::Accent),
+            shade: Some(Shade::Alt),
         },
         None,
         None,
@@ -1037,7 +1029,7 @@ fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
             horizontal: SemanticStyle::Subtotal,
             vertical: SemanticStyle::Data,
             is_highlight: false,
-            shade: Some(Shade::Accent),
+            shade: Some(Shade::Alt),
         },
         None,
         None,
@@ -1049,7 +1041,7 @@ fn test_scenario_15_shade_fill_precedence_and_summary_fallthrough() {
     let subtotal_fmt = cache.get_cell_format(&subtotal_shaded_key).expect("ok");
     let subtotal_debug = format!("{subtotal_fmt:?}");
     assert!(
-        subtotal_debug.contains(&format!("background_color: {accent_color}")),
+        subtotal_debug.contains(&format!("background_color: {alt_color}")),
         "Transparent subtotal_fill must fall back to shade_fill: {subtotal_debug}"
     );
 

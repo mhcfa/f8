@@ -145,6 +145,7 @@ impl Default for MetricsConfig {
 
 /// Color assignments across all workbook components.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PaletteConfig {
     pub table_title_fill: String,
     pub table_title_text: String,
@@ -164,7 +165,6 @@ pub struct PaletteConfig {
     pub input_text: String,
     pub formula_text: String,
     pub shade_muted_fill: String,
-    pub shade_accent_fill: String,
     pub shade_alt_fill: String,
     pub highlight_fill: String,
     pub highlight_text: String,
@@ -358,7 +358,6 @@ impl PaletteConfig {
             ("subtotal_fill", &self.subtotal_fill),
             ("total_fill", &self.total_fill),
             ("shade_muted_fill", &self.shade_muted_fill),
-            ("shade_accent_fill", &self.shade_accent_fill),
             ("shade_alt_fill", &self.shade_alt_fill),
             ("highlight_fill", &self.highlight_fill),
         ];
@@ -535,8 +534,8 @@ impl Theme {
             palette: PaletteConfig {
                 table_title_fill: "#1B365D".to_string(),
                 table_title_text: "#FFFFFF".to_string(),
-                table_subtitle_text: "#4B5563".to_string(),
-                super_header_fill: "#ced4da".to_string(),
+                table_subtitle_text: "#45556C".to_string(),
+                super_header_fill: "#E2E8F0".to_string(),
                 super_header_text: "#000000".to_string(),
                 col_header_fill: "none".to_string(),
                 col_header_text: "#000000".to_string(),
@@ -551,11 +550,10 @@ impl Theme {
                 input_text: "#0000FF".to_string(),
                 formula_text: "#000000".to_string(),
                 shade_muted_fill: "#F8FAFC".to_string(),
-                shade_accent_fill: "#EFF6FF".to_string(),
                 shade_alt_fill: "#F1F5F9".to_string(),
                 highlight_fill: "#FEF3C7".to_string(),
                 highlight_text: "#000000".to_string(),
-                gridline_color: "#E5E7EB".to_string(),
+                gridline_color: "#E2E8F0".to_string(),
                 border_color: "#000000".to_string(),
                 total_border_color: "#1B365D".to_string(),
             },
