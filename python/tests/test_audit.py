@@ -412,6 +412,28 @@ def test_scenario_9_multi_tier_header_and_section_auditing() -> None:
     )
     assert "**Operating Expenses**" in md_sub_sec
 
+    # Multi-section subsetting with include_section_headers=True omits orphaned section headers
+    multi_sec_model = Model(name="MultiSec", theme="corporate_navy")
+    multi_sec_sheet = multi_sec_model.add_sheet("Sheet1")
+    multi_sec_tbl = multi_sec_sheet.add_table("MultiSecTable", title="Multi Section")
+    multi_sec_tbl.add_column("line_item", role="descriptor", header="Metric")
+    multi_sec_tbl.add_column("val", role="measure", header="Value")
+    multi_sec_tbl.add_section_header("Section 1: Empty Match")
+    multi_sec_tbl.add_row("r1", cells={"line_item": "Row 1", "val": 10.0})
+    multi_sec_tbl.add_section_header("Section 2: Active Match")
+    multi_sec_tbl.add_row("r2", cells={"line_item": "Row 2", "val": 20.0})
+    multi_sec_tbl.add_section_header("Section 3: Trailing Empty Match")
+    multi_sec_tbl.add_row("r3", cells={"line_item": "Row 3", "val": 30.0})
+    multi_sec_compiled = multi_sec_model.compile()
+    md_filtered_sec = multi_sec_compiled.table("MultiSecTable").to_markdown(
+        rows=["r2"],
+        include_section_headers=True,
+    )
+    assert "**Section 1: Empty Match**" not in md_filtered_sec
+    assert "**Section 2: Active Match**" in md_filtered_sec
+    assert "Row 2" in md_filtered_sec
+    assert "**Section 3: Trailing Empty Match**" not in md_filtered_sec
+
     # Unknown row or col in to_markdown raises KeyError
     with pytest.raises(KeyError):
         is_table.to_markdown(rows=["unknown_row"])

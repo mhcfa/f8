@@ -413,6 +413,7 @@ class TableAuditor:
             if not r.get("is_section_header", False) and (rid := r.get("id")) is not None
         }
 
+        selected_rows: list[RowInspection]
         if rows is None:
             show_sections = True if include_section_headers is None else include_section_headers
             selected_rows = [
@@ -427,11 +428,16 @@ class TableAuditor:
                 selected_rows = [row_spec_by_id[rid] for rid in rows]
             else:
                 requested_row_set = set(rows)
-                selected_rows = [
-                    r
-                    for r in raw_rows
-                    if r.get("is_section_header", False) or r.get("id") in requested_row_set
-                ]
+                selected_rows = []
+                pending_header: RowInspection | None = None
+                for r in raw_rows:
+                    if r.get("is_section_header", False):
+                        pending_header = r
+                    elif r.get("id") in requested_row_set:
+                        if pending_header is not None:
+                            selected_rows.append(pending_header)
+                            pending_header = None
+                        selected_rows.append(r)
 
         render_cols: list[_RenderColumn] = []
         for c in selected_cols:

@@ -105,7 +105,7 @@ md: MarkdownTable = auditor.to_markdown(
   - `"addresses"`: Physical A1 addresses (`"D7"`).
 - Subsetting and formatting:
   - `cols`: Any `descriptor` columns not explicitly listed in `cols` are automatically prepended in declaration order ahead of the requested `cols` (which preserve the caller's list order; unknown ID raises `KeyError`). `descriptor` columns are left-aligned (`:---`); `measure` columns are right-aligned (`---:`).
-  - `rows`: Renders only requested `rows` (unknown ID raises `KeyError`). `include_section_headers` defaults to `True` when `rows=None` and `False` when `rows` is specified.
+  - `rows`: Renders only requested `rows` (unknown ID raises `KeyError`). `include_section_headers` defaults to `True` when `rows=None` and `False` when `rows` is specified; when `rows` is specified with `include_section_headers=True`, only section headers with at least one matching child row in `rows` are emitted.
   - `show_ids=True`: Appends `[{col_id}]` to column headers and `[{row_id}]` to descriptor labels when display text differs (case-insensitively) from the ID.
   - Rows with `style="subtotal"` or `style="total"` wrap non-empty cell text in `**...**`. Both `TableAuditor` and `MarkdownTable` (`str` subclass) implement `_repr_markdown_()`.
 
