@@ -1,6 +1,6 @@
 use crate::expr::ast::{
     BinaryOp, ColEndpoint, ColSelector, Expr, Literal, RelativeOffset, RowEndpoint, RowSelector,
-    TableRef, UnaryOp,
+    TableRef, TableSelector, UnaryOp,
 };
 use crate::expr::error::ParseError;
 use crate::model::id::{ColId, RowId};
@@ -39,6 +39,8 @@ pub(crate) enum Token<'a> {
     AtCol,
     /// Active evaluation row symbol `@row`.
     AtRow,
+    /// Active evaluation table symbol `@table`.
+    AtTable,
 
     // Operators
     /// Plus operator `+`.
@@ -93,7 +95,8 @@ impl<'a> Token<'a> {
             | Self::Dot
             | Self::DotDot
             | Self::AtCol
-            | Self::AtRow => None,
+            | Self::AtRow
+            | Self::AtTable => None,
         }
     }
 }
@@ -116,6 +119,7 @@ impl<'a> fmt::Display for Token<'a> {
             Self::DotDot => write!(f, ".."),
             Self::AtCol => write!(f, "@col"),
             Self::AtRow => write!(f, "@row"),
+            Self::AtTable => write!(f, "@table"),
             Self::Plus => write!(f, "+"),
             Self::Minus => write!(f, "-"),
             Self::Star => write!(f, "*"),
@@ -337,6 +341,20 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
                 continue;
             }
             '@' => {
+                if cursor.starts_with("@table")
+                    && cursor
+                        .as_bytes()
+                        .get(6)
+                        .is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_')
+                {
+                    tokens.push(SpannedToken {
+                        token: Token::AtTable,
+                        offset,
+                        len: 6,
+                    });
+                    cursor = &cursor[6..];
+                    continue;
+                }
                 if cursor.starts_with("@col")
                     && cursor
                         .as_bytes()
@@ -681,7 +699,9 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
 
             match stream.peek() {
                 Some(st) if st.token == Token::LParen => parse_function_call(name, offset, stream),
-                Some(st) if st.token == Token::LBracket => parse_bracket_access(name, stream),
+                Some(st) if st.token == Token::LBracket => {
+                    parse_bracket_access(TableSelector::from(name), stream)
+                }
                 Some(st) => Err(ParseError::UnexpectedToken {
                     expected: "function call '(' or table reference '['",
                     found: st.token.to_string(),
@@ -690,6 +710,24 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
                 None => Err(ParseError::UnexpectedToken {
                     expected: "function call '(' or table reference '['",
                     found: name.to_string(),
+                    offset,
+                }),
+            }
+        }
+        Token::AtTable => {
+            stream.advance();
+            match stream.peek() {
+                Some(st) if st.token == Token::LBracket => {
+                    parse_bracket_access(TableSelector::Active, stream)
+                }
+                Some(st) => Err(ParseError::UnexpectedToken {
+                    expected: "table reference '['",
+                    found: st.token.to_string(),
+                    offset: st.offset,
+                }),
+                None => Err(ParseError::UnexpectedToken {
+                    expected: "table reference '['",
+                    found: "@table".to_string(),
                     offset,
                 }),
             }
@@ -811,7 +849,10 @@ fn parse_function_call(
     })
 }
 
-fn parse_bracket_access(table: &str, stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
+fn parse_bracket_access(
+    table: TableSelector,
+    stream: &mut TokenStream<'_>,
+) -> Result<Expr, ParseError> {
     // Consume '['
     let _ = stream.expect(&Token::LBracket, "'['")?;
 
@@ -939,6 +980,7 @@ fn parse_row_endpoint(stream: &mut TokenStream<'_>) -> Result<RowEndpoint, Parse
         | Token::Dot
         | Token::DotDot
         | Token::AtCol
+        | Token::AtTable
         | Token::Plus
         | Token::Minus
         | Token::Star
@@ -1013,6 +1055,7 @@ fn parse_col_endpoint(stream: &mut TokenStream<'_>) -> Result<ColEndpoint, Parse
         | Token::Dot
         | Token::DotDot
         | Token::AtRow
+        | Token::AtTable
         | Token::Plus
         | Token::Minus
         | Token::Star

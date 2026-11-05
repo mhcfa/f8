@@ -8,7 +8,7 @@ pub mod parser;
 
 pub use ast::{
     BinaryOp, ColEndpoint, ColSelector, Expr, Literal, RelativeOffset, RowEndpoint, RowSelector,
-    TableRef, UnaryOp,
+    TableRef, TableSelector, UnaryOp,
 };
 pub use error::ParseError;
 

@@ -3,7 +3,7 @@
 use f8_core::compiler::graph::{ResolveError, resolve_cell_dependencies, resolve_table_ref};
 use f8_core::compiler::ir::{CellGrid, CellId, SymbolTable, expand_table};
 use f8_core::expr::ast::{
-    ColEndpoint, ColSelector, RelativeOffset, RowEndpoint, RowSelector, TableRef,
+    ColEndpoint, ColSelector, RelativeOffset, RowEndpoint, RowSelector, TableRef, TableSelector,
 };
 use f8_core::model::id::{ColId, RowId, SheetId, TableId};
 use f8_core::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
@@ -595,5 +595,220 @@ fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
             .cell_value(&debt_id, &prior_row, &ColId::from("2026E"))
             .unwrap(),
         CellValue::Number(25.0)
+    );
+}
+
+#[test]
+fn test_active_table_selector_resolution() {
+    let (symbols, _, _) = build_test_symbols();
+    let origin_2024 = CellId::new("IncomeStatement", "ebit", "2024E");
+
+    // 1. Scalar active table reference: @table["rev", @col]
+    let ref_scalar = TableRef::new(
+        TableSelector::Active,
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Active,
+    );
+    let resolved = resolve_table_ref(&origin_2024, &ref_scalar, &symbols).unwrap();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0], CellId::new("IncomeStatement", "rev", "2024E"));
+
+    // 2. Relative offset active table reference: @table["rev", col.prev]
+    let ref_prev = TableRef::new(
+        TableSelector::Active,
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Offset(RelativeOffset::Prev(1)),
+    );
+    let resolved_prev = resolve_table_ref(&origin_2024, &ref_prev, &symbols).unwrap();
+    assert_eq!(resolved_prev.len(), 1);
+    assert_eq!(
+        resolved_prev[0],
+        CellId::new("IncomeStatement", "rev", "2023A")
+    );
+
+    // 3. Range slice active table reference: @table["rev".."cogs", @col]
+    let ref_range = TableRef::new(
+        TableSelector::Active,
+        RowSelector::Range(RowEndpoint::from("rev"), RowEndpoint::from("cogs")),
+        ColSelector::Active,
+    );
+    let resolved_range = resolve_table_ref(&origin_2024, &ref_range, &symbols).unwrap();
+    assert_eq!(resolved_range.len(), 2);
+    assert_eq!(
+        resolved_range[0],
+        CellId::new("IncomeStatement", "rev", "2024E")
+    );
+    assert_eq!(
+        resolved_range[1],
+        CellId::new("IncomeStatement", "cogs", "2024E")
+    );
+}
+
+#[test]
+fn test_active_table_selector_model_compilation_and_inspection() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let table_active = TableSpec {
+        id: TableId::from("IncomeStatement"),
+        title: "Income Statement".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("y1"), ColumnSpec::new("y2")],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("y1", CellInput::number(100.0))
+                .with_cell("y2", CellInput::number(200.0)),
+            RowSpec::new("cogs")
+                .with_cell("y1", CellInput::number(40.0))
+                .with_cell("y2", CellInput::number(70.0)),
+            RowSpec::new("gp").with_expr("@table[\"rev\", @col] - @table[\"cogs\", @col]"),
+            RowSpec::new("sum_gp").with_expr("SUM(@table[\"rev\"..\"cogs\", @col])"),
+            RowSpec::new("lag_rev")
+                .with_cell("y1", CellInput::number(0.0))
+                .with_cell("y2", CellInput::formula("@table[\"rev\", col.prev]")),
+        ],
+    };
+
+    let table_explicit = TableSpec {
+        id: TableId::from("IncomeStatementExplicit"),
+        title: "Income Statement Explicit".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("y1"), ColumnSpec::new("y2")],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("y1", CellInput::number(100.0))
+                .with_cell("y2", CellInput::number(200.0)),
+            RowSpec::new("cogs")
+                .with_cell("y1", CellInput::number(40.0))
+                .with_cell("y2", CellInput::number(70.0)),
+            RowSpec::new("gp").with_expr(
+                "IncomeStatementExplicit[\"rev\", @col] - IncomeStatementExplicit[\"cogs\", @col]",
+            ),
+            RowSpec::new("sum_gp")
+                .with_expr("SUM(IncomeStatementExplicit[\"rev\"..\"cogs\", @col])"),
+            RowSpec::new("lag_rev")
+                .with_cell("y1", CellInput::number(0.0))
+                .with_cell(
+                    "y2",
+                    CellInput::formula("IncomeStatementExplicit[\"rev\", col.prev]"),
+                ),
+        ],
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "ActiveTableTest".into(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Model".into(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("IncomeStatement")],
+            },
+            SheetSpec {
+                name: "ExplicitModel".into(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("IncomeStatementExplicit")],
+            },
+        ],
+    };
+
+    let compiled =
+        Compiler::compile(&manifest, &[table_active, table_explicit]).expect("compile ok");
+
+    let is_id = TableId::from("IncomeStatement");
+    let exp_id = TableId::from("IncomeStatementExplicit");
+
+    // Pass 4: values evaluate identically
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("gp"), &ColId::from("y1"))
+            .unwrap(),
+        compiled
+            .cell_value(&exp_id, &RowId::from("gp"), &ColId::from("y1"))
+            .unwrap()
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("gp"), &ColId::from("y1"))
+            .unwrap(),
+        CellValue::Number(60.0)
+    );
+
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("gp"), &ColId::from("y2"))
+            .unwrap(),
+        compiled
+            .cell_value(&exp_id, &RowId::from("gp"), &ColId::from("y2"))
+            .unwrap()
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("gp"), &ColId::from("y2"))
+            .unwrap(),
+        CellValue::Number(130.0)
+    );
+
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("sum_gp"), &ColId::from("y1"))
+            .unwrap(),
+        compiled
+            .cell_value(&exp_id, &RowId::from("sum_gp"), &ColId::from("y1"))
+            .unwrap()
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("sum_gp"), &ColId::from("y1"))
+            .unwrap(),
+        CellValue::Number(140.0)
+    );
+
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("lag_rev"), &ColId::from("y2"))
+            .unwrap(),
+        compiled
+            .cell_value(&exp_id, &RowId::from("lag_rev"), &ColId::from("y2"))
+            .unwrap()
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&is_id, &RowId::from("lag_rev"), &ColId::from("y2"))
+            .unwrap(),
+        CellValue::Number(100.0)
+    );
+
+    // Pass 3 dependencies & inspect_cell: formula_expr preserves @table[...]
+    let insp = compiled
+        .inspect_cell(&is_id, &RowId::from("gp"), &ColId::from("y1"))
+        .expect("cell inspection ok");
+    assert_eq!(
+        insp.formula_expr.as_deref(),
+        Some("@table[\"rev\", @col] - @table[\"cogs\", @col]")
+    );
+
+    // Direct dependencies: resolves to IncomeStatement
+    assert_eq!(insp.precedents.len(), 2);
+    assert!(
+        insp.precedents
+            .iter()
+            .any(|d| d.cell_id == CellId::new("IncomeStatement", "rev", "y1"))
+    );
+    assert!(
+        insp.precedents
+            .iter()
+            .any(|d| d.cell_id == CellId::new("IncomeStatement", "cogs", "y1"))
     );
 }

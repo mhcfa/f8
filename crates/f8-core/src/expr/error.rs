@@ -59,9 +59,9 @@ pub enum ParseError {
         offset: usize,
     },
 
-    /// Bare '@' was encountered instead of '@col' or '@row'.
+    /// Bare '@' was encountered instead of '@col', '@row', or '@table'.
     #[error(
-        "Bare '@' at offset {offset} is retired; specify active axis explicitly using '@col' or '@row'"
+        "Bare '@' at offset {offset} is retired; specify active coordinate explicitly using '@col', '@row', or '@table'"
     )]
     RetiredBareAt {
         /// Byte offset in the formula string.

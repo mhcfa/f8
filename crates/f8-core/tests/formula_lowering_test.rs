@@ -4,7 +4,7 @@ use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::layout::LayoutPlanner;
 use f8_core::compiler::lowering::{FormulaLowerer, LoweringError};
 use f8_core::compiler::{Compiler, ir};
-use f8_core::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef};
+use f8_core::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef, TableSelector};
 use f8_core::model::id::{ColId, RowId, TableId};
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
 use f8_core::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
@@ -466,12 +466,12 @@ fn test_scenario_13_function_calls_with_omitted_positional_arguments() {
         args: vec![
             Expr::Literal(Literal::Number(100.0)),
             Expr::Reference(TableRef {
-                table: TableId::from("IncomeStatement"),
+                table: TableSelector::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("revenue")),
                 col: ColSelector::Range("2024E".into(), "2027E".into()),
             }),
             Expr::Reference(TableRef {
-                table: TableId::from("IncomeStatement"),
+                table: TableSelector::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("cogs")),
                 col: ColSelector::Range("2024E".into(), "2027E".into()),
             }),
@@ -686,4 +686,59 @@ fn test_scenario_18_dynamic_expanding_range_lowering() {
             .unwrap(),
         "=SUM(C$6:D$6)"
     );
+}
+
+#[test]
+fn test_active_table_selector_lowering() {
+    let (manifest, tables) = create_comprehensive_model();
+    let theme = Theme::default();
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    let origin_2024 = CellId::new("IncomeStatement", "gross_profit", "2024E");
+    let origin_2025 = CellId::new("IncomeStatement", "gross_profit", "2025E");
+
+    // Scenario 1: Active table scalar, offset, and range lowering matches explicit OriginTable identically
+    let comparisons = [
+        (
+            "@table[\"revenue\", @col] - @table[\"cogs\", @col]",
+            "IncomeStatement[\"revenue\", @col] - IncomeStatement[\"cogs\", @col]",
+            &origin_2024,
+        ),
+        (
+            "@table[\"revenue\", col.prev]",
+            "IncomeStatement[\"revenue\", col.prev]",
+            &origin_2025,
+        ),
+        (
+            "SUM(@table[\"revenue\"..\"cogs\", @col])",
+            "SUM(IncomeStatement[\"revenue\"..\"cogs\", @col])",
+            &origin_2024,
+        ),
+        (
+            "SUM(@table[\"revenue\", \"2024E\"..@col])",
+            "SUM(IncomeStatement[\"revenue\", \"2024E\"..@col])",
+            &origin_2025,
+        ),
+        (
+            "SUM(@table[\"revenue\"..@row, @col])",
+            "SUM(IncomeStatement[\"revenue\"..@row, @col])",
+            &origin_2024,
+        ),
+    ];
+
+    for (active_formula, explicit_formula, origin) in comparisons {
+        let active_expr = Expr::parse(active_formula).unwrap();
+        let explicit_expr = Expr::parse(explicit_formula).unwrap();
+
+        let lowered_active =
+            FormulaLowerer::lower_cell(origin, &active_expr, &symbol_table, &layout_map).unwrap();
+        let lowered_explicit =
+            FormulaLowerer::lower_cell(origin, &explicit_expr, &symbol_table, &layout_map).unwrap();
+
+        assert_eq!(
+            lowered_active, lowered_explicit,
+            "Active formula '{active_formula}' did not lower identically to '{explicit_formula}'"
+        );
+    }
 }

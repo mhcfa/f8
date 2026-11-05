@@ -52,7 +52,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
    - Resolves cell formatting, indentation, notes, visual highlights, and background zone shades (`row.shade` vs `col.shade`; conflicting active shades halt with `IrError::ShadeConflict`, while `shade: "none"` on a cell clears inherited shades).
    - Resolves cell currency: Point override > Vector rules (`row.currency` vs `col.currency`; conflicting codes halt with `IrError::CurrencyConflict`) > `table.currency` > default `usd`.
 3. Dependency Graph & SCC (`f8_core::compiler::graph`):
-   - Resolves cell references: table-qualified keys (`Table[row, col]`), active coordinate selectors (`@col`, `@row`), temporal offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`), and static or dynamic range slices (`start..end` with key, active, or offset endpoints).
+   - Resolves cell references: table-qualified keys (`Table[row, col]`), active table selector (`@table[row, col]`), active coordinate selectors (`@col`, `@row`), temporal offsets (`col.prev(k)`, `col.next(k)`, `row.prev(k)`, `row.next(k)`), and static or dynamic range slices (`start..end` with key, active, or offset endpoints).
    - Column offset semantics: steps strictly across data measure columns, skipping gutters and descriptor columns.
    - Row offset semantics: steps strictly across data rows, skipping gutters and section headers.
    - Cycle detection: executes Tarjan's Strongly Connected Components (SCC) on `petgraph::DiGraph`. Cycles halt compilation with exact cycle trace (`StrictDagHandler`).

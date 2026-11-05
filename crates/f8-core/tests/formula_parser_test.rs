@@ -2,7 +2,7 @@
 
 use f8_core::expr::{
     BinaryOp, ColEndpoint, ColSelector, Expr, ParseError, RelativeOffset, RowEndpoint, RowSelector,
-    TableRef,
+    TableRef, TableSelector,
 };
 use f8_core::model::id::{ColId, RowId, TableId};
 
@@ -321,4 +321,73 @@ fn test_dynamic_range_slice_parsing_and_display_roundtrip() {
     assert!(Expr::parse("SUM(Debt[\"amort\", \"2024E\"..\"2025E\"..@col])").is_err());
     assert!(Expr::parse("SUM(Debt[\"amort\", \"2024E\"..])").is_err());
     assert!(Expr::parse("SUM(Debt[\"amort\", ..@col])").is_err());
+}
+
+#[test]
+fn test_active_table_selector_parsing_and_roundtrip() {
+    let cases = vec![
+        (
+            "@table[\"rev\", @col] - @table[\"cogs\", @col]",
+            Expr::Binary {
+                op: BinaryOp::Sub,
+                left: Box::new(Expr::Reference(TableRef::new(
+                    TableSelector::Active,
+                    RowSelector::Key(RowId::new("rev")),
+                    ColSelector::Active,
+                ))),
+                right: Box::new(Expr::Reference(TableRef::new(
+                    TableSelector::Active,
+                    RowSelector::Key(RowId::new("cogs")),
+                    ColSelector::Active,
+                ))),
+            },
+        ),
+        (
+            "@table[\"rev\", col.prev]",
+            Expr::Reference(TableRef::new(
+                TableSelector::Active,
+                RowSelector::Key(RowId::new("rev")),
+                ColSelector::Offset(RelativeOffset::Prev(1)),
+            )),
+        ),
+        (
+            "SUM(@table[\"rev\"..\"cogs\", @col])",
+            Expr::FunctionCall {
+                name: "SUM".to_string(),
+                args: vec![Expr::Reference(TableRef::new(
+                    TableSelector::Active,
+                    RowSelector::Range(RowEndpoint::from("rev"), RowEndpoint::from("cogs")),
+                    ColSelector::Active,
+                ))],
+            },
+        ),
+    ];
+
+    for (formula, expected) in cases {
+        let parsed = Expr::parse(formula).expect("should parse valid @table formula");
+        assert_eq!(parsed, expected);
+        let displayed = parsed.to_string();
+        assert_eq!(displayed, formula);
+        assert_eq!(Expr::parse(&displayed).unwrap(), expected);
+    }
+}
+
+#[test]
+fn test_active_table_selector_invalid_positions_rejected() {
+    // Scenario 2: Invalid @table positions rejected
+    let invalid_formulas = [
+        "@table",
+        "@table(\"rev\")",
+        "IncomeStatement[@table, @col]",
+        "IncomeStatement[\"rev\", @table]",
+        "[\"rev\", @col]",
+    ];
+
+    for formula in invalid_formulas {
+        let err = Expr::parse(formula).expect_err(&format!("'{formula}' must fail parsing"));
+        assert!(
+            matches!(err, ParseError::UnexpectedToken { .. }),
+            "expected UnexpectedToken for '{formula}', got {err:?}"
+        );
+    }
 }

@@ -369,9 +369,10 @@ pub fn resolve_table_ref(
         .get_table(&origin.table)
         .ok_or_else(|| ResolveError::unregistered_table(origin, origin.table.clone()))?;
 
+    let resolved_table_id = table_ref.table.resolve(&origin.table);
     let target_table = symbol_table
-        .get_table(&table_ref.table)
-        .ok_or_else(|| ResolveError::unknown_table(origin, table_ref.table.clone()))?;
+        .get_table(resolved_table_id)
+        .ok_or_else(|| ResolveError::unknown_table(origin, resolved_table_id.clone()))?;
 
     let rows = resolve_row_selector(origin, target_table, origin_table, &table_ref.row)?;
     let cols = resolve_col_selector(origin, target_table, origin_table, &table_ref.col)?;
@@ -382,7 +383,7 @@ pub fn resolve_table_ref(
     for row in rows {
         for col in &cols {
             resolved.push(CellId::new(
-                table_ref.table.clone(),
+                resolved_table_id.clone(),
                 row.clone(),
                 col.clone(),
             ));
@@ -419,6 +420,7 @@ pub fn resolve_cell_dependencies(
 #[allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 mod tests {
     use super::*;
+    use crate::expr::ast::TableSelector;
     use crate::model::id::{SheetId, TableId};
     use crate::model::table::{ColumnSpec, RowSpec, TableSpec};
 
@@ -428,9 +430,9 @@ mod tests {
         let expr = Expr::parse(formula).expect("valid formula");
         let refs = collect_references(&expr);
         assert_eq!(refs.len(), 3);
-        assert_eq!(refs[0].table, TableId::from("TableA"));
-        assert_eq!(refs[1].table, TableId::from("TableB"));
-        assert_eq!(refs[2].table, TableId::from("TableC"));
+        assert_eq!(refs[0].table, TableSelector::from("TableA"));
+        assert_eq!(refs[1].table, TableSelector::from("TableB"));
+        assert_eq!(refs[2].table, TableSelector::from("TableC"));
     }
 
     #[test]

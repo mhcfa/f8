@@ -120,8 +120,12 @@ pub fn lower_table_ref(
         crate::compiler::graph::error::ResolveError::unknown_table(origin, origin.table.clone())
     })?;
 
-    let target_table = symbol_table.get_table(&target_ref.table).ok_or_else(|| {
-        crate::compiler::graph::error::ResolveError::unknown_table(origin, target_ref.table.clone())
+    let resolved_table_id = target_ref.table.resolve(&origin.table);
+    let target_table = symbol_table.get_table(resolved_table_id).ok_or_else(|| {
+        crate::compiler::graph::error::ResolveError::unknown_table(
+            origin,
+            resolved_table_id.clone(),
+        )
     })?;
 
     let origin_coord =
@@ -138,19 +142,19 @@ pub fn lower_table_ref(
 
     let first_row = rows.first().ok_or_else(|| LoweringError::EmptyRange {
         origin: origin.clone(),
-        target_table: target_ref.table.clone(),
+        target_table: resolved_table_id.clone(),
     })?;
     let last_row = rows.last().ok_or_else(|| LoweringError::EmptyRange {
         origin: origin.clone(),
-        target_table: target_ref.table.clone(),
+        target_table: resolved_table_id.clone(),
     })?;
     let first_col = cols.first().ok_or_else(|| LoweringError::EmptyRange {
         origin: origin.clone(),
-        target_table: target_ref.table.clone(),
+        target_table: resolved_table_id.clone(),
     })?;
     let last_col = cols.last().ok_or_else(|| LoweringError::EmptyRange {
         origin: origin.clone(),
-        target_table: target_ref.table.clone(),
+        target_table: resolved_table_id.clone(),
     })?;
 
     let is_row_range = target_ref.row.is_range();
@@ -161,7 +165,7 @@ pub fn lower_table_ref(
     let (start_row_dyn, end_row_dyn) = target_ref.row.dynamic_bounds();
 
     let top_left_id = CellId::new(
-        target_ref.table.clone(),
+        resolved_table_id.clone(),
         first_row.clone(),
         first_col.clone(),
     );
@@ -177,8 +181,11 @@ pub fn lower_table_ref(
         let end_pinned =
             range_endpoint_pinning(end_col_dyn, end_row_dyn, pin_static_col_on_dynamic_row);
 
-        let bottom_right_id =
-            CellId::new(target_ref.table.clone(), last_row.clone(), last_col.clone());
+        let bottom_right_id = CellId::new(
+            resolved_table_id.clone(),
+            last_row.clone(),
+            last_col.clone(),
+        );
         let bottom_right_coord =
             layout_map
                 .cells

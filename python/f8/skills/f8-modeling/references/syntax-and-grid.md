@@ -8,12 +8,13 @@
 
 All formula cell references require explicit 2D bracket syntax:
 
-`Table[RowSelector, ColSelector]`
+`Table[RowSelector, ColSelector]` or `@table[RowSelector, ColSelector]`
 
 ### Coordinate Selectors
 
 | Selector type              | Syntax                          | Resolution semantics                                                    | Example                                       |
 | :------------------------- | :------------------------------ | :---------------------------------------------------------------------- | :-------------------------------------------- |
+| **Active table**           | `@table["row", @col]`           | Current evaluation table (avoids repeating table name intra-table)     | `@table["revenue", @col] - @table["cogs", @col]` |
 | **Active column**          | `Table["row", @col]`            | Current evaluation column                                               | `IS["revenue", @col] * 0.40`                  |
 | **Active row**             | `Table[@row, "col"]`            | Current evaluation row                                                  | `Assumptions[@row, "rate"] * 100`             |
 | **Absolute point**         | `Table["row", "col"]`           | Fixed coordinate (lowers to `$Col$Row`)                                 | `Assumptions["tax_rate", "val"]`              |
@@ -30,9 +31,9 @@ All formula cell references require explicit 2D bracket syntax:
 
 ### Lexical and Grammatical Rules
 
-- Table identifiers: Bare ASCII identifiers (`[A-Za-z0-9_]+` containing at least one ASCII letter or `_`) before `[`. Quoted table names (`"Table"[...]`), pure numbers (`123[...]`), or dot access (`Table.row`) raise `FormulaParseError`.
+- Table identifiers: Bare ASCII identifiers (`[A-Za-z0-9_]+` containing at least one ASCII letter or `_`) or `@table` active-table token before `[`. Quoted table names (`"Table"[...]`), pure numbers (`123[...]`), or dot access (`Table.row`) raise `FormulaParseError`.
 - Coordinate keys: Explicit row and column IDs inside `[...]` must be double-quoted strings (`"revenue"`, `"2024E"`). Unquoted keys (`Table[revenue, @col]`) raise `FormulaParseError`.
-- Active axis tokens: Must be `@col` or `@row`. Bare `@` raises `FormulaParseError`.
+- Active axis tokens: Must be `@col`, `@row`, or `@table` (strictly before `[`). Bare `@` raises `FormulaParseError`.
 - Uppercase identifiers: Function names (`[A-Z][A-Z0-9_]*`, starting with an ASCII uppercase letter) and boolean literals (`TRUE`, `FALSE`) must be uppercase (table identifiers before `[` may be mixed-case). Lowercase functions/booleans, `null`, or standalone identifiers raise `FormulaParseError`.
 - Omitted arguments (`_`): Valid only as a direct argument in a function call (`PMT(rate, nper, pv, _, type)`). Using `_` in arithmetic or coordinate selectors raises `FormulaParseError`.
 - Operators and precedence (highest to lowest):

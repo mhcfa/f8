@@ -33,7 +33,7 @@ CLI commands (`f8` or `python -m f8`):
 
 ## Core Invariants
 
-- Explicit 2D coordinates: All references require bare table identifier and double-quoted keys (`Table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) raise `FormulaParseError`.
+- Explicit 2D coordinates: All references require bare table identifier or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) raise `FormulaParseError`.
 - Uppercase identifiers: Built-in functions (`SUM`, `IF`, `XLOOKUP`) and booleans (`TRUE`, `FALSE`) must be uppercase.
 - Argument omission: Use `_` for omitted optional function parameters (`PMT(rate, nper, pv, _, type)`).
 - Cell-level indentation: `indent` is restricted to `role="descriptor"` cells (`Cell("Label", indent=1)`) and section headers; setting `indent > 0` on a `measure` cell raises `SpecificationError`.

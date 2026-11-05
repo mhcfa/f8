@@ -166,11 +166,58 @@ impl fmt::Display for UnaryOp {
     }
 }
 
+/// Target table selector within a table reference.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TableSelector {
+    /// Active evaluation table: `@table`.
+    Active,
+    /// Explicit table identifier: `IncomeStatement`.
+    Key(TableId),
+}
+
+impl TableSelector {
+    /// Resolves the selector against the origin table ID.
+    #[must_use]
+    pub const fn resolve<'a>(&'a self, origin_table: &'a TableId) -> &'a TableId {
+        match self {
+            Self::Active => origin_table,
+            Self::Key(id) => id,
+        }
+    }
+}
+
+impl From<TableId> for TableSelector {
+    fn from(id: TableId) -> Self {
+        Self::Key(id)
+    }
+}
+
+impl From<&str> for TableSelector {
+    fn from(s: &str) -> Self {
+        Self::Key(TableId::from(s))
+    }
+}
+
+impl From<String> for TableSelector {
+    fn from(s: String) -> Self {
+        Self::Key(TableId::from(s))
+    }
+}
+
+impl fmt::Display for TableSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Active => write!(f, "@table"),
+            Self::Key(k) => write!(f, "{k}"),
+        }
+    }
+}
+
 /// Reference addressing target to a table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableRef {
-    /// Target table identifier.
-    pub table: TableId,
+    /// Target table selector.
+    pub table: TableSelector,
     /// Row coordinate selector.
     pub row: RowSelector,
     /// Column coordinate selector.
@@ -179,7 +226,7 @@ pub struct TableRef {
 
 impl TableRef {
     /// Constructs a table reference: `Table[row, col]`.
-    pub fn new(table: impl Into<TableId>, row: RowSelector, col: ColSelector) -> Self {
+    pub fn new(table: impl Into<TableSelector>, row: RowSelector, col: ColSelector) -> Self {
         Self {
             table: table.into(),
             row,

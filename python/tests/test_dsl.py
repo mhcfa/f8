@@ -1031,3 +1031,24 @@ def test_set_cells_scenario_3_selector_validation_and_atomic_failure() -> None:
         "id": "r1",
         "cells": {"c1": 10.0},
     }
+
+
+def test_active_table_selector_dsl() -> None:
+    model = Model(name="ActiveTableDSL")
+    sheet = model.add_sheet("Model")
+    table = sheet.add_table("IncomeStatement", title="Income Statement")
+    table.add_column("y1", role="measure", header="Y1")
+    table.add_column("y2", role="measure", header="Y2")
+
+    table.add_row("rev", cells={"y1": 100.0, "y2": 200.0})
+    table.add_row("cogs", cells={"y1": 40.0, "y2": 70.0})
+    table.add_row("gp", expr='@table["rev", @col] - @table["cogs", @col]')
+
+    compiled = model.compile()
+    insp = compiled.inspect_cell("IncomeStatement", "gp", "y1")
+    assert insp["formula_expr"] == '@table["rev", @col] - @table["cogs", @col]'
+    assert insp["evaluated_value"] == {"Number": 60.0}
+
+    insp_y2 = compiled.inspect_cell("IncomeStatement", "gp", "y2")
+    assert insp_y2["formula_expr"] == '@table["rev", @col] - @table["cogs", @col]'
+    assert insp_y2["evaluated_value"] == {"Number": 130.0}
