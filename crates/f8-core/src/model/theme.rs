@@ -532,7 +532,7 @@ impl Theme {
             typography: TypographyConfig::default(),
             metrics: MetricsConfig::default(),
             palette: PaletteConfig {
-                table_title_fill: "#1B365D".to_string(),
+                table_title_fill: "#00356B".to_string(),
                 table_title_text: "#FFFFFF".to_string(),
                 table_subtitle_text: "#45556C".to_string(),
                 super_header_fill: "#E2E8F0".to_string(),
@@ -555,7 +555,7 @@ impl Theme {
                 highlight_text: "#000000".to_string(),
                 gridline_color: "#E2E8F0".to_string(),
                 border_color: "#000000".to_string(),
-                total_border_color: "#1B365D".to_string(),
+                total_border_color: "#00356B".to_string(),
             },
             borders: BordersConfig::default(),
             number_formats: NumberFormatsConfig::default(),
