@@ -1,7 +1,7 @@
 ---
 name: spec-driven-development
 description: >-
-  Tri-agent spec-driven development (SDD) workflow for the f8 compiler workspace.
+  Tri-agent spec-driven development (SDD) workflow.
   Author ephemeral draft specs, orchestrate Implementer and Reviewer subagents,
   enforce verification gates, fold durable knowledge into reference docs, and clean up specs.
 ---
@@ -12,8 +12,8 @@ description: >-
 
 - Truth hierarchy (describes current behavior):
   1. Code, types & tests: Authoritative for behavior, data structures, and edge cases.
-  2. Reference docs: System architecture (`docs/architecture.md`) and bundled modeling skill (`python/f8/skills/f8-modeling/`).
-  3. Draft specs (`docs/specs/drafts/`): Intended delta for active work, not current behavior. A spec that conflicts with code is expected; a spec that conflicts with `docs/architecture.md` invariants must be escalated to the user.
+  2. Reference docs: System architecture (`docs/architecture.md`) and packaged skills/documentation listed in `docs/architecture.md` or `AGENTS.md`.
+  3. Draft specs (`docs/specs/drafts/`): Intended delta for active work, not current behavior. A spec that conflicts with code is expected; a spec that conflicts with reference architecture invariants must be escalated to the user.
 - Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
 - Spec custody: Only the Lead Orchestrator authors, amends, and deletes draft specs. Subagents never edit, move, or delete spec files.
 - Commit custody: Subagents leave changes uncommitted. Lead Orchestrator commits after step 5.
@@ -22,7 +22,7 @@ description: >-
 
 ### 1. Explore & align (Lead Orchestrator)
 
-- Ground designs in existing Rust/Python modules, AST/IR types, and `docs/architecture.md`.
+- Ground designs in existing modules, schemas, AST/IR types, and reference docs listed in `AGENTS.md`.
 - Surface candidate approaches with explicit trade-offs.
 
 ### 2. Specify (Lead Orchestrator)
@@ -51,7 +51,7 @@ description: >-
 
 ### 5. Fold, delete & commit (Lead Orchestrator)
 
-- Reconcile lasting architectural, DSL, or function changes into `docs/architecture.md` or `python/f8/skills/f8-modeling/` (start from the Reviewer's docs-impact flags).
+- Reconcile lasting architectural, schema, DSL, or API changes into `docs/architecture.md` and packaged skills/templates (start from the Reviewer's docs-impact flags).
 - Delete the completed draft spec from `docs/specs/drafts/`; no stale specs remain in the working tree.
 - Commit per `AGENTS.md` git conventions.
 
@@ -71,12 +71,12 @@ date: YYYY-MM-DD
 
 ## Design & Invariants
 
-- Decisions & rationale: Chosen architecture, compiler pass, or data structure and why it was chosen over alternatives.
-- Invariants: Domain invariants, compiler guarantees, and phase boundaries preserved.
+- Decisions & rationale: Chosen architecture, pass/module boundary, or data structure and why it was chosen over alternatives.
+- Invariants: Domain invariants, boundary contracts, and guarantees preserved.
 
 ## Data Contracts
 
-Compact type signatures or schema definitions for new/modified AST nodes, IR structs, traits, or Python SDK contracts (omit if none).
+Compact type signatures or schema definitions for new/modified AST/IR nodes, schemas, traits, or public SDK/CLI contracts (omit if none).
 
 ## Acceptance Criteria
 

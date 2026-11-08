@@ -2,10 +2,9 @@
 
 ## Architecture & workspace
 
-- `crates/f8-core/`: Rust calculation engine. 6-pass compiler pipeline (see `docs/architecture.md`) and `CompiledModel` facade.
-- `crates/f8-python/`: PyO3 native extension (`f8._core`, `abi3-py312`). Deserializes via `pythonize`, bridges `CompiledModel`, maps typed exceptions, and releases GIL on CPU tasks.
-- `python/f8/`: Python SDK (`Model`, `Sheet`, `Table`, `Cell`, `TableAuditor`), synchronized `.pyi` stubs (`_core.pyi`), and bundled `f8-modeling` skill.
-- `docs/`: Architecture overview (`docs/architecture.md`) and active task specs (`docs/specs/drafts/`).
+- `docs/architecture.md` & `README.md`: Repository architecture, module boundaries, domain invariants, packaged skills, and CLI/API entrypoints. Read `docs/architecture.md` before planning or modifying code.
+- `docs/specs/drafts/`: Ephemeral task specs for active work.
+- `.agents/skills/`: Bundled agent skills and optional `.agents/skills/review-implementation/references/repo-checks.md` for repository-specific review checks.
 
 ## Rule vocabulary
 
@@ -14,59 +13,77 @@
 
 ## Workflow
 
-- Spec-driven: Invoke `spec-driven-development` skill when a change alters a contract (IR/DSL semantics, pass interfaces, public Python API) or needs more than one independently verifiable increment.
-- Direct execution: Everything else (bug fixes contained in one pass, ergonomic tweaks, doc/skill updates, test additions). No draft spec or subagent dispatch. Escalate to spec-driven if a direct fix turns out to change a contract.
-- Design alignment: Surface architectural ambiguities, cross-pass impacts, and compiler vs. performance trade-offs before coding.
+- Spec-driven: Invoke `spec-driven-development` skill when a change alters a contract (schemas, IR/DSL semantics, pass or module boundaries, public CLI/SDK/API surface) or needs more than one independently verifiable increment.
+- Direct execution: Everything else (localized bug fixes, ergonomic tweaks, doc/skill updates, test additions). No draft spec or subagent dispatch. Escalate to spec-driven if a direct fix turns out to change a contract.
+- Design alignment: Surface architectural ambiguities, cross-boundary impacts, and trade-offs before coding.
 
 ## Hard rules
 
-- Never use `unwrap` / `expect` outside tests (clippy `unwrap_used`, `expect_used`).
-- Never use glob imports outside tests (clippy `wildcard_imports`).
+- Never suppress tooling to get green (`#[allow(...)]`, `# type: ignore`, `# pyright: ignore`, `# noqa`, `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`) without user approval and an inline reason.
+- Never add compatibility shims (`#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, `_v2` functions, or placeholder stubs). Update callers in place. Public Python (`__all__`) deprecation warnings only when the user or spec requires them.
+- Never use `unwrap` / `expect` outside tests (clippy `unwrap_used`, `expect_used`), bare `except:` (ruff `E722`), or silently swallow exceptions.
 - Never leave `todo!()`, `unimplemented!()`, or `dbg!()` in code (clippy `todo`, `unimplemented`, `dbg_macro`).
-- Never suppress tooling to get green (`#[allow(...)]`, `# type: ignore`, `# pyright: ignore`, `# noqa`) without user approval and an inline reason (clippy `allow_attributes_without_reason`).
-- Never use wildcard arms (`_ =>`) when matching AST, IR, or domain enums in compiler passes or PyO3 bridges. Why: adding a variant must fail compilation at every match site.
-- Never add compatibility shims in `f8-core` or `f8-python` (`#[deprecated]`, transition wrappers, old-name re-exports). Update callers in place. Public Python (`f8.__all__`) deprecation warnings only when the user or spec requires them.
-- Must pass the verification suite (below) before reporting work complete.
+- Never use glob imports outside tests (clippy `wildcard_imports`).
+- Never use wildcard arms (`_ =>`) when matching AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges. Why: adding a variant must fail compilation at every match site.
+- Never use mutable default arguments or hidden global mutable state.
+- Never manually edit generated files (e.g., `routeTree.gen.ts`); regenerate via workspace scripts.
+- Must pass the applicable verification suite (below) before reporting work complete.
 
 ## Core principles
 
-- Single source of truth: Define each concept (type, ID, coordinate mapping, error) once; import it everywhere else. Why: forked definitions drift silently across passes. Duplicated knowledge is a defect; incidental code similarity is not.
-- Canonical core IR: One representation per concept in core; no implicit fallbacks or syntactic sugar. Ergonomics live in outer adapters (Python SDK, `CompiledModel`). Why: each alternative form multiplies cases in every downstream pass.
-- Clean phase boundaries: Each pass consumes only upstream pass outputs; higher-level domain logic stays out of low-level IR primitives; no filesystem I/O in `f8-core`.
-- Pure data flow: Explicit inputs and outputs; no global mutable state or hidden side effects. Why: determinism and per-pass testability.
-- Invalid states unrepresentable: Prefer enums, interned IDs, and typed structs over strings and `bool` flags; 2-variant enum over `bool` parameter. No string inspection to infer semantics outside the lexer/parser. Why: the compiler checks semantics instead of the reviewer.
-- Concrete internals, ergonomic boundaries: Internal passes take concrete types (`&str`, `&[T]`); generic conversions (`impl Into`, `impl AsRef`) only at public facades (`f8-python`, `CompiledModel`).
-- Fix at the origin: Fix defects where they arise (parser, IR, schema), not where they surface. No downstream band-aids, lossy `.ok()`, unverified casts, or test-specific branches. Why: downstream patches mask the bug and multiply.
+- Single source of truth: Define each concept (type, ID, schema, coordinate mapping, error) once; import it everywhere else. Why: forked definitions drift silently across modules and passes. Duplicated knowledge is a defect; incidental code similarity is not.
+- Canonical contracts & IR: One representation per concept in core modules, IR, and schemas; no implicit fallbacks, untyped dicts, or syntactic sugar. Ergonomics live in outer adapters (presets, Python SDK, UI wrappers, inspection facades). Why: each alternative form multiplies cases downstream.
+- Clean boundaries: Unidirectional dependency graph. Each stage, pass, or module consumes only upstream outputs; shared and foundational modules stay out of higher-level presets and application layers; no filesystem I/O in core compiler crates.
+- Pure data flow: Explicit inputs, outputs, and boundary-driven state transitions; no global mutable state or hidden side effects. Why: determinism and isolated testability.
+- Invalid states unrepresentable: Prefer enums, `Literal` types, interned IDs, newtypes, frozen dataclasses, Pydantic/Zod schemas, and typed structs over string heuristics and `bool` flags; 2-variant enum/union over `bool` parameter. No string inspection to infer semantics outside lexer/parser/ingest boundaries. Why: the compiler or type checker checks semantics instead of the reviewer.
+- Concrete internals, ergonomic boundaries: Internal passes take concrete types (`&str`, `&[T]`); generic conversions (`impl Into`, `impl AsRef`) only at public facades (PyO3 bindings, inspection facades).
+- Fix at the origin: Fix defects where they arise (parser, ingest, IR, layout solver, schema, query), not where they surface. No downstream band-aids, lossy `.ok()`, unverified casts, or test-specific branches. Why: downstream patches mask the bug and multiply.
 - Minimal surface: No dead code, commented-out tombstones, or speculative abstractions. Abstract on the second real caller, not the first.
+
+## Reasoning & judgment
+
+- Intent over letter: Identify the purpose behind each request, rule, and spec. Flag when literal compliance defeats intent.
+- Tension surfacing: Name conflicts between instructions, specs, and invariants explicitly. Never silently pick a side.
+- Disconfirmation: Before concluding, test the strongest alternative design or root cause. Passing tests do not guarantee a sound contract.
+- Precision over hedging: Separate verified facts, inferences, and assumptions. One specific caveat beats generic disclaimers.
 
 ## Code standards & verification
 
-### Rust (2024 edition)
+### Python (3.12+)
+
+- Strict typing: `pyright` strict, explicit `-> None`, `TypedDict` / frozen dataclasses / Pydantic models over `dict[str, Any]`, no bare `Any`.
+- Exception hygiene: No bare `except:` (ruff `E722`) or swallowed `Exception`; structured diagnostics with context attributes; preserve cause via `raise ... from err`.
+
+### Rust & PyO3 (2024 edition)
 
 - Panic-free production paths: Prefer `.get()` / pattern matching over indexing; propagate via `?`.
 - Structured errors: `thiserror` for compiler diagnostics and domain errors.
 - Deterministic output: `IndexMap` / `IndexSet` over `HashMap` / `HashSet` wherever iteration, layout, IR, or serialization order matters. Identical input must yield identical bytes.
 - Memory efficiency: Prefer borrowed slices (`&str`, `&[T]`) or `Cow` over cloning in compiler passes.
 - Import order: Standard library (`std::*`), external crates, crate-local modules.
+- PyO3 bridges & stubs: Keep `_core.pyi` synchronized with PyO3 crate exports and exceptions; keep `py.typed` marker present. Release GIL (`py.allow_threads` / `py.detach`) on CPU-bound tasks; prefer `memoryview` / `bytes` buffer protocols.
 
-### Python (3.12+)
+### TypeScript & React
 
-- Strict typing: `pyright` strict, explicit `-> None`, `TypedDict` over `dict[str, Any]`, no bare `Any`.
-- Native stubs: Keep `python/f8/_core.pyi` synchronized with `crates/f8-python` exports and exceptions; keep `py.typed` marker present.
-- Exception hygiene: No bare `except:` (ruff `E722`) or swallowed `Exception`. Inherit from `F8Error` with typed attributes (coordinates, cycles, tables); wrap native errors via `raise ... from err`.
-- GIL & buffers: Release GIL (`py.allow_threads`) on CPU-bound PyO3 tasks; prefer `memoryview` / `bytes` buffer protocols.
+- Strict module & type hygiene: Enforce `import type` for type-only imports (`verbatimModuleSyntax`), zero unused locals/parameters, and zero floating or misused promises (`oxlint` type-aware).
+- Boundary validation: Parse external inputs, search params, and network payloads via `zod` schemas rather than unverified type assertions (`as`).
+- React 19 & styling: Pass `ref` directly as a prop (`React.RefAttributes<T>`); never wrap components in legacy `React.forwardRef`. Compose component variants with `cva` and merge classes with `cn`; use semantic theme tokens over hardcoded values.
 
 ### Verification suite
 
+- Python (any Python change; run `uv run maturin develop` first in PyO3 repos after any Rust change):
+  - `uv run ruff check .` && `uv run ruff format --check .`
+  - `uv run pyright`
+  - `uv run pytest`
 - Rust (any Rust change):
   - `cargo test`
   - `cargo clippy --all-targets -- -D warnings`
   - `cargo fmt --check`
-- Python (any Rust or `python/` change; core semantics reach Python through the bindings):
-  - `uv run maturin develop` (first, after any Rust change)
-  - `uv run ruff check .` && `uv run ruff format --check .`
-  - `uv run pyright`
-  - `uv run pytest`
+- TypeScript & React (any TypeScript/UI change):
+  - `pnpm typecheck`
+  - `pnpm lint`
+  - `pnpm format:check`
+  - `pnpm build`
 - Docs/skill-only changes: No suite required.
 
 ## Writing style
@@ -85,5 +102,5 @@ Applies to documentation, specs, docstrings, and commit messages.
 
 - Conventional commits: Follow `<type>(<scope>): <summary>`.
   - Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `perf`.
-  - Scopes: `core` (cross-pass `f8-core`), `compiler`, `expr`, `functions`, `schemas` (model spec / DSL schema), `python` (`f8-python` bindings), `sdk`, `cli`, `skill`, `docs`, `config`, `tests`.
+  - Scopes: Target package, crate, module, or domain (e.g., `core`, `compiler`, `schemas`, `python`, `sdk`, `web`, `ui`, `cli`, `sync`, `skill`, `docs`, `config`, `tests`).
   - Format: Imperative mood, lowercase, no trailing period. Blank line before body. Contiguous hyphen bullets (`- `).
