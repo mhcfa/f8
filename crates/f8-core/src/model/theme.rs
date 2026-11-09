@@ -105,7 +105,7 @@ impl Default for TypographyConfig {
 }
 
 fn default_max_col_width() -> f64 {
-    50.0
+    75.0
 }
 
 /// Physical row heights, column character widths, gutters, and margins.
