@@ -7,7 +7,7 @@ name = "f8-engine"
 dynamic = ["version"]
 description = "Financial modeling engine with compiler verification and live Excel formulas"
 readme = "README.md"
-license = "AGPL-3.0-only"
+license = "Apache-2.0"
 authors = [{ name = "Michael (Chencheng) Hu, CFA" }]
 requires-python = ">=3.12"
 keywords = ["excel", "financial-modeling", "spreadsheet", "xlsx", "compiler"]
