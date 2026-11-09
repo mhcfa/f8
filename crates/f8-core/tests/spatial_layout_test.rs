@@ -452,8 +452,8 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
     let col_b_width = *sheet.col_widths.get(&1).unwrap();
     let col_c_width = *sheet.col_widths.get(&2).unwrap();
 
-    // Col B (descriptor) has a 57-char label, clamped to max_col_width (50.0)
-    assert_eq!(col_b_width, theme.metrics.max_col_width);
+    // Col B (descriptor) has a 57-char label in Table1 vs 5-char in Table2 -> 57.0
+    assert_eq!(col_b_width, 57.0);
 
     // Col C (measure) must be at least min_col_width (12.0)
     assert!(col_c_width >= theme.metrics.min_col_width);
@@ -1554,14 +1554,14 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
         .columns
         .push(ColumnSpec::new("notes").with_header("Notes"));
 
-    let long_120 = "A".repeat(120);
-    let exact_50 = "B".repeat(50);
-    let over_51 = "C".repeat(51);
+    let long_180 = "A".repeat(180);
+    let exact_75 = "B".repeat(75);
+    let over_76 = "C".repeat(76);
 
-    // Row 1: 120-char descriptor text -> 3 lines (45.0), short measure
+    // Row 1: 180-char descriptor text -> 3 lines (45.0), short measure
     table.rows.push(
         RowSpec::new("r_long")
-            .with_cell("desc", CellInput::string(long_120))
+            .with_cell("desc", CellInput::string(long_180))
             .with_cell("notes", CellInput::string("Short note")),
     );
     // Row 2: short descriptor (<= max_col_width, no \n) -> unwrapped (15.0)
@@ -1570,17 +1570,17 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
             .with_cell("desc", CellInput::string("Brief description"))
             .with_cell("notes", CellInput::string("OK")),
     );
-    // Row 3: exact 50-char boundary -> unwrapped (15.0)
+    // Row 3: exact 75-char boundary -> unwrapped (15.0)
     table.rows.push(
-        RowSpec::new("r_exact_50")
-            .with_cell("desc", CellInput::string(exact_50))
+        RowSpec::new("r_exact_75")
+            .with_cell("desc", CellInput::string(exact_75))
             .with_cell("notes", CellInput::string("OK")),
     );
-    // Row 4: 51-char measure text -> 2 lines (30.0)
+    // Row 4: 76-char measure text -> 2 lines (30.0)
     table.rows.push(
-        RowSpec::new("r_over_51")
+        RowSpec::new("r_over_76")
             .with_cell("desc", CellInput::string("Item"))
-            .with_cell("notes", CellInput::string(over_51)),
+            .with_cell("notes", CellInput::string(over_76)),
     );
 
     let manifest = ProjectManifest {
@@ -1600,11 +1600,11 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
 
     let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
-    // Both columns have cells > 50 chars -> clamped to max_col_width (50.0)
-    assert_eq!(sheet.col_widths.get(&1), Some(&50.0));
-    assert_eq!(sheet.col_widths.get(&2), Some(&50.0));
+    // Both columns have cells > 75 chars -> clamped to max_col_width (75.0)
+    assert_eq!(sheet.col_widths.get(&1), Some(&75.0));
+    assert_eq!(sheet.col_widths.get(&2), Some(&75.0));
 
-    // Row 1 (physical row 4): 120 chars -> ceil(120 / 50) = 3 lines -> 45.0
+    // Row 1 (physical row 4): 180 chars -> ceil(180 / 75) = 3 lines -> 45.0
     let long_desc = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",
@@ -1634,22 +1634,22 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
     assert!(!short_desc.wrap_text);
     assert_eq!(sheet.row_heights.get(&short_desc.row), Some(&15.0));
 
-    // Row 3 (physical row 6): exact 50 chars -> wrap_text = false, height = 15.0
+    // Row 3 (physical row 6): exact 75 chars -> wrap_text = false, height = 15.0
     let exact_desc = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",
-            "r_exact_50",
+            "r_exact_75",
             "desc",
         ))
         .unwrap();
     assert!(!exact_desc.wrap_text);
     assert_eq!(sheet.row_heights.get(&exact_desc.row), Some(&15.0));
 
-    // Row 4 (physical row 7): 51 chars in measure column -> wrap_text = true, height = 30.0
+    // Row 4 (physical row 7): 76 chars in measure column -> wrap_text = true, height = 30.0
     let over_notes = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",
-            "r_over_51",
+            "r_over_76",
             "notes",
         ))
         .unwrap();
@@ -1674,8 +1674,8 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
             .with_cell("val", CellInput::number(100.0)),
     );
 
-    // Row 2: Explicit newline where second segment also wraps ("Header:\n" + 60 chars -> 1 + 2 = 3 lines)
-    let mixed_multiline = format!("Header:\n{}", "X".repeat(60));
+    // Row 2: Explicit newline where second segment also wraps ("Header:\n" + 80 chars -> 1 + 2 = 3 lines)
+    let mixed_multiline = format!("Header:\n{}", "X".repeat(80));
     table.rows.push(
         RowSpec::new("r_mixed")
             .with_cell("desc", CellInput::string("Normal"))
@@ -1701,8 +1701,8 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
     let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
     // Col 1 ("desc"): longest segment across rows is "Line two breakdown" (18 chars), not full string length (27 chars)
     assert_eq!(sheet.col_widths.get(&1), Some(&18.0));
-    // Col 2 ("val"): second segment is 60 chars -> clamped to 50.0
-    assert_eq!(sheet.col_widths.get(&2), Some(&50.0));
+    // Col 2 ("val"): second segment is 80 chars -> clamped to 75.0
+    assert_eq!(sheet.col_widths.get(&2), Some(&75.0));
 
     let two_line_cell = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(

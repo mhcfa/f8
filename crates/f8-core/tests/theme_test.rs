@@ -28,7 +28,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert!(theme.metrics.title_gutter_row_height > 0.0);
     assert_eq!(theme.metrics.col_padding, 0.0);
     assert!(theme.metrics.min_col_width > 0.0);
-    assert_eq!(theme.metrics.max_col_width, 50.0);
+    assert_eq!(theme.metrics.max_col_width, 75.0);
 
     // Verify borders
     assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
@@ -550,9 +550,9 @@ fn test_scenario_12_shade_palette_defaults_and_validation() {
 
 #[test]
 fn test_scenario_13_max_col_width_defaults_and_validation() {
-    // 1. Default corporate_navy max_col_width is 50.0
+    // 1. Default corporate_navy max_col_width is 75.0
     let mut theme = Theme::corporate_navy();
-    assert_eq!(theme.metrics.max_col_width, 50.0);
+    assert_eq!(theme.metrics.max_col_width, 75.0);
 
     // 2. Equal boundary (max_col_width == min_col_width) is valid
     theme.metrics.max_col_width = theme.metrics.min_col_width;
