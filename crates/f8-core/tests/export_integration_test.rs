@@ -216,17 +216,50 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 44 Standard Functions)
+    // 5. Excel Parity Verification Suite (All 44 Standard Functions + Edge & Error Cases)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
     let parity_evaluated = &parity_compiled.evaluated;
 
+    // Verify intentional domain error test cases match their recorded f8_val error literals
     let parity_errors = parity_evaluated.find_errors();
     assert!(
-        parity_errors.is_empty(),
-        "Expected zero evaluation errors across all 44 functions in parity suite, found: {parity_errors:?}"
+        !parity_errors.is_empty(),
+        "Expected domain error test cases in parity suite"
     );
+    for (cell_id, err) in &parity_errors {
+        assert_eq!(
+            cell_id.col.as_str(),
+            "formula_val",
+            "Only formula_val cells in error test cases may evaluate to an error, found error at {cell_id}"
+        );
+        let f8_recorded = parity_evaluated.get_value(
+            &cell_id.table,
+            &cell_id.row,
+            &f8_core::model::id::ColId::from("f8_val"),
+        );
+        assert_eq!(
+            f8_recorded,
+            Some(&f8_core::value::CellValue::Text(err.as_str().to_string())),
+            "Error cell {cell_id} must record its canonical error string in f8_val"
+        );
+    }
+
+    for expected_variant in [
+        f8_core::value::ExcelError::Div0,
+        f8_core::value::ExcelError::Value,
+        f8_core::value::ExcelError::Num,
+        f8_core::value::ExcelError::Na,
+        f8_core::value::ExcelError::Ref,
+    ] {
+        assert!(
+            parity_errors
+                .iter()
+                .any(|(_, err)| **err == expected_variant),
+            "Parity suite must include at least one graded test case for {expected_variant}"
+        );
+    }
 
     for table in &parity_tables[1..] {
         for row in &table.rows {
@@ -264,6 +297,14 @@ fn test_models_emit_in_memory() {
     assert!(
         uncached_sheet_xml.contains("<f>"),
         "Formulas must be emitted in uncached mode"
+    );
+    assert!(
+        uncached_sheet_xml.contains("0.000000001*ABS("),
+        "Parity check formulas must use 1e-9 (0.000000001) relative tolerance"
+    );
+    assert!(
+        uncached_sheet_xml.contains("COUNTIFS("),
+        "Parity check formulas must grade error cases via COUNTIFS"
     );
     assert!(
         !uncached_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),

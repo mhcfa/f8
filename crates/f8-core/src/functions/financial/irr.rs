@@ -124,7 +124,7 @@ impl ExcelFunction for IrrFunction {
                 }
             }
 
-            if f_val.abs() < CONVERGENCE_TOLERANCE {
+            if f_val == 0.0 {
                 return Ok(CellValue::Number(normalize_zero(rate)));
             }
 
@@ -282,7 +282,7 @@ impl ExcelFunction for XirrFunction {
                 }
             }
 
-            if f_val.abs() < CONVERGENCE_TOLERANCE {
+            if f_val == 0.0 {
                 return Ok(CellValue::Number(normalize_zero(rate)));
             }
 

@@ -20,7 +20,8 @@ AI agents struggle to manipulate raw spreadsheets (`openpyxl`, Office.js, or GUI
 
 - Semantic 2D modeling: Author models with readable table, row, and column identifiers; `f8` handles spatial layout and lowers logic into native Excel formulas.
 - Compiler-enforced rigor: A 6-pass Rust compiler verifies grid completeness (zero unassigned cells or formula overlaps) and enforces a strict DAG via Tarjan cycle detection.
-- Closed-loop verification: Evaluates formulas in memory with 100% Excel parity (including the 1900 leap day bug) so AI agents and `pytest` suites can audit tables, trace dependencies, and verify accounting checks in milliseconds.
+- Closed-loop verification: Evaluates formulas in memory so AI agents and `pytest` suites can audit tables, trace dependencies, and verify accounting checks in milliseconds, without opening Excel.
+- Verified Excel parity: Matches Excel on all 44 supported functions, including error propagation, type coercion, and the 1900 leap day bug. The [parity workbook](https://github.com/mhcfa/f8/releases/latest/download/excel_parity_verification.xlsx) ships without cached values, so Excel itself recalculates and grades 101 cases on open: exact match for integers, text, dates, and lookups; 1e-9 relative tolerance for floating-point and iterative functions (`IRR`, `XIRR`); exact error type for 23 error cases.
 
 ## Getting started
 
