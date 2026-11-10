@@ -10,6 +10,7 @@ import initWasm, {
   type InitOutput,
 } from "../wasm/f8_wasm.js";
 
+export { Cell, Model, Sheet, Table } from "./builder.js";
 export * from "./errors.js";
 export * from "./types.js";
 export { CompiledModel } from "./model.js";

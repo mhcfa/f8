@@ -2,8 +2,8 @@
 name: spec-driven-development
 description: >-
   Tri-agent spec-driven development (SDD) workflow.
-  Author draft specs, orchestrate Implementer and Reviewer subagents,
-  enforce verification gates, and fold durable knowledge into reference docs.
+  Author ephemeral draft specs, orchestrate Implementer and Reviewer subagents,
+  enforce verification gates, fold durable knowledge into reference docs, and clean up specs.
 ---
 
 # Spec-Driven Development Workflow
@@ -15,8 +15,9 @@ description: >-
   2. Reference docs: System architecture (`docs/architecture.md`) and packaged skills/documentation listed in `docs/architecture.md` or `AGENTS.md`.
   3. Draft specs (`docs/specs/drafts/`): Intended delta for active work, not current behavior. A spec that conflicts with code is expected; a spec that conflicts with reference architecture invariants must be escalated to the user.
 - Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
-- Spec custody: Only the Lead Orchestrator authors and amends draft specs; completed specs remain in `docs/specs/drafts/`. Subagents never edit, move, or delete spec files.
-- Commit custody: Leave changes uncommitted. Subagents and Lead Orchestrator do not commit; all changes and draft specs remain uncommitted for user review.
+- Spec custody: Only the Lead Orchestrator authors, amends, and deletes draft specs. Subagents never edit, move, or delete spec files.
+- Spec lifecycle: Must delete finished draft specs from `docs/specs/drafts/` before commit; no completed or stale specs remain in the repository.
+- Commit custody: Leave changes uncommitted. Subagents and Lead Orchestrator do not commit; all changes remain uncommitted for user review.
 
 ## Tri-Agent Workflow
 
@@ -52,8 +53,8 @@ description: >-
 ### 5. Fold durable docs (Lead Orchestrator)
 
 - Reconcile lasting architectural, schema, DSL, or API changes into `docs/architecture.md` and packaged skills/templates (start from the Reviewer's docs-impact flags).
-- Retain the draft spec in `docs/specs/drafts/`; do not delete it.
-- Leave all changes (spec, code, and documentation) uncommitted for user review.
+- Delete the finished draft spec from `docs/specs/drafts/` before commit; no completed or stale specs remain in the repository.
+- Leave changes uncommitted for user review.
 
 ## Draft Spec Template
 
