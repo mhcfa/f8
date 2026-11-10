@@ -2,8 +2,24 @@
   "name": "f8-engine",
   "version": "0.5.0",
   "description": "Financial modeling engine with compiler verification and live Excel formulas",
+  "keywords": [
+    "compiler",
+    "excel",
+    "financial-modeling",
+    "spreadsheet",
+    "wasm",
+    "xlsx"
+  ],
+  "homepage": "https://github.com/mhcfa/f8",
+  "bugs": {
+    "url": "https://github.com/mhcfa/f8/issues"
+  },
   "license": "Apache-2.0",
   "author": "Michael (Chencheng) Hu, CFA",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mhcfa/f8.git"
+  },
   "bin": {
     "f8": "./dist/src/cli.js"
   },
@@ -42,7 +58,7 @@
     "vitest": "^5.1.0"
   },
   "engines": {
-    "node": ">=26.0.0"
+    "node": ">=22.0.0"
   },
   "packageManager": "pnpm@12.16.1"
 }
