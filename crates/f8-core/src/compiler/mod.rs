@@ -16,10 +16,10 @@ pub use compiled::{
     CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel, DependencyNode,
     DependencyTree, InspectionError, ModelSummary, RowInspection, SheetCellInspection,
     SheetCellKind, SheetInspection, SheetRowInspection, SheetSummary, TableCellInfo,
-    TableInspection, TableSummary, parse_coordinate_tokens,
+    TableInspection, TableSummary, apply_unit_suffix, parse_coordinate_tokens,
 };
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
-pub use error::CompilerError;
+pub use error::{CompilerError, ErrorDiagnostic};
 pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
     LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SheetLayout, StyleRole,

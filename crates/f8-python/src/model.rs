@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use f8_core::compiler::CompiledModel;
 use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::error::CompilerError;
+use f8_core::compiler::{CompiledModel, apply_unit_suffix};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::value::CellValue;
 use pyo3::exceptions::PyTypeError;
@@ -12,17 +12,6 @@ use pyo3::types::PyBytes;
 use crate::error::{
     make_emission_error, map_compiler_error, map_inspection_error, map_pythonize_error,
 };
-
-fn apply_unit_suffix(formatted: String, unit: &str) -> String {
-    if formatted.is_empty() || unit.is_empty() {
-        return formatted;
-    }
-    if let Some(stem) = formatted.strip_suffix(')') {
-        format!("{stem}{unit})")
-    } else {
-        format!("{formatted}{unit}")
-    }
-}
 
 /// Compiled, verified, and evaluated financial model ready for auditing and `.xlsx` emission.
 #[pyclass(name = "CompiledModel")]

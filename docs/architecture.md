@@ -4,10 +4,10 @@ Deterministic financial model compiler treating spreadsheets as compiled binary 
 
 ## 1. Core Philosophy & Architectural Invariants
 
-- Code as single source of truth: Declarative Python DSL and structured specifications.
+- Code as single source of truth: Declarative Python/TypeScript SDKs and structured specifications.
 - Explicit core data structures: Exactly one canonical representation per concept. Zero implicit fallbacks, hidden defaults, or syntactic magic in core engine.
-- Agent-first intermediate representation (IR): Orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic verification over typing brevity. Ergonomic scaffolding isolated to Python SDK.
-- Pure in-memory calculation: Engine (`crates/f8-core`) operates 100% in-memory with in-memory `.xlsx` generation. Zero filesystem I/O in core; disk writes (`.xlsx` emission via `save()`) isolated to outer Python bindings (`crates/f8-python`).
+- Agent-first intermediate representation (IR): Orthogonal 2D matrix IR optimized for AI agent synthesis and deterministic verification over typing brevity. Ergonomic scaffolding isolated to outer SDKs (`python/f8`, `ts/`).
+- Pure in-memory calculation: Engine (`crates/f8-core`) operates 100% in-memory with in-memory `.xlsx` generation. Zero filesystem I/O in core and WebAssembly bridge (`crates/f8-wasm`); disk writes (`.xlsx` emission via `save()`) isolated to outer language bindings (`crates/f8-python`, `ts/src/model.ts`).
 - Orthogonal 2D matrix paradigm: General `R x C` table matrix. Columns represent time series, categories, or metrics. Every cell `Table[row, col]` is a first-class calculation node.
 - Excel as compile artifact: Emitted `.xlsx` workbooks contain live, auditable formulas and formatting, functioning like compiled binaries or PDF reports.
 - 100% Excel calculation and syntax parity: Exact calculation parity for supported and future functions, IEEE-754 normalization, mixed-type comparison ranking (`Number < Text < Boolean`), Excel error bubbling, and 1900 leap day bug reproduction.
@@ -129,33 +129,41 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
   - Treats tables strictly as orthogonal `R x C` matrices.
   - Agnostic to financial semantics (3-statement, LBO, Cap Table, Comps, Waterfall share identical IR primitives).
   - Enforces explicit JSON schema invariants with zero dynamic fallbacks.
-- Adapter / tooling layer (`python/f8` + `crates/f8-python`):
+- Python adapter / tooling layer (`python/f8` + `crates/f8-python`):
   - Bridge between human/agent workflows and the core compiler.
   - Handles operating system and filesystem I/O (`save()`).
   - Releases Python GIL (`py.allow_threads`) during compilation and emission.
   - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell`).
   - Table auditor (`TableAuditor`): dictionary conversions (`to_dict(orient="records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`to_markdown()`), Jupyter display protocol (`_repr_markdown_`).
+- TypeScript / WebAssembly adapter layer (`ts/` + `crates/f8-wasm`):
+  - Compiles `f8-core` to `wasm32-unknown-unknown` via `wasm-bindgen` and `serde-wasm-bindgen` with zero filesystem I/O in WASM.
+  - Synchronous WASM initialization in server/CLI runtimes (Node.js, Bun, Deno) and async `init()` for browser main threads.
+  - Idiomatic `camelCase` `CompiledModel` inspection API, `Uint8Array` workbook emission (`emitWorkbook()`), `node:fs` disk persistence (`save()`), and structured `F8Error` hierarchy (`ts/src/errors.ts`).
 
 ## 5. Technology Stack
 
-| Component             | Technology                     | Purpose                                                                      |
-| :-------------------- | :----------------------------- | :--------------------------------------------------------------------------- |
-| **Serialization**     | `serde`, `serde_json`          | Type-safe JSON specification parsing and validation                          |
-| **Formula parser**    | Custom lexer & Pratt parser    | Formula expression tokenization and AST parsing                              |
-| **Graph engine**      | `petgraph`                     | Directed dependency graph, Tarjan SCC cycle detection, Kahn topological sort |
-| **Evaluation engine** | Native Rust                    | Topological evaluation with Excel parity and lazy branch dispatch            |
-| **Function catalog**  | Extensible trait registry      | Built-in Excel function implementations                                      |
-| **Workbook emitter**  | `rust_xlsxwriter`              | Native OpenXML `.xlsx` generation with live formulas and deduplicated styles |
-| **Python bridge**     | `pyo3`, `maturin`, `pythonize` | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
-| **Python SDK**        | Python 3.12+ (`uv`)            | Fluent builder DSL, table auditor, bundled agent skills                      |
+| Component             | Technology                                  | Purpose                                                                      |
+| :-------------------- | :------------------------------------------ | :--------------------------------------------------------------------------- |
+| **Serialization**     | `serde`, `serde_json`                       | Type-safe JSON specification parsing and validation                          |
+| **Formula parser**    | Custom lexer & Pratt parser                 | Formula expression tokenization and AST parsing                              |
+| **Graph engine**      | `petgraph`                                  | Directed dependency graph, Tarjan SCC cycle detection, Kahn topological sort |
+| **Evaluation engine** | Native Rust                                 | Topological evaluation with Excel parity and lazy branch dispatch            |
+| **Function catalog**  | Extensible trait registry                   | Built-in Excel function implementations                                      |
+| **Workbook emitter**  | `rust_xlsxwriter`                           | Native OpenXML `.xlsx` generation with live formulas and deduplicated styles |
+| **Python bridge**     | `pyo3`, `maturin`, `pythonize`              | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
+| **Python SDK**        | Python 3.12+ (`uv`)                         | Fluent builder DSL, table auditor, bundled agent skills                      |
+| **WASM bridge**       | `wasm-bindgen`, `serde-wasm-bindgen`        | Universal `wasm32-unknown-unknown` compiler and inspection bindings          |
+| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`)   | `CompiledModel` facade, `camelCase` contracts, structured error hierarchy    |
 
 ## 6. Workspace Architecture
 
-Cargo workspace separating core compiler from Python native bindings and distribution packages:
+Cargo workspace separating core compiler from Python native bindings, WebAssembly bindings, and distribution packages:
 
 ```text
 f8/
 ├── Cargo.toml                  # Workspace root: shared dependencies and lints
+├── package.json                # Root TypeScript package manifest (f8-engine)
+├── pyproject.toml              # Root Python package manifest (f8-engine)
 ├── crates/
 │   ├── f8-core/                # Pure in-memory calculation compiler & IR
 │   │   └── src/
@@ -165,11 +173,18 @@ f8/
 │   │       ├── functions/      # Function registry, traits, & catalog
 │   │       └── compiler/       # 6 sequential compiler passes & CompiledModel facade
 │   │
-│   └── f8-python/              # Native PyO3 C-extension bindings (abi3-py312)
-│       └── src/                # Compiler bridge, PyCompiledModel, Serde marshaling, & error mapping
+│   ├── f8-python/              # Native PyO3 C-extension bindings (abi3-py312)
+│   │   └── src/                # Compiler bridge, PyCompiledModel, Serde marshaling, & error mapping
+│   │
+│   └── f8-wasm/                # WebAssembly bindings (wasm32-unknown-unknown)
+│       └── src/                # WasmCompiledModel, JSON-compatible Serde bridge, & WasmErrorPayload
 │
 ├── python/                     # Python SDK package
 │   └── f8/                     # Fluent builder, TableAuditor, CLI, & skills
+│
+├── ts/                         # TypeScript SDK package
+│   ├── src/                    # CompiledModel wrapper, camelCase contracts, & F8Error hierarchy
+│   └── tests/                  # Vitest integration test suite
 │
 └── docs/                       # Architecture overview & active task specs
     ├── architecture.md         # Compiler pipeline, invariants, & inspection facade

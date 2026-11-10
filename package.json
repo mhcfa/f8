@@ -1,0 +1,45 @@
+{
+  "name": "f8-engine",
+  "version": "0.5.0",
+  "description": "Financial modeling engine with compiler verification and live Excel formulas",
+  "license": "Apache-2.0",
+  "author": "Michael (Chencheng) Hu, CFA",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "module": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build:wasm": "wasm-pack build crates/f8-wasm --target web --out-dir ../../ts/wasm --no-opt && rm -f ts/wasm/.gitignore ts/wasm/package.json",
+    "build:ts": "tsc -p tsconfig.build.json && cp -r ts/wasm dist/",
+    "build": "pnpm build:wasm && pnpm build:ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --type-aware",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2006",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=26.0.0"
+  },
+  "packageManager": "pnpm@12.16.1"
+}
