@@ -141,6 +141,7 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
   - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell` in `ts/src/builder.ts`).
   - Table auditor (`TableAuditor` in `ts/src/audit.ts`): dictionary conversions (`toDict("records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`toMarkdown()`), and scalar/vector coordinate accessors.
   - Idiomatic `camelCase` `CompiledModel` inspection API, `Uint8Array` workbook emission (`emitWorkbook()`), `node:fs` disk persistence (`save()`), and structured `F8Error` hierarchy (`ts/src/errors.ts`).
+  - CLI runner (`ts/src/cli.ts`) and bundled TypeScript modeling skill (`ts/skills/f8-modeling/`): `f8 guide`, `f8 agent init`, and `f8 theme init`.
 
 ## 5. Technology Stack
 
@@ -153,9 +154,9 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
 | **Function catalog**  | Extensible trait registry                   | Built-in Excel function implementations                                      |
 | **Workbook emitter**  | `rust_xlsxwriter`                           | Native OpenXML `.xlsx` generation with live formulas and deduplicated styles |
 | **Python bridge**     | `pyo3`, `maturin`, `pythonize`              | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
-| **Python SDK**        | Python 3.12+ (`uv`)                         | Fluent builder DSL, table auditor, bundled agent skills                      |
+| **Python SDK**        | Python 3.12+ (`uv`)                         | Fluent builder DSL, table auditor, CLI, bundled agent skills                 |
 | **WASM bridge**       | `wasm-bindgen`, `serde-wasm-bindgen`        | Universal `wasm32-unknown-unknown` compiler and inspection bindings          |
-| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`)   | Fluent builder DSL, table auditor, `CompiledModel` facade, error hierarchy   |
+| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`)   | Fluent builder DSL, table auditor, CLI, bundled agent skills                 |
 
 ## 6. Workspace Architecture
 
@@ -185,7 +186,8 @@ f8/
 │   └── f8/                     # Fluent builder, TableAuditor, CLI, & skills
 │
 ├── ts/                         # TypeScript SDK package
-│   ├── src/                    # Fluent builder, TableAuditor, CompiledModel wrapper, & F8Error hierarchy
+│   ├── src/                    # Fluent builder, TableAuditor, CLI, CompiledModel, & F8Error hierarchy
+│   ├── skills/                 # Bundled TypeScript f8-modeling agent skill
 │   └── tests/                  # Vitest integration test suite
 │
 └── docs/                       # Architecture overview & active task specs
