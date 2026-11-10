@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "docs/**",
+    "python/**",
+    "crates/**",
+    "dist/**",
+    "ts/wasm/**",
+    "*.toml",
+    "*.md",
+    "*.yaml",
+    "*.lock"
+  ]
+}

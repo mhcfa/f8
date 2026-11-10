@@ -1183,6 +1183,20 @@ impl CompiledModel {
     }
 }
 
+/// Appends an optional display unit suffix to a formatted cell string, splicing inside
+/// a trailing closing parenthesis for negative accounting strings (e.g., `($50.0)` + `M` -> `($50.0M)`).
+#[must_use]
+pub fn apply_unit_suffix(formatted: String, unit: &str) -> String {
+    if formatted.is_empty() || unit.is_empty() {
+        return formatted;
+    }
+    if let Some(stem) = formatted.strip_suffix(')') {
+        format!("{stem}{unit})")
+    } else {
+        format!("{formatted}{unit}")
+    }
+}
+
 /// Helper to clean quotes and whitespace from an identifier.
 fn clean_id(s: &str) -> &str {
     let trimmed = s.trim();

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/f8-core",
     "crates/f8-python",
+    "crates/f8-wasm",
 ]
 
 [workspace.package]
@@ -18,12 +19,14 @@ f8-core = { path = "crates/f8-core" }
 indexmap = { version = "2.7", features = ["serde"] }
 petgraph = "0.8.3"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 rust_xlsxwriter = "0.99"
 thiserror = "2.0"
 zip = { version = "8.6", default-features = false }
 pyo3 = { version = "0.24", default-features = false, features = ["macros"] }
 pythonize = "0.24"
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
 
 [workspace.lints.clippy]
 unwrap_used = "deny"

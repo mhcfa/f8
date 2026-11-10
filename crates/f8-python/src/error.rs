@@ -1,15 +1,7 @@
 use f8_core::compiler::InspectionError as CoreInspectionError;
-use f8_core::compiler::LayoutError;
-use f8_core::compiler::error::CompilerError;
-use f8_core::compiler::eval::EvalError;
-use f8_core::compiler::graph::GraphError;
-use f8_core::compiler::graph::error::ResolveError;
-use f8_core::compiler::ir::error::IrError;
-use f8_core::compiler::lowering::LoweringError;
-use f8_core::expr::error::ParseError;
-use f8_core::model::error::ModelError;
+use f8_core::compiler::error::{CompilerError, ErrorDiagnostic};
 use pyo3::create_exception;
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{PyException, PyTypeError};
 use pyo3::prelude::*;
 
 create_exception!(
@@ -156,191 +148,45 @@ pub fn make_emission_error(py: Python<'_>, message: String) -> PyErr {
     err
 }
 
-pub fn map_resolve_error(py: Python<'_>, resolve_err: &ResolveError) -> PyErr {
-    let message = resolve_err.to_string();
-    let (coordinate, target_table, row, col) = match resolve_err {
-        ResolveError::UnknownTable {
-            origin,
-            target_table,
-        } => (
-            origin.to_string(),
-            Some(target_table.to_string()),
-            None,
-            None,
-        ),
-        ResolveError::UnknownRow {
-            origin,
+pub fn diagnostic_to_py_err(py: Python<'_>, diag: ErrorDiagnostic) -> PyErr {
+    match diag {
+        ErrorDiagnostic::F8Error { message } => make_f8_error(py, message),
+        ErrorDiagnostic::CycleDetectedError { message, cycle } => {
+            make_cycle_detected_error(py, message, cycle)
+        }
+        ErrorDiagnostic::ReferenceResolutionError {
+            message,
+            coordinate,
             target_table,
             row,
-        } => (
-            origin.to_string(),
-            Some(target_table.to_string()),
-            Some(row.to_string()),
-            None,
-        ),
-        ResolveError::UnknownColumn {
-            origin,
-            target_table,
-            column,
-        } => (
-            origin.to_string(),
-            Some(target_table.to_string()),
-            None,
-            Some(column.to_string()),
-        ),
-        ResolveError::ActiveColumnMismatch {
-            origin,
-            target_table,
-            column,
-        } => (
-            origin.to_string(),
-            Some(target_table.to_string()),
-            None,
-            Some(column.to_string()),
-        ),
-        ResolveError::ActiveRowMismatch {
-            origin,
-            target_table,
+            col,
+        } => make_reference_resolution_error(py, message, coordinate, target_table, row, col),
+        ErrorDiagnostic::SpecificationError {
+            message,
+            table,
+            reason,
+        } => make_specification_error(py, message, table, reason),
+        ErrorDiagnostic::FormulaParseError {
+            message,
+            table,
             row,
-        } => (
-            origin.to_string(),
-            Some(target_table.to_string()),
-            Some(row.to_string()),
-            None,
-        ),
-        ResolveError::TemporalOffsetOutOfBounds { origin, .. } => {
-            (origin.to_string(), None, None, None)
+            col,
+            token_offset,
+        } => make_formula_parse_error(py, message, table, row, col, token_offset),
+        ErrorDiagnostic::InspectionError { message, entity } => {
+            make_inspection_error(py, message, entity)
         }
-        ResolveError::InvertedRange {
-            origin,
-            target_table,
-            ..
-        } => (
-            origin.to_string(),
-            Some(target_table.to_string()),
-            None,
-            None,
-        ),
-        ResolveError::UnregisteredTable { origin, table } => {
-            (origin.to_string(), Some(table.to_string()), None, None)
-        }
-    };
-    make_reference_resolution_error(py, message, coordinate, target_table, row, col)
+        ErrorDiagnostic::EmissionError { message } => make_emission_error(py, message),
+        ErrorDiagnostic::TypeError { message } => PyTypeError::new_err(message),
+    }
 }
 
 pub fn map_inspection_error(py: Python<'_>, err: &CoreInspectionError) -> PyErr {
-    let message = err.to_string();
-    let entity = match err {
-        CoreInspectionError::TableNotFound(t) => t.to_string(),
-        CoreInspectionError::CellNotFound(c) => c.to_string(),
-        CoreInspectionError::SheetNotFound(s) => s.to_string(),
-        CoreInspectionError::InvalidCoordinate(s) => s.clone(),
-    };
-    make_inspection_error(py, message, entity)
+    diagnostic_to_py_err(py, err.diagnostic())
 }
 
 pub fn map_compiler_error(py: Python<'_>, err: &CompilerError) -> PyErr {
-    let message = err.to_string();
-    match err {
-        CompilerError::Model(model_err) => {
-            let table = match model_err {
-                ModelError::InvalidPrecisionForPreset { table, .. }
-                | ModelError::InvalidCurrencyForPreset { table, .. }
-                | ModelError::EmptyTableSubtitle { table }
-                | ModelError::EmptyColumnGroup { table, .. }
-                | ModelError::PrecisionOutOfBounds { table, .. }
-                | ModelError::UnknownCellColumn { table, .. }
-                | ModelError::MutuallyExclusiveCellPayload { table, .. }
-                | ModelError::EmptyCellPayload { table, .. }
-                | ModelError::UnknownColumn { table, .. }
-                | ModelError::UnknownRow { table, .. }
-                | ModelError::InvalidIndentOnMeasureCell { table, .. }
-                | ModelError::DuplicateRowId { table, .. }
-                | ModelError::DuplicateColumnId { table, .. }
-                | ModelError::DuplicateTableId { table }
-                | ModelError::EmptyColumns { table }
-                | ModelError::EmptyRows { table } => Some(table.to_string()),
-                ModelError::DuplicateSheetName { .. }
-                | ModelError::ThemeNotFound { .. }
-                | ModelError::InvalidThemeColor { .. }
-                | ModelError::InvalidThemeMetric { .. }
-                | ModelError::InvalidColWidthBounds { .. }
-                | ModelError::MissingDecimalPlaceholder { .. }
-                | ModelError::MissingCurrencySymbolPlaceholder
-                | ModelError::ThemePrecisionOutOfBounds { .. } => None,
-            };
-            make_specification_error(py, message.clone(), table, message)
-        }
-        CompilerError::Ir(IrError::FormulaParse {
-            table,
-            row,
-            column,
-            source,
-        }) => {
-            let token_offset = match source {
-                ParseError::UnexpectedEof { .. } => None,
-                ParseError::UnexpectedToken { offset, .. }
-                | ParseError::InvalidNumber { offset, .. }
-                | ParseError::InvalidFunctionName { offset, .. }
-                | ParseError::UnquotedCoordinateKey { offset, .. }
-                | ParseError::TrailingInput { offset, .. }
-                | ParseError::RetiredBareAt { offset, .. } => Some(*offset),
-            };
-            make_formula_parse_error(
-                py,
-                message,
-                table.to_string(),
-                row.as_ref().map(ToString::to_string),
-                column.as_ref().map(ToString::to_string),
-                token_offset,
-            )
-        }
-        CompilerError::Ir(other) => {
-            let table = match other {
-                IrError::DuplicateCell { id } => Some(id.table.to_string()),
-                IrError::DuplicateTable { table, .. }
-                | IrError::UnknownTable { table, .. }
-                | IrError::UnknownColumn { table, .. }
-                | IrError::UnknownRow { table, .. }
-                | IrError::EmptyTable { table }
-                | IrError::AmbiguousExpressionConflict { table, .. }
-                | IrError::UnassignedCell { table, .. }
-                | IrError::FormatConflict { table, .. }
-                | IrError::DecimalsConflict { table, .. }
-                | IrError::CurrencyConflict { table, .. }
-                | IrError::ShadeConflict { table, .. } => Some(table.to_string()),
-                IrError::UnknownSheet { .. } | IrError::FormulaParse { .. } | IrError::Model(_) => {
-                    None
-                }
-            };
-            make_specification_error(py, message.clone(), table, message)
-        }
-        CompilerError::Graph(GraphError::CircularDependency { cycle, .. }) => {
-            let cycle_strs = cycle.iter().map(ToString::to_string).collect();
-            make_cycle_detected_error(py, message, cycle_strs)
-        }
-        CompilerError::Graph(GraphError::Resolve(resolve_err)) => {
-            map_resolve_error(py, resolve_err)
-        }
-        CompilerError::Eval(EvalError::Resolve(resolve_err)) => map_resolve_error(py, resolve_err),
-        CompilerError::Eval(_) => make_f8_error(py, message),
-        CompilerError::Layout(layout_err) => {
-            let table = match layout_err {
-                LayoutError::UnassignedTable { table }
-                | LayoutError::UnknownTable { table, .. }
-                | LayoutError::InvalidPlacementTarget { table, .. } => Some(table.to_string()),
-                LayoutError::TableOverlap { second_table, .. } => Some(second_table.to_string()),
-                LayoutError::GridLimitExceeded { .. } => None,
-            };
-            make_specification_error(py, message.clone(), table, message)
-        }
-        CompilerError::Lowering(LoweringError::Resolve(resolve_err)) => {
-            map_resolve_error(py, resolve_err)
-        }
-        CompilerError::Lowering(_) => make_f8_error(py, message),
-        CompilerError::Emission(_) => make_emission_error(py, message),
-        CompilerError::Inspection(insp_err) => map_inspection_error(py, insp_err),
-    }
+    diagnostic_to_py_err(py, err.diagnostic())
 }
 
 pub fn map_pythonize_error(py: Python<'_>, err: pythonize::PythonizeError) -> PyErr {

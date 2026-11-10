@@ -10,3 +10,7 @@ __pycache__/
 dist/
 .pytest_cache/
 .ruff_cache/
+
+# Node / TypeScript and WASM artifacts
+node_modules/
+ts/wasm/
