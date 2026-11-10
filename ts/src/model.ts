@@ -1,3 +1,4 @@
+import { TableAuditor } from "./audit.js";
 import { EmissionError, F8Error, toF8Error } from "./errors.js";
 import type {
   CellInspection,
@@ -510,6 +511,10 @@ export class CompiledModel {
     } catch (err) {
       throw toF8Error(err);
     }
+  }
+
+  table(table: string): TableAuditor {
+    return new TableAuditor(this.inspectTable(table));
   }
 
   inspectSheet(sheet: string): SheetInspection {

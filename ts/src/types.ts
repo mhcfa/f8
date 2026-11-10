@@ -232,6 +232,24 @@ export interface DependencyTraceOptions {
   readonly recursive?: boolean;
 }
 
+export type TableOrient = "records" | "dict" | "index" | "split";
+
+export type TableViewMode = "values" | "formulas" | "expr" | "addresses";
+
+export interface SplitDict {
+  readonly columns: string[];
+  readonly index: string[];
+  readonly data: CellScalarValue[][];
+}
+
+export interface TableMarkdownOptions {
+  readonly view?: TableViewMode;
+  readonly rows?: readonly string[];
+  readonly cols?: readonly string[];
+  readonly includeSectionHeaders?: boolean;
+  readonly showIds?: boolean;
+}
+
 export type CellValueLiteral = number | string | boolean | null;
 
 export interface DetailedCellInput {
