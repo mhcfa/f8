@@ -18,7 +18,10 @@ import type { ProjectManifestInput, TableSpecInput } from "../src/types.js";
 
 describe("WebAssembly Core Bindings and TypeScript SDK", () => {
   it("exposes package version and default corporate_navy theme", () => {
-    expect(VERSION).toBe("0.5.0");
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+    ) as { version: string };
+    expect(VERSION).toBe(pkg.version);
     const theme = defaultTheme();
     expect(theme).toBeTypeOf("object");
     expect(theme["name"]).toBe("corporate_navy");
@@ -327,7 +330,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       try {
         // Trying to save directly to an existing directory path throws EmissionError
         expect(() => model.save(tempDir)).toThrow(EmissionError);
-        expect(() => model.save(tempDir)).toThrowError(F8Error);
+        expect(() => model.save(tempDir)).toThrow(F8Error);
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }

@@ -1,6 +1,6 @@
 {
   "name": "f8-engine",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Financial modeling engine with compiler verification and live Excel formulas",
   "keywords": [
     "compiler",
@@ -21,7 +21,7 @@
     "url": "git+https://github.com/mhcfa/f8.git"
   },
   "bin": {
-    "f8": "./dist/src/cli.js"
+    "f8": "dist/src/cli.js"
   },
   "files": [
     "dist",
