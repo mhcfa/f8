@@ -3,7 +3,7 @@ name: review-implementation
 description: >-
   Report-only implementation review for code changes and draft specs.
   Verification gate, spec conformance, review checklist, targeted probing, and decisive verdicts.
-  Use after implementation, before spec cleanup, or on demand for direct-execution changes.
+  Use after implementation, before folding durable docs, or on demand for direct-execution changes.
 ---
 
 # Implementation Review Workflow
