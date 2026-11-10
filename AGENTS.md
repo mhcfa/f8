@@ -3,7 +3,7 @@
 ## Architecture & workspace
 
 - `docs/architecture.md` & `README.md`: Repository architecture, module boundaries, domain invariants, packaged skills, and CLI/API entrypoints. Read `docs/architecture.md` before planning or modifying code.
-- `docs/specs/drafts/`: Ephemeral task specs for active work.
+- `docs/specs/drafts/`: Task specs for active work.
 - `.agents/skills/`: Bundled agent skills and optional `.agents/skills/review-implementation/references/repo-checks.md` for repository-specific review checks.
 
 ## Rule vocabulary
