@@ -1,3 +1,5 @@
+import type { Cell, Model, Table } from "./builder.js";
+
 export type CellScalarValue = number | string | boolean | null;
 
 export type CellValueDict =
@@ -262,7 +264,7 @@ export interface SheetSpecInput {
 
 export interface ProjectManifestInput {
   readonly modelName: string;
-  readonly theme?: string | Record<string, unknown>;
+  readonly theme?: string | Readonly<Record<string, unknown>>;
   readonly sheets: readonly SheetSpecInput[];
 }
 
@@ -344,4 +346,71 @@ export interface TableSpecInput {
   readonly placement?: PlacementSpecInput;
   readonly columns: readonly ColumnSpecInput[];
   readonly rows: readonly RowSpecInput[];
+}
+
+export type ThemeInput = string | Readonly<Record<string, unknown>> | URL;
+
+export type CellInputValue = CellValueLiteral | Cell | DetailedCellInput;
+
+export interface AxisSlice {
+  readonly start: string;
+  readonly stop: string;
+}
+
+export type AxisSelector = string | Iterable<string> | AxisSlice;
+
+export interface ModelOptions {
+  readonly name?: string;
+  readonly theme?: ThemeInput;
+}
+
+export interface ModelSpec {
+  readonly manifest: ProjectManifestInput;
+  readonly tables: readonly TableSpecInput[];
+}
+
+export interface SheetOptions {
+  readonly tabColor?: string;
+  readonly showGridlines?: boolean;
+  readonly freezePanes?: FreezePanesInput;
+  readonly model?: Model;
+}
+
+export interface TableOptions {
+  readonly subtitle?: string;
+  readonly currency?: CurrencyCode;
+  readonly collapsible?: boolean;
+  readonly rightOf?: string | Table;
+  readonly below?: string | Table;
+  readonly gap?: number;
+}
+
+export interface ColumnOptions {
+  readonly role?: AxisRole;
+  readonly header?: string;
+  readonly headers?: readonly string[];
+  readonly group?: string;
+  readonly style?: SemanticStyle;
+  readonly highlight?: boolean;
+  readonly shade?: Shade;
+  readonly format?: FormatPreset;
+  readonly decimals?: number;
+  readonly currency?: CurrencyCode;
+  readonly expr?: string;
+}
+
+export interface RowOptions {
+  readonly cells?: Readonly<Record<string, CellInputValue>>;
+  readonly expr?: string;
+  readonly style?: SemanticStyle;
+  readonly highlight?: boolean;
+  readonly shade?: Shade;
+  readonly format?: FormatPreset;
+  readonly decimals?: number;
+  readonly currency?: CurrencyCode;
+}
+
+export interface SectionHeaderOptions {
+  readonly indent?: number;
+  readonly note?: string;
 }

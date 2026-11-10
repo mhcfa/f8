@@ -138,6 +138,7 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
 - TypeScript / WebAssembly adapter layer (`ts/` + `crates/f8-wasm`):
   - Compiles `f8-core` to `wasm32-unknown-unknown` via `wasm-bindgen` and `serde-wasm-bindgen` with zero filesystem I/O in WASM.
   - Synchronous WASM initialization in server/CLI runtimes (Node.js, Bun, Deno) and async `init()` for browser main threads.
+  - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell` in `ts/src/builder.ts`).
   - Idiomatic `camelCase` `CompiledModel` inspection API, `Uint8Array` workbook emission (`emitWorkbook()`), `node:fs` disk persistence (`save()`), and structured `F8Error` hierarchy (`ts/src/errors.ts`).
 
 ## 5. Technology Stack
@@ -153,7 +154,7 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
 | **Python bridge**     | `pyo3`, `maturin`, `pythonize`              | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
 | **Python SDK**        | Python 3.12+ (`uv`)                         | Fluent builder DSL, table auditor, bundled agent skills                      |
 | **WASM bridge**       | `wasm-bindgen`, `serde-wasm-bindgen`        | Universal `wasm32-unknown-unknown` compiler and inspection bindings          |
-| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`)   | `CompiledModel` facade, `camelCase` contracts, structured error hierarchy    |
+| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`)   | Fluent builder DSL, `CompiledModel` facade, structured error hierarchy       |
 
 ## 6. Workspace Architecture
 
@@ -183,7 +184,7 @@ f8/
 │   └── f8/                     # Fluent builder, TableAuditor, CLI, & skills
 │
 ├── ts/                         # TypeScript SDK package
-│   ├── src/                    # CompiledModel wrapper, camelCase contracts, & F8Error hierarchy
+│   ├── src/                    # Fluent builder, CompiledModel wrapper, & F8Error hierarchy
 │   └── tests/                  # Vitest integration test suite
 │
 └── docs/                       # Architecture overview & active task specs

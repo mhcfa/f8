@@ -3,7 +3,7 @@
 ## Architecture & workspace
 
 - `docs/architecture.md` & `README.md`: Repository architecture, module boundaries, domain invariants, packaged skills, and CLI/API entrypoints. Read `docs/architecture.md` before planning or modifying code.
-- `docs/specs/drafts/`: Task specs for active work.
+- `docs/specs/drafts/`: Ephemeral task specs for active work (deleted before commit).
 - `.agents/skills/`: Bundled agent skills and optional `.agents/skills/review-implementation/references/repo-checks.md` for repository-specific review checks.
 
 ## Rule vocabulary
@@ -27,6 +27,7 @@
 - Never use wildcard arms (`_ =>`) when matching AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges. Why: adding a variant must fail compilation at every match site.
 - Never use mutable default arguments or hidden global mutable state.
 - Never manually edit generated files (e.g., `routeTree.gen.ts`); regenerate via workspace scripts.
+- Must delete finished draft specs from `docs/specs/drafts/` before commit.
 - Must pass the applicable verification suite (below) before reporting work complete.
 
 ## Core principles
