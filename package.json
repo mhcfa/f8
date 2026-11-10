@@ -4,6 +4,9 @@
   "description": "Financial modeling engine with compiler verification and live Excel formulas",
   "license": "Apache-2.0",
   "author": "Michael (Chencheng) Hu, CFA",
+  "bin": {
+    "f8": "./dist/src/cli.js"
+  },
   "files": [
     "dist",
     "README.md",
@@ -22,7 +25,7 @@
   },
   "scripts": {
     "build:wasm": "wasm-pack build crates/f8-wasm --target web --out-dir ../../ts/wasm --no-opt && rm -f ts/wasm/.gitignore ts/wasm/package.json",
-    "build:ts": "tsc -p tsconfig.build.json && cp -r ts/wasm dist/",
+    "build:ts": "tsc -p tsconfig.build.json && cp -r ts/wasm dist/ && cp -r ts/skills dist/",
     "build": "pnpm build:wasm && pnpm build:ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --type-aware",

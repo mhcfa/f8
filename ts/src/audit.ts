@@ -344,9 +344,6 @@ export class TableAuditor {
         };
       }
     }
-    throw new Error(
-      `Invalid orient '${String(orient)}'. Expected one of 'records', 'dict', 'index', 'split'.`,
-    );
   }
 
   toMarkdown(options?: TableMarkdownOptions): string;
@@ -364,12 +361,6 @@ export class TableAuditor {
     } else {
       opts = arg1;
       view = arg1?.view ?? "values";
-    }
-
-    if (view !== "values" && view !== "formulas" && view !== "expr" && view !== "addresses") {
-      throw new Error(
-        `Invalid view mode '${String(view)}'. Expected one of 'values', 'formulas', 'expr', 'addresses'.`,
-      );
     }
 
     const rows = opts?.rows;

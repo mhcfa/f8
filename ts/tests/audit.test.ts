@@ -7,8 +7,6 @@ import {
   Model,
   type SplitDict,
   TableAuditor,
-  type TableOrient,
-  type TableViewMode,
   unboxCellValue,
 } from "../src/index.js";
 
@@ -265,10 +263,6 @@ describe("TypeScript TableAuditor & Tabular Export", () => {
     expect(splitRes.data[0]?.[0]).toBe("Total Revenue");
     expect(splitRes.data[0]?.[1]).toBe(100.0);
     expect(splitRes.data[0]?.[2]).toBeCloseTo(115.0);
-
-    // Invalid orient runtime value throws Error
-    const invalidOrient = "invalid" as unknown as TableOrient;
-    expect(() => table.toDict(invalidOrient)).toThrow("Invalid orient 'invalid'");
   });
 
   it("Scenario 4: GitHub-Flavored Markdown rendering (toMarkdown)", () => {
@@ -442,16 +436,13 @@ describe("TypeScript TableAuditor & Tabular Export", () => {
     expect(mdFilteredSec).toContain("Row 2");
     expect(mdFilteredSec).not.toContain("**Section 3: Trailing Empty Match**");
 
-    // Unknown row, unknown col, or invalid view in toMarkdown throws Error
+    // Unknown row or unknown col in toMarkdown throws Error
     expect(() => isTable.toMarkdown({ rows: ["unknown_row"] })).toThrow(
       "Row 'unknown_row' not found",
     );
     expect(() => isTable.toMarkdown({ cols: ["unknown_col"] })).toThrow(
       "Column 'unknown_col' not found",
     );
-    const invalidView = "invalid" as unknown as TableViewMode;
-    expect(() => isTable.toMarkdown(invalidView)).toThrow("Invalid view mode 'invalid'");
-    expect(() => isTable.toMarkdown({ view: invalidView })).toThrow("Invalid view mode 'invalid'");
 
     // showIds: true appends [col_id] and [row_id] when display text differs from ID
     const mdIds = isTable.toMarkdown({ showIds: true });
