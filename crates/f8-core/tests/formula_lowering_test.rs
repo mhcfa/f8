@@ -742,3 +742,135 @@ fn test_active_table_selector_lowering() {
         );
     }
 }
+
+#[test]
+fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesization() {
+    use f8_core::compiler::eval::eval_expr;
+    use f8_core::expr::ast::BinaryOp;
+    use f8_core::functions::registry::FunctionRegistry;
+    use f8_core::value::CellValue;
+    use indexmap::IndexMap;
+
+    let (manifest, tables) = create_comprehensive_model();
+    let theme = Theme::corporate_navy();
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+    let registry = FunctionRegistry::standard();
+    let memoized = IndexMap::new();
+
+    let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
+
+    // 1. Right-hand relational comparisons wrap in parentheses; left-associated chains do not
+    let rel_cases = [
+        ("TRUE = (1 = 1)", "=TRUE=(1=1)", CellValue::Boolean(true)),
+        ("TRUE = 1 = 1", "=TRUE=1=1", CellValue::Boolean(false)),
+        ("1 < (2 < 3)", "=1<(2<3)", CellValue::Boolean(true)),
+        ("1 < 2 < 3", "=1<2<3", CellValue::Boolean(false)),
+        ("1 <> (2 = 2)", "=1<>(2=2)", CellValue::Boolean(true)),
+        ("1 >= (2 >= 3)", "=1>=(2>=3)", CellValue::Boolean(false)),
+        ("1 <= (2 >= 3)", "=1<=(2>=3)", CellValue::Boolean(true)),
+    ];
+
+    for (formula, expected_excel, expected_val) in rel_cases {
+        let expr = Expr::parse(formula).unwrap();
+        let eval_res = eval_expr(&expr, &origin, &memoized, &symbol_table, &registry).unwrap();
+        assert_eq!(eval_res, expected_val, "Pass 4 eval mismatch on {formula}");
+
+        let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map)
+            .expect("lowering must succeed");
+        assert_eq!(
+            lowered, expected_excel,
+            "Pass 6a lowering mismatch on {formula}"
+        );
+    }
+
+    // 2. Right-hand same-precedence arithmetic preserves grouping; left-heavy chains stay minimal
+    let arith_cases = [
+        (
+            "IncomeStatement[\"revenue\", @col] + IncomeStatement[\"cogs\", @col] + IncomeStatement[\"r_and_d\", @col]",
+            "=C6+C7+C9",
+        ),
+        (
+            "IncomeStatement[\"revenue\", @col] + (IncomeStatement[\"cogs\", @col] + IncomeStatement[\"r_and_d\", @col])",
+            "=C6+(C7+C9)",
+        ),
+        (
+            "IncomeStatement[\"revenue\", @col] + (IncomeStatement[\"cogs\", @col] - IncomeStatement[\"r_and_d\", @col])",
+            "=C6+(C7-C9)",
+        ),
+        (
+            "IncomeStatement[\"revenue\", @col] * IncomeStatement[\"cogs\", @col] * IncomeStatement[\"r_and_d\", @col]",
+            "=C6*C7*C9",
+        ),
+        (
+            "IncomeStatement[\"revenue\", @col] * (IncomeStatement[\"cogs\", @col] * IncomeStatement[\"r_and_d\", @col])",
+            "=C6*(C7*C9)",
+        ),
+        (
+            "IncomeStatement[\"revenue\", @col] * (IncomeStatement[\"cogs\", @col] / IncomeStatement[\"r_and_d\", @col])",
+            "=C6*(C7/C9)",
+        ),
+    ];
+
+    for (formula, expected_excel) in arith_cases {
+        let expr = Expr::parse(formula).unwrap();
+        let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map)
+            .expect("lowering must succeed");
+        assert_eq!(
+            lowered, expected_excel,
+            "Pass 6a arithmetic grouping mismatch on {formula}"
+        );
+    }
+
+    // 3. Float overflow & cancellation cases: 1e300 * (1e300 / 1e300) and 1e16 + (-1e16 + 1)
+    let big = Expr::number(1e300);
+    let mul_div = Expr::Binary {
+        op: BinaryOp::Mul,
+        left: Box::new(big.clone()),
+        right: Box::new(Expr::Binary {
+            op: BinaryOp::Div,
+            left: Box::new(big.clone()),
+            right: Box::new(big),
+        }),
+    };
+    assert_eq!(
+        eval_expr(&mul_div, &origin, &memoized, &symbol_table, &registry).unwrap(),
+        CellValue::Number(1e300)
+    );
+    let lowered_mul_div =
+        FormulaLowerer::lower_cell(&origin, &mul_div, &symbol_table, &layout_map).unwrap();
+    assert!(
+        lowered_mul_div.contains("*("),
+        "Expected parenthesized right-hand division, got {lowered_mul_div}"
+    );
+
+    let cancel_expr = Expr::parse("10000000000000000 + (-10000000000000000 + 1)").unwrap();
+    assert_eq!(
+        eval_expr(&cancel_expr, &origin, &memoized, &symbol_table, &registry).unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &cancel_expr, &symbol_table, &layout_map).unwrap(),
+        "=10000000000000000+(-10000000000000000+1)"
+    );
+
+    // 4. Programmatic negative numeric literals respect binary precedence identically to Unary::Neg
+    let neg_pow = Expr::Binary {
+        op: BinaryOp::Pow,
+        left: Box::new(Expr::number(-2.0)),
+        right: Box::new(Expr::number(2.0)),
+    };
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &neg_pow, &symbol_table, &layout_map).unwrap(),
+        "=(-2)^2"
+    );
+    let sub_neg = Expr::Binary {
+        op: BinaryOp::Sub,
+        left: Box::new(Expr::number(1.0)),
+        right: Box::new(Expr::number(-2.0)),
+    };
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &sub_neg, &symbol_table, &layout_map).unwrap(),
+        "=1-(-2)"
+    );
+}
