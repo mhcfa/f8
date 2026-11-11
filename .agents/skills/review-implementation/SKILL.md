@@ -41,7 +41,7 @@ description: >-
 - [ ] Canonical contracts & IR (`Blocker`): One representation per concept; no implicit fallbacks, untyped dicts, or syntactic sugar in core; ergonomics confined to outer adapters.
 - [ ] Typed semantics (`Blocker`): Explicit enums, `Literal` types, interned IDs, newtypes, and typed structs/models; no string inspection to infer semantics outside parsing/ingest.
 - [ ] Pure data flow (`Blocker`): Explicit inputs and outputs; no hidden or shared mutable state.
-- [ ] Root-cause correctness (`Blocker`): Defects fixed at origin (parser, ingest, IR, schema, solver); no downstream band-aids, silent workarounds, or test-specific branches.
+- [ ] Root-cause correctness (`Blocker`): Defects fixed at origin (parser, ingest, IR, schema, solver); no downstream workarounds, symptom patches (special-casing specific inputs or tests), masking fallbacks (`.get()`, `or default`, lossy `.ok()`), bypass flags (`skip_validation`, `force`), or single-use callsite patches.
 - [ ] Deterministic output (`Blocker`): No wall-clock time, randomness, or hash-order dependence in evaluation, layout, emitted artifacts, or bytes; `IndexMap` / `IndexSet` (or deterministic ordering) wherever order matters.
 - [ ] Repository-specific invariants (`Blocker`): Satisfies all domain invariants in `AGENTS.md` and `references/repo-checks.md` (when present).
 
@@ -51,7 +51,7 @@ description: >-
 - [ ] Exhaustive matching (`Blocker`): No wildcard arms (`_ =>`) on AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges.
 - [ ] No shims (`Blocker`): No `#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, or placeholder stubs. Public `__all__` deprecations only when the user or spec requires them.
 - [ ] Bool toggles (`Blocker` in public or IR signatures, `Minor` in private helpers): 2-variant enums/unions instead of `bool` behavior flags.
-- [ ] Minimal surface (`Minor`): No commented-out tombstones, unused functions/imports, or single-use trait/generic abstractions.
+- [ ] Minimal surface (`Minor`): No commented-out tombstones, unused functions/imports, single-use helper shims, or single-use trait/generic abstractions.
 
 ### 3. Rust Standards (2024 Edition, when the diff touches Rust crates)
 

@@ -38,7 +38,7 @@ Default to principles. Make a rule explicit (`Never` / `Must`) only when at leas
 | :---------------------------------------- | :------------------------------------------------------- |
 | Workspace contract the agent cannot infer | Run verification suite from `AGENTS.md` before finishing |
 | Failure is silent and costly              | Exhaustive enum match without `_ =>` wildcard arms       |
-| Model instinct is reliably wrong          | Fix defects at parser/schema origin, not via band-aids   |
+| Model instinct is reliably wrong          | Fix defects at origin, not via symptom patches           |
 | Pre-commitment is the point               | Get spec approval before dispatching Implementer         |
 
 Rules degrade performance when they:

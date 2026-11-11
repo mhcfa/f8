@@ -181,6 +181,7 @@ Jokes aside, writing models in code gives you 40 years of software infrastructur
 3. Constantly re-compiling just to peek at the Excel workbook can be a bit annoying, so we provide in-memory inspection methods in both SDKs. Once you get used to printing tables in the terminal, you don't need to open the `.xlsx` all the time (or just ask AI to do it).
 4. There are no circular references or iterative solvers (as per FAST Standard Section 2.01). There is a closed-form formula that solves the revolver circularity problem without circular references anyway (and don't worry, AI knows it).
 5. There is no native Excel chart emission yet (on roadmap), and no Pivot Tables. But since you are already in code, your language ecosystem handles data aggregation much better.
+6. It is a one-way flow (`code -> Excel`). Editing the emitted `.xlsx` workbook won't sync back to your code, and re-compiling will overwrite manual changes. This is by design, `.xlsx` is a compiled deliverable, not a source file.
 
 ## Architecture
 

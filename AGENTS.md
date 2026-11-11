@@ -21,6 +21,7 @@
 
 - Never suppress tooling to get green (`#[allow(...)]`, `# type: ignore`, `# pyright: ignore`, `# noqa`, `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`) without user approval and an inline reason.
 - Never add compatibility shims (`#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, `_v2` functions, or placeholder stubs). Update callers in place. Public Python (`__all__`) deprecation warnings only when the user or spec requires them.
+- Never patch symptoms downstream or introduce workarounds: fix defects at origin (parser, ingest, IR, schema, solver). Never add special-case branches for specific inputs or tests, silent fallback masks (e.g., permissive `.get()`, lossy `.ok()`, broad `except:`), bypass flags (e.g., `skip_validation`, `force`), or single-use callsite patches.
 - Never use `unwrap` / `expect` outside tests (clippy `unwrap_used`, `expect_used`), bare `except:` (ruff `E722`), or silently swallow exceptions.
 - Never leave `todo!()`, `unimplemented!()`, or `dbg!()` in code (clippy `todo`, `unimplemented`, `dbg_macro`).
 - Never use glob imports outside tests (clippy `wildcard_imports`).
@@ -38,8 +39,8 @@
 - Pure data flow: Explicit inputs, outputs, and boundary-driven state transitions; no global mutable state or hidden side effects. Why: determinism and isolated testability.
 - Invalid states unrepresentable: Prefer enums, `Literal` types, interned IDs, newtypes, frozen dataclasses, Pydantic/Zod schemas, and typed structs over string heuristics and `bool` flags; 2-variant enum/union over `bool` parameter. No string inspection to infer semantics outside lexer/parser/ingest boundaries. Why: the compiler or type checker checks semantics instead of the reviewer.
 - Concrete internals, ergonomic boundaries: Internal passes take concrete types (`&str`, `&[T]`); generic conversions (`impl Into`, `impl AsRef`) only at public facades (PyO3 bindings, inspection facades).
-- Fix at the origin: Fix defects where they arise (parser, ingest, IR, layout solver, schema, query), not where they surface. No downstream band-aids, lossy `.ok()`, unverified casts, or test-specific branches. Why: downstream patches mask the bug and multiply.
-- Minimal surface: No dead code, commented-out tombstones, or speculative abstractions. Abstract on the second real caller, not the first.
+- Fix at the origin: Fix defects where data originates or state transitions fail (parser, ingest, IR, layout solver, schema, query), not where symptoms surface (downstream passes, formatters, UI, tests). No symptom patches (input-specific branches), masking fallbacks, or bypass flags. Why: downstream patches hide origin defects, multiply edge cases, and create technical debt.
+- Minimal surface: No dead code, commented-out tombstones, single-use helper shims, or speculative abstractions. Abstract on the second real caller, not the first.
 
 ## Reasoning & judgment
 
