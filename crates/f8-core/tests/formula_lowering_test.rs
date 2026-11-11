@@ -874,3 +874,126 @@ fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesizati
         "=1-(-2)"
     );
 }
+
+#[test]
+fn test_scenario_20_range_contiguity_validation_during_lowering() {
+    use f8_core::compiler::graph::{RangeDiscontinuity, ResolveError};
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Lowering Contiguity".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("line_item", "Line Item"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+            ColumnSpec::gutter(),
+            ColumnSpec::descriptor("notes", "Notes"),
+            ColumnSpec::new("2026E"),
+        ],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_cell("line_item", "A")
+                .with_cell("2024E", 10.0)
+                .with_cell("2025E", 20.0)
+                .with_cell("notes", "n1")
+                .with_cell("2026E", 30.0),
+            RowSpec::new("r2")
+                .with_cell("line_item", "B")
+                .with_cell("2024E", 40.0)
+                .with_cell("2025E", 50.0)
+                .with_cell("notes", "n2")
+                .with_cell("2026E", 60.0),
+            RowSpec::gutter(),
+            RowSpec::new("r3")
+                .with_cell("line_item", "C")
+                .with_cell("2024E", 70.0)
+                .with_cell("2025E", 80.0)
+                .with_cell("notes", "n3")
+                .with_cell("2026E", 90.0),
+            RowSpec::section_header("OpEx"),
+            RowSpec::new("r4")
+                .with_cell("line_item", "D")
+                .with_cell("2024E", 100.0)
+                .with_cell("2025E", 110.0)
+                .with_cell("notes", "n4")
+                .with_cell("2026E", 120.0),
+        ],
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "LoweringContiguityModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Model".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+
+    let theme = Theme::corporate_navy();
+    let tables = [table];
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    let origin = CellId::new("T", "r1", "2026E");
+
+    // 1. Contiguous measure columns & data rows succeed
+    let ok_expr = Expr::parse("SUM(T[\"r1\"..\"r2\", \"2024E\"..\"2025E\"])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &ok_expr, &symbol_table, &layout_map).unwrap(),
+        "=SUM($C$5:$D$6)"
+    );
+
+    // 2. Vertical range on a single descriptor column succeeds
+    let ok_desc_vertical = Expr::parse("COUNTA(T[\"r1\"..\"r2\", \"line_item\"])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &ok_desc_vertical, &symbol_table, &layout_map).unwrap(),
+        "=COUNTA($B$5:$B$6)"
+    );
+
+    // 3. Discontinuous row range across gutter
+    let bad_row_gutter = Expr::parse("SUM(T[\"r2\"..\"r3\", @col])").unwrap();
+    assert!(matches!(
+        FormulaLowerer::lower_cell(&origin, &bad_row_gutter, &symbol_table, &layout_map),
+        Err(LoweringError::Resolve(ResolveError::DiscontinuousRange {
+            discontinuity: RangeDiscontinuity::RowGutter,
+            ..
+        }))
+    ));
+
+    // 4. Discontinuous row range across section header
+    let bad_section = Expr::parse("SUM(T[\"r3\"..\"r4\", @col])").unwrap();
+    assert!(matches!(
+        FormulaLowerer::lower_cell(&origin, &bad_section, &symbol_table, &layout_map),
+        Err(LoweringError::Resolve(ResolveError::DiscontinuousRange {
+            discontinuity: RangeDiscontinuity::SectionHeader { ref title },
+            ..
+        })) if title == "OpEx"
+    ));
+
+    // 5. Discontinuous col range across column gutter
+    let bad_col_gutter = Expr::parse("SUM(T[\"r1\", \"2025E\"..\"2026E\"])").unwrap();
+    assert!(matches!(
+        FormulaLowerer::lower_cell(&origin, &bad_col_gutter, &symbol_table, &layout_map),
+        Err(LoweringError::Resolve(ResolveError::DiscontinuousRange {
+            discontinuity: RangeDiscontinuity::ColumnGutter,
+            ..
+        }))
+    ));
+
+    // 6. Discontinuous col range across descriptor endpoint
+    let bad_col_desc = Expr::parse("COUNTA(T[\"r1\", \"line_item\"..\"2024E\"])").unwrap();
+    assert!(matches!(
+        FormulaLowerer::lower_cell(&origin, &bad_col_desc, &symbol_table, &layout_map),
+        Err(LoweringError::Resolve(ResolveError::DiscontinuousRange {
+            discontinuity: RangeDiscontinuity::DescriptorColumn { ref column },
+            ..
+        })) if column.as_str() == "line_item"
+    ));
+}

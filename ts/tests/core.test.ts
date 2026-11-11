@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  Cell,
   compile,
   CycleDetectedError,
   defaultTheme,
@@ -10,6 +11,7 @@ import {
   F8Error,
   FormulaParseError,
   InspectionError,
+  Model,
   ReferenceResolutionError,
   SpecificationError,
   VERSION,
@@ -585,6 +587,129 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(err).toBeInstanceOf(TypeError);
         // TypeError should NOT be an instance of F8Error
         expect(err instanceof F8Error).toBe(false);
+      }
+    });
+
+    it("(g) validates range slice contiguity and populates ReferenceResolutionError properties", () => {
+      // 1. Contiguous sub-block and vertical single-descriptor slice succeed
+      const okModel = new Model({ name: "ContiguousOk", theme: "corporate_navy" });
+      const okTable = okModel.addSheet("Main").addTable("T", "Summary");
+      okTable
+        .addColumn("line_item", { role: "descriptor", header: "Line Item" })
+        .addColumnGutter()
+        .addColumn("2024E", { role: "measure", header: "2024E" })
+        .addColumn("2025E", { role: "measure", header: "2025E" });
+      okTable.addSectionHeader("Revenue");
+      okTable.addRow("r1", { cells: { line_item: "Product", "2024E": 10, "2025E": 20 } });
+      okTable.addRow("r2", { cells: { line_item: "Rev", "2024E": 30, "2025E": 40 } });
+      okTable.addRowGutter();
+      okTable.addRow("tot", {
+        cells: { line_item: new Cell({ expr: 'COUNTA(@table["r1".."r2", @col])' }) },
+        expr: 'SUM(@table["r1".."r2", "2024E".."2025E"]) + XLOOKUP("Rev", @table["r1".."r2", "line_item"], @table["r1".."r2", @col])',
+      });
+      const compiled = okModel.compile();
+      expect(compiled.num("T", "tot", "2024E")).toBe(130);
+      expect(compiled.num("T", "tot", "2025E")).toBe(140);
+      expect(compiled.num("T", "tot", "line_item")).toBe(2);
+
+      // 2. Row range spanning RowGutter -> ReferenceResolutionError (col === null, row === null)
+      const rgModel = new Model({ name: "RowGutterFail" });
+      const rgTable = rgModel.addSheet("Main").addTable("T", "T");
+      rgTable.addColumn("2024E", { role: "measure", header: "2024E" });
+      rgTable.addRow("r1", { cells: { "2024E": 10 } });
+      rgTable.addRowGutter();
+      rgTable.addRow("r2", { cells: { "2024E": 20 } });
+      rgTable.addRow("tot", { expr: 'SUM(T["r1".."r2", @col])' });
+      try {
+        rgModel.compile();
+        expect.unreachable("Should have thrown ReferenceResolutionError");
+      } catch (err) {
+        if (!(err instanceof ReferenceResolutionError)) {
+          expect.unreachable("Expected ReferenceResolutionError");
+        }
+        expect(err).toBeInstanceOf(F8Error);
+        expect(err.coordinate).toBe('T["tot", "2024E"]');
+        expect(err.targetTable).toBe("T");
+        expect(err.row).toBeNull();
+        expect(err.col).toBeNull();
+        expect(err.message).toContain("a gutter row");
+      }
+
+      // 3. Row range spanning SectionHeader -> ReferenceResolutionError (col === null, row === null)
+      const shModel = new Model({ name: "SectionHeaderFail" });
+      const shTable = shModel.addSheet("Main").addTable("T", "T");
+      shTable.addColumn("2024E", { role: "measure", header: "2024E" });
+      shTable.addRow("r1", { cells: { "2024E": 10 } });
+      shTable.addSectionHeader("OpEx");
+      shTable.addRow("r2", { cells: { "2024E": 20 } });
+      shTable.addRow("tot", { expr: 'SUM(T["r1".."r2", @col])' });
+      try {
+        shModel.compile();
+        expect.unreachable("Should have thrown ReferenceResolutionError");
+      } catch (err) {
+        if (!(err instanceof ReferenceResolutionError)) {
+          expect.unreachable("Expected ReferenceResolutionError");
+        }
+        expect(err.coordinate).toBe('T["tot", "2024E"]');
+        expect(err.targetTable).toBe("T");
+        expect(err.row).toBeNull();
+        expect(err.col).toBeNull();
+        expect(err.message).toContain("section header 'OpEx'");
+      }
+
+      // 4. Column range spanning ColumnGutter -> ReferenceResolutionError (col === null, row === null)
+      const cgModel = new Model({ name: "ColGutterFail" });
+      const cgTable = cgModel.addSheet("Main").addTable("T", "T");
+      cgTable
+        .addColumn("2024E", { role: "measure", header: "2024E" })
+        .addColumnGutter()
+        .addColumn("2025E", { role: "measure", header: "2025E" });
+      cgTable.addRow("r1", {
+        cells: {
+          "2024E": 10,
+          "2025E": new Cell({ expr: 'SUM(T["r1", col.prev..@col])' }),
+        },
+      });
+      try {
+        cgModel.compile();
+        expect.unreachable("Should have thrown ReferenceResolutionError");
+      } catch (err) {
+        if (!(err instanceof ReferenceResolutionError)) {
+          expect.unreachable("Expected ReferenceResolutionError");
+        }
+        expect(err.coordinate).toBe('T["r1", "2025E"]');
+        expect(err.targetTable).toBe("T");
+        expect(err.row).toBeNull();
+        expect(err.col).toBeNull();
+        expect(err.message).toContain("a gutter column");
+      }
+
+      // 5. Column range spanning DescriptorColumn -> ReferenceResolutionError with col populated
+      const dcModel = new Model({ name: "DescriptorColFail" });
+      const dcTable = dcModel.addSheet("Main").addTable("T", "T");
+      dcTable
+        .addColumn("m1", { role: "measure", header: "M1" })
+        .addColumn("notes", { role: "descriptor", header: "Notes" })
+        .addColumn("m2", { role: "measure", header: "M2" });
+      dcTable.addRow("r1", {
+        cells: {
+          m1: 10,
+          notes: "memo",
+          m2: new Cell({ expr: 'SUM(T["r1", col.prev..@col])' }),
+        },
+      });
+      try {
+        dcModel.compile();
+        expect.unreachable("Should have thrown ReferenceResolutionError");
+      } catch (err) {
+        if (!(err instanceof ReferenceResolutionError)) {
+          expect.unreachable("Expected ReferenceResolutionError");
+        }
+        expect(err.coordinate).toBe('T["r1", "m2"]');
+        expect(err.targetTable).toBe("T");
+        expect(err.row).toBeNull();
+        expect(err.col).toBe("notes");
+        expect(err.message).toContain("descriptor column 'notes'");
       }
     });
   });

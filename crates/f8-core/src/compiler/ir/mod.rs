@@ -12,4 +12,4 @@ pub use cell::{CellGrid, CellNode, CellPayload};
 pub use error::IrError;
 pub use expand::{expand_grid, expand_table, expand_workbook};
 pub use id::CellId;
-pub use symbol::{SymbolTable, TableMetadata};
+pub use symbol::{ColSlot, RowSlot, SymbolTable, TableMetadata};
