@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
-use f8_core::compiler::graph::{ResolveError, resolve_cell_dependencies, resolve_table_ref};
+use f8_core::compiler::graph::{
+    RangeDiscontinuity, ResolveError, resolve_cell_dependencies, resolve_table_ref,
+};
 use f8_core::compiler::ir::{CellGrid, CellId, SymbolTable, expand_table};
 use f8_core::expr::ast::{
     ColEndpoint, ColSelector, RelativeOffset, RowEndpoint, RowSelector, TableRef, TableSelector,
@@ -810,5 +812,522 @@ fn test_active_table_selector_model_compilation_and_inspection() {
         insp.precedents
             .iter()
             .any(|d| d.cell_id == CellId::new("IncomeStatement", "cogs", "y1"))
+    );
+}
+
+#[test]
+fn test_contiguous_data_row_and_measure_col_ranges_with_surrounding_dividers() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Contiguous Sub-Block".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("line_item", "Line Item"),
+            ColumnSpec::gutter(),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+            ColumnSpec::gutter(),
+            ColumnSpec::new("2026E"),
+        ],
+        rows: vec![
+            RowSpec::section_header("Revenue"),
+            RowSpec::new("r1")
+                .with_cell("line_item", "Product")
+                .with_cell("2024E", 10.0)
+                .with_cell("2025E", 20.0)
+                .with_cell("2026E", 30.0),
+            RowSpec::new("r2")
+                .with_cell("line_item", "Services")
+                .with_cell("2024E", 40.0)
+                .with_cell("2025E", 50.0)
+                .with_cell("2026E", 60.0),
+            RowSpec::gutter(),
+            RowSpec::new("tot")
+                .with_cell("line_item", "2x2 Subtotal")
+                .with_expr("SUM(@table[\"r1\"..\"r2\", \"2024E\"..\"2025E\"])"),
+        ],
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "ContiguousRangeModel".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).expect("compile ok");
+    let t_id = TableId::from("T");
+    assert_eq!(
+        compiled
+            .cell_value(&t_id, &RowId::from("tot"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(120.0)
+    );
+
+    let r1_2024 = compiled
+        .inspect_cell(&t_id, &RowId::from("r1"), &ColId::from("2024E"))
+        .unwrap();
+    let r2_2025 = compiled
+        .inspect_cell(&t_id, &RowId::from("r2"), &ColId::from("2025E"))
+        .unwrap();
+    let tot_2024 = compiled
+        .inspect_cell(&t_id, &RowId::from("tot"), &ColId::from("2024E"))
+        .unwrap();
+    // Title (row 2), title gutter (row 3), header (row 4), section header (row 5), r1 (row 6), r2 (row 7)
+    // Col B = line_item, Col C = gutter, Col D = 2024E, Col E = 2025E
+    assert_eq!(r1_2024.physical_address, "Main!D6");
+    assert_eq!(r2_2025.physical_address, "Main!E7");
+    assert_eq!(tot_2024.excel_formula.as_deref(), Some("=SUM($D$6:$E$7)"));
+    assert_eq!(tot_2024.precedents.len(), 4);
+}
+
+#[test]
+fn test_vertical_range_on_single_descriptor_column_succeeds() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Descriptor Vertical Slice".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("line_item", "Line Item"),
+            ColumnSpec::new("2024E"),
+        ],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_cell("line_item", "COGS")
+                .with_cell("2024E", 40.0),
+            RowSpec::new("r2")
+                .with_cell("line_item", "Rev")
+                .with_cell("2024E", 100.0),
+            RowSpec::new("r3")
+                .with_cell("line_item", "OpEx")
+                .with_cell("2024E", 25.0),
+            RowSpec::gutter(),
+            RowSpec::new("summary")
+                .with_cell(
+                    "line_item",
+                    CellInput::formula("COUNTA(@table[\"r1\"..\"r2\", @col])"),
+                )
+                .with_expr(
+                    "XLOOKUP(\"Rev\", @table[\"r1\"..\"r3\", \"line_item\"], @table[\"r1\"..\"r3\", @col])",
+                ),
+        ],
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "DescriptorVerticalModel".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).expect("compile ok");
+    let t_id = TableId::from("T");
+    assert_eq!(
+        compiled
+            .cell_value(&t_id, &RowId::from("summary"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(100.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t_id, &RowId::from("summary"), &ColId::from("line_item"))
+            .unwrap(),
+        CellValue::Number(2.0)
+    );
+}
+
+#[test]
+fn test_row_range_spanning_gutter_rejected() {
+    use f8_core::compiler::graph::GraphError;
+    use f8_core::compiler::{Compiler, CompilerError, ErrorDiagnostic};
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Row Gutter".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("r1").with_cell("2024E", 10.0),
+            RowSpec::gutter(),
+            RowSpec::new("r2").with_cell("2024E", 20.0),
+            RowSpec::new("tot").with_expr("SUM(T[\"r1\"..\"r2\", @col])"),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &table)
+        .unwrap();
+
+    let origin = CellId::new("T", "tot", "2024E");
+    let table_ref = TableRef::new(
+        "T",
+        RowSelector::Range("r1".into(), "r2".into()),
+        ColSelector::Active,
+    );
+    let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
+    assert_eq!(
+        err,
+        ResolveError::discontinuous_range(
+            &origin,
+            TableId::from("T"),
+            "r1".to_string(),
+            "r2".to_string(),
+            RangeDiscontinuity::RowGutter,
+        )
+    );
+    assert_eq!(
+        err.to_string(),
+        "Formula in cell 'T[\"tot\", \"2024E\"]' specifies range 'r1'..'r2' in table 'T' spanning a gutter row"
+    );
+    assert_eq!(
+        err.diagnostic(),
+        ErrorDiagnostic::ReferenceResolutionError {
+            message: err.to_string(),
+            coordinate: "T[\"tot\", \"2024E\"]".to_string(),
+            target_table: Some("T".to_string()),
+            row: None,
+            col: None,
+        }
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "RowGutterFail".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+    let compile_err = Compiler::compile(&manifest, &[table]).unwrap_err();
+    assert!(matches!(
+        compile_err,
+        CompilerError::Graph(GraphError::Resolve(ResolveError::DiscontinuousRange {
+            discontinuity: RangeDiscontinuity::RowGutter,
+            ..
+        }))
+    ));
+}
+
+#[test]
+fn test_row_range_spanning_section_header_rejected_including_untaken_branch() {
+    use f8_core::compiler::graph::GraphError;
+    use f8_core::compiler::{Compiler, CompilerError};
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+
+    for expr_str in [
+        "SUM(T[\"r1\"..\"r2\", @col])",
+        "IF(TRUE, 1, SUM(T[\"r1\"..\"r2\", @col]))",
+    ] {
+        let table = TableSpec {
+            id: TableId::from("T"),
+            title: "Section Header".into(),
+            subtitle: None,
+            currency: None,
+            collapsible: false,
+            placement: f8_core::model::PlacementSpec::default(),
+            columns: vec![ColumnSpec::new("2024E")],
+            rows: vec![
+                RowSpec::new("r1").with_cell("2024E", 10.0),
+                RowSpec::section_header("OpEx"),
+                RowSpec::new("r2").with_cell("2024E", 20.0),
+                RowSpec::new("tot").with_expr(expr_str),
+            ],
+        };
+
+        let manifest = ProjectManifest {
+            model_name: "SectionHeaderFail".into(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Main".into(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("T")],
+            }],
+        };
+
+        let err = Compiler::compile(&manifest, &[table]).unwrap_err();
+        let CompilerError::Graph(GraphError::Resolve(resolve_err)) = err else {
+            panic!("expected Pass 3 DiscontinuousRange error, got {err:?}");
+        };
+        assert_eq!(
+            resolve_err,
+            ResolveError::discontinuous_range(
+                &CellId::new("T", "tot", "2024E"),
+                TableId::from("T"),
+                "r1".to_string(),
+                "r2".to_string(),
+                RangeDiscontinuity::SectionHeader {
+                    title: "OpEx".to_string(),
+                },
+            )
+        );
+        assert!(
+            resolve_err
+                .to_string()
+                .contains("spanning section header 'OpEx'")
+        );
+    }
+}
+
+#[test]
+fn test_col_range_spanning_gutter_rejected() {
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Column Gutter".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2024E"),
+            ColumnSpec::gutter(),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_cell("2024E", 10.0)
+                .with_cell("2025E", 20.0),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &table)
+        .unwrap();
+
+    let origin = CellId::new("T", "r1", "2025E");
+    for col_sel in [
+        ColSelector::Range("2024E".into(), "2025E".into()),
+        ColSelector::Range(
+            ColEndpoint::Offset(RelativeOffset::Prev(1)),
+            ColEndpoint::Active,
+        ),
+    ] {
+        let table_ref = TableRef::new("T", RowSelector::Key(RowId::from("r1")), col_sel);
+        let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
+        assert_eq!(
+            err,
+            ResolveError::discontinuous_range(
+                &origin,
+                TableId::from("T"),
+                "2024E".to_string(),
+                "2025E".to_string(),
+                RangeDiscontinuity::ColumnGutter,
+            )
+        );
+        assert!(err.to_string().contains("spanning a gutter column"));
+    }
+}
+
+#[test]
+fn test_col_range_including_descriptor_endpoint_or_intermediate_rejected() {
+    use f8_core::compiler::ErrorDiagnostic;
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Descriptor Column Range".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("desc", "Desc"),
+            ColumnSpec::new("m1"),
+            ColumnSpec::descriptor("notes", "Notes"),
+            ColumnSpec::new("m2"),
+        ],
+        rows: vec![RowSpec::new("r1")],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &table)
+        .unwrap();
+
+    let origin = CellId::new("T", "r1", "m2");
+    let cases = [
+        (
+            ColSelector::Range("desc".into(), "m1".into()),
+            "desc",
+            "m1",
+            "desc",
+        ),
+        (
+            ColSelector::Range("desc".into(), "desc".into()),
+            "desc",
+            "desc",
+            "desc",
+        ),
+        (
+            ColSelector::Range("m1".into(), "m2".into()),
+            "m1",
+            "m2",
+            "notes",
+        ),
+        (
+            ColSelector::Range(
+                ColEndpoint::Offset(RelativeOffset::Prev(1)),
+                ColEndpoint::Active,
+            ),
+            "m1",
+            "m2",
+            "notes",
+        ),
+        (
+            ColSelector::Range("m1".into(), "notes".into()),
+            "m1",
+            "notes",
+            "notes",
+        ),
+    ];
+
+    for (col_sel, expected_start, expected_end, expected_desc_col) in cases {
+        let table_ref = TableRef::new("T", RowSelector::Key(RowId::from("r1")), col_sel);
+        let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
+        assert_eq!(
+            err,
+            ResolveError::discontinuous_range(
+                &origin,
+                TableId::from("T"),
+                expected_start.to_string(),
+                expected_end.to_string(),
+                RangeDiscontinuity::DescriptorColumn {
+                    column: ColId::from(expected_desc_col),
+                },
+            )
+        );
+        assert!(
+            err.to_string()
+                .contains(&format!("spanning descriptor column '{expected_desc_col}'"))
+        );
+        assert_eq!(
+            err.diagnostic(),
+            ErrorDiagnostic::ReferenceResolutionError {
+                message: err.to_string(),
+                coordinate: "T[\"r1\", \"m2\"]".to_string(),
+                target_table: Some("T".to_string()),
+                row: None,
+                col: Some(expected_desc_col.to_string()),
+            }
+        );
+    }
+}
+
+#[test]
+fn test_inverted_range_precedes_discontinuity_and_first_discontinuity_order() {
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Ordering".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("desc", "Desc"),
+            ColumnSpec::new("m1"),
+            ColumnSpec::gutter(),
+            ColumnSpec::descriptor("notes", "Notes"),
+            ColumnSpec::new("m2"),
+        ],
+        rows: vec![
+            RowSpec::new("r1"),
+            RowSpec::gutter(),
+            RowSpec::section_header("OpEx"),
+            RowSpec::new("r2"),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &table)
+        .unwrap();
+
+    let origin = CellId::new("T", "r1", "m1");
+
+    // Scenario 7: Inverted range precedes discontinuity
+    let inv_row_ref = TableRef::new(
+        "T",
+        RowSelector::Range("r2".into(), "r1".into()),
+        ColSelector::Key(ColId::from("m1")),
+    );
+    assert_eq!(
+        resolve_table_ref(&origin, &inv_row_ref, &symbols).unwrap_err(),
+        ResolveError::inverted_range(&origin, "T", "r2", "r1")
+    );
+
+    let inv_col_ref = TableRef::new(
+        "T",
+        RowSelector::Key(RowId::from("r1")),
+        ColSelector::Range("m1".into(), "desc".into()),
+    );
+    assert_eq!(
+        resolve_table_ref(&origin, &inv_col_ref, &symbols).unwrap_err(),
+        ResolveError::inverted_range(&origin, "T", "m1", "desc")
+    );
+
+    // Multiple discontinuities report first in declared table order
+    let multi_row_ref = TableRef::new(
+        "T",
+        RowSelector::Range("r1".into(), "r2".into()),
+        ColSelector::Key(ColId::from("m1")),
+    );
+    assert_eq!(
+        resolve_table_ref(&origin, &multi_row_ref, &symbols).unwrap_err(),
+        ResolveError::discontinuous_range(
+            &origin,
+            TableId::from("T"),
+            "r1".to_string(),
+            "r2".to_string(),
+            RangeDiscontinuity::RowGutter,
+        )
+    );
+
+    let multi_col_ref = TableRef::new(
+        "T",
+        RowSelector::Key(RowId::from("r1")),
+        ColSelector::Range("m1".into(), "m2".into()),
+    );
+    assert_eq!(
+        resolve_table_ref(&origin, &multi_col_ref, &symbols).unwrap_err(),
+        ResolveError::discontinuous_range(
+            &origin,
+            TableId::from("T"),
+            "m1".to_string(),
+            "m2".to_string(),
+            RangeDiscontinuity::ColumnGutter,
+        )
     );
 }

@@ -4,6 +4,22 @@ use super::error::IrError;
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::table::{AxisRole, ColumnSpec, DataColumnSpec, RowSpec, TableSpec};
 
+/// Ordered structural slot along a table's row axis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RowSlot {
+    Data(RowId),
+    Gutter,
+    SectionHeader { title: String },
+}
+
+/// Ordered structural slot along a table's column axis.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ColSlot {
+    Measure(ColId),
+    Descriptor(ColId),
+    Gutter,
+}
+
 /// Catalog metadata registered for a table within the symbol table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableMetadata {
@@ -13,6 +29,10 @@ pub struct TableMetadata {
     pub column_index: IndexMap<ColId, usize>,
     pub measure_columns: Vec<ColId>,
     pub rows: IndexSet<RowId>,
+    pub row_slots: Vec<RowSlot>,
+    pub row_slot_index: IndexMap<RowId, usize>,
+    pub col_slots: Vec<ColSlot>,
+    pub col_slot_index: IndexMap<ColId, usize>,
 }
 
 impl TableMetadata {
@@ -27,22 +47,51 @@ impl TableMetadata {
         let mut columns = Vec::new();
         let mut column_index = IndexMap::new();
         let mut measure_columns = Vec::new();
+        let mut col_slots = Vec::with_capacity(table.columns.len());
+        let mut col_slot_index = IndexMap::new();
 
         for col in &table.columns {
-            if let ColumnSpec::Data(d) = col {
-                let idx = columns.len();
-                column_index.insert(d.id.clone(), idx);
-                if d.role.is_measure() {
-                    measure_columns.push(d.id.clone());
+            match col {
+                ColumnSpec::Data(d) => {
+                    let idx = columns.len();
+                    column_index.insert(d.id.clone(), idx);
+                    let slot_idx = col_slots.len();
+                    col_slot_index.insert(d.id.clone(), slot_idx);
+                    let slot = match d.role {
+                        AxisRole::Measure => {
+                            measure_columns.push(d.id.clone());
+                            ColSlot::Measure(d.id.clone())
+                        }
+                        AxisRole::Descriptor => ColSlot::Descriptor(d.id.clone()),
+                    };
+                    col_slots.push(slot);
+                    columns.push(d.clone());
                 }
-                columns.push(d.clone());
+                ColumnSpec::Gutter => {
+                    col_slots.push(ColSlot::Gutter);
+                }
             }
         }
 
         let mut rows = IndexSet::new();
+        let mut row_slots = Vec::with_capacity(table.rows.len());
+        let mut row_slot_index = IndexMap::new();
         for row in &table.rows {
-            if let RowSpec::Data(d) = row {
-                rows.insert(d.id.clone());
+            match row {
+                RowSpec::Data(d) => {
+                    rows.insert(d.id.clone());
+                    let slot_idx = row_slots.len();
+                    row_slot_index.insert(d.id.clone(), slot_idx);
+                    row_slots.push(RowSlot::Data(d.id.clone()));
+                }
+                RowSpec::Gutter => {
+                    row_slots.push(RowSlot::Gutter);
+                }
+                RowSpec::SectionHeader(h) => {
+                    row_slots.push(RowSlot::SectionHeader {
+                        title: h.title.clone(),
+                    });
+                }
             }
         }
 
@@ -53,12 +102,18 @@ impl TableMetadata {
             column_index,
             measure_columns,
             rows,
+            row_slots,
+            row_slot_index,
+            col_slots,
+            col_slot_index,
         })
     }
 
     /// Returns the column specification for a given column identifier.
     pub fn col_spec(&self, col: &ColId) -> Option<&DataColumnSpec> {
-        self.column_index.get(col).map(|&idx| &self.columns[idx])
+        self.column_index
+            .get(col)
+            .and_then(|&idx| self.columns.get(idx))
     }
 
     /// Returns the axis role of a column.
@@ -242,5 +297,57 @@ mod tests {
             symbols.col_role(&TableId::new("IncomeStatement"), &ColId::new("2023A")),
             Some(AxisRole::Measure)
         );
+    }
+
+    #[test]
+    fn test_table_metadata_slots_and_slot_indices() {
+        let table = TableSpec {
+            id: TableId::new("T"),
+            title: "Structural Slots".to_string(),
+            subtitle: None,
+            currency: None,
+            collapsible: false,
+            placement: crate::model::table::PlacementSpec::default(),
+            columns: vec![
+                ColumnSpec::descriptor("line_item", "Line Item"),
+                ColumnSpec::new("2024E"),
+                ColumnSpec::gutter(),
+                ColumnSpec::new("2025E"),
+            ],
+            rows: vec![
+                RowSpec::section_header("Revenue"),
+                RowSpec::new("r1").with_expr("1"),
+                RowSpec::gutter(),
+                RowSpec::new("r2").with_expr("2"),
+            ],
+        };
+
+        let meta = TableMetadata::from_table_spec(SheetId::from("Sheet1"), &table).unwrap();
+        assert_eq!(
+            meta.col_slots,
+            vec![
+                ColSlot::Descriptor(ColId::new("line_item")),
+                ColSlot::Measure(ColId::new("2024E")),
+                ColSlot::Gutter,
+                ColSlot::Measure(ColId::new("2025E")),
+            ]
+        );
+        assert_eq!(meta.col_slot_index.get(&ColId::new("line_item")), Some(&0));
+        assert_eq!(meta.col_slot_index.get(&ColId::new("2024E")), Some(&1));
+        assert_eq!(meta.col_slot_index.get(&ColId::new("2025E")), Some(&3));
+
+        assert_eq!(
+            meta.row_slots,
+            vec![
+                RowSlot::SectionHeader {
+                    title: "Revenue".to_string(),
+                },
+                RowSlot::Data(RowId::new("r1")),
+                RowSlot::Gutter,
+                RowSlot::Data(RowId::new("r2")),
+            ]
+        );
+        assert_eq!(meta.row_slot_index.get(&RowId::new("r1")), Some(&1));
+        assert_eq!(meta.row_slot_index.get(&RowId::new("r2")), Some(&3));
     }
 }

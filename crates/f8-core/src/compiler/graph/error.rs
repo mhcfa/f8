@@ -1,7 +1,29 @@
+use std::fmt;
+
 use thiserror::Error;
 
 use crate::compiler::ir::id::CellId;
 use crate::model::id::{ColId, RowId, TableId};
+
+/// Structural discontinuity encountered within a formula range slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RangeDiscontinuity {
+    RowGutter,
+    SectionHeader { title: String },
+    ColumnGutter,
+    DescriptorColumn { column: ColId },
+}
+
+impl fmt::Display for RangeDiscontinuity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RowGutter => f.write_str("a gutter row"),
+            Self::SectionHeader { title } => write!(f, "section header '{title}'"),
+            Self::ColumnGutter => f.write_str("a gutter column"),
+            Self::DescriptorColumn { column } => write!(f, "descriptor column '{column}'"),
+        }
+    }
+}
 
 /// Errors encountered during formula reference resolution against table axes and the symbol table.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -59,6 +81,17 @@ pub enum ResolveError {
         target_table: TableId,
         start: String,
         end: String,
+    },
+
+    #[error(
+        "Formula in cell '{origin}' specifies range '{start}'..'{end}' in table '{target_table}' spanning {discontinuity}"
+    )]
+    DiscontinuousRange {
+        origin: Box<CellId>,
+        target_table: TableId,
+        start: String,
+        end: String,
+        discontinuity: RangeDiscontinuity,
     },
 
     #[error("Table '{table}' containing cell '{origin}' is not registered in the symbol table")]
@@ -146,6 +179,24 @@ impl ResolveError {
             target_table: target_table.into(),
             start: start.into(),
             end: end.into(),
+        }
+    }
+
+    /// Creates a `DiscontinuousRange` error.
+    #[must_use]
+    pub fn discontinuous_range(
+        origin: &CellId,
+        target_table: TableId,
+        start: String,
+        end: String,
+        discontinuity: RangeDiscontinuity,
+    ) -> Self {
+        Self::DiscontinuousRange {
+            origin: Box::new(origin.clone()),
+            target_table,
+            start,
+            end,
+            discontinuity,
         }
     }
 

@@ -1,9 +1,9 @@
 use indexmap::{IndexMap, IndexSet};
 
-use super::error::ResolveError;
+use super::error::{RangeDiscontinuity, ResolveError};
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
-use crate::compiler::ir::symbol::{SymbolTable, TableMetadata};
+use crate::compiler::ir::symbol::{ColSlot, RowSlot, SymbolTable, TableMetadata};
 use crate::expr::ast::{
     ColEndpoint, ColSelector, Expr, RelativeOffset, RowEndpoint, RowSelector, TableRef,
 };
@@ -133,9 +133,28 @@ pub(crate) fn resolve_row_selector(
                 ));
             }
 
-            let slice = target_table
-                .rows
-                .get_range(start_idx..=end_idx)
+            let start_slot = target_table
+                .row_slot_index
+                .get(start_id)
+                .copied()
+                .ok_or_else(|| {
+                    ResolveError::unknown_row(
+                        origin,
+                        target_table.table_id.clone(),
+                        start_id.clone(),
+                    )
+                })?;
+            let end_slot = target_table
+                .row_slot_index
+                .get(end_id)
+                .copied()
+                .ok_or_else(|| {
+                    ResolveError::unknown_row(origin, target_table.table_id.clone(), end_id.clone())
+                })?;
+
+            let slot_slice = target_table
+                .row_slots
+                .get(start_slot..=end_slot)
                 .ok_or_else(|| {
                     ResolveError::inverted_range(
                         origin,
@@ -145,7 +164,34 @@ pub(crate) fn resolve_row_selector(
                     )
                 })?;
 
-            Ok(slice.iter().cloned().collect())
+            let mut resolved_rows = Vec::with_capacity(slot_slice.len());
+            for slot in slot_slice {
+                match slot {
+                    RowSlot::Data(row_id) => resolved_rows.push(row_id.clone()),
+                    RowSlot::Gutter => {
+                        return Err(ResolveError::discontinuous_range(
+                            origin,
+                            target_table.table_id.clone(),
+                            start_id.to_string(),
+                            end_id.to_string(),
+                            RangeDiscontinuity::RowGutter,
+                        ));
+                    }
+                    RowSlot::SectionHeader { title } => {
+                        return Err(ResolveError::discontinuous_range(
+                            origin,
+                            target_table.table_id.clone(),
+                            start_id.to_string(),
+                            end_id.to_string(),
+                            RangeDiscontinuity::SectionHeader {
+                                title: title.clone(),
+                            },
+                        ));
+                    }
+                }
+            }
+
+            Ok(resolved_rows)
         }
     }
 }
@@ -273,9 +319,32 @@ pub(crate) fn resolve_col_selector(
                 ));
             }
 
-            let slice = target_table
-                .columns
-                .get(start_idx..=end_idx)
+            let start_slot = target_table
+                .col_slot_index
+                .get(start_id)
+                .copied()
+                .ok_or_else(|| {
+                    ResolveError::unknown_column(
+                        origin,
+                        target_table.table_id.clone(),
+                        start_id.clone(),
+                    )
+                })?;
+            let end_slot = target_table
+                .col_slot_index
+                .get(end_id)
+                .copied()
+                .ok_or_else(|| {
+                    ResolveError::unknown_column(
+                        origin,
+                        target_table.table_id.clone(),
+                        end_id.clone(),
+                    )
+                })?;
+
+            let slot_slice = target_table
+                .col_slots
+                .get(start_slot..=end_slot)
                 .ok_or_else(|| {
                     ResolveError::inverted_range(
                         origin,
@@ -285,7 +354,34 @@ pub(crate) fn resolve_col_selector(
                     )
                 })?;
 
-            Ok(slice.iter().map(|c| c.id.clone()).collect())
+            let mut resolved_cols = Vec::with_capacity(slot_slice.len());
+            for slot in slot_slice {
+                match slot {
+                    ColSlot::Measure(col_id) => resolved_cols.push(col_id.clone()),
+                    ColSlot::Descriptor(col_id) => {
+                        return Err(ResolveError::discontinuous_range(
+                            origin,
+                            target_table.table_id.clone(),
+                            start_id.to_string(),
+                            end_id.to_string(),
+                            RangeDiscontinuity::DescriptorColumn {
+                                column: col_id.clone(),
+                            },
+                        ));
+                    }
+                    ColSlot::Gutter => {
+                        return Err(ResolveError::discontinuous_range(
+                            origin,
+                            target_table.table_id.clone(),
+                            start_id.to_string(),
+                            end_id.to_string(),
+                            RangeDiscontinuity::ColumnGutter,
+                        ));
+                    }
+                }
+            }
+
+            Ok(resolved_cols)
         }
     }
 }

@@ -742,3 +742,102 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
     accent_manifest = {**manifest, "theme": accent_theme}
     with pytest.raises(SpecificationError, match="shade_accent_fill"):
         core_compile(accent_manifest, tables)
+
+
+def test_scenario_15_contiguous_and_discontinuous_range_slice_validation() -> None:
+    # 1. Contiguous sub-block and single-descriptor vertical slice succeed
+    ok_model = f8.Model(name="ContiguousOk", theme="corporate_navy")
+    ok_sheet = ok_model.add_sheet("Main")
+    ok_table = ok_sheet.add_table("T", title="Summary")
+    ok_table.add_column("line_item", role="descriptor", header="Line Item")
+    ok_table.add_column_gutter()
+    ok_table.add_column("2024E", role="measure", header="2024E")
+    ok_table.add_column("2025E", role="measure", header="2025E")
+    ok_table.add_section_header("Revenue")
+    ok_table.add_row("r1", cells={"line_item": "Product", "2024E": 10.0, "2025E": 20.0})
+    ok_table.add_row("r2", cells={"line_item": "Rev", "2024E": 30.0, "2025E": 40.0})
+    ok_table.add_row_gutter()
+    ok_table.add_row(
+        "tot",
+        cells={"line_item": f8.Cell(expr='COUNTA(@table["r1".."r2", @col])')},
+        expr=(
+            'SUM(@table["r1".."r2", "2024E".."2025E"]) + '
+            'XLOOKUP("Rev", @table["r1".."r2", "line_item"], @table["r1".."r2", @col])'
+        ),
+    )
+    compiled = ok_model.compile()
+    assert compiled.num("T", "tot", "2024E") == pytest.approx(130.0)
+    assert compiled.num("T", "tot", "2025E") == pytest.approx(140.0)
+    assert compiled.num("T", "tot", "line_item") == pytest.approx(2.0)
+
+    # 2. Row range spanning RowGutter -> ReferenceResolutionError (col=None, row=None)
+    rg_model = f8.Model(name="RowGutterFail")
+    rg_table = rg_model.add_sheet("Main").add_table("T", title="T")
+    rg_table.add_column("2024E", role="measure", header="2024E")
+    rg_table.add_row("r1", cells={"2024E": 10.0})
+    rg_table.add_row_gutter()
+    rg_table.add_row("r2", cells={"2024E": 20.0})
+    rg_table.add_row("tot", expr='SUM(T["r1".."r2", @col])')
+    with pytest.raises(ReferenceResolutionError) as exc_rg:
+        rg_model.compile()
+    assert exc_rg.value.coordinate == 'T["tot", "2024E"]'
+    assert exc_rg.value.target_table == "T"
+    assert exc_rg.value.row is None
+    assert exc_rg.value.col is None
+    assert "a gutter row" in exc_rg.value.message
+
+    # 3. Row range spanning SectionHeader -> ReferenceResolutionError (col=None, row=None)
+    sh_model = f8.Model(name="SectionHeaderFail")
+    sh_table = sh_model.add_sheet("Main").add_table("T", title="T")
+    sh_table.add_column("2024E", role="measure", header="2024E")
+    sh_table.add_row("r1", cells={"2024E": 10.0})
+    sh_table.add_section_header("OpEx")
+    sh_table.add_row("r2", cells={"2024E": 20.0})
+    sh_table.add_row("tot", expr='SUM(T["r1".."r2", @col])')
+    with pytest.raises(ReferenceResolutionError) as exc_sh:
+        sh_model.compile()
+    assert exc_sh.value.coordinate == 'T["tot", "2024E"]'
+    assert exc_sh.value.target_table == "T"
+    assert exc_sh.value.row is None
+    assert exc_sh.value.col is None
+    assert "section header 'OpEx'" in exc_sh.value.message
+
+    # 4. Column range spanning ColumnGutter -> ReferenceResolutionError (col=None, row=None)
+    cg_model = f8.Model(name="ColGutterFail")
+    cg_table = cg_model.add_sheet("Main").add_table("T", title="T")
+    cg_table.add_column("2024E", role="measure", header="2024E")
+    cg_table.add_column_gutter()
+    cg_table.add_column("2025E", role="measure", header="2025E")
+    cg_table.add_row(
+        "r1",
+        cells={"2024E": 10.0, "2025E": f8.Cell(expr='SUM(T["r1", col.prev..@col])')},
+    )
+    with pytest.raises(ReferenceResolutionError) as exc_cg:
+        cg_model.compile()
+    assert exc_cg.value.coordinate == 'T["r1", "2025E"]'
+    assert exc_cg.value.target_table == "T"
+    assert exc_cg.value.row is None
+    assert exc_cg.value.col is None
+    assert "a gutter column" in exc_cg.value.message
+
+    # 5. Column range spanning DescriptorColumn -> ReferenceResolutionError with col populated
+    dc_model = f8.Model(name="DescriptorColFail")
+    dc_table = dc_model.add_sheet("Main").add_table("T", title="T")
+    dc_table.add_column("m1", role="measure", header="M1")
+    dc_table.add_column("notes", role="descriptor", header="Notes")
+    dc_table.add_column("m2", role="measure", header="M2")
+    dc_table.add_row(
+        "r1",
+        cells={
+            "m1": 10.0,
+            "notes": "memo",
+            "m2": f8.Cell(expr='SUM(T["r1", col.prev..@col])'),
+        },
+    )
+    with pytest.raises(ReferenceResolutionError) as exc_dc:
+        dc_model.compile()
+    assert exc_dc.value.coordinate == 'T["r1", "m2"]'
+    assert exc_dc.value.target_table == "T"
+    assert exc_dc.value.row is None
+    assert exc_dc.value.col == "notes"
+    assert "descriptor column 'notes'" in exc_dc.value.message
