@@ -270,6 +270,9 @@ fn lower_expr_inner(
 }
 
 /// Formats an operand of a binary operation, wrapping in parentheses if precedence requires it.
+///
+/// Excel evaluates all binary operators left-to-right, so any right-hand binary child of equal
+/// precedence (`a op1 (b op2 c)`) wraps in parentheses to preserve AST evaluation order.
 fn format_binary_operand(
     child_expr: &Expr,
     child_str: String,
@@ -283,11 +286,7 @@ fn format_binary_operand(
             if child_prec < parent_prec {
                 true
             } else if child_prec == parent_prec {
-                if is_right {
-                    matches!(parent_op, BinaryOp::Sub | BinaryOp::Div | BinaryOp::Pow)
-                } else {
-                    parent_op.is_right_associative()
-                }
+                is_right || parent_op.is_right_associative()
             } else {
                 false
             }
@@ -295,7 +294,13 @@ fn format_binary_operand(
         Expr::Unary { op: child_op, .. } => {
             is_right || child_op.precedence() < parent_op.precedence()
         }
-        Expr::Literal(_) | Expr::Reference(_) | Expr::FunctionCall { .. } | Expr::Omitted => false,
+        Expr::Literal(Literal::Number(n)) if n.is_sign_negative() => {
+            is_right || UnaryOp::Neg.precedence() < parent_op.precedence()
+        }
+        Expr::Literal(Literal::Number(_) | Literal::String(_) | Literal::Boolean(_))
+        | Expr::Reference(_)
+        | Expr::FunctionCall { .. }
+        | Expr::Omitted => false,
     };
 
     if wrap {
@@ -307,7 +312,14 @@ fn format_binary_operand(
 
 /// Formats an operand of a unary operation, wrapping in parentheses if precedence requires it.
 fn format_unary_operand(child_expr: &Expr, child_str: String, _parent_op: UnaryOp) -> String {
-    let wrap = matches!(child_expr, Expr::Binary { .. });
+    let wrap = match child_expr {
+        Expr::Binary { .. } => true,
+        Expr::Literal(_)
+        | Expr::Reference(_)
+        | Expr::Unary { .. }
+        | Expr::FunctionCall { .. }
+        | Expr::Omitted => false,
+    };
 
     if wrap {
         format!("({child_str})")
