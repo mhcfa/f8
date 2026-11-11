@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::compiler::compiled::error::InspectionError;
 use crate::compiler::emission::error::EmissionError;
 use crate::compiler::eval::error::EvalError;
-use crate::compiler::graph::error::{GraphError, ResolveError};
+use crate::compiler::graph::error::{GraphError, RangeDiscontinuity, ResolveError};
 use crate::compiler::ir::error::IrError;
 use crate::compiler::layout::error::LayoutError;
 use crate::compiler::lowering::error::LoweringError;
@@ -164,6 +164,26 @@ impl ResolveError {
                 None,
                 None,
             ),
+            Self::DiscontinuousRange {
+                origin,
+                target_table,
+                start: _,
+                end: _,
+                discontinuity,
+            } => {
+                let col = match discontinuity {
+                    RangeDiscontinuity::DescriptorColumn { column } => Some(column.to_string()),
+                    RangeDiscontinuity::RowGutter
+                    | RangeDiscontinuity::SectionHeader { .. }
+                    | RangeDiscontinuity::ColumnGutter => None,
+                };
+                (
+                    origin.to_string(),
+                    Some(target_table.to_string()),
+                    None,
+                    col,
+                )
+            }
             Self::UnregisteredTable { origin, table } => {
                 (origin.to_string(), Some(table.to_string()), None, None)
             }
