@@ -1,6 +1,7 @@
 use crate::functions::common::{extract_scalar_number, normalize_zero};
 use crate::functions::error::FunctionError;
 use crate::functions::financial::discounting::{collect_cash_flows, extract_vector_numbers};
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -18,13 +19,12 @@ static IRR_PARAMS: &[ParameterDef] = &[
         "Array or reference to cells containing numbers for which you want to calculate IRR.",
         ParamKind::RangeOrArray,
     ),
-    ParameterDef {
-        name: "guess",
-        description: "Number you guess is close to the result of IRR.",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.10)),
-    },
+    ParameterDef::with_default(
+        "guess",
+        "Number you guess is close to the result of IRR.",
+        ParamKind::Scalar,
+        CellValue::Number(0.10),
+    ),
 ];
 
 /// `IRR(values, [guess])`: Calculates the internal rate of return for a series of periodic cash flows.
@@ -53,20 +53,7 @@ impl ExcelFunction for IrrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
-        if args.len() > 2 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let cfs = match collect_cash_flows(&args[0..1]) {
             Ok(c) => c,
@@ -90,8 +77,8 @@ impl ExcelFunction for IrrFunction {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let guess = if args.len() >= 2 && !matches!(args[1], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[1]) {
+        let guess = if let Some(guess_arg) = args.get(1) {
+            match extract_scalar_number(guess_arg) {
                 Ok(g) => g,
                 Err(e) => return Ok(CellValue::Error(e)),
             }
@@ -162,13 +149,12 @@ static XIRR_PARAMS: &[ParameterDef] = &[
         "Schedule of payment dates corresponding to cash flow payments.",
         ParamKind::RangeOrArray,
     ),
-    ParameterDef {
-        name: "guess",
-        description: "Number you guess is close to the result of XIRR.",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.10)),
-    },
+    ParameterDef::with_default(
+        "guess",
+        "Number you guess is close to the result of XIRR.",
+        ParamKind::Scalar,
+        CellValue::Number(0.10),
+    ),
 ];
 
 /// `XIRR(values, dates, [guess])`: Calculates internal rate of return for a schedule of cash flows that is not necessarily periodic.
@@ -197,20 +183,7 @@ impl ExcelFunction for XirrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 3 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let values = match extract_vector_numbers(&args[0]) {
             Ok(v) => v,
@@ -245,8 +218,8 @@ impl ExcelFunction for XirrFunction {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let guess = if args.len() >= 3 && !matches!(args[2], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[2]) {
+        let guess = if let Some(guess_arg) = args.get(2) {
+            match extract_scalar_number(guess_arg) {
                 Ok(g) => g,
                 Err(e) => return Ok(CellValue::Error(e)),
             }

@@ -38,6 +38,19 @@ pub enum FunctionError {
         position: usize,
     },
 
+    /// An explicit omitted argument placeholder (`_`) was provided in a trailing optional position.
+    #[error(
+        "trailing argument '{param}' at position {position} of '{function}' cannot use '_'; omit trailing optional arguments instead"
+    )]
+    CannotOmitTrailingArgument {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Parameter identifier.
+        param: &'static str,
+        /// 1-indexed argument position for user-facing diagnostics.
+        position: usize,
+    },
+
     /// The variadic tail of a paired function does not have an even number of arguments.
     #[error("invalid argument count for variadic pairs in '{function}'")]
     InvalidVariadicPairs {
@@ -105,6 +118,16 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "argument 'number' at position 1 of 'ABS' cannot be omitted"
+        );
+
+        let err = FunctionError::CannotOmitTrailingArgument {
+            function: "IF",
+            param: "value_if_false",
+            position: 3,
+        };
+        assert_eq!(
+            err.to_string(),
+            "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'; omit trailing optional arguments instead"
         );
 
         let err = FunctionError::InvalidVariadicPairs {

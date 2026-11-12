@@ -1,6 +1,7 @@
 use crate::functions::common::extract_scalar_number;
 use crate::functions::date::serial::{DateSerial, validate_date_serial};
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
 };
@@ -163,13 +164,12 @@ static YEARFRAC_PARAMS: &[ParameterDef] = &[
         "A serial number that represents the end date.",
         ParamKind::Scalar,
     ),
-    ParameterDef {
-        name: "basis",
-        description: "The type of day count basis to use (0: US 30/360, 1: Actual/Actual, 2: Actual/360, 3: Actual/365, 4: European 30/360).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
+    ParameterDef::with_default(
+        "basis",
+        "The type of day count basis to use (0: US 30/360, 1: Actual/Actual, 2: Actual/360, 3: Actual/365, 4: European 30/360).",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
 ];
 
 /// `YEARFRAC(start_date, end_date, [basis])`: Calculates the fraction of the year represented by the number of whole days between two dates.
@@ -194,20 +194,7 @@ impl ExcelFunction for YearfracFunction {
         args: &[FunctionArg<'_>],
         _context: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 3 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let start_val = match extract_scalar_number(&args[0]) {
             Ok(v) => v,
@@ -217,8 +204,8 @@ impl ExcelFunction for YearfracFunction {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let basis_val: f64 = if args.len() > 2 && !matches!(args[2], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[2]) {
+        let basis_val: f64 = if let Some(basis_arg) = args.get(2) {
+            match extract_scalar_number(basis_arg) {
                 Ok(v) => v,
                 Err(e) => return Ok(CellValue::Error(e)),
             }

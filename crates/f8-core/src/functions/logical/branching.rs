@@ -1,5 +1,6 @@
 use crate::functions::common::eval_branch_arg;
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -18,13 +19,12 @@ static IF_PARAMS: &[ParameterDef] = &[
         "The value to return if logical_test evaluates to TRUE.",
         ParamKind::Lazy,
     ),
-    ParameterDef {
-        name: "value_if_false",
-        description: "The value to return if logical_test evaluates to FALSE.",
-        kind: ParamKind::Lazy,
-        optional: true,
-        default_value: Some(CellValue::Boolean(false)),
-    },
+    ParameterDef::with_default(
+        "value_if_false",
+        "The value to return if logical_test evaluates to FALSE.",
+        ParamKind::Lazy,
+        CellValue::Boolean(false),
+    ),
 ];
 
 /// `IF(logical_test, value_if_true, [value_if_false])`: Specifies a logical test to perform.
@@ -53,20 +53,7 @@ impl ExcelFunction for IfFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 3 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let cond_val = args[0].eval_scalar(self.name(), ctx)?;
         if let CellValue::Error(err) = cond_val {
@@ -80,15 +67,10 @@ impl ExcelFunction for IfFunction {
 
         if cond {
             eval_branch_arg(&args[1], self.name(), ctx)
-        } else if args.len() < 3 {
-            Ok(CellValue::Boolean(false))
+        } else if let Some(false_arg) = args.get(2) {
+            eval_branch_arg(false_arg, self.name(), ctx)
         } else {
-            match &args[2] {
-                FunctionArg::Omitted => Ok(CellValue::Boolean(false)),
-                other @ (FunctionArg::Scalar(_)
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)) => eval_branch_arg(other, self.name(), ctx),
-            }
+            Ok(CellValue::Boolean(false))
         }
     }
 }
@@ -133,19 +115,7 @@ impl ExcelFunction for IfsFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if !args.len().is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: self.name(),
-                count: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         for [test_arg, val_arg] in args.as_chunks::<2>().0 {
             let cond_val = eval_branch_arg(test_arg, self.name(), ctx)?;
@@ -208,13 +178,7 @@ impl ExcelFunction for ChooseFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let idx_val = args[0].eval_scalar(self.name(), ctx)?;
         if let CellValue::Error(err) = idx_val {
@@ -286,13 +250,7 @@ impl ExcelFunction for SwitchFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let target = args[0].eval_scalar(self.name(), ctx)?;
         if let CellValue::Error(err) = target {

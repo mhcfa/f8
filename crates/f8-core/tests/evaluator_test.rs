@@ -599,6 +599,134 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
             },
         ),
         (
+            "IF(FALSE, 10, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, IF(FALSE, 1, _))",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "INDEX(T[\"k1\"..\"k2\", @col], 2, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "INDEX",
+                param: "col_num",
+                position: 3,
+            },
+        ),
+        (
+            "YEARFRAC(45292, 45474, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "YEARFRAC",
+                param: "basis",
+                position: 3,
+            },
+        ),
+        (
+            "IRR(T[\"k1\"..\"k2\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IRR",
+                param: "guess",
+                position: 2,
+            },
+        ),
+        (
+            "XIRR(T[\"v1\"..\"v2\", @col], T[\"k1\"..\"k2\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XIRR",
+                param: "guess",
+                position: 3,
+            },
+        ),
+        (
+            "PMT(0.05, 10, -1000, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "PMT",
+                param: "fv",
+                position: 4,
+            },
+        ),
+        (
+            "PMT(0.05, 10, -1000, _, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "PMT",
+                param: "fv",
+                position: 4,
+            },
+        ),
+        (
+            "XMATCH(1, T[\"k1\"..\"k2\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+            },
+        ),
+        (
+            "XLOOKUP(1, T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XLOOKUP",
+                param: "if_not_found",
+                position: 4,
+            },
+        ),
+        (
+            "XLOOKUP(1, T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col], _, 0, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XLOOKUP",
+                param: "search_mode",
+                position: 6,
+            },
+        ),
+        (
+            "ROUND(1.5, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+            },
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IFS",
+                param: "value_if_true1",
+                position: 4,
+            },
+        ),
+        (
+            "IF(_, 10, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IF",
+                param: "logical_test",
+                position: 1,
+            },
+        ),
+        (
+            "INDEX(T[\"k1\"..\"k2\", @col], _, 1)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "INDEX",
+                param: "row_num",
+                position: 2,
+            },
+        ),
+        (
             "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
@@ -931,5 +1059,191 @@ fn test_scenario_10_nested_function_calls_validate_ast_once() {
             .min_args_checks
             .load(std::sync::atomic::Ordering::Relaxed),
         1
+    );
+}
+
+#[test]
+fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
+    let manifest = manifest_for_table("T");
+
+    let row_vec = RowSpec::new("row_vec").with_cells(IndexMap::from([
+        (ColId::from("c1"), CellInput::number(10.0)),
+        (ColId::from("c2"), CellInput::number(20.0)),
+        (ColId::from("c3"), CellInput::number(30.0)),
+    ]));
+    let k1 = RowSpec::new("k1").with_cells(IndexMap::from([
+        (ColId::from("c1"), CellInput::string("A")),
+        (ColId::from("c2"), CellInput::number(100.0)),
+        (ColId::from("c3"), CellInput::number(0.0)),
+    ]));
+    let k2 = RowSpec::new("k2").with_cells(IndexMap::from([
+        (ColId::from("c1"), CellInput::string("B")),
+        (ColId::from("c2"), CellInput::number(200.0)),
+        (ColId::from("c3"), CellInput::number(0.0)),
+    ]));
+    let k3 = RowSpec::new("k3").with_cells(IndexMap::from([
+        (ColId::from("c1"), CellInput::string("A")),
+        (ColId::from("c2"), CellInput::number(300.0)),
+        (ColId::from("c3"), CellInput::number(0.0)),
+    ]));
+
+    let pmt_skip = RowSpec::new("pmt_skip").with_expr("PMT(0.05, 10, -1000, _, 1)");
+    let pmt_explicit = RowSpec::new("pmt_explicit").with_expr("PMT(0.05, 10, -1000, 0, 1)");
+    let ipmt_skip = RowSpec::new("ipmt_skip").with_expr("IPMT(0.05, 1, 10, -1000, _, 1)");
+    let ipmt_explicit = RowSpec::new("ipmt_explicit").with_expr("IPMT(0.05, 1, 10, -1000, 0, 1)");
+    let ppmt_skip = RowSpec::new("ppmt_skip").with_expr("PPMT(0.05, 1, 10, -1000, _, 1)");
+    let ppmt_explicit = RowSpec::new("ppmt_explicit").with_expr("PPMT(0.05, 1, 10, -1000, 0, 1)");
+    let xmatch_skip =
+        RowSpec::new("xmatch_skip").with_expr("XMATCH(\"A\", T[\"k1\"..\"k3\", \"c1\"], _, -1)");
+    let xlookup_1skip = RowSpec::new("xlookup_1skip").with_expr(
+        "XLOOKUP(\"A\", T[\"k1\"..\"k3\", \"c1\"], T[\"k1\"..\"k3\", \"c2\"], _, 0, -1)",
+    );
+    let xlookup_2skip = RowSpec::new("xlookup_2skip").with_expr(
+        "XLOOKUP(\"A\", T[\"k1\"..\"k3\", \"c1\"], T[\"k1\"..\"k3\", \"c2\"], _, _, -1)",
+    );
+    let if_2arg = RowSpec::new("if_2arg").with_expr("IF(FALSE, 10)");
+    let index_2arg =
+        RowSpec::new("index_2arg").with_expr("INDEX(T[\"row_vec\", \"c1\"..\"c3\"], 2)");
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "T".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::gutter(),
+            ColumnSpec::new("c1").with_header("C1"),
+            ColumnSpec::new("c2").with_header("C2"),
+            ColumnSpec::new("c3").with_header("C3"),
+        ],
+        rows: vec![
+            row_vec,
+            k1,
+            k2,
+            k3,
+            pmt_skip,
+            pmt_explicit,
+            ipmt_skip,
+            ipmt_explicit,
+            ppmt_skip,
+            ppmt_explicit,
+            xmatch_skip,
+            xlookup_1skip,
+            xlookup_2skip,
+            if_2arg,
+            index_2arg,
+        ],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).expect("compile omission scenarios");
+    let t = TableId::from("T");
+    let c1 = ColId::from("c1");
+
+    // Scenario 1: Pass 4 values match explicit defaults
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("pmt_skip"), &c1),
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("pmt_explicit"), &c1),
+    );
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("ipmt_skip"), &c1),
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("ipmt_explicit"), &c1),
+    );
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("ppmt_skip"), &c1),
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("ppmt_explicit"), &c1),
+    );
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("xmatch_skip"), &c1),
+        Some(&CellValue::Number(3.0)),
+    );
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("xlookup_1skip"), &c1),
+        Some(&CellValue::Number(300.0)),
+    );
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("xlookup_2skip"), &c1),
+        Some(&CellValue::Number(300.0)),
+    );
+
+    // Scenario 1: Pass 6a lowered formulas emit intermediate `,,` / `,,,` slots
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "pmt_skip", "c1")),
+        Some("=PMT(0.05,10,-1000,,1)"),
+    );
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "ipmt_skip", "c1")),
+        Some("=IPMT(0.05,1,10,-1000,,1)"),
+    );
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "ppmt_skip", "c1")),
+        Some("=PPMT(0.05,1,10,-1000,,1)"),
+    );
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "xmatch_skip", "c1")),
+        Some("=XMATCH(\"A\",$C$6:$C$8,,-1)"),
+    );
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "xlookup_1skip", "c1")),
+        Some("=XLOOKUP(\"A\",$C$6:$C$8,$D$6:$D$8,,0,-1)"),
+    );
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "xlookup_2skip", "c1")),
+        Some("=XLOOKUP(\"A\",$C$6:$C$8,$D$6:$D$8,,,-1)"),
+    );
+
+    // Scenario 2: Absent trailing optional arguments evaluate and lower without synthetic padding
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("if_2arg"), &c1),
+        Some(&CellValue::Boolean(false)),
+    );
+    assert_eq!(
+        compiled.lowered_map.get(&CellId::new("T", "if_2arg", "c1")),
+        Some("=IF(FALSE,10)"),
+    );
+    assert_eq!(
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from("index_2arg"), &c1),
+        Some(&CellValue::Number(20.0)),
+    );
+    assert_eq!(
+        compiled
+            .lowered_map
+            .get(&CellId::new("T", "index_2arg", "c1")),
+        Some("=INDEX($C$5:$E$5,2)"),
     );
 }

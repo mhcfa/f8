@@ -253,6 +253,14 @@ fn lower_expr_inner(
             Ok(format!("{formatted_left}{}{formatted_right}", op.as_str()))
         }
         Expr::FunctionCall { name, args } => {
+            if matches!(args.last(), Some(CallArg::Omitted)) {
+                return Err(LoweringError::SyntaxError {
+                    message: format!(
+                        "trailing omitted argument '_' in function call '{}'",
+                        name.to_uppercase()
+                    ),
+                });
+            }
             let mut arg_strings = Vec::with_capacity(args.len());
             for arg in args {
                 let lowered = match arg {

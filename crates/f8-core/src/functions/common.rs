@@ -144,13 +144,17 @@ pub fn eval_branch_arg(
     ctx: &dyn EvalContext,
 ) -> Result<CellValue, FunctionError> {
     match arg {
-        FunctionArg::Omitted => Ok(CellValue::Empty),
         FunctionArg::Scalar(val) => Ok(val.clone()),
         FunctionArg::Lazy(expr) => ctx.eval_expr(expr),
         FunctionArg::Array { .. } => Err(FunctionError::InvalidArgumentKind {
             function,
             expected: "scalar or expression",
             found: "array",
+        }),
+        FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "scalar or expression",
+            found: "omitted",
         }),
     }
 }

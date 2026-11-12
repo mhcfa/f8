@@ -501,11 +501,49 @@ fn test_scenario_13_function_calls_with_omitted_positional_arguments() {
         "=XLOOKUP(100,$C$6:$F$6,$C$7:$F$7,,0,1)"
     );
 
-    let parsed_if = Expr::parse("IF(TRUE, 10, _)").unwrap();
+    let parsed_xlookup_double_skip = Expr::parse(
+        "XLOOKUP(100, IncomeStatement[\"revenue\", \"2024E\"..\"2027E\"], IncomeStatement[\"cogs\", \"2024E\"..\"2027E\"], _, _, -1)",
+    )
+    .unwrap();
     assert_eq!(
-        FormulaLowerer::lower_cell(&origin, &parsed_if, &symbol_table, &layout_map).unwrap(),
-        "=IF(TRUE,10,)"
+        FormulaLowerer::lower_cell(
+            &origin,
+            &parsed_xlookup_double_skip,
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=XLOOKUP(100,$C$6:$F$6,$C$7:$F$7,,,-1)"
     );
+
+    let parsed_pmt_skip = Expr::parse("PMT(0.05, 10, -1000, _, 1)").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &parsed_pmt_skip, &symbol_table, &layout_map).unwrap(),
+        "=PMT(0.05,10,-1000,,1)"
+    );
+
+    let parsed_if_two_arg = Expr::parse("IF(FALSE, 10)").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &parsed_if_two_arg, &symbol_table, &layout_map)
+            .unwrap(),
+        "=IF(FALSE,10)"
+    );
+
+    // Unvalidated trailing CallArg::Omitted is rejected directly by FormulaLowerer (Scenario 6)
+    for bad_trailing in [
+        "IF(TRUE, 10, _)",
+        "ABS(_)",
+        "IF(TRUE, 10, XLOOKUP(100, IncomeStatement[\"revenue\", \"2024E\"..\"2027E\"], IncomeStatement[\"cogs\", \"2024E\"..\"2027E\"], _))",
+        "PMT(0.05, 10, -1000, _, _)",
+    ] {
+        let parsed = Expr::parse(bad_trailing).unwrap();
+        let err = FormulaLowerer::lower_cell(&origin, &parsed, &symbol_table, &layout_map)
+            .expect_err("expected LoweringError::SyntaxError for trailing omitted arg");
+        assert!(
+            matches!(err, LoweringError::SyntaxError { .. }),
+            "expected LoweringError::SyntaxError for '{bad_trailing}', got {err:?}"
+        );
+    }
 }
 
 #[test]

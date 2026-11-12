@@ -1009,6 +1009,61 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ],
         ["IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"],
         ["IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"],
+        [
+          "IF(FALSE, 10, _)",
+          "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+        ],
+        [
+          "IF(TRUE, 10, _)",
+          "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+        ],
+        [
+          "IF(TRUE, 10, IF(FALSE, 1, _))",
+          "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+        ],
+        [
+          'INDEX(@table["k1".."k2", @col], 2, _)',
+          "trailing argument 'col_num' at position 3 of 'INDEX' cannot use '_'",
+        ],
+        [
+          "YEARFRAC(45292, 45474, _)",
+          "trailing argument 'basis' at position 3 of 'YEARFRAC' cannot use '_'",
+        ],
+        [
+          'IRR(@table["k1".."k2", @col], _)',
+          "trailing argument 'guess' at position 2 of 'IRR' cannot use '_'",
+        ],
+        [
+          'XIRR(@table["v1".."v2", @col], @table["k1".."k2", @col], _)',
+          "trailing argument 'guess' at position 3 of 'XIRR' cannot use '_'",
+        ],
+        ["PMT(0.05, 10, -1000, _)", "trailing argument 'fv' at position 4 of 'PMT' cannot use '_'"],
+        [
+          "PMT(0.05, 10, -1000, _, _)",
+          "trailing argument 'fv' at position 4 of 'PMT' cannot use '_'",
+        ],
+        [
+          'XMATCH(1, @table["k1".."k2", @col], _)',
+          "trailing argument 'match_mode' at position 3 of 'XMATCH' cannot use '_'",
+        ],
+        [
+          'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], _)',
+          "trailing argument 'if_not_found' at position 4 of 'XLOOKUP' cannot use '_'",
+        ],
+        [
+          'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], _, 0, _)',
+          "trailing argument 'search_mode' at position 6 of 'XLOOKUP' cannot use '_'",
+        ],
+        ["ROUND(1.5, _)", "argument 'num_digits' at position 2 of 'ROUND' cannot be omitted"],
+        [
+          "IFS(TRUE, 1, FALSE, _)",
+          "argument 'value_if_true1' at position 4 of 'IFS' cannot be omitted",
+        ],
+        ["IF(_, 10, _)", "argument 'logical_test' at position 1 of 'IF' cannot be omitted"],
+        [
+          'INDEX(@table["k1".."k2", @col], _, 2)',
+          "argument 'row_num' at position 2 of 'INDEX' cannot be omitted",
+        ],
       ];
 
       for (const [formula, expectedSubstr] of invalidCallCases) {
@@ -1034,7 +1089,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         }
       }
 
-      // Valid IFERROR domain error trapping and valid CallArg::Omitted lowering
+      // Valid IFERROR domain error trapping, 2-arg IF, and intermediate CallArg::Omitted lowering
       const okModel = new Model({ name: "ValidCallArgModel" });
       const okSheet = okModel.addSheet("Main");
       const okTbl = okSheet.addTable("T", "Table");
@@ -1044,23 +1099,38 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       okTbl.addRow("v1", { cells: { c1: 10 } });
       okTbl.addRow("v2", { cells: { c1: 20 } });
       okTbl.addRow("iferror_ok", { expr: "IFERROR(10 / 0, 42)" });
-      okTbl.addRow("if_omitted", { expr: "IF(TRUE, 10, _)" });
+      okTbl.addRow("if_2arg", { expr: "IF(FALSE, 10)" });
+      okTbl.addRow("pmt_skip", { expr: "PMT(0.05, 10, -1000, _, 1)" });
+      okTbl.addRow("pmt_explicit", { expr: "PMT(0.05, 10, -1000, 0, 1)" });
       okTbl.addRow("xlookup_omitted", {
         expr: 'XLOOKUP(100, @table["k1".."k2", @col], @table["v1".."v2", @col], _, 0, 1)',
+      });
+      okTbl.addRow("xlookup_2skip", {
+        expr: 'XLOOKUP(100, @table["k1".."k2", @col], @table["v1".."v2", @col], _, _, -1)',
       });
 
       const compiled = okModel.compile();
       expect(compiled.num("T", "iferror_ok", "c1")).toBe(42);
-      expect(compiled.num("T", "if_omitted", "c1")).toBe(10);
+      expect(compiled.num("T", "pmt_skip", "c1")).toBe(compiled.num("T", "pmt_explicit", "c1"));
       expect(compiled.num("T", "xlookup_omitted", "c1")).toBe(10);
+      expect(compiled.num("T", "xlookup_2skip", "c1")).toBe(10);
 
-      const ifCell = compiled.inspectCell("T", "if_omitted", "c1");
-      expect(ifCell.excelFormula).toBe("=IF(TRUE,10,)");
+      const ifCell = compiled.inspectCell("T", "if_2arg", "c1");
+      expect(ifCell.evaluatedValue).toEqual({ Boolean: false });
+      expect(ifCell.excelFormula).toBe("=IF(FALSE,10)");
+
+      const pmtCell = compiled.inspectCell("T", "pmt_skip", "c1");
+      expect(pmtCell.excelFormula).toBe("=PMT(0.05,10,-1000,,1)");
 
       const xlookupCell = compiled.inspectCell("T", "xlookup_omitted", "c1");
       expect(xlookupCell.excelFormula).not.toBeNull();
       expect(xlookupCell.excelFormula?.startsWith("=XLOOKUP(100,")).toBe(true);
       expect(xlookupCell.excelFormula?.endsWith(",,0,1)")).toBe(true);
+
+      const xlookup2SkipCell = compiled.inspectCell("T", "xlookup_2skip", "c1");
+      expect(xlookup2SkipCell.excelFormula).not.toBeNull();
+      expect(xlookup2SkipCell.excelFormula?.startsWith("=XLOOKUP(100,")).toBe(true);
+      expect(xlookup2SkipCell.excelFormula?.endsWith(",,,-1)")).toBe(true);
 
       // Invalid bare `_` outside direct function argument positions throws FormulaParseError
       for (const badSyntax of ["_", "1 + _", "IF(TRUE, 10, _ + 1)", "IF(TRUE, 10, (_))"]) {

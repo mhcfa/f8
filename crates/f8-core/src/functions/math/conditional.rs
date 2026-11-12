@@ -5,6 +5,7 @@
 
 use crate::functions::error::FunctionError;
 use crate::functions::math::criteria::Criterion;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -191,19 +192,7 @@ impl ExcelFunction for SumifsFunction {
         args: &[FunctionArg<'a>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
-        if !(args.len() - 3).is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: self.name(),
-                count: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let (target_rows, target_cols, target_values) = match &args[0] {
             FunctionArg::Array {
@@ -265,19 +254,7 @@ impl ExcelFunction for CountifsFunction {
         args: &[FunctionArg<'a>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if !args.len().is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: self.name(),
-                count: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let (cr1_rows, cr1_cols) = match &args[0] {
             FunctionArg::Array { rows, cols, .. } => (*rows, *cols),
@@ -333,19 +310,7 @@ impl ExcelFunction for AverageifsFunction {
         args: &[FunctionArg<'a>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
-        if !(args.len() - 3).is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: self.name(),
-                count: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let (target_rows, target_cols, target_values) = match &args[0] {
             FunctionArg::Array {
@@ -416,19 +381,7 @@ impl ExcelFunction for MinifsFunction {
         args: &[FunctionArg<'a>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
-        if !(args.len() - 3).is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: self.name(),
-                count: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let (target_rows, target_cols, target_values) = match &args[0] {
             FunctionArg::Array {
@@ -493,19 +446,7 @@ impl ExcelFunction for MaxifsFunction {
         args: &[FunctionArg<'a>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
-        if !(args.len() - 3).is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: self.name(),
-                count: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let (target_rows, target_cols, target_values) = match &args[0] {
             FunctionArg::Array {

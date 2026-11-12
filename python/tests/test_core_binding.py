@@ -1102,6 +1102,70 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
         ),
         ("IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"),
         ("IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"),
+        (
+            "IF(FALSE, 10, _)",
+            "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+        ),
+        (
+            "IF(TRUE, 10, _)",
+            "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+        ),
+        (
+            "IF(TRUE, 10, IF(FALSE, 1, _))",
+            "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+        ),
+        (
+            'INDEX(@table["k1".."k2", @col], 2, _)',
+            "trailing argument 'col_num' at position 3 of 'INDEX' cannot use '_'",
+        ),
+        (
+            "YEARFRAC(45292, 45474, _)",
+            "trailing argument 'basis' at position 3 of 'YEARFRAC' cannot use '_'",
+        ),
+        (
+            'IRR(@table["k1".."k2", @col], _)',
+            "trailing argument 'guess' at position 2 of 'IRR' cannot use '_'",
+        ),
+        (
+            'XIRR(@table["v1".."v2", @col], @table["k1".."k2", @col], _)',
+            "trailing argument 'guess' at position 3 of 'XIRR' cannot use '_'",
+        ),
+        (
+            "PMT(0.05, 10, -1000, _)",
+            "trailing argument 'fv' at position 4 of 'PMT' cannot use '_'",
+        ),
+        (
+            "PMT(0.05, 10, -1000, _, _)",
+            "trailing argument 'fv' at position 4 of 'PMT' cannot use '_'",
+        ),
+        (
+            'XMATCH(1, @table["k1".."k2", @col], _)',
+            "trailing argument 'match_mode' at position 3 of 'XMATCH' cannot use '_'",
+        ),
+        (
+            'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], _)',
+            "trailing argument 'if_not_found' at position 4 of 'XLOOKUP' cannot use '_'",
+        ),
+        (
+            'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], _, 0, _)',
+            "trailing argument 'search_mode' at position 6 of 'XLOOKUP' cannot use '_'",
+        ),
+        (
+            "ROUND(1.5, _)",
+            "argument 'num_digits' at position 2 of 'ROUND' cannot be omitted",
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, _)",
+            "argument 'value_if_true1' at position 4 of 'IFS' cannot be omitted",
+        ),
+        (
+            "IF(_, 10, _)",
+            "argument 'logical_test' at position 1 of 'IF' cannot be omitted",
+        ),
+        (
+            'INDEX(@table["k1".."k2", @col], _, 2)',
+            "argument 'row_num' at position 2 of 'INDEX' cannot be omitted",
+        ),
     )
 
     for formula, expected_substr in invalid_call_cases:
@@ -1120,7 +1184,7 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
         assert type(exc_call.value) is F8Error
         assert expected_substr in exc_call.value.message
 
-    # Valid IFERROR domain error trapping and valid CallArg::Omitted lowering
+    # Valid IFERROR domain error trapping, 2-arg IF, and intermediate CallArg::Omitted lowering
     ok_model = f8.Model(name="ValidCallArgModel")
     ok_sheet = ok_model.add_sheet("Main")
     ok_tbl = ok_sheet.add_table("T", title="Table")
@@ -1130,25 +1194,42 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
     ok_tbl.add_row("v1", cells={"c1": 10.0})
     ok_tbl.add_row("v2", cells={"c1": 20.0})
     ok_tbl.add_row("iferror_ok", expr="IFERROR(10 / 0, 42)")
-    ok_tbl.add_row("if_omitted", expr="IF(TRUE, 10, _)")
+    ok_tbl.add_row("if_2arg", expr="IF(FALSE, 10)")
+    ok_tbl.add_row("pmt_skip", expr="PMT(0.05, 10, -1000, _, 1)")
+    ok_tbl.add_row("pmt_explicit", expr="PMT(0.05, 10, -1000, 0, 1)")
     ok_tbl.add_row(
         "xlookup_omitted",
         expr='XLOOKUP(100, @table["k1".."k2", @col], @table["v1".."v2", @col], _, 0, 1)',
     )
+    ok_tbl.add_row(
+        "xlookup_2skip",
+        expr='XLOOKUP(100, @table["k1".."k2", @col], @table["v1".."v2", @col], _, _, -1)',
+    )
 
     compiled = ok_model.compile()
     assert compiled.num("T", "iferror_ok", "c1") == 42.0
-    assert compiled.num("T", "if_omitted", "c1") == 10.0
+    assert compiled.num("T", "pmt_skip", "c1") == compiled.num("T", "pmt_explicit", "c1")
     assert compiled.num("T", "xlookup_omitted", "c1") == 10.0
+    assert compiled.num("T", "xlookup_2skip", "c1") == 10.0
 
-    if_cell = compiled.inspect_cell("T", "if_omitted", "c1")
-    assert if_cell["excel_formula"] == "=IF(TRUE,10,)"
+    if_cell = compiled.inspect_cell("T", "if_2arg", "c1")
+    assert if_cell["evaluated_value"] == {"Boolean": False}
+    assert if_cell["excel_formula"] == "=IF(FALSE,10)"
+
+    pmt_cell = compiled.inspect_cell("T", "pmt_skip", "c1")
+    assert pmt_cell["excel_formula"] == "=PMT(0.05,10,-1000,,1)"
 
     xlookup_cell = compiled.inspect_cell("T", "xlookup_omitted", "c1")
     xlookup_excel = xlookup_cell["excel_formula"]
     assert xlookup_excel is not None
     assert xlookup_excel.startswith("=XLOOKUP(100,")
     assert xlookup_excel.endswith(",,0,1)")
+
+    xlookup_2skip_cell = compiled.inspect_cell("T", "xlookup_2skip", "c1")
+    xlookup_2skip_excel = xlookup_2skip_cell["excel_formula"]
+    assert xlookup_2skip_excel is not None
+    assert xlookup_2skip_excel.startswith("=XLOOKUP(100,")
+    assert xlookup_2skip_excel.endswith(",,,-1)")
 
     # Invalid bare `_` outside direct function argument positions raises FormulaParseError
     for bad_syntax in ("_", "1 + _", "IF(TRUE, 10, _ + 1)", "IF(TRUE, 10, (_))"):

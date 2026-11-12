@@ -1,5 +1,6 @@
 use crate::functions::common::normalize_zero;
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -39,21 +40,7 @@ impl ExcelFunction for AbsFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() != 1 {
-            return if args.is_empty() {
-                Err(FunctionError::TooFewArguments {
-                    function: self.name(),
-                    expected: 1,
-                    found: 0,
-                })
-            } else {
-                Err(FunctionError::TooManyArguments {
-                    function: self.name(),
-                    expected: 1,
-                    found: args.len(),
-                })
-            };
-        }
+        validate_bound_args(self, args)?;
 
         let val = args[0].eval_scalar(self.name(), ctx)?;
         match val.coerce_to_number() {

@@ -29,7 +29,7 @@ impl Evaluator {
     ///
     /// # Errors
     /// Returns [`EvalError::Function`] on the first cell containing an unknown function,
-    /// arity violation, invalid variadic pair count, or omitted required argument.
+    /// arity violation, invalid variadic pair count, or invalid omitted argument (`_`).
     pub fn validate_grid(grid: &CellGrid, registry: &FunctionRegistry) -> Result<(), EvalError> {
         for (cell_id, cell_node) in grid.iter() {
             match &cell_node.payload {

@@ -1,5 +1,6 @@
 use crate::functions::common::eval_branch_arg;
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -45,20 +46,7 @@ impl ExcelFunction for IferrorFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 2 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let evaluated_value = eval_branch_arg(&args[0], self.name(), ctx)?;
 
@@ -109,20 +97,7 @@ impl ExcelFunction for IfnaFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 2 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let evaluated_value = eval_branch_arg(&args[0], self.name(), ctx)?;
 
