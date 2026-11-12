@@ -1,6 +1,32 @@
-use crate::model::id::{ColId, RowId, TableId};
-use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+use crate::model::id::{ColId, RowId, TableId};
+
+/// Argument slot within a function call expression.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum CallArg {
+    /// Expression argument.
+    Expr(Expr),
+    /// Explicitly omitted positional argument (`_`).
+    Omitted,
+}
+
+impl From<Expr> for CallArg {
+    fn from(expr: Expr) -> Self {
+        Self::Expr(expr)
+    }
+}
+
+impl fmt::Display for CallArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Expr(expr) => write!(f, "{expr}"),
+            Self::Omitted => write!(f, "_"),
+        }
+    }
+}
 
 /// An abstract syntax tree representation of an f8 formula expression.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -18,9 +44,7 @@ pub enum Expr {
         right: Box<Expr>,
     },
     /// Uppercase built-in function invocation (e.g. `SUM(...)`, `IF(...)`).
-    FunctionCall { name: String, args: Vec<Expr> },
-    /// Explicitly omitted positional argument in a function call (`_`).
-    Omitted,
+    FunctionCall { name: String, args: Vec<CallArg> },
 }
 
 impl Expr {
@@ -40,9 +64,7 @@ impl Expr {
         match self {
             Self::Binary { op, .. } => Some(op.precedence()),
             Self::Unary { op, .. } => Some(op.precedence()),
-            Self::Literal(_) | Self::Reference(_) | Self::FunctionCall { .. } | Self::Omitted => {
-                None
-            }
+            Self::Literal(_) | Self::Reference(_) | Self::FunctionCall { .. } => None,
         }
     }
 }
@@ -513,7 +535,6 @@ impl fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
-            Self::Omitted => write!(f, "_"),
         }
     }
 }

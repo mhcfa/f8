@@ -14,9 +14,24 @@ use crate::value::{CellValue, ExcelError};
 
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
 ///
-/// Returns `Ok(CellValue)` on successful evaluation or Excel domain error (`#DIV/0!`, `#VALUE!`, `#NUM!`),
-/// or `Err(EvalError)` on internal compiler, resolution, or typing failures.
+/// Statically validates all function calls across the AST before evaluating. Returns `Ok(CellValue)`
+/// on successful evaluation or Excel domain error (`#DIV/0!`, `#VALUE!`, `#NUM!`),
+/// or `Err(EvalError)` on internal compiler, function signature, resolution, or typing failures.
 pub fn eval_expr(
+    expr: &Expr,
+    origin: &CellId,
+    memoized_values: &IndexMap<CellId, CellValue>,
+    symbol_table: &SymbolTable,
+    registry: &FunctionRegistry,
+) -> Result<CellValue, EvalError> {
+    registry
+        .validate_expr(expr)
+        .map_err(|source| EvalError::function(origin.clone(), source))?;
+    eval_expr_validated(expr, origin, memoized_values, symbol_table, registry)
+}
+
+/// Evaluates an already-validated formula AST expression within the context of an origin cell coordinate.
+pub(crate) fn eval_expr_validated(
     expr: &Expr,
     origin: &CellId,
     memoized_values: &IndexMap<CellId, CellValue>,
@@ -25,8 +40,6 @@ pub fn eval_expr(
 ) -> Result<CellValue, EvalError> {
     match expr {
         Expr::Literal(lit) => Ok(eval_literal(lit)),
-
-        Expr::Omitted => Err(EvalError::unexpected_omitted(origin.clone())),
 
         Expr::Reference(table_ref) => {
             let slice = resolve_table_ref(origin, table_ref, symbol_table)?;
@@ -44,7 +57,7 @@ pub fn eval_expr(
         }
 
         Expr::Unary { op, expr } => {
-            let inner = eval_expr(expr, origin, memoized_values, symbol_table, registry)?;
+            let inner = eval_expr_validated(expr, origin, memoized_values, symbol_table, registry)?;
             if let CellValue::Error(e) = inner {
                 return Ok(CellValue::Error(e));
             }
@@ -63,8 +76,10 @@ pub fn eval_expr(
         }
 
         Expr::Binary { op, left, right } => {
-            let left_val = eval_expr(left, origin, memoized_values, symbol_table, registry)?;
-            let right_val = eval_expr(right, origin, memoized_values, symbol_table, registry)?;
+            let left_val =
+                eval_expr_validated(left, origin, memoized_values, symbol_table, registry)?;
+            let right_val =
+                eval_expr_validated(right, origin, memoized_values, symbol_table, registry)?;
 
             eval_binary_op(*op, &left_val, &right_val)
         }

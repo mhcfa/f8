@@ -299,7 +299,6 @@ impl CompilerError {
                 EvalError::CellNotFound(_)
                 | EvalError::UnevaluatedDependency(_)
                 | EvalError::Function { .. }
-                | EvalError::UnexpectedOmitted(_)
                 | EvalError::TableNotFound(_)
                 | EvalError::RowNotFound { .. },
             ) => ErrorDiagnostic::F8Error { message },

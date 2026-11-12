@@ -1078,3 +1078,85 @@ def test_scenario_16_cross_table_relative_offsets_and_diagnostics() -> None:
     assert exc_inv.value.row is None
     assert exc_inv.value.col is None
     assert "inverted range" in exc_inv.value.message.lower()
+
+
+def test_scenario_17_static_function_validation_and_call_arg_confinement() -> None:
+    invalid_call_cases: tuple[tuple[str, str], ...] = (
+        ("IF(TRUE, 10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
+        ("IF(FALSE, SUM(), 10)", "too few arguments for 'SUM'"),
+        ("IF(TRUE, 10, ABS(1, 2))", "too many arguments for 'ABS'"),
+        ("IF(TRUE, 10, IFS(TRUE, 1, FALSE))", "variadic pairs in 'IFS'"),
+        (
+            "IF(TRUE, 10, ABS(_))",
+            "argument 'number' at position 1 of 'ABS' cannot be omitted",
+        ),
+        ("IFS(TRUE, 1, FALSE, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
+        ("IFERROR(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
+        ("IFERROR(ABS(1, 2, 3), 0)", "too many arguments for 'ABS'"),
+        ("IFNA(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
+        ("CHOOSE(1, 10, SUM())", "too few arguments for 'SUM'"),
+        ("SWITCH(1, 1, 10, ABS())", "too few arguments for 'ABS'"),
+        (
+            'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], UNKNOWN_FN())',
+            "unknown function 'UNKNOWN_FN'",
+        ),
+        ("IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"),
+        ("IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"),
+    )
+
+    for formula, expected_substr in invalid_call_cases:
+        err_model = f8.Model(name="InvalidCallModel")
+        sheet = err_model.add_sheet("Main")
+        tbl = sheet.add_table("T", title="Table")
+        tbl.add_column("c1", role="measure", header="C1")
+        tbl.add_row("k1", cells={"c1": 1.0})
+        tbl.add_row("k2", cells={"c1": 2.0})
+        tbl.add_row("v1", cells={"c1": 100.0})
+        tbl.add_row("v2", cells={"c1": 200.0})
+        tbl.add_row("target", expr=formula)
+
+        with pytest.raises(F8Error) as exc_call:
+            err_model.compile()
+        assert type(exc_call.value) is F8Error
+        assert expected_substr in exc_call.value.message
+
+    # Valid IFERROR domain error trapping and valid CallArg::Omitted lowering
+    ok_model = f8.Model(name="ValidCallArgModel")
+    ok_sheet = ok_model.add_sheet("Main")
+    ok_tbl = ok_sheet.add_table("T", title="Table")
+    ok_tbl.add_column("c1", role="measure", header="C1")
+    ok_tbl.add_row("k1", cells={"c1": 100.0})
+    ok_tbl.add_row("k2", cells={"c1": 200.0})
+    ok_tbl.add_row("v1", cells={"c1": 10.0})
+    ok_tbl.add_row("v2", cells={"c1": 20.0})
+    ok_tbl.add_row("iferror_ok", expr="IFERROR(10 / 0, 42)")
+    ok_tbl.add_row("if_omitted", expr="IF(TRUE, 10, _)")
+    ok_tbl.add_row(
+        "xlookup_omitted",
+        expr='XLOOKUP(100, @table["k1".."k2", @col], @table["v1".."v2", @col], _, 0, 1)',
+    )
+
+    compiled = ok_model.compile()
+    assert compiled.num("T", "iferror_ok", "c1") == 42.0
+    assert compiled.num("T", "if_omitted", "c1") == 10.0
+    assert compiled.num("T", "xlookup_omitted", "c1") == 10.0
+
+    if_cell = compiled.inspect_cell("T", "if_omitted", "c1")
+    assert if_cell["excel_formula"] == "=IF(TRUE,10,)"
+
+    xlookup_cell = compiled.inspect_cell("T", "xlookup_omitted", "c1")
+    xlookup_excel = xlookup_cell["excel_formula"]
+    assert xlookup_excel is not None
+    assert xlookup_excel.startswith("=XLOOKUP(100,")
+    assert xlookup_excel.endswith(",,0,1)")
+
+    # Invalid bare `_` outside direct function argument positions raises FormulaParseError
+    for bad_syntax in ("_", "1 + _", "IF(TRUE, 10, _ + 1)", "IF(TRUE, 10, (_))"):
+        syntax_model = f8.Model(name="InvalidUnderscoreSyntax")
+        syntax_sheet = syntax_model.add_sheet("Main")
+        syntax_tbl = syntax_sheet.add_table("T", title="Table")
+        syntax_tbl.add_column("c1", role="measure", header="C1")
+        syntax_tbl.add_row("r1", expr=bad_syntax)
+
+        with pytest.raises(FormulaParseError):
+            syntax_model.compile()

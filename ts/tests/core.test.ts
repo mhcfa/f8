@@ -989,5 +989,89 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(err.message.toLowerCase()).toContain("inverted range");
       }
     });
+
+    it("(i) statically validates dormant lazy branches, propagates IFERROR FunctionError, and confines CallArg omission", () => {
+      const invalidCallCases: readonly (readonly [string, string])[] = [
+        ["IF(TRUE, 10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
+        ["IF(FALSE, SUM(), 10)", "too few arguments for 'SUM'"],
+        ["IF(TRUE, 10, ABS(1, 2))", "too many arguments for 'ABS'"],
+        ["IF(TRUE, 10, IFS(TRUE, 1, FALSE))", "variadic pairs in 'IFS'"],
+        ["IF(TRUE, 10, ABS(_))", "argument 'number' at position 1 of 'ABS' cannot be omitted"],
+        ["IFS(TRUE, 1, FALSE, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
+        ["IFERROR(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
+        ["IFERROR(ABS(1, 2, 3), 0)", "too many arguments for 'ABS'"],
+        ["IFNA(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
+        ["CHOOSE(1, 10, SUM())", "too few arguments for 'SUM'"],
+        ["SWITCH(1, 1, 10, ABS())", "too few arguments for 'ABS'"],
+        [
+          'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], UNKNOWN_FN())',
+          "unknown function 'UNKNOWN_FN'",
+        ],
+        ["IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"],
+        ["IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"],
+      ];
+
+      for (const [formula, expectedSubstr] of invalidCallCases) {
+        const errModel = new Model({ name: "InvalidCallModel" });
+        const sheet = errModel.addSheet("Main");
+        const tbl = sheet.addTable("T", "Table");
+        tbl.addColumn("c1", { role: "measure", header: "C1" });
+        tbl.addRow("k1", { cells: { c1: 1 } });
+        tbl.addRow("k2", { cells: { c1: 2 } });
+        tbl.addRow("v1", { cells: { c1: 100 } });
+        tbl.addRow("v2", { cells: { c1: 200 } });
+        tbl.addRow("target", { expr: formula });
+
+        try {
+          errModel.compile();
+          expect.unreachable(`Expected F8Error for formula: ${formula}`);
+        } catch (err) {
+          if (!(err instanceof F8Error)) {
+            expect.unreachable("Expected F8Error");
+          }
+          expect(err.constructor).toBe(F8Error);
+          expect(err.message).toContain(expectedSubstr);
+        }
+      }
+
+      // Valid IFERROR domain error trapping and valid CallArg::Omitted lowering
+      const okModel = new Model({ name: "ValidCallArgModel" });
+      const okSheet = okModel.addSheet("Main");
+      const okTbl = okSheet.addTable("T", "Table");
+      okTbl.addColumn("c1", { role: "measure", header: "C1" });
+      okTbl.addRow("k1", { cells: { c1: 100 } });
+      okTbl.addRow("k2", { cells: { c1: 200 } });
+      okTbl.addRow("v1", { cells: { c1: 10 } });
+      okTbl.addRow("v2", { cells: { c1: 20 } });
+      okTbl.addRow("iferror_ok", { expr: "IFERROR(10 / 0, 42)" });
+      okTbl.addRow("if_omitted", { expr: "IF(TRUE, 10, _)" });
+      okTbl.addRow("xlookup_omitted", {
+        expr: 'XLOOKUP(100, @table["k1".."k2", @col], @table["v1".."v2", @col], _, 0, 1)',
+      });
+
+      const compiled = okModel.compile();
+      expect(compiled.num("T", "iferror_ok", "c1")).toBe(42);
+      expect(compiled.num("T", "if_omitted", "c1")).toBe(10);
+      expect(compiled.num("T", "xlookup_omitted", "c1")).toBe(10);
+
+      const ifCell = compiled.inspectCell("T", "if_omitted", "c1");
+      expect(ifCell.excelFormula).toBe("=IF(TRUE,10,)");
+
+      const xlookupCell = compiled.inspectCell("T", "xlookup_omitted", "c1");
+      expect(xlookupCell.excelFormula).not.toBeNull();
+      expect(xlookupCell.excelFormula?.startsWith("=XLOOKUP(100,")).toBe(true);
+      expect(xlookupCell.excelFormula?.endsWith(",,0,1)")).toBe(true);
+
+      // Invalid bare `_` outside direct function argument positions throws FormulaParseError
+      for (const badSyntax of ["_", "1 + _", "IF(TRUE, 10, _ + 1)", "IF(TRUE, 10, (_))"]) {
+        const syntaxModel = new Model({ name: "InvalidUnderscoreSyntax" });
+        const syntaxSheet = syntaxModel.addSheet("Main");
+        const syntaxTbl = syntaxSheet.addTable("T", "Table");
+        syntaxTbl.addColumn("c1", { role: "measure", header: "C1" });
+        syntaxTbl.addRow("r1", { expr: badSyntax });
+
+        expect(() => syntaxModel.compile()).toThrow(FormulaParseError);
+      }
+    });
   });
 });

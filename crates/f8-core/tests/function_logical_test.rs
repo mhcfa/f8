@@ -1,15 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
-use f8_core::compiler::eval::eval_expr;
+use indexmap::IndexMap;
+
+use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
-use f8_core::expr::ast::Expr;
+use f8_core::expr::ast::{CallArg, Expr};
 use f8_core::functions::traits::{EvalContext, FunctionArg};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
 use f8_core::value::{CellValue, ExcelError};
-use indexmap::IndexMap;
 
 /// Mock evaluation context for unit testing function evaluate directly.
 struct MockContext {
@@ -38,8 +39,7 @@ impl EvalContext for MockContext {
             Expr::Reference(_)
             | Expr::Unary { .. }
             | Expr::Binary { .. }
-            | Expr::FunctionCall { .. }
-            | Expr::Omitted => Ok(CellValue::Number(999.0)),
+            | Expr::FunctionCall { .. } => Ok(CellValue::Number(999.0)),
         }
     }
 }
@@ -342,16 +342,18 @@ fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
     assert_eq!(res_na, CellValue::Error(ExcelError::Na));
 
     // Validation rejects odd argument counts
-    let single_arg = vec![Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))];
+    let single_arg = vec![CallArg::from(Expr::Literal(
+        f8_core::expr::ast::Literal::Boolean(true),
+    ))];
     assert!(matches!(
         registry.validate_call("IFS", &single_arg),
         Err(FunctionError::TooFewArguments { .. })
     ));
 
     let odd_args = vec![
-        Expr::Literal(f8_core::expr::ast::Literal::Boolean(true)),
-        Expr::Literal(f8_core::expr::ast::Literal::Number(1.0)),
-        Expr::Literal(f8_core::expr::ast::Literal::Boolean(false)),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(1.0))),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(false))),
     ];
     assert!(matches!(
         registry.validate_call("IFS", &odd_args),
@@ -360,10 +362,10 @@ fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
 
     // Validation correctly associates cyclical parameter names for omitted arguments in pairs
     let omitted_cond = vec![
-        Expr::Literal(f8_core::expr::ast::Literal::Boolean(true)),
-        Expr::Literal(f8_core::expr::ast::Literal::Number(1.0)),
-        Expr::Omitted,
-        Expr::Literal(f8_core::expr::ast::Literal::Number(2.0)),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(1.0))),
+        CallArg::Omitted,
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(2.0))),
     ];
     match registry.validate_call("IFS", &omitted_cond) {
         Err(FunctionError::CannotOmitRequiredArgument {
@@ -376,10 +378,10 @@ fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
     }
 
     let omitted_val = vec![
-        Expr::Literal(f8_core::expr::ast::Literal::Boolean(true)),
-        Expr::Literal(f8_core::expr::ast::Literal::Number(1.0)),
-        Expr::Literal(f8_core::expr::ast::Literal::Boolean(false)),
-        Expr::Omitted,
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(1.0))),
+        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(false))),
+        CallArg::Omitted,
     ];
     match registry.validate_call("IFS", &omitted_val) {
         Err(FunctionError::CannotOmitRequiredArgument {
@@ -621,4 +623,150 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         eval_str("NOT(\"true\")", &symbols, &values, &registry, &origin),
         CellValue::Boolean(false)
     );
+}
+
+#[test]
+fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_errors_only() {
+    struct FailingFirstEvalContext {
+        eval_count: std::cell::Cell<usize>,
+    }
+
+    impl EvalContext for FailingFirstEvalContext {
+        fn eval_expr(&self, _expr: &Expr) -> Result<CellValue, FunctionError> {
+            self.eval_count.set(self.eval_count.get() + 1);
+            Err(FunctionError::EvaluationFailure {
+                function: "mock",
+                message: "simulated internal failure".into(),
+            })
+        }
+    }
+
+    let mut symbols = SymbolTable::new();
+    let sheet = SheetId::from("Sheet1");
+    let registry = FunctionRegistry::standard();
+    let table = TableSpec {
+        id: TableId::from("Data"),
+        title: "Data".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("c1")],
+        rows: vec![RowSpec::new("r1")],
+    };
+    symbols.register_table(sheet, &table).unwrap();
+
+    let origin = CellId::new("Data", "r1", "c1");
+    let values = IndexMap::new();
+
+    // 1. Domain error in args[0] is trapped by IFERROR
+    assert_eq!(
+        eval_str("IFERROR(10 / 0, 42)", &symbols, &values, &registry, &origin),
+        CellValue::Number(42.0)
+    );
+
+    // 2. Active invalid call in args[0] propagates FunctionError instead of falling through
+    let active_invalid = Expr::parse("IFERROR(ABS(1, 2, 3), 0)").unwrap();
+    let err_active = eval_expr(&active_invalid, &origin, &values, &symbols, &registry).unwrap_err();
+    let EvalError::Function { cell, source } = err_active else {
+        panic!("expected EvalError::Function, got {err_active:?}");
+    };
+    assert_eq!(*cell, origin);
+    assert_eq!(
+        *source,
+        FunctionError::TooManyArguments {
+            function: "ABS",
+            expected: 1,
+            found: 3,
+        }
+    );
+
+    // 3. Dormant invalid call in args[1] fails statically
+    let dormant_invalid = Expr::parse("IFERROR(10, UNKNOWN_FN())").unwrap();
+    let err_dormant =
+        eval_expr(&dormant_invalid, &origin, &values, &symbols, &registry).unwrap_err();
+    let EvalError::Function { cell, source } = err_dormant else {
+        panic!("expected EvalError::Function, got {err_dormant:?}");
+    };
+    assert_eq!(*cell, origin);
+    assert_eq!(*source, FunctionError::UnknownFunction("UNKNOWN_FN".into()));
+
+    // 4. Runtime FunctionError (InvalidArgumentKind and EvaluationFailure) on args[0] in IFERROR and IFNA propagates
+    let iferror_func = registry.lookup("IFERROR").unwrap();
+    let ifna_func = registry.lookup("IFNA").unwrap();
+    let fallback_expr = Expr::number(42.0);
+    let primary_expr = Expr::number(1.0);
+
+    let mock_ctx = MockContext::new();
+    let array_arg = FunctionArg::Array {
+        rows: 1,
+        cols: 1,
+        values: vec![CellValue::Number(1.0)],
+        is_range_ref: true,
+    };
+
+    let err_kind_iferror = iferror_func
+        .evaluate(
+            &[array_arg.clone(), FunctionArg::Lazy(&fallback_expr)],
+            &mock_ctx,
+        )
+        .unwrap_err();
+    assert_eq!(
+        err_kind_iferror,
+        FunctionError::InvalidArgumentKind {
+            function: "IFERROR",
+            expected: "scalar or expression",
+            found: "array",
+        }
+    );
+    assert_eq!(mock_ctx.count(), 0);
+
+    let err_kind_ifna = ifna_func
+        .evaluate(&[array_arg, FunctionArg::Lazy(&fallback_expr)], &mock_ctx)
+        .unwrap_err();
+    assert_eq!(
+        err_kind_ifna,
+        FunctionError::InvalidArgumentKind {
+            function: "IFNA",
+            expected: "scalar or expression",
+            found: "array",
+        }
+    );
+    assert_eq!(mock_ctx.count(), 0);
+
+    let fail_ctx = FailingFirstEvalContext {
+        eval_count: std::cell::Cell::new(0),
+    };
+    let err_eval_iferror = iferror_func
+        .evaluate(
+            &[
+                FunctionArg::Lazy(&primary_expr),
+                FunctionArg::Lazy(&fallback_expr),
+            ],
+            &fail_ctx,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err_eval_iferror,
+        FunctionError::EvaluationFailure { .. }
+    ));
+    assert_eq!(fail_ctx.eval_count.get(), 1);
+
+    let fail_ctx_na = FailingFirstEvalContext {
+        eval_count: std::cell::Cell::new(0),
+    };
+    let err_eval_ifna = ifna_func
+        .evaluate(
+            &[
+                FunctionArg::Lazy(&primary_expr),
+                FunctionArg::Lazy(&fallback_expr),
+            ],
+            &fail_ctx_na,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        err_eval_ifna,
+        FunctionError::EvaluationFailure { .. }
+    ));
+    assert_eq!(fail_ctx_na.eval_count.get(), 1);
 }

@@ -60,17 +60,12 @@ impl ExcelFunction for IferrorFunction {
             });
         }
 
-        let evaluated_value = eval_branch_arg(&args[0], self.name(), ctx);
+        let evaluated_value = eval_branch_arg(&args[0], self.name(), ctx)?;
 
-        let is_err = match &evaluated_value {
-            Ok(CellValue::Error(_)) | Err(_) => true,
-            Ok(_) => false,
-        };
-
-        if is_err {
+        if matches!(evaluated_value, CellValue::Error(_)) {
             eval_branch_arg(&args[1], self.name(), ctx)
         } else {
-            evaluated_value
+            Ok(evaluated_value)
         }
     }
 }
@@ -129,12 +124,12 @@ impl ExcelFunction for IfnaFunction {
             });
         }
 
-        let evaluated_value = eval_branch_arg(&args[0], self.name(), ctx);
+        let evaluated_value = eval_branch_arg(&args[0], self.name(), ctx)?;
 
-        if let Ok(CellValue::Error(ExcelError::Na)) = &evaluated_value {
+        if matches!(evaluated_value, CellValue::Error(ExcelError::Na)) {
             eval_branch_arg(&args[1], self.name(), ctx)
         } else {
-            evaluated_value
+            Ok(evaluated_value)
         }
     }
 }

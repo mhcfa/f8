@@ -4,7 +4,9 @@ use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::layout::LayoutPlanner;
 use f8_core::compiler::lowering::{FormulaLowerer, LoweringError};
 use f8_core::compiler::{Compiler, ir};
-use f8_core::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef, TableSelector};
+use f8_core::expr::ast::{
+    CallArg, ColSelector, Expr, Literal, RowSelector, TableRef, TableSelector,
+};
 use f8_core::model::id::{ColId, RowId, TableId};
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
 use f8_core::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec};
@@ -464,26 +466,46 @@ fn test_scenario_13_function_calls_with_omitted_positional_arguments() {
     let expr = Expr::FunctionCall {
         name: "xlookup".to_string(),
         args: vec![
-            Expr::Literal(Literal::Number(100.0)),
-            Expr::Reference(TableRef {
+            CallArg::Expr(Expr::Literal(Literal::Number(100.0))),
+            CallArg::Expr(Expr::Reference(TableRef {
                 table: TableSelector::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("revenue")),
                 col: ColSelector::Range("2024E".into(), "2027E".into()),
-            }),
-            Expr::Reference(TableRef {
+            })),
+            CallArg::Expr(Expr::Reference(TableRef {
                 table: TableSelector::from("IncomeStatement"),
                 row: RowSelector::Key(RowId::from("cogs")),
                 col: ColSelector::Range("2024E".into(), "2027E".into()),
-            }),
-            Expr::Omitted,
-            Expr::Literal(Literal::Number(0.0)),
-            Expr::Literal(Literal::Number(1.0)),
+            })),
+            CallArg::Omitted,
+            CallArg::Expr(Expr::Literal(Literal::Number(0.0))),
+            CallArg::Expr(Expr::Literal(Literal::Number(1.0))),
         ],
     };
 
     let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map).unwrap();
 
     assert_eq!(lowered, "=XLOOKUP(100,$C$6:$F$6,$C$7:$F$7,,0,1)");
+
+    // Parsed omitted optional slots round-trip and lower to empty positional slots
+    let parsed_xlookup = Expr::parse(
+        "XLOOKUP(100, IncomeStatement[\"revenue\", \"2024E\"..\"2027E\"], IncomeStatement[\"cogs\", \"2024E\"..\"2027E\"], _, 0, 1)",
+    )
+    .unwrap();
+    assert_eq!(
+        f8_core::compiler::graph::collect_references(&parsed_xlookup).len(),
+        2
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &parsed_xlookup, &symbol_table, &layout_map).unwrap(),
+        "=XLOOKUP(100,$C$6:$F$6,$C$7:$F$7,,0,1)"
+    );
+
+    let parsed_if = Expr::parse("IF(TRUE, 10, _)").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &parsed_if, &symbol_table, &layout_map).unwrap(),
+        "=IF(TRUE,10,)"
+    );
 }
 
 #[test]
@@ -499,9 +521,11 @@ fn test_scenario_14_string_literal_escaping() {
     let expr = Expr::FunctionCall {
         name: "if".to_string(),
         args: vec![
-            Expr::Literal(Literal::Boolean(true)),
-            Expr::Literal(Literal::String("Domestic \"Main\"".to_string())),
-            Expr::Literal(Literal::String("Export".to_string())),
+            CallArg::Expr(Expr::Literal(Literal::Boolean(true))),
+            CallArg::Expr(Expr::Literal(Literal::String(
+                "Domestic \"Main\"".to_string(),
+            ))),
+            CallArg::Expr(Expr::Literal(Literal::String("Export".to_string()))),
         ],
     };
 

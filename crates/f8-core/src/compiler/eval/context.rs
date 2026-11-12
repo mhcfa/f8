@@ -10,22 +10,23 @@ use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::EvalContext;
 use crate::value::CellValue;
 
-/// Concrete evaluation context bridging cell coordinates and memoized values to function implementations.
-pub struct CellEvalContext<'a> {
+/// Concrete evaluation context bridging cell coordinates and memoized values to function implementations
+/// for already-validated formula ASTs.
+pub(crate) struct CellEvalContext<'a> {
     /// Origin cell identifier being evaluated.
-    pub origin: &'a CellId,
+    pub(crate) origin: &'a CellId,
     /// Pre-evaluated cell values keyed by cell coordinate.
-    pub memoized_values: &'a IndexMap<CellId, CellValue>,
+    pub(crate) memoized_values: &'a IndexMap<CellId, CellValue>,
     /// Model metadata and symbol definitions.
-    pub symbol_table: &'a SymbolTable,
+    pub(crate) symbol_table: &'a SymbolTable,
     /// Registered Excel functions.
-    pub registry: &'a FunctionRegistry,
+    pub(crate) registry: &'a FunctionRegistry,
 }
 
 impl<'a> CellEvalContext<'a> {
     /// Constructs a new `CellEvalContext`.
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         origin: &'a CellId,
         memoized_values: &'a IndexMap<CellId, CellValue>,
         symbol_table: &'a SymbolTable,
@@ -42,7 +43,7 @@ impl<'a> CellEvalContext<'a> {
 
 impl<'a> EvalContext for CellEvalContext<'a> {
     fn eval_expr(&self, expr: &Expr) -> Result<CellValue, FunctionError> {
-        super::expr::eval_expr(
+        super::expr::eval_expr_validated(
             expr,
             self.origin,
             self.memoized_values,
@@ -54,7 +55,6 @@ impl<'a> EvalContext for CellEvalContext<'a> {
             other @ (EvalError::CellNotFound(_)
             | EvalError::UnevaluatedDependency(_)
             | EvalError::Resolve(_)
-            | EvalError::UnexpectedOmitted(_)
             | EvalError::TableNotFound(_)
             | EvalError::RowNotFound { .. }) => FunctionError::EvaluationFailure {
                 function: "eval_expr",
@@ -92,8 +92,7 @@ impl<'a> EvalContext for CellEvalContext<'a> {
             Expr::Literal(_)
             | Expr::Unary { .. }
             | Expr::Binary { .. }
-            | Expr::FunctionCall { .. }
-            | Expr::Omitted => {
+            | Expr::FunctionCall { .. } => {
                 let val = self.eval_expr(expr)?;
                 Ok((1, 1, vec![val]))
             }

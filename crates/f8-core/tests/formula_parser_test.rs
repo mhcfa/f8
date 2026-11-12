@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::{
-    BinaryOp, ColEndpoint, ColSelector, Expr, ParseError, RelativeOffset, RowEndpoint, RowSelector,
-    TableRef, TableSelector,
+    BinaryOp, CallArg, ColEndpoint, ColSelector, Expr, ParseError, RelativeOffset, RowEndpoint,
+    RowSelector, TableRef, TableSelector,
 };
 use f8_core::model::id::{ColId, RowId, TableId};
 
@@ -62,10 +62,10 @@ fn test_nested_functions_and_logical_operators() {
         assert_eq!(args.len(), 3);
 
         // First arg: AND(...)
-        if let Expr::FunctionCall {
+        if let CallArg::Expr(Expr::FunctionCall {
             name: and_name,
             args: and_args,
-        } = &args[0]
+        }) = &args[0]
         {
             assert_eq!(and_name, "AND");
             assert_eq!(and_args.len(), 2);
@@ -74,27 +74,27 @@ fn test_nested_functions_and_logical_operators() {
         }
 
         // Second arg: SUM(...)
-        if let Expr::FunctionCall {
+        if let CallArg::Expr(Expr::FunctionCall {
             name: sum_name,
             args: sum_args,
-        } = &args[1]
+        }) = &args[1]
         {
             assert_eq!(sum_name, "SUM");
             assert_eq!(sum_args.len(), 1);
             assert_eq!(
                 sum_args[0],
-                Expr::Reference(TableRef::new(
+                CallArg::Expr(Expr::Reference(TableRef::new(
                     TableId::new("Opex"),
                     RowSelector::Range("r_and_d".into(), "g_and_a".into()),
                     ColSelector::Active,
-                ))
+                )))
             );
         } else {
             panic!("Expected SUM function call");
         }
 
         // Third arg: omitted argument (_)
-        assert_eq!(args[2], Expr::Omitted);
+        assert_eq!(args[2], CallArg::Omitted);
     } else {
         panic!("Expected root IF call");
     }
@@ -244,57 +244,57 @@ fn test_dynamic_range_slice_parsing_and_display_roundtrip() {
             "SUM(Debt[\"amort\", \"2024E\"..@col])",
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     "Debt",
                     RowSelector::Key(RowId::new("amort")),
                     ColSelector::Range(ColEndpoint::from("2024E"), ColEndpoint::Active),
-                ))],
+                )))],
             },
         ),
         (
             "SUM(Debt[\"amort\", \"2024E\"..col.prev])",
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     "Debt",
                     RowSelector::Key(RowId::new("amort")),
                     ColSelector::Range(
                         ColEndpoint::from("2024E"),
                         ColEndpoint::Offset(RelativeOffset::Prev(1)),
                     ),
-                ))],
+                )))],
             },
         ),
         (
             "SUM(Debt[\"amort\", col.prev(2)..@col])",
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     "Debt",
                     RowSelector::Key(RowId::new("amort")),
                     ColSelector::Range(
                         ColEndpoint::Offset(RelativeOffset::Prev(2)),
                         ColEndpoint::Active,
                     ),
-                ))],
+                )))],
             },
         ),
         (
             "SUM(Cohort[\"c1\"..@row, @col])",
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     "Cohort",
                     RowSelector::Range(RowEndpoint::from("c1"), RowEndpoint::Active),
                     ColSelector::Active,
-                ))],
+                )))],
             },
         ),
         (
             "SUM(Cohort[row.prev(2)..row.next, @col..col.next(2)])",
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     "Cohort",
                     RowSelector::Range(
                         RowEndpoint::Offset(RelativeOffset::Prev(2)),
@@ -304,7 +304,7 @@ fn test_dynamic_range_slice_parsing_and_display_roundtrip() {
                         ColEndpoint::Active,
                         ColEndpoint::Offset(RelativeOffset::Next(2)),
                     ),
-                ))],
+                )))],
             },
         ),
     ];
@@ -354,11 +354,11 @@ fn test_active_table_selector_parsing_and_roundtrip() {
             "SUM(@table[\"rev\"..\"cogs\", @col])",
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     TableSelector::Active,
                     RowSelector::Range(RowEndpoint::from("rev"), RowEndpoint::from("cogs")),
                     ColSelector::Active,
-                ))],
+                )))],
             },
         ),
     ];
@@ -384,6 +384,39 @@ fn test_active_table_selector_invalid_positions_rejected() {
     ];
 
     for formula in invalid_formulas {
+        let err = Expr::parse(formula).expect_err(&format!("'{formula}' must fail parsing"));
+        assert!(
+            matches!(err, ParseError::UnexpectedToken { .. }),
+            "expected UnexpectedToken for '{formula}', got {err:?}"
+        );
+    }
+}
+
+#[test]
+fn test_call_arg_confinement_and_invalid_underscore_syntax() {
+    let xlookup_formula =
+        "XLOOKUP(100, R1[\"k1\"..\"k2\", @col], R2[\"v1\"..\"v2\", @col], _, 0, 1)";
+    let parsed_xlookup = Expr::parse(xlookup_formula).expect("valid omitted slot in XLOOKUP");
+    assert_eq!(parsed_xlookup.to_string(), xlookup_formula);
+    let Expr::FunctionCall { name, args } = &parsed_xlookup else {
+        panic!("expected FunctionCall, got {parsed_xlookup:?}");
+    };
+    assert_eq!(name, "XLOOKUP");
+    assert_eq!(args.len(), 6);
+    assert_eq!(args[0], CallArg::from(Expr::number(100.0)));
+    assert_eq!(args[3], CallArg::Omitted);
+    assert_eq!(args[3].to_string(), "_");
+
+    let if_formula = "IF(TRUE, 10, _)";
+    let parsed_if = Expr::parse(if_formula).expect("valid omitted slot in IF");
+    assert_eq!(parsed_if.to_string(), if_formula);
+    let Expr::FunctionCall { args: if_args, .. } = &parsed_if else {
+        panic!("expected FunctionCall, got {parsed_if:?}");
+    };
+    assert_eq!(if_args[2], CallArg::Omitted);
+
+    let invalid_underscore = ["_", "1 + _", "IF(TRUE, 10, _ + 1)", "IF(TRUE, 10, (_))"];
+    for formula in invalid_underscore {
         let err = Expr::parse(formula).expect_err(&format!("'{formula}' must fail parsing"));
         assert!(
             matches!(err, ParseError::UnexpectedToken { .. }),
