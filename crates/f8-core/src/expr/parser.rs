@@ -1,10 +1,11 @@
+use std::fmt;
+
 use crate::expr::ast::{
-    BinaryOp, ColEndpoint, ColSelector, Expr, Literal, RelativeOffset, RowEndpoint, RowSelector,
-    TableRef, TableSelector, UnaryOp,
+    BinaryOp, CallArg, ColEndpoint, ColSelector, Expr, Literal, RelativeOffset, RowEndpoint,
+    RowSelector, TableRef, TableSelector, UnaryOp,
 };
 use crate::expr::error::ParseError;
 use crate::model::id::{ColId, RowId};
-use std::fmt;
 
 /// Lexical token recognized by the formula tokenizer.
 #[derive(Debug, Clone, PartialEq)]
@@ -760,7 +761,7 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
     }
 }
 
-fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<Expr>, ParseError> {
+fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<CallArg>, ParseError> {
     if stream.peek_token() == Some(&Token::RParen) {
         return Ok(Vec::new());
     }
@@ -775,9 +776,9 @@ fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<Expr>, ParseE
 
         let arg = if stream.peek_token() == Some(&Token::Underscore) {
             stream.advance();
-            Expr::Omitted
+            CallArg::Omitted
         } else {
-            parse_expression(stream, 0)?
+            CallArg::Expr(parse_expression(stream, 0)?)
         };
         args.push(arg);
 
@@ -1243,7 +1244,7 @@ mod tests {
         assert_eq!(args.len(), 3);
         assert_eq!(
             args[0],
-            Expr::Binary {
+            CallArg::Expr(Expr::Binary {
                 op: BinaryOp::Eq,
                 left: Box::new(Expr::Reference(TableRef::new(
                     "Assumptions",
@@ -1251,10 +1252,10 @@ mod tests {
                     ColSelector::Key(ColId::new("active")),
                 ))),
                 right: Box::new(Expr::number(1.0)),
-            }
+            })
         );
-        assert_eq!(args[1], Expr::number(100.0));
-        assert_eq!(args[2], Expr::number(0.0));
+        assert_eq!(args[1], CallArg::Expr(Expr::number(100.0)));
+        assert_eq!(args[2], CallArg::Expr(Expr::number(0.0)));
 
         let nullary = parse_expr_str("PI()").unwrap();
         assert_eq!(
@@ -1363,11 +1364,11 @@ mod tests {
             h_range,
             Expr::FunctionCall {
                 name: "SUM".to_string(),
-                args: vec![Expr::Reference(TableRef::new(
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
                     TableId::new("IncomeStatement"),
                     RowSelector::Key(RowId::new("revenue")),
                     ColSelector::Range("2024E".into(), "2028E".into()),
-                ))],
+                )))],
             }
         );
 
@@ -1569,11 +1570,11 @@ mod tests {
         if let Expr::FunctionCall { name, args } = &parsed {
             assert_eq!(name, "PMT");
             assert_eq!(args.len(), 5);
-            assert_eq!(args[0], Expr::number(0.05));
-            assert_eq!(args[1], Expr::number(10.0));
-            assert_eq!(args[2], Expr::number(1000.0));
-            assert_eq!(args[3], Expr::Omitted);
-            assert_eq!(args[4], Expr::number(1.0));
+            assert_eq!(args[0], CallArg::Expr(Expr::number(0.05)));
+            assert_eq!(args[1], CallArg::Expr(Expr::number(10.0)));
+            assert_eq!(args[2], CallArg::Expr(Expr::number(1000.0)));
+            assert_eq!(args[3], CallArg::Omitted);
+            assert_eq!(args[4], CallArg::Expr(Expr::number(1.0)));
         } else {
             panic!("Expected FunctionCall");
         }
@@ -1582,7 +1583,11 @@ mod tests {
 
     #[test]
     fn test_grammatical_confinement_of_underscore() {
-        // Standalone underscore in arithmetic
+        // Standalone underscore at root and in arithmetic / parenthesized / call sub-expressions
+        assert!(matches!(
+            parse_expr_str("_").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
         assert!(matches!(
             parse_expr_str("1 + _").unwrap_err(),
             ParseError::UnexpectedToken { .. }
@@ -1597,6 +1602,14 @@ mod tests {
         ));
         assert!(matches!(
             parse_expr_str("_ + 1").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+        assert!(matches!(
+            parse_expr_str("IF(TRUE, 10, _ + 1)").unwrap_err(),
+            ParseError::UnexpectedToken { .. }
+        ));
+        assert!(matches!(
+            parse_expr_str("IF(TRUE, 10, (_))").unwrap_err(),
             ParseError::UnexpectedToken { .. }
         ));
 

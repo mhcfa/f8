@@ -18,7 +18,7 @@ use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::LayoutMap;
-use crate::expr::ast::{BinaryOp, Expr, Literal, TableRef, UnaryOp};
+use crate::expr::ast::{BinaryOp, CallArg, Expr, Literal, TableRef, UnaryOp};
 
 /// Deterministic map of lowered Excel formula strings indexed by [`CellId`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -237,7 +237,6 @@ fn lower_expr_inner(
                 Ok(format!("\"{escaped}\""))
             }
         },
-        Expr::Omitted => Ok(String::new()),
         Expr::Reference(table_ref) => lower_table_ref(origin, table_ref, symbol_table, layout_map),
         Expr::Unary { op, expr } => {
             let inner_str = lower_expr_inner(expr, origin, symbol_table, layout_map)?;
@@ -256,7 +255,13 @@ fn lower_expr_inner(
         Expr::FunctionCall { name, args } => {
             let mut arg_strings = Vec::with_capacity(args.len());
             for arg in args {
-                arg_strings.push(lower_expr_inner(arg, origin, symbol_table, layout_map)?);
+                let lowered = match arg {
+                    CallArg::Expr(arg_expr) => {
+                        lower_expr_inner(arg_expr, origin, symbol_table, layout_map)?
+                    }
+                    CallArg::Omitted => String::new(),
+                };
+                arg_strings.push(lowered);
             }
             Ok(format!(
                 "{}({})",
@@ -297,8 +302,7 @@ fn format_binary_operand(
         }
         Expr::Literal(Literal::Number(_) | Literal::String(_) | Literal::Boolean(_))
         | Expr::Reference(_)
-        | Expr::FunctionCall { .. }
-        | Expr::Omitted => false,
+        | Expr::FunctionCall { .. } => false,
     };
 
     if wrap {
@@ -312,11 +316,9 @@ fn format_binary_operand(
 fn format_unary_operand(child_expr: &Expr, child_str: String, _parent_op: UnaryOp) -> String {
     let wrap = match child_expr {
         Expr::Binary { .. } => true,
-        Expr::Literal(_)
-        | Expr::Reference(_)
-        | Expr::Unary { .. }
-        | Expr::FunctionCall { .. }
-        | Expr::Omitted => false,
+        Expr::Literal(_) | Expr::Reference(_) | Expr::Unary { .. } | Expr::FunctionCall { .. } => {
+            false
+        }
     };
 
     if wrap {

@@ -1,10 +1,12 @@
-use crate::expr::ast::Expr;
+use std::sync::Arc;
+
+use indexmap::IndexMap;
+
+use crate::expr::ast::{CallArg, Expr};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, ParamKind, ParameterDef, VariadicRule,
 };
-use indexmap::IndexMap;
-use std::sync::Arc;
 
 /// Thread-safe registry and dispatcher of built-in and user-defined Excel functions.
 #[derive(Clone, Default)]
@@ -39,18 +41,26 @@ impl FunctionRegistry {
             .insert(func.name().to_ascii_uppercase(), func);
     }
 
+    fn get_entry(&self, name: &str) -> Option<&Arc<dyn ExcelFunction>> {
+        if let Some(func) = self.functions.get(name) {
+            return Some(func);
+        }
+        if name.bytes().any(|b| b.is_ascii_lowercase()) {
+            return self.functions.get(name.to_ascii_uppercase().as_str());
+        }
+        None
+    }
+
     /// Looks up a function by name (case-insensitive).
     #[must_use]
     pub fn lookup(&self, name: &str) -> Option<&dyn ExcelFunction> {
-        self.functions
-            .get(&name.to_ascii_uppercase())
-            .map(std::convert::AsRef::as_ref)
+        self.get_entry(name).map(std::convert::AsRef::as_ref)
     }
 
     /// Looks up a shared reference to a function by name (case-insensitive).
     #[must_use]
     pub fn get(&self, name: &str) -> Option<Arc<dyn ExcelFunction>> {
-        self.functions.get(&name.to_ascii_uppercase()).cloned()
+        self.get_entry(name).cloned()
     }
 
     /// Returns an iterator over all registered functions in deterministic insertion order.
@@ -74,79 +84,65 @@ impl FunctionRegistry {
     pub fn validate_call(
         &self,
         name: &str,
-        args: &[Expr],
+        args: &[CallArg],
     ) -> Result<&dyn ExcelFunction, FunctionError> {
         let func = self
             .lookup(name)
             .ok_or_else(|| FunctionError::UnknownFunction(name.to_string()))?;
 
-        if args.len() < func.min_args() {
-            return Err(FunctionError::TooFewArguments {
-                function: func.name(),
-                expected: func.min_args(),
-                found: args.len(),
-            });
-        }
-
-        if let Some(max) = func.max_args()
-            && args.len() > max
-        {
-            return Err(FunctionError::TooManyArguments {
-                function: func.name(),
-                expected: max,
-                found: args.len(),
-            });
-        }
-
-        if func.variadic_rule() == VariadicRule::Pairs {
-            let fixed_count = func.parameters().len();
-            if args.len() > fixed_count && !(args.len() - fixed_count).is_multiple_of(2) {
-                return Err(FunctionError::InvalidVariadicPairs {
-                    function: func.name(),
-                    count: args.len(),
-                });
-            }
-        }
-
-        for (i, arg) in args.iter().enumerate() {
-            if matches!(arg, Expr::Omitted) {
-                let param = resolve_parameter(func, i)?;
-                if !param.optional {
-                    return Err(FunctionError::CannotOmitRequiredArgument {
-                        function: func.name(),
-                        param: param.name,
-                        position: i + 1,
-                    });
-                }
-            }
-        }
+        validate_signature(func, args)?;
 
         Ok(func)
+    }
+
+    /// Recursively validates all function invocations within an expression AST in pre-order.
+    pub fn validate_expr(&self, expr: &Expr) -> Result<(), FunctionError> {
+        match expr {
+            Expr::Literal(_) | Expr::Reference(_) => Ok(()),
+            Expr::Unary { expr, .. } => self.validate_expr(expr),
+            Expr::Binary { left, right, .. } => {
+                self.validate_expr(left)?;
+                self.validate_expr(right)
+            }
+            Expr::FunctionCall { name, args } => {
+                self.validate_call(name, args)?;
+                for arg in args {
+                    match arg {
+                        CallArg::Expr(arg_expr) => self.validate_expr(arg_expr)?,
+                        CallArg::Omitted => {}
+                    }
+                }
+                Ok(())
+            }
+        }
     }
 
     /// Binds parsed formula arguments into runtime `FunctionArg` values, evaluating scalars or delegating lazy branches.
     pub fn bind_arguments<'a>(
         &self,
         func: &dyn ExcelFunction,
-        expr_args: &'a [Expr],
+        expr_args: &'a [CallArg],
         ctx: &dyn EvalContext,
     ) -> Result<Vec<FunctionArg<'a>>, FunctionError> {
-        self.validate_call(func.name(), expr_args)?;
+        validate_signature(func, expr_args)?;
 
         let target_len = std::cmp::max(expr_args.len(), func.parameters().len());
         let mut bound = Vec::with_capacity(target_len);
 
-        for (i, arg_expr) in expr_args.iter().enumerate() {
+        for (i, call_arg) in expr_args.iter().enumerate() {
             let param = resolve_parameter(func, i)?;
 
-            if matches!(arg_expr, Expr::Omitted) {
-                if let Some(default_val) = &param.default_value {
-                    bound.push(FunctionArg::Scalar(default_val.clone()));
-                } else {
-                    bound.push(FunctionArg::Omitted);
+            let arg_expr = match call_arg {
+                CallArg::Expr(expr) => expr,
+                CallArg::Omitted => {
+                    if let Some(default_val) = &param.default_value {
+                        bound.push(FunctionArg::Scalar(default_val.clone()));
+                    } else {
+                        bound.push(FunctionArg::Omitted);
+                    }
+                    continue;
                 }
-                continue;
-            }
+            };
 
             match param.kind {
                 ParamKind::Lazy => {
@@ -186,6 +182,55 @@ impl FunctionRegistry {
 
         Ok(bound)
     }
+}
+
+/// Validates argument count, variadic pair parity, and omitted parameter eligibility against a resolved function.
+fn validate_signature(func: &dyn ExcelFunction, args: &[CallArg]) -> Result<(), FunctionError> {
+    if args.len() < func.min_args() {
+        return Err(FunctionError::TooFewArguments {
+            function: func.name(),
+            expected: func.min_args(),
+            found: args.len(),
+        });
+    }
+
+    if let Some(max) = func.max_args()
+        && args.len() > max
+    {
+        return Err(FunctionError::TooManyArguments {
+            function: func.name(),
+            expected: max,
+            found: args.len(),
+        });
+    }
+
+    if func.variadic_rule() == VariadicRule::Pairs {
+        let fixed_count = func.parameters().len();
+        if args.len() > fixed_count && !(args.len() - fixed_count).is_multiple_of(2) {
+            return Err(FunctionError::InvalidVariadicPairs {
+                function: func.name(),
+                count: args.len(),
+            });
+        }
+    }
+
+    for (i, arg) in args.iter().enumerate() {
+        match arg {
+            CallArg::Expr(_) => {}
+            CallArg::Omitted => {
+                let param = resolve_parameter(func, i)?;
+                if !param.optional {
+                    return Err(FunctionError::CannotOmitRequiredArgument {
+                        function: func.name(),
+                        param: param.name,
+                        position: i + 1,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Resolves the expected parameter definition for a given 0-indexed argument position,

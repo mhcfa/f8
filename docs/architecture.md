@@ -43,7 +43,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
    - Validates formatting invariants: maximum 14 decimal places (`decimals <= 14`), precision allowed only on decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`), currency symbols allowed only on `currency` preset, valid 6-character hex colors (`#RRGGBB`), and positive finite layout metrics.
 2. Grid Expansion & Formula Parsing (`f8_core::compiler::ir`):
    - Expands tables into discrete cells identified by `CellId { table, row, col }`.
-   - Parses formula strings into `Expr` AST nodes via recursive-descent Pratt parser.
+   - Parses formula strings into `Expr` AST nodes via recursive-descent Pratt parser, confining positional argument omission (`_`) structurally to `CallArg::Omitted` inside `Expr::FunctionCall`.
    - Enforces 3-tier specificity lattice:
      - Specificity: `0D Cell Override` > (`1D Row Rule` XOR `1D Column Rule`) > `Explicit Null / Error`.
      - Conflicting row and column expressions halt compilation (`IrError::AmbiguousExpressionConflict`).
@@ -59,12 +59,13 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
    - Cycle detection: executes Tarjan's Strongly Connected Components (SCC) on `petgraph::DiGraph`. Cycles halt compilation with exact cycle trace (`StrictDagHandler`).
    - Topological sorting: Kahn's algorithm with declaration-order tie-breaking for deterministic execution order.
 4. Topological Evaluation (`f8_core::compiler::eval`):
+   - Static signature validation: validates all `Expr::FunctionCall` nodes (existence, arity bounds, variadic pairs, and omitted required parameters) across active and dormant branches in cell declaration order (`Evaluator::validate_grid` / pre-order `FunctionRegistry::validate_expr`) before evaluating any cell.
    - Topologically evaluates cells in topological order using `FunctionRegistry`.
    - IEEE-754 normalizations: `-0.0` normalized to `0.0`.
    - Excel type coercions: `Empty` coerces to `0.0` (numeric) or `""` (string); booleans coerce to `1.0`/`0.0`.
    - Excel error semantics: division by zero or empty returns `#DIV/0!`, invalid text arithmetic returns `#VALUE!`, invalid math arguments return `#NUM!`, failed lookups return `#N/A`.
    - Mixed-type comparison ranking: `Number < Text < Boolean`; case-insensitive ASCII string comparisons.
-   - Lazy evaluation: short-circuits dormant branches in `IF`, `IFS`, `IFERROR`, `IFNA`, `CHOOSE`, `SWITCH`, and `XLOOKUP`.
+   - Lazy evaluation: short-circuits dormant branches in `IF`, `IFS`, `IFERROR`, `IFNA`, `CHOOSE`, `SWITCH`, and `XLOOKUP` (`IFERROR` and `IFNA` trap only `CellValue::Error` domain errors while propagating `FunctionError`).
    - Error tolerance: runtime errors stored as `CellValue::Error` without aborting compiler; downstream formulas bubble or handle them.
 5. Spatial Layout Planning (`f8_core::compiler::layout`):
    - Arranges tables into 0-indexed physical grid coordinates (`LayoutMap`).

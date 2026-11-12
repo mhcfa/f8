@@ -1,13 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
+use std::sync::Arc;
+
 use indexmap::IndexMap;
 
 use f8_core::compiler::eval::{EvalError, Evaluator};
 use f8_core::compiler::graph::DependencyGraph;
 use f8_core::compiler::ir::{CellGrid, CellId, CellNode, CellPayload, SymbolTable, expand_grid};
+use f8_core::compiler::{Compiler, CompilerError};
+use f8_core::functions::error::FunctionError;
+use f8_core::functions::logical::IfFunction;
 use f8_core::functions::registry::FunctionRegistry;
+use f8_core::functions::traits::{
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
+};
 use f8_core::model::id::{ColId, RowId, SheetId, TableId};
+use f8_core::model::manifest::{ProjectManifest, SheetSpec};
 use f8_core::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec, ValueLiteral};
+use f8_core::model::theme::ThemeSpec;
 use f8_core::value::{CellValue, ExcelError};
 
 fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec {
@@ -469,4 +479,457 @@ fn test_scenario_6_evaluator_missing_cell_guard() {
         Err(EvalError::CellNotFound(id)) => assert_eq!(*id, cell_missing),
         other => panic!("Expected CellNotFound, got {other:?}"),
     }
+}
+
+fn manifest_for_table(table_id: &str) -> ProjectManifest {
+    ProjectManifest {
+        model_name: "StaticValidationModel".into(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from(table_id)],
+        }],
+    }
+}
+
+fn assert_eval_function_err<T: std::fmt::Debug>(
+    result: Result<T, EvalError>,
+    expected_cell: &CellId,
+    expected_err: &FunctionError,
+) {
+    if let Err(EvalError::Function { cell, source }) = result {
+        assert_eq!(cell.as_ref(), expected_cell);
+        assert_eq!(source.as_ref(), expected_err);
+    } else {
+        panic!("Expected EvalError::Function({expected_cell}, {expected_err:?}), got {result:?}");
+    }
+}
+
+fn assert_compiler_function_err<T: std::fmt::Debug>(
+    result: Result<T, CompilerError>,
+    expected_cell: &CellId,
+    expected_err: &FunctionError,
+) {
+    if let Err(CompilerError::Eval(eval_err)) = result {
+        assert_eval_function_err::<()>(Err(eval_err), expected_cell, expected_err);
+    } else {
+        panic!(
+            "Expected CompilerError::Eval(EvalError::Function({expected_cell}, {expected_err:?})), got {result:?}"
+        );
+    }
+}
+
+#[derive(Debug)]
+struct CustomDoubleFunction;
+
+static CUSTOM_DOUBLE_PARAMS: [ParameterDef; 1] = [ParameterDef::required(
+    "value",
+    "Numeric value to double",
+    ParamKind::Scalar,
+)];
+
+impl ExcelFunction for CustomDoubleFunction {
+    fn name(&self) -> &'static str {
+        "CUSTOM_FN"
+    }
+
+    fn category(&self) -> FunctionCategory {
+        FunctionCategory::Math
+    }
+
+    fn parameters(&self) -> &'static [ParameterDef] {
+        &CUSTOM_DOUBLE_PARAMS
+    }
+
+    fn evaluate(
+        &self,
+        args: &[FunctionArg<'_>],
+        ctx: &dyn EvalContext,
+    ) -> Result<CellValue, FunctionError> {
+        let val = args[0].eval_scalar(self.name(), ctx)?;
+        match val {
+            CellValue::Number(n) => Ok(CellValue::Number(n * 2.0)),
+            CellValue::Error(e) => Ok(CellValue::Error(e)),
+            CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {
+                Ok(CellValue::Error(ExcelError::Value))
+            }
+        }
+    }
+}
+
+#[test]
+fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
+    let cases: &[(&str, FunctionError)] = &[
+        (
+            "IF(TRUE, 10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IF(FALSE, SUM(), 10)",
+            FunctionError::TooFewArguments {
+                function: "SUM",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "IF(TRUE, 10, ABS(1, 2))",
+            FunctionError::TooManyArguments {
+                function: "ABS",
+                expected: 1,
+                found: 2,
+            },
+        ),
+        (
+            "IF(TRUE, 10, IFS(TRUE, 1, FALSE))",
+            FunctionError::InvalidVariadicPairs {
+                function: "IFS",
+                count: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, ABS(_))",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "ABS",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IFERROR(10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IFERROR(ABS(1, 2, 3), 0)",
+            FunctionError::TooManyArguments {
+                function: "ABS",
+                expected: 1,
+                found: 3,
+            },
+        ),
+        (
+            "IFNA(10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "CHOOSE(1, 10, SUM())",
+            FunctionError::TooFewArguments {
+                function: "SUM",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "SWITCH(1, 1, 10, ABS())",
+            FunctionError::TooFewArguments {
+                function: "ABS",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "XLOOKUP(1, T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col], UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IF(1 / 0, UNKNOWN_FN(), 10)",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IF(TRUE, 10, -(1 + UNKNOWN_FN()))",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+    ];
+
+    let manifest = manifest_for_table("T");
+    let registry = FunctionRegistry::standard();
+    let target_cell = CellId::new("T", "target", "c1");
+
+    for (formula, expected_err) in cases {
+        let k1 = RowSpec::new("k1").with_cells(IndexMap::from([(
+            ColId::from("c1"),
+            CellInput::number(1.0),
+        )]));
+        let k2 = RowSpec::new("k2").with_cells(IndexMap::from([(
+            ColId::from("c1"),
+            CellInput::number(2.0),
+        )]));
+        let v1 = RowSpec::new("v1").with_cells(IndexMap::from([(
+            ColId::from("c1"),
+            CellInput::number(100.0),
+        )]));
+        let v2 = RowSpec::new("v2").with_cells(IndexMap::from([(
+            ColId::from("c1"),
+            CellInput::number(200.0),
+        )]));
+        let target = RowSpec::new("target").with_expr(*formula);
+
+        let table = create_table("T", &["c1"], vec![k1, k2, v1, v2, target]);
+        let tables = [table.clone()];
+
+        let mut symbols = SymbolTable::new();
+        symbols
+            .register_table(SheetId::from("Sheet1"), &table)
+            .expect("register table");
+        let grid = expand_grid(&symbols, &tables).expect("expand grid");
+        let graph = DependencyGraph::from_grid(&grid, &symbols).expect("build graph");
+
+        assert_eval_function_err(
+            Evaluator::validate_grid(&grid, &registry),
+            &target_cell,
+            expected_err,
+        );
+        assert_eval_function_err(
+            Evaluator::evaluate(&grid, &graph, &symbols, &registry),
+            &target_cell,
+            expected_err,
+        );
+        assert_compiler_function_err(
+            Compiler::evaluate(&manifest, &tables),
+            &target_cell,
+            expected_err,
+        );
+        assert_compiler_function_err(
+            Compiler::compile(&manifest, &tables),
+            &target_cell,
+            expected_err,
+        );
+    }
+
+    // Valid IFERROR trapping an Excel domain error still succeeds and evaluates to fallback
+    let ok_table = create_table(
+        "T",
+        &["c1"],
+        vec![RowSpec::new("target").with_expr("IFERROR(10 / 0, 42)")],
+    );
+    let evaluated = Compiler::evaluate(&manifest, &[ok_table]).expect("evaluate valid IFERROR");
+    assert_eq!(
+        evaluated.get_value(
+            &TableId::from("T"),
+            &RowId::from("target"),
+            &ColId::from("c1"),
+        ),
+        Some(&CellValue::Number(42.0))
+    );
+}
+
+#[test]
+fn test_scenario_8_validate_grid_reports_in_declaration_order() {
+    // r1 is declared first in CellGrid, but depends on r2 so topological order evaluates r2 before r1.
+    let r1 = RowSpec::new("r1").with_expr("T[\"r2\", @col] + IF(TRUE, 1, UNKNOWN_FIRST())");
+    let r2 = RowSpec::new("r2").with_expr("IF(TRUE, 1, UNKNOWN_SECOND())");
+    let table = create_table("T", &["c1"], vec![r1, r2]);
+    let tables = [table.clone()];
+    let manifest = manifest_for_table("T");
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Sheet1"), &table)
+        .expect("register table");
+    let grid = expand_grid(&symbols, &tables).expect("expand grid");
+    let graph = DependencyGraph::from_grid(&grid, &symbols).expect("build graph");
+
+    // Confirm topological order puts r2 before r1, while grid declaration order puts r1 before r2
+    let r1_cell = CellId::new("T", "r1", "c1");
+    let r2_cell = CellId::new("T", "r2", "c1");
+    let grid_order: Vec<CellId> = grid.iter().map(|(id, _)| id.clone()).collect();
+    assert_eq!(grid_order, vec![r1_cell.clone(), r2_cell.clone()]);
+    assert_eq!(graph.topological_order(), &[r2_cell, r1_cell.clone()]);
+
+    let registry = FunctionRegistry::standard();
+    let expected_err = FunctionError::UnknownFunction("UNKNOWN_FIRST".into());
+
+    assert_eval_function_err(
+        Evaluator::validate_grid(&grid, &registry),
+        &r1_cell,
+        &expected_err,
+    );
+    assert_eval_function_err(
+        Evaluator::evaluate(&grid, &graph, &symbols, &registry),
+        &r1_cell,
+        &expected_err,
+    );
+    assert_compiler_function_err(
+        Compiler::compile(&manifest, &tables),
+        &r1_cell,
+        &expected_err,
+    );
+}
+
+#[test]
+fn test_scenario_9_custom_function_registry_across_active_and_dormant_branches() {
+    let manifest = manifest_for_table("T");
+    let r1_cell = CellId::new("T", "r1", "c1");
+
+    // 1. Empty registry rejects even built-in IF
+    let empty_registry = FunctionRegistry::new();
+    let if_table = create_table(
+        "T",
+        &["c1"],
+        vec![RowSpec::new("r1").with_expr("IF(TRUE, 10, 20)")],
+    );
+    let expected_missing_if = FunctionError::UnknownFunction("IF".into());
+    assert_compiler_function_err(
+        Compiler::evaluate_with_registry(
+            &manifest,
+            std::slice::from_ref(&if_table),
+            &empty_registry,
+        ),
+        &r1_cell,
+        &expected_missing_if,
+    );
+
+    // 2. Custom registry with IF + CUSTOM_FN (without SUM)
+    let mut custom_registry = FunctionRegistry::new();
+    custom_registry.register(Arc::new(IfFunction));
+    custom_registry.register(Arc::new(CustomDoubleFunction));
+
+    // Dormant CUSTOM_FN(1) and active CUSTOM_FN(21) succeed
+    let custom_ok_table = create_table(
+        "T",
+        &["c1"],
+        vec![
+            RowSpec::new("r1").with_expr("IF(TRUE, 10, CUSTOM_FN(1))"),
+            RowSpec::new("r2").with_expr("CUSTOM_FN(21)"),
+        ],
+    );
+    let evaluated = Compiler::evaluate_with_registry(
+        &manifest,
+        std::slice::from_ref(&custom_ok_table),
+        &custom_registry,
+    )
+    .expect("evaluate with custom registry");
+    assert_eq!(
+        evaluated.get_value(&TableId::from("T"), &RowId::from("r1"), &ColId::from("c1"),),
+        Some(&CellValue::Number(10.0))
+    );
+    assert_eq!(
+        evaluated.get_value(&TableId::from("T"), &RowId::from("r2"), &ColId::from("c1"),),
+        Some(&CellValue::Number(42.0))
+    );
+
+    let compiled = Compiler::compile_with_registry(
+        &manifest,
+        std::slice::from_ref(&custom_ok_table),
+        &custom_registry,
+    )
+    .expect("compile with custom registry");
+    assert_eq!(
+        compiled.lowered_map.get(&r1_cell),
+        Some("=IF(TRUE,10,CUSTOM_FN(1))")
+    );
+
+    // Unregistered SUM(1) in dormant branch fails with UnknownFunction("SUM")
+    let unregistered_sum_table = create_table(
+        "T",
+        &["c1"],
+        vec![RowSpec::new("r1").with_expr("IF(TRUE, 10, SUM(1))")],
+    );
+    let expected_missing_sum = FunctionError::UnknownFunction("SUM".into());
+    assert_compiler_function_err(
+        Compiler::evaluate_with_registry(
+            &manifest,
+            std::slice::from_ref(&unregistered_sum_table),
+            &custom_registry,
+        ),
+        &r1_cell,
+        &expected_missing_sum,
+    );
+    assert_compiler_function_err(
+        Compiler::compile_with_registry(
+            &manifest,
+            std::slice::from_ref(&unregistered_sum_table),
+            &custom_registry,
+        ),
+        &r1_cell,
+        &expected_missing_sum,
+    );
+}
+
+#[test]
+fn test_scenario_10_nested_function_calls_validate_ast_once() {
+    #[derive(Debug, Default)]
+    struct ValidationCountFunction {
+        min_args_checks: std::sync::atomic::AtomicUsize,
+    }
+
+    impl ExcelFunction for ValidationCountFunction {
+        fn name(&self) -> &'static str {
+            "COUNTED_FN"
+        }
+
+        fn category(&self) -> FunctionCategory {
+            FunctionCategory::Math
+        }
+
+        fn parameters(&self) -> &'static [ParameterDef] {
+            &CUSTOM_DOUBLE_PARAMS
+        }
+
+        fn min_args(&self) -> usize {
+            self.min_args_checks
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            1
+        }
+
+        fn evaluate(
+            &self,
+            args: &[FunctionArg<'_>],
+            ctx: &dyn EvalContext,
+        ) -> Result<CellValue, FunctionError> {
+            CustomDoubleFunction.evaluate(args, ctx)
+        }
+    }
+
+    let counted = Arc::new(ValidationCountFunction::default());
+    let mut registry = FunctionRegistry::new();
+    registry.register(Arc::new(IfFunction));
+    registry.register(counted.clone());
+
+    let manifest = manifest_for_table("T");
+    let nested_formula = "IF(TRUE, IF(TRUE, IF(TRUE, 10, COUNTED_FN(1)), 0), 0)";
+    let table = create_table(
+        "T",
+        &["c1"],
+        vec![RowSpec::new("r1").with_expr(nested_formula)],
+    );
+
+    let evaluated = Compiler::evaluate_with_registry(&manifest, &[table], &registry)
+        .expect("evaluate nested IF with dormant COUNTED_FN");
+    assert_eq!(
+        evaluated.get_value(&TableId::from("T"), &RowId::from("r1"), &ColId::from("c1")),
+        Some(&CellValue::Number(10.0))
+    );
+    // Dormant COUNTED_FN(1) is never evaluated; static validation must inspect it once at entry,
+    // not re-walk subtrees at each outer IF level.
+    assert_eq!(
+        counted
+            .min_args_checks
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
+
+    counted
+        .min_args_checks
+        .store(0, std::sync::atomic::Ordering::Relaxed);
+    let expr = f8_core::expr::Expr::parse(nested_formula).expect("parse nested formula");
+    let symbols = SymbolTable::new();
+    let memo = IndexMap::new();
+    let origin = CellId::new("T", "r1", "c1");
+    let val = f8_core::compiler::eval_expr(&expr, &origin, &memo, &symbols, &registry)
+        .expect("eval_expr nested IF");
+    assert_eq!(val, CellValue::Number(10.0));
+    assert_eq!(
+        counted
+            .min_args_checks
+            .load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
 }

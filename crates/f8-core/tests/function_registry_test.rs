@@ -1,12 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
-use f8_core::expr::ast::{ColSelector, Expr, Literal, RowSelector, TableRef};
+use std::cell::RefCell;
+
+use f8_core::expr::ast::{CallArg, ColSelector, Expr, Literal, RowSelector, TableRef};
 use f8_core::functions::{
     EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
 };
 use f8_core::model::table::ValueLiteral;
 use f8_core::value::{CellValue, ExcelError};
-use std::cell::RefCell;
 
 /// Mock evaluation context tracking evaluated expressions.
 #[derive(Default)]
@@ -35,7 +36,6 @@ impl EvalContext for MockEvalContext {
             Expr::Literal(Literal::Number(n)) => Ok(CellValue::Number(*n)),
             Expr::Literal(Literal::Boolean(b)) => Ok(CellValue::Boolean(*b)),
             Expr::Literal(Literal::String(s)) => Ok(CellValue::Text(s.clone())),
-            Expr::Omitted => Ok(CellValue::Empty),
             Expr::Reference(_)
             | Expr::Unary { .. }
             | Expr::Binary { .. }
@@ -93,24 +93,44 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
     let registry = FunctionRegistry::standard();
 
     // Valid calls
-    assert!(registry.validate_call("ABS", &[Expr::number(10.0)]).is_ok());
     assert!(
         registry
-            .validate_call("SUM", &[Expr::number(1.0), Expr::number(2.0)])
+            .validate_call("ABS", &[CallArg::from(Expr::number(10.0))])
+            .is_ok()
+    );
+    assert!(
+        registry
+            .validate_call(
+                "SUM",
+                &[
+                    CallArg::from(Expr::number(1.0)),
+                    CallArg::from(Expr::number(2.0)),
+                ]
+            )
             .is_ok()
     );
     assert!(
         registry
             .validate_call(
                 "IF",
-                &[Expr::boolean(true), Expr::number(1.0), Expr::number(2.0)]
+                &[
+                    CallArg::from(Expr::boolean(true)),
+                    CallArg::from(Expr::number(1.0)),
+                    CallArg::from(Expr::number(2.0)),
+                ]
             )
             .is_ok()
     );
     // IF with 2 arguments is valid (3rd argument is optional)
     assert!(
         registry
-            .validate_call("IF", &[Expr::boolean(true), Expr::number(1.0)])
+            .validate_call(
+                "IF",
+                &[
+                    CallArg::from(Expr::boolean(true)),
+                    CallArg::from(Expr::number(1.0)),
+                ]
+            )
             .is_ok()
     );
 
@@ -131,7 +151,13 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
 
     // Too many arguments for ABS (expected 1, found 2)
     let err = registry
-        .validate_call("ABS", &[Expr::number(1.0), Expr::number(2.0)])
+        .validate_call(
+            "ABS",
+            &[
+                CallArg::from(Expr::number(1.0)),
+                CallArg::from(Expr::number(2.0)),
+            ],
+        )
         .unwrap_err();
     assert_eq!(
         err,
@@ -143,7 +169,9 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
     );
 
     // Cannot omit required argument in ABS(_) with 1-indexed position 1
-    let err = registry.validate_call("ABS", &[Expr::Omitted]).unwrap_err();
+    let err = registry
+        .validate_call("ABS", &[CallArg::Omitted])
+        .unwrap_err();
     assert_eq!(
         err,
         FunctionError::CannotOmitRequiredArgument {
@@ -157,7 +185,11 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
     let err = registry
         .validate_call(
             "IF",
-            &[Expr::Omitted, Expr::number(10.0), Expr::number(20.0)],
+            &[
+                CallArg::Omitted,
+                CallArg::from(Expr::number(10.0)),
+                CallArg::from(Expr::number(20.0)),
+            ],
         )
         .unwrap_err();
     assert_eq!(
@@ -174,7 +206,11 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
         registry
             .validate_call(
                 "IF",
-                &[Expr::boolean(true), Expr::number(10.0), Expr::Omitted]
+                &[
+                    CallArg::from(Expr::boolean(true)),
+                    CallArg::from(Expr::number(10.0)),
+                    CallArg::Omitted,
+                ]
             )
             .is_ok()
     );
@@ -361,16 +397,24 @@ fn test_bind_arguments_integration() {
     // Binding IF with 2 arguments: [condition, true_expr]
     // 3rd argument is missing, so it should be bound to the default CellValue::Boolean(false)
     let ctx = MockEvalContext::default();
-    let exprs = [Expr::boolean(true), Expr::number(42.0)];
+    let true_val_expr = Expr::number(42.0);
+    let exprs = [
+        CallArg::from(Expr::boolean(true)),
+        CallArg::from(true_val_expr.clone()),
+    ];
     let bound = registry.bind_arguments(if_func, &exprs, &ctx).unwrap();
 
     assert_eq!(bound.len(), 3);
     assert_eq!(bound[0], FunctionArg::Scalar(CellValue::Boolean(true)));
-    assert_eq!(bound[1], FunctionArg::Lazy(&exprs[1]));
+    assert_eq!(bound[1], FunctionArg::Lazy(&true_val_expr));
     assert_eq!(bound[2], FunctionArg::Scalar(CellValue::Boolean(false)));
 
     // Binding IF with explicit omitted 3rd argument: [condition, true_expr, _]
-    let exprs_omitted = [Expr::boolean(false), Expr::number(42.0), Expr::Omitted];
+    let exprs_omitted = [
+        CallArg::from(Expr::boolean(false)),
+        CallArg::from(Expr::number(42.0)),
+        CallArg::Omitted,
+    ];
     let bound_omitted = registry
         .bind_arguments(if_func, &exprs_omitted, &ctx)
         .unwrap();
@@ -393,7 +437,7 @@ fn test_bind_arguments_integration() {
         ],
     );
 
-    let sum_exprs = [table_ref, Expr::number(40.0)];
+    let sum_exprs = [CallArg::from(table_ref), CallArg::from(Expr::number(40.0))];
     let bound_sum = registry
         .bind_arguments(sum_func, &sum_exprs, &ctx_with_range)
         .unwrap();
@@ -480,4 +524,159 @@ fn test_registry_metadata_and_iteration() {
     assert_eq!(if_func.category(), FunctionCategory::Logical);
     assert_eq!(if_func.min_args(), 2);
     assert_eq!(if_func.max_args(), Some(3));
+
+    assert!(registry.lookup("IF").is_some());
+    assert!(registry.lookup("If").is_some());
+    assert!(registry.lookup("UNKNOWN_FN").is_none());
+    assert!(registry.lookup("unknown_fn").is_none());
+    assert!(registry.get("SUM").is_some());
+    assert!(registry.get("sum").is_some());
+    assert!(registry.get("UNKNOWN_FN").is_none());
+    assert!(registry.get("unknown_fn").is_none());
+}
+
+#[test]
+fn test_validate_expr_preorder_and_nested_ast() {
+    let registry = FunctionRegistry::standard();
+
+    // Valid nested expression with omitted optional slots passes
+    let valid_expr = Expr::parse(
+        "IF(TRUE, SUM(1, ABS(-2)), XLOOKUP(1, T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col], _, 0, 1))",
+    )
+    .unwrap();
+    assert!(registry.validate_expr(&valid_expr).is_ok());
+
+    // Dormant lazy branch signatures and unknown functions
+    let cases = [
+        (
+            "IF(TRUE, 10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IF(FALSE, SUM(), 10)",
+            FunctionError::TooFewArguments {
+                function: "SUM",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "IF(TRUE, 10, ABS(1, 2))",
+            FunctionError::TooManyArguments {
+                function: "ABS",
+                expected: 1,
+                found: 2,
+            },
+        ),
+        (
+            "IF(TRUE, 10, IFS(TRUE, 1, FALSE))",
+            FunctionError::InvalidVariadicPairs {
+                function: "IFS",
+                count: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, ABS(_))",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "ABS",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IFERROR(10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IFNA(10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "CHOOSE(1, 10, SUM())",
+            FunctionError::TooFewArguments {
+                function: "SUM",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "SWITCH(1, 1, 10, ABS())",
+            FunctionError::TooFewArguments {
+                function: "ABS",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "XLOOKUP(1, R1[\"k\", @col], R2[\"v\", @col], UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IF(1 / 0, UNKNOWN_FN(), 10)",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        // Nested unary/binary inside dormant branch
+        (
+            "IF(TRUE, 10, -(1 + UNKNOWN_FN()))",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        // Pre-order precedence: outer validated before inner
+        (
+            "UNKNOWN_OUTER(UNKNOWN_INNER())",
+            FunctionError::UnknownFunction("UNKNOWN_OUTER".into()),
+        ),
+        (
+            "ABS(UNKNOWN_INNER(), 2)",
+            FunctionError::TooManyArguments {
+                function: "ABS",
+                expected: 1,
+                found: 2,
+            },
+        ),
+        // Left-to-right argument traversal
+        (
+            "IF(UNKNOWN_FIRST(), UNKNOWN_SECOND())",
+            FunctionError::UnknownFunction("UNKNOWN_FIRST".into()),
+        ),
+    ];
+
+    for (formula, expected_err) in cases {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr).unwrap_err(),
+            expected_err,
+            "mismatch on formula: {formula}"
+        );
+    }
+}
+
+#[test]
+fn test_bind_arguments_uses_resolved_function_without_duplicate_lookup() {
+    let standard = FunctionRegistry::standard();
+    let abs_func = standard.lookup("ABS").unwrap();
+    let empty_registry = FunctionRegistry::new();
+    let ctx = MockEvalContext::default();
+
+    // Empty registry does not contain ABS, proving bind_arguments validates against `abs_func` directly
+    let call_args = [CallArg::from(Expr::number(-5.0))];
+    let bound = empty_registry
+        .bind_arguments(abs_func, &call_args, &ctx)
+        .unwrap();
+    assert_eq!(bound, vec![FunctionArg::Scalar(CellValue::Number(-5.0))]);
+
+    let err = empty_registry
+        .bind_arguments(abs_func, &[], &ctx)
+        .unwrap_err();
+    assert_eq!(
+        err,
+        FunctionError::TooFewArguments {
+            function: "ABS",
+            expected: 1,
+            found: 0,
+        }
+    );
 }
