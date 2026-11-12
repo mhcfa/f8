@@ -268,6 +268,36 @@ const MATH_CASES: &[ParityCase] = &[
         formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], \"\")",
         expected: ParityExpected::ExactNum(2.0),
     },
+    ParityCase {
+        id: "countifs_nan_on_numbers",
+        label: "COUNTIFS(num_a, \"NAN\") [ticker NAN ignores numbers]",
+        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], \"NAN\")",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "countifs_nan_on_text",
+        label: "COUNTIFS(special_text, \"nan\") [case-insensitive text match]",
+        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"special_text\"], \"nan\")",
+        expected: ParityExpected::ExactNum(1.0),
+    },
+    ParityCase {
+        id: "countifs_num_skips_nan_inf",
+        label: "COUNTIFS(special_text, 42) [matches \"42\", skips NAN/Infinity/inf]",
+        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"special_text\"], 42)",
+        expected: ParityExpected::ExactNum(1.0),
+    },
+    ParityCase {
+        id: "countifs_gt_skips_inf_text",
+        label: "COUNTIFS(special_text, \">0\") [relational skips Infinity/inf text]",
+        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"special_text\"], \">0\")",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "sumifs_op_trailing_space",
+        label: "SUMIFS(num_a, num_a, \"> 15 \") [operator trailing space trimmed]",
+        formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"num_a\"], \"> 15 \")",
+        expected: ParityExpected::ExactNum(90.0),
+    },
     // Error cases
     ParityCase {
         id: "div0_arith_err",
@@ -1008,6 +1038,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_measure_col_label("date", "Date"),
         build_measure_col_label("cash_flow", "Cash Flow"),
         build_measure_col_label("sparse", "Sparse"),
+        build_measure_col_label("special_text", "Special Text"),
     ];
 
     let seed_rows = vec![
@@ -1018,6 +1049,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 45292.0) // 2024-01-01
             .cell_num("cash_flow", -1000.0)
             .cell("sparse", CellInput::null())
+            .cell_str("special_text", "NAN")
             .build(),
         RowBuilder::descriptor("r2", "row_id", "Row 2")
             .cell_num("num_a", 20.0)
@@ -1026,6 +1058,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 45474.0) // 2024-07-01
             .cell_num("cash_flow", 300.0)
             .cell_formula("sparse", "SeedData[\"r1\", \"sparse\"]")
+            .cell_str("special_text", "Infinity")
             .build(),
         RowBuilder::descriptor("r3", "row_id", "Row 3")
             .cell_num("num_a", 30.0)
@@ -1034,6 +1067,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 45658.0) // 2025-01-01
             .cell_num("cash_flow", 400.0)
             .cell_num("sparse", 20.0)
+            .cell_str("special_text", "42")
             .build(),
         RowBuilder::descriptor("r4", "row_id", "Row 4")
             .cell_num("num_a", 40.0)
@@ -1042,6 +1076,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 46023.0) // 2026-01-01
             .cell_num("cash_flow", 600.0)
             .cell("sparse", CellInput::null())
+            .cell_str("special_text", "inf")
             .build(),
     ];
 

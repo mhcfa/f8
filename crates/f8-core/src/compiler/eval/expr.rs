@@ -10,7 +10,7 @@ use crate::compiler::ir::symbol::SymbolTable;
 use crate::expr::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, normalize_zero};
 
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
 ///
@@ -228,9 +228,4 @@ fn eval_comparison_op(
     };
 
     Ok(CellValue::Boolean(outcome))
-}
-
-/// Normalizes floating point negative zero `-0.0` to `0.0`.
-fn normalize_zero(val: f64) -> f64 {
-    if val == 0.0 { 0.0 } else { val }
 }

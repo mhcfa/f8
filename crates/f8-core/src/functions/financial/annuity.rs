@@ -1,11 +1,11 @@
-use crate::functions::common::{extract_scalar_number, normalize_zero};
+use crate::functions::common::extract_scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, normalize_zero};
 
 /// Calculates the periodic payment for an annuity based on constant payments and a constant interest rate.
 pub(crate) fn calculate_pmt(

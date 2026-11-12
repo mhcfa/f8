@@ -560,10 +560,152 @@ fn test_criteria_operator_with_spaces() {
         ],
     );
 
-    // Criteria with space after operator "> 10"
+    // Criteria with leading and trailing spaces after operator ("> 10 ")
     let crit = FunctionArg::Scalar(CellValue::Text("> 10".into()));
-    let res = sumifs.evaluate(&[sum_range, cr, crit], &ctx).unwrap();
+    let res = sumifs
+        .evaluate(&[sum_range.clone(), cr.clone(), crit], &ctx)
+        .unwrap();
     assert_eq!(res, CellValue::Number(50.0)); // 20.0 + 30.0
+
+    let crit_trailing = FunctionArg::Scalar(CellValue::Text("> 10 ".into()));
+    let res_trailing = sumifs
+        .evaluate(&[sum_range, cr, crit_trailing], &ctx)
+        .unwrap();
+    assert_eq!(res_trailing, CellValue::Number(50.0));
+}
+
+#[test]
+fn test_criteria_nan_and_infinity_strings_treated_as_text() {
+    let registry = FunctionRegistry::standard();
+    let countifs = registry.lookup("COUNTIFS").unwrap();
+    let sumifs = registry.lookup("SUMIFS").unwrap();
+    let avgifs = registry.lookup("AVERAGEIFS").unwrap();
+    let minifs = registry.lookup("MINIFS").unwrap();
+    let maxifs = registry.lookup("MAXIFS").unwrap();
+    let ctx = TestEvalContext;
+
+    // Mixed criteria range: ticker "NAN", "Infinity", "inf", "42", numeric 42.0, numeric 100.0
+    let mixed = make_array(
+        1,
+        6,
+        vec![
+            CellValue::Text("NAN".into()),
+            CellValue::Text("Infinity".into()),
+            CellValue::Text("inf".into()),
+            CellValue::Text("42".into()),
+            CellValue::Number(42.0),
+            CellValue::Number(100.0),
+        ],
+    );
+    let weights = make_array(
+        1,
+        6,
+        vec![
+            CellValue::Number(1.0),
+            CellValue::Number(2.0),
+            CellValue::Number(4.0),
+            CellValue::Number(8.0),
+            CellValue::Number(16.0),
+            CellValue::Number(32.0),
+        ],
+    );
+
+    // Criterion "NAN" matches only "NAN" (case-insensitive), never numbers
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    mixed.clone(),
+                    FunctionArg::Scalar(CellValue::Text("nan".into()))
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        sumifs
+            .evaluate(
+                &[
+                    weights.clone(),
+                    mixed.clone(),
+                    FunctionArg::Scalar(CellValue::Text("NAN".into()))
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+
+    // Criterion "Infinity" and "inf" match only their respective text strings
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    mixed.clone(),
+                    FunctionArg::Scalar(CellValue::Text("Infinity".into()))
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    mixed.clone(),
+                    FunctionArg::Scalar(CellValue::Text("INF".into()))
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+
+    // Numeric criterion 42 matches "42" and 42.0 (weights 8 + 16 = 24), never "NAN"/"Infinity"/"inf"
+    let crit_42 = FunctionArg::Scalar(CellValue::Number(42.0));
+    assert_eq!(
+        countifs
+            .evaluate(&[mixed.clone(), crit_42.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(2.0)
+    );
+    assert_eq!(
+        sumifs
+            .evaluate(&[weights.clone(), mixed.clone(), crit_42.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(24.0)
+    );
+    assert_eq!(
+        avgifs
+            .evaluate(&[weights.clone(), mixed.clone(), crit_42.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(12.0)
+    );
+    assert_eq!(
+        minifs
+            .evaluate(&[weights.clone(), mixed.clone(), crit_42.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(8.0)
+    );
+    assert_eq!(
+        maxifs
+            .evaluate(&[weights.clone(), mixed.clone(), crit_42], &ctx)
+            .unwrap(),
+        CellValue::Number(16.0)
+    );
+
+    // Relational ">0" matches only numeric cells 42.0 and 100.0, never "Infinity" or "42"
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[mixed, FunctionArg::Scalar(CellValue::Text(">0".into()))],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(2.0)
+    );
 }
 
 #[test]

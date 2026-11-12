@@ -1,11 +1,10 @@
-use crate::functions::common::normalize_zero;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
 };
-use crate::value::CellValue;
+use crate::value::{CellValue, normalize_zero};
 
 /// Positional parameter definitions for `ABS`.
 static ABS_PARAMS: &[ParameterDef] = &[ParameterDef::required(

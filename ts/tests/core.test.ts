@@ -1253,5 +1253,42 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "switch_a_bool", "c1")).toBe(30);
       expect(compiled.num("T", "switch_a_zero", "c1")).toBe(40);
     });
+
+    it("(k) treats NaN/inf/Infinity strings as text in *IFS criteria and trims operator trailing spaces", () => {
+      const model = new Model({ name: "CriteriaNanModel" });
+      const tbl = model.addSheet("Main").addTable("T", "Criteria NaN");
+      tbl.addColumn("c1", { role: "measure", header: "C1" });
+      tbl.addColumn("w", { role: "measure", header: "Weight" });
+
+      tbl.addRow("r1", { cells: { c1: "NAN", w: 10 } });
+      tbl.addRow("r2", { cells: { c1: "Infinity", w: 20 } });
+      tbl.addRow("r3", { cells: { c1: "inf", w: 30 } });
+      tbl.addRow("r4", { cells: { c1: " 42 ", w: 40 } });
+      tbl.addRow("r5", { cells: { c1: 42, w: 50 } });
+      tbl.addRow("r6", { cells: { c1: -0, w: 60 } });
+
+      tbl.addRow("cnt_nan", {
+        cells: { c1: new Cell({ expr: 'COUNTIFS(@table["r1".."r6", "c1"], "nan")' }), w: 0 },
+      });
+      tbl.addRow("cnt_inf", {
+        cells: { c1: new Cell({ expr: 'COUNTIFS(@table["r1".."r6", "c1"], "Infinity")' }), w: 0 },
+      });
+      tbl.addRow("sum_42", {
+        cells: {
+          c1: new Cell({ expr: 'SUMIFS(@table["r1".."r6", "w"], @table["r1".."r6", "c1"], 42)' }),
+          w: 0,
+        },
+      });
+      tbl.addRow("cnt_gt0", {
+        cells: { c1: new Cell({ expr: 'COUNTIFS(@table["r1".."r6", "c1"], "> 0 ")' }), w: 0 },
+      });
+
+      const compiled = model.compile();
+      expect(compiled.num("T", "cnt_nan", "c1")).toBe(1);
+      expect(compiled.num("T", "cnt_inf", "c1")).toBe(1);
+      expect(compiled.num("T", "sum_42", "c1")).toBe(90);
+      expect(compiled.num("T", "cnt_gt0", "c1")).toBe(1);
+      expect(Object.is(compiled.value("T", "r6", "c1"), 0)).toBe(true);
+    });
   });
 });

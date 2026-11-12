@@ -1,4 +1,4 @@
-use crate::functions::common::{extract_scalar_number, normalize_zero};
+use crate::functions::common::extract_scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::financial::discounting::{collect_cash_flows, extract_vector_numbers};
 use crate::functions::registry::validate_bound_args;
@@ -6,7 +6,7 @@ use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, normalize_zero};
 
 const MAX_ITERATIONS: usize = 100;
 const CONVERGENCE_TOLERANCE: f64 = 1e-9;
