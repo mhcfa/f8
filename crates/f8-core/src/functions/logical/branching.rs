@@ -224,6 +224,19 @@ static SWITCH_PARAMS: &[ParameterDef] = &[
     ),
 ];
 
+/// Coerces `CellValue::Empty` to `CellValue::Number(0.0)` for `SWITCH` comparison operands
+/// (`expression` and `value_i`), matching Excel value-class coercion while keeping `result_i`
+/// and `default` polymorphic.
+fn coerce_switch_operand(value: CellValue) -> CellValue {
+    match value {
+        CellValue::Empty => CellValue::Number(0.0),
+        other @ (CellValue::Number(_)
+        | CellValue::Text(_)
+        | CellValue::Boolean(_)
+        | CellValue::Error(_)) => other,
+    }
+}
+
 /// `SWITCH(expression, val1, result1, [default_or_val2, result2], ...)`: Evaluates an expression against a list of values.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SwitchFunction;
@@ -256,6 +269,7 @@ impl ExcelFunction for SwitchFunction {
         if let CellValue::Error(err) = target {
             return Ok(CellValue::Error(err));
         }
+        let target = coerce_switch_operand(target);
 
         let rem = &args[1..];
         let pair_count = rem.len() / 2;
@@ -269,6 +283,7 @@ impl ExcelFunction for SwitchFunction {
             if let CellValue::Error(err) = case_val {
                 return Ok(CellValue::Error(err));
             }
+            let case_val = coerce_switch_operand(case_val);
 
             if target.excel_eq(&case_val) {
                 return eval_branch_arg(res_arg, self.name(), ctx);

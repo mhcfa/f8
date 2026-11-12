@@ -1247,3 +1247,217 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
         Some("=INDEX($C$5:$E$5,2)"),
     );
 }
+
+#[test]
+fn test_scenario_12_formula_cell_boundary_blank_coercion_and_boolean_cmp() {
+    use f8_core::model::format::FormatPreset;
+
+    let manifest = manifest_for_table("T");
+
+    let row_a = RowSpec::new("a")
+        .with_format(Some(FormatPreset::Currency))
+        .with_decimals(Some(1))
+        .with_cells(IndexMap::from([(ColId::from("c1"), CellInput::null())]));
+    let row_k = RowSpec::new("k").with_cells(IndexMap::from([(
+        ColId::from("c1"),
+        CellInput::string("match"),
+    )]));
+
+    // Scenario 1: Top-level formula cells referencing `a` materialize as Number(0.0)
+    let row_b = RowSpec::new("b")
+        .with_format(Some(FormatPreset::Currency))
+        .with_decimals(Some(1))
+        .with_expr("T[\"a\", @col]");
+    let row_c = RowSpec::new("c").with_expr("INDEX(T[\"a\"..\"a\", @col], 1)");
+    let row_d = RowSpec::new("d")
+        .with_expr("XLOOKUP(\"match\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col])");
+    let row_e = RowSpec::new("e").with_expr("IF(TRUE, T[\"a\", @col], 1)");
+    let row_f = RowSpec::new("f").with_expr("IFS(TRUE, T[\"a\", @col])");
+    let row_g = RowSpec::new("g").with_expr("CHOOSE(1, T[\"a\", @col])");
+    let row_h = RowSpec::new("h").with_expr("SWITCH(1, 1, T[\"a\", @col])");
+    let row_i = RowSpec::new("i").with_expr("IFERROR(T[\"a\", @col], 1)");
+    let row_j = RowSpec::new("j").with_expr("IFERROR(1 / 0, T[\"a\", @col])");
+    let row_m = RowSpec::new("m").with_expr("IFNA(T[\"a\", @col], 1)");
+    let row_n = RowSpec::new("n").with_expr(
+        "IFNA(XLOOKUP(\"miss\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col]), T[\"a\", @col])",
+    );
+
+    // Scenario 2: Mid-expression blank preservation vs downstream formula cell materialization
+    let a_eq_empty = RowSpec::new("a_eq_empty").with_expr("(T[\"a\", @col] = \"\")");
+    let xlookup_a_eq_empty = RowSpec::new("xlookup_a_eq_empty")
+        .with_expr("(XLOOKUP(\"match\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col]) = \"\")");
+    let if_a_eq_empty =
+        RowSpec::new("if_a_eq_empty").with_expr("(IF(TRUE, T[\"a\", @col], 1) = \"\")");
+    let if_guard_a = RowSpec::new("if_guard_a")
+        .with_format(Some(FormatPreset::Currency))
+        .with_decimals(Some(1))
+        .with_expr("IF(T[\"a\", @col] = \"\", \"\", T[\"a\", @col])");
+    let b_eq_empty = RowSpec::new("b_eq_empty").with_expr("(T[\"b\", @col] = \"\")");
+    let b_eq_zero = RowSpec::new("b_eq_zero").with_expr("(T[\"b\", @col] = 0)");
+    let count_a = RowSpec::new("count_a").with_expr("COUNT(T[\"a\", @col])");
+    let count_b = RowSpec::new("count_b").with_expr("COUNT(T[\"b\", @col])");
+    let counta_a = RowSpec::new("counta_a").with_expr("COUNTA(T[\"a\", @col])");
+    let counta_b = RowSpec::new("counta_b").with_expr("COUNTA(T[\"b\", @col])");
+    let avg_a = RowSpec::new("avg_a").with_expr("AVERAGE(T[\"a\", @col], 10)");
+    let avg_b = RowSpec::new("avg_b").with_expr("AVERAGE(T[\"b\", @col], 10)");
+    let xlookup_zero_a = RowSpec::new("xlookup_zero_a")
+        .with_expr("XLOOKUP(0, T[\"a\"..\"a\", @col], T[\"k\"..\"k\", @col])");
+    let xlookup_zero_b = RowSpec::new("xlookup_zero_b")
+        .with_expr("XLOOKUP(0, T[\"b\"..\"b\", @col], T[\"k\"..\"k\", @col])");
+    let countifs_a_empty =
+        RowSpec::new("countifs_a_empty").with_expr("COUNTIFS(T[\"a\"..\"a\", @col], \"\")");
+    let countifs_b_empty =
+        RowSpec::new("countifs_b_empty").with_expr("COUNTIFS(T[\"b\"..\"b\", @col], \"\")");
+
+    // Scenario 5: Empty vs Boolean relational operators and SWITCH
+    let a_eq_false = RowSpec::new("a_eq_false").with_expr("T[\"a\", @col] = FALSE");
+    let a_neq_false = RowSpec::new("a_neq_false").with_expr("T[\"a\", @col] <> FALSE");
+    let a_lt_false = RowSpec::new("a_lt_false").with_expr("T[\"a\", @col] < FALSE");
+    let a_lte_false = RowSpec::new("a_lte_false").with_expr("T[\"a\", @col] <= FALSE");
+    let a_gt_false = RowSpec::new("a_gt_false").with_expr("T[\"a\", @col] > FALSE");
+    let a_gte_false = RowSpec::new("a_gte_false").with_expr("T[\"a\", @col] >= FALSE");
+    let a_lt_true = RowSpec::new("a_lt_true").with_expr("T[\"a\", @col] < TRUE");
+    let a_eq_true = RowSpec::new("a_eq_true").with_expr("T[\"a\", @col] = TRUE");
+    let switch_a_bool =
+        RowSpec::new("switch_a_bool").with_expr("SWITCH(T[\"a\", @col], FALSE, 10, TRUE, 20, 30)");
+    let switch_a_zero = RowSpec::new("switch_a_zero")
+        .with_expr("SWITCH(T[\"a\", @col], \"\", 10, FALSE, 20, 0, 40, 50)");
+
+    let table = create_table(
+        "T",
+        &["c1"],
+        vec![
+            row_a,
+            row_k,
+            row_b,
+            row_c,
+            row_d,
+            row_e,
+            row_f,
+            row_g,
+            row_h,
+            row_i,
+            row_j,
+            row_m,
+            row_n,
+            a_eq_empty,
+            xlookup_a_eq_empty,
+            if_a_eq_empty,
+            if_guard_a,
+            b_eq_empty,
+            b_eq_zero,
+            count_a,
+            count_b,
+            counta_a,
+            counta_b,
+            avg_a,
+            avg_b,
+            xlookup_zero_a,
+            xlookup_zero_b,
+            countifs_a_empty,
+            countifs_b_empty,
+            a_eq_false,
+            a_neq_false,
+            a_lt_false,
+            a_lte_false,
+            a_gt_false,
+            a_gte_false,
+            a_lt_true,
+            a_eq_true,
+            switch_a_bool,
+            switch_a_zero,
+        ],
+    );
+
+    let compiled =
+        Compiler::compile(&manifest, &[table]).expect("compile blank coercion scenarios");
+    let t = TableId::from("T");
+    let c1 = ColId::from("c1");
+
+    // Invariant: CellValue::Empty occurs on grid cells iff CellPayload is Literal(ValueLiteral::Null)
+    for (cell_id, val) in compiled.evaluated.iter() {
+        let node = compiled.grid.get(cell_id).expect("grid cell exists");
+        let is_null_literal = matches!(node.payload, CellPayload::Literal(ValueLiteral::Null));
+        assert_eq!(
+            val.is_empty(),
+            is_null_literal,
+            "Empty invariant violated at {cell_id}: val={val:?}, payload={:?}",
+            node.payload
+        );
+    }
+
+    // Scenario 1 assertions
+    assert_eq!(
+        compiled.cell_value(&t, &RowId::from("a"), &c1).unwrap(),
+        CellValue::Empty
+    );
+    assert_eq!(
+        compiled.cell_formatted(&t, &RowId::from("a"), &c1).unwrap(),
+        ""
+    );
+
+    for row_id in ["b", "c", "d", "e", "f", "g", "h", "i", "j", "m", "n"] {
+        let val = compiled
+            .cell_value(&t, &RowId::from(row_id), &c1)
+            .expect("cell exists");
+        let CellValue::Number(n) = val else {
+            panic!("expected Number(0.0) on row '{row_id}', got {val:?}");
+        };
+        assert_eq!(
+            n.to_bits(),
+            0.0_f64.to_bits(),
+            "expected positive +0.0 sign bit on row '{row_id}'"
+        );
+    }
+    assert_eq!(
+        compiled.cell_formatted(&t, &RowId::from("b"), &c1).unwrap(),
+        "$0.0"
+    );
+    assert_eq!(
+        compiled.cell_formatted(&t, &RowId::from("c"), &c1).unwrap(),
+        "0"
+    );
+
+    // Scenario 2 assertions
+    let get = |row: &str| {
+        compiled
+            .evaluated
+            .get_value(&t, &RowId::from(row), &c1)
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(get("a_eq_empty"), CellValue::Boolean(true));
+    assert_eq!(get("xlookup_a_eq_empty"), CellValue::Boolean(true));
+    assert_eq!(get("if_a_eq_empty"), CellValue::Boolean(true));
+    assert_eq!(get("if_guard_a"), CellValue::Text(String::new()));
+    assert_eq!(
+        compiled
+            .cell_formatted(&t, &RowId::from("if_guard_a"), &c1)
+            .unwrap(),
+        ""
+    );
+    assert_eq!(get("b_eq_empty"), CellValue::Boolean(false));
+    assert_eq!(get("b_eq_zero"), CellValue::Boolean(true));
+    assert_eq!(get("count_a"), CellValue::Number(0.0));
+    assert_eq!(get("count_b"), CellValue::Number(1.0));
+    assert_eq!(get("counta_a"), CellValue::Number(0.0));
+    assert_eq!(get("counta_b"), CellValue::Number(1.0));
+    assert_eq!(get("avg_a"), CellValue::Number(10.0));
+    assert_eq!(get("avg_b"), CellValue::Number(5.0));
+    assert_eq!(get("xlookup_zero_a"), CellValue::Error(ExcelError::Na));
+    assert_eq!(get("xlookup_zero_b"), CellValue::Text("match".into()));
+    assert_eq!(get("countifs_a_empty"), CellValue::Number(1.0));
+    assert_eq!(get("countifs_b_empty"), CellValue::Number(0.0));
+
+    // Scenario 5 assertions
+    assert_eq!(get("a_eq_false"), CellValue::Boolean(true));
+    assert_eq!(get("a_neq_false"), CellValue::Boolean(false));
+    assert_eq!(get("a_lt_false"), CellValue::Boolean(false));
+    assert_eq!(get("a_lte_false"), CellValue::Boolean(true));
+    assert_eq!(get("a_gt_false"), CellValue::Boolean(false));
+    assert_eq!(get("a_gte_false"), CellValue::Boolean(true));
+    assert_eq!(get("a_lt_true"), CellValue::Boolean(true));
+    assert_eq!(get("a_eq_true"), CellValue::Boolean(false));
+    assert_eq!(get("switch_a_bool"), CellValue::Number(30.0));
+    assert_eq!(get("switch_a_zero"), CellValue::Number(40.0));
+}

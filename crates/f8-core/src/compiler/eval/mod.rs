@@ -44,13 +44,14 @@ impl Evaluator {
         Ok(())
     }
 
-    /// Evaluates all cells in the cell grid according to the dependency graph's topological calculation order.
+    /// Evaluates all cells in the grid in topological dependency order.
     ///
-    /// Literals are converted directly to [`CellValue`], while formulas are evaluated via [`eval_expr`]
-    /// using `CellEvalContext` against accumulated predecessor values.
+    /// - `CellPayload::Literal`: converts directly via `CellValue::from` (`ValueLiteral::Null` remains `CellValue::Empty`).
+    /// - `CellPayload::Formula`: evaluates via `eval_expr_validated` (preserving mid-expression `CellValue::Empty`)
+    ///   and coerces a top-level `CellValue::Empty` result to `CellValue::Number(0.0)` at the cell boundary.
     ///
     /// # Errors
-    /// Returns [`EvalError`] if static function call validation fails, a referenced dependency is missing
+    /// Returns `EvalError` if static function call validation fails, a referenced dependency is missing
     /// from the grid, reference resolution fails, or a formula expression encounters a compiler-level evaluation error.
     pub fn evaluate(
         grid: &CellGrid,
@@ -70,7 +71,14 @@ impl Evaluator {
             let value = match &cell_node.payload {
                 CellPayload::Literal(lit) => CellValue::from(lit),
                 CellPayload::Formula(expr) => {
-                    expr::eval_expr_validated(expr, cell_id, &values, symbol_table, registry)?
+                    match expr::eval_expr_validated(expr, cell_id, &values, symbol_table, registry)?
+                    {
+                        CellValue::Empty => CellValue::Number(0.0),
+                        other @ (CellValue::Number(_)
+                        | CellValue::Text(_)
+                        | CellValue::Boolean(_)
+                        | CellValue::Error(_)) => other,
+                    }
                 }
             };
 

@@ -14,9 +14,14 @@ use crate::value::{CellValue, ExcelError};
 
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
 ///
-/// Statically validates all function calls across the AST before evaluating. Returns `Ok(CellValue)`
-/// on successful evaluation or Excel domain error (`#DIV/0!`, `#VALUE!`, `#NUM!`),
-/// or `Err(EvalError)` on internal compiler, function signature, resolution, or typing failures.
+/// - Statically validates all function calls across the AST before evaluating.
+/// - Preserves uncoerced `CellValue::Empty` when references or branch/error/lookup functions
+///   (`INDEX`, `XLOOKUP`, `IF`, `IFS`, `IFERROR`, `IFNA`, `CHOOSE`, `SWITCH`) resolve to a blank cell;
+///   cell-boundary `Empty` to `Number(0.0)` materialization applies only in `Evaluator::evaluate`.
+///
+/// # Errors
+/// Returns `EvalError` on internal compiler, function signature, resolution, or typing failures.
+/// Excel domain errors (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`, `#REF!`) return `Ok(CellValue::Error(_))`.
 pub fn eval_expr(
     expr: &Expr,
     origin: &CellId,
@@ -30,7 +35,7 @@ pub fn eval_expr(
     eval_expr_validated(expr, origin, memoized_values, symbol_table, registry)
 }
 
-/// Evaluates an already-validated formula AST expression within the context of an origin cell coordinate.
+/// Evaluates an already-validated formula AST expression at `origin`, preserving mid-expression `CellValue::Empty`.
 pub(crate) fn eval_expr_validated(
     expr: &Expr,
     origin: &CellId,
