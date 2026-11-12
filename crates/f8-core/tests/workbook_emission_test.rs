@@ -1173,3 +1173,99 @@ fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
         "sheet1.xml must leave row heights automatic: {sheet_xml}"
     );
 }
+
+// ----------------------------------------------------------------------------
+// Scenario 17: Formula Cell Blank Coercion in Cached and Values-Only Emission
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_17_formula_blank_coercion_cached_and_values_only_emission() {
+    use f8_core::model::id::{ColId, RowId};
+
+    let mut table = TableSpec::new("BlankCoercion", "Blank Coercion");
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    table
+        .rows
+        .push(RowSpec::new("a").with_cell("val", CellInput::null()));
+    table
+        .rows
+        .push(RowSpec::new("b").with_cell("val", CellInput::formula("BlankCoercion[\"a\", @col]")));
+
+    let manifest = ProjectManifest {
+        model_name: "BlankCoercionEmission".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("BlankCoercion")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    let t = TableId::from("BlankCoercion");
+    let col = ColId::from("val");
+
+    let a_addr = compiled
+        .inspect_cell(&t, &RowId::from("a"), &col)
+        .unwrap()
+        .physical_address;
+    let b_addr = compiled
+        .inspect_cell(&t, &RowId::from("b"), &col)
+        .unwrap()
+        .physical_address;
+    let a_ref = a_addr.strip_prefix("Sheet1!").unwrap_or(&a_addr);
+    let b_ref = b_addr.strip_prefix("Sheet1!").unwrap_or(&b_addr);
+
+    let extract_cell_element = |xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = xml.find(&needle)?;
+        let tag_start = xml[..start].rfind("<c ")?;
+        let open_end = xml[tag_start..].find('>')? + tag_start;
+        if xml[..open_end].ends_with('/') {
+            Some(xml[tag_start..=open_end].to_string())
+        } else {
+            let close_end = xml[open_end..].find("</c>")? + open_end + "</c>".len();
+            Some(xml[tag_start..close_end].to_string())
+        }
+    };
+
+    // 1. Cached formula emission: `b` writes `<v>0</v>` while `a` has no `<v>` tag
+    let cached_buf = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let cached_xml = read_zip_entry(&cached_buf, "xl/worksheets/sheet1.xml");
+    let cached_a = extract_cell_element(&cached_xml, a_ref).expect("a blank cell written");
+    let cached_b = extract_cell_element(&cached_xml, b_ref).expect("b formula cell written");
+
+    assert!(
+        !cached_a.contains("<v>") && !cached_a.contains("<f>"),
+        "null literal cell A must remain blank without <v> or <f>: {cached_a}"
+    );
+    assert!(
+        cached_b.contains("<f>") && cached_b.contains("<v>0</v>"),
+        "formula cell B referencing null must emit <f> and cached <v>0</v>: {cached_b}"
+    );
+
+    // 2. values_only emission: `b` writes numeric `0` while `a` remains blank
+    let values_only_buf = compiled
+        .emit_workbook(&EmissionOptions {
+            values_only: true,
+            omit_formula_cache: false,
+            title: None,
+            author: None,
+        })
+        .unwrap();
+    let values_only_xml = read_zip_entry(&values_only_buf, "xl/worksheets/sheet1.xml");
+    let frozen_a = extract_cell_element(&values_only_xml, a_ref).expect("a blank cell written");
+    let frozen_b = extract_cell_element(&values_only_xml, b_ref).expect("b value cell written");
+
+    assert!(
+        !frozen_a.contains("<v>") && !frozen_a.contains("<f>"),
+        "null literal cell A must remain blank in values_only mode: {frozen_a}"
+    );
+    assert!(
+        !frozen_b.contains("<f>") && !frozen_b.contains("t=\"s\"") && frozen_b.contains("<v>0</v>"),
+        "formula cell B referencing null must emit numeric <v>0</v> in values_only mode: {frozen_b}"
+    );
+}

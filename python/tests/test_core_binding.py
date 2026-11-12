@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import f8
@@ -1241,3 +1242,113 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
 
         with pytest.raises(FormulaParseError):
             syntax_model.compile()
+
+
+def test_scenario_18_formula_cell_blank_coercion_and_empty_boolean_comparisons() -> None:
+    model = f8.Model(name="BlankCoercionModel", theme="corporate_navy")
+    sheet = model.add_sheet("Main")
+    tbl = sheet.add_table("T", title="Blank Coercion", currency="USD")
+    tbl.add_column("c1", role="measure", header="C1")
+
+    tbl.add_row("a", cells={"c1": None}, format="currency", decimals=1)
+    tbl.add_row("k", cells={"c1": "match"})
+    tbl.add_row("b", expr='@table["a", @col]', format="currency", decimals=1)
+    tbl.add_row("c", expr='INDEX(@table["a".."a", @col], 1)')
+    tbl.add_row("d", expr='XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])')
+    tbl.add_row("e", expr='IF(TRUE, @table["a", @col], 1)')
+    tbl.add_row("f", expr='IFS(TRUE, @table["a", @col])')
+    tbl.add_row("g", expr='CHOOSE(1, @table["a", @col])')
+    tbl.add_row("h", expr='SWITCH(1, 1, @table["a", @col])')
+
+    tbl.add_row("a_eq_empty", expr='(@table["a", @col] = "")')
+    tbl.add_row(
+        "xlookup_a_eq_empty",
+        expr='(XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col]) = "")',
+    )
+    tbl.add_row(
+        "if_guard_a",
+        expr='IF(@table["a", @col] = "", "", @table["a", @col])',
+        format="currency",
+        decimals=1,
+    )
+    tbl.add_row("b_eq_empty", expr='(@table["b", @col] = "")')
+    tbl.add_row("b_eq_zero", expr='(@table["b", @col] = 0)')
+    tbl.add_row("count_a", expr='COUNT(@table["a", @col])')
+    tbl.add_row("count_b", expr='COUNT(@table["b", @col])')
+    tbl.add_row("counta_a", expr='COUNTA(@table["a", @col])')
+    tbl.add_row("counta_b", expr='COUNTA(@table["b", @col])')
+    tbl.add_row("avg_a", expr='AVERAGE(@table["a", @col], 10)')
+    tbl.add_row("avg_b", expr='AVERAGE(@table["b", @col], 10)')
+    tbl.add_row(
+        "xlookup_zero_a",
+        expr='XLOOKUP(0, @table["a".."a", @col], @table["k".."k", @col])',
+    )
+    tbl.add_row(
+        "xlookup_zero_b",
+        expr='XLOOKUP(0, @table["b".."b", @col], @table["k".."k", @col])',
+    )
+    tbl.add_row("countifs_a_empty", expr='COUNTIFS(@table["a".."a", @col], "")')
+    tbl.add_row("countifs_b_empty", expr='COUNTIFS(@table["b".."b", @col], "")')
+
+    tbl.add_row("a_eq_false", expr='@table["a", @col] = FALSE')
+    tbl.add_row("a_neq_false", expr='@table["a", @col] <> FALSE')
+    tbl.add_row("a_lt_false", expr='@table["a", @col] < FALSE')
+    tbl.add_row("a_lte_false", expr='@table["a", @col] <= FALSE')
+    tbl.add_row("a_gt_false", expr='@table["a", @col] > FALSE')
+    tbl.add_row("a_gte_false", expr='@table["a", @col] >= FALSE')
+    tbl.add_row("a_lt_true", expr='@table["a", @col] < TRUE')
+    tbl.add_row("a_eq_true", expr='@table["a", @col] = TRUE')
+    tbl.add_row("empty_str_lt_false", expr='"" < FALSE')
+    tbl.add_row("switch_a_bool", expr='SWITCH(@table["a", @col], FALSE, 10, TRUE, 20, 30)')
+    tbl.add_row("switch_a_zero", expr='SWITCH(@table["a", @col], "", 10, FALSE, 20, 0, 40, 50)')
+
+    compiled = model.compile()
+
+    # Literal null cell remains Empty
+    assert compiled.value("T", "a", "c1") is None
+    with pytest.raises(TypeError):
+        compiled.num("T", "a", "c1")
+    assert compiled.formatted("T", "a", "c1") == ""
+    assert compiled.inspect_cell("T", "a", "c1")["evaluated_value"] == "Empty"
+
+    # Formula cells referencing null materialize to 0.0 at cell boundary
+    b_val = compiled.value("T", "b", "c1")
+    assert isinstance(b_val, float) and b_val == 0.0 and math.copysign(1.0, b_val) == 1.0
+    assert compiled.num("T", "b", "c1") == 0.0
+    assert compiled.formatted("T", "b", "c1") == "$0.0"
+    assert compiled.inspect_cell("T", "b", "c1")["evaluated_value"] == {"Number": 0.0}
+
+    for row_id in ("c", "d", "e", "f", "g", "h"):
+        assert compiled.num("T", row_id, "c1") == 0.0
+        assert compiled.formatted("T", row_id, "c1") == "0"
+
+    # Mid-expression blank preservation vs downstream formula cell materialization
+    assert compiled.value("T", "a_eq_empty", "c1") is True
+    assert compiled.value("T", "xlookup_a_eq_empty", "c1") is True
+    assert compiled.value("T", "if_guard_a", "c1") == ""
+    assert compiled.formatted("T", "if_guard_a", "c1") == ""
+    assert compiled.value("T", "b_eq_empty", "c1") is False
+    assert compiled.value("T", "b_eq_zero", "c1") is True
+    assert compiled.num("T", "count_a", "c1") == 0.0
+    assert compiled.num("T", "count_b", "c1") == 1.0
+    assert compiled.num("T", "counta_a", "c1") == 0.0
+    assert compiled.num("T", "counta_b", "c1") == 1.0
+    assert compiled.num("T", "avg_a", "c1") == 10.0
+    assert compiled.num("T", "avg_b", "c1") == 5.0
+    assert compiled.value("T", "xlookup_zero_a", "c1") == "#N/A"
+    assert compiled.value("T", "xlookup_zero_b", "c1") == "match"
+    assert compiled.num("T", "countifs_a_empty", "c1") == 1.0
+    assert compiled.num("T", "countifs_b_empty", "c1") == 0.0
+
+    # Empty vs Boolean comparisons coerce Empty to FALSE; SWITCH coerces Empty operands to 0.0
+    assert compiled.value("T", "a_eq_false", "c1") is True
+    assert compiled.value("T", "a_neq_false", "c1") is False
+    assert compiled.value("T", "a_lt_false", "c1") is False
+    assert compiled.value("T", "a_lte_false", "c1") is True
+    assert compiled.value("T", "a_gt_false", "c1") is False
+    assert compiled.value("T", "a_gte_false", "c1") is True
+    assert compiled.value("T", "a_lt_true", "c1") is True
+    assert compiled.value("T", "a_eq_true", "c1") is False
+    assert compiled.value("T", "empty_str_lt_false", "c1") is True
+    assert compiled.num("T", "switch_a_bool", "c1") == 30.0
+    assert compiled.num("T", "switch_a_zero", "c1") == 40.0

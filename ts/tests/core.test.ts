@@ -1143,5 +1143,115 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(() => syntaxModel.compile()).toThrow(FormulaParseError);
       }
     });
+
+    it("(j) materializes formula cell blank results to 0 and coerces Empty to FALSE against Boolean", () => {
+      const model = new Model({ name: "BlankCoercionModel", theme: "corporate_navy" });
+      const tbl = model.addSheet("Main").addTable("T", "Blank Coercion", { currency: "USD" });
+      tbl.addColumn("c1", { role: "measure", header: "C1" });
+
+      tbl.addRow("a", { cells: { c1: null }, format: "currency", decimals: 1 });
+      tbl.addRow("k", { cells: { c1: "match" } });
+      tbl.addRow("b", { expr: '@table["a", @col]', format: "currency", decimals: 1 });
+      tbl.addRow("c", { expr: 'INDEX(@table["a".."a", @col], 1)' });
+      tbl.addRow("d", {
+        expr: 'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
+      });
+      tbl.addRow("e", { expr: 'IF(TRUE, @table["a", @col], 1)' });
+      tbl.addRow("f", { expr: 'IFS(TRUE, @table["a", @col])' });
+      tbl.addRow("g", { expr: 'CHOOSE(1, @table["a", @col])' });
+      tbl.addRow("h", { expr: 'SWITCH(1, 1, @table["a", @col])' });
+
+      tbl.addRow("a_eq_empty", { expr: '(@table["a", @col] = "")' });
+      tbl.addRow("xlookup_a_eq_empty", {
+        expr: '(XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col]) = "")',
+      });
+      tbl.addRow("if_guard_a", {
+        expr: 'IF(@table["a", @col] = "", "", @table["a", @col])',
+        format: "currency",
+        decimals: 1,
+      });
+      tbl.addRow("b_eq_empty", { expr: '(@table["b", @col] = "")' });
+      tbl.addRow("b_eq_zero", { expr: '(@table["b", @col] = 0)' });
+      tbl.addRow("count_a", { expr: 'COUNT(@table["a", @col])' });
+      tbl.addRow("count_b", { expr: 'COUNT(@table["b", @col])' });
+      tbl.addRow("counta_a", { expr: 'COUNTA(@table["a", @col])' });
+      tbl.addRow("counta_b", { expr: 'COUNTA(@table["b", @col])' });
+      tbl.addRow("avg_a", { expr: 'AVERAGE(@table["a", @col], 10)' });
+      tbl.addRow("avg_b", { expr: 'AVERAGE(@table["b", @col], 10)' });
+      tbl.addRow("xlookup_zero_a", {
+        expr: 'XLOOKUP(0, @table["a".."a", @col], @table["k".."k", @col])',
+      });
+      tbl.addRow("xlookup_zero_b", {
+        expr: 'XLOOKUP(0, @table["b".."b", @col], @table["k".."k", @col])',
+      });
+      tbl.addRow("countifs_a_empty", { expr: 'COUNTIFS(@table["a".."a", @col], "")' });
+      tbl.addRow("countifs_b_empty", { expr: 'COUNTIFS(@table["b".."b", @col], "")' });
+
+      tbl.addRow("a_eq_false", { expr: '@table["a", @col] = FALSE' });
+      tbl.addRow("a_neq_false", { expr: '@table["a", @col] <> FALSE' });
+      tbl.addRow("a_lt_false", { expr: '@table["a", @col] < FALSE' });
+      tbl.addRow("a_lte_false", { expr: '@table["a", @col] <= FALSE' });
+      tbl.addRow("a_gt_false", { expr: '@table["a", @col] > FALSE' });
+      tbl.addRow("a_gte_false", { expr: '@table["a", @col] >= FALSE' });
+      tbl.addRow("a_lt_true", { expr: '@table["a", @col] < TRUE' });
+      tbl.addRow("a_eq_true", { expr: '@table["a", @col] = TRUE' });
+      tbl.addRow("empty_str_lt_false", { expr: '"" < FALSE' });
+      tbl.addRow("switch_a_bool", {
+        expr: 'SWITCH(@table["a", @col], FALSE, 10, TRUE, 20, 30)',
+      });
+      tbl.addRow("switch_a_zero", {
+        expr: 'SWITCH(@table["a", @col], "", 10, FALSE, 20, 0, 40, 50)',
+      });
+
+      const compiled = model.compile();
+
+      // Literal null cell remains Empty
+      expect(compiled.value("T", "a", "c1")).toBeNull();
+      expect(() => compiled.num("T", "a", "c1")).toThrow(TypeError);
+      expect(compiled.formatted("T", "a", "c1")).toBe("");
+      expect(compiled.inspectCell("T", "a", "c1").evaluatedValue).toBe("Empty");
+
+      // Formula cells referencing null materialize to +0 at cell boundary
+      expect(Object.is(compiled.value("T", "b", "c1"), 0)).toBe(true);
+      expect(Object.is(compiled.num("T", "b", "c1"), 0)).toBe(true);
+      expect(compiled.formatted("T", "b", "c1")).toBe("$0.0");
+      expect(compiled.inspectCell("T", "b", "c1").evaluatedValue).toEqual({ Number: 0 });
+
+      for (const rowId of ["c", "d", "e", "f", "g", "h"]) {
+        expect(Object.is(compiled.num("T", rowId, "c1"), 0)).toBe(true);
+        expect(compiled.formatted("T", rowId, "c1")).toBe("0");
+      }
+
+      // Mid-expression blank preservation vs downstream formula cell materialization
+      expect(compiled.value("T", "a_eq_empty", "c1")).toBe(true);
+      expect(compiled.value("T", "xlookup_a_eq_empty", "c1")).toBe(true);
+      expect(compiled.value("T", "if_guard_a", "c1")).toBe("");
+      expect(compiled.formatted("T", "if_guard_a", "c1")).toBe("");
+      expect(compiled.value("T", "b_eq_empty", "c1")).toBe(false);
+      expect(compiled.value("T", "b_eq_zero", "c1")).toBe(true);
+      expect(compiled.num("T", "count_a", "c1")).toBe(0);
+      expect(compiled.num("T", "count_b", "c1")).toBe(1);
+      expect(compiled.num("T", "counta_a", "c1")).toBe(0);
+      expect(compiled.num("T", "counta_b", "c1")).toBe(1);
+      expect(compiled.num("T", "avg_a", "c1")).toBe(10);
+      expect(compiled.num("T", "avg_b", "c1")).toBe(5);
+      expect(compiled.value("T", "xlookup_zero_a", "c1")).toBe("#N/A");
+      expect(compiled.value("T", "xlookup_zero_b", "c1")).toBe("match");
+      expect(compiled.num("T", "countifs_a_empty", "c1")).toBe(1);
+      expect(compiled.num("T", "countifs_b_empty", "c1")).toBe(0);
+
+      // Empty vs Boolean comparisons coerce Empty to FALSE; SWITCH coerces Empty operands to 0
+      expect(compiled.value("T", "a_eq_false", "c1")).toBe(true);
+      expect(compiled.value("T", "a_neq_false", "c1")).toBe(false);
+      expect(compiled.value("T", "a_lt_false", "c1")).toBe(false);
+      expect(compiled.value("T", "a_lte_false", "c1")).toBe(true);
+      expect(compiled.value("T", "a_gt_false", "c1")).toBe(false);
+      expect(compiled.value("T", "a_gte_false", "c1")).toBe(true);
+      expect(compiled.value("T", "a_lt_true", "c1")).toBe(true);
+      expect(compiled.value("T", "a_eq_true", "c1")).toBe(false);
+      expect(compiled.value("T", "empty_str_lt_false", "c1")).toBe(true);
+      expect(compiled.num("T", "switch_a_bool", "c1")).toBe(30);
+      expect(compiled.num("T", "switch_a_zero", "c1")).toBe(40);
+    });
   });
 });

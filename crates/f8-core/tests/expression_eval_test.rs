@@ -193,26 +193,58 @@ fn test_scenario_3_comparison_operators_and_excel_type_ranking() {
         CellValue::Boolean(true)
     );
 
-    // Empty = FALSE -> FALSE (Empty ranks lower than Boolean)
-    let expr6 = Expr::parse("Assumptions[\"empty_row\", \"val\"] = FALSE").expect("valid expr");
-    assert_eq!(
-        eval_expr(&expr6, &origin, &memo, &symbols, &registry).expect("eval ok"),
-        CellValue::Boolean(false)
-    );
+    // Empty vs Boolean coerces Empty to FALSE
+    for (formula, expected) in [
+        ("Assumptions[\"empty_row\", \"val\"] = FALSE", true),
+        ("Assumptions[\"empty_row\", \"val\"] <> FALSE", false),
+        ("Assumptions[\"empty_row\", \"val\"] < FALSE", false),
+        ("Assumptions[\"empty_row\", \"val\"] <= FALSE", true),
+        ("Assumptions[\"empty_row\", \"val\"] > FALSE", false),
+        ("Assumptions[\"empty_row\", \"val\"] >= FALSE", true),
+        ("Assumptions[\"empty_row\", \"val\"] < TRUE", true),
+        ("Assumptions[\"empty_row\", \"val\"] = TRUE", false),
+        ("FALSE = Assumptions[\"empty_row\", \"val\"]", true),
+        ("TRUE > Assumptions[\"empty_row\", \"val\"]", true),
+        ("\"\" < FALSE", true),
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        assert_eq!(
+            eval_expr(&expr, &origin, &memo, &symbols, &registry).expect("eval ok"),
+            CellValue::Boolean(expected),
+            "mismatch on formula: {formula}"
+        );
+    }
 
-    // Empty < FALSE -> TRUE
-    let expr7 = Expr::parse("Assumptions[\"empty_row\", \"val\"] < FALSE").expect("valid expr");
-    assert_eq!(
-        eval_expr(&expr7, &origin, &memo, &symbols, &registry).expect("eval ok"),
-        CellValue::Boolean(true)
-    );
-
-    // Empty <> FALSE -> TRUE
-    let expr8 = Expr::parse("Assumptions[\"empty_row\", \"val\"] <> FALSE").expect("valid expr");
-    assert_eq!(
-        eval_expr(&expr8, &origin, &memo, &symbols, &registry).expect("eval ok"),
-        CellValue::Boolean(true)
-    );
+    // SWITCH coerces Empty to Number(0.0) on expression and value_i (skips FALSE and "", matches 0 and Empty)
+    for (formula, expected) in [
+        (
+            "SWITCH(Assumptions[\"empty_row\", \"val\"], FALSE, 10, TRUE, 20, 30)",
+            30.0,
+        ),
+        (
+            "SWITCH(Assumptions[\"empty_row\", \"val\"], \"\", 10, 30)",
+            30.0,
+        ),
+        (
+            "SWITCH(Assumptions[\"empty_row\", \"val\"], 0, 10, 30)",
+            10.0,
+        ),
+        (
+            "SWITCH(0, Assumptions[\"empty_row\", \"val\"], 10, 30)",
+            10.0,
+        ),
+        (
+            "SWITCH(Assumptions[\"empty_row\", \"val\"], Assumptions[\"empty_row\", \"val\"], 10, 30)",
+            10.0,
+        ),
+    ] {
+        let switch_expr = Expr::parse(formula).expect("valid SWITCH");
+        assert_eq!(
+            eval_expr(&switch_expr, &origin, &memo, &symbols, &registry).expect("eval ok"),
+            CellValue::Number(expected),
+            "mismatch on SWITCH formula: {formula}"
+        );
+    }
 }
 
 #[test]
@@ -490,5 +522,84 @@ fn test_unary_operator_arithmetic_and_parity() {
     assert_eq!(
         eval_expr(&expr4, &origin, &memo, &symbols, &registry).expect("eval ok"),
         CellValue::Error(ExcelError::Value)
+    );
+}
+
+#[test]
+fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
+    let (symbols, registry) = build_test_environment();
+    let origin = CellId::new("IncomeStatement", "rev", "2024E");
+    let mut memo = IndexMap::new();
+
+    memo.insert(
+        CellId::new("Assumptions", "tax", "rate"),
+        CellValue::Text("k_tax".into()),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "flag", "rate"),
+        CellValue::Text("k_flag".into()),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "empty_row", "rate"),
+        CellValue::Text("k_empty".into()),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "tax", "val"),
+        CellValue::Number(0.25),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "flag", "val"),
+        CellValue::Boolean(true),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "empty_row", "val"),
+        CellValue::Empty,
+    );
+
+    // Standalone eval_expr returns uncoerced CellValue::Empty across direct and function-returned blank references
+    for formula in [
+        "Assumptions[\"empty_row\", \"val\"]",
+        "IF(TRUE, Assumptions[\"empty_row\", \"val\"], 1)",
+        "IFS(TRUE, Assumptions[\"empty_row\", \"val\"])",
+        "CHOOSE(1, Assumptions[\"empty_row\", \"val\"])",
+        "SWITCH(1, 1, Assumptions[\"empty_row\", \"val\"])",
+        "IFERROR(Assumptions[\"empty_row\", \"val\"], 1)",
+        "IFERROR(1 / 0, Assumptions[\"empty_row\", \"val\"])",
+        "IFNA(Assumptions[\"empty_row\", \"val\"], 1)",
+        "INDEX(Assumptions[\"tax\"..\"empty_row\", \"val\"], 3)",
+        "XLOOKUP(\"k_empty\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"])",
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        assert_eq!(
+            eval_expr(&expr, &origin, &memo, &symbols, &registry).expect("eval ok"),
+            CellValue::Empty,
+            "expected uncoerced CellValue::Empty from eval_expr on '{formula}'"
+        );
+    }
+
+    // Mid-expression blank preservation in `= ""` checks and IF guard pattern
+    let xlookup_eq_empty = Expr::parse(
+        "(XLOOKUP(\"k_empty\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"]) = \"\")",
+    )
+    .expect("valid expr");
+    assert_eq!(
+        eval_expr(&xlookup_eq_empty, &origin, &memo, &symbols, &registry).expect("eval ok"),
+        CellValue::Boolean(true)
+    );
+
+    let if_eq_empty = Expr::parse("(IF(TRUE, Assumptions[\"empty_row\", \"val\"], 1) = \"\")")
+        .expect("valid expr");
+    assert_eq!(
+        eval_expr(&if_eq_empty, &origin, &memo, &symbols, &registry).expect("eval ok"),
+        CellValue::Boolean(true)
+    );
+
+    let if_guard = Expr::parse(
+        "IF(Assumptions[\"empty_row\", \"val\"] = \"\", \"\", Assumptions[\"empty_row\", \"val\"])",
+    )
+    .expect("valid expr");
+    assert_eq!(
+        eval_expr(&if_guard, &origin, &memo, &symbols, &registry).expect("eval ok"),
+        CellValue::Text(String::new())
     );
 }
