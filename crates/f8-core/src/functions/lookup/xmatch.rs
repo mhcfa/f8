@@ -2,6 +2,7 @@
 
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{MatchMode, SearchMode, extract_1d_slice, find_match_index};
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -20,20 +21,18 @@ static XMATCH_PARAMS: &[ParameterDef] = &[
         "The 1D range or array to search.",
         ParamKind::RangeOrArray,
     ),
-    ParameterDef {
-        name: "match_mode",
-        description: "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger), 2 (wildcard).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
-    ParameterDef {
-        name: "search_mode",
-        description: "The search type: 1 (first-to-last), -1 (last-to-first), 2 (binary ascending), -2 (binary descending).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(1.0)),
-    },
+    ParameterDef::with_default(
+        "match_mode",
+        "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger), 2 (wildcard).",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
+    ParameterDef::with_default(
+        "search_mode",
+        "The search type: 1 (first-to-last), -1 (last-to-first), 2 (binary ascending), -2 (binary descending).",
+        ParamKind::Scalar,
+        CellValue::Number(1.0),
+    ),
 ];
 
 /// `XMATCH(lookup_value, lookup_array, [match_mode], [search_mode])`:
@@ -63,20 +62,7 @@ impl ExcelFunction for XmatchFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 4 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 4,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let lookup_val = args[0].eval_scalar(self.name(), ctx)?;
         if let CellValue::Error(err) = lookup_val {
@@ -88,18 +74,23 @@ impl ExcelFunction for XmatchFunction {
             Err(err) => return Ok(CellValue::Error(err)),
         };
 
-        let match_mode = if args.len() > 2 && !matches!(args[2], FunctionArg::Omitted) {
-            let val = args[2].eval_scalar(self.name(), ctx)?;
-            match MatchMode::parse(&val) {
-                Ok(m) => m,
-                Err(err) => return Ok(CellValue::Error(err)),
+        let match_mode = match args.get(2) {
+            None | Some(FunctionArg::Omitted) => MatchMode::Exact,
+            Some(
+                match_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => {
+                let val = match_arg.eval_scalar(self.name(), ctx)?;
+                match MatchMode::parse(&val) {
+                    Ok(m) => m,
+                    Err(err) => return Ok(CellValue::Error(err)),
+                }
             }
-        } else {
-            MatchMode::Exact
         };
 
-        let search_mode = if args.len() > 3 && !matches!(args[3], FunctionArg::Omitted) {
-            let val = args[3].eval_scalar(self.name(), ctx)?;
+        let search_mode = if let Some(search_arg) = args.get(3) {
+            let val = search_arg.eval_scalar(self.name(), ctx)?;
             match SearchMode::parse(&val) {
                 Ok(s) => s,
                 Err(err) => return Ok(CellValue::Error(err)),

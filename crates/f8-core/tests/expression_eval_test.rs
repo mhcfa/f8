@@ -368,6 +368,56 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
             "IF(TRUE, 10, -(1 + UNKNOWN_FN()))",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
+        // Scenario 3: Trailing optional `_` rejected in active and dormant branches
+        (
+            "IF(FALSE, 10, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, IF(FALSE, 1, _))",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "PMT(0.05, 10, -1000, _, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "PMT",
+                param: "fv",
+                position: 4,
+            },
+        ),
+        (
+            "YEARFRAC(45292, 45474, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "YEARFRAC",
+                param: "basis",
+                position: 3,
+            },
+        ),
+        // Scenario 4: Required-parameter omission takes diagnostic precedence
+        (
+            "IF(_, 10, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IF",
+                param: "logical_test",
+                position: 1,
+            },
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IFS",
+                param: "value_if_true1",
+                position: 4,
+            },
+        ),
     ];
 
     for (formula, expected_fn_err) in cases {
@@ -379,6 +429,19 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
         assert_eq!(*cell, origin);
         assert_eq!(*source, expected_fn_err, "mismatch on formula: {formula}");
     }
+
+    // Valid absent trailing optional and intermediate optional skip succeed in eval_expr
+    let if_2arg = Expr::parse("IF(FALSE, 10)").expect("valid IF(FALSE, 10)");
+    assert_eq!(
+        eval_expr(&if_2arg, &origin, &memo, &symbols, &registry).expect("eval IF(FALSE, 10)"),
+        CellValue::Boolean(false)
+    );
+    let pmt_skip = Expr::parse("PMT(0.05, 10, -1000, _, 1)").expect("valid PMT skip");
+    let pmt_explicit = Expr::parse("PMT(0.05, 10, -1000, 0, 1)").expect("valid PMT explicit");
+    assert_eq!(
+        eval_expr(&pmt_skip, &origin, &memo, &symbols, &registry).expect("eval PMT skip"),
+        eval_expr(&pmt_explicit, &origin, &memo, &symbols, &registry).expect("eval PMT explicit")
+    );
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! `INDEX` function implementation.
 
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -53,20 +54,7 @@ impl ExcelFunction for IndexFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 3 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         // Extract array dimensions and flattened elements
         let (rows, cols, values) = match &args[0] {
@@ -101,9 +89,8 @@ impl ExcelFunction for IndexFunction {
         };
 
         // Resolve 1D vs 2D row and column indices
-        let (target_row, target_col) = if args.len() > 2 && !matches!(args[2], FunctionArg::Omitted)
-        {
-            let col_arg = args[2].eval_scalar(self.name(), ctx)?;
+        let (target_row, target_col) = if let Some(col_slot) = args.get(2) {
+            let col_arg = col_slot.eval_scalar(self.name(), ctx)?;
             let col_num = match col_arg.coerce_to_number() {
                 Ok(n) => {
                     if !n.is_finite() {

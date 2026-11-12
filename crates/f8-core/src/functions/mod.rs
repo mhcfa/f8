@@ -16,6 +16,6 @@ pub mod traits;
 pub use error::FunctionError;
 pub use registry::FunctionRegistry;
 pub use traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
-    VariadicRule,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamRequirement,
+    ParameterDef, VariadicRule,
 };

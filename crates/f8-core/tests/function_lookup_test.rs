@@ -1232,3 +1232,147 @@ fn test_xlookup_dormant_if_not_found_static_validation() {
         }
     );
 }
+
+#[test]
+fn test_lookup_positional_omission_contract() {
+    let mut symbols = SymbolTable::new();
+    let sheet = SheetId::from("Sheet1");
+    let registry = FunctionRegistry::standard();
+
+    let table = TableSpec {
+        id: TableId::from("Lookup"),
+        title: "Lookup".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("k"),
+            ColumnSpec::new("v"),
+            ColumnSpec::new("c3"),
+        ],
+        rows: vec![RowSpec::new("r1"), RowSpec::new("r2"), RowSpec::new("r3")],
+    };
+    symbols.register_table(sheet, &table).unwrap();
+
+    let origin = CellId::new("Lookup", "r1", "v");
+    let mut values = IndexMap::new();
+    // Duplicate "A" keys at r1 (10) and r3 (30) to distinguish forward vs reverse search (-1)
+    values.insert(
+        CellId::new("Lookup", "r1", "k"),
+        CellValue::Text("A".into()),
+    );
+    values.insert(
+        CellId::new("Lookup", "r2", "k"),
+        CellValue::Text("B".into()),
+    );
+    values.insert(
+        CellId::new("Lookup", "r3", "k"),
+        CellValue::Text("A".into()),
+    );
+    values.insert(CellId::new("Lookup", "r1", "v"), CellValue::Number(10.0));
+    values.insert(CellId::new("Lookup", "r2", "v"), CellValue::Number(20.0));
+    values.insert(CellId::new("Lookup", "r3", "v"), CellValue::Number(30.0));
+    // Row vector across columns k, v, c3 on r2: [100, 200, 300]
+    values.insert(CellId::new("Lookup", "r2", "k"), CellValue::Number(100.0));
+    values.insert(CellId::new("Lookup", "r2", "v"), CellValue::Number(200.0));
+    values.insert(CellId::new("Lookup", "r2", "c3"), CellValue::Number(300.0));
+
+    // Scenario 1: XMATCH and XLOOKUP with intermediate `_` skips
+    assert_eq!(
+        eval_str(
+            "XMATCH(\"A\", Lookup[\"r1\"..\"r3\", \"k\"], _, -1)",
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(3.0)
+    );
+    assert_eq!(
+        eval_str(
+            "XLOOKUP(\"A\", Lookup[\"r1\"..\"r3\", \"k\"], Lookup[\"r1\"..\"r3\", \"v\"], _, _, -1)",
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(30.0)
+    );
+    assert_eq!(
+        eval_str(
+            "XLOOKUP(\"MISSING\", Lookup[\"r1\"..\"r3\", \"k\"], Lookup[\"r1\"..\"r3\", \"v\"], _, _, -1)",
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Error(ExcelError::Na)
+    );
+
+    // Scenario 2: 2-argument INDEX on 1x3 row vector selects element 2 without trailing padding
+    assert_eq!(
+        eval_str(
+            "INDEX(Lookup[\"r2\", \"k\"..\"c3\"], 2)",
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(200.0)
+    );
+
+    // Scenario 3 & 4: Trailing `_` and required `_` rejected on lookup functions
+    let error_cases = [
+        (
+            "INDEX(Lookup[\"r1\"..\"r3\", \"v\"], 2, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "INDEX",
+                param: "col_num",
+                position: 3,
+            },
+        ),
+        (
+            "XMATCH(10, Lookup[\"r1\"..\"r3\", \"v\"], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+            },
+        ),
+        (
+            "XLOOKUP(10, Lookup[\"r1\"..\"r3\", \"k\"], Lookup[\"r1\"..\"r3\", \"v\"], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XLOOKUP",
+                param: "if_not_found",
+                position: 4,
+            },
+        ),
+        (
+            "XLOOKUP(10, Lookup[\"r1\"..\"r3\", \"k\"], Lookup[\"r1\"..\"r3\", \"v\"], _, 0, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XLOOKUP",
+                param: "search_mode",
+                position: 6,
+            },
+        ),
+        (
+            "INDEX(Lookup[\"r1\"..\"r3\", \"v\"], _, 1)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "INDEX",
+                param: "row_num",
+                position: 2,
+            },
+        ),
+    ];
+
+    for (formula, expected_err) in error_cases {
+        let expr = Expr::parse(formula).unwrap();
+        let err = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap_err();
+        let EvalError::Function { cell, source } = err else {
+            panic!("expected EvalError::Function for {formula}, got {err:?}");
+        };
+        assert_eq!(*cell, origin);
+        assert_eq!(*source, expected_err, "mismatch on {formula}");
+    }
+}

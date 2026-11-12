@@ -80,7 +80,7 @@ impl FunctionRegistry {
         self.functions.is_empty()
     }
 
-    /// Validates an invocation signature against registered arity bounds, variadic rules, and required parameters.
+    /// Validates an invocation signature against registered arity bounds, variadic rules, and positional omission rules.
     pub fn validate_call(
         &self,
         name: &str,
@@ -117,7 +117,7 @@ impl FunctionRegistry {
         }
     }
 
-    /// Binds parsed formula arguments into runtime `FunctionArg` values, evaluating scalars or delegating lazy branches.
+    /// Binds parsed formula arguments 1-to-1 into runtime `FunctionArg` values, substituting defaults for intermediate omitted optional parameters.
     pub fn bind_arguments<'a>(
         &self,
         func: &dyn ExcelFunction,
@@ -126,8 +126,7 @@ impl FunctionRegistry {
     ) -> Result<Vec<FunctionArg<'a>>, FunctionError> {
         validate_signature(func, expr_args)?;
 
-        let target_len = std::cmp::max(expr_args.len(), func.parameters().len());
-        let mut bound = Vec::with_capacity(target_len);
+        let mut bound = Vec::with_capacity(expr_args.len());
 
         for (i, call_arg) in expr_args.iter().enumerate() {
             let param = resolve_parameter(func, i)?;
@@ -135,7 +134,7 @@ impl FunctionRegistry {
             let arg_expr = match call_arg {
                 CallArg::Expr(expr) => expr,
                 CallArg::Omitted => {
-                    if let Some(default_val) = &param.default_value {
+                    if let Some(default_val) = param.requirement.default_value() {
                         bound.push(FunctionArg::Scalar(default_val.clone()));
                     } else {
                         bound.push(FunctionArg::Omitted);
@@ -169,27 +168,60 @@ impl FunctionRegistry {
             }
         }
 
-        // Fill in missing trailing optional parameters with defaults or Omitted
-        if expr_args.len() < func.parameters().len() {
-            for param in &func.parameters()[expr_args.len()..] {
-                if let Some(default_val) = &param.default_value {
-                    bound.push(FunctionArg::Scalar(default_val.clone()));
-                } else {
-                    bound.push(FunctionArg::Omitted);
-                }
-            }
-        }
-
         Ok(bound)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArgPresence {
+    Present,
+    Omitted,
+}
+
+trait ArgSlot {
+    fn presence(&self) -> ArgPresence;
+}
+
+impl ArgSlot for CallArg {
+    fn presence(&self) -> ArgPresence {
+        match self {
+            Self::Expr(_) => ArgPresence::Present,
+            Self::Omitted => ArgPresence::Omitted,
+        }
+    }
+}
+
+impl ArgSlot for FunctionArg<'_> {
+    fn presence(&self) -> ArgPresence {
+        match self {
+            Self::Scalar(_) | Self::Array { .. } | Self::Lazy(_) => ArgPresence::Present,
+            Self::Omitted => ArgPresence::Omitted,
+        }
     }
 }
 
 /// Validates argument count, variadic pair parity, and omitted parameter eligibility against a resolved function.
 fn validate_signature(func: &dyn ExcelFunction, args: &[CallArg]) -> Result<(), FunctionError> {
-    if args.len() < func.min_args() {
+    validate_arg_slots(func, args)
+}
+
+/// Validates runtime bound argument count, variadic pair parity, and omitted parameter eligibility against a resolved function.
+pub(crate) fn validate_bound_args(
+    func: &dyn ExcelFunction,
+    args: &[FunctionArg<'_>],
+) -> Result<(), FunctionError> {
+    validate_arg_slots(func, args)
+}
+
+fn validate_arg_slots<T: ArgSlot>(
+    func: &dyn ExcelFunction,
+    args: &[T],
+) -> Result<(), FunctionError> {
+    let min = func.min_args();
+    if args.len() < min {
         return Err(FunctionError::TooFewArguments {
             function: func.name(),
-            expected: func.min_args(),
+            expected: min,
             found: args.len(),
         });
     }
@@ -214,13 +246,24 @@ fn validate_signature(func: &dyn ExcelFunction, args: &[CallArg]) -> Result<(), 
         }
     }
 
+    let last_present = args
+        .iter()
+        .rposition(|arg| arg.presence() == ArgPresence::Present);
+
     for (i, arg) in args.iter().enumerate() {
-        match arg {
-            CallArg::Expr(_) => {}
-            CallArg::Omitted => {
+        match arg.presence() {
+            ArgPresence::Present => {}
+            ArgPresence::Omitted => {
                 let param = resolve_parameter(func, i)?;
-                if !param.optional {
+                if !param.requirement.is_optional() {
                     return Err(FunctionError::CannotOmitRequiredArgument {
+                        function: func.name(),
+                        param: param.name,
+                        position: i + 1,
+                    });
+                }
+                if last_present.is_none_or(|last| i >= last) {
+                    return Err(FunctionError::CannotOmitTrailingArgument {
                         function: func.name(),
                         param: param.name,
                         position: i + 1,

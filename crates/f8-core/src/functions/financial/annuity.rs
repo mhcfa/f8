@@ -1,5 +1,6 @@
 use crate::functions::common::{extract_scalar_number, normalize_zero};
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -102,20 +103,18 @@ static PMT_PARAMS: &[ParameterDef] = &[
         "The present value, or the total amount that a series of future payments is worth now.",
         ParamKind::Scalar,
     ),
-    ParameterDef {
-        name: "fv",
-        description: "The future value, or cash balance you want after the last payment is made.",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
-    ParameterDef {
-        name: "type",
-        description: "The number 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
+    ParameterDef::with_default(
+        "fv",
+        "The future value, or cash balance you want after the last payment is made.",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
+    ParameterDef::with_default(
+        "type",
+        "The number 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
 ];
 
 /// `PMT(rate, nper, pv, [fv], [type])`: Calculates the payment for a loan based on constant payments and a constant interest rate.
@@ -144,20 +143,7 @@ impl ExcelFunction for PmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
-        if args.len() > 5 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 5,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let rate = match extract_scalar_number(&args[0]) {
             Ok(r) => r,
@@ -171,16 +157,18 @@ impl ExcelFunction for PmtFunction {
             Ok(p) => p,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let fv = if args.len() >= 4 && !matches!(args[3], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[3]) {
+        let fv = match args.get(3) {
+            None | Some(FunctionArg::Omitted) => 0.0,
+            Some(
+                fv_arg
+                @ (FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Lazy(_)),
+            ) => match extract_scalar_number(fv_arg) {
                 Ok(f) => f,
                 Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
+            },
         };
-        let type_val = if args.len() >= 5 && !matches!(args[4], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[4]) {
+        let type_val = if let Some(type_arg) = args.get(4) {
+            match extract_scalar_number(type_arg) {
                 Ok(t) => t,
                 Err(e) => return Ok(CellValue::Error(e)),
             }
@@ -217,20 +205,18 @@ static AMORTIZATION_PARAMS: &[ParameterDef] = &[
         "The present value, or the total amount that a series of future payments is worth now.",
         ParamKind::Scalar,
     ),
-    ParameterDef {
-        name: "fv",
-        description: "The future value, or cash balance you want after the last payment is made.",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
-    ParameterDef {
-        name: "type",
-        description: "The number 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
+    ParameterDef::with_default(
+        "fv",
+        "The future value, or cash balance you want after the last payment is made.",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
+    ParameterDef::with_default(
+        "type",
+        "The number 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
 ];
 
 /// `IPMT(rate, per, nper, pv, [fv], [type])`: Calculates interest portion of annuity payment for a given period.
@@ -259,20 +245,7 @@ impl ExcelFunction for IpmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 4 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 4,
-                found: args.len(),
-            });
-        }
-        if args.len() > 6 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 6,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let rate = match extract_scalar_number(&args[0]) {
             Ok(r) => r,
@@ -290,16 +263,18 @@ impl ExcelFunction for IpmtFunction {
             Ok(p) => p,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let fv = if args.len() >= 5 && !matches!(args[4], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[4]) {
+        let fv = match args.get(4) {
+            None | Some(FunctionArg::Omitted) => 0.0,
+            Some(
+                fv_arg
+                @ (FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Lazy(_)),
+            ) => match extract_scalar_number(fv_arg) {
                 Ok(f) => f,
                 Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
+            },
         };
-        let type_val = if args.len() >= 6 && !matches!(args[5], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[5]) {
+        let type_val = if let Some(type_arg) = args.get(5) {
+            match extract_scalar_number(type_arg) {
                 Ok(t) => t,
                 Err(e) => return Ok(CellValue::Error(e)),
             }
@@ -340,20 +315,7 @@ impl ExcelFunction for PpmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 4 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 4,
-                found: args.len(),
-            });
-        }
-        if args.len() > 6 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 6,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let rate = match extract_scalar_number(&args[0]) {
             Ok(r) => r,
@@ -371,16 +333,18 @@ impl ExcelFunction for PpmtFunction {
             Ok(p) => p,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let fv = if args.len() >= 5 && !matches!(args[4], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[4]) {
+        let fv = match args.get(4) {
+            None | Some(FunctionArg::Omitted) => 0.0,
+            Some(
+                fv_arg
+                @ (FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Lazy(_)),
+            ) => match extract_scalar_number(fv_arg) {
                 Ok(f) => f,
                 Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
+            },
         };
-        let type_val = if args.len() >= 6 && !matches!(args[5], FunctionArg::Omitted) {
-            match extract_scalar_number(&args[5]) {
+        let type_val = if let Some(type_arg) = args.get(5) {
+            match extract_scalar_number(type_arg) {
                 Ok(t) => t,
                 Err(e) => return Ok(CellValue::Error(e)),
             }

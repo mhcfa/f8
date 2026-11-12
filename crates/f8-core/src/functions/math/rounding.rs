@@ -2,6 +2,7 @@ use crate::functions::common::{
     round_away_from_zero, round_half_away_from_zero, round_towards_zero,
 };
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -51,20 +52,7 @@ macro_rules! impl_rounding_function {
                 args: &[FunctionArg<'_>],
                 ctx: &dyn EvalContext,
             ) -> Result<CellValue, FunctionError> {
-                if args.len() < 2 {
-                    return Err(FunctionError::TooFewArguments {
-                        function: self.name(),
-                        expected: 2,
-                        found: args.len(),
-                    });
-                }
-                if args.len() > 2 {
-                    return Err(FunctionError::TooManyArguments {
-                        function: self.name(),
-                        expected: 2,
-                        found: args.len(),
-                    });
-                }
+                validate_bound_args(self, args)?;
 
                 let val = args[0].eval_scalar(self.name(), ctx)?;
                 let num = match val.coerce_to_number() {

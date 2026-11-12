@@ -35,7 +35,7 @@ All formula cell references require explicit 2D bracket syntax:
 - Coordinate keys: Explicit row and column IDs inside `[...]` must be double-quoted strings (`"revenue"`, `"2024E"`). Unquoted keys (`Table[revenue, @col]`) raise `FormulaParseError`.
 - Active axis tokens: Must be `@col`, `@row`, or `@table` (strictly before `[`). Bare `@` raises `FormulaParseError`.
 - Uppercase identifiers: Function names (`[A-Z][A-Z0-9_]*`, starting with an ASCII uppercase letter) and boolean literals (`TRUE`, `FALSE`) must be uppercase (table identifiers before `[` may be mixed-case). Lowercase functions/booleans, `null`, or standalone identifiers raise `FormulaParseError`.
-- Omitted arguments (`_`): Valid only as a direct argument in a function call (`PMT(rate, nper, pv, _, type)`). Using `_` in arithmetic or coordinate selectors raises `FormulaParseError`.
+- Omitted arguments (`_`): Syntactically confined to direct function call arguments (`PMT(rate, nper, pv, _, type)`); using `_` in arithmetic or coordinate selectors raises `FormulaParseError`. Semantically valid only on intermediate optional parameters followed by at least one explicit argument (omitting a required or trailing parameter with `_` raises `F8Error`).
 - Operators and precedence (highest to lowest):
   1. Exponentiation: `^` (tier 5, right-associative)
   2. Unary prefix: `+`, `-` (tier 4, right-associative)

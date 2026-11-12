@@ -932,8 +932,20 @@ fn test_yearfrac_omitted_basis_and_fractional_boundaries() {
     let start = DateSerial::from_ymd(2024, 1, 1).unwrap();
     let end = DateSerial::from_ymd(2024, 7, 1).unwrap();
 
-    // FunctionArg::Omitted for basis should gracefully default to 0.0 (US 30/360)
+    // 2-argument YEARFRAC defaults basis to 0.0 (US 30/360)
     let res = yearfrac_fn
+        .evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(start)),
+                FunctionArg::Scalar(CellValue::Number(end)),
+            ],
+            &ctx,
+        )
+        .unwrap();
+    assert_eq!(res, CellValue::Number(0.50));
+
+    // Trailing FunctionArg::Omitted for final optional basis is rejected
+    let err = yearfrac_fn
         .evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(start)),
@@ -942,8 +954,15 @@ fn test_yearfrac_omitted_basis_and_fractional_boundaries() {
             ],
             &ctx,
         )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(0.50));
+        .unwrap_err();
+    assert_eq!(
+        err,
+        f8_core::functions::FunctionError::CannotOmitTrailingArgument {
+            function: "YEARFRAC",
+            param: "basis",
+            position: 3,
+        }
+    );
 
     // Fractional timestamps on max date (9999-12-31 at noon) must be valid
     let res = yearfrac_fn
