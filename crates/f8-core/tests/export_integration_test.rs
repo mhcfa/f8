@@ -222,7 +222,10 @@ fn test_models_emit_in_memory() {
         .expect("Parity model must compile and evaluate cleanly");
     let parity_evaluated = &parity_compiled.evaluated;
 
-    // Verify intentional domain error test cases match their recorded f8_val error literals
+    // Directly verify Pass 4 evaluated values and in-sheet parity_status against pinned Excel constants
+    fixtures::parity_suite::assert_evaluated_parity(parity_evaluated);
+
+    // Verify intentional domain error test cases cover all five canonical ExcelError variants
     let parity_errors = parity_evaluated.find_errors();
     assert!(
         !parity_errors.is_empty(),
@@ -234,15 +237,15 @@ fn test_models_emit_in_memory() {
             "formula_val",
             "Only formula_val cells in error test cases may evaluate to an error, found error at {cell_id}"
         );
-        let f8_recorded = parity_evaluated.get_value(
+        let expected_recorded = parity_evaluated.get_value(
             &cell_id.table,
             &cell_id.row,
-            &f8_core::model::id::ColId::from("f8_val"),
+            &f8_core::model::id::ColId::from("expected_val"),
         );
         assert_eq!(
-            f8_recorded,
+            expected_recorded,
             Some(&f8_core::value::CellValue::Text(err.as_str().to_string())),
-            "Error cell {cell_id} must record its canonical error string in f8_val"
+            "Error cell {cell_id} must record its canonical error string in expected_val"
         );
     }
 
@@ -259,25 +262,6 @@ fn test_models_emit_in_memory() {
                 .any(|(_, err)| **err == expected_variant),
             "Parity suite must include at least one graded test case for {expected_variant}"
         );
-    }
-
-    for table in &parity_tables[1..] {
-        for row in &table.rows {
-            if let f8_core::model::table::RowSpec::Data(d) = row {
-                let status = parity_evaluated.get_value(
-                    &table.id,
-                    &d.id,
-                    &f8_core::model::id::ColId::from("parity_status"),
-                );
-                assert_eq!(
-                    status,
-                    Some(&f8_core::value::CellValue::Text("PASS".to_string())),
-                    "Function '{}' in table '{}' failed parity check",
-                    d.id,
-                    table.id
-                );
-            }
-        }
     }
 
     // Verify uncached formula emission (<f> present, <v> omitted for formulas)
@@ -359,6 +343,22 @@ fn test_models_emit_in_memory() {
     assert!(tc_shared_strings.contains("Public Trading Comparables"));
     assert!(tc_shared_strings.contains("Target Valuation Benchmarking"));
     assert!(tc_shared_strings.contains("Valuation Multiples"));
+}
+
+#[test]
+#[should_panic(expected = "Exact numeric mismatch for 'sum' in 'MathParity'")]
+fn test_parity_oracle_detects_evaluation_divergence() {
+    let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
+    // Perturb SeedData["r1", "num_a"] from 10.0 to 11.0 while pinned expected_val constants stay fixed
+    if let f8_core::model::table::RowSpec::Data(r1) = &mut tables[0].rows[0] {
+        r1.cells.insert(
+            f8_core::model::id::ColId::from("num_a"),
+            f8_core::model::table::CellInput::number(11.0),
+        );
+    }
+    let evaluated =
+        Compiler::evaluate(&manifest, &tables).expect("Perturbed parity model must evaluate");
+    fixtures::parity_suite::assert_evaluated_parity(&evaluated);
 }
 
 // ----------------------------------------------------------------------------
