@@ -8,6 +8,7 @@ use crate::expr::ast::{
     ColEndpoint, ColSelector, Expr, RelativeOffset, RowEndpoint, RowSelector, TableRef,
 };
 use crate::model::id::{ColId, RowId};
+use crate::model::table::AxisRole;
 
 /// Recursively collects all table references present within a formula expression AST.
 pub fn collect_references(expr: &Expr) -> Vec<&TableRef> {
@@ -49,11 +50,10 @@ fn resolve_row_key<'a>(
 fn resolve_row_offset<'a>(
     origin: &CellId,
     target_table: &'a TableMetadata,
-    origin_table: &TableMetadata,
     offset: RelativeOffset,
 ) -> Result<(usize, &'a RowId), ResolveError> {
-    let origin_idx = origin_table.rows.get_index_of(&origin.row).ok_or_else(|| {
-        ResolveError::unknown_row(origin, origin_table.table_id.clone(), origin.row.clone())
+    let anchor_idx = target_table.rows.get_index_of(&origin.row).ok_or_else(|| {
+        ResolveError::active_row_mismatch(origin, target_table.table_id.clone(), origin.row.clone())
     })?;
 
     let signed_offset = match offset {
@@ -61,26 +61,36 @@ fn resolve_row_offset<'a>(
         RelativeOffset::Next(k) => k as i32,
     };
     let target_idx = match offset {
-        RelativeOffset::Prev(k) => origin_idx
-            .checked_sub(k as usize)
-            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
-        RelativeOffset::Next(k) => origin_idx
-            .checked_add(k as usize)
-            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
+        RelativeOffset::Prev(k) => anchor_idx.checked_sub(k as usize).ok_or_else(|| {
+            ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            )
+        })?,
+        RelativeOffset::Next(k) => anchor_idx.checked_add(k as usize).ok_or_else(|| {
+            ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            )
+        })?,
     };
 
-    let target_row_id = origin_table
-        .rows
-        .get_index(target_idx)
-        .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?;
-    resolve_row_key(origin, target_table, target_row_id)
+    let target_row_id = target_table.rows.get_index(target_idx).ok_or_else(|| {
+        ResolveError::temporal_offset_out_of_bounds(
+            origin,
+            target_table.table_id.clone(),
+            signed_offset,
+        )
+    })?;
+    Ok((target_idx, target_row_id))
 }
 
 /// Resolves a single row endpoint to its 0-based index and canonical [`RowId`] in `target_table.rows`.
 fn resolve_row_endpoint<'a>(
     origin: &CellId,
     target_table: &'a TableMetadata,
-    origin_table: &TableMetadata,
     endpoint: &RowEndpoint,
 ) -> Result<(usize, &'a RowId), ResolveError> {
     match endpoint {
@@ -92,23 +102,19 @@ fn resolve_row_endpoint<'a>(
             )
         }),
         RowEndpoint::Key(row_id) => resolve_row_key(origin, target_table, row_id),
-        RowEndpoint::Offset(offset) => {
-            resolve_row_offset(origin, target_table, origin_table, *offset)
-        }
+        RowEndpoint::Offset(offset) => resolve_row_offset(origin, target_table, *offset),
     }
 }
 
-/// Resolves a row selector against target and origin table metadata.
+/// Resolves a row selector against target table metadata.
 pub(crate) fn resolve_row_selector(
     origin: &CellId,
     target_table: &TableMetadata,
-    origin_table: &TableMetadata,
     row_selector: &RowSelector,
 ) -> Result<Vec<RowId>, ResolveError> {
     match row_selector {
         RowSelector::Active => {
-            let (_, id) =
-                resolve_row_endpoint(origin, target_table, origin_table, &RowEndpoint::Active)?;
+            let (_, id) = resolve_row_endpoint(origin, target_table, &RowEndpoint::Active)?;
             Ok(vec![id.clone()])
         }
         RowSelector::Key(row_id) => {
@@ -116,13 +122,12 @@ pub(crate) fn resolve_row_selector(
             Ok(vec![id.clone()])
         }
         RowSelector::Offset(offset) => {
-            let (_, id) = resolve_row_offset(origin, target_table, origin_table, *offset)?;
+            let (_, id) = resolve_row_offset(origin, target_table, *offset)?;
             Ok(vec![id.clone()])
         }
         RowSelector::Range(start, end) => {
-            let (start_idx, start_id) =
-                resolve_row_endpoint(origin, target_table, origin_table, start)?;
-            let (end_idx, end_id) = resolve_row_endpoint(origin, target_table, origin_table, end)?;
+            let (start_idx, start_id) = resolve_row_endpoint(origin, target_table, start)?;
+            let (end_idx, end_id) = resolve_row_endpoint(origin, target_table, end)?;
 
             if start_idx > end_idx {
                 return Err(ResolveError::inverted_range(
@@ -219,32 +224,70 @@ fn resolve_col_key<'a>(
 fn resolve_col_offset<'a>(
     origin: &CellId,
     target_table: &'a TableMetadata,
-    origin_table: &TableMetadata,
     offset: RelativeOffset,
 ) -> Result<(usize, &'a ColId), ResolveError> {
     let signed_offset = match offset {
         RelativeOffset::Prev(k) => -(k as i32),
         RelativeOffset::Next(k) => k as i32,
     };
-    let origin_measure_idx = origin_table
+
+    match target_table.col_role(&origin.col) {
+        None => {
+            return Err(ResolveError::active_column_mismatch(
+                origin,
+                target_table.table_id.clone(),
+                origin.col.clone(),
+            ));
+        }
+        Some(AxisRole::Descriptor) => {
+            return Err(ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            ));
+        }
+        Some(AxisRole::Measure) => {}
+    }
+
+    let anchor_measure_idx = target_table
         .measure_columns
         .iter()
         .position(|c| c == &origin.col)
-        .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?;
+        .ok_or_else(|| {
+            ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            )
+        })?;
 
     let target_measure_idx = match offset {
-        RelativeOffset::Prev(k) => origin_measure_idx
-            .checked_sub(k as usize)
-            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
-        RelativeOffset::Next(k) => origin_measure_idx
-            .checked_add(k as usize)
-            .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?,
+        RelativeOffset::Prev(k) => anchor_measure_idx.checked_sub(k as usize).ok_or_else(|| {
+            ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            )
+        })?,
+        RelativeOffset::Next(k) => anchor_measure_idx.checked_add(k as usize).ok_or_else(|| {
+            ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            )
+        })?,
     };
 
-    let target_col_id = origin_table
+    let target_col_id = target_table
         .measure_columns
         .get(target_measure_idx)
-        .ok_or_else(|| ResolveError::temporal_offset_out_of_bounds(origin, signed_offset))?;
+        .ok_or_else(|| {
+            ResolveError::temporal_offset_out_of_bounds(
+                origin,
+                target_table.table_id.clone(),
+                signed_offset,
+            )
+        })?;
     resolve_col_key(origin, target_table, target_col_id)
 }
 
@@ -252,7 +295,6 @@ fn resolve_col_offset<'a>(
 fn resolve_col_endpoint<'a>(
     origin: &CellId,
     target_table: &'a TableMetadata,
-    origin_table: &TableMetadata,
     endpoint: &ColEndpoint,
 ) -> Result<(usize, &'a ColId), ResolveError> {
     match endpoint {
@@ -278,23 +320,19 @@ fn resolve_col_endpoint<'a>(
             Ok((idx, &col.id))
         }
         ColEndpoint::Key(col_id) => resolve_col_key(origin, target_table, col_id),
-        ColEndpoint::Offset(offset) => {
-            resolve_col_offset(origin, target_table, origin_table, *offset)
-        }
+        ColEndpoint::Offset(offset) => resolve_col_offset(origin, target_table, *offset),
     }
 }
 
-/// Resolves a column selector against target and origin table metadata.
+/// Resolves a column selector against target table metadata.
 pub(crate) fn resolve_col_selector(
     origin: &CellId,
     target_table: &TableMetadata,
-    origin_table: &TableMetadata,
     col_selector: &ColSelector,
 ) -> Result<Vec<ColId>, ResolveError> {
     match col_selector {
         ColSelector::Active => {
-            let (_, id) =
-                resolve_col_endpoint(origin, target_table, origin_table, &ColEndpoint::Active)?;
+            let (_, id) = resolve_col_endpoint(origin, target_table, &ColEndpoint::Active)?;
             Ok(vec![id.clone()])
         }
         ColSelector::Key(col_id) => {
@@ -302,13 +340,12 @@ pub(crate) fn resolve_col_selector(
             Ok(vec![id.clone()])
         }
         ColSelector::Offset(offset) => {
-            let (_, id) = resolve_col_offset(origin, target_table, origin_table, *offset)?;
+            let (_, id) = resolve_col_offset(origin, target_table, *offset)?;
             Ok(vec![id.clone()])
         }
         ColSelector::Range(start, end) => {
-            let (start_idx, start_id) =
-                resolve_col_endpoint(origin, target_table, origin_table, start)?;
-            let (end_idx, end_id) = resolve_col_endpoint(origin, target_table, origin_table, end)?;
+            let (start_idx, start_id) = resolve_col_endpoint(origin, target_table, start)?;
+            let (end_idx, end_id) = resolve_col_endpoint(origin, target_table, end)?;
 
             if start_idx > end_idx {
                 return Err(ResolveError::inverted_range(
@@ -461,17 +498,20 @@ pub fn resolve_table_ref(
     table_ref: &TableRef,
     symbol_table: &SymbolTable,
 ) -> Result<ResolvedSlice, ResolveError> {
-    let origin_table = symbol_table
-        .get_table(&origin.table)
-        .ok_or_else(|| ResolveError::unregistered_table(origin, origin.table.clone()))?;
+    if !symbol_table.contains_table(&origin.table) {
+        return Err(ResolveError::unregistered_table(
+            origin,
+            origin.table.clone(),
+        ));
+    }
 
     let resolved_table_id = table_ref.table.resolve(&origin.table);
     let target_table = symbol_table
         .get_table(resolved_table_id)
         .ok_or_else(|| ResolveError::unknown_table(origin, resolved_table_id.clone()))?;
 
-    let rows = resolve_row_selector(origin, target_table, origin_table, &table_ref.row)?;
-    let cols = resolve_col_selector(origin, target_table, origin_table, &table_ref.col)?;
+    let rows = resolve_row_selector(origin, target_table, &table_ref.row)?;
+    let cols = resolve_col_selector(origin, target_table, &table_ref.col)?;
 
     let num_rows = rows.len();
     let num_cols = cols.len();

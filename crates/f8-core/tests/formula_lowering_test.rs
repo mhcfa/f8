@@ -997,3 +997,511 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
         })) if column.as_str() == "line_item"
     ));
 }
+
+#[test]
+fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
+    use f8_core::compiler::graph::{ResolveError, resolve_table_ref};
+    use f8_core::compiler::lowering::lower_table_ref;
+
+    let history = TableSpec {
+        id: TableId::from("History"),
+        title: "History".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2022A"),
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("2024E"),
+        ],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2022A", 100.0)
+                .with_cell("2023A", 150.0)
+                .with_cell("2024E", 200.0),
+        ],
+    };
+
+    let detail = TableSpec {
+        id: TableId::from("Detail"),
+        title: "Detail".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2022A"),
+            ColumnSpec::descriptor("notes", "Notes"),
+            ColumnSpec::gutter(),
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("2024E"),
+        ],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2022A", 80.0)
+                .with_cell("notes", "memo")
+                .with_cell("2023A", 120.0)
+                .with_cell("2024E", 160.0),
+        ],
+    };
+
+    let schedule = TableSpec {
+        id: TableId::from("Schedule"),
+        title: "Schedule".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("r0").with_cell("2024E", 10.0),
+            RowSpec::section_header("Sec"),
+            RowSpec::new("r1").with_cell("2024E", 20.0),
+            RowSpec::gutter(),
+            RowSpec::new("r2").with_cell("2024E", 30.0),
+            RowSpec::new("r3").with_cell("2024E", 40.0),
+        ],
+    };
+
+    let forecast = TableSpec {
+        id: TableId::from("Forecast"),
+        title: "Forecast".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2024E", 200.0)
+                .with_cell("2025E", 300.0),
+            RowSpec::new("ebitda")
+                .with_cell("2024E", 50.0)
+                .with_cell("2025E", 75.0),
+        ],
+    };
+
+    let driver = TableSpec {
+        id: TableId::from("DriverTable"),
+        title: "Drivers".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("r1").with_cell("2024E", 0.0),
+            RowSpec::new("r3").with_cell("2024E", 0.0),
+        ],
+    };
+
+    let assumptions = TableSpec {
+        id: TableId::from("Assumptions"),
+        title: "Assumptions".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("val")],
+        rows: vec![RowSpec::new("tax").with_cell("val", 0.21)],
+    };
+
+    let target = TableSpec {
+        id: TableId::from("Target"),
+        title: "Target".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("label", "Label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_cell("label", "Item")
+                .with_cell("2024E", 10.0)
+                .with_cell("2025E", 20.0),
+        ],
+    };
+
+    let origin_tbl = TableSpec {
+        id: TableId::from("Origin"),
+        title: "Origin".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2023A"),
+            ColumnSpec::descriptor("label", "Label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![
+            RowSpec::new("r0")
+                .with_cell("2023A", 1.0)
+                .with_cell("label", "Zero")
+                .with_cell("2024E", 2.0)
+                .with_cell("2025E", 3.0),
+            RowSpec::new("r1")
+                .with_cell("2023A", 4.0)
+                .with_cell("label", "One")
+                .with_cell("2024E", 5.0)
+                .with_cell("2025E", 6.0),
+        ],
+    };
+
+    let history_a = TableSpec {
+        id: TableId::from("HistoryA"),
+        title: "History A".to_string(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+            ColumnSpec::new("2026E"),
+        ],
+        rows: vec![
+            RowSpec::new("r0")
+                .with_cell("2023A", 1.0)
+                .with_cell("label", 2.0)
+                .with_cell("2024E", 3.0)
+                .with_cell("2025E", 4.0)
+                .with_cell("2026E", 5.0),
+            RowSpec::new("r1")
+                .with_cell("2023A", 10.0)
+                .with_cell("label", 20.0)
+                .with_cell("2024E", 30.0)
+                .with_cell("2025E", 40.0)
+                .with_cell("2026E", 50.0),
+            RowSpec::new("r2")
+                .with_cell("2023A", 11.0)
+                .with_cell("label", 21.0)
+                .with_cell("2024E", 31.0)
+                .with_cell("2025E", 41.0)
+                .with_cell("2026E", 51.0),
+        ],
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "CrossTableLowering".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "HistSheet".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("History")],
+            },
+            SheetSpec {
+                name: "Main".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![
+                    TableId::from("Detail"),
+                    TableId::from("Schedule"),
+                    TableId::from("Forecast"),
+                    TableId::from("DriverTable"),
+                    TableId::from("Assumptions"),
+                    TableId::from("Target"),
+                    TableId::from("Origin"),
+                    TableId::from("HistoryA"),
+                ],
+            },
+        ],
+    };
+
+    let tables = vec![
+        history,
+        detail,
+        schedule,
+        forecast,
+        driver,
+        assumptions,
+        target,
+        origin_tbl,
+        history_a,
+    ];
+    let theme = Theme::corporate_navy();
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    // Scenario 1: Cross-sheet History <-> Forecast boundary offsets & range slices
+    let fcst_origin = CellId::new("Forecast", "rev", "2024E");
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &fcst_origin,
+            &Expr::parse("History[\"rev\", col.prev]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "='HistSheet'!C4"
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &fcst_origin,
+            &Expr::parse("SUM(History[\"rev\", \"2022A\"..col.prev])").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=SUM('HistSheet'!$B$4:C$4)"
+    );
+
+    let hist_origin = CellId::new("History", "rev", "2024E");
+    // Forecast on Main: Detail (rows 2..5), gap (6..7), Schedule (rows 8..15), gap (16..17),
+    // Forecast (Title 18, gutter 19, rev 20); Col C = 2025E
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &hist_origin,
+            &Expr::parse("Forecast[\"rev\", col.next]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "='Main'!C20"
+    );
+
+    // Scenario 2: Detail target measure stepping skipping descriptor + gutter
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &fcst_origin,
+            &Expr::parse("Detail[\"rev\", col.prev]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=E5"
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &fcst_origin,
+            &Expr::parse("Detail[\"rev\", col.prev(2)]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=B5"
+    );
+
+    // Scenario 3: Schedule target row stepping skipping section header + gutter
+    // Schedule on Main: Title (8), gutter (9), r0 (10), Sec (11), r1 (12), gutter (13), r2 (14), r3 (15)
+    let drv_r1 = CellId::new("DriverTable", "r1", "2024E");
+    let drv_r3 = CellId::new("DriverTable", "r3", "2024E");
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &drv_r1,
+            &Expr::parse("Schedule[row.prev, @col]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=B10"
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &drv_r3,
+            &Expr::parse("Schedule[row.prev, @col]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=B14"
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &drv_r3,
+            &Expr::parse("SUM(Schedule[\"r2\"..row.prev, @col])").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=SUM(B$14:B14)"
+    );
+
+    // Scenario 4: Active column/row mismatch on scalar and range endpoints during lowering
+    let fcst_ebitda = CellId::new("Forecast", "ebitda", "2024E");
+    for formula in [
+        "Assumptions[\"tax\", col.prev]",
+        "SUM(Assumptions[\"tax\", \"val\"..col.prev])",
+    ] {
+        let err = FormulaLowerer::lower_cell(
+            &fcst_ebitda,
+            &Expr::parse(formula).unwrap(),
+            &symbol_table,
+            &layout_map,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            LoweringError::Resolve(ResolveError::active_column_mismatch(
+                &fcst_ebitda,
+                "Assumptions",
+                "2024E"
+            ))
+        );
+    }
+
+    for formula in [
+        "Assumptions[row.prev, \"val\"]",
+        "SUM(Assumptions[\"tax\"..row.prev, \"val\"])",
+    ] {
+        let err = FormulaLowerer::lower_cell(
+            &fcst_ebitda,
+            &Expr::parse(formula).unwrap(),
+            &symbol_table,
+            &layout_map,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            LoweringError::Resolve(ResolveError::active_row_mismatch(
+                &fcst_ebitda,
+                "Assumptions",
+                "ebitda"
+            ))
+        );
+    }
+
+    // Scenario 5: Out-of-bounds in Target, descriptor anchor in Target, multi-table disambiguation,
+    // and inverted range against leading descriptor
+    let orig_2024 = CellId::new("Origin", "r1", "2024E");
+    let orig_label = CellId::new("Origin", "r1", "label");
+    let orig_2025 = CellId::new("Origin", "r1", "2025E");
+
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &orig_2024,
+            &Expr::parse("Target[\"r1\", col.prev]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap_err(),
+        LoweringError::Resolve(ResolveError::temporal_offset_out_of_bounds(
+            &orig_2024,
+            TableId::from("Target"),
+            -1
+        ))
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &orig_2024,
+            &Expr::parse("Target[row.prev, \"2024E\"]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap_err(),
+        LoweringError::Resolve(ResolveError::temporal_offset_out_of_bounds(
+            &orig_2024,
+            TableId::from("Target"),
+            -1
+        ))
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &orig_label,
+            &Expr::parse("Target[\"r1\", col.prev]").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap_err(),
+        LoweringError::Resolve(ResolveError::temporal_offset_out_of_bounds(
+            &orig_label,
+            TableId::from("Target"),
+            -1
+        ))
+    );
+
+    // Multi-table lowering disambiguation where HistoryA succeeds and Target fails
+    for (origin_cell, formula, expected_offset) in [
+        (
+            &orig_2024,
+            "HistoryA[\"r1\", col.prev] + Target[\"r1\", col.prev]",
+            -1,
+        ),
+        (
+            &orig_2025,
+            "HistoryA[\"r1\", col.next] + Target[\"r1\", col.next]",
+            1,
+        ),
+        (
+            &orig_2024,
+            "HistoryA[row.prev, \"2024E\"] + Target[row.prev, \"2024E\"]",
+            -1,
+        ),
+        (
+            &orig_2024,
+            "HistoryA[row.next, \"2024E\"] + Target[row.next, \"2024E\"]",
+            1,
+        ),
+        (
+            &orig_label,
+            "HistoryA[\"r1\", col.prev] + Target[\"r1\", col.prev]",
+            -1,
+        ),
+    ] {
+        assert_eq!(
+            FormulaLowerer::lower_cell(
+                origin_cell,
+                &Expr::parse(formula).unwrap(),
+                &symbol_table,
+                &layout_map
+            )
+            .unwrap_err(),
+            LoweringError::Resolve(ResolveError::temporal_offset_out_of_bounds(
+                origin_cell,
+                TableId::from("Target"),
+                expected_offset
+            ))
+        );
+    }
+
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &orig_2025,
+            &Expr::parse("SUM(Target[\"r1\", col.prev..\"label\"])").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap_err(),
+        LoweringError::Resolve(ResolveError::inverted_range(
+            &orig_2025, "Target", "2024E", "label"
+        ))
+    );
+
+    // Scenario 6: Unregistered origin table rejected identically in Pass 3 and Pass 6a
+    let ghost_origin = CellId::new("GhostTable", "rev", "2024E");
+    for target_sel in [TableSelector::from("History"), TableSelector::Active] {
+        let table_ref = TableRef::new(
+            target_sel,
+            RowSelector::Key(RowId::from("rev")),
+            ColSelector::Key(ColId::from("2024E")),
+        );
+        let pass3_err = resolve_table_ref(&ghost_origin, &table_ref, &symbol_table).unwrap_err();
+        let pass6_err =
+            lower_table_ref(&ghost_origin, &table_ref, &symbol_table, &layout_map).unwrap_err();
+        let expected = ResolveError::unregistered_table(&ghost_origin, "GhostTable");
+        assert_eq!(
+            expected.diagnostic(),
+            f8_core::compiler::ErrorDiagnostic::ReferenceResolutionError {
+                message: expected.to_string(),
+                coordinate: "GhostTable[\"rev\", \"2024E\"]".to_string(),
+                target_table: "GhostTable".to_string(),
+                row: None,
+                col: None,
+            }
+        );
+        assert_eq!(pass3_err, expected);
+        assert_eq!(pass6_err, LoweringError::Resolve(expected));
+    }
+}
