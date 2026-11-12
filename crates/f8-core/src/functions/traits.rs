@@ -1,8 +1,10 @@
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use crate::expr::ast::Expr;
 use crate::functions::error::FunctionError;
 use crate::value::CellValue;
-use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// Functional taxonomy categories for Excel built-in functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -66,6 +68,34 @@ pub enum VariadicRule {
     Pairs,
 }
 
+/// Requirement and default policy for a positional function parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParamRequirement {
+    /// Parameter must be supplied explicitly and cannot use `_`.
+    Required,
+    /// Optional parameter without a static scalar default value.
+    Optional,
+    /// Optional parameter with a static fallback value substituted when skipped via intermediate `_`.
+    OptionalWithDefault(CellValue),
+}
+
+impl ParamRequirement {
+    /// Returns `true` if this parameter is optional.
+    #[must_use]
+    pub const fn is_optional(&self) -> bool {
+        matches!(self, Self::Optional | Self::OptionalWithDefault(_))
+    }
+
+    /// Returns the static default value if configured via [`Self::OptionalWithDefault`].
+    #[must_use]
+    pub const fn default_value(&self) -> Option<&CellValue> {
+        match self {
+            Self::OptionalWithDefault(val) => Some(val),
+            Self::Required | Self::Optional => None,
+        }
+    }
+}
+
 /// Metadata definition describing an individual function parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterDef {
@@ -75,37 +105,36 @@ pub struct ParameterDef {
     pub description: &'static str,
     /// Argument consumption kind.
     pub kind: ParamKind,
-    /// Whether this parameter can be omitted by callers.
-    pub optional: bool,
-    /// Default cell value assigned when omitted or unspecified.
-    pub default_value: Option<CellValue>,
+    /// Requirement and default policy for this parameter.
+    pub requirement: ParamRequirement,
 }
 
 impl ParameterDef {
     /// Constructs a required parameter with no default value.
+    #[must_use]
     pub const fn required(name: &'static str, description: &'static str, kind: ParamKind) -> Self {
         Self {
             name,
             description,
             kind,
-            optional: false,
-            default_value: None,
+            requirement: ParamRequirement::Required,
         }
     }
 
     /// Constructs an optional parameter without an explicit default value.
+    #[must_use]
     pub const fn optional(name: &'static str, description: &'static str, kind: ParamKind) -> Self {
         Self {
             name,
             description,
             kind,
-            optional: true,
-            default_value: None,
+            requirement: ParamRequirement::Optional,
         }
     }
 
     /// Constructs an optional parameter with an explicit default fallback value.
-    pub fn with_default(
+    #[must_use]
+    pub const fn with_default(
         name: &'static str,
         description: &'static str,
         kind: ParamKind,
@@ -115,8 +144,7 @@ impl ParameterDef {
             name,
             description,
             kind,
-            optional: true,
-            default_value: Some(default_value),
+            requirement: ParamRequirement::OptionalWithDefault(default_value),
         }
     }
 }
@@ -139,7 +167,7 @@ pub enum FunctionArg<'a> {
     },
     /// Unevaluated AST expression for lazy conditional branches.
     Lazy(&'a Expr),
-    /// Explicitly or implicitly omitted argument placeholder.
+    /// Intermediate omitted optional-parameter placeholder (`_`) without a static default.
     Omitted,
 }
 
@@ -222,7 +250,10 @@ pub trait ExcelFunction: Send + Sync + fmt::Debug {
 
     /// Minimum number of required positional arguments.
     fn min_args(&self) -> usize {
-        self.parameters().iter().take_while(|p| !p.optional).count()
+        self.parameters()
+            .iter()
+            .take_while(|p| !p.requirement.is_optional())
+            .count()
     }
 
     /// Maximum number of accepted arguments, or `None` if variadic.

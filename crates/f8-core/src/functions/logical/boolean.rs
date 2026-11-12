@@ -1,5 +1,6 @@
 use crate::functions::common::LogicalCollector;
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -38,13 +39,7 @@ impl ExcelFunction for AndFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let collector = match LogicalCollector::collect(args) {
             Ok(c) => c,
@@ -87,13 +82,7 @@ impl ExcelFunction for OrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let collector = match LogicalCollector::collect(args) {
             Ok(c) => c,
@@ -136,20 +125,7 @@ impl ExcelFunction for NotFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
-        if args.len() > 1 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let val = args[0].eval_scalar(self.name(), ctx)?;
         if let CellValue::Error(err) = val {

@@ -11,11 +11,12 @@ Signatures, parameter defaults, argument omission (`_`), criteria matching rules
   - Unknown function name (`UnknownFunction`).
   - Argument count below minimum or above maximum (`TooFewArguments`, `TooManyArguments`).
   - Odd trailing argument count in pair-variadic functions (`IFS`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS` -> `InvalidVariadicPairs`).
-  - Omitting a required parameter with `_` (`CannotOmitRequiredArgument`).
+  - Omitting a required parameter with `_` (`CannotOmitRequiredArgument`, checked before trailing omission).
+  - Omitting a trailing optional parameter with `_` (`CannotOmitTrailingArgument`).
 - Argument omission (`_`):
-  - Optional positional parameters can be omitted via `_` (`PMT(rate, nper, pv, _, 1)` or `XLOOKUP(k, look, ret, _, -1)`). Omitting a required parameter with `_` fails at compile time (`CannotOmitRequiredArgument`).
-  - Omitted parameters bind to their declared default value (or remain omitted for lazy fallback parameters like `XLOOKUP`'s `if_not_found`).
-  - In lowered Excel formulas, `_` emits an empty positional argument (`=PMT(C5,C6,C7,,1)`).
+  - Intermediate optional positional parameters can be skipped via `_` when followed by at least one explicit argument (`PMT(rate, nper, pv, _, 1)`, `XLOOKUP(k, look, ret, _, -1)`, `XLOOKUP(k, look, ret, _, _, -1)`). Omitting a required parameter (`ABS(_)`) or trailing optional parameter (`IF(cond, t, _)`, `PMT(r, n, pv, _)`) with `_` fails at compile time (`CannotOmitRequiredArgument` / `CannotOmitTrailingArgument`); omit trailing optional arguments directly (`IF(cond, t)`, `PMT(r, n, pv)`).
+  - Intermediate `_` slots bind to their declared default value (or `FunctionArg::Omitted` for `XLOOKUP`'s lazy `if_not_found`, returning `#N/A` on miss); absent trailing optional arguments are not synthetically padded.
+  - In lowered Excel formulas, intermediate `_` emits an empty positional argument (`=PMT(C5,C6,C7,,1)`, `=XLOOKUP(..., ..., ..., , , -1)`).
 - Runtime Excel error values (returned as cell values and propagated through dependent formulas):
   - `#DIV/0!`: `x / 0`, `0 ^ -k`, `AVERAGE` on range with no numbers, `AVERAGEIFS` with zero matches, `r = -1.0` in `NPV`, or `nper = 0` in `PMT`/`PPMT`.
   - `#VALUE!`: Multi-cell range slice evaluated in scalar context (`1 + Table["r1".."r2", @col]`), uncoercible text scalar in numeric operation, range dimension mismatch in `SUMPRODUCT`/`*IFS`/`XLOOKUP`, 2D matrix passed to `XLOOKUP`/`XMATCH`, omitting `col_num` on 2D matrix in `INDEX`, combining wildcard `match_mode = 2` with binary `search_mode = 2` or `-2`, `index_num < 1` or `> N` in `CHOOSE`, or zero logical inputs in `AND`/`OR`.
@@ -63,7 +64,7 @@ Each `criteria` argument accepts a number, boolean, string literal, or single-ce
 
 | Function  | Signature                                                                  | Semantics                                                                                                                                                    |
 | :-------- | :------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `IF`      | `IF(logical_test, value_if_true, [value_if_false])`                        | Short-circuiting branch: evaluates only the taken branch (referencing an `Empty` cell in a taken branch preserves `Empty`). `value_if_true` is required; `value_if_false` defaults to `FALSE` (whether omitted or passed `_`). Numbers coerce (`0.0` -> false, non-zero -> true). |
+| `IF`      | `IF(logical_test, value_if_true, [value_if_false])`                        | Short-circuiting branch: evaluates only the taken branch (referencing an `Empty` cell in a taken branch preserves `Empty`). `value_if_true` is required; `value_if_false` defaults to `FALSE` when omitted (`IF(cond, t)`). Trailing `_` (`IF(cond, t, _)`) raises `F8Error`. Numbers coerce (`0.0` -> false, non-zero -> true). |
 | `IFS`     | `IFS(logical_test1, value_if_true1, [logical_test2, value_if_true2], ...)` | Evaluates `(test, value)` pairs left-to-right with short-circuiting (referencing an `Empty` cell preserves `Empty`). Requires even argument count (`>= 2`). Returns `#N/A` if no condition is true. |
 | `IFERROR` | `IFERROR(value, value_if_error)`                                           | Short-circuiting error trap: evaluates and returns `value_if_error` only if `value` evaluates to any Excel error (referencing an `Empty` cell preserves `Empty`). |
 | `IFNA`    | `IFNA(value, value_if_na)`                                                 | Short-circuiting `#N/A` trap: evaluates `value_if_na` only if `value` is `#N/A` (referencing an `Empty` cell preserves `Empty`); other errors propagate without evaluating `value_if_na`. |

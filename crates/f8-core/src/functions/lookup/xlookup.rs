@@ -3,6 +3,7 @@
 use crate::functions::common::eval_branch_arg;
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{MatchMode, SearchMode, extract_1d_slice, find_match_index};
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
@@ -31,20 +32,18 @@ static XLOOKUP_PARAMS: &[ParameterDef] = &[
         "The value to return if no match is found.",
         ParamKind::Lazy,
     ),
-    ParameterDef {
-        name: "match_mode",
-        description: "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger), 2 (wildcard).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(0.0)),
-    },
-    ParameterDef {
-        name: "search_mode",
-        description: "The search type: 1 (first-to-last), -1 (last-to-first), 2 (binary ascending), -2 (binary descending).",
-        kind: ParamKind::Scalar,
-        optional: true,
-        default_value: Some(CellValue::Number(1.0)),
-    },
+    ParameterDef::with_default(
+        "match_mode",
+        "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger), 2 (wildcard).",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    ),
+    ParameterDef::with_default(
+        "search_mode",
+        "The search type: 1 (first-to-last), -1 (last-to-first), 2 (binary ascending), -2 (binary descending).",
+        ParamKind::Scalar,
+        CellValue::Number(1.0),
+    ),
 ];
 
 /// `XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])`:
@@ -74,20 +73,7 @@ impl ExcelFunction for XlookupFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 3 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        }
-        if args.len() > 6 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 6,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let lookup_val = args[0].eval_scalar(self.name(), ctx)?;
         if let CellValue::Error(err) = lookup_val {
@@ -108,18 +94,23 @@ impl ExcelFunction for XlookupFunction {
             return Ok(CellValue::Error(ExcelError::Value));
         }
 
-        let match_mode = if args.len() > 4 && !matches!(args[4], FunctionArg::Omitted) {
-            let val = args[4].eval_scalar(self.name(), ctx)?;
-            match MatchMode::parse(&val) {
-                Ok(m) => m,
-                Err(err) => return Ok(CellValue::Error(err)),
+        let match_mode = match args.get(4) {
+            None | Some(FunctionArg::Omitted) => MatchMode::Exact,
+            Some(
+                match_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => {
+                let val = match_arg.eval_scalar(self.name(), ctx)?;
+                match MatchMode::parse(&val) {
+                    Ok(m) => m,
+                    Err(err) => return Ok(CellValue::Error(err)),
+                }
             }
-        } else {
-            MatchMode::Exact
         };
 
-        let search_mode = if args.len() > 5 && !matches!(args[5], FunctionArg::Omitted) {
-            let val = args[5].eval_scalar(self.name(), ctx)?;
+        let search_mode = if let Some(search_arg) = args.get(5) {
+            let val = search_arg.eval_scalar(self.name(), ctx)?;
             match SearchMode::parse(&val) {
                 Ok(s) => s,
                 Err(err) => return Ok(CellValue::Error(err)),
@@ -130,13 +121,14 @@ impl ExcelFunction for XlookupFunction {
 
         match find_match_index(&lookup_val, lookup_slice, match_mode, search_mode) {
             Ok(Some(idx)) => Ok(return_slice[idx].clone()),
-            Ok(None) => {
-                if args.len() > 3 && !matches!(args[3], FunctionArg::Omitted) {
-                    eval_branch_arg(&args[3], self.name(), ctx)
-                } else {
-                    Ok(CellValue::Error(ExcelError::Na))
-                }
-            }
+            Ok(None) => match args.get(3) {
+                None | Some(FunctionArg::Omitted) => Ok(CellValue::Error(ExcelError::Na)),
+                Some(
+                    not_found_arg @ (FunctionArg::Scalar(_)
+                    | FunctionArg::Array { .. }
+                    | FunctionArg::Lazy(_)),
+                ) => eval_branch_arg(not_found_arg, self.name(), ctx),
+            },
             Err(err) => Ok(CellValue::Error(err)),
         }
     }

@@ -3,6 +3,7 @@
 use crate::functions::common::extract_scalar_number;
 use crate::functions::date::serial::{DateSerial, validate_date_serial};
 use crate::functions::error::FunctionError;
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
 };
@@ -36,20 +37,7 @@ impl ExcelFunction for YearFunction {
         args: &[FunctionArg<'_>],
         _context: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
-        if args.len() > 1 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let serial_val = match extract_scalar_number(&args[0]) {
             Ok(v) => v,
@@ -85,20 +73,7 @@ impl ExcelFunction for MonthFunction {
         args: &[FunctionArg<'_>],
         _context: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
-        if args.len() > 1 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let serial_val = match extract_scalar_number(&args[0]) {
             Ok(v) => v,
@@ -134,20 +109,7 @@ impl ExcelFunction for DayFunction {
         args: &[FunctionArg<'_>],
         _context: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.is_empty() {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: 0,
-            });
-        }
-        if args.len() > 1 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let serial_val = match extract_scalar_number(&args[0]) {
             Ok(v) => v,
@@ -196,20 +158,7 @@ impl ExcelFunction for DaysFunction {
         args: &[FunctionArg<'_>],
         _context: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        if args.len() < 2 {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
-        if args.len() > 2 {
-            return Err(FunctionError::TooManyArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        }
+        validate_bound_args(self, args)?;
 
         let end_val = match extract_scalar_number(&args[0]) {
             Ok(v) => v,

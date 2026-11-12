@@ -36,7 +36,7 @@ CLI commands (`f8` or `npx f8`):
 
 - Explicit 2D coordinates: All references require bare table identifier or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) throw `FormulaParseError`.
 - Uppercase identifiers: Built-in functions (`SUM`, `IF`, `XLOOKUP`) and booleans (`TRUE`, `FALSE`) must be uppercase.
-- Argument omission: Use `_` for omitted optional function parameters (`PMT(rate, nper, pv, _, type)`).
+- Argument omission: Use `_` strictly for intermediate optional function parameters followed by a later explicit argument (`PMT(rate, nper, pv, _, type)`); omit trailing optional parameters directly (`IF(cond, t)`, not `IF(cond, t, _)`).
 - Cell-level indentation: `indent` is restricted to `role: "descriptor"` cells (`new Cell({ value: "Label", indent: 1 })`) and section headers; setting `indent > 0` on a `measure` cell throws `SpecificationError`.
 
 ## Reference Index

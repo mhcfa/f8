@@ -2,9 +2,11 @@
 
 use std::cell::RefCell;
 
-use f8_core::expr::ast::{CallArg, ColSelector, Expr, Literal, RowSelector, TableRef};
+use f8_core::expr::ast::{CallArg, ColSelector, Expr, Literal, RowSelector, TableRef, UnaryOp};
+use f8_core::functions::common::eval_branch_arg;
 use f8_core::functions::{
-    EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
+    EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry, ParamKind,
+    ParamRequirement, ParameterDef,
 };
 use f8_core::model::table::ValueLiteral;
 use f8_core::value::{CellValue, ExcelError};
@@ -36,10 +38,24 @@ impl EvalContext for MockEvalContext {
             Expr::Literal(Literal::Number(n)) => Ok(CellValue::Number(*n)),
             Expr::Literal(Literal::Boolean(b)) => Ok(CellValue::Boolean(*b)),
             Expr::Literal(Literal::String(s)) => Ok(CellValue::Text(s.clone())),
-            Expr::Reference(_)
-            | Expr::Unary { .. }
-            | Expr::Binary { .. }
-            | Expr::FunctionCall { .. } => Ok(CellValue::Number(100.0)),
+            Expr::Unary {
+                op: UnaryOp::Neg,
+                expr: inner,
+            } => match inner.as_ref() {
+                Expr::Literal(Literal::Number(n)) => Ok(CellValue::Number(-n)),
+                Expr::Literal(_)
+                | Expr::Reference(_)
+                | Expr::Unary { .. }
+                | Expr::Binary { .. }
+                | Expr::FunctionCall { .. } => Ok(CellValue::Number(-100.0)),
+            },
+            Expr::Unary {
+                op: UnaryOp::Pos,
+                expr: inner,
+            } => self.eval_expr(inner),
+            Expr::Reference(_) | Expr::Binary { .. } | Expr::FunctionCall { .. } => {
+                Ok(CellValue::Number(100.0))
+            }
         }
     }
 
@@ -201,19 +217,177 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
         }
     );
 
-    // Omitting optional 3rd argument in IF(TRUE, 10, _) is valid
-    assert!(
-        registry
-            .validate_call(
-                "IF",
-                &[
-                    CallArg::from(Expr::boolean(true)),
-                    CallArg::from(Expr::number(10.0)),
-                    CallArg::Omitted,
-                ]
-            )
-            .is_ok()
-    );
+    // Scenario 1: Valid intermediate optional positional skips
+    for valid_intermediate in [
+        "PMT(0.05, 10, -1000, _, 1)",
+        "IPMT(0.05, 1, 10, -1000, _, 1)",
+        "PPMT(0.05, 1, 10, -1000, _, 1)",
+        "XMATCH(\"A\", R[\"k1\"..\"k3\", @col], _, -1)",
+        "XLOOKUP(\"A\", R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _, 0, -1)",
+        "XLOOKUP(\"A\", R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _, _, -1)",
+    ] {
+        let expr = Expr::parse(valid_intermediate).unwrap();
+        assert!(
+            registry.validate_expr(&expr).is_ok(),
+            "expected valid intermediate omission for {valid_intermediate}"
+        );
+    }
+
+    // Scenario 3: Trailing `_` on optional parameter fails validation statically
+    let trailing_cases = [
+        (
+            "IF(FALSE, 10, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "INDEX(R[\"r1\"..\"r3\", @col], 2, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "INDEX",
+                param: "col_num",
+                position: 3,
+            },
+        ),
+        (
+            "YEARFRAC(45292, 45474, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "YEARFRAC",
+                param: "basis",
+                position: 3,
+            },
+        ),
+        (
+            "IRR(R[\"r1\"..\"r3\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IRR",
+                param: "guess",
+                position: 2,
+            },
+        ),
+        (
+            "XIRR(R[\"v1\"..\"v3\", @col], R[\"d1\"..\"d3\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XIRR",
+                param: "guess",
+                position: 3,
+            },
+        ),
+        (
+            "PMT(0.05, 10, -1000, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "PMT",
+                param: "fv",
+                position: 4,
+            },
+        ),
+        (
+            "PMT(0.05, 10, -1000, _, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "PMT",
+                param: "fv",
+                position: 4,
+            },
+        ),
+        (
+            "XMATCH(1, R[\"r1\"..\"r3\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+            },
+        ),
+        (
+            "XLOOKUP(1, R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XLOOKUP",
+                param: "if_not_found",
+                position: 4,
+            },
+        ),
+        (
+            "XLOOKUP(1, R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _, 0, _)",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "XLOOKUP",
+                param: "search_mode",
+                position: 6,
+            },
+        ),
+    ];
+    for (formula, expected_err) in trailing_cases {
+        let Expr::FunctionCall { name, args } = Expr::parse(formula).unwrap() else {
+            panic!("expected function call for {formula}");
+        };
+        assert_eq!(
+            registry.validate_call(&name, &args).unwrap_err(),
+            expected_err,
+            "mismatch on trailing omission formula: {formula}"
+        );
+    }
+
+    // Scenario 4: Required-parameter omission takes diagnostic precedence over trailing check
+    let required_precedence_cases = [
+        (
+            "ABS(_)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "ABS",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "ROUND(1.5, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+            },
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IFS",
+                param: "value_if_true1",
+                position: 4,
+            },
+        ),
+        (
+            "IF(_, 10, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IF",
+                param: "logical_test",
+                position: 1,
+            },
+        ),
+        (
+            "INDEX(R[\"r1\"..\"r3\", @col], _, 2)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "INDEX",
+                param: "row_num",
+                position: 2,
+            },
+        ),
+    ];
+    for (formula, expected_err) in required_precedence_cases {
+        let Expr::FunctionCall { name, args } = Expr::parse(formula).unwrap() else {
+            panic!("expected function call for {formula}");
+        };
+        assert_eq!(
+            registry.validate_call(&name, &args).unwrap_err(),
+            expected_err,
+            "mismatch on required omission precedence formula: {formula}"
+        );
+    }
 }
 
 #[test]
@@ -350,15 +524,22 @@ fn test_scenario_5_if_short_circuiting_lazy_branches_and_omitted_false() {
     assert_eq!(res, CellValue::Number(222.0));
     assert_eq!(ctx.recorded(), vec!["222"]);
 
-    // Case 3: IF(FALSE, 111, _) -> returns FALSE without executing true branch
+    // Case 3: IF(FALSE, 111, _) -> rejected at runtime with CannotOmitTrailingArgument before evaluating branches
     let ctx = MockEvalContext::default();
     let args = [
         FunctionArg::Scalar(CellValue::Boolean(false)),
         FunctionArg::Lazy(&true_expr),
         FunctionArg::Omitted,
     ];
-    let res = if_func.evaluate(&args, &ctx).unwrap();
-    assert_eq!(res, CellValue::Boolean(false));
+    let err = if_func.evaluate(&args, &ctx).unwrap_err();
+    assert_eq!(
+        err,
+        FunctionError::CannotOmitTrailingArgument {
+            function: "IF",
+            param: "value_if_false",
+            position: 3,
+        }
+    );
     assert!(ctx.recorded().is_empty());
 
     // Case 4: IF(FALSE, 111) with only 2 arguments -> returns FALSE
@@ -394,35 +575,97 @@ fn test_bind_arguments_integration() {
         ColSelector::Active,
     ));
 
-    // Binding IF with 2 arguments: [condition, true_expr]
-    // 3rd argument is missing, so it should be bound to the default CellValue::Boolean(false)
+    // Scenario 2: Binding IF with 2 arguments preserves 1-to-1 arity without synthetic trailing padding
     let ctx = MockEvalContext::default();
     let true_val_expr = Expr::number(42.0);
     let exprs = [
-        CallArg::from(Expr::boolean(true)),
+        CallArg::from(Expr::boolean(false)),
         CallArg::from(true_val_expr.clone()),
     ];
     let bound = registry.bind_arguments(if_func, &exprs, &ctx).unwrap();
 
-    assert_eq!(bound.len(), 3);
-    assert_eq!(bound[0], FunctionArg::Scalar(CellValue::Boolean(true)));
+    assert_eq!(bound.len(), 2);
+    assert_eq!(bound[0], FunctionArg::Scalar(CellValue::Boolean(false)));
     assert_eq!(bound[1], FunctionArg::Lazy(&true_val_expr));
-    assert_eq!(bound[2], FunctionArg::Scalar(CellValue::Boolean(false)));
+    assert_eq!(
+        if_func.evaluate(&bound, &ctx).unwrap(),
+        CellValue::Boolean(false)
+    );
 
-    // Binding IF with explicit omitted 3rd argument: [condition, true_expr, _]
+    // Scenario 2: Binding 2-argument INDEX on a 1x3 row vector preserves bound.len() == 2
+    let index_func = registry.lookup("INDEX").unwrap();
+    let ctx_row_vec = MockEvalContext::with_range(
+        1,
+        3,
+        vec![
+            CellValue::Number(10.0),
+            CellValue::Number(20.0),
+            CellValue::Number(30.0),
+        ],
+    );
+    let index_exprs = [
+        CallArg::from(table_ref.clone()),
+        CallArg::from(Expr::number(2.0)),
+    ];
+    let bound_index = registry
+        .bind_arguments(index_func, &index_exprs, &ctx_row_vec)
+        .unwrap();
+    assert_eq!(bound_index.len(), 2);
+    assert_eq!(
+        index_func.evaluate(&bound_index, &ctx_row_vec).unwrap(),
+        CellValue::Number(20.0)
+    );
+
+    // Scenario 3: Binding IF with trailing omitted 3rd argument fails validation
     let exprs_omitted = [
         CallArg::from(Expr::boolean(false)),
         CallArg::from(Expr::number(42.0)),
         CallArg::Omitted,
     ];
-    let bound_omitted = registry
+    let err_omitted = registry
         .bind_arguments(if_func, &exprs_omitted, &ctx)
-        .unwrap();
-
-    assert_eq!(bound_omitted.len(), 3);
+        .unwrap_err();
     assert_eq!(
-        bound_omitted[2],
-        FunctionArg::Scalar(CellValue::Boolean(false))
+        err_omitted,
+        FunctionError::CannotOmitTrailingArgument {
+            function: "IF",
+            param: "value_if_false",
+            position: 3,
+        }
+    );
+
+    // Scenario 1: Intermediate optional skips bind Scalar(default) or FunctionArg::Omitted 1-to-1
+    let pmt_func = registry.lookup("PMT").unwrap();
+    let Expr::FunctionCall { args: pmt_args, .. } =
+        Expr::parse("PMT(0.05, 10, -1000, _, 1)").unwrap()
+    else {
+        panic!("expected PMT call");
+    };
+    let bound_pmt = registry.bind_arguments(pmt_func, &pmt_args, &ctx).unwrap();
+    assert_eq!(bound_pmt.len(), 5);
+    assert_eq!(bound_pmt[3], FunctionArg::Scalar(CellValue::Number(0.0)));
+    assert_eq!(bound_pmt[4], FunctionArg::Scalar(CellValue::Number(1.0)));
+
+    let xlookup_func = registry.lookup("XLOOKUP").unwrap();
+    let Expr::FunctionCall {
+        args: xlookup_args, ..
+    } = Expr::parse("XLOOKUP(\"A\", R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _, _, -1)")
+        .unwrap()
+    else {
+        panic!("expected XLOOKUP call");
+    };
+    let bound_xlookup = registry
+        .bind_arguments(xlookup_func, &xlookup_args, &ctx_row_vec)
+        .unwrap();
+    assert_eq!(bound_xlookup.len(), 6);
+    assert_eq!(bound_xlookup[3], FunctionArg::Omitted);
+    assert_eq!(
+        bound_xlookup[4],
+        FunctionArg::Scalar(CellValue::Number(0.0))
+    );
+    assert_eq!(
+        bound_xlookup[5],
+        FunctionArg::Scalar(CellValue::Number(-1.0))
     );
 
     // Binding SUM with a range reference expression and scalar expression
@@ -584,6 +827,14 @@ fn test_validate_expr_preorder_and_nested_ast() {
             },
         ),
         (
+            "IF(TRUE, 10, IF(FALSE, 1, _))",
+            FunctionError::CannotOmitTrailingArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
             "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
@@ -678,5 +929,310 @@ fn test_bind_arguments_uses_resolved_function_without_duplicate_lookup() {
             expected: 1,
             found: 0,
         }
+    );
+}
+
+#[test]
+fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
+    let req_required = ParameterDef::required("x", "required x", ParamKind::Scalar);
+    assert_eq!(req_required.requirement, ParamRequirement::Required);
+    assert!(!req_required.requirement.is_optional());
+    assert_eq!(req_required.requirement.default_value(), None);
+
+    let req_optional = ParameterDef::optional("y", "optional y", ParamKind::Lazy);
+    assert_eq!(req_optional.requirement, ParamRequirement::Optional);
+    assert!(req_optional.requirement.is_optional());
+    assert_eq!(req_optional.requirement.default_value(), None);
+
+    let req_default = ParameterDef::with_default(
+        "z",
+        "optional z with default",
+        ParamKind::Scalar,
+        CellValue::Number(0.0),
+    );
+    assert_eq!(
+        req_default.requirement,
+        ParamRequirement::OptionalWithDefault(CellValue::Number(0.0))
+    );
+    assert!(req_default.requirement.is_optional());
+    assert_eq!(
+        req_default.requirement.default_value(),
+        Some(&CellValue::Number(0.0))
+    );
+
+    let registry = FunctionRegistry::standard();
+    let ctx = MockEvalContext::default();
+    let lazy_num = Expr::number(10.0);
+    let vec_arg = FunctionArg::Array {
+        rows: 1,
+        cols: 3,
+        values: vec![
+            CellValue::Number(10.0),
+            CellValue::Number(20.0),
+            CellValue::Number(30.0),
+        ],
+        is_range_ref: true,
+    };
+
+    // Direct trailing optional FunctionArg::Omitted calls fail with CannotOmitTrailingArgument
+    let if_fn = registry.lookup("IF").unwrap();
+    assert_eq!(
+        if_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Boolean(false)),
+                FunctionArg::Lazy(&lazy_num),
+                FunctionArg::Omitted,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "IF",
+            param: "value_if_false",
+            position: 3,
+        })
+    );
+
+    let index_fn = registry.lookup("INDEX").unwrap();
+    assert_eq!(
+        index_fn.evaluate(
+            &[
+                vec_arg.clone(),
+                FunctionArg::Scalar(CellValue::Number(2.0)),
+                FunctionArg::Omitted,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "INDEX",
+            param: "col_num",
+            position: 3,
+        })
+    );
+
+    let yearfrac_fn = registry.lookup("YEARFRAC").unwrap();
+    assert_eq!(
+        yearfrac_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(45292.0)),
+                FunctionArg::Scalar(CellValue::Number(45474.0)),
+                FunctionArg::Omitted,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "YEARFRAC",
+            param: "basis",
+            position: 3,
+        })
+    );
+
+    let irr_fn = registry.lookup("IRR").unwrap();
+    assert_eq!(
+        irr_fn.evaluate(&[vec_arg.clone(), FunctionArg::Omitted], &ctx),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "IRR",
+            param: "guess",
+            position: 2,
+        })
+    );
+
+    let xirr_fn = registry.lookup("XIRR").unwrap();
+    assert_eq!(
+        xirr_fn.evaluate(
+            &[vec_arg.clone(), vec_arg.clone(), FunctionArg::Omitted],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "XIRR",
+            param: "guess",
+            position: 3,
+        })
+    );
+
+    let pmt_fn = registry.lookup("PMT").unwrap();
+    assert_eq!(
+        pmt_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.05)),
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                FunctionArg::Omitted,
+                FunctionArg::Omitted,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "PMT",
+            param: "fv",
+            position: 4,
+        })
+    );
+
+    let xmatch_fn = registry.lookup("XMATCH").unwrap();
+    assert_eq!(
+        xmatch_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(20.0)),
+                vec_arg.clone(),
+                FunctionArg::Omitted,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "XMATCH",
+            param: "match_mode",
+            position: 3,
+        })
+    );
+
+    let xlookup_fn = registry.lookup("XLOOKUP").unwrap();
+    assert_eq!(
+        xlookup_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(20.0)),
+                vec_arg.clone(),
+                vec_arg.clone(),
+                FunctionArg::Omitted,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "XLOOKUP",
+            param: "if_not_found",
+            position: 4,
+        })
+    );
+
+    // Direct required-parameter FunctionArg::Omitted calls fail across SUM, ABS, and all 44 functions
+    let sum_fn = registry.lookup("SUM").unwrap();
+    assert_eq!(
+        sum_fn.evaluate(&[FunctionArg::Omitted], &ctx),
+        Err(FunctionError::CannotOmitRequiredArgument {
+            function: "SUM",
+            param: "number1",
+            position: 1,
+        })
+    );
+
+    let abs_fn = registry.lookup("ABS").unwrap();
+    assert_eq!(
+        abs_fn.evaluate(&[FunctionArg::Omitted], &ctx),
+        Err(FunctionError::CannotOmitRequiredArgument {
+            function: "ABS",
+            param: "number",
+            position: 1,
+        })
+    );
+
+    for (name, func) in registry.iter() {
+        let min = func.min_args();
+        let mut args = vec![FunctionArg::Scalar(CellValue::Number(1.0)); min.max(1)];
+        args[0] = FunctionArg::Omitted;
+        assert_eq!(
+            func.evaluate(&args, &ctx),
+            Err(FunctionError::CannotOmitRequiredArgument {
+                function: func.name(),
+                param: func.parameters()[0].name,
+                position: 1,
+            }),
+            "expected CannotOmitRequiredArgument at position 1 for {name}"
+        );
+    }
+
+    // Direct intermediate optional FunctionArg::Omitted calls succeed using parameter defaults
+    let pmt_omitted_fv = pmt_fn
+        .evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.05)),
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                FunctionArg::Omitted,
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+            ],
+            &ctx,
+        )
+        .unwrap();
+    let pmt_explicit_fv = pmt_fn
+        .evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.05)),
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+            ],
+            &ctx,
+        )
+        .unwrap();
+    assert_eq!(pmt_omitted_fv, pmt_explicit_fv);
+
+    let ipmt_fn = registry.lookup("IPMT").unwrap();
+    assert_eq!(
+        ipmt_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.05)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    FunctionArg::Scalar(CellValue::Number(10.0)),
+                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                    FunctionArg::Omitted,
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        ipmt_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.05)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    FunctionArg::Scalar(CellValue::Number(10.0)),
+                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+    );
+
+    let ppmt_fn = registry.lookup("PPMT").unwrap();
+    assert_eq!(
+        ppmt_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.05)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    FunctionArg::Scalar(CellValue::Number(10.0)),
+                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                    FunctionArg::Omitted,
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        ppmt_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.05)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    FunctionArg::Scalar(CellValue::Number(10.0)),
+                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+    );
+
+    // eval_branch_arg rejects FunctionArg::Omitted
+    assert_eq!(
+        eval_branch_arg(&FunctionArg::Omitted, "IF", &ctx),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "IF",
+            expected: "scalar or expression",
+            found: "omitted",
+        })
     );
 }
