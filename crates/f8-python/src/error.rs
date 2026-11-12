@@ -92,7 +92,7 @@ pub fn make_reference_resolution_error(
     py: Python<'_>,
     message: String,
     coordinate: String,
-    target_table: Option<String>,
+    target_table: String,
     row: Option<String>,
     col: Option<String>,
 ) -> PyErr {

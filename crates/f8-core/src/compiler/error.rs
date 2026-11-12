@@ -67,7 +67,7 @@ pub enum ErrorDiagnostic {
     ReferenceResolutionError {
         message: String,
         coordinate: String,
-        target_table: Option<String>,
+        target_table: String,
         row: Option<String>,
         col: Option<String>,
     },
@@ -104,19 +104,14 @@ impl ResolveError {
             Self::UnknownTable {
                 origin,
                 target_table,
-            } => (
-                origin.to_string(),
-                Some(target_table.to_string()),
-                None,
-                None,
-            ),
+            } => (origin.to_string(), target_table.to_string(), None, None),
             Self::UnknownRow {
                 origin,
                 target_table,
                 row,
             } => (
                 origin.to_string(),
-                Some(target_table.to_string()),
+                target_table.to_string(),
                 Some(row.to_string()),
                 None,
             ),
@@ -126,7 +121,7 @@ impl ResolveError {
                 column,
             } => (
                 origin.to_string(),
-                Some(target_table.to_string()),
+                target_table.to_string(),
                 None,
                 Some(column.to_string()),
             ),
@@ -136,7 +131,7 @@ impl ResolveError {
                 column,
             } => (
                 origin.to_string(),
-                Some(target_table.to_string()),
+                target_table.to_string(),
                 None,
                 Some(column.to_string()),
             ),
@@ -146,24 +141,21 @@ impl ResolveError {
                 row,
             } => (
                 origin.to_string(),
-                Some(target_table.to_string()),
+                target_table.to_string(),
                 Some(row.to_string()),
                 None,
             ),
-            Self::TemporalOffsetOutOfBounds { origin, offset: _ } => {
-                (origin.to_string(), None, None, None)
-            }
+            Self::TemporalOffsetOutOfBounds {
+                origin,
+                target_table,
+                offset: _,
+            } => (origin.to_string(), target_table.to_string(), None, None),
             Self::InvertedRange {
                 origin,
                 target_table,
                 start: _,
                 end: _,
-            } => (
-                origin.to_string(),
-                Some(target_table.to_string()),
-                None,
-                None,
-            ),
+            } => (origin.to_string(), target_table.to_string(), None, None),
             Self::DiscontinuousRange {
                 origin,
                 target_table,
@@ -177,15 +169,10 @@ impl ResolveError {
                     | RangeDiscontinuity::SectionHeader { .. }
                     | RangeDiscontinuity::ColumnGutter => None,
                 };
-                (
-                    origin.to_string(),
-                    Some(target_table.to_string()),
-                    None,
-                    col,
-                )
+                (origin.to_string(), target_table.to_string(), None, col)
             }
             Self::UnregisteredTable { origin, table } => {
-                (origin.to_string(), Some(table.to_string()), None, None)
+                (origin.to_string(), table.to_string(), None, None)
             }
         };
         ErrorDiagnostic::ReferenceResolutionError {

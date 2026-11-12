@@ -841,3 +841,240 @@ def test_scenario_15_contiguous_and_discontinuous_range_slice_validation() -> No
     assert exc_dc.value.row is None
     assert exc_dc.value.col == "notes"
     assert "descriptor column 'notes'" in exc_dc.value.message
+
+
+def test_scenario_16_cross_table_relative_offsets_and_diagnostics() -> None:
+    # 1. Valid cross-table column & row offsets and range slices (Scenarios 1, 2, 3)
+    model = f8.Model(name="CrossTableOffsets", theme="corporate_navy")
+    sheet = model.add_sheet("Main")
+
+    history = sheet.add_table("History", title="History")
+    for col_id in ("2022A", "2023A", "2024E"):
+        history.add_column(col_id, role="measure", header=col_id)
+    history.add_row(
+        "rev",
+        cells={
+            "2022A": 100.0,
+            "2023A": 150.0,
+            "2024E": f8.Cell(expr='Forecast["rev", col.next]'),
+        },
+    )
+
+    detail = sheet.add_table("Detail", title="Detail")
+    detail.add_column("2022A", role="measure", header="2022A")
+    detail.add_column("notes", role="descriptor", header="Notes")
+    detail.add_column_gutter()
+    detail.add_column("2023A", role="measure", header="2023A")
+    detail.add_column("2024E", role="measure", header="2024E")
+    detail.add_row(
+        "rev",
+        cells={"2022A": 80.0, "notes": "audited", "2023A": 120.0, "2024E": 160.0},
+    )
+
+    forecast = sheet.add_table("Forecast", title="Forecast")
+    forecast.add_column("2024E", role="measure", header="2024E")
+    forecast.add_column("2025E", role="measure", header="2025E")
+    forecast.add_row(
+        "rev",
+        cells={
+            "2024E": f8.Cell(expr='History["rev", col.prev]'),
+            "2025E": 300.0,
+        },
+    )
+    forecast.add_row(
+        "cum_hist",
+        cells={
+            "2024E": f8.Cell(expr='SUM(History["rev", "2022A"..col.prev])'),
+            "2025E": 0.0,
+        },
+    )
+    forecast.add_row(
+        "detail_lag",
+        cells={
+            "2024E": f8.Cell(expr='Detail["rev", col.prev]'),
+            "2025E": 0.0,
+        },
+    )
+    forecast.add_row(
+        "detail_lag2",
+        cells={
+            "2024E": f8.Cell(expr='Detail["rev", col.prev(2)]'),
+            "2025E": 0.0,
+        },
+    )
+
+    schedule = sheet.add_table("Schedule", title="Schedule")
+    schedule.add_column("2024E", role="measure", header="2024E")
+    schedule.add_row("r0", cells={"2024E": 10.0})
+    schedule.add_section_header("Sec")
+    schedule.add_row("r1", cells={"2024E": 20.0})
+    schedule.add_row_gutter()
+    schedule.add_row("r2", cells={"2024E": 30.0})
+    schedule.add_row("r3", cells={"2024E": 40.0})
+
+    driver = sheet.add_table("DriverTable", title="Drivers")
+    driver.add_column("2024E", role="measure", header="2024E")
+    driver.add_row("r1", expr="Schedule[row.prev, @col]")
+    driver.add_row("r3", expr='Schedule[row.prev, @col] + SUM(Schedule["r2"..row.prev, @col])')
+
+    compiled = model.compile()
+    assert compiled.num("Forecast", "rev", "2024E") == pytest.approx(150.0)
+    assert compiled.num("Forecast", "cum_hist", "2024E") == pytest.approx(250.0)
+    assert compiled.num("History", "rev", "2024E") == pytest.approx(300.0)
+    assert compiled.num("Forecast", "detail_lag", "2024E") == pytest.approx(120.0)
+    assert compiled.num("Forecast", "detail_lag2", "2024E") == pytest.approx(80.0)
+    assert compiled.num("DriverTable", "r1", "2024E") == pytest.approx(10.0)
+    assert compiled.num("DriverTable", "r3", "2024E") == pytest.approx(60.0)
+
+    fcst_cum = compiled.inspect_cell("Forecast", "cum_hist", "2024E")
+    assert fcst_cum["excel_formula"] == "=SUM($B$5:C$5)"
+
+    # 2. Cross-table active column mismatch (scalar and range endpoint) -> ReferenceResolutionError
+    for expr_str in (
+        'Assumptions["tax", col.prev]',
+        'SUM(Assumptions["tax", "val"..col.prev])',
+    ):
+        col_mm = f8.Model(name="ColMismatch")
+        mm_sheet = col_mm.add_sheet("Main")
+        assump = mm_sheet.add_table("Assumptions", title="Assumptions")
+        assump.add_column("val", role="measure", header="Val")
+        assump.add_row("tax", cells={"val": 0.21})
+        fcst = mm_sheet.add_table("Forecast", title="Forecast")
+        fcst.add_column("2024E", role="measure", header="2024E")
+        fcst.add_row("ebitda", expr=expr_str)
+        with pytest.raises(ReferenceResolutionError) as exc_col:
+            col_mm.compile()
+        assert exc_col.value.coordinate == 'Forecast["ebitda", "2024E"]'
+        assert exc_col.value.target_table == "Assumptions"
+        assert exc_col.value.col == "2024E"
+        assert exc_col.value.row is None
+
+    # 3. Cross-table active row mismatch (scalar and range endpoint) -> ReferenceResolutionError
+    for expr_str in (
+        'Assumptions[row.prev, "val"]',
+        'SUM(Assumptions["tax"..row.prev, "val"])',
+    ):
+        row_mm = f8.Model(name="RowMismatch")
+        mm_sheet = row_mm.add_sheet("Main")
+        assump = mm_sheet.add_table("Assumptions", title="Assumptions")
+        assump.add_column("val", role="measure", header="Val")
+        assump.add_row("tax", cells={"val": 0.21})
+        fcst = mm_sheet.add_table("Forecast", title="Forecast")
+        fcst.add_column("2024E", role="measure", header="2024E")
+        fcst.add_row("ebitda", expr=expr_str)
+        with pytest.raises(ReferenceResolutionError) as exc_row:
+            row_mm.compile()
+        assert exc_row.value.coordinate == 'Forecast["ebitda", "2024E"]'
+        assert exc_row.value.target_table == "Assumptions"
+        assert exc_row.value.row == "ebitda"
+        assert exc_row.value.col is None
+
+    # 4. Same-table and cross-table target out-of-bounds, target descriptor anchor,
+    # multi-table disambiguation, and inverted range (Scenarios 3, 4, 5)
+    same_oob_model = f8.Model(name="SameTableOob")
+    same_oob_tbl = same_oob_model.add_sheet("Main").add_table("Origin", title="Origin")
+    same_oob_tbl.add_column("2024E", role="measure", header="2024E")
+    same_oob_tbl.add_row("r1", cells={"2024E": f8.Cell(expr='@table["r1", col.prev]')})
+    with pytest.raises(ReferenceResolutionError) as exc_same_oob:
+        same_oob_model.compile()
+    same_target_table: str = exc_same_oob.value.target_table
+    assert same_target_table.upper() == "ORIGIN"
+    assert same_target_table == "Origin"
+    assert exc_same_oob.value.row is None
+    assert exc_same_oob.value.col is None
+    assert (
+        'Formula in cell \'Origin["r1", "2024E"]\' has temporal offset -1 '
+        "which exceeds axis boundaries in table 'Origin'"
+    ) in exc_same_oob.value.message
+
+    for origin_col, expr_str, expected_offset_str in (
+        ("2024E", 'Target["r1", col.prev]', "-1"),
+        ("2024E", 'Target[row.prev, "2024E"]', "-1"),
+        ("label", 'Target["r1", col.prev]', "-1"),
+        ("2024E", 'HistoryA["r1", col.prev] + Target["r1", col.prev]', "-1"),
+        ("2025E", 'HistoryA["r1", col.next] + Target["r1", col.next]', "+1"),
+        ("2024E", 'HistoryA[row.prev, "2024E"] + Target[row.prev, "2024E"]', "-1"),
+        ("2024E", 'HistoryA[row.next, "2024E"] + Target[row.next, "2024E"]', "+1"),
+        ("label", 'HistoryA["r1", col.prev] + Target["r1", col.prev]', "-1"),
+    ):
+        oob_model = f8.Model(name="TargetOob")
+        oob_sheet = oob_model.add_sheet("Main")
+
+        history_a = oob_sheet.add_table("HistoryA", title="History A")
+        for col_id in ("2023A", "label", "2024E", "2025E", "2026E"):
+            history_a.add_column(col_id, role="measure", header=col_id)
+        for row_id, base in (("r0", 1.0), ("r1", 10.0), ("r2", 20.0)):
+            history_a.add_row(
+                row_id,
+                cells={
+                    "2023A": base,
+                    "label": base + 1.0,
+                    "2024E": base + 2.0,
+                    "2025E": base + 3.0,
+                    "2026E": base + 4.0,
+                },
+            )
+
+        target_tbl = oob_sheet.add_table("Target", title="Target")
+        target_tbl.add_column("label", role="descriptor", header="Label")
+        target_tbl.add_column("2024E", role="measure", header="2024E")
+        target_tbl.add_column("2025E", role="measure", header="2025E")
+        target_tbl.add_row("r1", cells={"label": "Item", "2024E": 10.0, "2025E": 20.0})
+
+        origin_tbl = oob_sheet.add_table("Origin", title="Origin")
+        origin_tbl.add_column("2023A", role="measure", header="2023A")
+        origin_tbl.add_column("label", role="descriptor", header="Label")
+        origin_tbl.add_column("2024E", role="measure", header="2024E")
+        origin_tbl.add_column("2025E", role="measure", header="2025E")
+        origin_tbl.add_row(
+            "r0",
+            cells={"2023A": 1.0, "label": "Zero", "2024E": 2.0, "2025E": 3.0},
+        )
+        origin_cells: dict[str, float | str | f8.Cell] = {
+            "2023A": 4.0,
+            "label": "One",
+            "2024E": 5.0,
+            "2025E": 6.0,
+        }
+        origin_cells[origin_col] = f8.Cell(expr=expr_str)
+        origin_tbl.add_row("r1", cells=origin_cells)
+
+        with pytest.raises(ReferenceResolutionError) as exc_oob:
+            oob_model.compile()
+        target_table_id: str = exc_oob.value.target_table
+        assert target_table_id.upper() == "TARGET"
+        assert target_table_id == "Target"
+        assert exc_oob.value.coordinate == f'Origin["r1", "{origin_col}"]'
+        assert exc_oob.value.row is None
+        assert exc_oob.value.col is None
+        assert (
+            f'Formula in cell \'Origin["r1", "{origin_col}"]\' has temporal offset '
+            f"{expected_offset_str} which exceeds axis boundaries in table 'Target'"
+        ) in exc_oob.value.message
+
+    inv_model = f8.Model(name="TargetInverted")
+    inv_sheet = inv_model.add_sheet("Main")
+    inv_target = inv_sheet.add_table("Target", title="Target")
+    inv_target.add_column("label", role="descriptor", header="Label")
+    inv_target.add_column("2024E", role="measure", header="2024E")
+    inv_target.add_column("2025E", role="measure", header="2025E")
+    inv_target.add_row("r1", cells={"label": "Item", "2024E": 10.0, "2025E": 20.0})
+    inv_origin = inv_sheet.add_table("Origin", title="Origin")
+    inv_origin.add_column("label", role="descriptor", header="Label")
+    inv_origin.add_column("2024E", role="measure", header="2024E")
+    inv_origin.add_column("2025E", role="measure", header="2025E")
+    inv_origin.add_row(
+        "r1",
+        cells={
+            "label": "Item",
+            "2024E": 10.0,
+            "2025E": f8.Cell(expr='SUM(Target["r1", col.prev.."label"])'),
+        },
+    )
+    with pytest.raises(ReferenceResolutionError) as exc_inv:
+        inv_model.compile()
+    assert exc_inv.value.coordinate == 'Origin["r1", "2025E"]'
+    assert exc_inv.value.target_table == "Target"
+    assert exc_inv.value.row is None
+    assert exc_inv.value.col is None
+    assert "inverted range" in exc_inv.value.message.lower()

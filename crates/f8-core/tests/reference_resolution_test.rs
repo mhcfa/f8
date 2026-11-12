@@ -163,6 +163,8 @@ fn test_scenario_4_resolving_relative_temporal_predecessor_offset() {
 
 #[test]
 fn test_scenario_5_temporal_offset_out_of_bounds_rejected() {
+    use f8_core::compiler::ErrorDiagnostic;
+
     let (symbols, _, _) = build_test_symbols();
 
     // 2023A is at index 0 of measure columns; col.prev(1) stops at descriptor boundary
@@ -176,7 +178,21 @@ fn test_scenario_5_temporal_offset_out_of_bounds_rejected() {
     let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
     assert_eq!(
         err,
-        ResolveError::temporal_offset_out_of_bounds(&origin, -1)
+        ResolveError::temporal_offset_out_of_bounds(&origin, TableId::from("IncomeStatement"), -1)
+    );
+    assert_eq!(
+        err.to_string(),
+        "Formula in cell 'IncomeStatement[\"rev\", \"2023A\"]' has temporal offset -1 which exceeds axis boundaries in table 'IncomeStatement'"
+    );
+    assert_eq!(
+        err.diagnostic(),
+        ErrorDiagnostic::ReferenceResolutionError {
+            message: err.to_string(),
+            coordinate: "IncomeStatement[\"rev\", \"2023A\"]".to_string(),
+            target_table: "IncomeStatement".to_string(),
+            row: None,
+            col: None,
+        }
     );
 
     // Also test forward offset out of bounds at last column (2027E, index 4 of measures)
@@ -190,7 +206,15 @@ fn test_scenario_5_temporal_offset_out_of_bounds_rejected() {
     let err_next = resolve_table_ref(&origin_last, &table_ref_next, &symbols).unwrap_err();
     assert_eq!(
         err_next,
-        ResolveError::temporal_offset_out_of_bounds(&origin_last, 1)
+        ResolveError::temporal_offset_out_of_bounds(
+            &origin_last,
+            TableId::from("IncomeStatement"),
+            1
+        )
+    );
+    assert_eq!(
+        err_next.to_string(),
+        "Formula in cell 'IncomeStatement[\"rev\", \"2027E\"]' has temporal offset +1 which exceeds axis boundaries in table 'IncomeStatement'"
     );
 }
 
@@ -400,7 +424,11 @@ fn test_scenario_vertical_temporal_offsets_and_bounds() {
     let err_prev = resolve_table_ref(&origin_first, &ref_prev, &symbols).unwrap_err();
     assert_eq!(
         err_prev,
-        ResolveError::temporal_offset_out_of_bounds(&origin_first, -1)
+        ResolveError::temporal_offset_out_of_bounds(
+            &origin_first,
+            TableId::from("IncomeStatement"),
+            -1
+        )
     );
 
     // Origin at index 3 ("ebit"): row.next(1) exceeds bounds
@@ -408,7 +436,11 @@ fn test_scenario_vertical_temporal_offsets_and_bounds() {
     let err_next = resolve_table_ref(&origin_last, &ref_next, &symbols).unwrap_err();
     assert_eq!(
         err_next,
-        ResolveError::temporal_offset_out_of_bounds(&origin_last, 1)
+        ResolveError::temporal_offset_out_of_bounds(
+            &origin_last,
+            TableId::from("IncomeStatement"),
+            1
+        )
     );
 }
 
@@ -514,7 +546,7 @@ fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
     let err_oob = resolve_table_ref(&origin_close, &ref_prior_cum, &symbols).unwrap_err();
     assert_eq!(
         err_oob,
-        ResolveError::temporal_offset_out_of_bounds(&origin_close, -1)
+        ResolveError::temporal_offset_out_of_bounds(&origin_close, TableId::from("Debt"), -1)
     );
 
     // Dynamic row range resolution: "sched"..@row
@@ -1013,7 +1045,7 @@ fn test_row_range_spanning_gutter_rejected() {
         ErrorDiagnostic::ReferenceResolutionError {
             message: err.to_string(),
             coordinate: "T[\"tot\", \"2024E\"]".to_string(),
-            target_table: Some("T".to_string()),
+            target_table: "T".to_string(),
             row: None,
             col: None,
         }
@@ -1238,7 +1270,7 @@ fn test_col_range_including_descriptor_endpoint_or_intermediate_rejected() {
             ErrorDiagnostic::ReferenceResolutionError {
                 message: err.to_string(),
                 coordinate: "T[\"r1\", \"m2\"]".to_string(),
-                target_table: Some("T".to_string()),
+                target_table: "T".to_string(),
                 row: None,
                 col: Some(expected_desc_col.to_string()),
             }
@@ -1330,4 +1362,979 @@ fn test_inverted_range_precedes_discontinuity_and_first_discontinuity_order() {
             RangeDiscontinuity::ColumnGutter,
         )
     );
+}
+
+#[test]
+fn test_cross_table_col_offset_at_origin_boundary_and_range() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let history = TableSpec {
+        id: TableId::from("History"),
+        title: "History".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2022A"),
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("2024E"),
+        ],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2022A", 100.0)
+                .with_cell("2023A", 150.0)
+                .with_cell("2024E", CellInput::formula("Forecast[\"rev\", col.next]")),
+        ],
+    };
+
+    let forecast = TableSpec {
+        id: TableId::from("Forecast"),
+        title: "Forecast".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2024E", CellInput::formula("History[\"rev\", col.prev]"))
+                .with_cell("2025E", 300.0),
+            RowSpec::new("cum_hist")
+                .with_cell(
+                    "2024E",
+                    CellInput::formula("SUM(History[\"rev\", \"2022A\"..col.prev])"),
+                )
+                .with_cell("2025E", 0.0),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &history)
+        .unwrap();
+    symbols
+        .register_table(SheetId::from("Main"), &forecast)
+        .unwrap();
+
+    let forecast_origin = CellId::new("Forecast", "rev", "2024E");
+    let ref_hist_prev = TableRef::new(
+        "History",
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Offset(RelativeOffset::Prev(1)),
+    );
+    assert_eq!(
+        resolve_table_ref(&forecast_origin, &ref_hist_prev, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("History", "rev", "2023A")]
+    );
+
+    let ref_hist_slice = TableRef::new(
+        "History",
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Range(
+            ColEndpoint::from("2022A"),
+            ColEndpoint::Offset(RelativeOffset::Prev(1)),
+        ),
+    );
+    assert_eq!(
+        resolve_table_ref(&forecast_origin, &ref_hist_slice, &symbols)
+            .unwrap()
+            .cells(),
+        &[
+            CellId::new("History", "rev", "2022A"),
+            CellId::new("History", "rev", "2023A"),
+        ]
+    );
+
+    let history_origin = CellId::new("History", "rev", "2024E");
+    let ref_forecast_next = TableRef::new(
+        "Forecast",
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Offset(RelativeOffset::Next(1)),
+    );
+    assert_eq!(
+        resolve_table_ref(&history_origin, &ref_forecast_next, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Forecast", "rev", "2025E")]
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "CrossTableBoundary".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("History"), TableId::from("Forecast")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[history, forecast]).expect("compile ok");
+    let hist_id = TableId::from("History");
+    let fcst_id = TableId::from("Forecast");
+
+    assert_eq!(
+        compiled
+            .cell_value(&fcst_id, &RowId::from("rev"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(150.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&fcst_id, &RowId::from("cum_hist"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(250.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&hist_id, &RowId::from("rev"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(300.0)
+    );
+
+    assert_eq!(
+        compiled
+            .inspect_cell(&hist_id, &RowId::from("rev"), &ColId::from("2023A"))
+            .unwrap()
+            .physical_address,
+        "Main!C4"
+    );
+    assert_eq!(
+        compiled
+            .inspect_cell(&fcst_id, &RowId::from("rev"), &ColId::from("2025E"))
+            .unwrap()
+            .physical_address,
+        "Main!C9"
+    );
+
+    let fcst_rev_2024 = compiled
+        .inspect_cell(&fcst_id, &RowId::from("rev"), &ColId::from("2024E"))
+        .unwrap();
+    assert_eq!(fcst_rev_2024.excel_formula.as_deref(), Some("=C4"));
+    assert_eq!(fcst_rev_2024.precedents.len(), 1);
+    assert_eq!(
+        fcst_rev_2024.precedents[0].cell_id,
+        CellId::new("History", "rev", "2023A")
+    );
+
+    let fcst_cum_2024 = compiled
+        .inspect_cell(&fcst_id, &RowId::from("cum_hist"), &ColId::from("2024E"))
+        .unwrap();
+    assert_eq!(
+        fcst_cum_2024.excel_formula.as_deref(),
+        Some("=SUM($B$4:C$4)")
+    );
+    assert_eq!(fcst_cum_2024.precedents.len(), 2);
+
+    let hist_rev_2024 = compiled
+        .inspect_cell(&hist_id, &RowId::from("rev"), &ColId::from("2024E"))
+        .unwrap();
+    assert_eq!(hist_rev_2024.excel_formula.as_deref(), Some("=C9"));
+    assert_eq!(hist_rev_2024.precedents.len(), 1);
+    assert_eq!(
+        hist_rev_2024.precedents[0].cell_id,
+        CellId::new("Forecast", "rev", "2025E")
+    );
+}
+
+#[test]
+fn test_cross_table_col_offset_steps_along_target_measure_columns() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let detail = TableSpec {
+        id: TableId::from("Detail"),
+        title: "Detail".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2022A"),
+            ColumnSpec::descriptor("notes", "Notes"),
+            ColumnSpec::gutter(),
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("2024E"),
+        ],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2022A", 80.0)
+                .with_cell("notes", "audited")
+                .with_cell("2023A", 120.0)
+                .with_cell("2024E", 160.0),
+        ],
+    };
+
+    let summary = TableSpec {
+        id: TableId::from("Summary"),
+        title: "Summary".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2022A"), ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("rev")
+                .with_cell("2022A", 80.0)
+                .with_cell("2024E", CellInput::formula("Detail[\"rev\", col.prev]")),
+            RowSpec::new("rev_lag2")
+                .with_cell("2022A", 0.0)
+                .with_cell("2024E", CellInput::formula("Detail[\"rev\", col.prev(2)]")),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &detail)
+        .unwrap();
+    symbols
+        .register_table(SheetId::from("Main"), &summary)
+        .unwrap();
+
+    let origin = CellId::new("Summary", "rev", "2024E");
+    let ref_prev1 = TableRef::new(
+        "Detail",
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Offset(RelativeOffset::Prev(1)),
+    );
+    let ref_prev2 = TableRef::new(
+        "Detail",
+        RowSelector::Key(RowId::from("rev")),
+        ColSelector::Offset(RelativeOffset::Prev(2)),
+    );
+
+    assert_eq!(
+        resolve_table_ref(&origin, &ref_prev1, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Detail", "rev", "2023A")]
+    );
+    assert_eq!(
+        resolve_table_ref(&origin, &ref_prev2, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Detail", "rev", "2022A")]
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "TargetMeasureStepping".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Detail"), TableId::from("Summary")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[detail, summary]).expect("compile ok");
+    let sum_id = TableId::from("Summary");
+
+    assert_eq!(
+        compiled
+            .cell_value(&sum_id, &RowId::from("rev"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(120.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&sum_id, &RowId::from("rev_lag2"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(80.0)
+    );
+
+    // Detail on Main: Col B = 2022A, Col C = notes, Col D = gutter, Col E = 2023A, Col F = 2024E; rev = row 5
+    let sum_rev = compiled
+        .inspect_cell(&sum_id, &RowId::from("rev"), &ColId::from("2024E"))
+        .unwrap();
+    assert_eq!(sum_rev.excel_formula.as_deref(), Some("=E5"));
+
+    let sum_lag2 = compiled
+        .inspect_cell(&sum_id, &RowId::from("rev_lag2"), &ColId::from("2024E"))
+        .unwrap();
+    assert_eq!(sum_lag2.excel_formula.as_deref(), Some("=B5"));
+}
+
+#[test]
+fn test_cross_table_row_offset_steps_along_target_data_rows() {
+    use f8_core::compiler::Compiler;
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+    use f8_core::value::CellValue;
+
+    let schedule = TableSpec {
+        id: TableId::from("Schedule"),
+        title: "Schedule".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("r0").with_cell("2024E", 10.0),
+            RowSpec::section_header("Sec"),
+            RowSpec::new("r1").with_cell("2024E", 20.0),
+            RowSpec::gutter(),
+            RowSpec::new("r2").with_cell("2024E", 30.0),
+            RowSpec::new("r3").with_cell("2024E", 40.0),
+        ],
+    };
+
+    let driver_scalar = TableSpec {
+        id: TableId::from("DriverTable"),
+        title: "Drivers".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("r1").with_expr("Schedule[row.prev, @col]"),
+            RowSpec::new("r3").with_expr("Schedule[row.prev, @col]"),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &schedule)
+        .unwrap();
+    symbols
+        .register_table(SheetId::from("Main"), &driver_scalar)
+        .unwrap();
+
+    let origin_r1 = CellId::new("DriverTable", "r1", "2024E");
+    let origin_r3 = CellId::new("DriverTable", "r3", "2024E");
+    let ref_row_prev = TableRef::new(
+        "Schedule",
+        RowSelector::Offset(RelativeOffset::Prev(1)),
+        ColSelector::Active,
+    );
+    let ref_row_next = TableRef::new(
+        "Schedule",
+        RowSelector::Offset(RelativeOffset::Next(1)),
+        ColSelector::Active,
+    );
+    let ref_row_range = TableRef::new(
+        "Schedule",
+        RowSelector::Range(
+            RowEndpoint::from("r2"),
+            RowEndpoint::Offset(RelativeOffset::Prev(1)),
+        ),
+        ColSelector::Active,
+    );
+
+    assert_eq!(
+        resolve_table_ref(&origin_r1, &ref_row_prev, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Schedule", "r0", "2024E")]
+    );
+    assert_eq!(
+        resolve_table_ref(&origin_r1, &ref_row_next, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Schedule", "r2", "2024E")]
+    );
+    assert_eq!(
+        resolve_table_ref(&origin_r3, &ref_row_prev, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Schedule", "r2", "2024E")]
+    );
+    assert_eq!(
+        resolve_table_ref(&origin_r3, &ref_row_range, &symbols)
+            .unwrap()
+            .cells(),
+        &[CellId::new("Schedule", "r2", "2024E")]
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "CrossTableRowOffset".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Schedule"), TableId::from("DriverTable")],
+        }],
+    };
+
+    let compiled_scalar =
+        Compiler::compile(&manifest, &[schedule.clone(), driver_scalar]).expect("compile ok");
+    let drv_id = TableId::from("DriverTable");
+    assert_eq!(
+        compiled_scalar
+            .cell_value(&drv_id, &RowId::from("r1"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(10.0)
+    );
+    assert_eq!(
+        compiled_scalar
+            .cell_value(&drv_id, &RowId::from("r3"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(30.0)
+    );
+    // Schedule rows on Main (no col headers): Title (2), title gutter (3), r0 (4), Sec (5), r1 (6), gutter (7), r2 (8), r3 (9)
+    let sched_id = TableId::from("Schedule");
+    assert_eq!(
+        compiled_scalar
+            .inspect_cell(&sched_id, &RowId::from("r0"), &ColId::from("2024E"))
+            .unwrap()
+            .physical_address,
+        "Main!B4"
+    );
+    assert_eq!(
+        compiled_scalar
+            .inspect_cell(&sched_id, &RowId::from("r2"), &ColId::from("2024E"))
+            .unwrap()
+            .physical_address,
+        "Main!B8"
+    );
+    assert_eq!(
+        compiled_scalar
+            .inspect_cell(&drv_id, &RowId::from("r1"), &ColId::from("2024E"))
+            .unwrap()
+            .excel_formula
+            .as_deref(),
+        Some("=B4")
+    );
+    assert_eq!(
+        compiled_scalar
+            .inspect_cell(&drv_id, &RowId::from("r3"), &ColId::from("2024E"))
+            .unwrap()
+            .excel_formula
+            .as_deref(),
+        Some("=B8")
+    );
+
+    let driver_range = TableSpec {
+        id: TableId::from("DriverTable"),
+        title: "Drivers".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![
+            RowSpec::new("r1").with_expr("Schedule[row.prev, @col]"),
+            RowSpec::new("r3").with_expr("SUM(Schedule[\"r2\"..row.prev, @col])"),
+        ],
+    };
+    let compiled_range =
+        Compiler::compile(&manifest, &[schedule, driver_range]).expect("compile ok");
+    assert_eq!(
+        compiled_range
+            .cell_value(&drv_id, &RowId::from("r3"), &ColId::from("2024E"))
+            .unwrap(),
+        CellValue::Number(30.0)
+    );
+    assert_eq!(
+        compiled_range
+            .inspect_cell(&drv_id, &RowId::from("r3"), &ColId::from("2024E"))
+            .unwrap()
+            .excel_formula
+            .as_deref(),
+        Some("=SUM(B$8:B8)")
+    );
+}
+
+#[test]
+fn test_cross_table_offset_active_mismatch_rejected() {
+    use f8_core::compiler::graph::GraphError;
+    use f8_core::compiler::{Compiler, CompilerError, ErrorDiagnostic};
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+
+    let assumptions = TableSpec {
+        id: TableId::from("Assumptions"),
+        title: "Assumptions".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("val")],
+        rows: vec![RowSpec::new("tax").with_cell("val", 0.21)],
+    };
+
+    let forecast_base = TableSpec {
+        id: TableId::from("Forecast"),
+        title: "Forecast".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("2024E")],
+        rows: vec![RowSpec::new("ebitda").with_cell("2024E", 100.0)],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &assumptions)
+        .unwrap();
+    symbols
+        .register_table(SheetId::from("Main"), &forecast_base)
+        .unwrap();
+
+    let origin = CellId::new("Forecast", "ebitda", "2024E");
+
+    for col_sel in [
+        ColSelector::Offset(RelativeOffset::Prev(1)),
+        ColSelector::Offset(RelativeOffset::Next(1)),
+        ColSelector::Range(
+            ColEndpoint::from("val"),
+            ColEndpoint::Offset(RelativeOffset::Prev(1)),
+        ),
+        ColSelector::Range(
+            ColEndpoint::Offset(RelativeOffset::Prev(1)),
+            ColEndpoint::from("val"),
+        ),
+    ] {
+        let table_ref = TableRef::new("Assumptions", RowSelector::Key(RowId::from("tax")), col_sel);
+        let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
+        assert_eq!(
+            err,
+            ResolveError::active_column_mismatch(&origin, "Assumptions", "2024E")
+        );
+        assert_eq!(
+            err.diagnostic(),
+            ErrorDiagnostic::ReferenceResolutionError {
+                message: err.to_string(),
+                coordinate: "Forecast[\"ebitda\", \"2024E\"]".to_string(),
+                target_table: "Assumptions".to_string(),
+                row: None,
+                col: Some("2024E".to_string()),
+            }
+        );
+    }
+
+    for row_sel in [
+        RowSelector::Offset(RelativeOffset::Prev(1)),
+        RowSelector::Offset(RelativeOffset::Next(1)),
+        RowSelector::Range(
+            RowEndpoint::from("tax"),
+            RowEndpoint::Offset(RelativeOffset::Prev(1)),
+        ),
+        RowSelector::Range(
+            RowEndpoint::Offset(RelativeOffset::Prev(1)),
+            RowEndpoint::from("tax"),
+        ),
+    ] {
+        let table_ref = TableRef::new("Assumptions", row_sel, ColSelector::Key(ColId::from("val")));
+        let err = resolve_table_ref(&origin, &table_ref, &symbols).unwrap_err();
+        assert_eq!(
+            err,
+            ResolveError::active_row_mismatch(&origin, "Assumptions", "ebitda")
+        );
+        assert_eq!(
+            err.diagnostic(),
+            ErrorDiagnostic::ReferenceResolutionError {
+                message: err.to_string(),
+                coordinate: "Forecast[\"ebitda\", \"2024E\"]".to_string(),
+                target_table: "Assumptions".to_string(),
+                row: Some("ebitda".to_string()),
+                col: None,
+            }
+        );
+    }
+
+    let manifest = ProjectManifest {
+        model_name: "CrossTableMismatch".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Assumptions"), TableId::from("Forecast")],
+        }],
+    };
+
+    let forecast_col_mismatch = TableSpec {
+        rows: vec![RowSpec::new("ebitda").with_expr("Assumptions[\"tax\", col.prev]")],
+        ..forecast_base.clone()
+    };
+    let err_col = Compiler::compile(&manifest, &[assumptions.clone(), forecast_col_mismatch])
+        .expect_err("expected ActiveColumnMismatch");
+    assert!(matches!(
+        err_col,
+        CompilerError::Graph(GraphError::Resolve(ResolveError::ActiveColumnMismatch {
+            ref target_table,
+            ref column,
+            ..
+        })) if target_table.as_str() == "Assumptions" && column.as_str() == "2024E"
+    ));
+
+    let forecast_row_mismatch = TableSpec {
+        rows: vec![RowSpec::new("ebitda").with_expr("Assumptions[row.prev, \"val\"]")],
+        ..forecast_base
+    };
+    let err_row = Compiler::compile(&manifest, &[assumptions, forecast_row_mismatch])
+        .expect_err("expected ActiveRowMismatch");
+    assert!(matches!(
+        err_row,
+        CompilerError::Graph(GraphError::Resolve(ResolveError::ActiveRowMismatch {
+            ref target_table,
+            ref row,
+            ..
+        })) if target_table.as_str() == "Assumptions" && row.as_str() == "ebitda"
+    ));
+}
+
+#[test]
+fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() {
+    use f8_core::compiler::ErrorDiagnostic;
+
+    let target = TableSpec {
+        id: TableId::from("Target"),
+        title: "Target".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("label", "Label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
+    };
+
+    // Origin has earlier column "2023A" and earlier row "r0" so origin-stepping would not underflow,
+    // plus both descriptor and measure variants of "label".
+    let origin_table = TableSpec {
+        id: TableId::from("Origin"),
+        title: "Origin".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2023A"),
+            ColumnSpec::descriptor("label", "Label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![RowSpec::new("r0"), RowSpec::new("r1"), RowSpec::new("r2")],
+    };
+
+    let origin_measure_label = TableSpec {
+        id: TableId::from("OriginMeasureLabel"),
+        title: "Origin Measure Label".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![RowSpec::new("r1")],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Main"), &target)
+        .unwrap();
+    symbols
+        .register_table(SheetId::from("Main"), &origin_table)
+        .unwrap();
+    symbols
+        .register_table(SheetId::from("Main"), &origin_measure_label)
+        .unwrap();
+
+    // 1. Origin["r1", "2024E"] -> Target["r1", col.prev]: "2024E" is Target's first measure column
+    let origin_2024 = CellId::new("Origin", "r1", "2024E");
+    let ref_col_prev = TableRef::new(
+        "Target",
+        RowSelector::Key(RowId::from("r1")),
+        ColSelector::Offset(RelativeOffset::Prev(1)),
+    );
+    let err_col_oob = resolve_table_ref(&origin_2024, &ref_col_prev, &symbols).unwrap_err();
+    assert_eq!(
+        err_col_oob,
+        ResolveError::temporal_offset_out_of_bounds(&origin_2024, TableId::from("Target"), -1)
+    );
+    assert_eq!(
+        err_col_oob.to_string(),
+        "Formula in cell 'Origin[\"r1\", \"2024E\"]' has temporal offset -1 which exceeds axis boundaries in table 'Target'"
+    );
+    assert_eq!(
+        err_col_oob.diagnostic(),
+        ErrorDiagnostic::ReferenceResolutionError {
+            message: err_col_oob.to_string(),
+            coordinate: "Origin[\"r1\", \"2024E\"]".to_string(),
+            target_table: "Target".to_string(),
+            row: None,
+            col: None,
+        }
+    );
+
+    // 2. Origin["r1", "2024E"] -> Target[row.prev, "2024E"]: "r1" is Target's first data row
+    let ref_row_prev = TableRef::new(
+        "Target",
+        RowSelector::Offset(RelativeOffset::Prev(1)),
+        ColSelector::Key(ColId::from("2024E")),
+    );
+    let err_row_oob = resolve_table_ref(&origin_2024, &ref_row_prev, &symbols).unwrap_err();
+    assert_eq!(
+        err_row_oob,
+        ResolveError::temporal_offset_out_of_bounds(&origin_2024, TableId::from("Target"), -1)
+    );
+
+    // 3. Forward bounds in Target: "2025E" is Target's last measure col, "r2" is Target's last data row
+    let origin_2025 = CellId::new("Origin", "r1", "2025E");
+    let ref_col_next = TableRef::new(
+        "Target",
+        RowSelector::Key(RowId::from("r1")),
+        ColSelector::Offset(RelativeOffset::Next(1)),
+    );
+    let err_col_next = resolve_table_ref(&origin_2025, &ref_col_next, &symbols).unwrap_err();
+    assert_eq!(
+        err_col_next,
+        ResolveError::temporal_offset_out_of_bounds(&origin_2025, TableId::from("Target"), 1)
+    );
+    assert_eq!(
+        err_col_next.to_string(),
+        "Formula in cell 'Origin[\"r1\", \"2025E\"]' has temporal offset +1 which exceeds axis boundaries in table 'Target'"
+    );
+
+    let origin_r2 = CellId::new("Origin", "r2", "2024E");
+    let ref_row_next = TableRef::new(
+        "Target",
+        RowSelector::Offset(RelativeOffset::Next(1)),
+        ColSelector::Key(ColId::from("2024E")),
+    );
+    assert_eq!(
+        resolve_table_ref(&origin_r2, &ref_row_next, &symbols).unwrap_err(),
+        ResolveError::temporal_offset_out_of_bounds(&origin_r2, TableId::from("Target"), 1)
+    );
+
+    // 4. Origin["r1", "label"] (both descriptor and measure in Origin) -> Target["r1", col.prev]:
+    // "label" is AxisRole::Descriptor in Target -> TemporalOffsetOutOfBounds
+    for label_origin in [
+        CellId::new("Origin", "r1", "label"),
+        CellId::new("OriginMeasureLabel", "r1", "label"),
+    ] {
+        let err_desc = resolve_table_ref(&label_origin, &ref_col_prev, &symbols).unwrap_err();
+        assert_eq!(
+            err_desc,
+            ResolveError::temporal_offset_out_of_bounds(&label_origin, TableId::from("Target"), -1)
+        );
+        assert_eq!(
+            err_desc.diagnostic(),
+            ErrorDiagnostic::ReferenceResolutionError {
+                message: err_desc.to_string(),
+                coordinate: label_origin.to_string(),
+                target_table: "Target".to_string(),
+                row: None,
+                col: None,
+            }
+        );
+    }
+
+    // 5. Origin["r1", "2025E"] -> Target["r1", col.prev.."label"]:
+    // col.prev resolves to Target.columns[1] ("2024E") > Target.columns[0] ("label") -> InvertedRange
+    let ref_inverted = TableRef::new(
+        "Target",
+        RowSelector::Key(RowId::from("r1")),
+        ColSelector::Range(
+            ColEndpoint::Offset(RelativeOffset::Prev(1)),
+            ColEndpoint::from("label"),
+        ),
+    );
+    assert_eq!(
+        resolve_table_ref(&origin_2025, &ref_inverted, &symbols).unwrap_err(),
+        ResolveError::inverted_range(&origin_2025, "Target", "2024E", "label")
+    );
+
+    // 6. Multi-reference expressions where HistoryA succeeds and Target fails (underflow, overflow,
+    // or descriptor anchor in Target) must disambiguate target_table = "Target".
+    use f8_core::compiler::graph::GraphError;
+    use f8_core::compiler::{Compiler, CompilerError};
+    use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+
+    let history_a = TableSpec {
+        id: TableId::from("HistoryA"),
+        title: "History A".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::new("2023A"),
+            ColumnSpec::new("label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+            ColumnSpec::new("2026E"),
+        ],
+        rows: vec![
+            RowSpec::new("r0")
+                .with_cell("2023A", 1.0)
+                .with_cell("label", 2.0)
+                .with_cell("2024E", 3.0)
+                .with_cell("2025E", 4.0)
+                .with_cell("2026E", 5.0),
+            RowSpec::new("r1")
+                .with_cell("2023A", 10.0)
+                .with_cell("label", 20.0)
+                .with_cell("2024E", 30.0)
+                .with_cell("2025E", 40.0)
+                .with_cell("2026E", 50.0),
+            RowSpec::new("r2")
+                .with_cell("2023A", 11.0)
+                .with_cell("label", 21.0)
+                .with_cell("2024E", 31.0)
+                .with_cell("2025E", 41.0)
+                .with_cell("2026E", 51.0),
+            RowSpec::new("r3")
+                .with_cell("2023A", 12.0)
+                .with_cell("label", 22.0)
+                .with_cell("2024E", 32.0)
+                .with_cell("2025E", 42.0)
+                .with_cell("2026E", 52.0),
+        ],
+    };
+
+    let target_full = TableSpec {
+        id: TableId::from("Target"),
+        title: "Target".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("label", "Label"),
+            ColumnSpec::new("2024E"),
+            ColumnSpec::new("2025E"),
+        ],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_cell("label", "One")
+                .with_cell("2024E", 10.0)
+                .with_cell("2025E", 20.0),
+            RowSpec::new("r2")
+                .with_cell("label", "Two")
+                .with_cell("2024E", 30.0)
+                .with_cell("2025E", 40.0),
+        ],
+    };
+
+    let multi_cases = [
+        (
+            "r1",
+            "2024E",
+            "HistoryA[\"r1\", col.prev] + Target[\"r1\", col.prev]",
+            -1,
+        ),
+        (
+            "r1",
+            "2025E",
+            "HistoryA[\"r1\", col.next] + Target[\"r1\", col.next]",
+            1,
+        ),
+        (
+            "r1",
+            "2024E",
+            "HistoryA[row.prev, \"2024E\"] + Target[row.prev, \"2024E\"]",
+            -1,
+        ),
+        (
+            "r2",
+            "2024E",
+            "HistoryA[row.next, \"2024E\"] + Target[row.next, \"2024E\"]",
+            1,
+        ),
+        (
+            "r1",
+            "label",
+            "HistoryA[\"r1\", col.prev] + Target[\"r1\", col.prev]",
+            -1,
+        ),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "MultiTableDisambiguation".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("HistoryA"),
+                TableId::from("Target"),
+                TableId::from("Origin"),
+            ],
+        }],
+    };
+
+    for (fail_row, fail_col, expr_str, expected_offset) in multi_cases {
+        let mut r1_cells = IndexMap::new();
+        r1_cells.insert(ColId::from("2023A"), CellInput::number(1.0));
+        r1_cells.insert(ColId::from("label"), CellInput::number(2.0));
+        r1_cells.insert(ColId::from("2024E"), CellInput::number(3.0));
+        r1_cells.insert(ColId::from("2025E"), CellInput::number(4.0));
+
+        let mut r2_cells = r1_cells.clone();
+        if fail_row == "r1" {
+            r1_cells.insert(ColId::from(fail_col), CellInput::formula(expr_str));
+        } else {
+            r2_cells.insert(ColId::from(fail_col), CellInput::formula(expr_str));
+        }
+
+        let origin_multi = TableSpec {
+            id: TableId::from("Origin"),
+            title: "Origin".into(),
+            subtitle: None,
+            currency: None,
+            collapsible: false,
+            placement: f8_core::model::PlacementSpec::default(),
+            columns: vec![
+                ColumnSpec::new("2023A"),
+                ColumnSpec::new("label"),
+                ColumnSpec::new("2024E"),
+                ColumnSpec::new("2025E"),
+            ],
+            rows: vec![
+                RowSpec::new("r1").with_cells(r1_cells),
+                RowSpec::new("r2").with_cells(r2_cells),
+            ],
+        };
+
+        let compile_err = Compiler::compile(
+            &manifest,
+            &[history_a.clone(), target_full.clone(), origin_multi],
+        )
+        .expect_err("expected TemporalOffsetOutOfBounds in Target");
+
+        let expected_origin = CellId::new("Origin", fail_row, fail_col);
+        let expected_resolve = ResolveError::temporal_offset_out_of_bounds(
+            &expected_origin,
+            TableId::from("Target"),
+            expected_offset,
+        );
+        assert_eq!(
+            compile_err.diagnostic(),
+            ErrorDiagnostic::ReferenceResolutionError {
+                message: expected_resolve.to_string(),
+                coordinate: expected_origin.to_string(),
+                target_table: "Target".to_string(),
+                row: None,
+                col: None,
+            }
+        );
+        let CompilerError::Graph(GraphError::Resolve(resolve_err)) = compile_err else {
+            panic!("expected Graph(Resolve(_)), got {compile_err:?}");
+        };
+        assert_eq!(resolve_err, expected_resolve);
+    }
 }

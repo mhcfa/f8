@@ -69,9 +69,13 @@ pub enum ResolveError {
     },
 
     #[error(
-        "Formula in cell '{origin}' has temporal offset {offset:+} which exceeds axis boundaries"
+        "Formula in cell '{origin}' has temporal offset {offset:+} which exceeds axis boundaries in table '{target_table}'"
     )]
-    TemporalOffsetOutOfBounds { origin: Box<CellId>, offset: i32 },
+    TemporalOffsetOutOfBounds {
+        origin: Box<CellId>,
+        target_table: TableId,
+        offset: i32,
+    },
 
     #[error(
         "Formula in cell '{origin}' specifies inverted range '{start}'..'{end}' in table '{target_table}'"
@@ -160,9 +164,15 @@ impl ResolveError {
     }
 
     /// Creates a `TemporalOffsetOutOfBounds` error.
-    pub fn temporal_offset_out_of_bounds(origin: &CellId, offset: i32) -> Self {
+    #[must_use]
+    pub fn temporal_offset_out_of_bounds(
+        origin: &CellId,
+        target_table: TableId,
+        offset: i32,
+    ) -> Self {
         Self::TemporalOffsetOutOfBounds {
             origin: Box::new(origin.clone()),
+            target_table,
             offset,
         }
     }
