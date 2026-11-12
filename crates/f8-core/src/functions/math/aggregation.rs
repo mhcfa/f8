@@ -1,11 +1,11 @@
-use crate::functions::common::{NumericCollector, count_non_empty, count_numbers, normalize_zero};
+use crate::functions::common::{NumericCollector, count_non_empty, count_numbers};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, normalize_zero};
 
 /// Positional parameter definitions for `SUM`.
 static SUM_PARAMS: &[ParameterDef] = &[ParameterDef::required(

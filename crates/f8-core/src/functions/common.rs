@@ -1,12 +1,6 @@
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{EvalContext, FunctionArg};
-use crate::value::{CellValue, ExcelError};
-
-/// Normalizes signed negative zero (`-0.0`) to positive zero (`0.0`).
-#[inline]
-pub fn normalize_zero(val: f64) -> f64 {
-    if val == 0.0 { 0.0 } else { val }
-}
+use crate::value::{CellValue, ExcelError, normalize_zero};
 
 /// Aggregated numeric statistics gathered across arguments for arithmetic functions.
 #[derive(Debug, Clone, PartialEq)]

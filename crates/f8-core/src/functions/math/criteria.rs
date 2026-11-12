@@ -3,10 +3,13 @@
 //! Provides single-pass compilation of criteria arguments for conditional aggregation
 //! (`*IFS`) and pattern-matching lookup functions, conforming to Excel criteria parity rules.
 
+use std::cmp::Ordering;
+
 pub use crate::functions::common::WildcardToken;
 use crate::functions::common::{matches_wildcard, parse_wildcard_tokens};
-use crate::value::compare_ascii_case_insensitive;
-use crate::value::{CellValue, ExcelError};
+use crate::value::{
+    CellValue, ExcelError, compare_ascii_case_insensitive, normalize_zero, parse_excel_number,
+};
 
 /// Relational comparison operators supported in criteria strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +31,7 @@ pub enum ComparisonOp {
 impl ComparisonOp {
     /// Evaluates this comparison operator against an `Ordering`.
     #[must_use]
-    pub fn matches_ordering(self, ordering: std::cmp::Ordering) -> bool {
+    pub fn matches_ordering(self, ordering: Ordering) -> bool {
         match self {
             Self::Eq => ordering.is_eq(),
             Self::NotEq => ordering.is_ne(),
@@ -71,10 +74,19 @@ impl Criterion {
     #[must_use]
     pub fn parse(val: &CellValue) -> Self {
         match val {
-            CellValue::Number(n) => Self {
-                op: ComparisonOp::Eq,
-                target: CriteriaTarget::Number(*n),
-            },
+            CellValue::Number(n) => {
+                if n.is_finite() {
+                    Self {
+                        op: ComparisonOp::Eq,
+                        target: CriteriaTarget::Number(normalize_zero(*n)),
+                    }
+                } else {
+                    Self {
+                        op: ComparisonOp::Eq,
+                        target: CriteriaTarget::Error(ExcelError::Num),
+                    }
+                }
+            }
             CellValue::Boolean(b) => Self {
                 op: ComparisonOp::Eq,
                 target: CriteriaTarget::Boolean(*b),
@@ -129,31 +141,22 @@ impl Criterion {
             };
         }
 
-        // Check if operand parses as a number:
-        // For plain text without operator (e.g. " 10" or "  text"), leading/trailing space indicates text.
-        let is_valid_numeric_candidate = if has_explicit_op {
-            true
-        } else {
-            !rest.starts_with(' ') && !rest.ends_with(' ')
-        };
+        // For plain text without an explicit operator (e.g. " 10", "10 ", " TRUE"),
+        // leading or trailing ASCII spaces force literal text matching in Excel.
+        // After an explicit operator (e.g. "> 10", "> 10 ", "= TRUE "), ASCII spaces
+        // around numeric, boolean, and error operands are trimmed.
+        let can_parse_typed_operand =
+            has_explicit_op || (!rest.starts_with(' ') && !rest.ends_with(' '));
 
-        if is_valid_numeric_candidate && let Ok(num) = rest.trim_start().parse::<f64>() {
-            return Self {
-                op,
-                target: CriteriaTarget::Number(num),
-            };
-        }
+        if can_parse_typed_operand {
+            if let Some(num) = parse_excel_number(rest) {
+                return Self {
+                    op,
+                    target: CriteriaTarget::Number(num),
+                };
+            }
 
-        // Check if operand parses as a boolean or error:
-        // For plain text without operator (e.g. " TRUE" or " #DIV/0!"), leading/trailing space indicates text.
-        let is_valid_keyword_candidate = if has_explicit_op {
-            true
-        } else {
-            !rest.starts_with(' ') && !rest.ends_with(' ')
-        };
-
-        if is_valid_keyword_candidate {
-            let trimmed_for_keywords = rest.trim_start();
+            let trimmed_for_keywords = rest.trim_matches(' ');
             if trimmed_for_keywords.eq_ignore_ascii_case("true") {
                 return Self {
                     op,
@@ -221,27 +224,29 @@ impl Criterion {
             }
             CriteriaTarget::Number(target_n) => match cell {
                 CellValue::Number(cell_n) => {
-                    let ord = cell_n
-                        .partial_cmp(target_n)
-                        .unwrap_or(std::cmp::Ordering::Equal);
+                    if !cell_n.is_finite() || !target_n.is_finite() {
+                        return self.op == ComparisonOp::NotEq;
+                    }
+                    let ord = normalize_zero(*cell_n).total_cmp(&normalize_zero(*target_n));
                     self.op.matches_ordering(ord)
                 }
                 CellValue::Text(s) => {
-                    // In Excel *IFS, exact equality matches string cells that parse to the target number
-                    if let Ok(num) = s.parse::<f64>() {
-                        let ord = num
-                            .partial_cmp(target_n)
-                            .unwrap_or(std::cmp::Ordering::Equal);
-                        if self.op == ComparisonOp::Eq {
-                            ord.is_eq()
-                        } else if self.op == ComparisonOp::NotEq {
-                            ord.is_ne()
-                        } else {
-                            // Relational comparisons against strings in *IFS evaluate to false
-                            false
+                    // In Excel *IFS, exact equality/inequality matches string cells that parse to a finite number
+                    if let Some(num) = parse_excel_number(s) {
+                        if !target_n.is_finite() {
+                            return self.op == ComparisonOp::NotEq;
+                        }
+                        let ord = num.total_cmp(&normalize_zero(*target_n));
+                        match self.op {
+                            ComparisonOp::Eq => ord.is_eq(),
+                            ComparisonOp::NotEq => ord.is_ne(),
+                            ComparisonOp::Lt
+                            | ComparisonOp::LtEq
+                            | ComparisonOp::Gt
+                            | ComparisonOp::GtEq => false,
                         }
                     } else {
-                        // String that cannot be parsed as number is not equal to target number
+                        // String that cannot be parsed as finite number is not equal to target number
                         self.op == ComparisonOp::NotEq
                     }
                 }
@@ -437,5 +442,104 @@ mod tests {
         assert!(gt_text_with_space.matches(&CellValue::Text(" textA".into())));
         assert!(!gt_text_with_space.matches(&CellValue::Text(" text".into())));
         assert!(!gt_text_with_space.matches(&CellValue::Text(" a".into())));
+
+        // Explicit operators trim both leading and trailing ASCII spaces on typed operands
+        let gt_trailing_space = Criterion::parse_str("> 10 ");
+        assert_eq!(
+            gt_trailing_space,
+            Criterion {
+                op: ComparisonOp::Gt,
+                target: CriteriaTarget::Number(10.0),
+            }
+        );
+        assert!(gt_trailing_space.matches(&CellValue::Number(15.0)));
+        assert!(!gt_trailing_space.matches(&CellValue::Number(10.0)));
+
+        let eq_bool_trailing = Criterion::parse_str("= TRUE ");
+        assert_eq!(
+            eq_bool_trailing,
+            Criterion {
+                op: ComparisonOp::Eq,
+                target: CriteriaTarget::Boolean(true),
+            }
+        );
+        assert!(eq_bool_trailing.matches(&CellValue::Boolean(true)));
+
+        let eq_err_trailing = Criterion::parse_str("= #N/A ");
+        assert_eq!(
+            eq_err_trailing,
+            Criterion {
+                op: ComparisonOp::Eq,
+                target: CriteriaTarget::Error(ExcelError::Na),
+            }
+        );
+        assert!(eq_err_trailing.matches(&CellValue::Error(ExcelError::Na)));
+
+        // Plain number with trailing space remains literal text search
+        let num_trailing_space = Criterion::parse_str("10 ");
+        assert!(num_trailing_space.matches(&CellValue::Text("10 ".into())));
+        assert!(!num_trailing_space.matches(&CellValue::Number(10.0)));
+    }
+
+    #[test]
+    fn test_non_finite_strings_and_floats_do_not_poison_criteria() {
+        for token in [
+            "NaN",
+            "nan",
+            "NAN",
+            "-NaN",
+            "inf",
+            "-inf",
+            "INF",
+            "Infinity",
+            "-Infinity",
+            "1e500",
+        ] {
+            let crit = Criterion::parse_str(token);
+            assert!(
+                matches!(crit.target, CriteriaTarget::Text(_)),
+                "expected Text target for {token:?}, got {crit:?}"
+            );
+            assert!(!crit.matches(&CellValue::Number(0.0)));
+            assert!(!crit.matches(&CellValue::Number(42.0)));
+            assert!(crit.matches(&CellValue::Text(token.to_ascii_lowercase())));
+            assert!(crit.matches(&CellValue::Text(token.to_ascii_uppercase())));
+
+            let eq_op_crit = Criterion::parse_str(&format!("={token}"));
+            assert!(matches!(eq_op_crit.target, CriteriaTarget::Text(_)));
+            assert!(!eq_op_crit.matches(&CellValue::Number(42.0)));
+
+            let gt_op_crit = Criterion::parse_str(&format!(">{token}"));
+            assert!(matches!(gt_op_crit.target, CriteriaTarget::Text(_)));
+            assert!(!gt_op_crit.matches(&CellValue::Number(42.0)));
+        }
+
+        // Numeric criterion must not match "NaN", "inf", "Infinity", or overflow text cells,
+        // while still matching padded finite numeric text cells (" 42 ") on Eq/NotEq.
+        let eq42 = Criterion::parse(&CellValue::Number(42.0));
+        let ne42 = Criterion::parse_str("<>42");
+        let gt0 = Criterion::parse_str(">0");
+        for non_finite_text in ["NaN", "NAN", "inf", "-inf", "Infinity", "1e500"] {
+            let text_cell = CellValue::Text(non_finite_text.into());
+            assert!(!eq42.matches(&text_cell));
+            assert!(ne42.matches(&text_cell));
+            assert!(!gt0.matches(&text_cell));
+        }
+        assert!(eq42.matches(&CellValue::Text(" 42 ".into())));
+        assert!(!ne42.matches(&CellValue::Text(" 42 ".into())));
+
+        // Defensive raw non-finite CellValue::Number handling
+        let nan_crit = Criterion::parse(&CellValue::Number(f64::NAN));
+        assert_eq!(
+            nan_crit,
+            Criterion {
+                op: ComparisonOp::Eq,
+                target: CriteriaTarget::Error(ExcelError::Num),
+            }
+        );
+        assert!(!eq42.matches(&CellValue::Number(f64::NAN)));
+        assert!(ne42.matches(&CellValue::Number(f64::NAN)));
+        assert!(!gt0.matches(&CellValue::Number(f64::NAN)));
+        assert!(!gt0.matches(&CellValue::Number(f64::INFINITY)));
     }
 }
