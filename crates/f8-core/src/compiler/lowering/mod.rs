@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 pub use error::LoweringError;
 
+use crate::compiler::graph::error::ResolveError;
 use crate::compiler::graph::resolve::{resolve_col_selector, resolve_row_selector};
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
@@ -116,17 +117,14 @@ pub fn lower_table_ref(
     symbol_table: &SymbolTable,
     layout_map: &LayoutMap,
 ) -> Result<String, LoweringError> {
-    let origin_table = symbol_table.get_table(&origin.table).ok_or_else(|| {
-        crate::compiler::graph::error::ResolveError::unknown_table(origin, origin.table.clone())
-    })?;
+    if !symbol_table.contains_table(&origin.table) {
+        return Err(ResolveError::unregistered_table(origin, origin.table.clone()).into());
+    }
 
     let resolved_table_id = target_ref.table.resolve(&origin.table);
-    let target_table = symbol_table.get_table(resolved_table_id).ok_or_else(|| {
-        crate::compiler::graph::error::ResolveError::unknown_table(
-            origin,
-            resolved_table_id.clone(),
-        )
-    })?;
+    let target_table = symbol_table
+        .get_table(resolved_table_id)
+        .ok_or_else(|| ResolveError::unknown_table(origin, resolved_table_id.clone()))?;
 
     let origin_coord =
         layout_map
@@ -137,8 +135,8 @@ pub fn lower_table_ref(
             })?;
     let origin_sheet = &origin_coord.sheet;
 
-    let rows = resolve_row_selector(origin, target_table, origin_table, &target_ref.row)?;
-    let cols = resolve_col_selector(origin, target_table, origin_table, &target_ref.col)?;
+    let rows = resolve_row_selector(origin, target_table, &target_ref.row)?;
+    let cols = resolve_col_selector(origin, target_table, &target_ref.col)?;
 
     let first_row = rows.first().ok_or_else(|| LoweringError::EmptyRange {
         origin: origin.clone(),

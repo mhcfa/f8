@@ -712,5 +712,282 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(err.message).toContain("descriptor column 'notes'");
       }
     });
+
+    it("(h) resolves cross-table relative offsets and populates mismatch/out-of-bounds ReferenceResolutionError", () => {
+      // 1. Valid cross-table column & row offsets and range slices (Scenarios 1, 2, 3)
+      const okModel = new Model({ name: "CrossTableOffsets", theme: "corporate_navy" });
+      const sheet = okModel.addSheet("Main");
+
+      const history = sheet.addTable("History", "History");
+      history
+        .addColumn("2022A", { role: "measure", header: "2022A" })
+        .addColumn("2023A", { role: "measure", header: "2023A" })
+        .addColumn("2024E", { role: "measure", header: "2024E" });
+      history.addRow("rev", {
+        cells: {
+          "2022A": 100,
+          "2023A": 150,
+          "2024E": new Cell({ expr: 'Forecast["rev", col.next]' }),
+        },
+      });
+
+      const detail = sheet.addTable("Detail", "Detail");
+      detail
+        .addColumn("2022A", { role: "measure", header: "2022A" })
+        .addColumn("notes", { role: "descriptor", header: "Notes" })
+        .addColumnGutter()
+        .addColumn("2023A", { role: "measure", header: "2023A" })
+        .addColumn("2024E", { role: "measure", header: "2024E" });
+      detail.addRow("rev", {
+        cells: { "2022A": 80, notes: "audited", "2023A": 120, "2024E": 160 },
+      });
+
+      const forecast = sheet.addTable("Forecast", "Forecast");
+      forecast
+        .addColumn("2024E", { role: "measure", header: "2024E" })
+        .addColumn("2025E", { role: "measure", header: "2025E" });
+      forecast.addRow("rev", {
+        cells: {
+          "2024E": new Cell({ expr: 'History["rev", col.prev]' }),
+          "2025E": 300,
+        },
+      });
+      forecast.addRow("cum_hist", {
+        cells: {
+          "2024E": new Cell({ expr: 'SUM(History["rev", "2022A"..col.prev])' }),
+          "2025E": 0,
+        },
+      });
+      forecast.addRow("detail_lag", {
+        cells: {
+          "2024E": new Cell({ expr: 'Detail["rev", col.prev]' }),
+          "2025E": 0,
+        },
+      });
+      forecast.addRow("detail_lag2", {
+        cells: {
+          "2024E": new Cell({ expr: 'Detail["rev", col.prev(2)]' }),
+          "2025E": 0,
+        },
+      });
+
+      const schedule = sheet.addTable("Schedule", "Schedule");
+      schedule.addColumn("2024E", { role: "measure", header: "2024E" });
+      schedule.addRow("r0", { cells: { "2024E": 10 } });
+      schedule.addSectionHeader("Sec");
+      schedule.addRow("r1", { cells: { "2024E": 20 } });
+      schedule.addRowGutter();
+      schedule.addRow("r2", { cells: { "2024E": 30 } });
+      schedule.addRow("r3", { cells: { "2024E": 40 } });
+
+      const driver = sheet.addTable("DriverTable", "Drivers");
+      driver.addColumn("2024E", { role: "measure", header: "2024E" });
+      driver.addRow("r1", { expr: "Schedule[row.prev, @col]" });
+      driver.addRow("r3", {
+        expr: 'Schedule[row.prev, @col] + SUM(Schedule["r2"..row.prev, @col])',
+      });
+
+      const compiled = okModel.compile();
+      expect(compiled.num("Forecast", "rev", "2024E")).toBe(150);
+      expect(compiled.num("Forecast", "cum_hist", "2024E")).toBe(250);
+      expect(compiled.num("History", "rev", "2024E")).toBe(300);
+      expect(compiled.num("Forecast", "detail_lag", "2024E")).toBe(120);
+      expect(compiled.num("Forecast", "detail_lag2", "2024E")).toBe(80);
+      expect(compiled.num("DriverTable", "r1", "2024E")).toBe(10);
+      expect(compiled.num("DriverTable", "r3", "2024E")).toBe(60);
+      expect(compiled.inspectCell("Forecast", "cum_hist", "2024E").excelFormula).toBe(
+        "=SUM($B$5:C$5)",
+      );
+
+      // 2. Cross-table active column mismatch (scalar and range endpoint)
+      for (const exprStr of [
+        'Assumptions["tax", col.prev]',
+        'SUM(Assumptions["tax", "val"..col.prev])',
+      ]) {
+        const colMm = new Model({ name: "ColMismatch" });
+        const mmSheet = colMm.addSheet("Main");
+        const assump = mmSheet.addTable("Assumptions", "Assumptions");
+        assump.addColumn("val", { role: "measure", header: "Val" });
+        assump.addRow("tax", { cells: { val: 0.21 } });
+        const fcst = mmSheet.addTable("Forecast", "Forecast");
+        fcst.addColumn("2024E", { role: "measure", header: "2024E" });
+        fcst.addRow("ebitda", { expr: exprStr });
+        try {
+          colMm.compile();
+          expect.unreachable("Should have thrown ReferenceResolutionError");
+        } catch (err) {
+          if (!(err instanceof ReferenceResolutionError)) {
+            expect.unreachable("Expected ReferenceResolutionError");
+          }
+          expect(err.coordinate).toBe('Forecast["ebitda", "2024E"]');
+          expect(err.targetTable).toBe("Assumptions");
+          expect(err.col).toBe("2024E");
+          expect(err.row).toBeNull();
+        }
+      }
+
+      // 3. Cross-table active row mismatch (scalar and range endpoint)
+      for (const exprStr of [
+        'Assumptions[row.prev, "val"]',
+        'SUM(Assumptions["tax"..row.prev, "val"])',
+      ]) {
+        const rowMm = new Model({ name: "RowMismatch" });
+        const mmSheet = rowMm.addSheet("Main");
+        const assump = mmSheet.addTable("Assumptions", "Assumptions");
+        assump.addColumn("val", { role: "measure", header: "Val" });
+        assump.addRow("tax", { cells: { val: 0.21 } });
+        const fcst = mmSheet.addTable("Forecast", "Forecast");
+        fcst.addColumn("2024E", { role: "measure", header: "2024E" });
+        fcst.addRow("ebitda", { expr: exprStr });
+        try {
+          rowMm.compile();
+          expect.unreachable("Should have thrown ReferenceResolutionError");
+        } catch (err) {
+          if (!(err instanceof ReferenceResolutionError)) {
+            expect.unreachable("Expected ReferenceResolutionError");
+          }
+          expect(err.coordinate).toBe('Forecast["ebitda", "2024E"]');
+          expect(err.targetTable).toBe("Assumptions");
+          expect(err.row).toBe("ebitda");
+          expect(err.col).toBeNull();
+        }
+      }
+
+      // 4. Same-table and cross-table target out-of-bounds, target descriptor anchor,
+      // multi-table disambiguation, and inverted range (Scenarios 3, 4, 5)
+      const sameOobModel = new Model({ name: "SameTableOob" });
+      const sameOobTbl = sameOobModel.addSheet("Main").addTable("Origin", "Origin");
+      sameOobTbl.addColumn("2024E", { role: "measure", header: "2024E" });
+      sameOobTbl.addRow("r1", {
+        cells: { "2024E": new Cell({ expr: '@table["r1", col.prev]' }) },
+      });
+      try {
+        sameOobModel.compile();
+        expect.unreachable("Should have thrown ReferenceResolutionError");
+      } catch (err) {
+        if (!(err instanceof ReferenceResolutionError)) {
+          expect.unreachable("Expected ReferenceResolutionError");
+        }
+        const sameTargetTable: string = err.targetTable;
+        expect(sameTargetTable.toUpperCase()).toBe("ORIGIN");
+        expect(sameTargetTable).toBe("Origin");
+        expect(err.row).toBeNull();
+        expect(err.col).toBeNull();
+        expect(err.message).toContain(
+          "Formula in cell 'Origin[\"r1\", \"2024E\"]' has temporal offset -1 which exceeds axis boundaries in table 'Origin'",
+        );
+      }
+
+      for (const [originCol, exprStr, expectedOffsetStr] of [
+        ["2024E", 'Target["r1", col.prev]', "-1"],
+        ["2024E", 'Target[row.prev, "2024E"]', "-1"],
+        ["label", 'Target["r1", col.prev]', "-1"],
+        ["2024E", 'HistoryA["r1", col.prev] + Target["r1", col.prev]', "-1"],
+        ["2025E", 'HistoryA["r1", col.next] + Target["r1", col.next]', "+1"],
+        ["2024E", 'HistoryA[row.prev, "2024E"] + Target[row.prev, "2024E"]', "-1"],
+        ["2024E", 'HistoryA[row.next, "2024E"] + Target[row.next, "2024E"]', "+1"],
+        ["label", 'HistoryA["r1", col.prev] + Target["r1", col.prev]', "-1"],
+      ] as const) {
+        const oobModel = new Model({ name: "TargetOob" });
+        const oobSheet = oobModel.addSheet("Main");
+
+        const historyA = oobSheet.addTable("HistoryA", "History A");
+        for (const colId of ["2023A", "label", "2024E", "2025E", "2026E"]) {
+          historyA.addColumn(colId, { role: "measure", header: colId });
+        }
+        for (const [rowId, base] of [
+          ["r0", 1],
+          ["r1", 10],
+          ["r2", 20],
+        ] as const) {
+          historyA.addRow(rowId, {
+            cells: {
+              "2023A": base,
+              label: base + 1,
+              "2024E": base + 2,
+              "2025E": base + 3,
+              "2026E": base + 4,
+            },
+          });
+        }
+
+        const targetTbl = oobSheet.addTable("Target", "Target");
+        targetTbl
+          .addColumn("label", { role: "descriptor", header: "Label" })
+          .addColumn("2024E", { role: "measure", header: "2024E" })
+          .addColumn("2025E", { role: "measure", header: "2025E" });
+        targetTbl.addRow("r1", { cells: { label: "Item", "2024E": 10, "2025E": 20 } });
+
+        const originTbl = oobSheet.addTable("Origin", "Origin");
+        originTbl
+          .addColumn("2023A", { role: "measure", header: "2023A" })
+          .addColumn("label", { role: "descriptor", header: "Label" })
+          .addColumn("2024E", { role: "measure", header: "2024E" })
+          .addColumn("2025E", { role: "measure", header: "2025E" });
+        originTbl.addRow("r0", {
+          cells: { "2023A": 1, label: "Zero", "2024E": 2, "2025E": 3 },
+        });
+        const originCells: Record<string, number | string | Cell> = {
+          "2023A": 4,
+          label: "One",
+          "2024E": 5,
+          "2025E": 6,
+        };
+        originCells[originCol] = new Cell({ expr: exprStr });
+        originTbl.addRow("r1", { cells: originCells });
+
+        try {
+          oobModel.compile();
+          expect.unreachable("Should have thrown ReferenceResolutionError");
+        } catch (err) {
+          if (!(err instanceof ReferenceResolutionError)) {
+            expect.unreachable("Expected ReferenceResolutionError");
+          }
+          const targetTableId: string = err.targetTable;
+          expect(targetTableId.toUpperCase()).toBe("TARGET");
+          expect(targetTableId).toBe("Target");
+          expect(err.coordinate).toBe(`Origin["r1", "${originCol}"]`);
+          expect(err.row).toBeNull();
+          expect(err.col).toBeNull();
+          expect(err.message).toContain(
+            `Formula in cell 'Origin["r1", "${originCol}"]' has temporal offset ${expectedOffsetStr} which exceeds axis boundaries in table 'Target'`,
+          );
+        }
+      }
+
+      const invModel = new Model({ name: "TargetInverted" });
+      const invSheet = invModel.addSheet("Main");
+      const invTarget = invSheet.addTable("Target", "Target");
+      invTarget
+        .addColumn("label", { role: "descriptor", header: "Label" })
+        .addColumn("2024E", { role: "measure", header: "2024E" })
+        .addColumn("2025E", { role: "measure", header: "2025E" });
+      invTarget.addRow("r1", { cells: { label: "Item", "2024E": 10, "2025E": 20 } });
+      const invOrigin = invSheet.addTable("Origin", "Origin");
+      invOrigin
+        .addColumn("label", { role: "descriptor", header: "Label" })
+        .addColumn("2024E", { role: "measure", header: "2024E" })
+        .addColumn("2025E", { role: "measure", header: "2025E" });
+      invOrigin.addRow("r1", {
+        cells: {
+          label: "Item",
+          "2024E": 10,
+          "2025E": new Cell({ expr: 'SUM(Target["r1", col.prev.."label"])' }),
+        },
+      });
+      try {
+        invModel.compile();
+        expect.unreachable("Should have thrown ReferenceResolutionError");
+      } catch (err) {
+        if (!(err instanceof ReferenceResolutionError)) {
+          expect.unreachable("Expected ReferenceResolutionError");
+        }
+        expect(err.coordinate).toBe('Origin["r1", "2025E"]');
+        expect(err.targetTable).toBe("Target");
+        expect(err.row).toBeNull();
+        expect(err.col).toBeNull();
+        expect(err.message.toLowerCase()).toContain("inverted range");
+      }
+    });
   });
 });

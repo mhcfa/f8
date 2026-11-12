@@ -115,7 +115,7 @@ class ReferenceResolutionError(F8Error):
     """Raised when a formula coordinate or range reference cannot be resolved."""
 
     coordinate: str
-    target_table: str | None
+    target_table: str
     row: str | None
     col: str | None
 

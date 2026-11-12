@@ -17,20 +17,20 @@ export class CycleDetectedError extends F8Error {
 
 export class ReferenceResolutionError extends F8Error {
   readonly coordinate: string;
-  readonly targetTable: string | null;
+  readonly targetTable: string;
   readonly row: string | null;
   readonly col: string | null;
 
   constructor(
     message: string,
     coordinate: string,
-    targetTable?: string | null,
+    targetTable: string,
     row?: string | null,
     col?: string | null,
   ) {
     super(message);
     this.coordinate = coordinate;
-    this.targetTable = targetTable ?? null;
+    this.targetTable = targetTable;
     this.row = row ?? null;
     this.col = col ?? null;
   }
@@ -88,7 +88,7 @@ interface RawWasmError {
   readonly message?: string;
   readonly cycle?: string[];
   readonly coordinate?: string;
-  readonly target_table?: string | null;
+  readonly target_table?: string;
   readonly row?: string | null;
   readonly col?: string | null;
   readonly table?: string | null;
@@ -112,7 +112,7 @@ export function toF8Error(err: unknown): Error {
         return new ReferenceResolutionError(
           msg,
           raw.coordinate ?? "",
-          raw.target_table ?? null,
+          raw.target_table ?? "",
           raw.row ?? null,
           raw.col ?? null,
         );
