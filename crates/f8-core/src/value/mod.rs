@@ -119,10 +119,11 @@ impl CellValue {
         }
     }
 
-    /// Compares two cell values conforming to Excel type ranking and equality rules:
+    /// Compares two cell values conforming to Excel pairwise relational comparison rules:
     /// - Same types: standard comparison (strings compare case-insensitively using ASCII case folding).
-    /// - Empty cell coercions: Empty vs Number coerces to 0.0; Empty vs Text coerces to ""; Empty is less than Boolean.
-    /// - Mixed types: Number < Text < Boolean < Error.
+    /// - Empty cell coercions: `Empty` coerces to the other operand's neutral identity (`0.0` vs `Number`, `""` vs `Text`, `false` vs `Boolean`).
+    /// - Mixed non-empty types: `Number < Text < Boolean < Error`.
+    /// - Pairwise comparator: not a transitive total order across heterogeneous sets containing `Empty`.
     #[must_use]
     pub fn excel_cmp(&self, other: &Self) -> std::cmp::Ordering {
         use std::cmp::Ordering;
@@ -137,9 +138,9 @@ impl CellValue {
             (Self::Empty, Self::Text(s)) => compare_ascii_case_insensitive("", s.as_str()),
             (Self::Text(s), Self::Empty) => compare_ascii_case_insensitive(s.as_str(), ""),
 
-            // Empty vs Boolean: Empty ranks lower than any Boolean
-            (Self::Empty, Self::Boolean(_)) => Ordering::Less,
-            (Self::Boolean(_), Self::Empty) => Ordering::Greater,
+            // Empty vs Boolean coerces Empty to false
+            (Self::Empty, Self::Boolean(b)) => false.cmp(b),
+            (Self::Boolean(b), Self::Empty) => b.cmp(&false),
 
             // Same type comparisons
             (Self::Number(a), Self::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
@@ -383,17 +384,40 @@ mod tests {
         );
         assert!(CellValue::Empty.excel_eq(&CellValue::Text("".into())));
 
-        // Empty vs Boolean
+        // Empty vs Boolean coerces Empty to false
         assert_eq!(
             CellValue::Empty.excel_cmp(&CellValue::Boolean(false)),
+            Ordering::Equal
+        );
+        assert_eq!(
+            CellValue::Boolean(false).excel_cmp(&CellValue::Empty),
+            Ordering::Equal
+        );
+        assert_eq!(
+            CellValue::Empty.excel_cmp(&CellValue::Boolean(true)),
             Ordering::Less
         );
-        assert!(!CellValue::Empty.excel_eq(&CellValue::Boolean(false)));
+        assert_eq!(
+            CellValue::Boolean(true).excel_cmp(&CellValue::Empty),
+            Ordering::Greater
+        );
+        assert!(CellValue::Empty.excel_eq(&CellValue::Boolean(false)));
+        assert!(CellValue::Boolean(false).excel_eq(&CellValue::Empty));
+        assert!(!CellValue::Empty.excel_eq(&CellValue::Boolean(true)));
+        assert!(!CellValue::Boolean(true).excel_eq(&CellValue::Empty));
 
-        // Type ranking: Number < Text < Boolean
+        // Type ranking: Number < Text < Boolean (including Text("") < Boolean(false))
         assert_eq!(
             CellValue::Number(100.0).excel_cmp(&CellValue::Text("1".into())),
             Ordering::Less
+        );
+        assert_eq!(
+            CellValue::Text("".into()).excel_cmp(&CellValue::Boolean(false)),
+            Ordering::Less
+        );
+        assert_eq!(
+            CellValue::Boolean(false).excel_cmp(&CellValue::Text("".into())),
+            Ordering::Greater
         );
         assert_eq!(
             CellValue::Text("xyz".into()).excel_cmp(&CellValue::Boolean(false)),

@@ -503,6 +503,62 @@ fn test_scenario_7_switch_matching_and_default() {
     ];
     let res_na = switch_func.evaluate(&args_no_match, &ctx).unwrap();
     assert_eq!(res_na, CellValue::Error(ExcelError::Na));
+
+    // Empty coerces to Number(0.0) on expression and value_i (skips "" and FALSE, matches 0.0 and Empty)
+    let empty_str_val = Expr::Literal(f8_core::expr::ast::Literal::String(String::new()));
+    let false_val = Expr::Literal(f8_core::expr::ast::Literal::Boolean(false));
+    let zero_val = Expr::Literal(f8_core::expr::ast::Literal::Number(0.0));
+    let res3 = Expr::Literal(f8_core::expr::ast::Literal::Number(3.0));
+    let args_empty_target = vec![
+        FunctionArg::Scalar(CellValue::Empty),
+        FunctionArg::Lazy(&empty_str_val),
+        FunctionArg::Lazy(&res1),
+        FunctionArg::Lazy(&false_val),
+        FunctionArg::Lazy(&res2),
+        FunctionArg::Lazy(&zero_val),
+        FunctionArg::Lazy(&res3),
+        FunctionArg::Lazy(&def_expr),
+    ];
+    assert_eq!(
+        switch_func.evaluate(&args_empty_target, &ctx).unwrap(),
+        CellValue::Number(3.0)
+    );
+
+    // Numeric 0.0 matches Empty case_val, while "" and FALSE do not match Empty case_val
+    let args_zero_vs_empty = vec![
+        FunctionArg::Scalar(CellValue::Number(0.0)),
+        FunctionArg::Scalar(CellValue::Empty),
+        FunctionArg::Lazy(&res1),
+        FunctionArg::Lazy(&def_expr),
+    ];
+    assert_eq!(
+        switch_func.evaluate(&args_zero_vs_empty, &ctx).unwrap(),
+        CellValue::Number(1.0)
+    );
+
+    for non_matching_target in [CellValue::Text(String::new()), CellValue::Boolean(false)] {
+        let args_non_match_empty = vec![
+            FunctionArg::Scalar(non_matching_target),
+            FunctionArg::Scalar(CellValue::Empty),
+            FunctionArg::Lazy(&res1),
+            FunctionArg::Lazy(&def_expr),
+        ];
+        assert_eq!(
+            switch_func.evaluate(&args_non_match_empty, &ctx).unwrap(),
+            CellValue::Number(99.0)
+        );
+    }
+
+    // Empty in result_i / default remains uncoerced CellValue::Empty mid-expression
+    let args_empty_result = vec![
+        FunctionArg::Scalar(CellValue::Empty),
+        FunctionArg::Scalar(CellValue::Empty),
+        FunctionArg::Scalar(CellValue::Empty),
+    ];
+    assert_eq!(
+        switch_func.evaluate(&args_empty_result, &ctx).unwrap(),
+        CellValue::Empty
+    );
 }
 
 #[test]
