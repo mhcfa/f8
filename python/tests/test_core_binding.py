@@ -1352,3 +1352,46 @@ def test_scenario_18_formula_cell_blank_coercion_and_empty_boolean_comparisons()
     assert compiled.value("T", "empty_str_lt_false", "c1") is True
     assert compiled.num("T", "switch_a_bool", "c1") == 30.0
     assert compiled.num("T", "switch_a_zero", "c1") == 40.0
+
+
+def test_scenario_19_criteria_nan_infinity_and_operator_trailing_spaces() -> None:
+    model = f8.Model(name="CriteriaNanModel")
+    tbl = model.add_sheet("Main").add_table("T", title="Criteria NaN")
+    tbl.add_column("c1", role="measure", header="C1")
+    tbl.add_column("w", role="measure", header="Weight")
+
+    tbl.add_row("r1", cells={"c1": "NAN", "w": 10.0})
+    tbl.add_row("r2", cells={"c1": "Infinity", "w": 20.0})
+    tbl.add_row("r3", cells={"c1": "inf", "w": 30.0})
+    tbl.add_row("r4", cells={"c1": " 42 ", "w": 40.0})
+    tbl.add_row("r5", cells={"c1": 42.0, "w": 50.0})
+    tbl.add_row("r6", cells={"c1": -0.0, "w": 60.0})
+
+    tbl.add_row(
+        "cnt_nan",
+        cells={"c1": f8.Cell(expr='COUNTIFS(@table["r1".."r6", "c1"], "nan")'), "w": 0.0},
+    )
+    tbl.add_row(
+        "cnt_inf",
+        cells={"c1": f8.Cell(expr='COUNTIFS(@table["r1".."r6", "c1"], "Infinity")'), "w": 0.0},
+    )
+    tbl.add_row(
+        "sum_42",
+        cells={
+            "c1": f8.Cell(expr='SUMIFS(@table["r1".."r6", "w"], @table["r1".."r6", "c1"], 42)'),
+            "w": 0.0,
+        },
+    )
+    tbl.add_row(
+        "cnt_gt0",
+        cells={"c1": f8.Cell(expr='COUNTIFS(@table["r1".."r6", "c1"], "> 0 ")'), "w": 0.0},
+    )
+
+    compiled = model.compile()
+    assert compiled.num("T", "cnt_nan", "c1") == 1.0
+    assert compiled.num("T", "cnt_inf", "c1") == 1.0
+    assert compiled.num("T", "sum_42", "c1") == 90.0
+    assert compiled.num("T", "cnt_gt0", "c1") == 1.0
+
+    neg_zero_val = compiled.value("T", "r6", "c1")
+    assert isinstance(neg_zero_val, float) and math.copysign(1.0, neg_zero_val) == 1.0

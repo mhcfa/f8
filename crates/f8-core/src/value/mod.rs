@@ -8,10 +8,34 @@ pub mod format;
 pub use error::{ExcelError, ParseExcelError};
 pub use format::{format_accounting_number, format_cell_value};
 
+use std::cmp::Ordering;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
 use crate::expr::ast::Literal;
 use crate::model::table::ValueLiteral;
-use serde::{Deserialize, Serialize};
-use std::fmt;
+
+/// Normalizes IEEE-754 negative zero (`-0.0`) to canonical positive zero (`0.0`).
+#[inline]
+#[must_use]
+pub fn normalize_zero(val: f64) -> f64 {
+    if val == 0.0 { 0.0 } else { val }
+}
+
+/// Parses a locale-independent finite Excel numeric string.
+///
+/// Trims leading and trailing ASCII spaces (`' '`), rejects non-finite float tokens
+/// (`"NaN"`, `"inf"`, `"Infinity"`, and exponent overflows), and normalizes `-0.0` to `0.0`.
+#[must_use]
+pub(crate) fn parse_excel_number(s: &str) -> Option<f64> {
+    let trimmed = s.trim_matches(' ');
+    let num = trimmed.parse::<f64>().ok()?;
+    if !num.is_finite() {
+        return None;
+    }
+    Some(normalize_zero(num))
+}
 
 /// Runtime representation of a spreadsheet cell calculation result or literal value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,6 +53,18 @@ pub enum CellValue {
 }
 
 impl CellValue {
+    /// Constructs a numeric `CellValue`, normalizing `-0.0` to `0.0` and mapping
+    /// non-finite floats (`NaN`, `inf`, `-inf`) to `CellValue::Error(ExcelError::Num)`.
+    #[inline]
+    #[must_use]
+    pub fn number(n: f64) -> Self {
+        if n.is_finite() {
+            Self::Number(normalize_zero(n))
+        } else {
+            Self::Error(ExcelError::Num)
+        }
+    }
+
     /// Returns the contained numeric value if this cell is `Number`.
     #[must_use]
     pub fn as_number(&self) -> Option<f64> {
@@ -125,14 +161,13 @@ impl CellValue {
     /// - Mixed non-empty types: `Number < Text < Boolean < Error`.
     /// - Pairwise comparator: not a transitive total order across heterogeneous sets containing `Empty`.
     #[must_use]
-    pub fn excel_cmp(&self, other: &Self) -> std::cmp::Ordering {
-        use std::cmp::Ordering;
+    pub fn excel_cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Self::Empty, Self::Empty) => Ordering::Equal,
 
             // Empty vs Number coerces Empty to 0.0
-            (Self::Empty, Self::Number(n)) => 0.0f64.partial_cmp(n).unwrap_or(Ordering::Equal),
-            (Self::Number(n), Self::Empty) => n.partial_cmp(&0.0f64).unwrap_or(Ordering::Equal),
+            (Self::Empty, Self::Number(n)) => 0.0_f64.total_cmp(&normalize_zero(*n)),
+            (Self::Number(n), Self::Empty) => normalize_zero(*n).total_cmp(&0.0_f64),
 
             // Empty vs Text coerces Empty to ""
             (Self::Empty, Self::Text(s)) => compare_ascii_case_insensitive("", s.as_str()),
@@ -143,7 +178,7 @@ impl CellValue {
             (Self::Boolean(b), Self::Empty) => b.cmp(&false),
 
             // Same type comparisons
-            (Self::Number(a), Self::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (Self::Number(a), Self::Number(b)) => normalize_zero(*a).total_cmp(&normalize_zero(*b)),
             (Self::Text(a), Self::Text(b)) => {
                 compare_ascii_case_insensitive(a.as_str(), b.as_str())
             }
@@ -160,8 +195,12 @@ impl CellValue {
             (Self::Text(_), Self::Boolean(_)) => Ordering::Less,
             (Self::Boolean(_), Self::Text(_)) => Ordering::Greater,
 
-            (Self::Error(_), _) => Ordering::Greater,
-            (_, Self::Error(_)) => Ordering::Less,
+            (Self::Error(_), Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty) => {
+                Ordering::Greater
+            }
+            (Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty, Self::Error(_)) => {
+                Ordering::Less
+            }
         }
     }
 
@@ -170,8 +209,14 @@ impl CellValue {
     pub fn excel_eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Error(a), Self::Error(b)) => a == b,
-            (Self::Error(_), _) | (_, Self::Error(_)) => false,
-            _ => self.excel_cmp(other) == std::cmp::Ordering::Equal,
+            (Self::Error(_), Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty)
+            | (Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty, Self::Error(_)) => {
+                false
+            }
+            (
+                Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty,
+                Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty,
+            ) => self.excel_cmp(other) == Ordering::Equal,
         }
     }
 }
@@ -205,7 +250,7 @@ impl fmt::Display for CellValue {
 impl From<ValueLiteral> for CellValue {
     fn from(lit: ValueLiteral) -> Self {
         match lit {
-            ValueLiteral::Number(n) => Self::Number(n),
+            ValueLiteral::Number(n) => Self::number(n),
             ValueLiteral::String(s) => Self::Text(s),
             ValueLiteral::Boolean(b) => Self::Boolean(b),
             ValueLiteral::Null => Self::Empty,
@@ -216,7 +261,7 @@ impl From<ValueLiteral> for CellValue {
 impl From<&ValueLiteral> for CellValue {
     fn from(lit: &ValueLiteral) -> Self {
         match lit {
-            ValueLiteral::Number(n) => Self::Number(*n),
+            ValueLiteral::Number(n) => Self::number(*n),
             ValueLiteral::String(s) => Self::Text(s.clone()),
             ValueLiteral::Boolean(b) => Self::Boolean(*b),
             ValueLiteral::Null => Self::Empty,
@@ -227,7 +272,7 @@ impl From<&ValueLiteral> for CellValue {
 impl From<Literal> for CellValue {
     fn from(lit: Literal) -> Self {
         match lit {
-            Literal::Number(n) => Self::Number(n),
+            Literal::Number(n) => Self::number(n),
             Literal::String(s) => Self::Text(s),
             Literal::Boolean(b) => Self::Boolean(b),
         }
@@ -237,7 +282,7 @@ impl From<Literal> for CellValue {
 impl From<&Literal> for CellValue {
     fn from(lit: &Literal) -> Self {
         match lit {
-            Literal::Number(n) => Self::Number(*n),
+            Literal::Number(n) => Self::number(*n),
             Literal::String(s) => Self::Text(s.clone()),
             Literal::Boolean(b) => Self::Boolean(*b),
         }
@@ -246,7 +291,7 @@ impl From<&Literal> for CellValue {
 
 impl From<f64> for CellValue {
     fn from(n: f64) -> Self {
-        Self::Number(n)
+        Self::number(n)
     }
 }
 
@@ -424,5 +469,125 @@ mod tests {
             Ordering::Less
         );
         assert!(!CellValue::Number(1.0).excel_eq(&CellValue::Text("1".into())));
+
+        // Negative zero normalizes to positive zero in total-order comparison
+        assert_eq!(
+            CellValue::Number(-0.0).excel_cmp(&CellValue::Number(0.0)),
+            Ordering::Equal
+        );
+        assert!(CellValue::Number(-0.0).excel_eq(&CellValue::Number(0.0)));
+        assert_eq!(
+            CellValue::Empty.excel_cmp(&CellValue::Number(-0.0)),
+            Ordering::Equal
+        );
+
+        // Non-finite floats never compare equal to finite numbers or Empty
+        assert_ne!(
+            CellValue::Number(f64::NAN).excel_cmp(&CellValue::Number(42.0)),
+            Ordering::Equal
+        );
+        assert!(!CellValue::Number(f64::NAN).excel_eq(&CellValue::Number(42.0)));
+        assert_ne!(
+            CellValue::Empty.excel_cmp(&CellValue::Number(f64::NAN)),
+            Ordering::Equal
+        );
+        assert!(!CellValue::Empty.excel_eq(&CellValue::Number(f64::NAN)));
+    }
+
+    #[test]
+    fn test_parse_excel_number_and_finite_constructors() {
+        assert_eq!(parse_excel_number("42.5"), Some(42.5));
+        assert_eq!(parse_excel_number("  -12.25  "), Some(-12.25));
+        assert_eq!(parse_excel_number("+3.5"), Some(3.5));
+        assert_eq!(parse_excel_number(".5"), Some(0.5));
+        assert_eq!(parse_excel_number("5."), Some(5.0));
+        assert_eq!(parse_excel_number("1.5e-3"), Some(0.0015));
+        assert_eq!(parse_excel_number("2E+4"), Some(20_000.0));
+
+        // Negative zero and subnormal underflow normalize to +0.0
+        for neg_zero_str in ["-0", "-0.0", " -0.00 ", "-1e-400"] {
+            assert_eq!(
+                parse_excel_number(neg_zero_str).map(f64::to_bits),
+                Some(0.0_f64.to_bits()),
+                "expected +0.0 for {neg_zero_str:?}"
+            );
+        }
+
+        // Non-finite tokens, overflows, control whitespace, and locale formats are rejected
+        for rejected in [
+            "",
+            "   ",
+            "NaN",
+            "nan",
+            "NAN",
+            "+NaN",
+            "-NaN",
+            "inf",
+            "INF",
+            "-inf",
+            "+inf",
+            "Infinity",
+            "infinity",
+            "-INFINITY",
+            "1e500",
+            "-1e500",
+            "\t10",
+            "10\n",
+            "$10",
+            "10%",
+            "1,000",
+            "1_000",
+            "0x10",
+        ] {
+            assert_eq!(
+                parse_excel_number(rejected),
+                None,
+                "expected None for {rejected:?}"
+            );
+        }
+
+        // CellValue::number and From conversions guard against NaN/Inf and normalize -0.0
+        if let CellValue::Number(n) = CellValue::from(-0.0) {
+            assert_eq!(n.to_bits(), 0.0_f64.to_bits());
+        } else {
+            panic!("expected Number(0.0)");
+        }
+        if let CellValue::Number(n) = CellValue::from(ValueLiteral::Number(-0.0)) {
+            assert_eq!(n.to_bits(), 0.0_f64.to_bits());
+        } else {
+            panic!("expected Number(0.0)");
+        }
+        if let CellValue::Number(n) = CellValue::from(Literal::Number(-0.0)) {
+            assert_eq!(n.to_bits(), 0.0_f64.to_bits());
+        } else {
+            panic!("expected Number(0.0)");
+        }
+
+        for non_finite in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                CellValue::number(non_finite),
+                CellValue::Error(ExcelError::Num)
+            );
+            assert_eq!(
+                CellValue::from(non_finite),
+                CellValue::Error(ExcelError::Num)
+            );
+            assert_eq!(
+                CellValue::from(ValueLiteral::Number(non_finite)),
+                CellValue::Error(ExcelError::Num)
+            );
+            assert_eq!(
+                CellValue::from(&ValueLiteral::Number(non_finite)),
+                CellValue::Error(ExcelError::Num)
+            );
+            assert_eq!(
+                CellValue::from(Literal::Number(non_finite)),
+                CellValue::Error(ExcelError::Num)
+            );
+            assert_eq!(
+                CellValue::from(&Literal::Number(non_finite)),
+                CellValue::Error(ExcelError::Num)
+            );
+        }
     }
 }
