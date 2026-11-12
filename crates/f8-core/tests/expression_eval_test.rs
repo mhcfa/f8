@@ -6,6 +6,7 @@ use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::Expr;
+use f8_core::functions::FunctionError;
 use f8_core::functions::registry::FunctionRegistry;
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
@@ -280,30 +281,104 @@ fn test_scenario_6_2d_range_resolution_and_aggregation_sum() {
 }
 
 #[test]
-fn test_scenario_7_standalone_omitted_argument_rejection() {
+fn test_scenario_7_static_function_validation_in_eval_expr() {
     let (symbols, registry) = build_test_environment();
     let origin = CellId::new("IncomeStatement", "rev", "2024E");
     let memo = IndexMap::new();
 
-    // Standalone _ in AST arithmetic: 1 + _
-    let expr1 = Expr::Binary {
-        op: f8_core::expr::ast::BinaryOp::Add,
-        left: Box::new(Expr::number(1.0)),
-        right: Box::new(Expr::Omitted),
-    };
-    let err1 = eval_expr(&expr1, &origin, &memo, &symbols, &registry).unwrap_err();
-    let EvalError::UnexpectedOmitted(cell) = err1 else {
-        panic!("expected UnexpectedOmitted, got {err1:?}");
-    };
-    assert_eq!(*cell, origin);
+    let cases = [
+        (
+            "IF(TRUE, 10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IF(FALSE, SUM(), 10)",
+            FunctionError::TooFewArguments {
+                function: "SUM",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "IF(TRUE, 10, ABS(1, 2))",
+            FunctionError::TooManyArguments {
+                function: "ABS",
+                expected: 1,
+                found: 2,
+            },
+        ),
+        (
+            "IF(TRUE, 10, IFS(TRUE, 1, FALSE))",
+            FunctionError::InvalidVariadicPairs {
+                function: "IFS",
+                count: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, ABS(_))",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "ABS",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IFERROR(10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "IFERROR(ABS(1, 2, 3), 0)",
+            FunctionError::TooManyArguments {
+                function: "ABS",
+                expected: 1,
+                found: 3,
+            },
+        ),
+        (
+            "IFNA(10, UNKNOWN_FN())",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        (
+            "CHOOSE(1, 10, SUM())",
+            FunctionError::TooFewArguments {
+                function: "SUM",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "SWITCH(1, 1, 10, ABS())",
+            FunctionError::TooFewArguments {
+                function: "ABS",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        // Selector-error branch: fails statically with UnknownFunction rather than returning #DIV/0!
+        (
+            "IF(1 / 0, UNKNOWN_FN(), 10)",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+        // Nested invalid expression inside dormant branch
+        (
+            "IF(TRUE, 10, -(1 + UNKNOWN_FN()))",
+            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+        ),
+    ];
 
-    // Standalone _
-    let expr2 = Expr::Omitted;
-    let err2 = eval_expr(&expr2, &origin, &memo, &symbols, &registry).unwrap_err();
-    let EvalError::UnexpectedOmitted(cell) = err2 else {
-        panic!("expected UnexpectedOmitted, got {err2:?}");
-    };
-    assert_eq!(*cell, origin);
+    for (formula, expected_fn_err) in cases {
+        let expr = Expr::parse(formula).expect("valid syntax");
+        let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
+        let EvalError::Function { cell, source } = err else {
+            panic!("expected EvalError::Function for '{formula}', got {err:?}");
+        };
+        assert_eq!(*cell, origin);
+        assert_eq!(*source, expected_fn_err, "mismatch on formula: {formula}");
+    }
 }
 
 #[test]

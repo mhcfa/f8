@@ -30,10 +30,6 @@ pub enum EvalError {
         source: Box<FunctionError>,
     },
 
-    /// The omitted argument placeholder `_` appeared outside a function call.
-    #[error("Unexpected omitted argument placeholder '_' in cell '{0}'")]
-    UnexpectedOmitted(Box<CellId>),
-
     /// The specified table was not found in the symbol table.
     #[error("Table '{0}' not found in symbol table")]
     TableNotFound(TableId),
@@ -70,12 +66,6 @@ impl EvalError {
         }
     }
 
-    /// Creates an `UnexpectedOmitted` error.
-    #[must_use]
-    pub fn unexpected_omitted(cell: CellId) -> Self {
-        Self::UnexpectedOmitted(Box::new(cell))
-    }
-
     /// Creates a `TableNotFound` error.
     #[must_use]
     pub fn table_not_found(table: TableId) -> Self {
@@ -106,12 +96,6 @@ mod tests {
         assert_eq!(
             err2.to_string(),
             "Referenced cell 'Table[\"r1\", \"c1\"]' has not been evaluated (dependency ordering anomaly)"
-        );
-
-        let err3 = EvalError::unexpected_omitted(origin.clone());
-        assert_eq!(
-            err3.to_string(),
-            "Unexpected omitted argument placeholder '_' in cell 'Table[\"r1\", \"c1\"]'"
         );
 
         let func_err = FunctionError::UnknownFunction("FOO".into());

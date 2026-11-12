@@ -7,7 +7,7 @@ Signatures, parameter defaults, argument omission (`_`), criteria matching rules
 ## 1. Call Rules, Argument Omission, and Error Semantics
 
 - Calculation parity: IEEE 754 `f64` arithmetic (`-0.0` normalized to `0.0`), Excel scalar type coercion, criteria wildcards, and domain error propagation. Excludes dynamic array spilling (`#SPILL!`), implicit intersection, and volatile functions (`TODAY()`, `RAND()`).
-- Compile-time validation (throws `F8Error` during `model.compile()` Pass 4 when the call is evaluated; skipped inside untaken lazy branches):
+- Compile-time validation (throws `F8Error` during `model.compile()` Pass 4 static AST validation in cell declaration order before evaluation, covering both active and untaken lazy branches in `IF`, `IFS`, `IFERROR`, `IFNA`, `CHOOSE`, `SWITCH`, and `XLOOKUP`):
   - Unknown function name (`UnknownFunction`).
   - Argument count below minimum or above maximum (`TooFewArguments`, `TooManyArguments`).
   - Odd trailing argument count in pair-variadic functions (`IFS`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS` -> `InvalidVariadicPairs`).

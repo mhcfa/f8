@@ -5,7 +5,7 @@ use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::{ColSlot, RowSlot, SymbolTable, TableMetadata};
 use crate::expr::ast::{
-    ColEndpoint, ColSelector, Expr, RelativeOffset, RowEndpoint, RowSelector, TableRef,
+    CallArg, ColEndpoint, ColSelector, Expr, RelativeOffset, RowEndpoint, RowSelector, TableRef,
 };
 use crate::model::id::{ColId, RowId};
 use crate::model::table::AxisRole;
@@ -28,10 +28,12 @@ fn collect_refs_recursive<'a>(expr: &'a Expr, out: &mut Vec<&'a TableRef>) {
         }
         Expr::FunctionCall { args, .. } => {
             for arg in args {
-                collect_refs_recursive(arg, out);
+                match arg {
+                    CallArg::Expr(arg_expr) => collect_refs_recursive(arg_expr, out),
+                    CallArg::Omitted => {}
+                }
             }
         }
-        Expr::Omitted => {}
     }
 }
 

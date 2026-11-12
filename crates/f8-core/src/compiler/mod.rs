@@ -20,7 +20,7 @@ pub use compiled::{
 };
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 pub use error::{CompilerError, ErrorDiagnostic};
-pub use eval::{CellEvalContext, EvalError, EvaluatedModel, Evaluator, eval_expr};
+pub use eval::{EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
     LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SheetLayout, StyleRole,
     TablePlacement, col_to_excel_col,

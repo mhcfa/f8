@@ -4,7 +4,11 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
-use f8_core::compiler::eval::eval_expr;
+use std::cell::Cell;
+
+use indexmap::IndexMap;
+
+use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::{Expr, Literal};
@@ -13,8 +17,6 @@ use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
 use f8_core::value::{CellValue, ExcelError};
-use indexmap::IndexMap;
-use std::cell::Cell;
 
 /// Mock evaluation context for direct function execution and lazy branch counting.
 struct MockContext {
@@ -43,8 +45,7 @@ impl EvalContext for MockContext {
             Expr::Reference(_)
             | Expr::Unary { .. }
             | Expr::Binary { .. }
-            | Expr::FunctionCall { .. }
-            | Expr::Omitted => Ok(CellValue::Text("FallbackEvaluated".into())),
+            | Expr::FunctionCall { .. } => Ok(CellValue::Text("FallbackEvaluated".into())),
         }
     }
 
@@ -1162,4 +1163,72 @@ fn test_excel_parity_edge_cases() {
         )
         .unwrap();
     assert_eq!(err_array_index, CellValue::Error(ExcelError::Div0));
+}
+
+#[test]
+fn test_xlookup_dormant_if_not_found_static_validation() {
+    let mut symbols = SymbolTable::new();
+    let sheet = SheetId::from("Sheet1");
+    let registry = FunctionRegistry::standard();
+
+    let table = TableSpec {
+        id: TableId::from("Lookup"),
+        title: "Lookup".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("k"), ColumnSpec::new("v")],
+        rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
+    };
+    symbols.register_table(sheet, &table).unwrap();
+
+    let origin = CellId::new("Lookup", "r1", "v");
+    let mut values = IndexMap::new();
+    values.insert(CellId::new("Lookup", "r1", "k"), CellValue::Number(1.0));
+    values.insert(CellId::new("Lookup", "r2", "k"), CellValue::Number(2.0));
+    values.insert(CellId::new("Lookup", "r1", "v"), CellValue::Number(10.0));
+    values.insert(CellId::new("Lookup", "r2", "v"), CellValue::Number(20.0));
+
+    // Valid omitted optional `if_not_found` slot succeeds
+    assert_eq!(
+        eval_str(
+            "XLOOKUP(1, Lookup[\"r1\"..\"r2\", \"k\"], Lookup[\"r1\"..\"r2\", \"v\"], _, 0, 1)",
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(10.0)
+    );
+
+    // Even when key 1 matches and `if_not_found` is dormant, invalid calls inside `if_not_found` fail statically
+    let unknown_expr = Expr::parse(
+        "XLOOKUP(1, Lookup[\"r1\"..\"r2\", \"k\"], Lookup[\"r1\"..\"r2\", \"v\"], UNKNOWN_FN())",
+    )
+    .unwrap();
+    let err_unknown = eval_expr(&unknown_expr, &origin, &values, &symbols, &registry).unwrap_err();
+    let EvalError::Function { cell, source } = err_unknown else {
+        panic!("expected EvalError::Function, got {err_unknown:?}");
+    };
+    assert_eq!(*cell, origin);
+    assert_eq!(*source, FunctionError::UnknownFunction("UNKNOWN_FN".into()));
+
+    let arity_expr = Expr::parse(
+        "XLOOKUP(1, Lookup[\"r1\"..\"r2\", \"k\"], Lookup[\"r1\"..\"r2\", \"v\"], ABS(1, 2))",
+    )
+    .unwrap();
+    let err_arity = eval_expr(&arity_expr, &origin, &values, &symbols, &registry).unwrap_err();
+    let EvalError::Function { cell, source } = err_arity else {
+        panic!("expected EvalError::Function, got {err_arity:?}");
+    };
+    assert_eq!(*cell, origin);
+    assert_eq!(
+        *source,
+        FunctionError::TooManyArguments {
+            function: "ABS",
+            expected: 1,
+            found: 2,
+        }
+    );
 }
