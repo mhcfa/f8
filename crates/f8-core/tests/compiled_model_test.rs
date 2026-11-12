@@ -40,10 +40,10 @@ fn test_scenario_2_zero_redundancy_emission() {
     assert!(buffer.starts_with(b"PK\x03\x04"));
     assert!(buffer.len() > 1000);
 
-    // Verify emission via Compiler facade produces matching buffer
+    // Verify emission via Compiler facade produces identical bytes
     let compiler_buffer = Compiler::emit_workbook(&manifest, &tables, &options)
         .expect("Compiler facade emission must succeed");
-    assert_eq!(buffer.len(), compiler_buffer.len());
+    assert_eq!(buffer, compiler_buffer);
 }
 
 #[test]

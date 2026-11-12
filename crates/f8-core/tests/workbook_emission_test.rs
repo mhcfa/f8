@@ -385,6 +385,7 @@ fn test_scenario_6_values_only_freezing_mode() {
     // 2. Test via CompiledModel::emit_workbook
     let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
     let buffer2 = compiled.emit_workbook(&options).unwrap();
+    assert_eq!(buffer, buffer2);
 
     let sheet2_xml = read_zip_entry(&buffer2, "xl/worksheets/sheet1.xml");
     assert!(!sheet2_xml.contains("<f>"));
