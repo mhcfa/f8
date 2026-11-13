@@ -12,8 +12,10 @@ static SUM_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range to sum.",
     ParamKind::RangeOrArray,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `SUM(number1, [number2], ...)`: Adds all numbers in a range of cells or scalar arguments.
 #[derive(Debug, Default, Clone, Copy)]
@@ -59,8 +61,10 @@ static AVERAGE_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the average.",
     ParamKind::RangeOrArray,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `AVERAGE(number1, [number2], ...)`: Computes the arithmetic mean of arguments.
 #[derive(Debug, Default, Clone, Copy)]
@@ -113,8 +117,10 @@ static COUNT_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "value1",
     "The first cell reference or range within which you want to count numbers.",
     ParamKind::Range,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `COUNT(value1, [value2], ...)`: Counts the number of cells in ranges that contain numbers.
 #[derive(Debug, Default, Clone, Copy)]
@@ -203,8 +209,10 @@ static MAX_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the maximum.",
     ParamKind::RangeOrArray,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `MAX(number1, [number2], ...)`: Returns the largest numeric value in a set of values.
 #[derive(Debug, Default, Clone, Copy)]
@@ -250,8 +258,10 @@ static MIN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the minimum.",
     ParamKind::RangeOrArray,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `MIN(number1, [number2], ...)`: Returns the smallest numeric value in a set of values.
 #[derive(Debug, Default, Clone, Copy)]
@@ -297,8 +307,10 @@ static MEDIAN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the median.",
     ParamKind::RangeOrArray,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `MEDIAN(number1, [number2], ...)`: Returns the median (middle number) of the given numbers.
 #[derive(Debug, Default, Clone, Copy)]

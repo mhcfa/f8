@@ -469,15 +469,22 @@ pub struct ResolvedSlice {
     pub rows: usize,
     /// Number of columns in the resolved slice.
     pub cols: usize,
+    /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
+    pub axis_role: AxisRole,
     /// Flattened row-major list of cell coordinates.
     pub cells: Vec<CellId>,
 }
 
 impl ResolvedSlice {
-    /// Creates a new `ResolvedSlice` with specified row and column dimensions.
+    /// Creates a new `ResolvedSlice` with specified row and column dimensions and column axis role.
     #[must_use]
-    pub fn new(rows: usize, cols: usize, cells: Vec<CellId>) -> Self {
-        Self { rows, cols, cells }
+    pub fn new(rows: usize, cols: usize, axis_role: AxisRole, cells: Vec<CellId>) -> Self {
+        Self {
+            rows,
+            cols,
+            axis_role,
+            cells,
+        }
     }
 
     /// Returns `true` if the slice contains no cells.
@@ -551,6 +558,12 @@ pub fn resolve_table_ref(
 
     let rows = resolve_row_selector(origin, target_table, &table_ref.row)?;
     let cols = resolve_col_selector(origin, target_table, &table_ref.col)?;
+    let axis_role = match cols.first() {
+        Some(first_col) => target_table.col_role(first_col).ok_or_else(|| {
+            ResolveError::unknown_column(origin, target_table.table_id.clone(), first_col.clone())
+        })?,
+        None => AxisRole::Measure,
+    };
 
     let num_rows = rows.len();
     let num_cols = cols.len();
@@ -564,7 +577,7 @@ pub fn resolve_table_ref(
             ));
         }
     }
-    Ok(ResolvedSlice::new(num_rows, num_cols, resolved))
+    Ok(ResolvedSlice::new(num_rows, num_cols, axis_role, resolved))
 }
 
 /// Traverses all formulas in the cell grid, resolving each cell's references into discrete target CellIds.

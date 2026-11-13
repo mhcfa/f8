@@ -1,15 +1,16 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
-use f8_core::compiler::eval::eval_expr;
+use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::Expr;
 use f8_core::functions::FunctionError;
-use f8_core::functions::date::DateSerial;
 use f8_core::functions::registry::FunctionRegistry;
 use f8_core::functions::traits::{EvalContext, FunctionArg, FunctionCategory};
+use f8_core::model::format::FormatPreset;
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError, TypeError};
+use f8_core::value::format::format_cell_value;
+use f8_core::value::{CellValue, DateSerial, ExcelError, TypeError};
 use indexmap::IndexMap;
 
 /// Mock execution context for isolated function unit testing.
@@ -180,129 +181,141 @@ fn test_scenario_1_date_constructor_and_1900_leap_year_bug() {
 }
 
 // ============================================================================
-// Scenario 2: DATE rollover with out-of-range month and day
+// Scenario 2: DATE rejects out-of-range month and day rollover strictly
 // ============================================================================
 
 #[test]
-fn test_scenario_2_date_rollover_with_out_of_range_month_and_day() {
+fn test_scenario_2_date_rejects_out_of_range_month_and_day() {
     let registry = FunctionRegistry::standard();
     let date_fn = registry.lookup("DATE").unwrap();
     let ctx = MockContext::new();
 
-    // 2024-13-01 -> 2025-01-01 (45658.0)
-    let res = date_fn
-        .evaluate(
+    for bad_month in [0_i64, -1, 13, 14] {
+        assert_eq!(
+            date_fn.evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(2024.0)),
+                    FunctionArg::Scalar(CellValue::Number(bad_month as f64)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            ),
+            Err(FunctionError::InvalidDateMonth { month: bad_month })
+        );
+    }
+
+    for (y, m, bad_day, max_day) in [
+        (2024.0, 1.0, 0_i64, 31_u32),
+        (2024.0, 1.0, 32, 31),
+        (2024.0, 6.0, 31, 30),
+        (2025.0, 2.0, 29, 28),
+    ] {
+        assert_eq!(
+            date_fn.evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(y)),
+                    FunctionArg::Scalar(CellValue::Number(m)),
+                    FunctionArg::Scalar(CellValue::Number(bad_day as f64)),
+                ],
+                &ctx,
+            ),
+            Err(FunctionError::InvalidDateDay {
+                day: bad_day,
+                max_day,
+            })
+        );
+    }
+
+    // CalendarDate validates concrete non-Error components before bubbling CellValue::Error
+    assert_eq!(
+        date_fn.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Number(2024.0)),
-                FunctionArg::Scalar(CellValue::Number(13.0)),
+                FunctionArg::Scalar(CellValue::Number(24.0)),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
                 FunctionArg::Scalar(CellValue::Number(1.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(45658.0));
-
-    // 2024-01-00 -> 2023-12-31 (45291.0)
-    let res = date_fn
-        .evaluate(
+        ),
+        Err(FunctionError::InvalidDateYear { year: 24 })
+    );
+    assert_eq!(
+        date_fn.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Number(2024.0)),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                FunctionArg::Scalar(CellValue::Number(14.0)),
                 FunctionArg::Scalar(CellValue::Number(1.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::InvalidDateMonth { month: 14 })
+    );
+    assert_eq!(
+        date_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
                 FunctionArg::Scalar(CellValue::Number(0.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(45291.0));
-
-    // 2024-00-01 -> 2023-12-01 (45261.0)
-    let res = date_fn
-        .evaluate(
+        ),
+        Err(FunctionError::InvalidDateDay {
+            day: 0,
+            max_day: 31,
+        })
+    );
+    // When year is Error and month=2, leap-year max_day=29 rejects impossible day=30 while day=29 bubbles Div0
+    assert_eq!(
+        date_fn.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Number(2024.0)),
-                FunctionArg::Scalar(CellValue::Number(0.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                FunctionArg::Scalar(CellValue::Number(2.0)),
+                FunctionArg::Scalar(CellValue::Number(30.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(45261.0));
-
-    // 2024-01-32 -> 2024-02-01 (45323.0)
-    let res = date_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(2024.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(32.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(45323.0));
+        ),
+        Err(FunctionError::InvalidDateDay {
+            day: 30,
+            max_day: 29,
+        })
+    );
+    assert_eq!(
+        date_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                    FunctionArg::Scalar(CellValue::Number(2.0)),
+                    FunctionArg::Scalar(CellValue::Number(29.0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
 }
 
 // ============================================================================
-// Scenario 3: 2-digit year expansion and bounds checking in DATE
+// Scenario 3: 4-digit year enforcement (1900..=9999) in DATE
 // ============================================================================
 
 #[test]
-fn test_scenario_3_two_digit_year_expansion_and_bounds() {
+fn test_scenario_3_four_digit_year_enforcement_and_bounds() {
     let registry = FunctionRegistry::standard();
     let date_fn = registry.lookup("DATE").unwrap();
     let ctx = MockContext::new();
 
-    // 100 -> 2000 (2000-01-01 -> 36526.0)
-    let res = date_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(100.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(36526.0));
-
-    // 0 -> 1900 (1900-01-01 -> 1.0)
-    let res = date_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(0.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(1.0));
-
-    // Negative year -> #NUM!
-    let res = date_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(-1.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Num));
-
-    // Year >= 10000 -> #NUM!
-    let res = date_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(10000.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Num));
+    for bad_year in [-1_i64, 0, 24, 100, 1899, 10000] {
+        assert_eq!(
+            date_fn.evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(bad_year as f64)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            ),
+            Err(FunctionError::InvalidDateYear { year: bad_year })
+        );
+    }
 
     // Non-finite raw floats bubble as #NUM!
     for non_finite in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
@@ -383,19 +396,28 @@ fn test_scenario_4_date_component_extraction() {
     assert_eq!(m, CellValue::Number(2.0));
     assert_eq!(d, CellValue::Number(29.0));
 
-    // Day zero 0.0 -> 1900-01-00
-    let y = year_fn
-        .evaluate(&[FunctionArg::Scalar(CellValue::Number(0.0))], &ctx)
-        .unwrap();
-    let m = month_fn
-        .evaluate(&[FunctionArg::Scalar(CellValue::Number(0.0))], &ctx)
-        .unwrap();
-    let d = day_fn
-        .evaluate(&[FunctionArg::Scalar(CellValue::Number(0.0))], &ctx)
-        .unwrap();
-    assert_eq!(y, CellValue::Number(1900.0));
-    assert_eq!(m, CellValue::Number(1.0));
-    assert_eq!(d, CellValue::Number(0.0));
+    // Serial 0.0 (fictitious 1900-01-00) is rejected as a date function input...
+    for (func, fn_name) in [(year_fn, "YEAR"), (month_fn, "MONTH"), (day_fn, "DAY")] {
+        assert_eq!(
+            func.evaluate(&[FunctionArg::Scalar(CellValue::Number(0.0))], &ctx),
+            Err(FunctionError::InvalidDateSerial {
+                function: fn_name,
+                param: "serial_number",
+                position: 1,
+                serial: "0".into(),
+            })
+        );
+    }
+    // ...while FormatPreset::Date display formatting of literal 0.0 retains "1900-01-00" parity
+    assert_eq!(
+        format_cell_value(
+            &CellValue::Number(0.0),
+            Some(FormatPreset::Date),
+            None,
+            None
+        ),
+        "1900-01-00"
+    );
 
     // Fractional time: 25569.75 (6:00 PM) -> truncates to identical components
     let y = year_fn
@@ -411,11 +433,16 @@ fn test_scenario_4_date_component_extraction() {
     assert_eq!(m, CellValue::Number(1.0));
     assert_eq!(d, CellValue::Number(1.0));
 
-    // Out of bounds: -1.0 -> #NUM!
-    let err = year_fn
-        .evaluate(&[FunctionArg::Scalar(CellValue::Number(-1.0))], &ctx)
-        .unwrap();
-    assert_eq!(err, CellValue::Error(ExcelError::Num));
+    // Out of bounds: -1.0 -> InvalidDateSerial
+    assert_eq!(
+        year_fn.evaluate(&[FunctionArg::Scalar(CellValue::Number(-1.0))], &ctx),
+        Err(FunctionError::InvalidDateSerial {
+            function: "YEAR",
+            param: "serial_number",
+            position: 1,
+            serial: "-1".into(),
+        })
+    );
 }
 
 // ============================================================================
@@ -688,18 +715,18 @@ fn test_scenario_8_yearfrac_bases() {
         assert!((n - (182.0 / 366.0)).abs() < 1e-12);
     }
 
-    // Invalid basis: 5 -> #NUM!
-    let err = yearfrac_fn
-        .evaluate(
+    // Invalid basis: 5 -> InvalidDayCountBasis
+    assert_eq!(
+        yearfrac_fn.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(start)),
                 FunctionArg::Scalar(CellValue::Number(end)),
                 FunctionArg::Scalar(CellValue::Number(5.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err, CellValue::Error(ExcelError::Num));
+        ),
+        Err(FunctionError::InvalidDayCountBasis { found: 5 })
+    );
 }
 
 // ============================================================================
@@ -816,6 +843,119 @@ fn test_end_to_end_date_formula_evaluation() {
         &origin,
     );
     assert_eq!(day_eval, CellValue::Number(1.0));
+
+    // 7. Upstream #NUM! from EDATE/EOMONTH stepping outside 1900..=9999 bubbles as CellValue::Error(Num)
+    assert_eq!(
+        eval_str(
+            "EDATE(DATE(1900, 1, 15), -2)",
+            &symbols,
+            &values,
+            &registry,
+            &origin
+        ),
+        CellValue::Error(ExcelError::Num)
+    );
+    assert_eq!(
+        eval_str(
+            "EOMONTH(DATE(9999, 12, 1), 2)",
+            &symbols,
+            &values,
+            &registry,
+            &origin
+        ),
+        CellValue::Error(ExcelError::Num)
+    );
+    assert_eq!(
+        eval_str(
+            "YEAR(EDATE(DATE(1900, 1, 15), -2))",
+            &symbols,
+            &values,
+            &registry,
+            &origin
+        ),
+        CellValue::Error(ExcelError::Num)
+    );
+
+    // 8. Dynamic cell references enforce CalendarDate and DateSerial bounds across active & dormant branches
+    values.insert(
+        CellId::new("Timeline", "fractions", "c2"),
+        CellValue::Number(24.0),
+    );
+    values.insert(
+        CellId::new("Timeline", "fractions", "c3"),
+        CellValue::Number(0.0),
+    );
+    for (bad_formula, expected_fn_err) in [
+        (
+            r#"IFERROR(DATE(Timeline["fractions", "c2"], 1, 1), 0)"#,
+            FunctionError::InvalidDateYear { year: 24 },
+        ),
+        (
+            r#"IF(FALSE, DATE(Timeline["fractions", "c2"], 1, 1), Timeline["dates", "c1"])"#,
+            FunctionError::InvalidDateYear { year: 24 },
+        ),
+        (
+            r#"DATE(Timeline["fractions", "c2"], 1 / 0, 1)"#,
+            FunctionError::InvalidDateYear { year: 24 },
+        ),
+        (
+            r#"DATE(1 / 0, 2, 30)"#,
+            FunctionError::InvalidDateDay {
+                day: 30,
+                max_day: 29,
+            },
+        ),
+        (
+            r#"IF(FALSE, YEAR(Timeline["fractions", "c3"]), 2024)"#,
+            FunctionError::InvalidDateSerial {
+                function: "YEAR",
+                param: "serial_number",
+                position: 1,
+                serial: "0".into(),
+            },
+        ),
+    ] {
+        let expr = Expr::parse(bad_formula).unwrap();
+        let err = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap_err();
+        let EvalError::Function { cell, source } = err else {
+            panic!("expected EvalError::Function on {bad_formula}, got {err:?}");
+        };
+        assert_eq!(*cell, origin);
+        assert_eq!(*source, expected_fn_err, "mismatch on {bad_formula}");
+    }
+
+    // Dynamic day=29 with year=2025, month=2 fails with max_day=28, while year=2024 succeeds
+    values.insert(
+        CellId::new("Timeline", "fractions", "c2"),
+        CellValue::Number(29.0),
+    );
+    let bad_leap_expr = Expr::parse(r#"DATE(2025, 2, Timeline["fractions", "c2"])"#).unwrap();
+    let leap_err = eval_expr(&bad_leap_expr, &origin, &values, &symbols, &registry).unwrap_err();
+    let EvalError::Function { cell, source } = leap_err else {
+        panic!("expected EvalError::Function, got {leap_err:?}");
+    };
+    assert_eq!(*cell, origin);
+    assert_eq!(
+        *source,
+        FunctionError::InvalidDateDay {
+            day: 29,
+            max_day: 28,
+        }
+    );
+    assert_eq!(
+        eval_str(
+            r#"DATE(2024, 2, Timeline["fractions", "c2"])"#,
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(45351.0)
+    );
+    assert_eq!(
+        eval_str("DATE(1 / 0, 2, 29)", &symbols, &values, &registry, &origin,),
+        CellValue::Error(ExcelError::Div0)
+    );
 }
 
 // ============================================================================
@@ -832,35 +972,44 @@ fn test_negative_dates_and_fractional_boundaries() {
     let eomonth_fn = registry.lookup("EOMONTH").unwrap();
     let ctx = MockContext::new();
 
-    // Negative numbers in YEAR, MONTH, DAY must evaluate to #NUM!
-    for neg in [-0.5, -0.0001, -1.0, -100.0] {
-        let arg = [FunctionArg::Scalar(CellValue::Number(neg))];
-        assert_eq!(
-            year_fn.evaluate(&arg, &ctx).unwrap(),
-            CellValue::Error(ExcelError::Num)
-        );
-        assert_eq!(
-            month_fn.evaluate(&arg, &ctx).unwrap(),
-            CellValue::Error(ExcelError::Num)
-        );
-        assert_eq!(
-            day_fn.evaluate(&arg, &ctx).unwrap(),
-            CellValue::Error(ExcelError::Num)
-        );
+    // Sub-1.0 and negative numbers in YEAR, MONTH, DAY fail with InvalidDateSerial
+    for bad_serial in [0.0, 0.5, -0.5, -0.0001, -1.0, -100.0] {
+        let arg = [FunctionArg::Scalar(CellValue::Number(bad_serial))];
+        for (func, fn_name) in [(year_fn, "YEAR"), (month_fn, "MONTH"), (day_fn, "DAY")] {
+            assert_eq!(
+                func.evaluate(&arg, &ctx),
+                Err(FunctionError::InvalidDateSerial {
+                    function: fn_name,
+                    param: "serial_number",
+                    position: 1,
+                    serial: bad_serial.to_string(),
+                })
+            );
+        }
     }
 
-    // Negative numbers in EDATE and EOMONTH start_date must evaluate to #NUM!
+    // Sub-1.0 or negative numbers in EDATE and EOMONTH start_date fail with InvalidDateSerial
     let neg_args = [
         FunctionArg::Scalar(CellValue::Number(-0.5)),
         FunctionArg::Scalar(CellValue::Number(1.0)),
     ];
     assert_eq!(
-        edate_fn.evaluate(&neg_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
+        edate_fn.evaluate(&neg_args, &ctx),
+        Err(FunctionError::InvalidDateSerial {
+            function: "EDATE",
+            param: "start_date",
+            position: 1,
+            serial: "-0.5".into(),
+        })
     );
     assert_eq!(
-        eomonth_fn.evaluate(&neg_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
+        eomonth_fn.evaluate(&neg_args, &ctx),
+        Err(FunctionError::InvalidDateSerial {
+            function: "EOMONTH",
+            param: "start_date",
+            position: 1,
+            serial: "-0.5".into(),
+        })
     );
 
     // Fractional timestamps on maximum date (9999-12-31 at 6:00 PM) must be accepted
@@ -878,20 +1027,19 @@ fn test_negative_dates_and_fractional_boundaries() {
         CellValue::Number(31.0)
     );
 
-    // Numbers strictly beyond 9999-12-31 must return #NUM!
+    // Numbers strictly beyond 9999-12-31 fail with InvalidDateSerial
     let beyond_max_args = [FunctionArg::Scalar(CellValue::Number(2958466.0))];
-    assert_eq!(
-        year_fn.evaluate(&beyond_max_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
-    );
-    assert_eq!(
-        month_fn.evaluate(&beyond_max_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
-    );
-    assert_eq!(
-        day_fn.evaluate(&beyond_max_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
-    );
+    for (func, fn_name) in [(year_fn, "YEAR"), (month_fn, "MONTH"), (day_fn, "DAY")] {
+        assert_eq!(
+            func.evaluate(&beyond_max_args, &ctx),
+            Err(FunctionError::InvalidDateSerial {
+                function: fn_name,
+                param: "serial_number",
+                position: 1,
+                serial: "2958466".into(),
+            })
+        );
+    }
 }
 
 #[test]
@@ -900,39 +1048,54 @@ fn test_days_bounds_validation() {
     let days_fn = registry.lookup("DAYS").unwrap();
     let ctx = MockContext::new();
 
-    // Invalid start or end date outside 0..=2958465 must return #NUM!
-    let res = days_fn
-        .evaluate(
+    // Invalid start or end date outside 1..=2958465 fails with InvalidDateSerial
+    assert_eq!(
+        days_fn.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Number(-10.0)),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
                 FunctionArg::Scalar(CellValue::Number(10.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Num));
+        ),
+        Err(FunctionError::InvalidDateSerial {
+            function: "DAYS",
+            param: "end_date",
+            position: 1,
+            serial: "0".into(),
+        })
+    );
 
-    let res = days_fn
-        .evaluate(
+    assert_eq!(
+        days_fn.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(10.0)),
                 FunctionArg::Scalar(CellValue::Number(-10.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Num));
+        ),
+        Err(FunctionError::InvalidDateSerial {
+            function: "DAYS",
+            param: "start_date",
+            position: 2,
+            serial: "-10".into(),
+        })
+    );
 
-    let res = days_fn
-        .evaluate(
+    assert_eq!(
+        days_fn.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(2958466.0)),
                 FunctionArg::Scalar(CellValue::Number(10.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Num));
+        ),
+        Err(FunctionError::InvalidDateSerial {
+            function: "DAYS",
+            param: "end_date",
+            position: 1,
+            serial: "2958466".into(),
+        })
+    );
 
     // Valid fractional timestamps on bounds
     let res = days_fn
@@ -1001,26 +1164,46 @@ fn test_yearfrac_omitted_basis_and_fractional_boundaries() {
         .unwrap();
     assert_eq!(res, CellValue::Number(0.0));
 
-    // Negative dates in YEARFRAC must return #NUM!
-    let res = yearfrac_fn
-        .evaluate(
+    // Sub-1.0 or negative dates in YEARFRAC fail with InvalidDateSerial
+    assert_eq!(
+        yearfrac_fn.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(-0.5)),
                 FunctionArg::Scalar(CellValue::Number(start)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Num));
+        ),
+        Err(FunctionError::InvalidDateSerial {
+            function: "YEARFRAC",
+            param: "start_date",
+            position: 1,
+            serial: "-0.5".into(),
+        })
+    );
 
-    // Out-of-domain integer or non-finite basis values -> #NUM!
-    for oob_or_non_finite in [-1.0, 5.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+    // Out-of-domain integer basis values fail with InvalidDayCountBasis
+    for oob_basis in [-1_i64, 5] {
+        assert_eq!(
+            yearfrac_fn.evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(start)),
+                    FunctionArg::Scalar(CellValue::Number(end)),
+                    FunctionArg::Scalar(CellValue::Number(oob_basis as f64)),
+                ],
+                &ctx,
+            ),
+            Err(FunctionError::InvalidDayCountBasis { found: oob_basis })
+        );
+    }
+
+    // Non-finite raw basis values bubble as #NUM!
+    for non_finite in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         let res = yearfrac_fn
             .evaluate(
                 &[
                     FunctionArg::Scalar(CellValue::Number(start)),
                     FunctionArg::Scalar(CellValue::Number(end)),
-                    FunctionArg::Scalar(CellValue::Number(oob_or_non_finite)),
+                    FunctionArg::Scalar(CellValue::Number(non_finite)),
                 ],
                 &ctx,
             )

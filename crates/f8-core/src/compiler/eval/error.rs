@@ -109,7 +109,14 @@ impl EvalError {
             | FunctionError::NonLiteralLookupMode { .. }
             | FunctionError::InvalidLookupMode { .. }
             | FunctionError::ErrorInBinaryLookupArray { .. }
-            | FunctionError::UnsortedBinaryLookupArray { .. }) => Self::Function {
+            | FunctionError::UnsortedBinaryLookupArray { .. }
+            | FunctionError::DescriptorReferenceNotAllowed { .. }
+            | FunctionError::InvalidDateYear { .. }
+            | FunctionError::InvalidDateMonth { .. }
+            | FunctionError::InvalidDateDay { .. }
+            | FunctionError::InvalidDateSerial { .. }
+            | FunctionError::InvalidAnnuityType { .. }
+            | FunctionError::InvalidDayCountBasis { .. }) => Self::Function {
                 cell: Box::new(cell),
                 source: Box::new(other),
             },

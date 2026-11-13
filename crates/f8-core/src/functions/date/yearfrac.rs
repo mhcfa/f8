@@ -1,11 +1,10 @@
 use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
-use crate::functions::date::serial::{DateSerial, validate_date_serial};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, ExcelError, ValueType};
+use crate::value::{CellValue, DateSerial, ExcelError, ValueType, validate_date_serial};
 
 /// Supported financial day-count conventions for `YEARFRAC`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,19 +148,19 @@ static YEARFRAC_PARAMS: &[ParameterDef] = &[
         "start_date",
         "A serial number that represents the start date.",
         ParamKind::Scalar,
-        ParamType::Number,
+        ParamType::DateSerial,
     ),
     ParameterDef::required(
         "end_date",
         "A serial number that represents the end date.",
         ParamKind::Scalar,
-        ParamType::Number,
+        ParamType::DateSerial,
     ),
     ParameterDef::with_default(
         "basis",
         "The integer day count basis to use (0: US 30/360, 1: Actual/Actual, 2: Actual/360, 3: Actual/365, 4: European 30/360).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::DayCountBasis,
         CellValue::Number(0.0),
     ),
 ];

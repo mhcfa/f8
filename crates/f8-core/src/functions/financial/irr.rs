@@ -20,8 +20,9 @@ static IRR_PARAMS: &[ParameterDef] = &[
         "values",
         "Range of cells containing numbers for which you want to calculate IRR.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only(),
     ParameterDef::with_default(
         "guess",
         "Number you guess is close to the result of IRR.",
@@ -157,14 +158,16 @@ static XIRR_PARAMS: &[ParameterDef] = &[
         "values",
         "1D range of cash flows corresponding to schedule of payments in dates.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only(),
     ParameterDef::required(
         "dates",
         "1D range of payment dates corresponding to cash flow payments.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::DateSerial,
+    )
+    .measure_only(),
     ParameterDef::with_default(
         "guess",
         "Number you guess is close to the result of XIRR.",

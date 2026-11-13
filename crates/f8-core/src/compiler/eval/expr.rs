@@ -33,7 +33,7 @@ pub fn eval_expr(
     registry
         .validate_expr_with_shapes(expr, |table_ref| {
             resolve_table_ref(origin, table_ref, symbol_table)
-                .map(|slice| Some((slice.rows, slice.cols)))
+                .map(|slice| Some((slice.rows, slice.cols, slice.axis_role)))
         })
         .map_err(|err| match err {
             StageAError::Function(source) => EvalError::function(origin.clone(), source),

@@ -7,8 +7,8 @@ use f8_core::expr::ast::Expr;
 use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
-use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError, TypeError};
+use f8_core::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
+use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 use indexmap::IndexMap;
 
 fn eval_str(
@@ -100,21 +100,20 @@ fn test_scenario_2_npv_periodic_discounting() {
         panic!("Expected Number, got {res:?}");
     }
 
-    // Range reference with ignored empty and text cells
+    // Clean numeric Measure slice succeeds
     let range_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.10)),
         FunctionArg::array(
-            6,
+            4,
             1,
             vec![
                 CellValue::Number(-10000.0),
-                CellValue::Text("ignored text".into()),
                 CellValue::Number(3000.0),
-                CellValue::Empty,
                 CellValue::Number(4200.0),
                 CellValue::Number(6800.0),
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
     ];
     let range_res = npv_func.evaluate(&range_args, &ctx).unwrap();
@@ -124,14 +123,84 @@ fn test_scenario_2_npv_periodic_discounting() {
         panic!("Expected Number, got {range_res:?}");
     }
 
-    // Direct scalar text produces #VALUE!
-    let err_args = vec![
-        FunctionArg::Scalar(CellValue::Number(0.10)),
-        FunctionArg::Scalar(CellValue::Text("bad".into())),
-    ];
+    // Empty cash-flow hole, Text, or Boolean in range or scalar fails strictly with InvalidArgumentType
+    for (bad_arg, found_type) in [
+        (
+            FunctionArg::array(
+                4,
+                1,
+                vec![
+                    CellValue::Number(-1000.0),
+                    CellValue::Empty,
+                    CellValue::Number(600.0),
+                    CellValue::Number(600.0),
+                ],
+                ReferenceKind::Slice,
+                AxisRole::Measure,
+            ),
+            ValueType::Empty,
+        ),
+        (
+            FunctionArg::array(
+                2,
+                1,
+                vec![CellValue::Number(-1000.0), CellValue::Text("bad".into())],
+                ReferenceKind::Slice,
+                AxisRole::Measure,
+            ),
+            ValueType::Text,
+        ),
+        (
+            FunctionArg::array(
+                2,
+                1,
+                vec![CellValue::Number(-1000.0), CellValue::Boolean(true)],
+                ReferenceKind::Slice,
+                AxisRole::Measure,
+            ),
+            ValueType::Boolean,
+        ),
+        (
+            FunctionArg::Scalar(CellValue::Text("bad".into())),
+            ValueType::Text,
+        ),
+        (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
+    ] {
+        assert_eq!(
+            npv_func.evaluate(
+                &[FunctionArg::Scalar(CellValue::Number(0.10)), bad_arg],
+                &ctx,
+            ),
+            Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "NPV",
+                param: "value1",
+                position: 2,
+                expected: ExpectedType::Number,
+                found: found_type,
+            }))
+        );
+    }
+
+    // Descriptor range fails with DescriptorReferenceNotAllowed
     assert_eq!(
-        npv_func.evaluate(&err_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Value)
+        npv_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.10)),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
+                    ReferenceKind::Slice,
+                    AxisRole::Descriptor,
+                ),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::DescriptorReferenceNotAllowed {
+            function: "NPV",
+            param: "value1",
+            position: 2,
+        })
     );
 
     // Rate = -1.0 with non-zero cash flows returns #DIV/0!
@@ -183,6 +252,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(5000.0),
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
         FunctionArg::array(
             4,
@@ -194,6 +264,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(d3),
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
     ];
     let res = xnpv_func.evaluate(&args, &ctx).unwrap();
@@ -217,7 +288,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         CellValue::Error(ExcelError::Num)
     );
 
-    // Mismatched vector lengths fail strictly with LengthMismatch (even when values contain ExcelError)
+    // Mismatched vector lengths fail strictly with LengthMismatch before InvalidDateSerial or ExcelError
     let mismatched_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
         FunctionArg::array(
@@ -228,8 +299,15 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(1000.0),
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
-        FunctionArg::array(1, 1, vec![CellValue::Number(d0)], ReferenceKind::Slice),
+        FunctionArg::array(
+            1,
+            1,
+            vec![CellValue::Number(0.0)],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
     ];
     assert_eq!(
         xnpv_func.evaluate(&mismatched_args, &ctx),
@@ -240,11 +318,23 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         })
     );
 
-    // 2D slice fails with ExpectedOneDimensionalSlice before rate <= -1.0 domain check
+    // 2D slice fails with ExpectedOneDimensionalSlice before role, serial, or rate <= -1.0 checks
     let two_d_args = vec![
         FunctionArg::Scalar(CellValue::Number(-2.0)),
-        FunctionArg::array(2, 2, vec![CellValue::Number(1.0); 4], ReferenceKind::Slice),
-        FunctionArg::array(2, 2, vec![CellValue::Number(d0); 4], ReferenceKind::Slice),
+        FunctionArg::array(
+            2,
+            2,
+            vec![CellValue::Number(1.0); 4],
+            ReferenceKind::Slice,
+            AxisRole::Descriptor,
+        ),
+        FunctionArg::array(
+            2,
+            2,
+            vec![CellValue::Number(0.0); 4],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
     ];
     assert_eq!(
         xnpv_func.evaluate(&two_d_args, &ctx),
@@ -256,6 +346,65 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         })
     );
 
+    // Empty in values or dates fails strictly with InvalidArgumentType; swapped/OOB dates fail with InvalidDateSerial
+    assert_eq!(
+        xnpv_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.09)),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(-1000.0), CellValue::Empty],
+                    ReferenceKind::Slice,
+                    AxisRole::Measure,
+                ),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(d0), CellValue::Number(d1)],
+                    ReferenceKind::Slice,
+                    AxisRole::Measure,
+                ),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XNPV",
+            param: "values",
+            position: 2,
+            expected: ExpectedType::Number,
+            found: ValueType::Empty,
+        }))
+    );
+    assert_eq!(
+        xnpv_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.09)),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(d0), CellValue::Number(d1)],
+                    ReferenceKind::Slice,
+                    AxisRole::Measure,
+                ),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
+                    ReferenceKind::Slice,
+                    AxisRole::Measure,
+                ),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::InvalidDateSerial {
+            function: "XNPV",
+            param: "dates",
+            position: 3,
+            serial: "-1000".into(),
+        })
+    );
+
     // Out-of-order date (di < d0) returns #NUM!
     let out_of_order_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
@@ -264,12 +413,14 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
             1,
             vec![CellValue::Number(-1000.0), CellValue::Number(1000.0)],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
         FunctionArg::array(
             2,
             1,
             vec![CellValue::Number(d1), CellValue::Number(d0)],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
     ];
     assert_eq!(
@@ -291,6 +442,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(d3 + 0.9),
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
     ];
     let trunc_res = xnpv_func.evaluate(&trunc_dates, &ctx).unwrap();
@@ -319,6 +471,7 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(6800.0),
         ],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     )];
     let res = irr_func.evaluate(&args, &ctx).unwrap();
     if let CellValue::Number(rate) = res {
@@ -333,6 +486,32 @@ fn test_scenario_4_irr_periodic_solver() {
         panic!("Expected Number, got {res:?}");
     }
 
+    // Empty cash-flow hole in IRR fails strictly with InvalidArgumentType instead of shifting timing
+    assert_eq!(
+        irr_func.evaluate(
+            &[FunctionArg::array(
+                4,
+                1,
+                vec![
+                    CellValue::Number(-1000.0),
+                    CellValue::Empty,
+                    CellValue::Number(600.0),
+                    CellValue::Number(600.0),
+                ],
+                ReferenceKind::Slice,
+                AxisRole::Measure,
+            )],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "IRR",
+            param: "values",
+            position: 1,
+            expected: ExpectedType::Number,
+            found: ValueType::Empty,
+        }))
+    );
+
     // All positive cash flows -> #NUM!
     let all_pos = vec![FunctionArg::array(
         3,
@@ -343,6 +522,7 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(300.0),
         ],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     )];
     assert_eq!(
         irr_func.evaluate(&all_pos, &ctx).unwrap(),
@@ -359,6 +539,7 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(-300.0),
         ],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     )];
     assert_eq!(
         irr_func.evaluate(&all_neg, &ctx).unwrap(),
@@ -369,8 +550,9 @@ fn test_scenario_4_irr_periodic_solver() {
     let too_few = vec![FunctionArg::array(
         1,
         1,
-        vec![CellValue::Number(-100.0)],
+        vec![CellValue::Number(-1000.0)],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     )];
     assert_eq!(
         irr_func.evaluate(&too_few, &ctx).unwrap(),
@@ -391,12 +573,14 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             1,
             vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
         FunctionArg::array(
             2,
             1,
             vec![CellValue::Number(45292.0), CellValue::Number(45657.0)],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
     ];
     let res = xirr_func.evaluate(&args, &ctx).unwrap();
@@ -405,6 +589,51 @@ fn test_scenario_5_xirr_non_periodic_solver() {
     } else {
         panic!("Expected Number, got {res:?}");
     }
+
+    // Empty or OOB serial in XIRR dates fails strictly
+    assert_eq!(
+        xirr_func.evaluate(
+            &[
+                args[0].clone(),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(45292.0), CellValue::Empty],
+                    ReferenceKind::Slice,
+                    AxisRole::Measure,
+                ),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XIRR",
+            param: "dates",
+            position: 2,
+            expected: ExpectedType::Number,
+            found: ValueType::Empty,
+        }))
+    );
+    assert_eq!(
+        xirr_func.evaluate(
+            &[
+                args[0].clone(),
+                FunctionArg::array(
+                    2,
+                    1,
+                    vec![CellValue::Number(0.0), CellValue::Number(45657.0)],
+                    ReferenceKind::Slice,
+                    AxisRole::Measure,
+                ),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::InvalidDateSerial {
+            function: "XIRR",
+            param: "dates",
+            position: 2,
+            serial: "0".into(),
+        })
+    );
 
     // Realistic multi-period non-periodic project
     let dates = vec![
@@ -420,8 +649,8 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         CellValue::Number(9000.0),
     ];
     let multi_args = vec![
-        FunctionArg::array(4, 1, values, ReferenceKind::Slice),
-        FunctionArg::array(4, 1, dates, ReferenceKind::Slice),
+        FunctionArg::array(4, 1, values, ReferenceKind::Slice, AxisRole::Measure),
+        FunctionArg::array(4, 1, dates, ReferenceKind::Slice, AxisRole::Measure),
     ];
     let multi_res = xirr_func.evaluate(&multi_args, &ctx).unwrap();
     if let CellValue::Number(rate) = multi_res {
@@ -448,8 +677,9 @@ fn test_scenario_5_xirr_non_periodic_solver() {
                 CellValue::Number(9000.0),
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         ),
-        FunctionArg::array(4, 1, trunc_dates, ReferenceKind::Slice),
+        FunctionArg::array(4, 1, trunc_dates, ReferenceKind::Slice, AxisRole::Measure),
     ];
     let trunc_res = xirr_func.evaluate(&trunc_args, &ctx).unwrap();
     if let CellValue::Number(rate) = trunc_res {
@@ -541,6 +771,26 @@ fn test_scenario_6_pmt_annuity_payments() {
             value: "0.5".into(),
         }))
     );
+
+    // Integer `type` outside {0, 1} fails strictly with InvalidAnnuityType (even when rate is Error)
+    for bad_type in [2_i64, -1, 5] {
+        assert_eq!(
+            pmt_func.evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                    FunctionArg::Scalar(CellValue::Number(10.0)),
+                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                    FunctionArg::Scalar(CellValue::Number(bad_type as f64)),
+                ],
+                &ctx,
+            ),
+            Err(FunctionError::InvalidAnnuityType {
+                function: "PMT",
+                found: bad_type,
+            })
+        );
+    }
 }
 
 #[test]
@@ -623,6 +873,42 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
     assert_eq!(
         ppmt_func.evaluate(&bad_per_args, &ctx).unwrap(),
         CellValue::Error(ExcelError::Num)
+    );
+
+    // Invalid integer `type` in IPMT and PPMT fails strictly with InvalidAnnuityType
+    assert_eq!(
+        ipmt_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(rate)),
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Scalar(CellValue::Number(nper)),
+                FunctionArg::Scalar(CellValue::Number(pv)),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(-1.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::InvalidAnnuityType {
+            function: "IPMT",
+            found: -1,
+        })
+    );
+    assert_eq!(
+        ppmt_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(rate)),
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Scalar(CellValue::Number(nper)),
+                FunctionArg::Scalar(CellValue::Number(pv)),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(3.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::InvalidAnnuityType {
+            function: "PPMT",
+            found: 3,
+        })
     );
 }
 

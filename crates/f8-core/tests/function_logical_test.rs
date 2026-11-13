@@ -9,7 +9,7 @@ use f8_core::expr::ast::{CallArg, Expr};
 use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
-use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
+use f8_core::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
 use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context for unit testing function evaluate directly.
@@ -134,7 +134,13 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
 
     // SingleCell reference rejects Empty strictly
     let single_cell_empty = vec![
-        FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+        FunctionArg::array(
+            1,
+            1,
+            vec![CellValue::Empty],
+            ReferenceKind::SingleCell,
+            AxisRole::Measure,
+        ),
         FunctionArg::Scalar(CellValue::Boolean(true)),
     ];
     assert_eq!(
@@ -148,12 +154,13 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         }))
     );
 
-    // Syntactic Slice ignores Empty cells when Boolean cells are present
+    // Syntactic Slice ignores Empty cells when Boolean cells are present (including Descriptor role)
     let args_sparse_slice = vec![FunctionArg::array(
         2,
         1,
         vec![CellValue::Empty, CellValue::Boolean(true)],
         ReferenceKind::Slice,
+        AxisRole::Descriptor,
     )];
     assert_eq!(
         and_func.evaluate(&args_sparse_slice, &ctx).unwrap(),
@@ -170,6 +177,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         1,
         vec![CellValue::Empty, CellValue::Empty],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     )];
     assert_eq!(
         and_func.evaluate(&args_all_empty_slice, &ctx).unwrap(),
@@ -190,6 +198,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
             1,
             vec![CellValue::Boolean(true), bad_elem],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         )];
         assert_eq!(
             and_func.evaluate(&bad_slice, &ctx),
@@ -209,6 +218,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         1,
         vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Div0)],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     )];
     assert_eq!(
         and_func.evaluate(&args_err_range, &ctx).unwrap(),
@@ -226,6 +236,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         values: vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Na)],
         error_types: vec![None, Some(ValueType::Text)],
         ref_kind: ReferenceKind::Slice,
+        axis_role: AxisRole::Measure,
     }];
     assert_eq!(
         and_func.evaluate(&typed_err_slice, &ctx),
@@ -788,7 +799,13 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
     let primary_expr = Expr::number(1.0);
 
     let mock_ctx = MockContext::new();
-    let array_arg = FunctionArg::array(1, 1, vec![CellValue::Number(1.0)], ReferenceKind::Slice);
+    let array_arg = FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Number(1.0)],
+        ReferenceKind::Slice,
+        AxisRole::Measure,
+    );
 
     let err_kind_iferror = iferror_func
         .evaluate(
