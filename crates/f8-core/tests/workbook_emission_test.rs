@@ -1175,25 +1175,17 @@ fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
 }
 
 // ----------------------------------------------------------------------------
-// Scenario 17: Formula Cell Blank Coercion in Cached and Values-Only Emission
+// Scenario 17: EmptyFormulaResult Rejection & Guarded IF(ISBLANK(...)) Emission
 // ----------------------------------------------------------------------------
 #[test]
-fn test_scenario_17_formula_blank_coercion_cached_and_values_only_emission() {
+fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
+    use f8_core::compiler::eval::EvalError;
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic};
     use f8_core::model::id::{ColId, RowId};
-
-    let mut table = TableSpec::new("BlankCoercion", "Blank Coercion");
-    table
-        .columns
-        .push(ColumnSpec::new("val").with_header("Value"));
-    table
-        .rows
-        .push(RowSpec::new("a").with_cell("val", CellInput::null()));
-    table
-        .rows
-        .push(RowSpec::new("b").with_cell("val", CellInput::formula("BlankCoercion[\"a\", @col]")));
+    use f8_core::value::TypeError;
 
     let manifest = ProjectManifest {
-        model_name: "BlankCoercionEmission".to_string(),
+        model_name: "BlankGuardEmission".to_string(),
         theme: Default::default(),
         sheets: vec![SheetSpec {
             name: "Sheet1".to_string(),
@@ -1203,6 +1195,44 @@ fn test_scenario_17_formula_blank_coercion_cached_and_values_only_emission() {
             tables: vec![TableId::from("BlankCoercion")],
         }],
     };
+
+    // 1. Unguarded formula evaluating to Empty fails in Pass 4 prior to Pass 5/6 emission
+    let mut unguarded = TableSpec::new("BlankCoercion", "Blank Coercion");
+    unguarded
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    unguarded
+        .rows
+        .push(RowSpec::new("a").with_cell("val", CellInput::null()));
+    unguarded
+        .rows
+        .push(RowSpec::new("b").with_cell("val", CellInput::formula("BlankCoercion[\"a\", @col]")));
+
+    let err = Compiler::emit_workbook(&manifest, &[unguarded], &EmissionOptions::default())
+        .expect_err("unguarded formula evaluating to Empty must halt before workbook emission");
+    assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+    assert!(matches!(
+        err,
+        CompilerError::Eval(EvalError::Type {
+            source: TypeError::EmptyFormulaResult,
+            ..
+        })
+    ));
+
+    // 2. Explicitly guarded IF(ISBLANK(...), 0, ...) emits cleanly in cached and values_only modes
+    let mut table = TableSpec::new("BlankCoercion", "Blank Coercion");
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    table
+        .rows
+        .push(RowSpec::new("a").with_cell("val", CellInput::null()));
+    table.rows.push(RowSpec::new("b").with_cell(
+        "val",
+        CellInput::formula(
+            "IF(ISBLANK(BlankCoercion[\"a\", @col]), 0, BlankCoercion[\"a\", @col])",
+        ),
+    ));
 
     let compiled = Compiler::compile(&manifest, &[table]).unwrap();
     let t = TableId::from("BlankCoercion");
@@ -1232,7 +1262,7 @@ fn test_scenario_17_formula_blank_coercion_cached_and_values_only_emission() {
         }
     };
 
-    // 1. Cached formula emission: `b` writes `<v>0</v>` while `a` has no `<v>` tag
+    // Cached formula emission: `b` writes `<f>` with `ISBLANK(` and `<v>0</v>` while `a` has no `<v>` tag
     let cached_buf = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
     let cached_xml = read_zip_entry(&cached_buf, "xl/worksheets/sheet1.xml");
     let cached_a = extract_cell_element(&cached_xml, a_ref).expect("a blank cell written");
@@ -1243,11 +1273,11 @@ fn test_scenario_17_formula_blank_coercion_cached_and_values_only_emission() {
         "null literal cell A must remain blank without <v> or <f>: {cached_a}"
     );
     assert!(
-        cached_b.contains("<f>") && cached_b.contains("<v>0</v>"),
-        "formula cell B referencing null must emit <f> and cached <v>0</v>: {cached_b}"
+        cached_b.contains("<f>") && cached_b.contains("ISBLANK(") && cached_b.contains("<v>0</v>"),
+        "guarded formula cell B must emit ISBLANK <f> and cached <v>0</v>: {cached_b}"
     );
 
-    // 2. values_only emission: `b` writes numeric `0` while `a` remains blank
+    // values_only emission: `b` writes numeric `0` while `a` remains blank
     let values_only_buf = compiled
         .emit_workbook(&EmissionOptions {
             values_only: true,
@@ -1266,6 +1296,6 @@ fn test_scenario_17_formula_blank_coercion_cached_and_values_only_emission() {
     );
     assert!(
         !frozen_b.contains("<f>") && !frozen_b.contains("t=\"s\"") && frozen_b.contains("<v>0</v>"),
-        "formula cell B referencing null must emit numeric <v>0</v> in values_only mode: {frozen_b}"
+        "guarded formula cell B must emit numeric <v>0</v> in values_only mode: {frozen_b}"
     );
 }

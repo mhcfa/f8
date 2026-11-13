@@ -35,7 +35,7 @@ pub enum Expr {
     Literal(Literal),
     /// Coordinate or slice reference to a table.
     Reference(TableRef),
-    /// Unary prefix operation (e.g. `-x`, `+x`).
+    /// Unary prefix operation (e.g. `-x`).
     Unary { op: UnaryOp, expr: Box<Expr> },
     /// Binary infix operation (e.g. `a + b`, `x * y`).
     Binary {
@@ -130,12 +130,35 @@ impl BinaryOp {
     }
 
     /// Returns `true` if the operator is right-associative (e.g. `^`).
-    pub fn is_right_associative(self) -> bool {
-        matches!(self, Self::Pow)
+    #[must_use]
+    pub const fn is_right_associative(self) -> bool {
+        match self {
+            Self::Pow => true,
+            Self::Mul
+            | Self::Div
+            | Self::Add
+            | Self::Sub
+            | Self::Eq
+            | Self::NotEq
+            | Self::Lt
+            | Self::Lte
+            | Self::Gt
+            | Self::Gte => false,
+        }
+    }
+
+    /// Returns `true` if the operator is a relational comparison (`=`, `<>`, `<`, `<=`, `>`, `>=`).
+    #[must_use]
+    pub const fn is_relational(self) -> bool {
+        match self {
+            Self::Eq | Self::NotEq | Self::Lt | Self::Lte | Self::Gt | Self::Gte => true,
+            Self::Pow | Self::Mul | Self::Div | Self::Add | Self::Sub => false,
+        }
     }
 
     /// Returns the canonical textual representation of the operator.
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pow => "^",
             Self::Mul => "*",
@@ -161,22 +184,23 @@ impl fmt::Display for BinaryOp {
 /// Unary prefix operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnaryOp {
-    /// Unary positive (`+`).
-    Pos,
     /// Unary negation (`-`).
     Neg,
 }
 
 impl UnaryOp {
     /// Returns the precedence level of the unary operator.
-    pub fn precedence(self) -> u8 {
-        4
+    #[must_use]
+    pub const fn precedence(self) -> u8 {
+        match self {
+            Self::Neg => 4,
+        }
     }
 
     /// Returns the canonical textual representation of the unary operator.
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Pos => "+",
             Self::Neg => "-",
         }
     }
@@ -254,6 +278,12 @@ impl TableRef {
             row,
             col,
         }
+    }
+
+    /// Returns `true` if either the row or column selector is a range slice (`start..end`).
+    #[must_use]
+    pub const fn is_slice(&self) -> bool {
+        self.row.is_range() || self.col.is_range()
     }
 }
 
@@ -497,7 +527,7 @@ impl fmt::Display for Expr {
             }
             Self::Binary { op, left, right } => {
                 let left_paren = left.precedence().is_some_and(|p| {
-                    if op.is_right_associative() {
+                    if op.is_right_associative() || op.is_relational() {
                         p <= op.precedence()
                     } else {
                         p < op.precedence()

@@ -1,19 +1,20 @@
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
-    VariadicRule,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
+    ShapePolicy, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 /// Positional parameter definitions for `SUMPRODUCT`.
 static SUMPRODUCT_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "array1",
-    "The first array argument whose components you want to multiply and then add.",
-    ParamKind::RangeOrArray,
+    "The first range argument whose components you want to multiply and then add.",
+    ParamKind::Range,
+    ParamType::Any,
 )];
 
-/// `SUMPRODUCT(array1, [array2], ...)`: Multiplies corresponding components in the given arrays, and returns the sum of those products.
+/// `SUMPRODUCT(array1, [array2], ...)`: Multiplies corresponding components in the given ranges, and returns the sum of those products.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SumproductFunction;
 
@@ -30,8 +31,16 @@ impl ExcelFunction for SumproductFunction {
         SUMPRODUCT_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::EqualAllRanges)
     }
 
     fn evaluate(
@@ -41,7 +50,6 @@ impl ExcelFunction for SumproductFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        // Collect (rows, cols, &[CellValue]) for each argument
         let mut arrays = Vec::with_capacity(args.len());
         let mut target_dims: Option<(usize, usize)> = None;
 
@@ -50,15 +58,26 @@ impl ExcelFunction for SumproductFunction {
                 FunctionArg::Array {
                     rows, cols, values, ..
                 } => (*rows, *cols, values.as_slice()),
-                FunctionArg::Scalar(val) => (1, 1, std::slice::from_ref(val)),
-                FunctionArg::Lazy(_) => {
-                    return Err(FunctionError::EvaluationFailure {
+                FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
+                    return Err(FunctionError::InvalidArgumentKind {
                         function: self.name(),
-                        message: "unexpected lazy argument in SUMPRODUCT".into(),
+                        expected: "range",
+                        found: "scalar",
+                    });
+                }
+                FunctionArg::Lazy(_) => {
+                    return Err(FunctionError::InvalidArgumentKind {
+                        function: self.name(),
+                        expected: "range",
+                        found: "lazy",
                     });
                 }
                 FunctionArg::Omitted => {
-                    return Ok(CellValue::Error(ExcelError::Value));
+                    return Err(FunctionError::InvalidArgumentKind {
+                        function: self.name(),
+                        expected: "range",
+                        found: "omitted",
+                    });
                 }
             };
 
@@ -74,7 +93,13 @@ impl ExcelFunction for SumproductFunction {
 
             if let Some((target_rows, target_cols)) = target_dims {
                 if rows != target_rows || cols != target_cols {
-                    return Ok(CellValue::Error(ExcelError::Value));
+                    return Err(FunctionError::DimensionMismatch {
+                        function: self.name(),
+                        expected_rows: target_rows,
+                        expected_cols: target_cols,
+                        found_rows: rows,
+                        found_cols: cols,
+                    });
                 }
             } else {
                 target_dims = Some((rows, cols));
@@ -86,7 +111,7 @@ impl ExcelFunction for SumproductFunction {
         let (target_rows, target_cols) = target_dims.unwrap_or((0, 0));
         let num_elements = target_rows * target_cols;
 
-        // Check for error values in any array - cell errors bubble up immediately
+        // Cell errors bubble after all range shapes have been verified
         for slice in &arrays {
             for v in *slice {
                 if let CellValue::Error(err) = v {
@@ -101,14 +126,25 @@ impl ExcelFunction for SumproductFunction {
             let mut product = 1.0;
             for slice in &arrays {
                 let val = match slice.get(k) {
-                    Some(CellValue::Number(n)) => *n,
-                    _ => 0.0, // Non-numeric entries (text, booleans, empty) are treated as 0.0
+                    Some(CellValue::Number(n)) => {
+                        if !n.is_finite() {
+                            return Ok(CellValue::Error(ExcelError::Num));
+                        }
+                        *n
+                    }
+                    Some(
+                        CellValue::Text(_)
+                        | CellValue::Boolean(_)
+                        | CellValue::Empty
+                        | CellValue::Error(_),
+                    )
+                    | None => 0.0,
                 };
                 product *= val;
             }
             total_sum += product;
         }
 
-        Ok(CellValue::Number(normalize_zero(total_sum)))
+        Ok(CellValue::number(total_sum))
     }
 }

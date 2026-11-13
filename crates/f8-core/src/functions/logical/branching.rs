@@ -1,33 +1,38 @@
-use crate::functions::common::eval_branch_arg;
+use crate::functions::common::{
+    BranchTypeUnifier, eval_branch_arg, eval_taken_branch_arm, extract_scalar_bool,
+    extract_scalar_integer, validate_dormant_arm,
+};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
-    VariadicRule,
+    BranchPolicy, EvalContext, ExcelFunction, ExpectationOrigin, FunctionArg, FunctionCategory,
+    ParamKind, ParamType, ParameterDef, TypeExpectation, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Positional parameter definitions for `IF`.
 static IF_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "logical_test",
-        "Any value or expression that can be evaluated to TRUE or FALSE.",
+        "A boolean value or expression that evaluates to TRUE or FALSE.",
         ParamKind::Scalar,
+        ParamType::Boolean,
     ),
     ParameterDef::required(
         "value_if_true",
         "The value to return if logical_test evaluates to TRUE.",
         ParamKind::Lazy,
+        ParamType::Any,
     ),
-    ParameterDef::with_default(
+    ParameterDef::required(
         "value_if_false",
         "The value to return if logical_test evaluates to FALSE.",
         ParamKind::Lazy,
-        CellValue::Boolean(false),
+        ParamType::Any,
     ),
 ];
 
-/// `IF(logical_test, value_if_true, [value_if_false])`: Specifies a logical test to perform.
+/// `IF(logical_test, value_if_true, value_if_false)`: Specifies a logical test to perform.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IfFunction;
 
@@ -44,8 +49,16 @@ impl ExcelFunction for IfFunction {
         IF_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        None
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::Branch(BranchPolicy::If)
     }
 
     fn evaluate(
@@ -55,22 +68,38 @@ impl ExcelFunction for IfFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let cond_val = args[0].eval_scalar(self.name(), ctx)?;
-        if let CellValue::Error(err) = cond_val {
-            return Ok(CellValue::Error(err));
-        }
-
-        let cond = match cond_val.coerce_to_bool() {
-            Ok(b) => b,
-            Err(err) => return Ok(CellValue::Error(err)),
+        let [cond_arg, true_arg, false_arg] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 3,
+                found: args.len(),
+            });
         };
 
-        if cond {
-            eval_branch_arg(&args[1], self.name(), ctx)
-        } else if let Some(false_arg) = args.get(2) {
-            eval_branch_arg(false_arg, self.name(), ctx)
-        } else {
-            Ok(CellValue::Boolean(false))
+        let mut unifier = BranchTypeUnifier::new(self.name());
+
+        match extract_scalar_bool(cond_arg, self.name(), "logical_test", 1, ctx)? {
+            Ok(true) => {
+                let (val, vt1) = eval_taken_branch_arm(true_arg, self.name(), ctx)?;
+                let vt2 = validate_dormant_arm(false_arg, self.name(), None, ctx)?;
+                unifier.record(2, vt1).map_err(FunctionError::Type)?;
+                unifier.record(3, vt2).map_err(FunctionError::Type)?;
+                Ok(val)
+            }
+            Ok(false) => {
+                let vt1 = validate_dormant_arm(true_arg, self.name(), None, ctx)?;
+                let (val, vt2) = eval_taken_branch_arm(false_arg, self.name(), ctx)?;
+                unifier.record(2, vt1).map_err(FunctionError::Type)?;
+                unifier.record(3, vt2).map_err(FunctionError::Type)?;
+                Ok(val)
+            }
+            Err(err) => {
+                let vt1 = validate_dormant_arm(true_arg, self.name(), None, ctx)?;
+                let vt2 = validate_dormant_arm(false_arg, self.name(), None, ctx)?;
+                unifier.record(2, vt1).map_err(FunctionError::Type)?;
+                unifier.record(3, vt2).map_err(FunctionError::Type)?;
+                Ok(CellValue::Error(err))
+            }
         }
     }
 }
@@ -79,13 +108,15 @@ impl ExcelFunction for IfFunction {
 static IFS_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "logical_test1",
-        "Any value or expression that can be evaluated to TRUE or FALSE.",
+        "A boolean value or expression that evaluates to TRUE or FALSE.",
         ParamKind::Lazy,
+        ParamType::Boolean,
     ),
     ParameterDef::required(
         "value_if_true1",
         "The value to return if logical_test1 evaluates to TRUE.",
         ParamKind::Lazy,
+        ParamType::Any,
     ),
 ];
 
@@ -106,8 +137,16 @@ impl ExcelFunction for IfsFunction {
         IFS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        None
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Pairs
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::Branch(BranchPolicy::Ifs)
     }
 
     fn evaluate(
@@ -117,24 +156,67 @@ impl ExcelFunction for IfsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        for [test_arg, val_arg] in args.as_chunks::<2>().0 {
-            let cond_val = eval_branch_arg(test_arg, self.name(), ctx)?;
-            if let CellValue::Error(err) = cond_val {
-                return Ok(CellValue::Error(err));
-            }
+        let mut unifier = BranchTypeUnifier::new(self.name());
+        let mut selected: Option<CellValue> = None;
 
-            let cond = match cond_val.coerce_to_bool() {
-                Ok(b) => b,
-                Err(err) => return Ok(CellValue::Error(err)),
+        for (pair_idx, [test_arg, val_arg]) in args.as_chunks::<2>().0.iter().enumerate() {
+            let cond_pos = 2 * pair_idx + 1;
+            let val_pos = 2 * pair_idx + 2;
+            let cond_exp = TypeExpectation {
+                expected: ExpectedType::Boolean,
+                origin: ExpectationOrigin::FunctionParam {
+                    function: self.name(),
+                    param: "logical_test1",
+                    position: cond_pos,
+                },
             };
 
-            if cond {
-                return eval_branch_arg(val_arg, self.name(), ctx);
+            if selected.is_some() {
+                validate_dormant_arm(test_arg, self.name(), Some(cond_exp), ctx)?;
+                let val_vt = validate_dormant_arm(val_arg, self.name(), None, ctx)?;
+                unifier
+                    .record(val_pos, val_vt)
+                    .map_err(FunctionError::Type)?;
+                continue;
+            }
+
+            let cond_val = eval_branch_arg(test_arg, self.name(), ctx)?;
+            match cond_val.strict_bool() {
+                Ok(Ok(true)) => {
+                    let (val, val_vt) = eval_taken_branch_arm(val_arg, self.name(), ctx)?;
+                    unifier
+                        .record(val_pos, val_vt)
+                        .map_err(FunctionError::Type)?;
+                    selected = Some(val);
+                }
+                Ok(Ok(false)) => {
+                    let val_vt = validate_dormant_arm(val_arg, self.name(), None, ctx)?;
+                    unifier
+                        .record(val_pos, val_vt)
+                        .map_err(FunctionError::Type)?;
+                }
+                Ok(Err(err)) => {
+                    validate_dormant_arm(test_arg, self.name(), Some(cond_exp), ctx)?;
+                    let val_vt = validate_dormant_arm(val_arg, self.name(), None, ctx)?;
+                    unifier
+                        .record(val_pos, val_vt)
+                        .map_err(FunctionError::Type)?;
+                    selected = Some(CellValue::Error(err));
+                }
+                Err(found) => {
+                    return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                        function: self.name(),
+                        param: "logical_test1",
+                        position: cond_pos,
+                        expected: ExpectedType::Boolean,
+                        found,
+                    }));
+                }
             }
         }
 
         // If no conditions evaluate to TRUE, Excel returns #N/A
-        Ok(CellValue::Error(ExcelError::Na))
+        Ok(selected.unwrap_or(CellValue::Error(ExcelError::Na)))
     }
 }
 
@@ -144,11 +226,13 @@ static CHOOSE_PARAMS: &[ParameterDef] = &[
         "index_num",
         "Specifies which value argument is selected (1 to 254).",
         ParamKind::Scalar,
+        ParamType::Integer,
     ),
     ParameterDef::required(
         "value1",
         "Value or expression from which CHOOSE selects.",
         ParamKind::Lazy,
+        ParamType::Any,
     ),
 ];
 
@@ -169,8 +253,16 @@ impl ExcelFunction for ChooseFunction {
         CHOOSE_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        None
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::Branch(BranchPolicy::Choose)
     }
 
     fn evaluate(
@@ -180,121 +272,49 @@ impl ExcelFunction for ChooseFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let idx_val = args[0].eval_scalar(self.name(), ctx)?;
-        if let CellValue::Error(err) = idx_val {
-            return Ok(CellValue::Error(err));
-        }
-
-        let num = match idx_val.coerce_to_number() {
-            Ok(n) => n,
-            Err(err) => return Ok(CellValue::Error(err)),
+        let Some((idx_arg, choices)) = args.split_first() else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
         };
 
-        if !num.is_finite() {
-            return Ok(CellValue::Error(ExcelError::Value));
-        }
-
-        let idx = num.trunc() as i64;
-        let choices = &args[1..];
-
-        if idx < 1 || (idx as usize) > choices.len() {
-            return Ok(CellValue::Error(ExcelError::Value));
-        }
-
-        eval_branch_arg(&choices[(idx - 1) as usize], self.name(), ctx)
-    }
-}
-
-/// Positional parameter definitions for `SWITCH`.
-static SWITCH_PARAMS: &[ParameterDef] = &[
-    ParameterDef::required(
-        "expression",
-        "The value that will be compared against value1...valueN.",
-        ParamKind::Scalar,
-    ),
-    ParameterDef::required(
-        "value1",
-        "The value that will be compared against expression.",
-        ParamKind::Lazy,
-    ),
-    ParameterDef::required(
-        "result1",
-        "The value to be returned if value1 matches expression.",
-        ParamKind::Lazy,
-    ),
-];
-
-/// Coerces `CellValue::Empty` to `CellValue::Number(0.0)` for `SWITCH` comparison operands
-/// (`expression` and `value_i`), matching Excel value-class coercion while keeping `result_i`
-/// and `default` polymorphic.
-fn coerce_switch_operand(value: CellValue) -> CellValue {
-    match value {
-        CellValue::Empty => CellValue::Number(0.0),
-        other @ (CellValue::Number(_)
-        | CellValue::Text(_)
-        | CellValue::Boolean(_)
-        | CellValue::Error(_)) => other,
-    }
-}
-
-/// `SWITCH(expression, val1, result1, [default_or_val2, result2], ...)`: Evaluates an expression against a list of values.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct SwitchFunction;
-
-impl ExcelFunction for SwitchFunction {
-    fn name(&self) -> &'static str {
-        "SWITCH"
-    }
-
-    fn category(&self) -> FunctionCategory {
-        FunctionCategory::Logical
-    }
-
-    fn parameters(&self) -> &'static [ParameterDef] {
-        SWITCH_PARAMS
-    }
-
-    fn variadic_rule(&self) -> VariadicRule {
-        VariadicRule::Single
-    }
-
-    fn evaluate(
-        &self,
-        args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
-    ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
-        let target = args[0].eval_scalar(self.name(), ctx)?;
-        if let CellValue::Error(err) = target {
-            return Ok(CellValue::Error(err));
-        }
-        let target = coerce_switch_operand(target);
-
-        let rem = &args[1..];
-        let pair_count = rem.len() / 2;
-        let has_default = rem.len() % 2 == 1;
-
-        for i in 0..pair_count {
-            let val_arg = &rem[2 * i];
-            let res_arg = &rem[2 * i + 1];
-
-            let case_val = eval_branch_arg(val_arg, self.name(), ctx)?;
-            if let CellValue::Error(err) = case_val {
-                return Ok(CellValue::Error(err));
+        let idx_res = extract_scalar_integer(idx_arg, self.name(), "index_num", 1, ctx)?;
+        let selected_idx: Result<usize, ExcelError> = match idx_res {
+            Err(err) => Err(err),
+            Ok(idx) => {
+                if idx < 1 {
+                    Err(ExcelError::Value)
+                } else if let Ok(zero_based) = usize::try_from(idx - 1)
+                    && zero_based < choices.len()
+                {
+                    Ok(zero_based)
+                } else {
+                    Err(ExcelError::Value)
+                }
             }
-            let case_val = coerce_switch_operand(case_val);
+        };
 
-            if target.excel_eq(&case_val) {
-                return eval_branch_arg(res_arg, self.name(), ctx);
+        let mut unifier = BranchTypeUnifier::new(self.name());
+        let mut selected_val: Option<CellValue> = None;
+
+        for (k, choice) in choices.iter().enumerate() {
+            let pos = k + 2;
+            if selected_idx == Ok(k) {
+                let (val, vt) = eval_taken_branch_arm(choice, self.name(), ctx)?;
+                unifier.record(pos, vt).map_err(FunctionError::Type)?;
+                selected_val = Some(val);
+            } else {
+                let vt = validate_dormant_arm(choice, self.name(), None, ctx)?;
+                unifier.record(pos, vt).map_err(FunctionError::Type)?;
             }
         }
 
-        if has_default {
-            let default_arg = &rem[rem.len() - 1];
-            eval_branch_arg(default_arg, self.name(), ctx)
-        } else {
-            Ok(CellValue::Error(ExcelError::Na))
+        match (selected_idx, selected_val) {
+            (Ok(_), Some(val)) => Ok(val),
+            (Err(err), _) => Ok(CellValue::Error(err)),
+            (Ok(_), None) => Ok(CellValue::Error(ExcelError::Value)),
         }
     }
 }

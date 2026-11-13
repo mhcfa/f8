@@ -1,11 +1,11 @@
-use crate::functions::common::extract_scalar_number;
+use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 /// Calculates the periodic payment for an annuity based on constant payments and a constant interest rate.
 pub(crate) fn calculate_pmt(
@@ -92,27 +92,32 @@ static PMT_PARAMS: &[ParameterDef] = &[
         "rate",
         "The interest rate per period for the loan.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "nper",
         "The total number of payment periods for the loan.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "pv",
         "The present value, or the total amount that a series of future payments is worth now.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::with_default(
         "fv",
         "The future value, or cash balance you want after the last payment is made.",
         ParamKind::Scalar,
+        ParamType::Number,
         CellValue::Number(0.0),
     ),
     ParameterDef::with_default(
         "type",
-        "The number 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
+        "The integer 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
         ParamKind::Scalar,
+        ParamType::Integer,
         CellValue::Number(0.0),
     ),
 ];
@@ -134,6 +139,10 @@ impl ExcelFunction for PmtFunction {
         PMT_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
     }
@@ -141,43 +150,55 @@ impl ExcelFunction for PmtFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate = match extract_scalar_number(&args[0]) {
-            Ok(r) => r,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let nper = match extract_scalar_number(&args[1]) {
-            Ok(n) => n,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let pv = match extract_scalar_number(&args[2]) {
-            Ok(p) => p,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let fv = match args.get(3) {
-            None | Some(FunctionArg::Omitted) => 0.0,
+        let rate_res = extract_scalar_number(&args[0], self.name(), "rate", 1, ctx)?;
+        let nper_res = extract_scalar_number(&args[1], self.name(), "nper", 2, ctx)?;
+        let pv_res = extract_scalar_number(&args[2], self.name(), "pv", 3, ctx)?;
+        let fv_res = match args.get(3) {
+            None | Some(FunctionArg::Omitted) => Ok(0.0),
             Some(
-                fv_arg
-                @ (FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Lazy(_)),
-            ) => match extract_scalar_number(fv_arg) {
-                Ok(f) => f,
-                Err(e) => return Ok(CellValue::Error(e)),
-            },
+                fv_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => extract_scalar_number(fv_arg, self.name(), "fv", 4, ctx)?,
         };
-        let type_val = if let Some(type_arg) = args.get(4) {
-            match extract_scalar_number(type_arg) {
-                Ok(t) => t,
-                Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
+        let type_res = match args.get(4) {
+            None | Some(FunctionArg::Omitted) => Ok(0_i64),
+            Some(
+                type_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => extract_scalar_integer(type_arg, self.name(), "type", 5, ctx)?,
+        };
+
+        let rate = match rate_res {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
+        let nper = match nper_res {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
+        let pv = match pv_res {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
+        let fv = match fv_res {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
+        let type_val = match type_res {
+            Ok(v) => v as f64,
+            Err(e) => return Ok(CellValue::Error(e)),
         };
 
         match calculate_pmt(rate, nper, pv, fv, type_val) {
-            Ok(val) => Ok(CellValue::Number(normalize_zero(val))),
+            Ok(val) => Ok(CellValue::number(val)),
             Err(e) => Ok(CellValue::Error(e)),
         }
     }
@@ -189,35 +210,113 @@ static AMORTIZATION_PARAMS: &[ParameterDef] = &[
         "rate",
         "The interest rate per period for the loan.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "per",
         "The period for which you want to find the payment, from 1 to nper.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "nper",
         "The total number of payment periods for the loan.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "pv",
         "The present value, or the total amount that a series of future payments is worth now.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::with_default(
         "fv",
         "The future value, or cash balance you want after the last payment is made.",
         ParamKind::Scalar,
+        ParamType::Number,
         CellValue::Number(0.0),
     ),
     ParameterDef::with_default(
         "type",
-        "The number 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
+        "The integer 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
         ParamKind::Scalar,
+        ParamType::Integer,
         CellValue::Number(0.0),
     ),
 ];
+
+struct AmortizationArgs {
+    rate: f64,
+    per: f64,
+    nper: f64,
+    pv: f64,
+    fv: f64,
+    type_val: f64,
+}
+
+fn extract_amortization_args(
+    func_name: &'static str,
+    args: &[FunctionArg<'_>],
+    ctx: &dyn EvalContext,
+) -> Result<Result<AmortizationArgs, ExcelError>, FunctionError> {
+    let rate_res = extract_scalar_number(&args[0], func_name, "rate", 1, ctx)?;
+    let per_res = extract_scalar_number(&args[1], func_name, "per", 2, ctx)?;
+    let nper_res = extract_scalar_number(&args[2], func_name, "nper", 3, ctx)?;
+    let pv_res = extract_scalar_number(&args[3], func_name, "pv", 4, ctx)?;
+    let fv_res = match args.get(4) {
+        None | Some(FunctionArg::Omitted) => Ok(0.0),
+        Some(
+            fv_arg @ (FunctionArg::Scalar(_)
+            | FunctionArg::TypedErrorScalar { .. }
+            | FunctionArg::Array { .. }
+            | FunctionArg::Lazy(_)),
+        ) => extract_scalar_number(fv_arg, func_name, "fv", 5, ctx)?,
+    };
+    let type_res = match args.get(5) {
+        None | Some(FunctionArg::Omitted) => Ok(0_i64),
+        Some(
+            type_arg @ (FunctionArg::Scalar(_)
+            | FunctionArg::TypedErrorScalar { .. }
+            | FunctionArg::Array { .. }
+            | FunctionArg::Lazy(_)),
+        ) => extract_scalar_integer(type_arg, func_name, "type", 6, ctx)?,
+    };
+
+    let rate = match rate_res {
+        Ok(v) => v,
+        Err(e) => return Ok(Err(e)),
+    };
+    let per = match per_res {
+        Ok(v) => v,
+        Err(e) => return Ok(Err(e)),
+    };
+    let nper = match nper_res {
+        Ok(v) => v,
+        Err(e) => return Ok(Err(e)),
+    };
+    let pv = match pv_res {
+        Ok(v) => v,
+        Err(e) => return Ok(Err(e)),
+    };
+    let fv = match fv_res {
+        Ok(v) => v,
+        Err(e) => return Ok(Err(e)),
+    };
+    let type_val = match type_res {
+        Ok(v) => v as f64,
+        Err(e) => return Ok(Err(e)),
+    };
+
+    Ok(Ok(AmortizationArgs {
+        rate,
+        per,
+        nper,
+        pv,
+        fv,
+        type_val,
+    }))
+}
 
 /// `IPMT(rate, per, nper, pv, [fv], [type])`: Calculates interest portion of annuity payment for a given period.
 #[derive(Debug, Default, Clone, Copy)]
@@ -236,6 +335,10 @@ impl ExcelFunction for IpmtFunction {
         AMORTIZATION_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
     }
@@ -243,47 +346,24 @@ impl ExcelFunction for IpmtFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate = match extract_scalar_number(&args[0]) {
-            Ok(r) => r,
+        let parsed = match extract_amortization_args(self.name(), args, ctx)? {
+            Ok(parsed) => parsed,
             Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let per = match extract_scalar_number(&args[1]) {
-            Ok(p) => p,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let nper = match extract_scalar_number(&args[2]) {
-            Ok(n) => n,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let pv = match extract_scalar_number(&args[3]) {
-            Ok(p) => p,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let fv = match args.get(4) {
-            None | Some(FunctionArg::Omitted) => 0.0,
-            Some(
-                fv_arg
-                @ (FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Lazy(_)),
-            ) => match extract_scalar_number(fv_arg) {
-                Ok(f) => f,
-                Err(e) => return Ok(CellValue::Error(e)),
-            },
-        };
-        let type_val = if let Some(type_arg) = args.get(5) {
-            match extract_scalar_number(type_arg) {
-                Ok(t) => t,
-                Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
         };
 
-        match calculate_ipmt(rate, per, nper, pv, fv, type_val) {
-            Ok(val) => Ok(CellValue::Number(normalize_zero(val))),
+        match calculate_ipmt(
+            parsed.rate,
+            parsed.per,
+            parsed.nper,
+            parsed.pv,
+            parsed.fv,
+            parsed.type_val,
+        ) {
+            Ok(val) => Ok(CellValue::number(val)),
             Err(e) => Ok(CellValue::Error(e)),
         }
     }
@@ -306,6 +386,10 @@ impl ExcelFunction for PpmtFunction {
         AMORTIZATION_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
     }
@@ -313,47 +397,24 @@ impl ExcelFunction for PpmtFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate = match extract_scalar_number(&args[0]) {
-            Ok(r) => r,
+        let parsed = match extract_amortization_args(self.name(), args, ctx)? {
+            Ok(parsed) => parsed,
             Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let per = match extract_scalar_number(&args[1]) {
-            Ok(p) => p,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let nper = match extract_scalar_number(&args[2]) {
-            Ok(n) => n,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let pv = match extract_scalar_number(&args[3]) {
-            Ok(p) => p,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let fv = match args.get(4) {
-            None | Some(FunctionArg::Omitted) => 0.0,
-            Some(
-                fv_arg
-                @ (FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Lazy(_)),
-            ) => match extract_scalar_number(fv_arg) {
-                Ok(f) => f,
-                Err(e) => return Ok(CellValue::Error(e)),
-            },
-        };
-        let type_val = if let Some(type_arg) = args.get(5) {
-            match extract_scalar_number(type_arg) {
-                Ok(t) => t,
-                Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
         };
 
-        match calculate_ppmt(rate, per, nper, pv, fv, type_val) {
-            Ok(val) => Ok(CellValue::Number(normalize_zero(val))),
+        match calculate_ppmt(
+            parsed.rate,
+            parsed.per,
+            parsed.nper,
+            parsed.pv,
+            parsed.fv,
+            parsed.type_val,
+        ) {
+            Ok(val) => Ok(CellValue::number(val)),
             Err(e) => Ok(CellValue::Error(e)),
         }
     }

@@ -6,11 +6,11 @@ use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::{CallArg, Expr};
-use f8_core::functions::traits::{EvalContext, FunctionArg};
+use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context for unit testing function evaluate directly.
 struct MockContext {
@@ -58,10 +58,11 @@ fn eval_str(
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
+    assert_eq!(registry.len(), 45);
+    assert!(registry.lookup("SWITCH").is_none());
+    assert!(registry.lookup("switch").is_none());
 
-    let logical_funcs = [
-        "IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE", "SWITCH",
-    ];
+    let logical_funcs = ["IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE"];
 
     for name in logical_funcs {
         let func = registry
@@ -79,11 +80,10 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
     let or_func = registry.lookup("OR").unwrap();
     let ctx = MockContext::new();
 
-    // Pure scalars: all true
+    // Pure boolean scalars: all true
     let args_true = vec![
         FunctionArg::Scalar(CellValue::Boolean(true)),
-        FunctionArg::Scalar(CellValue::Number(1.0)),
-        FunctionArg::Scalar(CellValue::Text("true".into())),
+        FunctionArg::Scalar(CellValue::Boolean(true)),
     ];
     assert_eq!(
         and_func.evaluate(&args_true, &ctx).unwrap(),
@@ -94,11 +94,10 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         CellValue::Boolean(true)
     );
 
-    // Pure scalars: mixed
+    // Pure boolean scalars: mixed
     let args_mixed = vec![
         FunctionArg::Scalar(CellValue::Boolean(true)),
-        FunctionArg::Scalar(CellValue::Number(0.0)),
-        FunctionArg::Scalar(CellValue::Text("false".into())),
+        FunctionArg::Scalar(CellValue::Boolean(false)),
     ];
     assert_eq!(
         and_func.evaluate(&args_mixed, &ctx).unwrap(),
@@ -109,50 +108,108 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         CellValue::Boolean(true)
     );
 
-    // Range reference: ignores text and empty cells
-    let args_range = vec![FunctionArg::Array {
-        rows: 4,
-        cols: 1,
-        values: vec![
-            CellValue::Boolean(true),
-            CellValue::Text("some_text".into()),
-            CellValue::Empty,
-            CellValue::Number(2.5),
-        ],
-        is_range_ref: true,
-    }];
+    // Non-boolean scalars (Number, Text, Empty) fail strictly, even alongside an ExcelError
+    for (bad_scalar, expected_found) in [
+        (CellValue::Number(1.0), ValueType::Number),
+        (CellValue::Text("true".into()), ValueType::Text),
+        (CellValue::Empty, ValueType::Empty),
+    ] {
+        assert_eq!(
+            and_func.evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                    FunctionArg::Scalar(bad_scalar),
+                ],
+                &ctx,
+            ),
+            Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "AND",
+                param: "logical1",
+                position: 2,
+                expected: ExpectedType::Boolean,
+                found: expected_found,
+            }))
+        );
+    }
+
+    // SingleCell reference rejects Empty strictly
+    let single_cell_empty = vec![
+        FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+        FunctionArg::Scalar(CellValue::Boolean(true)),
+    ];
     assert_eq!(
-        and_func.evaluate(&args_range, &ctx).unwrap(),
+        and_func.evaluate(&single_cell_empty, &ctx),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "AND",
+            param: "logical1",
+            position: 1,
+            expected: ExpectedType::Boolean,
+            found: ValueType::Empty,
+        }))
+    );
+
+    // Syntactic Slice ignores Empty cells when Boolean cells are present
+    let args_sparse_slice = vec![FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Empty, CellValue::Boolean(true)],
+        ReferenceKind::Slice,
+    )];
+    assert_eq!(
+        and_func.evaluate(&args_sparse_slice, &ctx).unwrap(),
         CellValue::Boolean(true)
     );
     assert_eq!(
-        or_func.evaluate(&args_range, &ctx).unwrap(),
+        or_func.evaluate(&args_sparse_slice, &ctx).unwrap(),
         CellValue::Boolean(true)
     );
 
-    // Range with zero logical values returns #VALUE!
-    let args_empty_range = vec![FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Text("abc".into()), CellValue::Empty],
-        is_range_ref: true,
-    }];
+    // Syntactic Slice with all Empty cells returns #VALUE!
+    let args_all_empty_slice = vec![FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Empty, CellValue::Empty],
+        ReferenceKind::Slice,
+    )];
     assert_eq!(
-        and_func.evaluate(&args_empty_range, &ctx).unwrap(),
+        and_func.evaluate(&args_all_empty_slice, &ctx).unwrap(),
         CellValue::Error(ExcelError::Value)
     );
     assert_eq!(
-        or_func.evaluate(&args_empty_range, &ctx).unwrap(),
+        or_func.evaluate(&args_all_empty_slice, &ctx).unwrap(),
         CellValue::Error(ExcelError::Value)
     );
 
-    // Error in range bubbles immediately
-    let args_err_range = vec![FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Div0)],
-        is_range_ref: true,
-    }];
+    // Syntactic Slice containing Text or Number fails strictly with InvalidArgumentType
+    for (bad_elem, expected_found) in [
+        (CellValue::Text("some_text".into()), ValueType::Text),
+        (CellValue::Number(2.5), ValueType::Number),
+    ] {
+        let bad_slice = vec![FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Boolean(true), bad_elem],
+            ReferenceKind::Slice,
+        )];
+        assert_eq!(
+            and_func.evaluate(&bad_slice, &ctx),
+            Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "AND",
+                param: "logical1",
+                position: 1,
+                expected: ExpectedType::Boolean,
+                found: expected_found,
+            }))
+        );
+    }
+
+    // Error in valid boolean slice bubbles immediately
+    let args_err_range = vec![FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Div0)],
+        ReferenceKind::Slice,
+    )];
     assert_eq!(
         and_func.evaluate(&args_err_range, &ctx).unwrap(),
         CellValue::Error(ExcelError::Div0)
@@ -162,14 +219,54 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         CellValue::Error(ExcelError::Div0)
     );
 
-    // Non-boolean text in scalar produces #VALUE!
-    let args_bad_text = vec![
-        FunctionArg::Scalar(CellValue::Boolean(true)),
-        FunctionArg::Scalar(CellValue::Text("invalid".into())),
-    ];
+    // Slice containing typed non-Boolean error provenance fails strictly with InvalidArgumentType
+    let typed_err_slice = vec![FunctionArg::Array {
+        rows: 2,
+        cols: 1,
+        values: vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Na)],
+        error_types: vec![None, Some(ValueType::Text)],
+        ref_kind: ReferenceKind::Slice,
+    }];
     assert_eq!(
-        and_func.evaluate(&args_bad_text, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Value)
+        and_func.evaluate(&typed_err_slice, &ctx),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "AND",
+            param: "logical1",
+            position: 1,
+            expected: ExpectedType::Boolean,
+            found: ValueType::Text,
+        }))
+    );
+
+    // LogicalCollector::collect preserves inferred error ValueType on FunctionArg::Lazy
+    struct TypedLazyErrorCtx;
+    impl EvalContext for TypedLazyErrorCtx {
+        fn eval_expr(&self, _expr: &Expr) -> Result<CellValue, FunctionError> {
+            Ok(CellValue::Error(ExcelError::Div0))
+        }
+        fn validate_dormant_expr(
+            &self,
+            _expr: &Expr,
+            _expected: Option<f8_core::functions::TypeExpectation>,
+        ) -> Result<Option<ValueType>, FunctionError> {
+            Ok(Some(ValueType::Number))
+        }
+    }
+    let lazy_err_expr = Expr::number(0.0);
+    assert_eq!(
+        f8_core::functions::common::LogicalCollector::collect(
+            "AND",
+            "logical1",
+            &[FunctionArg::Lazy(&lazy_err_expr)],
+            &TypedLazyErrorCtx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "AND",
+            param: "logical1",
+            position: 1,
+            expected: ExpectedType::Boolean,
+            found: ValueType::Number,
+        }))
     );
 }
 
@@ -193,18 +290,6 @@ fn test_scenario_3_not_scalar_inversion() {
     );
     assert_eq!(
         not_func
-            .evaluate(&[FunctionArg::Scalar(CellValue::Number(0.0))], &ctx)
-            .unwrap(),
-        CellValue::Boolean(true)
-    );
-    assert_eq!(
-        not_func
-            .evaluate(&[FunctionArg::Scalar(CellValue::Number(10.0))], &ctx)
-            .unwrap(),
-        CellValue::Boolean(false)
-    );
-    assert_eq!(
-        not_func
             .evaluate(
                 &[FunctionArg::Scalar(CellValue::Error(ExcelError::Ref))],
                 &ctx
@@ -212,27 +297,25 @@ fn test_scenario_3_not_scalar_inversion() {
             .unwrap(),
         CellValue::Error(ExcelError::Ref)
     );
-    assert_eq!(
-        not_func
-            .evaluate(&[FunctionArg::Scalar(CellValue::Text("TRUE".into()))], &ctx)
-            .unwrap(),
-        CellValue::Boolean(false)
-    );
-    assert_eq!(
-        not_func
-            .evaluate(
-                &[FunctionArg::Scalar(CellValue::Text("false".into()))],
-                &ctx
-            )
-            .unwrap(),
-        CellValue::Boolean(true)
-    );
-    assert_eq!(
-        not_func
-            .evaluate(&[FunctionArg::Scalar(CellValue::Text("foo".into()))], &ctx)
-            .unwrap(),
-        CellValue::Error(ExcelError::Value)
-    );
+
+    for (bad_val, expected_found) in [
+        (CellValue::Number(0.0), ValueType::Number),
+        (CellValue::Number(10.0), ValueType::Number),
+        (CellValue::Text("TRUE".into()), ValueType::Text),
+        (CellValue::Text("false".into()), ValueType::Text),
+        (CellValue::Empty, ValueType::Empty),
+    ] {
+        assert_eq!(
+            not_func.evaluate(&[FunctionArg::Scalar(bad_val)], &ctx),
+            Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "NOT",
+                param: "logical",
+                position: 1,
+                expected: ExpectedType::Boolean,
+                found: expected_found,
+            }))
+        );
+    }
 }
 
 #[test]
@@ -319,17 +402,18 @@ fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
     let expr_res2 = Expr::Literal(f8_core::expr::ast::Literal::String("second".into()));
     let expr_unreachable = Expr::Literal(f8_core::expr::ast::Literal::String("unreachable".into()));
 
-    // IFS(FALSE, "first", TRUE, "second", ...)
+    // IFS(FALSE, "first", TRUE, "second", FALSE, "unreachable")
     let args = vec![
         FunctionArg::Lazy(&expr_false),
         FunctionArg::Lazy(&expr_res1),
         FunctionArg::Lazy(&expr_true),
         FunctionArg::Lazy(&expr_res2),
-        FunctionArg::Lazy(&expr_unreachable),
+        FunctionArg::Lazy(&expr_false),
         FunctionArg::Lazy(&expr_unreachable),
     ];
     let res = ifs_func.evaluate(&args, &ctx).unwrap();
     assert_eq!(res, CellValue::Text("second".into()));
+    assert_eq!(ctx.count(), 3);
 
     // All false conditions return #N/A
     let args_all_false = vec![
@@ -393,15 +477,21 @@ fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
         other => panic!("expected CannotOmitRequiredArgument for position 4, got {other:?}"),
     }
 
-    // Text boolean coercion in IFS condition
+    // Non-boolean condition in IFS fails strictly with InvalidArgumentType
     let expr_text_true = Expr::Literal(f8_core::expr::ast::Literal::String("true".into()));
     let args_text_cond = vec![
         FunctionArg::Lazy(&expr_text_true),
         FunctionArg::Lazy(&expr_res1),
     ];
     assert_eq!(
-        ifs_func.evaluate(&args_text_cond, &ctx).unwrap(),
-        CellValue::Text("first".into())
+        ifs_func.evaluate(&args_text_cond, &ctx),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "IFS",
+            param: "logical_test1",
+            position: 1,
+            expected: ExpectedType::Boolean,
+            found: ValueType::Text,
+        }))
     );
 }
 
@@ -425,15 +515,22 @@ fn test_scenario_6_choose_index_selection() {
     let res = choose_func.evaluate(&args, &ctx).unwrap();
     assert_eq!(res, CellValue::Text("B".into()));
 
-    // Floating index 2.9 truncates to 2
-    let args_trunc = vec![
+    // Floating index 2.9 fails strictly with NonIntegerArgument
+    let args_non_int = vec![
         FunctionArg::Scalar(CellValue::Number(2.9)),
         FunctionArg::Lazy(&choice1),
         FunctionArg::Lazy(&choice2),
         FunctionArg::Lazy(&choice3),
     ];
-    let res_trunc = choose_func.evaluate(&args_trunc, &ctx).unwrap();
-    assert_eq!(res_trunc, CellValue::Text("B".into()));
+    assert_eq!(
+        choose_func.evaluate(&args_non_int, &ctx),
+        Err(FunctionError::Type(TypeError::NonIntegerArgument {
+            function: "CHOOSE",
+            param: "index_num",
+            position: 1,
+            value: 2.9.to_string(),
+        }))
+    );
 
     // Index 0 or negative returns #VALUE!
     let args_zero = vec![
@@ -458,107 +555,44 @@ fn test_scenario_6_choose_index_selection() {
 }
 
 #[test]
-fn test_scenario_7_switch_matching_and_default() {
+fn test_scenario_7_switch_retired_unknown_function() {
     let registry = FunctionRegistry::standard();
-    let switch_func = registry.lookup("SWITCH").unwrap();
-    let ctx = MockContext::new();
+    assert!(registry.lookup("SWITCH").is_none());
 
-    let val1 = Expr::Literal(f8_core::expr::ast::Literal::String("apple".into()));
-    let res1 = Expr::Literal(f8_core::expr::ast::Literal::Number(1.0));
-    let val2 = Expr::Literal(f8_core::expr::ast::Literal::String("banana".into()));
-    let res2 = Expr::Literal(f8_core::expr::ast::Literal::Number(2.0));
-    let def_expr = Expr::Literal(f8_core::expr::ast::Literal::Number(99.0));
+    let mut symbols = SymbolTable::new();
+    let sheet = SheetId::from("Sheet1");
+    let table = TableSpec {
+        id: TableId::from("Data"),
+        title: "Data".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("c1")],
+        rows: vec![RowSpec::new("r1")],
+    };
+    symbols.register_table(sheet, &table).unwrap();
+    let origin = CellId::new("Data", "r1", "c1");
+    let values = IndexMap::new();
 
-    // Case-insensitive match on "BANANA"
-    let args_match = vec![
-        FunctionArg::Scalar(CellValue::Text("BANANA".into())),
-        FunctionArg::Lazy(&val1),
-        FunctionArg::Lazy(&res1),
-        FunctionArg::Lazy(&val2),
-        FunctionArg::Lazy(&res2),
-        FunctionArg::Lazy(&def_expr),
-    ];
-    let res = switch_func.evaluate(&args_match, &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(2.0));
-
-    // No match with default
-    let args_default = vec![
-        FunctionArg::Scalar(CellValue::Text("orange".into())),
-        FunctionArg::Lazy(&val1),
-        FunctionArg::Lazy(&res1),
-        FunctionArg::Lazy(&val2),
-        FunctionArg::Lazy(&res2),
-        FunctionArg::Lazy(&def_expr),
-    ];
-    let res_def = switch_func.evaluate(&args_default, &ctx).unwrap();
-    assert_eq!(res_def, CellValue::Number(99.0));
-
-    // No match without default returns #N/A
-    let args_no_match = vec![
-        FunctionArg::Scalar(CellValue::Text("orange".into())),
-        FunctionArg::Lazy(&val1),
-        FunctionArg::Lazy(&res1),
-        FunctionArg::Lazy(&val2),
-        FunctionArg::Lazy(&res2),
-    ];
-    let res_na = switch_func.evaluate(&args_no_match, &ctx).unwrap();
-    assert_eq!(res_na, CellValue::Error(ExcelError::Na));
-
-    // Empty coerces to Number(0.0) on expression and value_i (skips "" and FALSE, matches 0.0 and Empty)
-    let empty_str_val = Expr::Literal(f8_core::expr::ast::Literal::String(String::new()));
-    let false_val = Expr::Literal(f8_core::expr::ast::Literal::Boolean(false));
-    let zero_val = Expr::Literal(f8_core::expr::ast::Literal::Number(0.0));
-    let res3 = Expr::Literal(f8_core::expr::ast::Literal::Number(3.0));
-    let args_empty_target = vec![
-        FunctionArg::Scalar(CellValue::Empty),
-        FunctionArg::Lazy(&empty_str_val),
-        FunctionArg::Lazy(&res1),
-        FunctionArg::Lazy(&false_val),
-        FunctionArg::Lazy(&res2),
-        FunctionArg::Lazy(&zero_val),
-        FunctionArg::Lazy(&res3),
-        FunctionArg::Lazy(&def_expr),
-    ];
-    assert_eq!(
-        switch_func.evaluate(&args_empty_target, &ctx).unwrap(),
-        CellValue::Number(3.0)
-    );
-
-    // Numeric 0.0 matches Empty case_val, while "" and FALSE do not match Empty case_val
-    let args_zero_vs_empty = vec![
-        FunctionArg::Scalar(CellValue::Number(0.0)),
-        FunctionArg::Scalar(CellValue::Empty),
-        FunctionArg::Lazy(&res1),
-        FunctionArg::Lazy(&def_expr),
-    ];
-    assert_eq!(
-        switch_func.evaluate(&args_zero_vs_empty, &ctx).unwrap(),
-        CellValue::Number(1.0)
-    );
-
-    for non_matching_target in [CellValue::Text(String::new()), CellValue::Boolean(false)] {
-        let args_non_match_empty = vec![
-            FunctionArg::Scalar(non_matching_target),
-            FunctionArg::Scalar(CellValue::Empty),
-            FunctionArg::Lazy(&res1),
-            FunctionArg::Lazy(&def_expr),
-        ];
+    for formula in [
+        "SWITCH(1, 1, 10, 20)",
+        "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
+        "ISBLANK(SWITCH(1, 1, 10))",
+    ] {
+        let expr = Expr::parse(formula).unwrap();
         assert_eq!(
-            switch_func.evaluate(&args_non_match_empty, &ctx).unwrap(),
-            CellValue::Number(99.0)
+            registry.validate_expr(&expr),
+            Err(FunctionError::UnknownFunction("SWITCH".into())),
+            "expected UnknownFunction(\"SWITCH\") in Stage A for '{formula}'"
         );
+        let err = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap_err();
+        let EvalError::Function { cell, source } = err else {
+            panic!("expected EvalError::Function for '{formula}', got {err:?}");
+        };
+        assert_eq!(*cell, origin);
+        assert_eq!(*source, FunctionError::UnknownFunction("SWITCH".into()));
     }
-
-    // Empty in result_i / default remains uncoerced CellValue::Empty mid-expression
-    let args_empty_result = vec![
-        FunctionArg::Scalar(CellValue::Empty),
-        FunctionArg::Scalar(CellValue::Empty),
-        FunctionArg::Scalar(CellValue::Empty),
-    ];
-    assert_eq!(
-        switch_func.evaluate(&args_empty_result, &ctx).unwrap(),
-        CellValue::Empty
-    );
 }
 
 #[test]
@@ -642,42 +676,42 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         CellValue::Text("B".into())
     );
 
-    // SWITCH formula
-    assert_eq!(
-        eval_str(
-            "SWITCH(2, 1, \"one\", 2, \"two\", \"other\")",
-            &symbols,
-            &values,
-            &registry,
-            &origin
-        ),
-        CellValue::Text("two".into())
-    );
+    // Boolean text literals in IF and NOT formulas are rejected strictly
+    for bad_bool_formula in [
+        "IF(\"TRUE\", 10, 20)",
+        "IF(\"false\", 10, 20)",
+        "NOT(\"true\")",
+    ] {
+        let parsed = Expr::parse(bad_bool_formula).unwrap();
+        let err = eval_expr(&parsed, &origin, &values, &symbols, &registry).unwrap_err();
+        assert!(
+            matches!(err, EvalError::Type { .. }),
+            "expected EvalError::Type for '{bad_bool_formula}', got {err:?}"
+        );
+    }
 
-    // Boolean text literals in IF and NOT formulas
+    // ISBLANK and NA() end-to-end formulas
     assert_eq!(
-        eval_str(
-            "IF(\"TRUE\", 10, 20)",
-            &symbols,
-            &values,
-            &registry,
-            &origin
-        ),
-        CellValue::Number(10.0)
-    );
-    assert_eq!(
-        eval_str(
-            "IF(\"false\", 10, 20)",
-            &symbols,
-            &values,
-            &registry,
-            &origin
-        ),
-        CellValue::Number(20.0)
-    );
-    assert_eq!(
-        eval_str("NOT(\"true\")", &symbols, &values, &registry, &origin),
+        eval_str("ISBLANK(\"\")", &symbols, &values, &registry, &origin),
         CellValue::Boolean(false)
+    );
+    assert_eq!(
+        eval_str("ISBLANK(1 / 0)", &symbols, &values, &registry, &origin),
+        CellValue::Boolean(false)
+    );
+    assert_eq!(
+        eval_str("NA()", &symbols, &values, &registry, &origin),
+        CellValue::Error(ExcelError::Na)
+    );
+    assert_eq!(
+        eval_str(
+            "IFNA(IF(FALSE, 10, NA()), 0)",
+            &symbols,
+            &values,
+            &registry,
+            &origin
+        ),
+        CellValue::Number(0.0)
     );
 }
 
@@ -754,12 +788,7 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
     let primary_expr = Expr::number(1.0);
 
     let mock_ctx = MockContext::new();
-    let array_arg = FunctionArg::Array {
-        rows: 1,
-        cols: 1,
-        values: vec![CellValue::Number(1.0)],
-        is_range_ref: true,
-    };
+    let array_arg = FunctionArg::array(1, 1, vec![CellValue::Number(1.0)], ReferenceKind::Slice);
 
     let err_kind_iferror = iferror_func
         .evaluate(
@@ -769,11 +798,7 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
         .unwrap_err();
     assert_eq!(
         err_kind_iferror,
-        FunctionError::InvalidArgumentKind {
-            function: "IFERROR",
-            expected: "scalar or expression",
-            found: "array",
-        }
+        FunctionError::SliceInScalarContext { rows: 1, cols: 1 }
     );
     assert_eq!(mock_ctx.count(), 0);
 
@@ -782,11 +807,7 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
         .unwrap_err();
     assert_eq!(
         err_kind_ifna,
-        FunctionError::InvalidArgumentKind {
-            function: "IFNA",
-            expected: "scalar or expression",
-            found: "array",
-        }
+        FunctionError::SliceInScalarContext { rows: 1, cols: 1 }
     );
     assert_eq!(mock_ctx.count(), 0);
 
@@ -825,4 +846,166 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
         FunctionError::EvaluationFailure { .. }
     ));
     assert_eq!(fail_ctx_na.eval_count.get(), 1);
+}
+
+#[test]
+fn test_scenario_10_runtime_monomorphic_branch_unification_and_iferror_non_empty() {
+    let registry = FunctionRegistry::standard();
+    let if_fn = registry.lookup("IF").unwrap();
+    let ifs_fn = registry.lookup("IFS").unwrap();
+    let choose_fn = registry.lookup("CHOOSE").unwrap();
+    let iferror_fn = registry.lookup("IFERROR").unwrap();
+    let ifna_fn = registry.lookup("IFNA").unwrap();
+    let ctx = MockContext::new();
+
+    // Runtime IncompatibleBranchTypes across IF, IFS, CHOOSE, IFERROR, IFNA
+    assert_eq!(
+        if_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Boolean(true)),
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Text("NM".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+            function: "IF",
+            position: 3,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    assert_eq!(
+        ifs_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Boolean(true)),
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Boolean(false)),
+                FunctionArg::Scalar(CellValue::Text("NM".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+            function: "IFS",
+            position: 4,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    assert_eq!(
+        choose_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Text("NM".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+            function: "CHOOSE",
+            position: 3,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    assert_eq!(
+        iferror_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Text("N/A".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+            function: "IFERROR",
+            position: 2,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    assert_eq!(
+        ifna_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Scalar(CellValue::Text("N/A".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+            function: "IFNA",
+            position: 2,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    // IFERROR and IFNA reject CellValue::Empty on evaluated non-Error arms with ExpectedType::NonEmpty
+    assert_eq!(
+        iferror_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Empty),
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "IFERROR",
+            param: "value",
+            position: 1,
+            expected: ExpectedType::NonEmpty,
+            found: ValueType::Empty,
+        }))
+    );
+    assert_eq!(
+        iferror_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                FunctionArg::Scalar(CellValue::Empty),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "IFERROR",
+            param: "value_if_error",
+            position: 2,
+            expected: ExpectedType::NonEmpty,
+            found: ValueType::Empty,
+        }))
+    );
+    assert_eq!(
+        ifna_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Empty),
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "IFNA",
+            param: "value",
+            position: 1,
+            expected: ExpectedType::NonEmpty,
+            found: ValueType::Empty,
+        }))
+    );
+    assert_eq!(
+        ifna_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Na)),
+                FunctionArg::Scalar(CellValue::Empty),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "IFNA",
+            param: "value_if_na",
+            position: 2,
+            expected: ExpectedType::NonEmpty,
+            found: ValueType::Empty,
+        }))
+    );
 }

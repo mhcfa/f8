@@ -252,7 +252,8 @@ impl CompilerError {
                     | ParseError::InvalidFunctionName { offset, .. }
                     | ParseError::UnquotedCoordinateKey { offset, .. }
                     | ParseError::TrailingInput { offset, .. }
-                    | ParseError::RetiredBareAt { offset, .. } => Some(*offset),
+                    | ParseError::RetiredBareAt { offset, .. }
+                    | ParseError::ChainedComparison { offset, .. } => Some(*offset),
                 };
                 ErrorDiagnostic::FormulaParseError {
                     message,
@@ -299,6 +300,8 @@ impl CompilerError {
                 EvalError::CellNotFound(_)
                 | EvalError::UnevaluatedDependency(_)
                 | EvalError::Function { .. }
+                | EvalError::Type { .. }
+                | EvalError::SliceInScalarContext { .. }
                 | EvalError::TableNotFound(_)
                 | EvalError::RowNotFound { .. },
             ) => ErrorDiagnostic::F8Error { message },

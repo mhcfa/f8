@@ -1,13 +1,14 @@
-//! Canonical Excel calculation parity test fixture covering all 44 registered standard functions,
+//! Canonical Excel calculation parity test fixture covering all 45 registered standard functions,
 //! domain error semantics (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`, `#REF!`), and calculation edge cases.
 //!
-//! Organizes tests into 6 vertical tables on a single worksheet:
-//! 1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows) for ranges and lookups.
+//! Organizes tests into 7 vertical tables on a single worksheet:
+//! 1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows, sparse cells) for ranges and lookups.
 //! 2. `MathParity`: 17 standard math and aggregation functions + edge and error cases.
-//! 3. `LogicalParity`: 9 logical, branching, and error-handling functions + edge and error cases.
+//! 3. `LogicalParity`: 8 logical, branching, and error-handling functions + edge and error cases.
 //! 4. `FinancialParity`: 7 discounting, return, and loan amortization functions + edge and error cases.
 //! 5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
 //! 6. `DateParity`: 8 serial date construction, decomposition, and difference functions + edge and error cases.
+//! 7. `InformationParity`: 2 cell-blank introspection and `#N/A` generation functions + edge and error cases.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test fixture")]
 
@@ -215,6 +216,12 @@ const MATH_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(-3.0),
     },
     ParityCase {
+        id: "round_taken_int_branch",
+        label: "ROUND(10, IF(TRUE, 2, 2.5)) [taken integer branch]",
+        formula: "ROUND(10, IF(TRUE, 2, 2.5))",
+        expected: ParityExpected::ExactNum(10.0),
+    },
+    ParityCase {
         id: "roundup_negative",
         label: "ROUNDUP(-123.451, 2) [negative away from zero]",
         formula: "ROUNDUP(-123.451, 2)",
@@ -298,6 +305,12 @@ const MATH_CASES: &[ParityCase] = &[
         formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"num_a\"], \"> 15 \")",
         expected: ParityExpected::ExactNum(90.0),
     },
+    ParityCase {
+        id: "neg_zero_norm",
+        label: "0 * -1 [normalized +0.0]",
+        formula: "0 * -1",
+        expected: ParityExpected::ExactNum(0.0),
+    },
     // Error cases
     ParityCase {
         id: "div0_arith_err",
@@ -318,21 +331,15 @@ const MATH_CASES: &[ParityCase] = &[
         expected: ParityExpected::Error(ExcelError::Div0),
     },
     ParityCase {
-        id: "abs_text_err",
-        label: "ABS(\"invalid\") [text coercion -> #VALUE!]",
-        formula: "ABS(\"invalid\")",
-        expected: ParityExpected::Error(ExcelError::Value),
-    },
-    ParityCase {
-        id: "sumifs_dim_err",
-        label: "SUMIFS(r1..r4, r1..r2, \"Alpha\") [shape mismatch -> #VALUE!]",
-        formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r2\", \"category\"], \"Alpha\")",
-        expected: ParityExpected::Error(ExcelError::Value),
-    },
-    ParityCase {
         id: "pow_domain_err",
         label: "(-4) ^ 0.5 [negative fractional power -> #NUM!]",
         formula: "(-4) ^ 0.5",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "pow_overflow_err",
+        label: "10 ^ 309 [float overflow -> #NUM!]",
+        formula: "10 ^ 309",
         expected: ParityExpected::Error(ExcelError::Num),
     },
     ParityCase {
@@ -344,7 +351,7 @@ const MATH_CASES: &[ParityCase] = &[
 ];
 
 const LOGICAL_CASES: &[ParityCase] = &[
-    // Core 9 functions
+    // Core 8 functions
     ParityCase {
         id: "if_fn",
         label: "IF(10 > 5, 100, 200)",
@@ -393,12 +400,6 @@ const LOGICAL_CASES: &[ParityCase] = &[
         formula: "CHOOSE(2, 100, 200, 300)",
         expected: ParityExpected::ExactNum(200.0),
     },
-    ParityCase {
-        id: "switch_fn",
-        label: "SWITCH(2, 1, 100, 2, 200, 3, 300)",
-        formula: "SWITCH(2, 1, 100, 2, 200, 3, 300)",
-        expected: ParityExpected::ExactNum(200.0),
-    },
     // Edge cases
     ParityCase {
         id: "if_lazy_shortcircuit",
@@ -407,21 +408,27 @@ const LOGICAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(42.0),
     },
     ParityCase {
-        id: "if_default_false",
-        label: "IF(10 < 5, 100) [omitted false branch -> FALSE]",
-        formula: "IF(10 < 5, 100)",
-        expected: ParityExpected::Bool(false),
+        id: "if_monomorphic_text",
+        label: "IF(10 > 5, \"PASS\", \"FAIL\") [monomorphic text branches]",
+        formula: "IF(10 > 5, \"PASS\", \"FAIL\")",
+        expected: ParityExpected::Text("PASS"),
     },
     ParityCase {
-        id: "type_rank_num_text",
-        label: "100 < \"1\" [Number < Text ranking]",
-        formula: "100 < \"1\"",
+        id: "if_na_bottom",
+        label: "IF(10 > 5, 100 / 2, NA()) [NA() bottom type unifies with Number]",
+        formula: "IF(10 > 5, 100 / 2, NA())",
+        expected: ParityExpected::ExactNum(50.0),
+    },
+    ParityCase {
+        id: "paren_eq_chain_left",
+        label: "(1 = 1) = TRUE [parenthesized relational]",
+        formula: "(1 = 1) = TRUE",
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "type_rank_text_bool",
-        label: "\"zzz\" < FALSE [Text < Boolean ranking]",
-        formula: "\"zzz\" < FALSE",
+        id: "paren_eq_chain_right",
+        label: "TRUE = (1 = 1) [parenthesized relational]",
+        formula: "TRUE = (1 = 1)",
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
@@ -431,147 +438,45 @@ const LOGICAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "switch_default_edge",
-        label: "SWITCH(99, 1, 100, 2, 200, 999) [default fallback]",
-        formula: "SWITCH(99, 1, 100, 2, 200, 999)",
-        expected: ParityExpected::ExactNum(999.0),
-    },
-    ParityCase {
-        id: "blank_ref_zero",
-        label: "sparse[r1] [blank ref materializes 0 at cell boundary]",
-        formula: "SeedData[\"r1\", \"sparse\"]",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "blank_mid_expr_eq_empty",
-        label: "sparse[r1] = \"\" [mid-expression blank equals empty text]",
-        formula: "SeedData[\"r1\", \"sparse\"] = \"\"",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "formula_blank_ref_neq_empty",
-        label: "sparse[r2] = \"\" [materialized 0 does not equal empty text]",
-        formula: "SeedData[\"r2\", \"sparse\"] = \"\"",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
         id: "if_blank_guard",
-        label: "IF(sparse[r1] = \"\", \"\", sparse[r1]) [explicit blank guard]",
-        formula: "IF(SeedData[\"r1\", \"sparse\"] = \"\", \"\", SeedData[\"r1\", \"sparse\"])",
+        label: "IF(ISBLANK(sparse[r1]), \"\", sparse[r1]) [explicit blank guard]",
+        formula: "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), \"\", SeedData[\"r1\", \"sparse\"])",
         expected: ParityExpected::Text(""),
     },
     ParityCase {
-        id: "empty_eq_false",
-        label: "sparse[r1] = FALSE [Empty coerces to FALSE]",
-        formula: "SeedData[\"r1\", \"sparse\"] = FALSE",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "empty_lt_false",
-        label: "sparse[r1] < FALSE [Empty not less than FALSE]",
-        formula: "SeedData[\"r1\", \"sparse\"] < FALSE",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "empty_lt_true",
-        label: "sparse[r1] < TRUE [Empty less than TRUE]",
-        formula: "SeedData[\"r1\", \"sparse\"] < TRUE",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "switch_empty_false",
-        label: "SWITCH(sparse[r1], FALSE, 10, TRUE, 20, 30) [Empty coerces to 0, skips FALSE]",
-        formula: "SWITCH(SeedData[\"r1\", \"sparse\"], FALSE, 10, TRUE, 20, 30)",
-        expected: ParityExpected::ExactNum(30.0),
-    },
-    ParityCase {
-        id: "switch_empty_zero",
-        label: "SWITCH(sparse[r1], 0, 10, 30) [Empty coerces to 0, matches 0]",
-        formula: "SWITCH(SeedData[\"r1\", \"sparse\"], 0, 10, 30)",
-        expected: ParityExpected::ExactNum(10.0),
-    },
-    ParityCase {
-        id: "switch_empty_str",
-        label: "SWITCH(sparse[r1], \"\", 10, 30) [Empty coerces to 0, skips empty text]",
-        formula: "SWITCH(SeedData[\"r1\", \"sparse\"], \"\", 10, 30)",
-        expected: ParityExpected::ExactNum(30.0),
-    },
-    ParityCase {
-        id: "switch_empty_empty",
-        label: "SWITCH(sparse[r1], sparse[r4], 10, 30) [both Empty coerce to 0, match]",
-        formula: "SWITCH(SeedData[\"r1\", \"sparse\"], SeedData[\"r4\", \"sparse\"], 10, 30)",
-        expected: ParityExpected::ExactNum(10.0),
-    },
-    ParityCase {
-        id: "iferror_blank_passthrough_zero",
-        label: "IFERROR(sparse[r1], 1) [blank pass-through materializes 0 at cell boundary]",
-        formula: "IFERROR(SeedData[\"r1\", \"sparse\"], 1)",
+        id: "if_blank_guard_arith",
+        label: "IF(ISBLANK(sparse[r1]), 0, sparse[r1] + 5) [lazy guarded arithmetic]",
+        formula: "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), 0, SeedData[\"r1\", \"sparse\"] + 5)",
         expected: ParityExpected::ExactNum(0.0),
     },
     ParityCase {
-        id: "iferror_blank_fallback_zero",
-        label: "IFERROR(1 / 0, sparse[r1]) [blank error fallback materializes 0 at cell boundary]",
-        formula: "IFERROR(1 / 0, SeedData[\"r1\", \"sparse\"])",
+        id: "if_helper_blank_guard",
+        label: "IF(sparse_is_null[r1], 0, sparse[r1] + 5) [helper-cell ISBLANK guard]",
+        formula: "IF(SeedData[\"r1\", \"sparse_is_null\"], 0, SeedData[\"r1\", \"sparse\"] + 5)",
         expected: ParityExpected::ExactNum(0.0),
     },
     ParityCase {
-        id: "ifna_blank_passthrough_zero",
-        label: "IFNA(sparse[r1], 1) [blank pass-through materializes 0 at cell boundary]",
-        formula: "IFNA(SeedData[\"r1\", \"sparse\"], 1)",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "ifna_blank_fallback_zero",
-        label: "IFNA(XLOOKUP(\"Missing\", ...), sparse[r1]) [blank #N/A fallback materializes 0]",
-        formula: "IFNA(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"]), SeedData[\"r1\", \"sparse\"])",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "if_blank_mid_eq_empty",
-        label: "IF(TRUE, sparse[r1], 1) = \"\" [mid-expression IF blank]",
-        formula: "IF(TRUE, SeedData[\"r1\", \"sparse\"], 1) = \"\"",
+        id: "and_sparse_slice_true",
+        label: "AND(sparse_bool[r1..r2]) [skips null in syntactic slice -> TRUE]",
+        formula: "AND(SeedData[\"r1\"..\"r2\", \"sparse_bool\"])",
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "ifs_blank_mid_eq_empty",
-        label: "IFS(TRUE, sparse[r1]) = \"\" [mid-expression IFS blank]",
-        formula: "IFS(TRUE, SeedData[\"r1\", \"sparse\"]) = \"\"",
+        id: "if_blank_mid_isblank",
+        label: "ISBLANK(IF(TRUE, sparse[r1], 1)) [mid-expression IF blank]",
+        formula: "ISBLANK(IF(TRUE, SeedData[\"r1\", \"sparse\"], 1))",
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "choose_blank_mid_eq_empty",
-        label: "CHOOSE(1, sparse[r1]) = \"\" [mid-expression CHOOSE blank]",
-        formula: "CHOOSE(1, SeedData[\"r1\", \"sparse\"]) = \"\"",
+        id: "ifs_blank_mid_isblank",
+        label: "ISBLANK(IFS(TRUE, sparse[r1])) [mid-expression IFS blank]",
+        formula: "ISBLANK(IFS(TRUE, SeedData[\"r1\", \"sparse\"]))",
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "switch_blank_mid_eq_empty",
-        label: "SWITCH(1, 1, sparse[r1]) = \"\" [mid-expression SWITCH blank]",
-        formula: "SWITCH(1, 1, SeedData[\"r1\", \"sparse\"]) = \"\"",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "iferror_blank_passthrough_mid_eq_empty",
-        label: "IFERROR(sparse[r1], 1) = \"\" [mid-expression IFERROR blank pass-through]",
-        formula: "IFERROR(SeedData[\"r1\", \"sparse\"], 1) = \"\"",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "iferror_blank_fallback_mid_eq_empty",
-        label: "IFERROR(1 / 0, sparse[r1]) = \"\" [mid-expression IFERROR blank fallback]",
-        formula: "IFERROR(1 / 0, SeedData[\"r1\", \"sparse\"]) = \"\"",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "ifna_blank_passthrough_mid_eq_empty",
-        label: "IFNA(sparse[r1], 1) = \"\" [mid-expression IFNA blank pass-through]",
-        formula: "IFNA(SeedData[\"r1\", \"sparse\"], 1) = \"\"",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "ifna_blank_fallback_mid_eq_empty",
-        label: "IFNA(XLOOKUP(\"Missing\", ...), sparse[r1]) = \"\" [mid-expression IFNA blank fallback]",
-        formula: "IFNA(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"]), SeedData[\"r1\", \"sparse\"]) = \"\"",
+        id: "choose_blank_mid_isblank",
+        label: "ISBLANK(CHOOSE(1, sparse[r1])) [mid-expression CHOOSE blank]",
+        formula: "ISBLANK(CHOOSE(1, SeedData[\"r1\", \"sparse\"]))",
         expected: ParityExpected::Bool(true),
     },
     // Error cases
@@ -588,15 +493,15 @@ const LOGICAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::Error(ExcelError::Na),
     },
     ParityCase {
-        id: "switch_no_match_err",
-        label: "SWITCH(99, 1, 100, 2, 200) [unmatched without default -> #N/A]",
-        formula: "SWITCH(99, 1, 100, 2, 200)",
-        expected: ParityExpected::Error(ExcelError::Na),
+        id: "choose_dyn_oob_err",
+        label: "CHOOSE(num_b[r4], 100, 200, 300) [dynamic index 5 out of bounds -> #VALUE!]",
+        formula: "CHOOSE(SeedData[\"r4\", \"num_b\"], 100, 200, 300)",
+        expected: ParityExpected::Error(ExcelError::Value),
     },
     ParityCase {
-        id: "choose_oob_err",
-        label: "CHOOSE(5, 100, 200, 300) [index out of bounds -> #VALUE!]",
-        formula: "CHOOSE(5, 100, 200, 300)",
+        id: "and_all_empty_slice_err",
+        label: "AND(sparse_bool[r3..r4]) [all-empty slice -> #VALUE!]",
+        formula: "AND(SeedData[\"r3\"..\"r4\", \"sparse_bool\"])",
         expected: ParityExpected::Error(ExcelError::Value),
     },
 ];
@@ -743,12 +648,6 @@ const LOOKUP_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(30.0),
     },
     ParityCase {
-        id: "xlookup_wildcard_edge",
-        label: "XLOOKUP(\"G*\", cat, num_a, _, 2) [wildcard match_mode=2]",
-        formula: "XLOOKUP(\"G*\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"], _, 2)",
-        expected: ParityExpected::ExactNum(40.0),
-    },
-    ParityCase {
         id: "xlookup_text_edge",
         label: "XLOOKUP(30, num_a, category) [text return value]",
         formula: "XLOOKUP(30, SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"])",
@@ -761,38 +660,68 @@ const LOOKUP_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(2.0),
     },
     ParityCase {
+        id: "xmatch_binary_asc",
+        label: "XMATCH(30, num_a, 0, 2) [binary ascending]",
+        formula: "XMATCH(30, SeedData[\"r1\"..\"r4\", \"num_a\"], 0, 2)",
+        expected: ParityExpected::ExactNum(3.0),
+    },
+    ParityCase {
+        id: "xlookup_binary_asc",
+        label: "XLOOKUP(25, num_a, category, \"Miss\", -1, 2) [binary ascending next smaller]",
+        formula: "XLOOKUP(25, SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Miss\", -1, 2)",
+        expected: ParityExpected::Text("Beta"),
+    },
+    ParityCase {
+        id: "xmatch_binary_desc",
+        label: "XMATCH(20, num_desc, 0, -2) [binary descending]",
+        formula: "XMATCH(20, SeedData[\"r1\"..\"r4\", \"num_desc\"], 0, -2)",
+        expected: ParityExpected::ExactNum(3.0),
+    },
+    ParityCase {
+        id: "xlookup_binary_desc",
+        label: "XLOOKUP(25, num_desc, category, \"Miss\", 1, -2) [binary descending next larger]",
+        formula: "XLOOKUP(25, SeedData[\"r1\"..\"r4\", \"num_desc\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Miss\", 1, -2)",
+        expected: ParityExpected::Text("Beta"),
+    },
+    ParityCase {
+        id: "index_sparse_homogeneous",
+        label: "INDEX(sparse, 3) [homogeneous sparse numeric array]",
+        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 3)",
+        expected: ParityExpected::ExactNum(20.0),
+    },
+    ParityCase {
         id: "index_2d_edge",
         label: "INDEX(num_a..num_b, 2, 2) [2D matrix lookup]",
         formula: "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"..\"num_b\"], 2, 2)",
         expected: ParityExpected::ExactNum(3.0),
     },
     ParityCase {
-        id: "index_blank_zero",
-        label: "INDEX(sparse, 1) [blank target materializes 0 at cell boundary]",
-        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 1)",
-        expected: ParityExpected::ExactNum(0.0),
+        id: "index_horiz_1d",
+        label: "INDEX(r1[num_a..num_b], 2) [2-arg horizontal 1D lookup]",
+        formula: "INDEX(SeedData[\"r1\", \"num_a\"..\"num_b\"], 2)",
+        expected: ParityExpected::ExactNum(2.0),
     },
     ParityCase {
-        id: "index_blank_mid_eq_empty",
-        label: "INDEX(sparse, 1) = \"\" [mid-expression INDEX blank preserved]",
-        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 1) = \"\"",
+        id: "index_blank_mid_isblank",
+        label: "ISBLANK(INDEX(sparse, 1)) [mid-expression INDEX blank preserved]",
+        formula: "ISBLANK(INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 1))",
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "xlookup_blank_zero",
-        label: "XLOOKUP(\"Alpha\", cat, sparse) [blank return materializes 0]",
-        formula: "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"])",
-        expected: ParityExpected::ExactNum(0.0),
+        id: "xlookup_blank_mid_isblank",
+        label: "ISBLANK(XLOOKUP(\"Alpha\", cat, sparse, 0)) [mid-expression blank preserved]",
+        formula: "ISBLANK(XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"], 0))",
+        expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "xlookup_blank_mid_eq_empty",
-        label: "XLOOKUP(\"Alpha\", cat, sparse) = \"\" [mid-expression blank preserved]",
-        formula: "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"]) = \"\"",
-        expected: ParityExpected::Bool(true),
+        id: "xlookup_miss_isblank_false",
+        label: "ISBLANK(XLOOKUP(\"Missing\", cat, sparse, 0)) [fallback 0 is non-blank]",
+        formula: "ISBLANK(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"], 0))",
+        expected: ParityExpected::Bool(false),
     },
     ParityCase {
         id: "xlookup_zero_skips_null_hits_formula",
-        label: "XLOOKUP(0, sparse, num_a) [skips null r1, matches formula-blank r2]",
+        label: "XLOOKUP(0, sparse, num_a) [skips null r1, matches guarded 0 r2]",
         formula: "XLOOKUP(0, SeedData[\"r1\"..\"r4\", \"sparse\"], SeedData[\"r1\"..\"r4\", \"num_a\"])",
         expected: ParityExpected::ExactNum(20.0),
     },
@@ -810,16 +739,10 @@ const LOOKUP_CASES: &[ParityCase] = &[
         expected: ParityExpected::Error(ExcelError::Na),
     },
     ParityCase {
-        id: "index_oob_err",
-        label: "INDEX(num_a, 5) [row out of bounds -> #REF!]",
-        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], 5)",
+        id: "index_dyn_oob_err",
+        label: "INDEX(num_a, num_b[r4]) [dynamic row 5 out of bounds -> #REF!]",
+        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r4\", \"num_b\"])",
         expected: ParityExpected::Error(ExcelError::Ref),
-    },
-    ParityCase {
-        id: "xlookup_mode_err",
-        label: "XLOOKUP(\"Alpha\", cat, num_a, _, 99) [invalid match_mode -> #VALUE!]",
-        formula: "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"], _, 99)",
-        expected: ParityExpected::Error(ExcelError::Value),
     },
 ];
 
@@ -935,11 +858,64 @@ const DATE_CASES: &[ParityCase] = &[
         formula: "DATE(10000, 1, 1)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
+];
+
+const INFORMATION_CASES: &[ParityCase] = &[
+    // Core 2 functions (ISBLANK, NA) + edge and error cases
     ParityCase {
-        id: "days_text_err",
-        label: "DAYS(\"invalid\", DATE(2024, 1, 1)) [text coercion -> #VALUE!]",
-        formula: "DAYS(\"invalid\", DATE(2024, 1, 1))",
-        expected: ParityExpected::Error(ExcelError::Value),
+        id: "isblank_null",
+        label: "ISBLANK(sparse[r1]) [null literal -> TRUE]",
+        formula: "ISBLANK(SeedData[\"r1\", \"sparse\"])",
+        expected: ParityExpected::Bool(true),
+    },
+    ParityCase {
+        id: "isblank_guarded_zero",
+        label: "ISBLANK(sparse[r2]) [guarded formula 0 -> FALSE]",
+        formula: "ISBLANK(SeedData[\"r2\", \"sparse\"])",
+        expected: ParityExpected::Bool(false),
+    },
+    ParityCase {
+        id: "isblank_empty_str",
+        label: "ISBLANK(\"\") [empty string -> FALSE]",
+        formula: "ISBLANK(\"\")",
+        expected: ParityExpected::Bool(false),
+    },
+    ParityCase {
+        id: "isblank_zero",
+        label: "ISBLANK(0) [numeric zero -> FALSE]",
+        formula: "ISBLANK(0)",
+        expected: ParityExpected::Bool(false),
+    },
+    ParityCase {
+        id: "isblank_false",
+        label: "ISBLANK(FALSE) [boolean false -> FALSE]",
+        formula: "ISBLANK(FALSE)",
+        expected: ParityExpected::Bool(false),
+    },
+    ParityCase {
+        id: "isblank_div0",
+        label: "ISBLANK(10 / 0) [domain error does not bubble -> FALSE]",
+        formula: "ISBLANK(10 / 0)",
+        expected: ParityExpected::Bool(false),
+    },
+    ParityCase {
+        id: "na_trapped_ifna",
+        label: "IFNA(IF(FALSE, 10, NA()), 0) [trapped NA() -> 0]",
+        formula: "IFNA(IF(FALSE, 10, NA()), 0)",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    // Error cases
+    ParityCase {
+        id: "na_fn",
+        label: "NA() [explicit #N/A]",
+        formula: "NA()",
+        expected: ParityExpected::Error(ExcelError::Na),
+    },
+    ParityCase {
+        id: "na_propagated",
+        label: "1 + IF(FALSE, 10, NA()) [propagated #N/A]",
+        formula: "1 + IF(FALSE, 10, NA())",
+        expected: ParityExpected::Error(ExcelError::Na),
     },
 ];
 
@@ -952,8 +928,8 @@ const PARITY_GROUPS: &[ParityGroup] = &[
     },
     ParityGroup {
         table_id: "LogicalParity",
-        title: "Logical & Branching Functions (9 Functions + Edge & Error Cases)",
-        subtitle: "IF, IFS, IFERROR, IFNA, AND, OR, NOT, CHOOSE, SWITCH",
+        title: "Logical & Branching Functions (8 Functions + Edge & Error Cases)",
+        subtitle: "IF, IFS, IFERROR, IFNA, AND, OR, NOT, CHOOSE",
         cases: LOGICAL_CASES,
     },
     ParityGroup {
@@ -973,6 +949,12 @@ const PARITY_GROUPS: &[ParityGroup] = &[
         title: "Date Construction & Difference Functions (8 Functions + Edge & Error Cases)",
         subtitle: "DATE, EDATE, EOMONTH, YEARFRAC, YEAR, MONTH, DAY, DAYS",
         cases: DATE_CASES,
+    },
+    ParityGroup {
+        table_id: "InformationParity",
+        title: "Information Functions (2 Functions + Edge & Error Cases)",
+        subtitle: "ISBLANK, NA",
+        cases: INFORMATION_CASES,
     },
 ];
 
@@ -1009,7 +991,7 @@ fn build_category_table(group: &ParityGroup) -> TableSpec {
     }
 }
 
-/// Constructs the complete 44-function Excel parity verification model with pinned ground-truth constants.
+/// Constructs the complete 45-function Excel parity verification model with pinned ground-truth constants.
 #[must_use]
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let mut sheet_tables = Vec::with_capacity(1 + PARITY_GROUPS.len());
@@ -1034,10 +1016,13 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_descriptor_col("row_id", "Row"),
         build_measure_col_label("num_a", "Vector A"),
         build_measure_col_label("num_b", "Vector B"),
+        build_measure_col_label("num_desc", "Vector Desc"),
         build_measure_col_label("category", "Category"),
         build_measure_col_label("date", "Date"),
         build_measure_col_label("cash_flow", "Cash Flow"),
         build_measure_col_label("sparse", "Sparse"),
+        build_measure_col_label("sparse_is_null", "Sparse Is Null"),
+        build_measure_col_label("sparse_bool", "Sparse Bool"),
         build_measure_col_label("special_text", "Special Text"),
     ];
 
@@ -1045,37 +1030,52 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         RowBuilder::descriptor("r1", "row_id", "Row 1")
             .cell_num("num_a", 10.0)
             .cell_num("num_b", 2.0)
+            .cell_num("num_desc", 40.0)
             .cell_str("category", "Alpha")
             .cell_num("date", 45292.0) // 2024-01-01
             .cell_num("cash_flow", -1000.0)
             .cell("sparse", CellInput::null())
+            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
+            .cell("sparse_bool", CellInput::null())
             .cell_str("special_text", "NAN")
             .build(),
         RowBuilder::descriptor("r2", "row_id", "Row 2")
             .cell_num("num_a", 20.0)
             .cell_num("num_b", 3.0)
+            .cell_num("num_desc", 30.0)
             .cell_str("category", "Beta")
             .cell_num("date", 45474.0) // 2024-07-01
             .cell_num("cash_flow", 300.0)
-            .cell_formula("sparse", "SeedData[\"r1\", \"sparse\"]")
+            .cell_formula(
+                "sparse",
+                "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), 0, SeedData[\"r1\", \"sparse\"])",
+            )
+            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
+            .cell("sparse_bool", CellInput::boolean(true))
             .cell_str("special_text", "Infinity")
             .build(),
         RowBuilder::descriptor("r3", "row_id", "Row 3")
             .cell_num("num_a", 30.0)
             .cell_num("num_b", 4.0)
+            .cell_num("num_desc", 20.0)
             .cell_str("category", "Alpha")
             .cell_num("date", 45658.0) // 2025-01-01
             .cell_num("cash_flow", 400.0)
             .cell_num("sparse", 20.0)
+            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
+            .cell("sparse_bool", CellInput::null())
             .cell_str("special_text", "42")
             .build(),
         RowBuilder::descriptor("r4", "row_id", "Row 4")
             .cell_num("num_a", 40.0)
             .cell_num("num_b", 5.0)
+            .cell_num("num_desc", 10.0)
             .cell_str("category", "Gamma")
             .cell_num("date", 46023.0) // 2026-01-01
             .cell_num("cash_flow", 600.0)
             .cell("sparse", CellInput::null())
+            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
+            .cell("sparse_bool", CellInput::null())
             .cell_str("special_text", "inf")
             .build(),
     ];

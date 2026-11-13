@@ -424,3 +424,65 @@ fn test_call_arg_confinement_and_invalid_underscore_syntax() {
         );
     }
 }
+
+#[test]
+fn test_cluster_a1_scenario_1_grammar_strictness() {
+    // 1. Unary '+' is retired
+    for formula in ["+10", "+TRUE", "+\"abc\"", "1 + +2", "SUM(+1)"] {
+        let err = Expr::parse(formula).expect_err(&format!("'{formula}' must fail parsing"));
+        assert!(
+            matches!(err, ParseError::UnexpectedToken { ref found, .. } if found == "+"),
+            "expected UnexpectedToken('+') for '{formula}', got {err:?}"
+        );
+    }
+
+    // 2. Unparenthesized chained comparisons are non-associative
+    let chained_cases = [
+        ("1 = 1 = TRUE", "="),
+        ("TRUE = 1 = 1", "="),
+        ("1 < 2 < 3", "<"),
+        ("FALSE = FALSE = FALSE", "="),
+        ("1 <= 2 >= 3", ">="),
+        ("1 <> 2 = 3", "="),
+    ];
+    for (formula, expected_op) in chained_cases {
+        let err = Expr::parse(formula).expect_err(&format!("'{formula}' must fail parsing"));
+        assert!(
+            matches!(err, ParseError::ChainedComparison { operator, .. } if operator == expected_op),
+            "expected ChainedComparison('{expected_op}') for '{formula}', got {err:?}"
+        );
+    }
+
+    // 3. Invalid relative offsets (< 1, fractional, or > i32::MAX) are rejected
+    for formula in [
+        "Table[row.prev(0), @col]",
+        "Table[@row, col.next(0)]",
+        "Table[@row, col.prev(5000000000)]",
+        "Table[@row, col.prev(-1)]",
+        "Table[@row, col.prev(1.5)]",
+        "SUM(Table[@row, col.prev(0)..@col])",
+    ] {
+        let err = Expr::parse(formula).expect_err(&format!("'{formula}' must fail parsing"));
+        assert!(
+            matches!(err, ParseError::UnexpectedToken { .. }),
+            "expected UnexpectedToken for '{formula}', got {err:?}"
+        );
+    }
+
+    // 4. Valid binary '+', unary '-', parenthesized comparisons, positive integer offsets, ISBLANK, and NA() succeed
+    for valid in [
+        "1 + 2",
+        "-10",
+        "(1 = 1) = TRUE",
+        "TRUE = (1 = 1)",
+        "Table[@row, col.prev]",
+        "Table[@row, col.prev(2)]",
+        "ISBLANK(Table[\"r1\", @col])",
+        "NA()",
+    ] {
+        let parsed = Expr::parse(valid).unwrap_or_else(|e| panic!("'{valid}' should parse: {e}"));
+        let displayed = parsed.to_string();
+        assert_eq!(displayed, valid, "Display roundtrip mismatch for '{valid}'");
+        assert_eq!(Expr::parse(&displayed).unwrap(), parsed);
+    }
+}

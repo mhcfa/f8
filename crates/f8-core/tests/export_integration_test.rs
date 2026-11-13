@@ -142,10 +142,10 @@ fn test_models_emit_in_memory() {
     );
     assert!(
         combined_sheets.contains("XLOOKUP")
-            && combined_sheets.contains("SWITCH")
+            && combined_sheets.contains("IFS")
             && combined_sheets.contains("PMT")
             && combined_sheets.contains("XIRR"),
-        "Expected lowered financial and logical functions (XLOOKUP, SWITCH, PMT, XIRR) in formula tags"
+        "Expected lowered financial and logical functions (XLOOKUP, IFS, PMT, XIRR) in formula tags"
     );
 
     let lbo_shared_strings = read_zip_entry(&lbo_buffer, "xl/sharedStrings.xml");
@@ -216,7 +216,7 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 44 Standard Functions + Edge & Error Cases)
+    // 5. Excel Parity Verification Suite (All 45 Standard Functions + Edge & Error Cases)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
@@ -346,6 +346,60 @@ fn test_models_emit_in_memory() {
 }
 
 #[test]
+fn test_migrated_parity_cases_rejected_with_f8_error() {
+    use f8_core::compiler::ErrorDiagnostic;
+    use f8_core::model::id::ColId;
+    use f8_core::model::table::{CellInput, RowSpec};
+
+    let migrated_compile_errors = [
+        "ABS(\"invalid\")",
+        "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r2\", \"category\"], \"Alpha\")",
+        "DAYS(\"invalid\", DATE(2024, 1, 1))",
+        "CHOOSE(5, 100, 200, 300)",
+        "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], 5)",
+        "100 < \"1\"",
+        "\"zzz\" < FALSE",
+        "SeedData[\"r1\", \"sparse\"]",
+        "SeedData[\"r1\", \"sparse\"] = \"\"",
+        "SeedData[\"r1\", \"sparse\"] = FALSE",
+        "INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 1)",
+        "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"])",
+        // Cluster A2 migrated parity cases & retired SWITCH / taken-branch integer checks
+        "IF(10 < 5, 100)",
+        "IF(10 > 5, 100, \"NM\")",
+        "IFERROR(10 / 0, \"N/A\")",
+        "SWITCH(1, 1, 10, 20)",
+        "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
+        "ROUND(10, IF(FALSE, 2, 2.5))",
+        "ISBLANK(IFERROR(SeedData[\"r1\", \"sparse\"], 1))",
+        "ISBLANK(IFERROR(1 / 0, SeedData[\"r1\", \"sparse\"]))",
+        "ISBLANK(IFNA(SeedData[\"r1\", \"sparse\"], 1))",
+        "ISBLANK(IFNA(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"]), SeedData[\"r1\", \"sparse\"]))",
+        "XLOOKUP(\"G*\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"], _, 2)",
+        "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"], _, 99)",
+        "XMATCH(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], 0, 2)",
+        "XMATCH(20, SeedData[\"r1\"..\"r4\", \"num_a\"], 0, -2)",
+        "INDEX(SeedData[\"r1\"..\"r4\", \"num_desc\"..\"category\"], 1, 1)",
+    ];
+
+    for formula in migrated_compile_errors {
+        let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
+        // Inject the migrated invalid formula into MathParity["abs", "formula_val"]
+        if let RowSpec::Data(abs_row) = &mut tables[1].rows[0] {
+            abs_row
+                .cells
+                .insert(ColId::from("formula_val"), CellInput::formula(formula));
+        }
+        let err = Compiler::compile(&manifest, &tables)
+            .expect_err(&format!("expected F8Error on migrated formula '{formula}'"));
+        assert!(
+            matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }),
+            "expected F8Error on '{formula}', got {err:?}"
+        );
+    }
+}
+
+#[test]
 #[should_panic(expected = "Exact numeric mismatch for 'sum' in 'MathParity'")]
 fn test_parity_oracle_detects_evaluation_divergence() {
     let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
@@ -463,7 +517,7 @@ fn test_export_xlsx_to_disk() {
 
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 44 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 45 Functions)".to_string()),
         author: Some("f8 Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,

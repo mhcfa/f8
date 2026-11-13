@@ -2,15 +2,15 @@ use crate::functions::common::extract_scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
-    VariadicRule,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
+    ReferenceKind, ShapePolicy, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType, normalize_zero};
 
 /// Collects an ordered sequence of numeric cash flows across one or more arguments.
 ///
-/// - In range references (`is_range_ref: true`), text, booleans, and empty cells are ignored.
-/// - In direct scalars and array literals, booleans and empty cells convert, while text produces `#VALUE!`.
+/// - In range references (`FunctionArg::Array`), text, booleans, and empty cells are ignored.
+/// - In direct scalars, booleans and empty cells convert, while text produces `#VALUE!`.
 /// - Errors bubble up immediately.
 pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, ExcelError> {
     let mut cfs = Vec::new();
@@ -19,22 +19,24 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
             FunctionArg::Scalar(val) => {
                 cfs.push(val.coerce_to_number()?);
             }
+            FunctionArg::TypedErrorScalar { error, .. } => {
+                return Err(*error);
+            }
             FunctionArg::Array {
                 values,
-                is_range_ref,
+                ref_kind: ReferenceKind::SingleCell | ReferenceKind::Slice,
                 ..
             } => {
-                if *is_range_ref {
-                    for v in values {
-                        match v {
-                            CellValue::Number(n) => cfs.push(*n),
-                            CellValue::Error(e) => return Err(*e),
-                            CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
+                for v in values {
+                    match v {
+                        CellValue::Number(n) => {
+                            if !n.is_finite() {
+                                return Err(ExcelError::Num);
+                            }
+                            cfs.push(normalize_zero(*n));
                         }
-                    }
-                } else {
-                    for v in values {
-                        cfs.push(v.coerce_to_number()?);
+                        CellValue::Error(e) => return Err(*e),
+                        CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
                     }
                 }
             }
@@ -44,20 +46,53 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
     Ok(cfs)
 }
 
-/// Extracts a sequence of numbers from a single array argument where every entry must be numeric.
-/// Used for parallel vectors in non-periodic functions (`XNPV` and `XIRR`).
-pub(crate) fn extract_vector_numbers(arg: &FunctionArg<'_>) -> Result<Vec<f64>, ExcelError> {
+/// Validates and extracts a 1D range slice for `XNPV` and `XIRR` prior to value/domain checks.
+pub(crate) fn extract_1d_range_values<'a>(
+    arg: &'a FunctionArg<'_>,
+    function: &'static str,
+    param: &'static str,
+) -> Result<&'a [CellValue], FunctionError> {
     match arg {
-        FunctionArg::Scalar(val) => Ok(vec![val.coerce_to_number()?]),
-        FunctionArg::Array { values, .. } => {
-            let mut result = Vec::with_capacity(values.len());
-            for v in values {
-                result.push(v.coerce_to_number()?);
+        FunctionArg::Array {
+            rows, cols, values, ..
+        } => {
+            if *rows > 1 && *cols > 1 {
+                return Err(FunctionError::ExpectedOneDimensionalSlice {
+                    function,
+                    param,
+                    rows: *rows,
+                    cols: *cols,
+                });
             }
-            Ok(result)
+            Ok(values.as_slice())
         }
-        FunctionArg::Lazy(_) | FunctionArg::Omitted => Err(ExcelError::Value),
+        FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
+            Err(FunctionError::InvalidArgumentKind {
+                function,
+                expected: "range",
+                found: "scalar",
+            })
+        }
+        FunctionArg::Lazy(_) => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "range",
+            found: "lazy",
+        }),
+        FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "range",
+            found: "omitted",
+        }),
     }
+}
+
+/// Extracts numeric entries from a validated 1D slice for `XNPV` and `XIRR`.
+pub(crate) fn coerce_slice_numbers(slice: &[CellValue]) -> Result<Vec<f64>, ExcelError> {
+    let mut result = Vec::with_capacity(slice.len());
+    for v in slice {
+        result.push(v.coerce_to_number()?);
+    }
+    Ok(result)
 }
 
 /// Positional parameter definitions for `NPV`.
@@ -66,11 +101,13 @@ static NPV_PARAMS: &[ParameterDef] = &[
         "rate",
         "Discount rate over the length of the period.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "value1",
         "First value, cell reference, or range of cash flows.",
         ParamKind::RangeOrArray,
+        ParamType::Any,
     ),
 ];
 
@@ -91,6 +128,10 @@ impl ExcelFunction for NpvFunction {
         NPV_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -98,11 +139,11 @@ impl ExcelFunction for NpvFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate = match extract_scalar_number(&args[0]) {
+        let rate = match extract_scalar_number(&args[0], self.name(), "rate", 1, ctx)? {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -130,11 +171,7 @@ impl ExcelFunction for NpvFunction {
             npv += cf / denom;
         }
 
-        if npv.is_nan() || npv.is_infinite() {
-            return Ok(CellValue::Error(ExcelError::Num));
-        }
-
-        Ok(CellValue::Number(normalize_zero(npv)))
+        Ok(CellValue::number(npv))
     }
 }
 
@@ -144,16 +181,19 @@ static XNPV_PARAMS: &[ParameterDef] = &[
         "rate",
         "Discount rate to apply to the cash flows.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "values",
-        "Series of cash flows corresponding to schedule of payments in dates.",
-        ParamKind::RangeOrArray,
+        "1D range of cash flows corresponding to schedule of payments in dates.",
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "dates",
-        "Schedule of payment dates corresponding to the cash flow payments.",
-        ParamKind::RangeOrArray,
+        "1D range of payment dates corresponding to the cash flow payments.",
+        ParamKind::Range,
+        ParamType::Any,
     ),
 ];
 
@@ -174,18 +214,43 @@ impl ExcelFunction for XnpvFunction {
         XNPV_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::OneDimEqualLength {
+            first_idx: 1,
+            first_param: "values",
+            second_idx: 2,
+            second_param: "dates",
+        })
     }
 
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate = match extract_scalar_number(&args[0]) {
+        let rate_res = extract_scalar_number(&args[0], self.name(), "rate", 1, ctx)?;
+        let raw_values = extract_1d_range_values(&args[1], self.name(), "values")?;
+        let raw_dates = extract_1d_range_values(&args[2], self.name(), "dates")?;
+
+        if raw_values.len() != raw_dates.len() {
+            return Err(FunctionError::LengthMismatch {
+                function: self.name(),
+                expected: raw_values.len(),
+                found: raw_dates.len(),
+            });
+        }
+
+        let rate = match rate_res {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -194,17 +259,17 @@ impl ExcelFunction for XnpvFunction {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let values = match extract_vector_numbers(&args[1]) {
+        let values = match coerce_slice_numbers(raw_values) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let dates = match extract_vector_numbers(&args[2]) {
+        let dates = match coerce_slice_numbers(raw_dates) {
             Ok(d) => d,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        if values.len() != dates.len() || values.is_empty() {
+        if values.is_empty() {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
@@ -224,10 +289,6 @@ impl ExcelFunction for XnpvFunction {
             xnpv += v / denom;
         }
 
-        if xnpv.is_nan() || xnpv.is_infinite() {
-            return Ok(CellValue::Error(ExcelError::Num));
-        }
-
-        Ok(CellValue::Number(normalize_zero(xnpv)))
+        Ok(CellValue::number(xnpv))
     }
 }

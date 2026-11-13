@@ -3,12 +3,13 @@ use f8_core::compiler::eval::eval_expr;
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::Expr;
+use f8_core::functions::FunctionError;
 use f8_core::functions::date::DateSerial;
 use f8_core::functions::registry::FunctionRegistry;
 use f8_core::functions::traits::{EvalContext, FunctionArg, FunctionCategory};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::value::{CellValue, ExcelError, TypeError};
 use indexmap::IndexMap;
 
 /// Mock execution context for isolated function unit testing.
@@ -52,7 +53,7 @@ fn eval_str(
 #[test]
 fn test_date_functions_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 44);
+    assert_eq!(registry.len(), 45);
 
     let date_funcs = [
         ("DATE", 3, Some(3)),
@@ -303,9 +304,24 @@ fn test_scenario_3_two_digit_year_expansion_and_bounds() {
         .unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Num));
 
-    // Infinite and extreme float values -> #NUM!
-    for extreme in [f64::INFINITY, f64::NEG_INFINITY, 1e19, -1e19] {
+    // Non-finite raw floats bubble as #NUM!
+    for non_finite in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         let res = date_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(non_finite)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(res, CellValue::Error(ExcelError::Num));
+    }
+
+    // Fractional and > MAX_SAFE_INTEGER finite float values fail strictly with NonIntegerArgument
+    for extreme in [1e19, -1e19, 1.5] {
+        let err = date_fn
             .evaluate(
                 &[
                     FunctionArg::Scalar(CellValue::Number(extreme)),
@@ -314,8 +330,16 @@ fn test_scenario_3_two_digit_year_expansion_and_bounds() {
                 ],
                 &ctx,
             )
-            .unwrap();
-        assert_eq!(res, CellValue::Error(ExcelError::Num));
+            .unwrap_err();
+        assert_eq!(
+            err,
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "DATE",
+                param: "year",
+                position: 1,
+                value: extreme.to_string(),
+            })
+        );
     }
 }
 
@@ -989,27 +1013,42 @@ fn test_yearfrac_omitted_basis_and_fractional_boundaries() {
         .unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Num));
 
-    // Invalid basis values: negative fractions, out-of-range, non-finite
-    for bad_basis in [
-        -0.5,
-        -1.0,
-        5.0,
-        5.5,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::NAN,
-    ] {
+    // Out-of-domain integer or non-finite basis values -> #NUM!
+    for oob_or_non_finite in [-1.0, 5.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         let res = yearfrac_fn
             .evaluate(
                 &[
                     FunctionArg::Scalar(CellValue::Number(start)),
                     FunctionArg::Scalar(CellValue::Number(end)),
-                    FunctionArg::Scalar(CellValue::Number(bad_basis)),
+                    FunctionArg::Scalar(CellValue::Number(oob_or_non_finite)),
                 ],
                 &ctx,
             )
             .unwrap();
         assert_eq!(res, CellValue::Error(ExcelError::Num));
+    }
+
+    // Fractional or > MAX_SAFE_INTEGER finite basis values -> NonIntegerArgument
+    for non_int_basis in [-0.5, 5.5, 1e19] {
+        let err = yearfrac_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(start)),
+                    FunctionArg::Scalar(CellValue::Number(end)),
+                    FunctionArg::Scalar(CellValue::Number(non_int_basis)),
+                ],
+                &ctx,
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "YEARFRAC",
+                param: "basis",
+                position: 3,
+                ..
+            })
+        ));
     }
 }
 
@@ -1022,19 +1061,11 @@ fn test_edate_eomonth_overflow_protection() {
 
     let jan15_2024 = DateSerial::from_ymd(2024, 1, 15).unwrap();
 
-    // Enormous and non-finite month offsets must return #NUM! rather than wrapping/overflowing
-    for extreme_months in [
-        1e15,
-        1e19,
-        f64::INFINITY,
-        -1e15,
-        -1e19,
-        f64::NEG_INFINITY,
-        f64::NAN,
-    ] {
+    // Large safe-integer and non-finite month offsets return #NUM! rather than wrapping/overflowing
+    for num_err_months in [1e15, -1e15, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         let args = [
             FunctionArg::Scalar(CellValue::Number(jan15_2024)),
-            FunctionArg::Scalar(CellValue::Number(extreme_months)),
+            FunctionArg::Scalar(CellValue::Number(num_err_months)),
         ];
         assert_eq!(
             edate_fn.evaluate(&args, &ctx).unwrap(),
@@ -1044,6 +1075,22 @@ fn test_edate_eomonth_overflow_protection() {
             eomonth_fn.evaluate(&args, &ctx).unwrap(),
             CellValue::Error(ExcelError::Num)
         );
+    }
+
+    // Beyond MAX_SAFE_INTEGER or fractional finite month offsets fail strictly with NonIntegerArgument
+    for unsafe_months in [1e19, -1e19, 1.5] {
+        let args = [
+            FunctionArg::Scalar(CellValue::Number(jan15_2024)),
+            FunctionArg::Scalar(CellValue::Number(unsafe_months)),
+        ];
+        assert!(matches!(
+            edate_fn.evaluate(&args, &ctx),
+            Err(FunctionError::Type(TypeError::NonIntegerArgument { .. }))
+        ));
+        assert!(matches!(
+            eomonth_fn.evaluate(&args, &ctx),
+            Err(FunctionError::Type(TypeError::NonIntegerArgument { .. }))
+        ));
     }
 }
 
