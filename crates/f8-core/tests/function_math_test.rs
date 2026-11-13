@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::ast::Expr;
-use f8_core::functions::traits::{EvalContext, FunctionArg};
+use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::value::{CellValue, ExcelError, TypeError};
 
 /// Mock evaluation context for unit tests.
 #[derive(Default)]
@@ -18,7 +18,8 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 44);
+    assert_eq!(registry.len(), 45);
+    assert!(registry.lookup("SWITCH").is_none());
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),
@@ -46,7 +47,6 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("OR", FunctionCategory::Logical),
         ("NOT", FunctionCategory::Logical),
         ("CHOOSE", FunctionCategory::Logical),
-        ("SWITCH", FunctionCategory::Logical),
         ("NPV", FunctionCategory::Financial),
         ("XNPV", FunctionCategory::Financial),
         ("IRR", FunctionCategory::Financial),
@@ -57,6 +57,8 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("XLOOKUP", FunctionCategory::Lookup),
         ("XMATCH", FunctionCategory::Lookup),
         ("INDEX", FunctionCategory::Lookup),
+        ("ISBLANK", FunctionCategory::Information),
+        ("NA", FunctionCategory::Information),
     ];
 
     for (name, category) in expected_functions {
@@ -75,39 +77,39 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
     let ctx = MockEvalContext;
 
     // Range with numbers, ignored text, ignored booleans: [10.0, 20.0, "ignored", true, 30.0]
-    let range_arg = FunctionArg::Array {
-        rows: 5,
-        cols: 1,
-        values: vec![
+    let range_arg = FunctionArg::array(
+        5,
+        1,
+        vec![
             CellValue::Number(10.0),
             CellValue::Number(20.0),
             CellValue::Text("ignored".into()),
             CellValue::Boolean(true),
             CellValue::Number(30.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
 
     let res = avg.evaluate(&[range_arg], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(20.0));
 
     // Empty range with no numbers returns #DIV/0!
-    let empty_range = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Empty, CellValue::Text("still no numbers".into())],
-        is_range_ref: true,
-    };
+    let empty_range = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Empty, CellValue::Text("still no numbers".into())],
+        ReferenceKind::Slice,
+    );
     let res = avg.evaluate(&[empty_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Div0));
 
     // Error in range bubbles immediately
-    let err_range = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
-        is_range_ref: true,
-    };
+    let err_range = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
+        ReferenceKind::Slice,
+    );
     let res = avg.evaluate(&[err_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 
@@ -125,18 +127,18 @@ fn test_scenario_3_count_vs_counta_semantics() {
     let ctx = MockEvalContext;
 
     // Range containing [10.0, "text", true, Empty, ExcelError::Div0]
-    let mixed_range = FunctionArg::Array {
-        rows: 5,
-        cols: 1,
-        values: vec![
+    let mixed_range = FunctionArg::array(
+        5,
+        1,
+        vec![
             CellValue::Number(10.0),
             CellValue::Text("text".into()),
             CellValue::Boolean(true),
             CellValue::Empty,
             CellValue::Error(ExcelError::Div0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
 
     // COUNT: only numbers counted; text, booleans, empty, and errors ignored (+0) -> 1.0
     let res_count = count_func
@@ -150,24 +152,62 @@ fn test_scenario_3_count_vs_counta_semantics() {
         .unwrap();
     assert_eq!(res_counta, CellValue::Number(4.0));
 
-    // Direct scalar arguments: COUNT(10.0, "hello", true, ExcelError::Div0) -> 2.0 (10.0 and true)
-    let scalar_args = [
-        FunctionArg::Scalar(CellValue::Number(10.0)),
-        FunctionArg::Scalar(CellValue::Text("hello".into())),
-        FunctionArg::Scalar(CellValue::Boolean(true)),
-        FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+    // Single-cell references (1x1 ReferenceKind::SingleCell) are accepted by ParamKind::Range
+    let single_cell_args = [
+        FunctionArg::array(
+            1,
+            1,
+            vec![CellValue::Number(10.0)],
+            ReferenceKind::SingleCell,
+        ),
+        FunctionArg::array(
+            1,
+            1,
+            vec![CellValue::Text("hello".into())],
+            ReferenceKind::SingleCell,
+        ),
+        FunctionArg::array(
+            1,
+            1,
+            vec![CellValue::Boolean(true)],
+            ReferenceKind::SingleCell,
+        ),
+        FunctionArg::array(
+            1,
+            1,
+            vec![CellValue::Error(ExcelError::Div0)],
+            ReferenceKind::SingleCell,
+        ),
     ];
-    let res_count_scalars = count_func.evaluate(&scalar_args, &ctx).unwrap();
-    assert_eq!(res_count_scalars, CellValue::Number(2.0));
+    assert_eq!(
+        count_func.evaluate(&single_cell_args, &ctx).unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        counta_func.evaluate(&single_cell_args, &ctx).unwrap(),
+        CellValue::Number(4.0)
+    );
 
-    // COUNTA on direct scalar arguments -> 4.0
-    let res_counta_scalars = counta_func.evaluate(&scalar_args, &ctx).unwrap();
-    assert_eq!(res_counta_scalars, CellValue::Number(4.0));
-
-    // Direct scalar text: COUNT("hello") -> 0.0 (no error!)
-    let single_text = [FunctionArg::Scalar(CellValue::Text("hello".into()))];
-    let res_single_text = count_func.evaluate(&single_text, &ctx).unwrap();
-    assert_eq!(res_single_text, CellValue::Number(0.0));
+    // Non-reference scalars are rejected by ParamKind::Range
+    assert_eq!(
+        count_func.evaluate(&[FunctionArg::Scalar(CellValue::Number(10.0))], &ctx),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "COUNT",
+            expected: "range",
+            found: "scalar",
+        })
+    );
+    assert_eq!(
+        counta_func.evaluate(
+            &[FunctionArg::Scalar(CellValue::Text("hello".into()))],
+            &ctx
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "COUNTA",
+            expected: "range",
+            found: "scalar",
+        })
+    );
 }
 
 #[test]
@@ -178,17 +218,17 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     let ctx = MockEvalContext;
 
     // Range containing [-15.0, 0.0, 42.5, "text"]
-    let mixed_range = FunctionArg::Array {
-        rows: 4,
-        cols: 1,
-        values: vec![
+    let mixed_range = FunctionArg::array(
+        4,
+        1,
+        vec![
             CellValue::Number(-15.0),
             CellValue::Number(0.0),
             CellValue::Number(42.5),
             CellValue::Text("text".into()),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
     assert_eq!(
         max_func
             .evaluate(std::slice::from_ref(&mixed_range), &ctx)
@@ -203,16 +243,16 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     );
 
     // Range containing all negative numbers: [-20.0, -10.0, -5.0]
-    let negative_range = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+    let negative_range = FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(-20.0),
             CellValue::Number(-10.0),
             CellValue::Number(-5.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
     assert_eq!(
         max_func
             .evaluate(std::slice::from_ref(&negative_range), &ctx)
@@ -227,12 +267,12 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     );
 
     // Empty range defaults to 0.0
-    let empty_range = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Empty, CellValue::Text("ignored".into())],
-        is_range_ref: true,
-    };
+    let empty_range = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Empty, CellValue::Text("ignored".into())],
+        ReferenceKind::Slice,
+    );
     assert_eq!(
         max_func
             .evaluate(std::slice::from_ref(&empty_range), &ctx)
@@ -319,15 +359,22 @@ fn test_scenario_5_round_roundup_and_rounddown_variants() {
         CellValue::Number(130.0)
     );
 
-    // ROUND with non-integer digits truncates digits: ROUND(2.15, 1.9) == ROUND(2.15, 1) -> 2.2
-    let args_trunc_digits = [
-        FunctionArg::Scalar(CellValue::Number(2.15)),
-        FunctionArg::Scalar(CellValue::Number(1.9)),
-    ];
-    assert_eq!(
-        round_func.evaluate(&args_trunc_digits, &ctx).unwrap(),
-        CellValue::Number(2.2)
-    );
+    // ROUND with non-integer or oversized digits fails strictly with NonIntegerArgument
+    for bad_digits in [1.9, 1e20] {
+        let args_non_int = [
+            FunctionArg::Scalar(CellValue::Number(2.15)),
+            FunctionArg::Scalar(CellValue::Number(bad_digits)),
+        ];
+        assert_eq!(
+            round_func.evaluate(&args_non_int, &ctx),
+            Err(FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                value: bad_digits.to_string(),
+            }))
+        );
+    }
 }
 
 #[test]
@@ -337,99 +384,102 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
     let ctx = MockEvalContext;
 
     // Two ranges of dimensions 3x1: [1.0, 2.0, 3.0] and [4.0, 5.0, 6.0]
-    let r1 = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+    let r1 = FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(1.0),
             CellValue::Number(2.0),
             CellValue::Number(3.0),
         ],
-        is_range_ref: true,
-    };
-    let r2 = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+        ReferenceKind::Slice,
+    );
+    let r2 = FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(4.0),
             CellValue::Number(5.0),
             CellValue::Number(6.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
 
     // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32.0
     let res = sumproduct.evaluate(&[r1, r2], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(32.0));
 
     // Ranges with non-numeric text: [1.0, "text", 3.0] and [4.0, 5.0, 6.0]
-    let r_text = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+    let r_text = FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(1.0),
             CellValue::Text("text".into()),
             CellValue::Number(3.0),
         ],
-        is_range_ref: true,
-    };
-    let r_other = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+        ReferenceKind::Slice,
+    );
+    let r_other = FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(4.0),
             CellValue::Number(5.0),
             CellValue::Number(6.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
     // 1*4 + 0*5 + 3*6 = 22.0
     let res_text = sumproduct.evaluate(&[r_text, r_other], &ctx).unwrap();
     assert_eq!(res_text, CellValue::Number(22.0));
 
-    // Mismatched dimensions (3x1 and 2x1) -> #VALUE!
-    let r_mismatch = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Number(4.0), CellValue::Number(5.0)],
-        is_range_ref: true,
-    };
-    let r_base = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
-            CellValue::Number(1.0),
+    // Mismatched dimensions (3x1 and 2x1) -> FunctionError::DimensionMismatch (even if arg 1 contains an ExcelError)
+    let r_mismatch = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Number(4.0), CellValue::Number(5.0)],
+        ReferenceKind::Slice,
+    );
+    let r_base = FunctionArg::array(
+        3,
+        1,
+        vec![
+            CellValue::Error(ExcelError::Div0),
             CellValue::Number(2.0),
             CellValue::Number(3.0),
         ],
-        is_range_ref: true,
-    };
-    let res_mismatch = sumproduct.evaluate(&[r_base, r_mismatch], &ctx).unwrap();
-    assert_eq!(res_mismatch, CellValue::Error(ExcelError::Value));
+        ReferenceKind::Slice,
+    );
+    assert_eq!(
+        sumproduct.evaluate(&[r_base, r_mismatch], &ctx),
+        Err(FunctionError::DimensionMismatch {
+            function: "SUMPRODUCT",
+            expected_rows: 3,
+            expected_cols: 1,
+            found_rows: 2,
+            found_cols: 1,
+        })
+    );
 
     // Error in range bubbles immediately
-    let r_err = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Number(1.0), CellValue::Error(ExcelError::Div0)],
-        is_range_ref: true,
-    };
-    let r_valid = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Number(1.0), CellValue::Number(2.0)],
-        is_range_ref: true,
-    };
+    let r_err = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Number(1.0), CellValue::Error(ExcelError::Div0)],
+        ReferenceKind::Slice,
+    );
+    let r_valid = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Number(1.0), CellValue::Number(2.0)],
+        ReferenceKind::Slice,
+    );
     let res_err = sumproduct.evaluate(&[r_err, r_valid], &ctx).unwrap();
     assert_eq!(res_err, CellValue::Error(ExcelError::Div0));
 
     // Malformed array element count mismatch returns evaluation failure error
-    let r_malformed = FunctionArg::Array {
-        rows: 2,
-        cols: 2,
-        values: vec![CellValue::Number(1.0)],
-        is_range_ref: true,
-    };
+    let r_malformed = FunctionArg::array(2, 2, vec![CellValue::Number(1.0)], ReferenceKind::Slice);
     let res_malformed = sumproduct.evaluate(&[r_malformed], &ctx);
     assert!(matches!(
         res_malformed,
@@ -444,39 +494,39 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     let ctx = MockEvalContext;
 
     // 1. Odd count of numbers: [10, 50, 20] -> sorted [10, 20, 50] -> median is 20
-    let odd_range = FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+    let odd_range = FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(10.0),
             CellValue::Number(50.0),
             CellValue::Number(20.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
     let res = median.evaluate(&[odd_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(20.0));
 
     // 2. Even count of numbers: [10, 40, 20, 30] -> sorted [10, 20, 30, 40] -> median is (20 + 30) / 2 = 25
-    let even_range = FunctionArg::Array {
-        rows: 4,
-        cols: 1,
-        values: vec![
+    let even_range = FunctionArg::array(
+        4,
+        1,
+        vec![
             CellValue::Number(10.0),
             CellValue::Number(40.0),
             CellValue::Number(20.0),
             CellValue::Number(30.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
     let res = median.evaluate(&[even_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(25.0));
 
     // 3. Range with ignored non-numeric cells (text, booleans, empty)
-    let mixed_range = FunctionArg::Array {
-        rows: 6,
-        cols: 1,
-        values: vec![
+    let mixed_range = FunctionArg::array(
+        6,
+        1,
+        vec![
             CellValue::Number(100.0),
             CellValue::Text("ignore me".into()),
             CellValue::Boolean(true),
@@ -484,18 +534,18 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
             CellValue::Number(300.0),
             CellValue::Number(200.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
     let res = median.evaluate(&[mixed_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(200.0));
 
     // 4. Empty range with no numbers returns #NUM! in Excel
-    let empty_range = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Empty, CellValue::Text("no numbers".into())],
-        is_range_ref: true,
-    };
+    let empty_range = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Empty, CellValue::Text("no numbers".into())],
+        ReferenceKind::Slice,
+    );
     let res = median.evaluate(&[empty_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Num));
 
@@ -517,12 +567,12 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     assert_eq!(res, CellValue::Error(ExcelError::Value));
 
     // 7. Error in range bubbles immediately
-    let error_range = FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
-        is_range_ref: true,
-    };
+    let error_range = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
+        ReferenceKind::Slice,
+    );
     let res = median.evaluate(&[error_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 

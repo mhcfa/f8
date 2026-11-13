@@ -1,3 +1,5 @@
+use crate::value::TypeError;
+
 /// Structured errors produced by function validation, binding, and execution.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FunctionError {
@@ -78,6 +80,136 @@ pub enum FunctionError {
         function: &'static str,
         /// Descriptive failure diagnostic message.
         message: String,
+    },
+
+    /// Static or dynamic formula type violation.
+    #[error(transparent)]
+    Type(#[from] TypeError),
+
+    /// Range slice evaluated in a scalar parameter or expression context.
+    #[error("range slice ({rows}x{cols}) cannot be evaluated as a scalar")]
+    SliceInScalarContext {
+        /// Resolved row count of the slice.
+        rows: usize,
+        /// Resolved column count of the slice.
+        cols: usize,
+    },
+
+    /// Parallel range arguments have incompatible `(rows, cols)` dimensions.
+    #[error(
+        "dimension mismatch in '{function}': expected {expected_rows}x{expected_cols}, found {found_rows}x{found_cols}"
+    )]
+    DimensionMismatch {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Expected row count.
+        expected_rows: usize,
+        /// Expected column count.
+        expected_cols: usize,
+        /// Actual row count.
+        found_rows: usize,
+        /// Actual column count.
+        found_cols: usize,
+    },
+
+    /// Parallel 1D slice arguments have unequal element counts.
+    #[error("length mismatch in '{function}': expected {expected}, found {found}")]
+    LengthMismatch {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Expected element count.
+        expected: usize,
+        /// Actual element count.
+        found: usize,
+    },
+
+    /// A 1D slice parameter received a 2D slice (`rows > 1 && cols > 1`).
+    #[error("parameter '{param}' of '{function}' requires a 1D slice, found {rows}x{cols}")]
+    ExpectedOneDimensionalSlice {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Parameter identifier.
+        param: &'static str,
+        /// Actual row count.
+        rows: usize,
+        /// Actual column count.
+        cols: usize,
+    },
+
+    /// 2-argument `INDEX` called on a 2D slice (`rows > 1 && cols > 1`) without `col_num`.
+    #[error("'{function}' on a 2D slice ({rows}x{cols}) requires 'col_num'")]
+    MissingColumnIndexFor2DSlice {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Slice row count.
+        rows: usize,
+        /// Slice column count.
+        cols: usize,
+    },
+
+    /// Constant integer index in `INDEX` or `CHOOSE` is outside static 1-based bounds.
+    #[error(
+        "constant index {index} for parameter '{param}' of '{function}' is out of bounds ({min}..={max})"
+    )]
+    IndexOutOfBounds {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Parameter identifier (`"row_num"`, `"col_num"`, or `"index_num"`).
+        param: &'static str,
+        /// Constant index supplied.
+        index: i64,
+        /// Minimum valid 1-based index (`1`).
+        min: usize,
+        /// Maximum valid 1-based index.
+        max: usize,
+    },
+
+    /// Lookup mode parameter received a non-literal expression instead of an integer literal.
+    #[error(
+        "parameter '{param}' at position {position} of '{function}' requires an integer literal"
+    )]
+    NonLiteralLookupMode {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Parameter identifier (`"match_mode"` or `"search_mode"`).
+        param: &'static str,
+        /// 1-indexed argument position.
+        position: usize,
+    },
+
+    /// Lookup mode parameter received an integer outside the supported mode set.
+    #[error("invalid {param} {mode} at position {position} of '{function}'")]
+    InvalidLookupMode {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Parameter identifier (`"match_mode"` or `"search_mode"`).
+        param: &'static str,
+        /// 1-indexed argument position.
+        position: usize,
+        /// Invalid integer mode value supplied.
+        mode: i64,
+    },
+
+    /// Binary search (`search_mode` `2` or `-2`) received a `lookup_array` containing `CellValue::Error`.
+    #[error(
+        "binary search (search_mode {search_mode}) in '{function}' cannot search 'lookup_array' containing error cells"
+    )]
+    ErrorInBinaryLookupArray {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Binary search mode (`2` or `-2`).
+        search_mode: i64,
+    },
+
+    /// Binary search (`search_mode` `2` or `-2`) received a `lookup_array` whose keys are not monotonically sorted.
+    #[error(
+        "binary search (search_mode {search_mode}) in '{function}' requires monotonically sorted 'lookup_array' keys"
+    )]
+    UnsortedBinaryLookupArray {
+        /// Canonical uppercase function identifier.
+        function: &'static str,
+        /// Binary search mode (`2` or `-2`).
+        search_mode: i64,
     },
 }
 

@@ -126,12 +126,12 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                     "XLOOKUP(DealAssumptions[\"active_case\", \"val\"], Scenarios[\"base\"..\"bear\", \"case_id\"], Scenarios[\"base\"..\"bear\", \"exit_multiple\"])",
                 )
                 .build(),
-            RowBuilder::line_item("sponsor_hurdle", "Sponsor Target Hurdle Rate (SWITCH)")
+            RowBuilder::line_item("sponsor_hurdle", "Sponsor Target Hurdle Rate (IFS)")
                 .format(FormatPreset::Percentage)
                 .decimals(1)
                 .cell_formula(
                     "val",
-                    "SWITCH(DealAssumptions[\"active_case\", \"val\"], \"base\", 0.20, \"bull\", 0.25, \"bear\", 0.15, 0.20)",
+                    "IFS(DealAssumptions[\"active_case\", \"val\"] = \"base\", 0.20, DealAssumptions[\"active_case\", \"val\"] = \"bull\", 0.25, DealAssumptions[\"active_case\", \"val\"] = \"bear\", 0.15, TRUE, 0.20)",
                 )
                 .build(),
             build_gutter_row(),

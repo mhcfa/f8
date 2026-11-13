@@ -5,7 +5,7 @@
 pub mod error;
 pub mod format;
 
-pub use error::{ExcelError, ParseExcelError};
+pub use error::{ExcelError, ExpectedType, ParseExcelError, StrictIntError, TypeError, ValueType};
 pub use format::{format_accounting_number, format_cell_value};
 
 use std::cmp::Ordering;
@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::expr::ast::Literal;
 use crate::model::table::ValueLiteral;
+
+/// Maximum exact integer magnitude representable without precision loss in IEEE-754 `f64` (`2^53 - 1`).
+pub(crate) const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 /// Normalizes IEEE-754 negative zero (`-0.0`) to canonical positive zero (`0.0`).
 #[inline]
@@ -113,110 +116,142 @@ impl CellValue {
         }
     }
 
-    /// Coerces this cell value to a number according to Excel scalar coercion semantics:
-    /// - `Number(n)` -> `Ok(n)`
-    /// - `Boolean(true)` -> `Ok(1.0)`, `Boolean(false)` -> `Ok(0.0)`
-    /// - `Empty` -> `Ok(0.0)`
-    /// - `Error(e)` -> `Err(e)` (bubbles up existing error)
-    /// - `Text(_)` -> `Err(ExcelError::Value)`
-    pub fn coerce_to_number(&self) -> Result<f64, ExcelError> {
+    /// Returns the [`ValueType`] of this cell, or `None` if this cell is `CellValue::Error(_)`.
+    #[must_use]
+    pub const fn value_type(&self) -> Option<ValueType> {
         match self {
-            Self::Number(n) => Ok(*n),
+            Self::Number(_) => Some(ValueType::Number),
+            Self::Text(_) => Some(ValueType::Text),
+            Self::Boolean(_) => Some(ValueType::Boolean),
+            Self::Empty => Some(ValueType::Empty),
+            Self::Error(_) => None,
+        }
+    }
+
+    /// Extracts a strict finite numeric scalar without coercing `Text`, `Boolean`, or `Empty`.
+    ///
+    /// - `Number(n)` -> `Ok(Ok(normalize_zero(n)))` if finite, else `Ok(Err(ExcelError::Num))`
+    /// - `Error(e)` -> `Ok(Err(e))`
+    /// - `Text` / `Boolean` / `Empty` -> `Err(ValueType)`
+    pub fn strict_number(&self) -> Result<Result<f64, ExcelError>, ValueType> {
+        match self {
+            Self::Number(n) => {
+                if n.is_finite() {
+                    Ok(Ok(normalize_zero(*n)))
+                } else {
+                    Ok(Err(ExcelError::Num))
+                }
+            }
+            Self::Error(e) => Ok(Err(*e)),
+            Self::Text(_) => Err(ValueType::Text),
+            Self::Boolean(_) => Err(ValueType::Boolean),
+            Self::Empty => Err(ValueType::Empty),
+        }
+    }
+
+    /// Extracts a strict exact integer in `-9_007_199_254_740_991..=9_007_199_254_740_991`.
+    ///
+    /// - `Number(n)` -> `Ok(Err(ExcelError::Num))` if non-finite, `Err(StrictIntError::NonInteger)`
+    ///   if `fract() != 0.0` or outside safe integer bounds, else `Ok(Ok(n as i64))`
+    /// - `Error(e)` -> `Ok(Err(e))`
+    /// - `Text` / `Boolean` / `Empty` -> `Err(StrictIntError::WrongType(ValueType))`
+    pub fn strict_integer(&self) -> Result<Result<i64, ExcelError>, StrictIntError> {
+        match self {
+            Self::Number(n) => {
+                if !n.is_finite() {
+                    return Ok(Err(ExcelError::Num));
+                }
+                let norm = normalize_zero(*n);
+                if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
+                    return Err(StrictIntError::NonInteger(norm.to_string()));
+                }
+                Ok(Ok(norm as i64))
+            }
+            Self::Error(e) => Ok(Err(*e)),
+            Self::Text(_) => Err(StrictIntError::WrongType(ValueType::Text)),
+            Self::Boolean(_) => Err(StrictIntError::WrongType(ValueType::Boolean)),
+            Self::Empty => Err(StrictIntError::WrongType(ValueType::Empty)),
+        }
+    }
+
+    /// Extracts a strict boolean scalar without coercing `Number`, `Text`, or `Empty`.
+    ///
+    /// - `Boolean(b)` -> `Ok(Ok(b))`
+    /// - `Error(e)` -> `Ok(Err(e))`
+    /// - `Number` / `Text` / `Empty` -> `Err(ValueType)`
+    pub fn strict_bool(&self) -> Result<Result<bool, ExcelError>, ValueType> {
+        match self {
+            Self::Boolean(b) => Ok(Ok(*b)),
+            Self::Error(e) => Ok(Err(*e)),
+            Self::Number(_) => Err(ValueType::Number),
+            Self::Text(_) => Err(ValueType::Text),
+            Self::Empty => Err(ValueType::Empty),
+        }
+    }
+
+    /// Compares two cell values under strict homogeneous non-`Empty` relational rules.
+    ///
+    /// - Any `Empty` operand or mismatched `(Number, Text | Boolean)` / `(Text, Boolean)` types
+    ///   return `Err((left_type, right_type))` (checked before bubbling `Error(_)`).
+    /// - `Error(e)` paired with any non-`Empty` operand bubbles `Ok(Err(e))` (left error first).
+    /// - Homogeneous `Number`, `Text` (ASCII case-insensitive), and `Boolean` pairs return `Ok(Ok(Ordering))`.
+    pub fn compare_relational(
+        &self,
+        other: &Self,
+    ) -> Result<Result<Ordering, ExcelError>, (ValueType, ValueType)> {
+        match (self, other) {
+            (Self::Empty, Self::Empty)
+            | (Self::Empty, Self::Error(_))
+            | (Self::Error(_), Self::Empty) => Err((ValueType::Empty, ValueType::Empty)),
+            (Self::Empty, Self::Number(_)) => Err((ValueType::Empty, ValueType::Number)),
+            (Self::Empty, Self::Text(_)) => Err((ValueType::Empty, ValueType::Text)),
+            (Self::Empty, Self::Boolean(_)) => Err((ValueType::Empty, ValueType::Boolean)),
+            (Self::Number(_), Self::Empty) => Err((ValueType::Number, ValueType::Empty)),
+            (Self::Text(_), Self::Empty) => Err((ValueType::Text, ValueType::Empty)),
+            (Self::Boolean(_), Self::Empty) => Err((ValueType::Boolean, ValueType::Empty)),
+
+            (Self::Number(_), Self::Text(_)) => Err((ValueType::Number, ValueType::Text)),
+            (Self::Text(_), Self::Number(_)) => Err((ValueType::Text, ValueType::Number)),
+            (Self::Number(_), Self::Boolean(_)) => Err((ValueType::Number, ValueType::Boolean)),
+            (Self::Boolean(_), Self::Number(_)) => Err((ValueType::Boolean, ValueType::Number)),
+            (Self::Text(_), Self::Boolean(_)) => Err((ValueType::Text, ValueType::Boolean)),
+            (Self::Boolean(_), Self::Text(_)) => Err((ValueType::Boolean, ValueType::Text)),
+
+            (
+                Self::Error(e),
+                Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Error(_),
+            ) => Ok(Err(*e)),
+            (Self::Number(_) | Self::Text(_) | Self::Boolean(_), Self::Error(e)) => Ok(Err(*e)),
+
+            (Self::Number(a), Self::Number(b)) => {
+                if !a.is_finite() || !b.is_finite() {
+                    Ok(Err(ExcelError::Num))
+                } else {
+                    Ok(Ok(normalize_zero(*a).total_cmp(&normalize_zero(*b))))
+                }
+            }
+            (Self::Text(a), Self::Text(b)) => {
+                Ok(Ok(compare_ascii_case_insensitive(a.as_str(), b.as_str())))
+            }
+            (Self::Boolean(a), Self::Boolean(b)) => Ok(Ok(a.cmp(b))),
+        }
+    }
+
+    /// Coerces a scalar value in legacy/variadic collectors (`Number`, `Boolean`, `Empty` -> `f64`).
+    pub(crate) fn coerce_to_number(&self) -> Result<f64, ExcelError> {
+        match self {
+            Self::Number(n) => {
+                if n.is_finite() {
+                    Ok(normalize_zero(*n))
+                } else {
+                    Err(ExcelError::Num)
+                }
+            }
             Self::Boolean(true) => Ok(1.0),
             Self::Boolean(false) => Ok(0.0),
             Self::Empty => Ok(0.0),
             Self::Error(e) => Err(*e),
             Self::Text(_) => Err(ExcelError::Value),
-        }
-    }
-
-    /// Coerces this cell value to a boolean according to Excel scalar coercion semantics:
-    /// - `Boolean(b)` -> `Ok(b)`
-    /// - `Number(n)` -> `Ok(n != 0.0)`
-    /// - `Empty` -> `Ok(false)`
-    /// - `Error(e)` -> `Err(e)` (bubbles up existing error)
-    /// - `Text("true" / "false")` (case-insensitive) -> `Ok(true / false)`
-    /// - `Text(_)` (other strings) -> `Err(ExcelError::Value)`
-    pub fn coerce_to_bool(&self) -> Result<bool, ExcelError> {
-        match self {
-            Self::Boolean(b) => Ok(*b),
-            Self::Number(n) => Ok(*n != 0.0),
-            Self::Empty => Ok(false),
-            Self::Error(e) => Err(*e),
-            Self::Text(s) => {
-                if s.eq_ignore_ascii_case("true") {
-                    Ok(true)
-                } else if s.eq_ignore_ascii_case("false") {
-                    Ok(false)
-                } else {
-                    Err(ExcelError::Value)
-                }
-            }
-        }
-    }
-
-    /// Compares two cell values conforming to Excel pairwise relational comparison rules:
-    /// - Same types: standard comparison (strings compare case-insensitively using ASCII case folding).
-    /// - Empty cell coercions: `Empty` coerces to the other operand's neutral identity (`0.0` vs `Number`, `""` vs `Text`, `false` vs `Boolean`).
-    /// - Mixed non-empty types: `Number < Text < Boolean < Error`.
-    /// - Pairwise comparator: not a transitive total order across heterogeneous sets containing `Empty`.
-    #[must_use]
-    pub fn excel_cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Self::Empty, Self::Empty) => Ordering::Equal,
-
-            // Empty vs Number coerces Empty to 0.0
-            (Self::Empty, Self::Number(n)) => 0.0_f64.total_cmp(&normalize_zero(*n)),
-            (Self::Number(n), Self::Empty) => normalize_zero(*n).total_cmp(&0.0_f64),
-
-            // Empty vs Text coerces Empty to ""
-            (Self::Empty, Self::Text(s)) => compare_ascii_case_insensitive("", s.as_str()),
-            (Self::Text(s), Self::Empty) => compare_ascii_case_insensitive(s.as_str(), ""),
-
-            // Empty vs Boolean coerces Empty to false
-            (Self::Empty, Self::Boolean(b)) => false.cmp(b),
-            (Self::Boolean(b), Self::Empty) => b.cmp(&false),
-
-            // Same type comparisons
-            (Self::Number(a), Self::Number(b)) => normalize_zero(*a).total_cmp(&normalize_zero(*b)),
-            (Self::Text(a), Self::Text(b)) => {
-                compare_ascii_case_insensitive(a.as_str(), b.as_str())
-            }
-            (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
-            (Self::Error(a), Self::Error(b)) => a.as_str().cmp(b.as_str()),
-
-            // Mixed type comparisons: Number < Text < Boolean < Error
-            (Self::Number(_), Self::Text(_)) => Ordering::Less,
-            (Self::Text(_), Self::Number(_)) => Ordering::Greater,
-
-            (Self::Number(_), Self::Boolean(_)) => Ordering::Less,
-            (Self::Boolean(_), Self::Number(_)) => Ordering::Greater,
-
-            (Self::Text(_), Self::Boolean(_)) => Ordering::Less,
-            (Self::Boolean(_), Self::Text(_)) => Ordering::Greater,
-
-            (Self::Error(_), Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty) => {
-                Ordering::Greater
-            }
-            (Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty, Self::Error(_)) => {
-                Ordering::Less
-            }
-        }
-    }
-
-    /// Tests equality conforming to Excel case-insensitive string and empty coercion rules.
-    #[must_use]
-    pub fn excel_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Error(a), Self::Error(b)) => a == b,
-            (Self::Error(_), Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty)
-            | (Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty, Self::Error(_)) => {
-                false
-            }
-            (
-                Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty,
-                Self::Number(_) | Self::Text(_) | Self::Boolean(_) | Self::Empty,
-            ) => self.excel_cmp(other) == Ordering::Equal,
         }
     }
 }
@@ -362,8 +397,16 @@ mod tests {
     }
 
     #[test]
-    fn test_cell_value_coercions() {
+    fn test_cell_value_coercions_and_strict_extractors() {
         assert_eq!(CellValue::Number(12.5).coerce_to_number(), Ok(12.5));
+        assert_eq!(
+            CellValue::Number(-0.0).coerce_to_number().map(f64::to_bits),
+            Ok(0.0_f64.to_bits())
+        );
+        assert_eq!(
+            CellValue::Number(f64::INFINITY).coerce_to_number(),
+            Err(ExcelError::Num)
+        );
         assert_eq!(CellValue::Boolean(true).coerce_to_number(), Ok(1.0));
         assert_eq!(CellValue::Boolean(false).coerce_to_number(), Ok(0.0));
         assert_eq!(CellValue::Empty.coerce_to_number(), Ok(0.0));
@@ -376,17 +419,78 @@ mod tests {
             Err(ExcelError::Ref)
         );
 
-        assert_eq!(CellValue::Boolean(true).coerce_to_bool(), Ok(true));
-        assert_eq!(CellValue::Number(1.0).coerce_to_bool(), Ok(true));
-        assert_eq!(CellValue::Number(0.0).coerce_to_bool(), Ok(false));
-        assert_eq!(CellValue::Empty.coerce_to_bool(), Ok(false));
-        assert_eq!(CellValue::Text("true".into()).coerce_to_bool(), Ok(true));
-        assert_eq!(CellValue::Text("TRUE".into()).coerce_to_bool(), Ok(true));
-        assert_eq!(CellValue::Text("false".into()).coerce_to_bool(), Ok(false));
-        assert_eq!(CellValue::Text("FALSE".into()).coerce_to_bool(), Ok(false));
+        assert_eq!(CellValue::Number(12.5).strict_number(), Ok(Ok(12.5)));
         assert_eq!(
-            CellValue::Text("foo".into()).coerce_to_bool(),
-            Err(ExcelError::Value)
+            CellValue::Number(f64::NAN).strict_number(),
+            Ok(Err(ExcelError::Num))
+        );
+        assert_eq!(
+            CellValue::Error(ExcelError::Div0).strict_number(),
+            Ok(Err(ExcelError::Div0))
+        );
+        assert_eq!(
+            CellValue::Boolean(true).strict_number(),
+            Err(ValueType::Boolean)
+        );
+        assert_eq!(
+            CellValue::Text("5".into()).strict_number(),
+            Err(ValueType::Text)
+        );
+        assert_eq!(CellValue::Empty.strict_number(), Err(ValueType::Empty));
+
+        assert_eq!(CellValue::Number(42.0).strict_integer(), Ok(Ok(42)));
+        assert_eq!(
+            CellValue::Number(MAX_SAFE_INTEGER).strict_integer(),
+            Ok(Ok(9_007_199_254_740_991))
+        );
+        assert_eq!(
+            CellValue::Number(-MAX_SAFE_INTEGER).strict_integer(),
+            Ok(Ok(-9_007_199_254_740_991))
+        );
+        assert_eq!(
+            CellValue::Number(2.5).strict_integer(),
+            Err(StrictIntError::NonInteger("2.5".to_string()))
+        );
+        assert!(matches!(
+            CellValue::Number(1e20).strict_integer(),
+            Err(StrictIntError::NonInteger(_))
+        ));
+        assert_eq!(
+            CellValue::Boolean(false).strict_integer(),
+            Err(StrictIntError::WrongType(ValueType::Boolean))
+        );
+
+        assert_eq!(CellValue::Boolean(true).strict_bool(), Ok(Ok(true)));
+        assert_eq!(
+            CellValue::Error(ExcelError::Na).strict_bool(),
+            Ok(Err(ExcelError::Na))
+        );
+        assert_eq!(CellValue::Number(1.0).strict_bool(), Err(ValueType::Number));
+        assert_eq!(
+            CellValue::Text("TRUE".into()).strict_bool(),
+            Err(ValueType::Text)
+        );
+        assert_eq!(CellValue::Empty.strict_bool(), Err(ValueType::Empty));
+
+        assert_eq!(
+            CellValue::Number(10.0).compare_relational(&CellValue::Number(20.0)),
+            Ok(Ok(Ordering::Less))
+        );
+        assert_eq!(
+            CellValue::Text("ABC".into()).compare_relational(&CellValue::Text("abc".into())),
+            Ok(Ok(Ordering::Equal))
+        );
+        assert_eq!(
+            CellValue::Number(1.0).compare_relational(&CellValue::Text("1".into())),
+            Err((ValueType::Number, ValueType::Text))
+        );
+        assert_eq!(
+            CellValue::Error(ExcelError::Div0).compare_relational(&CellValue::Empty),
+            Err((ValueType::Empty, ValueType::Empty))
+        );
+        assert_eq!(
+            CellValue::Error(ExcelError::Div0).compare_relational(&CellValue::Number(1.0)),
+            Ok(Err(ExcelError::Div0))
         );
     }
 
@@ -401,97 +505,6 @@ mod tests {
         let err = CellValue::Error(ExcelError::Num);
         assert!(err.is_error());
         assert_eq!(err.as_error(), Some(ExcelError::Num));
-    }
-
-    #[test]
-    fn test_excel_cmp_and_excel_eq() {
-        use std::cmp::Ordering;
-
-        // Strings case-insensitivity
-        assert_eq!(
-            CellValue::Text("ABC".into()).excel_cmp(&CellValue::Text("abc".into())),
-            Ordering::Equal
-        );
-        assert!(CellValue::Text("ABC".into()).excel_eq(&CellValue::Text("abc".into())));
-        assert!(!CellValue::Text("ABC".into()).excel_eq(&CellValue::Text("def".into())));
-
-        // Empty vs Number
-        assert_eq!(
-            CellValue::Empty.excel_cmp(&CellValue::Number(0.0)),
-            Ordering::Equal
-        );
-        assert!(CellValue::Empty.excel_eq(&CellValue::Number(0.0)));
-
-        // Empty vs Text
-        assert_eq!(
-            CellValue::Empty.excel_cmp(&CellValue::Text("".into())),
-            Ordering::Equal
-        );
-        assert!(CellValue::Empty.excel_eq(&CellValue::Text("".into())));
-
-        // Empty vs Boolean coerces Empty to false
-        assert_eq!(
-            CellValue::Empty.excel_cmp(&CellValue::Boolean(false)),
-            Ordering::Equal
-        );
-        assert_eq!(
-            CellValue::Boolean(false).excel_cmp(&CellValue::Empty),
-            Ordering::Equal
-        );
-        assert_eq!(
-            CellValue::Empty.excel_cmp(&CellValue::Boolean(true)),
-            Ordering::Less
-        );
-        assert_eq!(
-            CellValue::Boolean(true).excel_cmp(&CellValue::Empty),
-            Ordering::Greater
-        );
-        assert!(CellValue::Empty.excel_eq(&CellValue::Boolean(false)));
-        assert!(CellValue::Boolean(false).excel_eq(&CellValue::Empty));
-        assert!(!CellValue::Empty.excel_eq(&CellValue::Boolean(true)));
-        assert!(!CellValue::Boolean(true).excel_eq(&CellValue::Empty));
-
-        // Type ranking: Number < Text < Boolean (including Text("") < Boolean(false))
-        assert_eq!(
-            CellValue::Number(100.0).excel_cmp(&CellValue::Text("1".into())),
-            Ordering::Less
-        );
-        assert_eq!(
-            CellValue::Text("".into()).excel_cmp(&CellValue::Boolean(false)),
-            Ordering::Less
-        );
-        assert_eq!(
-            CellValue::Boolean(false).excel_cmp(&CellValue::Text("".into())),
-            Ordering::Greater
-        );
-        assert_eq!(
-            CellValue::Text("xyz".into()).excel_cmp(&CellValue::Boolean(false)),
-            Ordering::Less
-        );
-        assert!(!CellValue::Number(1.0).excel_eq(&CellValue::Text("1".into())));
-
-        // Negative zero normalizes to positive zero in total-order comparison
-        assert_eq!(
-            CellValue::Number(-0.0).excel_cmp(&CellValue::Number(0.0)),
-            Ordering::Equal
-        );
-        assert!(CellValue::Number(-0.0).excel_eq(&CellValue::Number(0.0)));
-        assert_eq!(
-            CellValue::Empty.excel_cmp(&CellValue::Number(-0.0)),
-            Ordering::Equal
-        );
-
-        // Non-finite floats never compare equal to finite numbers or Empty
-        assert_ne!(
-            CellValue::Number(f64::NAN).excel_cmp(&CellValue::Number(42.0)),
-            Ordering::Equal
-        );
-        assert!(!CellValue::Number(f64::NAN).excel_eq(&CellValue::Number(42.0)));
-        assert_ne!(
-            CellValue::Empty.excel_cmp(&CellValue::Number(f64::NAN)),
-            Ordering::Equal
-        );
-        assert!(!CellValue::Empty.excel_eq(&CellValue::Number(f64::NAN)));
     }
 
     #[test]

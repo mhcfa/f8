@@ -1,11 +1,11 @@
-use crate::functions::common::extract_scalar_number;
+use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
 use crate::functions::date::serial::{DateSerial, validate_date_serial};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 /// Supported financial day-count conventions for `YEARFRAC`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,7 +49,6 @@ pub fn calculate_yearfrac(
         return Ok(0.0);
     }
 
-    // Order independence: compute fraction between smaller and larger date
     let (d1, d2) = if s1 <= s2 { (s1, s2) } else { (s2, s1) };
 
     let date1 = DateSerial::to_ymd(d1)?;
@@ -82,7 +81,7 @@ pub fn calculate_yearfrac(
             }
 
             let days = 360 * (y2 - y1) + 30 * (m2 - m1) + (d2_day - d1_day);
-            Ok(days as f64 / 360.0)
+            Ok(f64::from(days) / 360.0)
         }
 
         DayCountBasis::ActualActual => {
@@ -100,7 +99,6 @@ pub fn calculate_yearfrac(
                 && (date1.month > date2.month
                     || (date1.month == date2.month && date1.day >= date2.day))
             {
-                // Spans <= 1 calendar year across a year boundary
                 let has_leap_day = if DateSerial::is_excel_leap_year(y1) && date1.month <= 2 {
                     true
                 } else {
@@ -109,11 +107,10 @@ pub fn calculate_yearfrac(
                 };
                 if has_leap_day { 366.0 } else { 365.0 }
             } else {
-                // Spans > 1 calendar year: average days per year across all included calendar years
-                let total_years = (y2 - y1 + 1) as f64;
+                let total_years = f64::from(y2 - y1 + 1);
                 let mut total_days = 0.0;
                 for y in y1..=y2 {
-                    total_days += DateSerial::days_in_year(y) as f64;
+                    total_days += f64::from(DateSerial::days_in_year(y));
                 }
                 total_days / total_years
             };
@@ -121,15 +118,9 @@ pub fn calculate_yearfrac(
             Ok(actual_days / divisor)
         }
 
-        DayCountBasis::Actual360 => {
-            let actual_days = d2 - d1;
-            Ok(actual_days / 360.0)
-        }
+        DayCountBasis::Actual360 => Ok((d2 - d1) / 360.0),
 
-        DayCountBasis::Actual365 => {
-            let actual_days = d2 - d1;
-            Ok(actual_days / 365.0)
-        }
+        DayCountBasis::Actual365 => Ok((d2 - d1) / 365.0),
 
         DayCountBasis::European30_360 => {
             let y1 = date1.year;
@@ -148,7 +139,7 @@ pub fn calculate_yearfrac(
             }
 
             let days = 360 * (y2 - y1) + 30 * (m2 - m1) + (d2_day - d1_day);
-            Ok(days as f64 / 360.0)
+            Ok(f64::from(days) / 360.0)
         }
     }
 }
@@ -158,16 +149,19 @@ static YEARFRAC_PARAMS: &[ParameterDef] = &[
         "start_date",
         "A serial number that represents the start date.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "end_date",
         "A serial number that represents the end date.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::with_default(
         "basis",
-        "The type of day count basis to use (0: US 30/360, 1: Actual/Actual, 2: Actual/360, 3: Actual/365, 4: European 30/360).",
+        "The integer day count basis to use (0: US 30/360, 1: Actual/Actual, 2: Actual/360, 3: Actual/365, 4: European 30/360).",
         ParamKind::Scalar,
+        ParamType::Integer,
         CellValue::Number(0.0),
     ),
 ];
@@ -189,42 +183,49 @@ impl ExcelFunction for YearfracFunction {
         YEARFRAC_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _context: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let start_val = match extract_scalar_number(&args[0]) {
+        let start_res = extract_scalar_number(&args[0], self.name(), "start_date", 1, ctx)?;
+        let end_res = extract_scalar_number(&args[1], self.name(), "end_date", 2, ctx)?;
+        let basis_res = match args.get(2) {
+            None | Some(FunctionArg::Omitted) => Ok(0_i64),
+            Some(
+                basis_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => extract_scalar_integer(basis_arg, self.name(), "basis", 3, ctx)?,
+        };
+
+        let start_val = match start_res {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let end_val = match extract_scalar_number(&args[1]) {
+        let end_val = match end_res {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let basis_val: f64 = if let Some(basis_arg) = args.get(2) {
-            match extract_scalar_number(basis_arg) {
-                Ok(v) => v,
-                Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.0
+        let basis_i64 = match basis_res {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        if !basis_val.is_finite() || basis_val < 0.0 || basis_val >= 5.0 {
-            return Ok(CellValue::Error(ExcelError::Num));
-        }
-
-        let basis_i64 = basis_val.trunc() as i64;
         let basis = match DayCountBasis::from_i64(basis_i64) {
             Ok(b) => b,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
         match calculate_yearfrac(start_val, end_val, basis) {
-            Ok(frac) => Ok(CellValue::Number(frac)),
+            Ok(frac) => Ok(CellValue::number(frac)),
             Err(e) => Ok(CellValue::Error(e)),
         }
     }

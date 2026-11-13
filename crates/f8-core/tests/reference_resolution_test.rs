@@ -2338,3 +2338,47 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         assert_eq!(resolve_err, expected_resolve);
     }
 }
+
+#[test]
+fn test_direct_ast_zero_and_overflow_relative_offsets_rejected_in_resolver() {
+    let (symbols, _, _) = build_test_symbols();
+    let origin = CellId::new("IncomeStatement", "cogs", "2025E");
+
+    for bad_col_offset in [
+        RelativeOffset::Prev(0),
+        RelativeOffset::Next(0),
+        RelativeOffset::Prev(u32::MAX),
+        RelativeOffset::Next(u32::MAX),
+    ] {
+        let table_ref = TableRef::new(
+            "IncomeStatement",
+            RowSelector::Key(RowId::from("rev")),
+            ColSelector::Offset(bad_col_offset),
+        );
+        let err = resolve_table_ref(&origin, &table_ref, &symbols)
+            .expect_err("zero or > i32::MAX col offset must fail resolution");
+        assert!(
+            matches!(err, ResolveError::TemporalOffsetOutOfBounds { .. }),
+            "expected TemporalOffsetOutOfBounds, got {err:?}"
+        );
+    }
+
+    for bad_row_offset in [
+        RelativeOffset::Prev(0),
+        RelativeOffset::Next(0),
+        RelativeOffset::Prev(u32::MAX),
+        RelativeOffset::Next(u32::MAX),
+    ] {
+        let table_ref = TableRef::new(
+            "IncomeStatement",
+            RowSelector::Offset(bad_row_offset),
+            ColSelector::Key(ColId::from("2025E")),
+        );
+        let err = resolve_table_ref(&origin, &table_ref, &symbols)
+            .expect_err("zero or > i32::MAX row offset must fail resolution");
+        assert!(
+            matches!(err, ResolveError::TemporalOffsetOutOfBounds { .. }),
+            "expected TemporalOffsetOutOfBounds, got {err:?}"
+        );
+    }
+}

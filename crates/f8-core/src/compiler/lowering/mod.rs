@@ -297,7 +297,7 @@ fn format_binary_operand(
             if child_prec < parent_prec {
                 true
             } else if child_prec == parent_prec {
-                is_right || parent_op.is_right_associative()
+                is_right || parent_op.is_right_associative() || parent_op.is_relational()
             } else {
                 false
             }

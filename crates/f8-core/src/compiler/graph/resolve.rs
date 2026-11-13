@@ -7,7 +7,7 @@ use crate::compiler::ir::symbol::{ColSlot, RowSlot, SymbolTable, TableMetadata};
 use crate::expr::ast::{
     CallArg, ColEndpoint, ColSelector, Expr, RelativeOffset, RowEndpoint, RowSelector, TableRef,
 };
-use crate::model::id::{ColId, RowId};
+use crate::model::id::{ColId, RowId, TableId};
 use crate::model::table::AxisRole;
 
 /// Recursively collects all table references present within a formula expression AST.
@@ -48,6 +48,48 @@ fn resolve_row_key<'a>(
     })
 }
 
+/// Validates a relative offset step `k` into `(step_usize, signed_i32)`, rejecting `0` or `> i32::MAX`.
+fn checked_relative_offset(
+    origin: &CellId,
+    target_table: &TableId,
+    offset: RelativeOffset,
+) -> Result<(usize, i32), ResolveError> {
+    match offset {
+        RelativeOffset::Prev(k) => {
+            if k == 0 {
+                return Err(ResolveError::temporal_offset_out_of_bounds(
+                    origin,
+                    target_table.clone(),
+                    0,
+                ));
+            }
+            let k_i32 = i32::try_from(k).map_err(|_| {
+                ResolveError::temporal_offset_out_of_bounds(origin, target_table.clone(), i32::MIN)
+            })?;
+            let k_usize = usize::try_from(k).map_err(|_| {
+                ResolveError::temporal_offset_out_of_bounds(origin, target_table.clone(), -k_i32)
+            })?;
+            Ok((k_usize, -k_i32))
+        }
+        RelativeOffset::Next(k) => {
+            if k == 0 {
+                return Err(ResolveError::temporal_offset_out_of_bounds(
+                    origin,
+                    target_table.clone(),
+                    0,
+                ));
+            }
+            let k_i32 = i32::try_from(k).map_err(|_| {
+                ResolveError::temporal_offset_out_of_bounds(origin, target_table.clone(), i32::MAX)
+            })?;
+            let k_usize = usize::try_from(k).map_err(|_| {
+                ResolveError::temporal_offset_out_of_bounds(origin, target_table.clone(), k_i32)
+            })?;
+            Ok((k_usize, k_i32))
+        }
+    }
+}
+
 /// Resolves a relative row offset (`row.prev`, `row.next`) to its 0-based index and [`RowId`] in `target_table.rows`.
 fn resolve_row_offset<'a>(
     origin: &CellId,
@@ -58,19 +100,16 @@ fn resolve_row_offset<'a>(
         ResolveError::active_row_mismatch(origin, target_table.table_id.clone(), origin.row.clone())
     })?;
 
-    let signed_offset = match offset {
-        RelativeOffset::Prev(k) => -(k as i32),
-        RelativeOffset::Next(k) => k as i32,
-    };
+    let (step, signed_offset) = checked_relative_offset(origin, &target_table.table_id, offset)?;
     let target_idx = match offset {
-        RelativeOffset::Prev(k) => anchor_idx.checked_sub(k as usize).ok_or_else(|| {
+        RelativeOffset::Prev(_) => anchor_idx.checked_sub(step).ok_or_else(|| {
             ResolveError::temporal_offset_out_of_bounds(
                 origin,
                 target_table.table_id.clone(),
                 signed_offset,
             )
         })?,
-        RelativeOffset::Next(k) => anchor_idx.checked_add(k as usize).ok_or_else(|| {
+        RelativeOffset::Next(_) => anchor_idx.checked_add(step).ok_or_else(|| {
             ResolveError::temporal_offset_out_of_bounds(
                 origin,
                 target_table.table_id.clone(),
@@ -228,27 +267,25 @@ fn resolve_col_offset<'a>(
     target_table: &'a TableMetadata,
     offset: RelativeOffset,
 ) -> Result<(usize, &'a ColId), ResolveError> {
-    let signed_offset = match offset {
-        RelativeOffset::Prev(k) => -(k as i32),
-        RelativeOffset::Next(k) => k as i32,
+    let Some(role) = target_table.col_role(&origin.col) else {
+        return Err(ResolveError::active_column_mismatch(
+            origin,
+            target_table.table_id.clone(),
+            origin.col.clone(),
+        ));
     };
 
-    match target_table.col_role(&origin.col) {
-        None => {
-            return Err(ResolveError::active_column_mismatch(
-                origin,
-                target_table.table_id.clone(),
-                origin.col.clone(),
-            ));
-        }
-        Some(AxisRole::Descriptor) => {
+    let (step, signed_offset) = checked_relative_offset(origin, &target_table.table_id, offset)?;
+
+    match role {
+        AxisRole::Descriptor => {
             return Err(ResolveError::temporal_offset_out_of_bounds(
                 origin,
                 target_table.table_id.clone(),
                 signed_offset,
             ));
         }
-        Some(AxisRole::Measure) => {}
+        AxisRole::Measure => {}
     }
 
     let anchor_measure_idx = target_table
@@ -264,14 +301,14 @@ fn resolve_col_offset<'a>(
         })?;
 
     let target_measure_idx = match offset {
-        RelativeOffset::Prev(k) => anchor_measure_idx.checked_sub(k as usize).ok_or_else(|| {
+        RelativeOffset::Prev(_) => anchor_measure_idx.checked_sub(step).ok_or_else(|| {
             ResolveError::temporal_offset_out_of_bounds(
                 origin,
                 target_table.table_id.clone(),
                 signed_offset,
             )
         })?,
-        RelativeOffset::Next(k) => anchor_measure_idx.checked_add(k as usize).ok_or_else(|| {
+        RelativeOffset::Next(_) => anchor_measure_idx.checked_add(step).ok_or_else(|| {
             ResolveError::temporal_offset_out_of_bounds(
                 origin,
                 target_table.table_id.clone(),

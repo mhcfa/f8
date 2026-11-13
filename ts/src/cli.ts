@@ -30,7 +30,7 @@ export const GUIDE_TOPICS: Readonly<Record<string, readonly [string, string]>> =
   ],
   functions: [
     "references/functions.md",
-    "44 built-in Excel functions, signatures, omission syntax, errors",
+    "45 built-in Excel functions, signatures, omission syntax, errors",
   ],
   audit: [
     "references/auditing-and-repair.md",

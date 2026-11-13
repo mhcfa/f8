@@ -1,13 +1,14 @@
 use crate::functions::common::{
-    round_away_from_zero, round_half_away_from_zero, round_towards_zero,
+    MAX_DECIMAL_DIGITS, extract_scalar_integer, extract_scalar_number, round_away_from_zero,
+    round_half_away_from_zero, round_towards_zero,
 };
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ValueType};
 
 /// Positional parameter definitions for rounding functions (`ROUND`, `ROUNDUP`, `ROUNDDOWN`).
 static ROUND_PARAMS: &[ParameterDef] = &[
@@ -15,11 +16,13 @@ static ROUND_PARAMS: &[ParameterDef] = &[
         "number",
         "The real number that you want to round.",
         ParamKind::Scalar,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "num_digits",
         "The number of digits to which you want to round the number.",
         ParamKind::Scalar,
+        ParamType::Integer,
     ),
 ];
 
@@ -43,6 +46,10 @@ macro_rules! impl_rounding_function {
                 ROUND_PARAMS
             }
 
+            fn return_type(&self) -> Option<ValueType> {
+                Some(ValueType::Number)
+            }
+
             fn variadic_rule(&self) -> VariadicRule {
                 VariadicRule::None
             }
@@ -54,25 +61,25 @@ macro_rules! impl_rounding_function {
             ) -> Result<CellValue, FunctionError> {
                 validate_bound_args(self, args)?;
 
-                let val = args[0].eval_scalar(self.name(), ctx)?;
-                let num = match val.coerce_to_number() {
+                let num_res = extract_scalar_number(&args[0], self.name(), "number", 1, ctx)?;
+                let digits_res =
+                    extract_scalar_integer(&args[1], self.name(), "num_digits", 2, ctx)?;
+
+                let num = match num_res {
                     Ok(n) => n,
                     Err(err) => return Ok(CellValue::Error(err)),
                 };
-
-                let digits_val = args[1].eval_scalar(self.name(), ctx)?;
-                let digits_num = match digits_val.coerce_to_number() {
-                    Ok(n) => n,
+                let digits_i64 = match digits_res {
+                    Ok(d) => d,
                     Err(err) => return Ok(CellValue::Error(err)),
                 };
 
-                if !digits_num.is_finite() {
-                    return Ok(CellValue::Error(ExcelError::Value));
-                }
-
-                let digits = digits_num.trunc() as i32;
-                let result = $round_op(num, digits);
-                Ok(CellValue::Number(result))
+                let clamped = digits_i64.clamp(
+                    -i64::from(MAX_DECIMAL_DIGITS),
+                    i64::from(MAX_DECIMAL_DIGITS),
+                ) as i32;
+                let result = $round_op(num, clamped);
+                Ok(CellValue::number(result))
             }
         }
     };

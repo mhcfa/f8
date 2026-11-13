@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// Excel domain calculation errors.
@@ -63,6 +65,167 @@ impl std::str::FromStr for ExcelError {
             Err(ParseExcelError(s.to_string()))
         }
     }
+}
+
+/// Non-error runtime value categories for static and dynamic type diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ValueType {
+    /// Numeric scalar (`f64`).
+    Number,
+    /// Text string scalar.
+    Text,
+    /// Boolean scalar (`TRUE` or `FALSE`).
+    Boolean,
+    /// Empty / null cell (`ValueLiteral::Null`).
+    Empty,
+}
+
+impl ValueType {
+    /// Returns the lowercase diagnostic label for this value type.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Number => "number",
+            Self::Text => "text",
+            Self::Boolean => "boolean",
+            Self::Empty => "empty",
+        }
+    }
+}
+
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Expected type categories for operator operands and function parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ExpectedType {
+    /// Any non-empty scalar (`Number`, `Text`, or `Boolean`).
+    NonEmpty,
+    /// Finite numeric scalar.
+    Number,
+    /// Exact integer within the IEEE-754 safe integer range.
+    Integer,
+    /// Text string scalar.
+    Text,
+    /// Boolean scalar.
+    Boolean,
+}
+
+impl ExpectedType {
+    /// Returns the lowercase diagnostic label for this expected type.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NonEmpty => "non-empty value",
+            Self::Number => "number",
+            Self::Integer => "integer",
+            Self::Text => "text",
+            Self::Boolean => "boolean",
+        }
+    }
+
+    /// Maps a concrete [`ValueType`] into its matching [`ExpectedType`], or `None` for [`ValueType::Empty`].
+    #[must_use]
+    pub const fn from_value_type(vt: ValueType) -> Option<Self> {
+        match vt {
+            ValueType::Number => Some(Self::Number),
+            ValueType::Text => Some(Self::Text),
+            ValueType::Boolean => Some(Self::Boolean),
+            ValueType::Empty => None,
+        }
+    }
+}
+
+impl fmt::Display for ExpectedType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Failure modes when extracting a strict integer from a [`crate::value::CellValue`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StrictIntError {
+    /// Value had a non-numeric [`ValueType`] (`Text`, `Boolean`, or `Empty`).
+    WrongType(ValueType),
+    /// Numeric value had a non-zero fractional part or exceeded safe integer bounds.
+    NonInteger(String),
+}
+
+/// Static and dynamic formula type errors raised prior to workbook emission.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TypeError {
+    /// Formula cell evaluated to `CellValue::Empty` at the cell boundary.
+    #[error(
+        "formula cannot evaluate to an empty cell; guard nullable references explicitly with IF(ISBLANK(...), ...)"
+    )]
+    EmptyFormulaResult,
+    /// Unary or binary operator received an operand of an invalid type.
+    #[error("invalid operand type for '{operator}': expected {expected}, found {found}")]
+    InvalidOperandType {
+        /// Operator token (`"-"`, `"+"`, `"="`, etc.).
+        operator: &'static str,
+        /// Expected operand type.
+        expected: ExpectedType,
+        /// Actual operand value type.
+        found: ValueType,
+    },
+    /// Relational comparison received operands of incompatible types.
+    #[error("cannot compare '{operator}' operands of types {left} and {right}")]
+    IncompatibleComparison {
+        /// Relational operator token (`"="`, `"<>"`, `"<"`, `"<="`, `">"`, `">="`).
+        operator: &'static str,
+        /// Left operand value type.
+        left: ValueType,
+        /// Right operand value type.
+        right: ValueType,
+    },
+    /// Function parameter received an argument of an invalid type.
+    #[error(
+        "invalid argument type for parameter '{param}' at position {position} of '{function}': expected {expected}, found {found}"
+    )]
+    InvalidArgumentType {
+        /// Canonical uppercase function name.
+        function: &'static str,
+        /// Parameter name.
+        param: &'static str,
+        /// 1-indexed argument position.
+        position: usize,
+        /// Expected parameter type.
+        expected: ExpectedType,
+        /// Actual argument value type.
+        found: ValueType,
+    },
+    /// Integer parameter received a fractional or out-of-safe-range numeric value.
+    #[error(
+        "invalid argument for parameter '{param}' at position {position} of '{function}': expected integer, found {value}"
+    )]
+    NonIntegerArgument {
+        /// Canonical uppercase function name.
+        function: &'static str,
+        /// Parameter name.
+        param: &'static str,
+        /// 1-indexed argument position.
+        position: usize,
+        /// Formatted offending numeric value.
+        value: String,
+    },
+    /// Branching or error-handling function received result arms of incompatible types.
+    #[error(
+        "incompatible branch return types in '{function}' at position {position}: expected {expected}, found {found}"
+    )]
+    IncompatibleBranchTypes {
+        /// Canonical uppercase function name.
+        function: &'static str,
+        /// 1-indexed arm position.
+        position: usize,
+        /// Expected unified branch return type.
+        expected: ValueType,
+        /// Actual arm value type.
+        found: ValueType,
+    },
 }
 
 #[cfg(test)]

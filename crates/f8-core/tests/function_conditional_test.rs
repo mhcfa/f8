@@ -7,7 +7,7 @@
 
 use f8_core::expr::ast::Expr;
 use f8_core::functions::{
-    EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
+    EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry, ReferenceKind,
 };
 use f8_core::value::{CellValue, ExcelError};
 
@@ -25,12 +25,7 @@ impl EvalContext for TestEvalContext {
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
-    FunctionArg::Array {
-        rows,
-        cols,
-        values,
-        is_range_ref: true,
-    }
+    FunctionArg::array(rows, cols, values, ReferenceKind::Slice)
 }
 
 // ============================================================================
@@ -385,22 +380,55 @@ fn test_scenario_7_dimension_conformity_validation() {
     let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // Target (1, 4) vs criteria range (1, 3)
+    // Target (1, 4) vs criteria range (1, 3) -> DimensionMismatch
     let target = make_array(1, 4, vec![CellValue::Number(10.0); 4]);
     let mismatched = make_array(1, 3, vec![CellValue::Text("A".into()); 3]);
     let crit = FunctionArg::Scalar(CellValue::Text("A".into()));
 
-    let res = sumifs.evaluate(&[target, mismatched, crit], &ctx).unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Value));
+    assert_eq!(
+        sumifs.evaluate(&[target, mismatched.clone(), crit.clone()], &ctx),
+        Err(FunctionError::DimensionMismatch {
+            function: "SUMIFS",
+            expected_rows: 1,
+            expected_cols: 4,
+            found_rows: 1,
+            found_cols: 3,
+        })
+    );
 
-    // COUNTIFS dimension mismatch: cr1 (2, 2) vs cr2 (1, 4)
+    // Scalar in ParamKind::Range slot -> InvalidArgumentKind
+    assert_eq!(
+        sumifs.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                mismatched,
+                crit
+            ],
+            &ctx
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "SUMIFS",
+            expected: "range",
+            found: "scalar",
+        })
+    );
+
+    // COUNTIFS dimension mismatch: cr1 (2, 2) vs cr2 (1, 4) -> DimensionMismatch
     let cr1 = make_array(2, 2, vec![CellValue::Number(1.0); 4]);
     let cr2 = make_array(1, 4, vec![CellValue::Number(1.0); 4]);
     let crit1 = FunctionArg::Scalar(CellValue::Number(1.0));
     let crit2 = FunctionArg::Scalar(CellValue::Number(1.0));
 
-    let res_count = countifs.evaluate(&[cr1, crit1, cr2, crit2], &ctx).unwrap();
-    assert_eq!(res_count, CellValue::Error(ExcelError::Value));
+    assert_eq!(
+        countifs.evaluate(&[cr1, crit1, cr2, crit2], &ctx),
+        Err(FunctionError::DimensionMismatch {
+            function: "COUNTIFS",
+            expected_rows: 2,
+            expected_cols: 2,
+            found_rows: 1,
+            found_cols: 4,
+        })
+    );
 }
 
 // ============================================================================

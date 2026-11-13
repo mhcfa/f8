@@ -2,14 +2,17 @@
 
 use std::cell::RefCell;
 
-use f8_core::expr::ast::{CallArg, ColSelector, Expr, Literal, RowSelector, TableRef, UnaryOp};
+use f8_core::expr::ast::{
+    CallArg, ColEndpoint, ColSelector, Expr, Literal, RowEndpoint, RowSelector, TableRef, UnaryOp,
+};
 use f8_core::functions::common::eval_branch_arg;
 use f8_core::functions::{
-    EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry, ParamKind,
-    ParamRequirement, ParameterDef,
+    BranchPolicy, EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
+    LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef, ReferenceKind, ShapePolicy,
+    StageAError, ValidationPolicy,
 };
 use f8_core::model::table::ValueLiteral;
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context tracking evaluated expressions.
 #[derive(Default)]
@@ -49,10 +52,6 @@ impl EvalContext for MockEvalContext {
                 | Expr::Binary { .. }
                 | Expr::FunctionCall { .. } => Ok(CellValue::Number(-100.0)),
             },
-            Expr::Unary {
-                op: UnaryOp::Pos,
-                expr: inner,
-            } => self.eval_expr(inner),
             Expr::Reference(_) | Expr::Binary { .. } | Expr::FunctionCall { .. } => {
                 Ok(CellValue::Number(100.0))
             }
@@ -137,17 +136,23 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
             )
             .is_ok()
     );
-    // IF with 2 arguments is valid (3rd argument is optional)
-    assert!(
-        registry
-            .validate_call(
-                "IF",
-                &[
-                    CallArg::from(Expr::boolean(true)),
-                    CallArg::from(Expr::number(1.0)),
-                ]
-            )
-            .is_ok()
+    // IF with 2 arguments is rejected (all 3 arguments are required)
+    let err = registry
+        .validate_call(
+            "IF",
+            &[
+                CallArg::from(Expr::boolean(true)),
+                CallArg::from(Expr::number(1.0)),
+            ],
+        )
+        .unwrap_err();
+    assert_eq!(
+        err,
+        FunctionError::TooFewArguments {
+            function: "IF",
+            expected: 3,
+            found: 2,
+        }
     );
 
     // Unknown function
@@ -235,22 +240,6 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
 
     // Scenario 3: Trailing `_` on optional parameter fails validation statically
     let trailing_cases = [
-        (
-            "IF(FALSE, 10, _)",
-            FunctionError::CannotOmitTrailingArgument {
-                function: "IF",
-                param: "value_if_false",
-                position: 3,
-            },
-        ),
-        (
-            "IF(TRUE, 10, _)",
-            FunctionError::CannotOmitTrailingArgument {
-                function: "IF",
-                param: "value_if_false",
-                position: 3,
-            },
-        ),
         (
             "INDEX(R[\"r1\"..\"r3\", @col], 2, _)",
             FunctionError::CannotOmitTrailingArgument {
@@ -362,6 +351,22 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
             },
         ),
         (
+            "IF(FALSE, 10, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
+            "IF(TRUE, 10, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "IF",
+                param: "value_if_false",
+                position: 3,
+            },
+        ),
+        (
             "IF(_, 10, _)",
             FunctionError::CannotOmitRequiredArgument {
                 function: "IF",
@@ -407,22 +412,27 @@ fn test_scenario_3_abs_scalar_evaluation() {
         .unwrap();
     assert_eq!(res, CellValue::Number(42.5));
 
-    // Empty cell coerces to 0.0
-    let res = abs
-        .evaluate(&[FunctionArg::Scalar(CellValue::Empty)], &ctx)
-        .unwrap();
-    assert_eq!(res, CellValue::Number(0.0));
-
-    // Booleans coerce to 1.0 / 0.0
-    let res = abs
-        .evaluate(&[FunctionArg::Scalar(CellValue::Boolean(true))], &ctx)
-        .unwrap();
-    assert_eq!(res, CellValue::Number(1.0));
-
-    let res = abs
-        .evaluate(&[FunctionArg::Scalar(CellValue::Boolean(false))], &ctx)
-        .unwrap();
-    assert_eq!(res, CellValue::Number(0.0));
+    // Empty, Boolean, and Text fail strictly with TypeError::InvalidArgumentType
+    for (bad_val, expected_found) in [
+        (CellValue::Empty, ValueType::Empty),
+        (CellValue::Boolean(true), ValueType::Boolean),
+        (CellValue::Boolean(false), ValueType::Boolean),
+        (CellValue::Text("invalid".into()), ValueType::Text),
+    ] {
+        let err = abs
+            .evaluate(&[FunctionArg::Scalar(bad_val)], &ctx)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "ABS",
+                param: "number",
+                position: 1,
+                expected: ExpectedType::Number,
+                found: expected_found,
+            })
+        );
+    }
 
     // Domain error propagates
     let res = abs
@@ -432,15 +442,6 @@ fn test_scenario_3_abs_scalar_evaluation() {
         )
         .unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Div0));
-
-    // Text evaluates to #VALUE!
-    let res = abs
-        .evaluate(
-            &[FunctionArg::Scalar(CellValue::Text("invalid".into()))],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Value));
 }
 
 #[test]
@@ -450,10 +451,10 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     let ctx = MockEvalContext::default();
 
     // Range slice containing numbers, text, booleans, and empty cells
-    let range_arg = FunctionArg::Array {
-        rows: 2,
-        cols: 3,
-        values: vec![
+    let range_arg = FunctionArg::array(
+        2,
+        3,
+        vec![
             CellValue::Number(10.0),
             CellValue::Text("N/A text".into()), // Ignored in range
             CellValue::Boolean(true),           // Ignored in range
@@ -461,8 +462,8 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
             CellValue::Empty, // Contributes 0.0
             CellValue::Number(14.5),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
 
     let scalar_arg = FunctionArg::Scalar(CellValue::Number(50.0));
     let empty_arg = FunctionArg::Scalar(CellValue::Empty);
@@ -474,12 +475,12 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     assert_eq!(res, CellValue::Number(100.0));
 
     // Range reference with an error bubbles up immediately
-    let err_range_arg = FunctionArg::Array {
-        rows: 1,
-        cols: 2,
-        values: vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
-        is_range_ref: true,
-    };
+    let err_range_arg = FunctionArg::array(
+        1,
+        2,
+        vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
+        ReferenceKind::Slice,
+    );
     let res = sum.evaluate(&[err_range_arg], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 
@@ -524,7 +525,7 @@ fn test_scenario_5_if_short_circuiting_lazy_branches_and_omitted_false() {
     assert_eq!(res, CellValue::Number(222.0));
     assert_eq!(ctx.recorded(), vec!["222"]);
 
-    // Case 3: IF(FALSE, 111, _) -> rejected at runtime with CannotOmitTrailingArgument before evaluating branches
+    // Case 3: IF(FALSE, 111, _) -> rejected at runtime with CannotOmitRequiredArgument before evaluating branches
     let ctx = MockEvalContext::default();
     let args = [
         FunctionArg::Scalar(CellValue::Boolean(false)),
@@ -534,7 +535,7 @@ fn test_scenario_5_if_short_circuiting_lazy_branches_and_omitted_false() {
     let err = if_func.evaluate(&args, &ctx).unwrap_err();
     assert_eq!(
         err,
-        FunctionError::CannotOmitTrailingArgument {
+        FunctionError::CannotOmitRequiredArgument {
             function: "IF",
             param: "value_if_false",
             position: 3,
@@ -542,14 +543,21 @@ fn test_scenario_5_if_short_circuiting_lazy_branches_and_omitted_false() {
     );
     assert!(ctx.recorded().is_empty());
 
-    // Case 4: IF(FALSE, 111) with only 2 arguments -> returns FALSE
+    // Case 4: IF(FALSE, 111) with only 2 arguments -> rejected with TooFewArguments
     let ctx = MockEvalContext::default();
     let args = [
         FunctionArg::Scalar(CellValue::Boolean(false)),
         FunctionArg::Lazy(&true_expr),
     ];
-    let res = if_func.evaluate(&args, &ctx).unwrap();
-    assert_eq!(res, CellValue::Boolean(false));
+    let err_2arg = if_func.evaluate(&args, &ctx).unwrap_err();
+    assert_eq!(
+        err_2arg,
+        FunctionError::TooFewArguments {
+            function: "IF",
+            expected: 3,
+            found: 2,
+        }
+    );
     assert!(ctx.recorded().is_empty());
 
     // Condition error bubbles up without evaluating branches
@@ -575,21 +583,38 @@ fn test_bind_arguments_integration() {
         ColSelector::Active,
     ));
 
-    // Scenario 2: Binding IF with 2 arguments preserves 1-to-1 arity without synthetic trailing padding
+    // Scenario 2: Binding IF with 2 arguments fails with TooFewArguments; 3-arg IF binds lazy arms 1-to-1
     let ctx = MockEvalContext::default();
     let true_val_expr = Expr::number(42.0);
-    let exprs = [
+    let false_val_expr = Expr::number(99.0);
+    let exprs_2arg = [
         CallArg::from(Expr::boolean(false)),
         CallArg::from(true_val_expr.clone()),
     ];
+    assert_eq!(
+        registry
+            .bind_arguments(if_func, &exprs_2arg, &ctx)
+            .unwrap_err(),
+        FunctionError::TooFewArguments {
+            function: "IF",
+            expected: 3,
+            found: 2,
+        }
+    );
+    let exprs = [
+        CallArg::from(Expr::boolean(false)),
+        CallArg::from(true_val_expr.clone()),
+        CallArg::from(false_val_expr.clone()),
+    ];
     let bound = registry.bind_arguments(if_func, &exprs, &ctx).unwrap();
 
-    assert_eq!(bound.len(), 2);
+    assert_eq!(bound.len(), 3);
     assert_eq!(bound[0], FunctionArg::Scalar(CellValue::Boolean(false)));
     assert_eq!(bound[1], FunctionArg::Lazy(&true_val_expr));
+    assert_eq!(bound[2], FunctionArg::Lazy(&false_val_expr));
     assert_eq!(
         if_func.evaluate(&bound, &ctx).unwrap(),
-        CellValue::Boolean(false)
+        CellValue::Number(99.0)
     );
 
     // Scenario 2: Binding 2-argument INDEX on a 1x3 row vector preserves bound.len() == 2
@@ -616,7 +641,7 @@ fn test_bind_arguments_integration() {
         CellValue::Number(20.0)
     );
 
-    // Scenario 3: Binding IF with trailing omitted 3rd argument fails validation
+    // Scenario 3: Binding IF with omitted 3rd argument fails validation with CannotOmitRequiredArgument
     let exprs_omitted = [
         CallArg::from(Expr::boolean(false)),
         CallArg::from(Expr::number(42.0)),
@@ -627,7 +652,7 @@ fn test_bind_arguments_integration() {
         .unwrap_err();
     assert_eq!(
         err_omitted,
-        FunctionError::CannotOmitTrailingArgument {
+        FunctionError::CannotOmitRequiredArgument {
             function: "IF",
             param: "value_if_false",
             position: 3,
@@ -688,16 +713,16 @@ fn test_bind_arguments_integration() {
     assert_eq!(bound_sum.len(), 2);
     assert_eq!(
         bound_sum[0],
-        FunctionArg::Array {
-            rows: 3,
-            cols: 1,
-            values: vec![
+        FunctionArg::array(
+            3,
+            1,
+            vec![
                 CellValue::Number(10.0),
                 CellValue::Number(20.0),
                 CellValue::Number(30.0)
             ],
-            is_range_ref: true,
-        }
+            ReferenceKind::Slice,
+        )
     );
     assert_eq!(bound_sum[1], FunctionArg::Scalar(CellValue::Number(40.0)));
 
@@ -708,7 +733,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 44);
+    assert_eq!(registry.len(), 45);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -740,7 +765,6 @@ fn test_registry_metadata_and_iteration() {
             "OR",
             "NOT",
             "CHOOSE",
-            "SWITCH",
             "NPV",
             "XNPV",
             "IRR",
@@ -758,24 +782,70 @@ fn test_registry_metadata_and_iteration() {
             "YEAR",
             "MONTH",
             "DAY",
-            "DAYS"
+            "DAYS",
+            "ISBLANK",
+            "NA",
         ]
     );
 
     let if_func = registry.lookup("if").unwrap();
     assert_eq!(if_func.name(), "IF");
     assert_eq!(if_func.category(), FunctionCategory::Logical);
-    assert_eq!(if_func.min_args(), 2);
+    assert_eq!(if_func.min_args(), 3);
     assert_eq!(if_func.max_args(), Some(3));
 
     assert!(registry.lookup("IF").is_some());
     assert!(registry.lookup("If").is_some());
+    assert!(registry.lookup("SWITCH").is_none());
+    assert!(registry.lookup("switch").is_none());
     assert!(registry.lookup("UNKNOWN_FN").is_none());
     assert!(registry.lookup("unknown_fn").is_none());
     assert!(registry.get("SUM").is_some());
     assert!(registry.get("sum").is_some());
+    assert!(registry.get("SWITCH").is_none());
     assert!(registry.get("UNKNOWN_FN").is_none());
     assert!(registry.get("unknown_fn").is_none());
+
+    // Exhaustive ValidationPolicy matrix across all 45 standard functions
+    let mut non_standard_count = 0usize;
+    for (name, func) in registry.iter() {
+        let expected_policy = match name {
+            "IF" => ValidationPolicy::Branch(BranchPolicy::If),
+            "IFS" => ValidationPolicy::Branch(BranchPolicy::Ifs),
+            "CHOOSE" => ValidationPolicy::Branch(BranchPolicy::Choose),
+            "IFERROR" | "IFNA" => ValidationPolicy::Branch(BranchPolicy::ErrorTrap),
+            "INDEX" => ValidationPolicy::Lookup(LookupPolicy::Index),
+            "XLOOKUP" => ValidationPolicy::Lookup(LookupPolicy::Xlookup),
+            "XMATCH" => ValidationPolicy::Lookup(LookupPolicy::Xmatch),
+            "SUMPRODUCT" => ValidationPolicy::ShapeCoupled(ShapePolicy::EqualAllRanges),
+            "SUMIFS" | "AVERAGEIFS" | "MINIFS" | "MAXIFS" => {
+                ValidationPolicy::ShapeCoupled(ShapePolicy::EqualTargetAndOddPairRanges)
+            }
+            "COUNTIFS" => ValidationPolicy::ShapeCoupled(ShapePolicy::EqualEvenPairRanges),
+            "XNPV" => ValidationPolicy::ShapeCoupled(ShapePolicy::OneDimEqualLength {
+                first_idx: 1,
+                first_param: "values",
+                second_idx: 2,
+                second_param: "dates",
+            }),
+            "XIRR" => ValidationPolicy::ShapeCoupled(ShapePolicy::OneDimEqualLength {
+                first_idx: 0,
+                first_param: "values",
+                second_idx: 1,
+                second_param: "dates",
+            }),
+            _ => ValidationPolicy::Standard,
+        };
+        if expected_policy != ValidationPolicy::Standard {
+            non_standard_count += 1;
+        }
+        assert_eq!(
+            func.validation_policy(),
+            expected_policy,
+            "unexpected ValidationPolicy for {name}"
+        );
+    }
+    assert_eq!(non_standard_count, 16);
 }
 
 #[test]
@@ -828,7 +898,7 @@ fn test_validate_expr_preorder_and_nested_ast() {
         ),
         (
             "IF(TRUE, 10, IF(FALSE, 1, _))",
-            FunctionError::CannotOmitTrailingArgument {
+            FunctionError::CannotOmitRequiredArgument {
                 function: "IF",
                 param: "value_if_false",
                 position: 3,
@@ -855,12 +925,12 @@ fn test_validate_expr_preorder_and_nested_ast() {
             },
         ),
         (
-            "SWITCH(1, 1, 10, ABS())",
-            FunctionError::TooFewArguments {
-                function: "ABS",
-                expected: 1,
-                found: 0,
-            },
+            "SWITCH(1, 1, 10, 20)",
+            FunctionError::UnknownFunction("SWITCH".into()),
+        ),
+        (
+            "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
+            FunctionError::UnknownFunction("SWITCH".into()),
         ),
         (
             "XLOOKUP(1, R1[\"k\", @col], R2[\"v\", @col], UNKNOWN_FN())",
@@ -890,7 +960,7 @@ fn test_validate_expr_preorder_and_nested_ast() {
         ),
         // Left-to-right argument traversal
         (
-            "IF(UNKNOWN_FIRST(), UNKNOWN_SECOND())",
+            "IF(UNKNOWN_FIRST(), UNKNOWN_SECOND(), 0)",
             FunctionError::UnknownFunction("UNKNOWN_FIRST".into()),
         ),
     ];
@@ -934,12 +1004,12 @@ fn test_bind_arguments_uses_resolved_function_without_duplicate_lookup() {
 
 #[test]
 fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
-    let req_required = ParameterDef::required("x", "required x", ParamKind::Scalar);
+    let req_required = ParameterDef::required("x", "required x", ParamKind::Scalar, ParamType::Any);
     assert_eq!(req_required.requirement, ParamRequirement::Required);
     assert!(!req_required.requirement.is_optional());
     assert_eq!(req_required.requirement.default_value(), None);
 
-    let req_optional = ParameterDef::optional("y", "optional y", ParamKind::Lazy);
+    let req_optional = ParameterDef::optional("y", "optional y", ParamKind::Lazy, ParamType::Any);
     assert_eq!(req_optional.requirement, ParamRequirement::Optional);
     assert!(req_optional.requirement.is_optional());
     assert_eq!(req_optional.requirement.default_value(), None);
@@ -948,6 +1018,7 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
         "z",
         "optional z with default",
         ParamKind::Scalar,
+        ParamType::Number,
         CellValue::Number(0.0),
     );
     assert_eq!(
@@ -963,18 +1034,18 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
     let registry = FunctionRegistry::standard();
     let ctx = MockEvalContext::default();
     let lazy_num = Expr::number(10.0);
-    let vec_arg = FunctionArg::Array {
-        rows: 1,
-        cols: 3,
-        values: vec![
+    let vec_arg = FunctionArg::array(
+        1,
+        3,
+        vec![
             CellValue::Number(10.0),
             CellValue::Number(20.0),
             CellValue::Number(30.0),
         ],
-        is_range_ref: true,
-    };
+        ReferenceKind::Slice,
+    );
 
-    // Direct trailing optional FunctionArg::Omitted calls fail with CannotOmitTrailingArgument
+    // Direct required FunctionArg::Omitted on 3rd argument of IF fails with CannotOmitRequiredArgument
     let if_fn = registry.lookup("IF").unwrap();
     assert_eq!(
         if_fn.evaluate(
@@ -985,7 +1056,7 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
             ],
             &ctx,
         ),
-        Err(FunctionError::CannotOmitTrailingArgument {
+        Err(FunctionError::CannotOmitRequiredArgument {
             function: "IF",
             param: "value_if_false",
             position: 3,
@@ -1103,7 +1174,7 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
         })
     );
 
-    // Direct required-parameter FunctionArg::Omitted calls fail across SUM, ABS, and all 44 functions
+    // Direct required-parameter FunctionArg::Omitted calls fail across SUM, ABS, and all 45 functions
     let sum_fn = registry.lookup("SUM").unwrap();
     assert_eq!(
         sum_fn.evaluate(&[FunctionArg::Omitted], &ctx),
@@ -1125,6 +1196,18 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
     );
 
     for (name, func) in registry.iter() {
+        if func.max_args() == Some(0) {
+            assert_eq!(
+                func.evaluate(&[FunctionArg::Omitted], &ctx),
+                Err(FunctionError::TooManyArguments {
+                    function: func.name(),
+                    expected: 0,
+                    found: 1,
+                }),
+                "expected TooManyArguments for 0-arg {name}"
+            );
+            continue;
+        }
         let min = func.min_args();
         let mut args = vec![FunctionArg::Scalar(CellValue::Number(1.0)); min.max(1)];
         args[0] = FunctionArg::Omitted;
@@ -1235,4 +1318,439 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
             found: "omitted",
         })
     );
+}
+
+#[test]
+fn test_stage_a_static_scalar_slice_and_shape_strictness() {
+    let registry = FunctionRegistry::standard();
+
+    // Scenario 2: Static AST scalar, logical, discrete Integer, and relational strictness across active and dormant branches
+    for bad_formula in [
+        "\"5\" + 1",
+        "TRUE * 10",
+        "-FALSE",
+        "ABS(\"invalid\")",
+        "ROUND(TRUE, 2)",
+        "ROUND(10, 2.5)",
+        "ROUND(10, 100000000000000000000)",
+        "INDEX(T[\"r1\"..\"r4\", @col], 1.5)",
+        "DATE(2024, 1.5, 1)",
+        "PMT(0.05, 10, -1000, 0, 0.5)",
+        "DAYS(\"invalid\", DATE(2024, 1, 1))",
+        "IF(1, 10, 20)",
+        "IF(\"TRUE\", 10, 20)",
+        "NA(1)",
+        "NOT(0)",
+        "AND(1, TRUE)",
+        "100 < \"1\"",
+        "\"zzz\" < FALSE",
+        "1 = \"1\"",
+        "IF(TRUE, 10, \"5\" + 1)",
+        "IFERROR(\"5\" + 1, 0)",
+    ] {
+        let expr = Expr::parse(bad_formula).unwrap();
+        assert!(
+            registry.validate_expr(&expr).is_err(),
+            "expected Stage A error for '{bad_formula}'"
+        );
+    }
+
+    // Valid expressions pass Stage A
+    for ok_formula in [
+        "\"str\"",
+        "INDEX(T[\"r1\"..\"r4\", @col], XMATCH(\"Beta\", T[\"r1\"..\"r4\", @col]))",
+        "DATE(YEAR(T[\"r1\", @col]) + 1, MONTH(T[\"r1\", @col]), DAY(T[\"r1\", @col]))",
+        "ISBLANK(T[\"r1\", @col])",
+        "NA()",
+    ] {
+        let expr = Expr::parse(ok_formula).unwrap();
+        assert!(
+            registry.validate_expr(&expr).is_ok(),
+            "expected Stage A ok for '{ok_formula}'"
+        );
+    }
+
+    // Scenario 4: Shape-resolving Stage A validation (including 1x1 syntactic slices, ParamKind::Range, rank, and constant bounds)
+    let resolve_shape = |tr: &TableRef| -> Result<Option<(usize, usize)>, &'static str> {
+        let rows = match &tr.row {
+            RowSelector::Range(s, e) => match (s, e) {
+                (RowEndpoint::Key(sk), RowEndpoint::Key(ek)) => match (sk.as_str(), ek.as_str()) {
+                    ("r1", "r1") => 1,
+                    ("r1", "r2") => 2,
+                    ("r2", "r4") => 3,
+                    ("r1", "r4") => 4,
+                    _ => 2,
+                },
+                (RowEndpoint::Active | RowEndpoint::Offset(_), _)
+                | (_, RowEndpoint::Active | RowEndpoint::Offset(_)) => 1,
+            },
+            RowSelector::Active | RowSelector::Key(_) | RowSelector::Offset(_) => 1,
+        };
+        let cols = match &tr.col {
+            ColSelector::Range(s, e) => match (s, e) {
+                (ColEndpoint::Key(sk), ColEndpoint::Key(ek)) => match (sk.as_str(), ek.as_str()) {
+                    ("c1", "c4") => 4,
+                    _ => 2,
+                },
+                (ColEndpoint::Active | ColEndpoint::Offset(_), _)
+                | (_, ColEndpoint::Active | ColEndpoint::Offset(_)) => 1,
+            },
+            ColSelector::Active | ColSelector::Key(_) | ColSelector::Offset(_) => 1,
+        };
+        Ok(Some((rows, cols)))
+    };
+
+    for slice_in_scalar in [
+        "T[\"r1\"..\"r2\", @col]",
+        "T[\"r1\"..\"r1\", @col]",
+        "1 + T[\"r1\"..\"r1\", @col]",
+        "1 + T[\"r1\"..\"r2\", @col]",
+        "ABS(T[\"r1\"..\"r2\", @col])",
+        "ISBLANK(T[\"r1\"..\"r2\", @col])",
+        "ISBLANK(T[\"r1\"..\"r1\", @col])",
+        "IF(TRUE, 1, T[\"r1\"..\"r2\", @col])",
+        "IFS(T[\"r1\"..\"r2\", @col], 1, TRUE, 2)",
+    ] {
+        let expr = Expr::parse(slice_in_scalar).unwrap();
+        let err = registry
+            .validate_expr_with_shapes(&expr, resolve_shape)
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                StageAError::Function(FunctionError::SliceInScalarContext { .. })
+            ),
+            "expected SliceInScalarContext for '{slice_in_scalar}', got {err:?}"
+        );
+    }
+
+    for non_ref_range in [
+        "SUMIFS(10, T[\"r1\"..\"r4\", @col], \"Alpha\")",
+        "SUMPRODUCT(\"abc\")",
+        "COUNT(10)",
+        "COUNTA(\"a\")",
+        "XMATCH(10, 10)",
+        "XLOOKUP(10, 10, 20)",
+        "INDEX(10, 1)",
+        "IRR(100)",
+        "XNPV(0.1, 100, 45292)",
+    ] {
+        let expr = Expr::parse(non_ref_range).unwrap();
+        let err = registry
+            .validate_expr_with_shapes(&expr, resolve_shape)
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                StageAError::Function(FunctionError::InvalidArgumentKind { .. })
+            ),
+            "expected InvalidArgumentKind for '{non_ref_range}', got {err:?}"
+        );
+    }
+
+    for shape_or_bounds in [
+        "SUMPRODUCT(T[\"r1\"..\"r4\", @col], T[\"r1\"..\"r2\", @col])",
+        "SUMIFS(T[\"r1\"..\"r4\", @col], T[\"r1\"..\"r2\", @col], \"Alpha\")",
+        "COUNTIFS(T[\"r1\"..\"r2\", \"c1\"..\"c2\"], 1, T[\"r1\", \"c1\"..\"c4\"], 1)",
+        "XLOOKUP(1, T[\"r1\"..\"r4\", @col], T[\"r2\"..\"r4\", @col])",
+        "XLOOKUP(1, T[\"r1\"..\"r4\", @col], T[\"r1\", \"c1\"..\"c4\"])",
+        "XNPV(0.1, T[\"r1\"..\"r4\", @col], T[\"r1\"..\"r2\", @col])",
+        "XIRR(T[\"r2\"..\"r4\", @col], T[\"r1\"..\"r4\", @col])",
+        "XMATCH(1, T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
+        "XLOOKUP(1, T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
+        "XNPV(-2.0, T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
+        "XIRR(T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
+        "INDEX(T[\"r1\"..\"r4\", \"c1\"..\"c2\"], 2)",
+        "INDEX(T[\"r1\"..\"r4\", @col], 5)",
+        "INDEX(T[\"r1\", \"c1\"..\"c4\"], 5)",
+        "INDEX(T[\"r1\"..\"r4\", @col], 0)",
+        "INDEX(T[\"r1\"..\"r4\", @col], -1)",
+        "CHOOSE(5, 100, 200, 300)",
+        "CHOOSE(0, 100)",
+        "IFERROR(INDEX(T[\"r1\"..\"r4\", @col], 5), 0)",
+        "IF(TRUE, 1, CHOOSE(0, 100))",
+    ] {
+        let expr = Expr::parse(shape_or_bounds).unwrap();
+        let err = registry
+            .validate_expr_with_shapes(&expr, resolve_shape)
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                StageAError::Function(
+                    FunctionError::DimensionMismatch { .. }
+                        | FunctionError::LengthMismatch { .. }
+                        | FunctionError::ExpectedOneDimensionalSlice { .. }
+                        | FunctionError::MissingColumnIndexFor2DSlice { .. }
+                        | FunctionError::IndexOutOfBounds { .. }
+                )
+            ),
+            "expected static shape/rank/bounds error for '{shape_or_bounds}', got {err:?}"
+        );
+    }
+
+    // Valid 1x1 single-cell and 1x1 slice in Range/RangeOrArray and 2-arg horizontal INDEX succeed
+    for valid_shape_case in [
+        "COUNT(T[\"r1\", @col])",
+        "SUM(T[\"r1\"..\"r1\", @col])",
+        "INDEX(T[\"r1\", \"c1\"..\"c4\"], 3)",
+    ] {
+        let expr = Expr::parse(valid_shape_case).unwrap();
+        assert!(
+            registry
+                .validate_expr_with_shapes(&expr, resolve_shape)
+                .is_ok(),
+            "expected shape validation ok for '{valid_shape_case}'"
+        );
+    }
+}
+
+#[test]
+fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
+    let registry = FunctionRegistry::standard();
+
+    let stage_a_cases: &[(&str, FunctionError)] = &[
+        // 3-arg IF required
+        (
+            "IF(TRUE, 10)",
+            FunctionError::TooFewArguments {
+                function: "IF",
+                expected: 3,
+                found: 2,
+            },
+        ),
+        // Monomorphic branch result unification across IF, IFS, CHOOSE, IFERROR, IFNA
+        (
+            "IF(T[\"ebitda\", @col] > 0, T[\"ev\", @col] / T[\"ebitda\", @col], \"NM\")",
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "IF",
+                position: 3,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "IFERROR(10 / 0, \"N/A\")",
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "IFERROR",
+                position: 2,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "IFNA(10 + 1, \"N/A\")",
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "IFNA",
+                position: 2,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "CHOOSE(1, 10, \"NM\")",
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "CHOOSE",
+                position: 3,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "IFS(T[\"c1\", @col], 10, T[\"c2\", @col], \"NM\")",
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "IFS",
+                position: 4,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        // Relational comparisons, parameter-boundary integer refinements, and XLOOKUP if_not_found
+        (
+            "IF(FALSE, IF(TRUE, \"a\", \"b\") = IF(FALSE, 1, 2), TRUE)",
+            FunctionError::Type(TypeError::IncompatibleComparison {
+                operator: "=",
+                left: ValueType::Text,
+                right: ValueType::Number,
+            }),
+        ),
+        (
+            "ROUND(10, 2.5)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                value: "2.5".into(),
+            }),
+        ),
+        (
+            "ROUND(10, -2.5)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                value: "-2.5".into(),
+            }),
+        ),
+        (
+            "ROUND(10, --2.5)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                value: "2.5".into(),
+            }),
+        ),
+        (
+            "ROUND(10, ---2.5)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                value: "-2.5".into(),
+            }),
+        ),
+        (
+            "IF(FALSE, ROUND(10, 2.5), 0)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                value: "2.5".into(),
+            }),
+        ),
+        (
+            "ROUND(10, IF(TRUE, \"a\", \"b\"))",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "ROUND",
+                param: "num_digits",
+                position: 2,
+                expected: ExpectedType::Integer,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "ROUND(10, IF(TRUE, 2, \"bad\"))",
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "IF",
+                position: 3,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "1 + XLOOKUP(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"num\"], \"NM\")",
+            FunctionError::Type(TypeError::InvalidOperandType {
+                operator: "+",
+                expected: ExpectedType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        // XLOOKUP & XMATCH mode literal validation order: ParamType::Integer -> literal check -> valid mode set
+        (
+            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], \"abc\")",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+                expected: ExpectedType::Integer,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 1.5)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+                value: "1.5".into(),
+            }),
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"mode\", @col])",
+            FunctionError::NonLiteralLookupMode {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+            },
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 0 + 0)",
+            FunctionError::NonLiteralLookupMode {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+            },
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], --1)",
+            FunctionError::NonLiteralLookupMode {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+            },
+        ),
+        (
+            "XLOOKUP(\"A\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"cat\"], \"nf\", --1)",
+            FunctionError::NonLiteralLookupMode {
+                function: "XLOOKUP",
+                param: "match_mode",
+                position: 5,
+            },
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 2)",
+            FunctionError::InvalidLookupMode {
+                function: "XMATCH",
+                param: "match_mode",
+                position: 3,
+                mode: 2,
+            },
+        ),
+        (
+            "XLOOKUP(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"num\"], _, 99)",
+            FunctionError::InvalidLookupMode {
+                function: "XLOOKUP",
+                param: "match_mode",
+                position: 5,
+                mode: 99,
+            },
+        ),
+        (
+            "XLOOKUP(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"num\"], _, 0, 0)",
+            FunctionError::InvalidLookupMode {
+                function: "XLOOKUP",
+                param: "search_mode",
+                position: 6,
+                mode: 0,
+            },
+        ),
+    ];
+
+    for (formula, expected_err) in stage_a_cases {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr).unwrap_err(),
+            *expected_err,
+            "mismatch on Cluster A2 Stage A formula: {formula}"
+        );
+    }
+
+    // Valid monomorphic branches, NA() error bottom type, and clean literal lookup modes succeed
+    for valid_formula in [
+        "IF(T[\"c\", @col], \"PASS\", \"FAIL\")",
+        "IF(T[\"ebitda\", @col] > 0, T[\"ev\", @col] / T[\"ebitda\", @col], NA())",
+        "IF(T[\"ebitda\", @col] > 0, NA(), T[\"ev\", @col] / T[\"ebitda\", @col])",
+        "XMATCH(30, T[\"r1\"..\"r4\", \"num\"], -1, 2)",
+        "XLOOKUP(25, T[\"r1\"..\"r4\", \"num\"], T[\"r1\"..\"r4\", \"cat\"], \"Miss\", 1, -2)",
+        "ROUND(10, -IF(TRUE, 2, 3))",
+        "ROUND(10, IF(TRUE, 2, 2.5))",
+        "ROUND(10, --2)",
+    ] {
+        let expr = Expr::parse(valid_formula).unwrap();
+        assert!(
+            registry.validate_expr(&expr).is_ok(),
+            "expected Stage A ok on '{valid_formula}'"
+        );
+    }
 }
