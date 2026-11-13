@@ -11,8 +11,10 @@ static SUMPRODUCT_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "array1",
     "The first range argument whose components you want to multiply and then add.",
     ParamKind::Range,
-    ParamType::Any,
-)];
+    ParamType::Number,
+)
+.measure_only()
+.allow_empty_in_slice()];
 
 /// `SUMPRODUCT(array1, [array2], ...)`: Multiplies corresponding components in the given ranges, and returns the sum of those products.
 #[derive(Debug, Default, Clone, Copy)]

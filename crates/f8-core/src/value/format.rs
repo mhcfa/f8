@@ -35,7 +35,7 @@ pub fn format_accounting_number(
     currency: Option<CurrencyCode>,
 ) -> String {
     if matches!(format, Some(FormatPreset::Date)) {
-        return match crate::functions::date::serial::DateSerial::to_ymd(val) {
+        return match crate::value::date::DateSerial::to_display_ymd(val) {
             Ok(dt) => format!("{:04}-{:02}-{:02}", dt.year, dt.month, dt.day),
             Err(e) => e.as_str().to_string(),
         };
@@ -223,7 +223,11 @@ mod tests {
             "$1,250"
         );
 
-        // Date preset (ISO YYYY-MM-DD and out-of-bounds error)
+        // Date preset (ISO YYYY-MM-DD, 1900-01-00 display parity, and out-of-bounds error)
+        assert_eq!(
+            format_accounting_number(0.0, Some(FormatPreset::Date), None, None),
+            "1900-01-00"
+        );
         assert_eq!(
             format_accounting_number(45657.0, Some(FormatPreset::Date), None, None),
             "2024-12-31"

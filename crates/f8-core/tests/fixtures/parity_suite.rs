@@ -186,22 +186,40 @@ const MATH_CASES: &[ParityCase] = &[
     },
     // Edge cases
     ParityCase {
-        id: "sum_coercion_edge",
-        label: "SUM(cat_range, TRUE, 5) [range text ignored, scalar bool coerced]",
-        formula: "SUM(SeedData[\"r1\"..\"r4\", \"category\"], TRUE, 5)",
-        expected: ParityExpected::ExactNum(6.0),
-    },
-    ParityCase {
-        id: "count_text_edge",
-        label: "COUNT(category) [non-numeric range]",
-        formula: "COUNT(SeedData[\"r1\"..\"r4\", \"category\"])",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
         id: "median_odd_edge",
         label: "MEDIAN(r1..r3) [odd count]",
         formula: "MEDIAN(SeedData[\"r1\"..\"r3\", \"num_a\"])",
         expected: ParityExpected::ExactNum(20.0),
+    },
+    ParityCase {
+        id: "sum_all_null",
+        label: "SUM(all_null) [sparse all-null slice -> 0]",
+        formula: "SUM(SeedData[\"r1\"..\"r4\", \"all_null\"])",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "min_all_null",
+        label: "MIN(all_null) [sparse all-null slice -> 0]",
+        formula: "MIN(SeedData[\"r1\"..\"r4\", \"all_null\"])",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "max_all_null",
+        label: "MAX(all_null) [sparse all-null slice -> 0]",
+        formula: "MAX(SeedData[\"r1\"..\"r4\", \"all_null\"])",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "count_all_null",
+        label: "COUNT(all_null) [sparse all-null slice -> 0]",
+        formula: "COUNT(SeedData[\"r1\"..\"r4\", \"all_null\"])",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "sumproduct_sparse",
+        label: "SUMPRODUCT(sparse, num_b) [sparse null contributes 0 -> 80]",
+        formula: "SUMPRODUCT(SeedData[\"r1\"..\"r4\", \"sparse\"], SeedData[\"r1\"..\"r4\", \"num_b\"])",
+        expected: ParityExpected::ExactNum(80.0),
     },
     ParityCase {
         id: "round_neg_digits",
@@ -320,8 +338,8 @@ const MATH_CASES: &[ParityCase] = &[
     },
     ParityCase {
         id: "average_empty_err",
-        label: "AVERAGE(category) [no numeric cells -> #DIV/0!]",
-        formula: "AVERAGE(SeedData[\"r1\"..\"r4\", \"category\"])",
+        label: "AVERAGE(all_null) [no numeric cells -> #DIV/0!]",
+        formula: "AVERAGE(SeedData[\"r1\"..\"r4\", \"all_null\"])",
         expected: ParityExpected::Error(ExcelError::Div0),
     },
     ParityCase {
@@ -344,8 +362,8 @@ const MATH_CASES: &[ParityCase] = &[
     },
     ParityCase {
         id: "median_empty_err",
-        label: "MEDIAN(category) [no numeric cells -> #NUM!]",
-        formula: "MEDIAN(SeedData[\"r1\"..\"r4\", \"category\"])",
+        label: "MEDIAN(all_null) [no numeric cells -> #NUM!]",
+        formula: "MEDIAN(SeedData[\"r1\"..\"r4\", \"all_null\"])",
         expected: ParityExpected::Error(ExcelError::Num),
     },
 ];
@@ -810,12 +828,6 @@ const DATE_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(2.0),
     },
     ParityCase {
-        id: "date_month_overflow",
-        label: "DATE(2024, 14, 1) [month overflow to 2025-02-01]",
-        formula: "DATE(2024, 14, 1)",
-        expected: ParityExpected::ExactNum(45_689.0),
-    },
-    ParityCase {
         id: "edate_nonleap_clamp",
         label: "EDATE(DATE(2025, 1, 31), 1) [non-leap Feb 28 clamp]",
         formula: "EDATE(DATE(2025, 1, 31), 1)",
@@ -847,15 +859,21 @@ const DATE_CASES: &[ParityCase] = &[
     },
     // Error cases
     ParityCase {
-        id: "yearfrac_basis_err",
-        label: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5) [basis > 4 -> #NUM!]",
-        formula: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5)",
+        id: "edate_underflow_err",
+        label: "EDATE(DATE(1900, 1, 15), -2) [steps before 1900 -> #NUM!]",
+        formula: "EDATE(DATE(1900, 1, 15), -2)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
     ParityCase {
-        id: "date_year_oob_err",
-        label: "DATE(10000, 1, 1) [year >= 10000 -> #NUM!]",
-        formula: "DATE(10000, 1, 1)",
+        id: "eomonth_overflow_err",
+        label: "EOMONTH(DATE(9999, 12, 1), 2) [steps past 9999 -> #NUM!]",
+        formula: "EOMONTH(DATE(9999, 12, 1), 2)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "year_edate_bubble_err",
+        label: "YEAR(EDATE(DATE(1900, 1, 15), -2)) [upstream #NUM! bubbles]",
+        formula: "YEAR(EDATE(DATE(1900, 1, 15), -2))",
         expected: ParityExpected::Error(ExcelError::Num),
     },
 ];
@@ -1021,6 +1039,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_measure_col_label("date", "Date"),
         build_measure_col_label("cash_flow", "Cash Flow"),
         build_measure_col_label("sparse", "Sparse"),
+        build_measure_col_label("all_null", "All Null"),
         build_measure_col_label("sparse_is_null", "Sparse Is Null"),
         build_measure_col_label("sparse_bool", "Sparse Bool"),
         build_measure_col_label("special_text", "Special Text"),
@@ -1035,6 +1054,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 45292.0) // 2024-01-01
             .cell_num("cash_flow", -1000.0)
             .cell("sparse", CellInput::null())
+            .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
             .cell_str("special_text", "NAN")
@@ -1050,6 +1070,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                 "sparse",
                 "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), 0, SeedData[\"r1\", \"sparse\"])",
             )
+            .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::boolean(true))
             .cell_str("special_text", "Infinity")
@@ -1062,6 +1083,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 45658.0) // 2025-01-01
             .cell_num("cash_flow", 400.0)
             .cell_num("sparse", 20.0)
+            .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
             .cell_str("special_text", "42")
@@ -1074,6 +1096,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("date", 46023.0) // 2026-01-01
             .cell_num("cash_flow", 600.0)
             .cell("sparse", CellInput::null())
+            .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
             .cell_str("special_text", "inf")

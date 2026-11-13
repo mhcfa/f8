@@ -5,20 +5,21 @@ use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     ReferenceKind, ShapePolicy, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ValueType, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType};
 
-/// Collects an ordered sequence of numeric cash flows across one or more arguments.
+/// Collects an ordered sequence of strict numeric cash flows across one or more validated arguments.
 ///
-/// - In range references (`FunctionArg::Array`), text, booleans, and empty cells are ignored.
-/// - In direct scalars, booleans and empty cells convert, while text produces `#VALUE!`.
-/// - Errors bubble up immediately.
+/// Errors bubble up immediately; non-numeric or empty cells are rejected by `validate_bound_args`
+/// (`EmptyPolicy::ForbidAll`).
 pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, ExcelError> {
     let mut cfs = Vec::new();
     for arg in args {
         match arg {
-            FunctionArg::Scalar(val) => {
-                cfs.push(val.coerce_to_number()?);
-            }
+            FunctionArg::Scalar(val) => match val.strict_number() {
+                Ok(Ok(n)) => cfs.push(n),
+                Ok(Err(e)) => return Err(e),
+                Err(_) => return Err(ExcelError::Value),
+            },
             FunctionArg::TypedErrorScalar { error, .. } => {
                 return Err(*error);
             }
@@ -28,15 +29,10 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
                 ..
             } => {
                 for v in values {
-                    match v {
-                        CellValue::Number(n) => {
-                            if !n.is_finite() {
-                                return Err(ExcelError::Num);
-                            }
-                            cfs.push(normalize_zero(*n));
-                        }
-                        CellValue::Error(e) => return Err(*e),
-                        CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
+                    match v.strict_number() {
+                        Ok(Ok(n)) => cfs.push(n),
+                        Ok(Err(e)) => return Err(e),
+                        Err(_) => return Err(ExcelError::Value),
                     }
                 }
             }
@@ -86,11 +82,15 @@ pub(crate) fn extract_1d_range_values<'a>(
     }
 }
 
-/// Extracts numeric entries from a validated 1D slice for `XNPV` and `XIRR`.
+/// Extracts strict numeric entries from a validated 1D slice for `XNPV` and `XIRR`.
 pub(crate) fn coerce_slice_numbers(slice: &[CellValue]) -> Result<Vec<f64>, ExcelError> {
     let mut result = Vec::with_capacity(slice.len());
     for v in slice {
-        result.push(v.coerce_to_number()?);
+        match v.strict_number() {
+            Ok(Ok(n)) => result.push(n),
+            Ok(Err(e)) => return Err(e),
+            Err(_) => return Err(ExcelError::Value),
+        }
     }
     Ok(result)
 }
@@ -107,8 +107,9 @@ static NPV_PARAMS: &[ParameterDef] = &[
         "value1",
         "First value, cell reference, or range of cash flows.",
         ParamKind::RangeOrArray,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only(),
 ];
 
 /// `NPV(rate, value1, [value2], ...)`: Calculates net present value of periodic cash flows starting at t=1.
@@ -154,7 +155,7 @@ impl ExcelFunction for NpvFunction {
         };
 
         if cfs.is_empty() {
-            return Ok(CellValue::Number(0.0));
+            return Ok(CellValue::number(0.0));
         }
 
         if rate == -1.0 {
@@ -187,14 +188,16 @@ static XNPV_PARAMS: &[ParameterDef] = &[
         "values",
         "1D range of cash flows corresponding to schedule of payments in dates.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only(),
     ParameterDef::required(
         "dates",
         "1D range of payment dates corresponding to the cash flow payments.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::DateSerial,
+    )
+    .measure_only(),
 ];
 
 /// `XNPV(rate, values, dates)`: Calculates net present value of non-periodic cash flows using Actual/365 year fractions.

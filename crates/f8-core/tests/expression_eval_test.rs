@@ -365,17 +365,14 @@ fn test_scenario_6_2d_range_resolution_and_aggregation_sum() {
     let origin = CellId::new("IncomeStatement", "ebit", "2024E");
     let mut memo = IndexMap::new();
 
-    // Cells for SUM range:
-    // rev = 100.0
-    // cogs = "TextString" (should be ignored by SUM range reference)
-    // sga = Empty (should be ignored by SUM range reference)
+    // Sparse numeric range: rev = 100.0, cogs = Empty, sga = Empty -> 100.0
     memo.insert(
         CellId::new("IncomeStatement", "rev", "2024E"),
         CellValue::Number(100.0),
     );
     memo.insert(
         CellId::new("IncomeStatement", "cogs", "2024E"),
-        CellValue::Text("CostNote".into()),
+        CellValue::Empty,
     );
     memo.insert(
         CellId::new("IncomeStatement", "sga", "2024E"),
@@ -386,13 +383,21 @@ fn test_scenario_6_2d_range_resolution_and_aggregation_sum() {
     let val = eval_expr(&expr, &origin, &memo, &symbols, &registry).expect("eval ok");
     assert_eq!(val, CellValue::Number(100.0));
 
-    // Also test adding another numeric cell
+    // Also test adding another numeric cell -> 130.0
     memo.insert(
         CellId::new("IncomeStatement", "sga", "2024E"),
         CellValue::Number(30.0),
     );
     let val2 = eval_expr(&expr, &origin, &memo, &symbols, &registry).expect("eval ok");
     assert_eq!(val2, CellValue::Number(130.0));
+
+    // Non-numeric text cell inside SUM slice fails strictly with EvalError::Type
+    memo.insert(
+        CellId::new("IncomeStatement", "cogs", "2024E"),
+        CellValue::Text("CostNote".into()),
+    );
+    let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
+    assert!(matches!(err, EvalError::Type { .. }));
 }
 
 #[test]

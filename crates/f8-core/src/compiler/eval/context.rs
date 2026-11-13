@@ -8,6 +8,7 @@ use crate::expr::ast::{Expr, TableRef};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::{FunctionRegistry, ReferenceResolver, ResolvedRef, StageAError};
 use crate::functions::traits::{EvalContext, TypeExpectation, TypedRangeGrid};
+use crate::model::table::AxisRole;
 use crate::value::{CellValue, ValueType};
 
 /// Concrete evaluation context bridging cell coordinates and memoized values to function implementations
@@ -70,6 +71,7 @@ impl ReferenceResolver for CellEvalContext<'_> {
         Ok(Some(ResolvedRef {
             rows: slice.rows,
             cols: slice.cols,
+            axis_role: slice.axis_role,
             values: Some(values),
             error_types: Some(error_types),
         }))
@@ -106,7 +108,13 @@ impl CellEvalContext<'_> {
             error_types.push(err_vt);
         }
 
-        Ok((slice.rows, slice.cols, values, error_types))
+        Ok(TypedRangeGrid {
+            rows: slice.rows,
+            cols: slice.cols,
+            values,
+            error_types,
+            axis_role: slice.axis_role,
+        })
     }
 }
 
@@ -140,8 +148,8 @@ impl EvalContext for CellEvalContext<'_> {
     fn eval_range(&self, expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
         match expr {
             Expr::Reference(table_ref) => {
-                let (rows, cols, values, _) = self.resolve_evaluated_table_ref(table_ref)?;
-                Ok((rows, cols, values))
+                let grid = self.resolve_evaluated_table_ref(table_ref)?;
+                Ok((grid.rows, grid.cols, grid.values))
             }
             Expr::Literal(_)
             | Expr::Unary { .. }
@@ -167,7 +175,13 @@ impl EvalContext for CellEvalContext<'_> {
                 } else {
                     None
                 };
-                Ok((1, 1, vec![val], vec![err_vt]))
+                Ok(TypedRangeGrid {
+                    rows: 1,
+                    cols: 1,
+                    values: vec![val],
+                    error_types: vec![err_vt],
+                    axis_role: AxisRole::Measure,
+                })
             }
         }
     }

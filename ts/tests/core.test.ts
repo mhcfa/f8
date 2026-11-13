@@ -1187,6 +1187,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         '@table["r1".."r1", @col]',
         'ISBLANK(@table["r1".."r1", @col])',
         "COUNT(10)",
+        'COUNT(@table["a", @col])',
         'SUMPRODUCT("abc")',
         'SUMIFS(@table["r1".."r2", @col], @table["r1".."r1", @col], 10)',
         "CHOOSE(5, 10, 20)",
@@ -1246,7 +1247,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       tbl.addRow("paren_cmp", { expr: "(1 = 1) = TRUE" });
       tbl.addRow("and_sparse", { expr: 'AND(@table["f1".."f2", @col])' });
       tbl.addRow("b_eq_zero", { expr: '(@table["b", @col] = 0)' });
-      tbl.addRow("count_a", { expr: 'COUNT(@table["a", @col])' });
+      tbl.addRow("count_a", { expr: 'COUNT(@table["a".."a", @col])' });
       tbl.addRow("count_b", { expr: 'COUNT(@table["b", @col])' });
       tbl.addRow("counta_a", { expr: 'COUNTA(@table["a", @col])' });
       tbl.addRow("counta_b", { expr: 'COUNTA(@table["b", @col])' });
@@ -1509,6 +1510,299 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "ok_ifna_na_num", "c1")).toBe(10);
       expect(compiled.value("T", "ok_ifna_na_txt", "c1")).toBe("fallback");
       expect(compiled.value("T", "ok_and_na_slice", "c1")).toBe("#N/A");
+    });
+
+    it("(m) enforces Cluster B descriptor roles, sparse slice aggregation, and strict date/annuity/basis domains", () => {
+      // 1. Stage A & Stage B rejections throw exact F8Error (never host TypeError or 'dormant')
+      const badClusterB: readonly (readonly [string, string])[] = [
+        // Scenario 1: Descriptor references in numeric/financial aggregations
+        ['SUM(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        ['SUM(@table["r1", "line_item"])', "cannot reference descriptor column"],
+        ['AVERAGE(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        ['MIN(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        ['MAX(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        ['MEDIAN(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        ['COUNT(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        [
+          'SUMPRODUCT(@table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])',
+          "cannot reference descriptor column",
+        ],
+        [
+          'SUMIFS(@table["r1".."r3", "line_item"], @table["r1".."r3", "c1"], 10)',
+          "cannot reference descriptor column",
+        ],
+        ['NPV(0.1, @table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        ['IRR(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
+        [
+          'XNPV(0.1, @table["r1".."r3", "line_item"], @table["d1".."d3", "c1"])',
+          "cannot reference descriptor column",
+        ],
+        [
+          'XIRR(@table["cf1".."cf3", "c1"], @table["r1".."r3", "line_item"])',
+          "cannot reference descriptor column",
+        ],
+        [
+          'IF(FALSE, SUM(@table["r1".."r3", "line_item"]), 0)',
+          "cannot reference descriptor column",
+        ],
+        // Scenario 2: Non-numeric cells, SingleCell Empty refs, and NPV/IRR/XNPV/XIRR Empty holes
+        ['SUM(@table["txt1".."txt2", "c1"])', "expected number, found text"],
+        ['SUM(@table["bool1".."bool2", "c1"])', "expected number, found boolean"],
+        ["SUM(TRUE, 5)", "expected number, found boolean"],
+        ['SUM(@table["null1", "c1"])', "expected number, found empty"],
+        ['AVERAGE(@table["r1", "c1"], @table["null1", "c1"])', "expected number, found empty"],
+        ['MIN(@table["txt1".."txt2", "c1"])', "expected number, found text"],
+        ['MAX(@table["null1", "c1"])', "expected number, found empty"],
+        ['MEDIAN(@table["bool1".."bool2", "c1"])', "expected number, found boolean"],
+        ['COUNT(@table["txt1".."txt2", "c1"])', "expected number, found text"],
+        ['COUNT(@table["null1", "c1"])', "expected number, found empty"],
+        [
+          'SUMPRODUCT(@table["txt1".."txt2", "c1"], @table["r1".."r2", "c1"])',
+          "expected number, found text",
+        ],
+        [
+          'SUMPRODUCT(@table["bool1".."bool2", "c1"], @table["r1".."r2", "c1"])',
+          "expected number, found boolean",
+        ],
+        [
+          'SUMIFS(@table["r1".."txt1", "c1"], @table["r1".."txt1", "line_item"], "Rev")',
+          "expected number, found text",
+        ],
+        ['IFERROR(SUM(@table["null1", "c1"]), 0)', "expected number, found empty"],
+        ['NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"],
+        ['IRR(@table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"],
+        [
+          'XNPV(0.1, @table["cf_hole1".."cf_hole3", "c1"], @table["d1".."d3", "c1"])',
+          "expected number, found empty",
+        ],
+        [
+          'XIRR(@table["cf1".."cf3", "c1"], @table["d_hole1".."d_hole3", "c1"])',
+          "expected number, found empty",
+        ],
+        // Scenario 4: Strict calendar DATE, {0, 1} annuity type, and 0..=4 YEARFRAC basis
+        ["DATE(24, 12, 31)", "invalid year 24 in 'DATE': expected 4-digit year in 1900..=9999"],
+        ["DATE(0, 1, 1)", "invalid year 0 in 'DATE': expected 4-digit year in 1900..=9999"],
+        ["DATE(1899, 12, 31)", "invalid year 1899 in 'DATE': expected 4-digit year in 1900..=9999"],
+        ["DATE(-1, 1, 1)", "invalid year -1 in 'DATE': expected 4-digit year in 1900..=9999"],
+        ["DATE(10000, 1, 1)", "invalid year 10000 in 'DATE': expected 4-digit year in 1900..=9999"],
+        ["DATE(2024, 0, 1)", "invalid month 0 in 'DATE': expected integer in 1..=12"],
+        ["DATE(2024, 14, 1)", "invalid month 14 in 'DATE': expected integer in 1..=12"],
+        ["DATE(2024, 1, 0)", "invalid day 0 in 'DATE': expected integer in 1..=31"],
+        ["DATE(2024, 6, 31)", "invalid day 31 in 'DATE': expected integer in 1..=30"],
+        ["DATE(2025, 2, 29)", "invalid day 29 in 'DATE': expected integer in 1..=28"],
+        ["DATE(9999, 13, 1)", "invalid month 13 in 'DATE': expected integer in 1..=12"],
+        ["IF(FALSE, DATE(2024, 6, 31), 45292)", "invalid day 31 in 'DATE'"],
+        ['DATE(@table["yr_ok", "c1"], 14, 1)', "invalid month 14 in 'DATE'"],
+        ['IFERROR(DATE(@table["yr_24", "c1"], 1, 1), 0)', "invalid year 24 in 'DATE'"],
+        ['IF(FALSE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"],
+        ['DATE(2025, 2, @table["day_29", "c1"])', "invalid day 29 in 'DATE'"],
+        ['DATE(@table["yr_24", "c1"], 1 / 0, 1)', "invalid year 24 in 'DATE'"],
+        ["PMT(0.05, 10, -1000, 0, 2)", "invalid payment timing 'type' 2 in 'PMT'"],
+        ["IPMT(0.05, 1, 10, -1000, 0, -1)", "invalid payment timing 'type' -1 in 'IPMT'"],
+        ["PPMT(0.05, 1, 10, -1000, 0, 3)", "invalid payment timing 'type' 3 in 'PPMT'"],
+        ["YEARFRAC(45292, 45658, 5)", "invalid day-count 'basis' 5 in 'YEARFRAC'"],
+        // Scenario 5: Input serial bounds (1..=2958465), swapped XNPV/XIRR dates, ShapePolicy precedence
+        ["YEAR(0)", "expected serial in 1..=2958465"],
+        ["MONTH(0.5)", "expected serial in 1..=2958465"],
+        ["DAY(-1)", "expected serial in 1..=2958465"],
+        ["DAYS(45292, 0)", "expected serial in 1..=2958465"],
+        ["EDATE(0, 1)", "expected serial in 1..=2958465"],
+        ["EOMONTH(2958466, 0)", "expected serial in 1..=2958465"],
+        ["YEARFRAC(0, 45292, 0)", "expected serial in 1..=2958465"],
+        ['IF(FALSE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"],
+        [
+          'XNPV(0.1, @table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
+          "expected serial in 1..=2958465",
+        ],
+        [
+          'XIRR(@table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
+          "expected serial in 1..=2958465",
+        ],
+        [
+          'XNPV(-2.0, @table["r1".."r2", "c1".."c2"], @table["r1".."r2", "c1".."c2"])',
+          "requires a 1D slice, found 2x2",
+        ],
+        [
+          'XNPV(0.1, @table["cf1".."cf3", "c1"], @table["zero_serial".."zero_serial", "c1"])',
+          "length mismatch in 'XNPV'",
+        ],
+      ];
+
+      for (const [formula, expectedSubstr] of badClusterB) {
+        const errModel = new Model({ name: "ClusterBErrorModel" });
+        const errTbl = errModel.addSheet("Main").addTable("T", "Cluster B Error");
+        errTbl
+          .addColumn("line_item", { role: "descriptor", header: "Item" })
+          .addColumn("c1", { role: "measure", header: "C1" })
+          .addColumn("c2", { role: "measure", header: "C2" });
+        errTbl.addRow("r1", { cells: { line_item: "Rev", c1: 10, c2: 1 } });
+        errTbl.addRow("r2", { cells: { line_item: "Cost", c1: 20, c2: 2 } });
+        errTbl.addRow("r3", { cells: { line_item: "OpEx", c1: 30, c2: 3 } });
+        errTbl.addRow("txt1", { cells: { line_item: "T1", c1: "Alpha", c2: 0 } });
+        errTbl.addRow("txt2", { cells: { line_item: "T2", c1: "Beta", c2: 0 } });
+        errTbl.addRow("bool1", { cells: { line_item: "B1", c1: true, c2: 0 } });
+        errTbl.addRow("bool2", { cells: { line_item: "B2", c1: false, c2: 0 } });
+        errTbl.addRow("null1", { cells: { line_item: "N1", c1: null, c2: 0 } });
+        errTbl.addRow("cf1", { cells: { line_item: "CF1", c1: -1000, c2: 0 } });
+        errTbl.addRow("cf2", { cells: { line_item: "CF2", c1: 600, c2: 0 } });
+        errTbl.addRow("cf3", { cells: { line_item: "CF3", c1: 600, c2: 0 } });
+        errTbl.addRow("cf_hole1", { cells: { line_item: "CFH1", c1: -1000, c2: 0 } });
+        errTbl.addRow("cf_hole2", { cells: { line_item: "CFH2", c1: null, c2: 0 } });
+        errTbl.addRow("cf_hole3", { cells: { line_item: "CFH3", c1: 1200, c2: 0 } });
+        errTbl.addRow("d1", { cells: { line_item: "D1", c1: 45292, c2: 0 } });
+        errTbl.addRow("d2", { cells: { line_item: "D2", c1: 45658, c2: 0 } });
+        errTbl.addRow("d3", { cells: { line_item: "D3", c1: 46023, c2: 0 } });
+        errTbl.addRow("d_hole1", { cells: { line_item: "DH1", c1: 45292, c2: 0 } });
+        errTbl.addRow("d_hole2", { cells: { line_item: "DH2", c1: null, c2: 0 } });
+        errTbl.addRow("d_hole3", { cells: { line_item: "DH3", c1: 46023, c2: 0 } });
+        errTbl.addRow("yr_ok", { cells: { line_item: "YOK", c1: 2024, c2: 0 } });
+        errTbl.addRow("yr_24", { cells: { line_item: "Y24", c1: 24, c2: 0 } });
+        errTbl.addRow("day_29", { cells: { line_item: "D29", c1: 29, c2: 0 } });
+        errTbl.addRow("zero_serial", { cells: { line_item: "ZS", c1: 0, c2: 0 } });
+        errTbl.addRow("target", {
+          cells: { line_item: "Target", c1: new Cell({ expr: formula }), c2: 0 },
+        });
+
+        let caught: unknown;
+        try {
+          errModel.compile();
+        } catch (err: unknown) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(F8Error);
+        expect(caught instanceof F8Error && caught.constructor === F8Error).toBe(true);
+        expect(caught instanceof TypeError).toBe(false);
+        if (caught instanceof F8Error) {
+          expect(caught.message.includes("dormant")).toBe(false);
+          expect(caught.message).toContain(expectedSubstr);
+        }
+      }
+
+      // 2. Valid descriptor lookups, sparse slices, COUNT error skipping, overflow #NUM!, and date parity
+      const okModel = new Model({ name: "ClusterBValidModel", theme: "corporate_navy" });
+      const okTbl = okModel.addSheet("Main").addTable("T", "Cluster B Valid");
+      okTbl
+        .addColumn("line_item", { role: "descriptor", header: "Item" })
+        .addColumn("c1", { role: "measure", header: "C1" })
+        .addColumn("w", { role: "measure", header: "Weight" });
+
+      okTbl.addRow("r1", { cells: { line_item: "Rev", c1: 10, w: 1 } });
+      okTbl.addRow("r2", { cells: { line_item: "Cost", c1: 20, w: 2 } });
+      okTbl.addRow("r3", { cells: { line_item: "OpEx", c1: 30, w: 3 } });
+
+      okTbl.addRow("sp1", { cells: { line_item: "S1", c1: null, w: 5 } });
+      okTbl.addRow("sp2", { cells: { line_item: "S2", c1: 0, w: 2 } });
+      okTbl.addRow("sp3", { cells: { line_item: "S3", c1: 20, w: 4 } });
+      okTbl.addRow("sp4", { cells: { line_item: "S4", c1: null, w: 9 } });
+
+      okTbl.addRow("an1", { cells: { line_item: "AN1", c1: null, w: 0 } });
+      okTbl.addRow("an2", { cells: { line_item: "AN2", c1: null, w: 0 } });
+
+      okTbl.addRow("er1", { cells: { line_item: "E1", c1: 10, w: 0 } });
+      okTbl.addRow("er2", { cells: { line_item: "E2", c1: new Cell({ expr: "1 / 0" }), w: 0 } });
+      okTbl.addRow("er3", { cells: { line_item: "E3", c1: 20, w: 0 } });
+
+      okTbl.addRow("big1", { cells: { line_item: "BG1", c1: 1e308, w: 1e200 } });
+      okTbl.addRow("big2", { cells: { line_item: "BG2", c1: 1e308, w: 1e200 } });
+
+      okTbl.addRow("yr_ok", { cells: { line_item: "Y", c1: 2024, w: 0 } });
+      okTbl.addRow("mo_feb", { cells: { line_item: "M", c1: 2, w: 0 } });
+      okTbl.addRow("day_29", { cells: { line_item: "D", c1: 29, w: 0 } });
+      okTbl.addRow("type_1", { cells: { line_item: "T", c1: 1, w: 0 } });
+      okTbl.addRow("basis_3", { cells: { line_item: "B", c1: 3, w: 0 } });
+      okTbl.addRow("zero_date", { cells: { line_item: "ZD", c1: 0, w: 0 }, format: "date" });
+
+      const addCheck = (rowId: string, formula: string): void => {
+        okTbl.addRow(rowId, {
+          cells: { line_item: rowId, c1: new Cell({ expr: formula }), w: 0 },
+        });
+      };
+
+      addCheck("desc_counta", 'COUNTA(@table["r1".."r3", "line_item"])');
+      addCheck(
+        "desc_xlookup",
+        'XLOOKUP("Rev", @table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])',
+      );
+      addCheck("desc_index", 'INDEX(@table["r1".."r3", "line_item"], 2)');
+      addCheck(
+        "desc_sumifs",
+        'SUMIFS(@table["r1".."r3", "c1"], @table["r1".."r3", "line_item"], "Rev")',
+      );
+      addCheck("guard_sum", 'IF(ISBLANK(@table["sp1", "c1"]), 0, SUM(@table["sp1", "c1"]))');
+
+      addCheck("sum_sparse", 'SUM(@table["sp1".."sp4", "c1"])');
+      addCheck("avg_sparse", 'AVERAGE(@table["sp1".."sp4", "c1"])');
+      addCheck("cnt_sparse", 'COUNT(@table["sp1".."sp4", "c1"])');
+      addCheck("sp_sparse", 'SUMPRODUCT(@table["sp1".."sp4", "c1"], @table["sp1".."sp4", "w"])');
+
+      addCheck("sum_all_null", 'SUM(@table["an1".."an2", "c1"])');
+      addCheck("avg_all_null", 'AVERAGE(@table["an1".."an2", "c1"])');
+      addCheck("med_all_null", 'MEDIAN(@table["an1".."an2", "c1"])');
+      addCheck("min_all_null", 'MIN(@table["an1".."an2", "c1"])');
+      addCheck("max_all_null", 'MAX(@table["an1".."an2", "c1"])');
+      addCheck("cnt_all_null", 'COUNT(@table["an1".."an2", "c1"])');
+
+      addCheck("cnt_err_slice", 'COUNT(@table["er1".."er3", "c1"])');
+      addCheck("sum_err_slice", 'SUM(@table["er1".."er3", "c1"])');
+
+      addCheck("sum_ovf", 'SUM(@table["big1".."big2", "c1"])');
+      addCheck("sp_ovf", 'SUMPRODUCT(@table["big1".."big1", "w"], @table["big2".."big2", "w"])');
+      addCheck(
+        "sumifs_ovf",
+        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], "BG*")',
+      );
+      addCheck("max_big", 'MAX(@table["big1".."big2", "c1"])');
+
+      addCheck("date_1900_leap", "DATE(1900, 2, 29)");
+      addCheck(
+        "date_dyn",
+        'DATE(@table["yr_ok", "c1"], @table["mo_feb", "c1"], @table["day_29", "c1"])',
+      );
+      addCheck("pmt_dyn", 'PMT(0.05, 10, -1000, 0, @table["type_1", "c1"])');
+      addCheck("yf_dyn", 'YEARFRAC(45292, 45658, @table["basis_3", "c1"])');
+      addCheck("yr_min", "YEAR(1)");
+      addCheck("yr_max", "YEAR(2958465.9)");
+      addCheck("edate_udf", "EDATE(DATE(1900, 1, 15), -2)");
+      addCheck("eomonth_ovf", "EOMONTH(DATE(9999, 12, 1), 2)");
+      addCheck("yr_edate_bubble", "YEAR(EDATE(DATE(1900, 1, 15), -2))");
+
+      const compiled = okModel.compile();
+      expect(compiled.num("T", "desc_counta", "c1")).toBe(3);
+      expect(compiled.num("T", "desc_xlookup", "c1")).toBe(10);
+      expect(compiled.value("T", "desc_index", "c1")).toBe("Cost");
+      expect(compiled.num("T", "desc_sumifs", "c1")).toBe(10);
+      expect(compiled.num("T", "guard_sum", "c1")).toBe(0);
+
+      expect(compiled.num("T", "sum_sparse", "c1")).toBe(20);
+      expect(compiled.num("T", "avg_sparse", "c1")).toBe(10);
+      expect(compiled.num("T", "cnt_sparse", "c1")).toBe(2);
+      expect(compiled.num("T", "sp_sparse", "c1")).toBe(80);
+
+      expect(compiled.num("T", "sum_all_null", "c1")).toBe(0);
+      expect(compiled.value("T", "avg_all_null", "c1")).toBe("#DIV/0!");
+      expect(compiled.value("T", "med_all_null", "c1")).toBe("#NUM!");
+      expect(compiled.num("T", "min_all_null", "c1")).toBe(0);
+      expect(compiled.num("T", "max_all_null", "c1")).toBe(0);
+      expect(compiled.num("T", "cnt_all_null", "c1")).toBe(0);
+
+      expect(compiled.num("T", "cnt_err_slice", "c1")).toBe(2);
+      expect(compiled.value("T", "sum_err_slice", "c1")).toBe("#DIV/0!");
+
+      expect(compiled.value("T", "sum_ovf", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "sp_ovf", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "sumifs_ovf", "c1")).toBe("#NUM!");
+      expect(compiled.num("T", "max_big", "c1")).toBe(1e308);
+
+      expect(compiled.num("T", "date_1900_leap", "c1")).toBe(60);
+      expect(compiled.num("T", "date_dyn", "c1")).toBe(45351);
+      expect(compiled.num("T", "pmt_dyn", "c1")).toBeGreaterThan(120);
+      expect(compiled.num("T", "yf_dyn", "c1")).toBeCloseTo(366 / 365, 10);
+      expect(compiled.num("T", "yr_min", "c1")).toBe(1900);
+      expect(compiled.num("T", "yr_max", "c1")).toBe(9999);
+      expect(compiled.formatted("T", "zero_date", "c1")).toBe("1900-01-00");
+      expect(compiled.value("T", "edate_udf", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "eomonth_ovf", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "yr_edate_bubble", "c1")).toBe("#NUM!");
     });
   });
 });

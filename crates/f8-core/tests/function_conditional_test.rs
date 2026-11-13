@@ -9,7 +9,8 @@ use f8_core::expr::ast::Expr;
 use f8_core::functions::{
     EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry, ReferenceKind,
 };
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::model::table::AxisRole;
+use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context for testing function execution.
 struct TestEvalContext;
@@ -25,7 +26,7 @@ impl EvalContext for TestEvalContext {
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
-    FunctionArg::array(rows, cols, values, ReferenceKind::Slice)
+    FunctionArg::array(rows, cols, values, ReferenceKind::Slice, AxisRole::Measure)
 }
 
 // ============================================================================
@@ -81,36 +82,210 @@ fn test_scenario_1_sumifs_multi_criteria_numeric_and_text() {
 }
 
 #[test]
-fn test_sumifs_text_empty_and_boolean_ignored_in_sum_range() {
+fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
     let registry = FunctionRegistry::standard();
     let sumifs = registry.lookup("SUMIFS").unwrap();
+    let avgifs = registry.lookup("AVERAGEIFS").unwrap();
+    let minifs = registry.lookup("MINIFS").unwrap();
+    let maxifs = registry.lookup("MAXIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // sum_range with mixed types
-    let sum_range = make_array(
+    // Sparse Empty in syntactic Slice target range is skipped cleanly
+    let sparse_target = make_array(
         1,
         4,
         vec![
             CellValue::Number(100.0),
-            CellValue::Text("text".into()),
             CellValue::Empty,
-            CellValue::Boolean(true),
+            CellValue::Number(50.0),
+            CellValue::Empty,
         ],
     );
-    let cr1 = make_array(
+    let cr_desc = FunctionArg::array(
         1,
         4,
         vec![
-            CellValue::Number(1.0),
-            CellValue::Number(1.0),
-            CellValue::Number(1.0),
-            CellValue::Number(1.0),
+            CellValue::Text("Alpha".into()),
+            CellValue::Text("Alpha".into()),
+            CellValue::Text("Alpha".into()),
+            CellValue::Text("Beta".into()),
+        ],
+        ReferenceKind::Slice,
+        AxisRole::Descriptor,
+    );
+    let crit_alpha = FunctionArg::Scalar(CellValue::Text("Alpha".into()));
+
+    assert_eq!(
+        sumifs
+            .evaluate(
+                &[sparse_target.clone(), cr_desc.clone(), crit_alpha.clone()],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(150.0)
+    );
+    assert_eq!(
+        avgifs
+            .evaluate(
+                &[sparse_target.clone(), cr_desc.clone(), crit_alpha.clone()],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(75.0)
+    );
+    assert_eq!(
+        minifs
+            .evaluate(
+                &[sparse_target.clone(), cr_desc.clone(), crit_alpha.clone()],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(50.0)
+    );
+    assert_eq!(
+        maxifs
+            .evaluate(&[sparse_target, cr_desc.clone(), crit_alpha.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(100.0)
+    );
+
+    // Text or Boolean in target_range fails eagerly even when its row is unmatched
+    for (bad_cell, found_type) in [
+        (CellValue::Text("text".into()), ValueType::Text),
+        (CellValue::Boolean(true), ValueType::Boolean),
+    ] {
+        let mixed_target = make_array(
+            1,
+            4,
+            vec![
+                CellValue::Number(100.0),
+                CellValue::Number(50.0),
+                CellValue::Empty,
+                bad_cell, // Row 4 is "Beta" (unmatched by "Alpha"), still rejected eagerly
+            ],
+        );
+        for (fn_name, param_name) in [
+            ("SUMIFS", "sum_range"),
+            ("AVERAGEIFS", "average_range"),
+            ("MINIFS", "min_range"),
+            ("MAXIFS", "max_range"),
+        ] {
+            let func = registry.lookup(fn_name).unwrap();
+            assert_eq!(
+                func.evaluate(
+                    &[mixed_target.clone(), cr_desc.clone(), crit_alpha.clone()],
+                    &ctx,
+                ),
+                Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function: fn_name,
+                    param: param_name,
+                    position: 1,
+                    expected: ExpectedType::Number,
+                    found: found_type,
+                }))
+            );
+        }
+    }
+
+    // SingleCell Empty in target_range is rejected, while SingleCell Empty in criteria_range is allowed
+    let single_empty_target = FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Empty],
+        ReferenceKind::SingleCell,
+        AxisRole::Measure,
+    );
+    let single_crit_range = FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Empty],
+        ReferenceKind::SingleCell,
+        AxisRole::Descriptor,
+    );
+    assert_eq!(
+        sumifs.evaluate(
+            &[
+                single_empty_target,
+                single_crit_range.clone(),
+                FunctionArg::Scalar(CellValue::Text("".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "SUMIFS",
+            param: "sum_range",
+            position: 1,
+            expected: ExpectedType::Number,
+            found: ValueType::Empty,
+        }))
+    );
+    let single_num_target = FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Number(42.0)],
+        ReferenceKind::SingleCell,
+        AxisRole::Measure,
+    );
+    assert_eq!(
+        sumifs
+            .evaluate(
+                &[
+                    single_num_target,
+                    single_crit_range,
+                    FunctionArg::Scalar(CellValue::Text("".into())),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Number(42.0)
+    );
+
+    // Descriptor target_range fails with DescriptorReferenceNotAllowed
+    let desc_target = FunctionArg::array(
+        1,
+        4,
+        vec![CellValue::Number(10.0); 4],
+        ReferenceKind::Slice,
+        AxisRole::Descriptor,
+    );
+    assert_eq!(
+        sumifs.evaluate(&[desc_target, cr_desc, crit_alpha.clone()], &ctx),
+        Err(FunctionError::DescriptorReferenceNotAllowed {
+            function: "SUMIFS",
+            param: "sum_range",
+            position: 1,
+        })
+    );
+
+    // Overflow in SUMIFS / AVERAGEIFS routes through CellValue::number -> #NUM!
+    let extreme_target = make_array(
+        1,
+        2,
+        vec![CellValue::Number(1e308), CellValue::Number(1e308)],
+    );
+    let cr_two = make_array(
+        1,
+        2,
+        vec![
+            CellValue::Text("Alpha".into()),
+            CellValue::Text("Alpha".into()),
         ],
     );
-    let crit1 = FunctionArg::Scalar(CellValue::Number(1.0));
-
-    let res = sumifs.evaluate(&[sum_range, cr1, crit1], &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(100.0));
+    assert_eq!(
+        sumifs
+            .evaluate(
+                &[extreme_target.clone(), cr_two.clone(), crit_alpha.clone()],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Num)
+    );
+    assert_eq!(
+        avgifs
+            .evaluate(&[extreme_target, cr_two, crit_alpha], &ctx)
+            .unwrap(),
+        CellValue::Error(ExcelError::Num)
+    );
 }
 
 // ============================================================================

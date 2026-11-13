@@ -1,19 +1,18 @@
 //! Calendar component extraction and day difference functions (`YEAR`, `MONTH`, `DAY`, `DAYS`).
 
 use crate::functions::common::extract_scalar_number;
-use crate::functions::date::serial::{DateSerial, validate_date_serial};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, ValueType};
+use crate::value::{CellValue, DateSerial, ValueType, validate_date_serial};
 
 static SERIAL_NUMBER_PARAM: &[ParameterDef] = &[ParameterDef::required(
     "serial_number",
     "The date of the year/month/day you want to find.",
     ParamKind::Scalar,
-    ParamType::Number,
+    ParamType::DateSerial,
 )];
 
 /// `YEAR(serial_number)`: Returns the year corresponding to a serial date (1900-9999).
@@ -144,13 +143,13 @@ static DAYS_PARAMS: &[ParameterDef] = &[
         "end_date",
         "The end date for the date calculation.",
         ParamKind::Scalar,
-        ParamType::Number,
+        ParamType::DateSerial,
     ),
     ParameterDef::required(
         "start_date",
         "The start date for the date calculation.",
         ParamKind::Scalar,
-        ParamType::Number,
+        ParamType::DateSerial,
     ),
 ];
 

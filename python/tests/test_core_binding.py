@@ -1291,6 +1291,7 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
         '@table["r1".."r1", @col]',
         'ISBLANK(@table["r1".."r1", @col])',
         "COUNT(10)",
+        'COUNT(@table["a", @col])',
         'SUMPRODUCT("abc")',
         'SUMIFS(@table["r1".."r2", @col], @table["r1".."r1", @col], 10)',
         "CHOOSE(5, 10, 20)",
@@ -1345,7 +1346,7 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
     tbl.add_row("paren_cmp", expr="(1 = 1) = TRUE")
     tbl.add_row("and_sparse", expr='AND(@table["f1".."f2", @col])')
     tbl.add_row("b_eq_zero", expr='(@table["b", @col] = 0)')
-    tbl.add_row("count_a", expr='COUNT(@table["a", @col])')
+    tbl.add_row("count_a", expr='COUNT(@table["a".."a", @col])')
     tbl.add_row("count_b", expr='COUNT(@table["b", @col])')
     tbl.add_row("counta_a", expr='COUNTA(@table["a", @col])')
     tbl.add_row("counta_b", expr='COUNTA(@table["b", @col])')
@@ -1627,3 +1628,290 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
     assert compiled.num("T", "ok_ifna_na_num", "c1") == 10.0
     assert compiled.value("T", "ok_ifna_na_txt", "c1") == "fallback"
     assert compiled.value("T", "ok_and_na_slice", "c1") == "#N/A"
+
+
+def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains() -> None:
+    # 1. Stage A & Stage B rejections raise exact F8Error (never host TypeError or 'dormant')
+    bad_cluster_b: tuple[tuple[str, str], ...] = (
+        # Scenario 1: Descriptor references in numeric/financial aggregations
+        ('SUM(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        ('SUM(@table["r1", "line_item"])', "cannot reference descriptor column"),
+        ('AVERAGE(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        ('MIN(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        ('MAX(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        ('MEDIAN(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        ('COUNT(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        (
+            'SUMPRODUCT(@table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])',
+            "cannot reference descriptor column",
+        ),
+        (
+            'SUMIFS(@table["r1".."r3", "line_item"], @table["r1".."r3", "c1"], 10)',
+            "cannot reference descriptor column",
+        ),
+        ('NPV(0.1, @table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        ('IRR(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"),
+        (
+            'XNPV(0.1, @table["r1".."r3", "line_item"], @table["d1".."d3", "c1"])',
+            "cannot reference descriptor column",
+        ),
+        (
+            'XIRR(@table["cf1".."cf3", "c1"], @table["r1".."r3", "line_item"])',
+            "cannot reference descriptor column",
+        ),
+        (
+            'IF(FALSE, SUM(@table["r1".."r3", "line_item"]), 0)',
+            "cannot reference descriptor column",
+        ),
+        # Scenario 2: Non-numeric cells, SingleCell Empty refs, and NPV/IRR/XNPV/XIRR Empty holes
+        ('SUM(@table["txt1".."txt2", "c1"])', "expected number, found text"),
+        ('SUM(@table["bool1".."bool2", "c1"])', "expected number, found boolean"),
+        ("SUM(TRUE, 5)", "expected number, found boolean"),
+        ('SUM(@table["null1", "c1"])', "expected number, found empty"),
+        ('AVERAGE(@table["r1", "c1"], @table["null1", "c1"])', "expected number, found empty"),
+        ('MIN(@table["txt1".."txt2", "c1"])', "expected number, found text"),
+        ('MAX(@table["null1", "c1"])', "expected number, found empty"),
+        ('MEDIAN(@table["bool1".."bool2", "c1"])', "expected number, found boolean"),
+        ('COUNT(@table["txt1".."txt2", "c1"])', "expected number, found text"),
+        ('COUNT(@table["null1", "c1"])', "expected number, found empty"),
+        (
+            'SUMPRODUCT(@table["txt1".."txt2", "c1"], @table["r1".."r2", "c1"])',
+            "expected number, found text",
+        ),
+        (
+            'SUMPRODUCT(@table["bool1".."bool2", "c1"], @table["r1".."r2", "c1"])',
+            "expected number, found boolean",
+        ),
+        (
+            'SUMIFS(@table["r1".."txt1", "c1"], @table["r1".."txt1", "line_item"], "Rev")',
+            "expected number, found text",
+        ),
+        ('IFERROR(SUM(@table["null1", "c1"]), 0)', "expected number, found empty"),
+        ('NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"),
+        ('IRR(@table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"),
+        (
+            'XNPV(0.1, @table["cf_hole1".."cf_hole3", "c1"], @table["d1".."d3", "c1"])',
+            "expected number, found empty",
+        ),
+        (
+            'XIRR(@table["cf1".."cf3", "c1"], @table["d_hole1".."d_hole3", "c1"])',
+            "expected number, found empty",
+        ),
+        # Scenario 4: Strict calendar DATE, {0, 1} annuity type, and 0..=4 YEARFRAC basis
+        ("DATE(24, 12, 31)", "invalid year 24 in 'DATE': expected 4-digit year in 1900..=9999"),
+        ("DATE(0, 1, 1)", "invalid year 0 in 'DATE': expected 4-digit year in 1900..=9999"),
+        (
+            "DATE(1899, 12, 31)",
+            "invalid year 1899 in 'DATE': expected 4-digit year in 1900..=9999",
+        ),
+        ("DATE(-1, 1, 1)", "invalid year -1 in 'DATE': expected 4-digit year in 1900..=9999"),
+        (
+            "DATE(10000, 1, 1)",
+            "invalid year 10000 in 'DATE': expected 4-digit year in 1900..=9999",
+        ),
+        ("DATE(2024, 0, 1)", "invalid month 0 in 'DATE': expected integer in 1..=12"),
+        ("DATE(2024, 14, 1)", "invalid month 14 in 'DATE': expected integer in 1..=12"),
+        ("DATE(2024, 1, 0)", "invalid day 0 in 'DATE': expected integer in 1..=31"),
+        ("DATE(2024, 6, 31)", "invalid day 31 in 'DATE': expected integer in 1..=30"),
+        ("DATE(2025, 2, 29)", "invalid day 29 in 'DATE': expected integer in 1..=28"),
+        ("DATE(9999, 13, 1)", "invalid month 13 in 'DATE': expected integer in 1..=12"),
+        ("IF(FALSE, DATE(2024, 6, 31), 45292)", "invalid day 31 in 'DATE'"),
+        ('DATE(@table["yr_ok", "c1"], 14, 1)', "invalid month 14 in 'DATE'"),
+        ('IFERROR(DATE(@table["yr_24", "c1"], 1, 1), 0)', "invalid year 24 in 'DATE'"),
+        ('IF(FALSE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"),
+        ('DATE(2025, 2, @table["day_29", "c1"])', "invalid day 29 in 'DATE'"),
+        ('DATE(@table["yr_24", "c1"], 1 / 0, 1)', "invalid year 24 in 'DATE'"),
+        ("PMT(0.05, 10, -1000, 0, 2)", "invalid payment timing 'type' 2 in 'PMT'"),
+        ("IPMT(0.05, 1, 10, -1000, 0, -1)", "invalid payment timing 'type' -1 in 'IPMT'"),
+        ("PPMT(0.05, 1, 10, -1000, 0, 3)", "invalid payment timing 'type' 3 in 'PPMT'"),
+        ("YEARFRAC(45292, 45658, 5)", "invalid day-count 'basis' 5 in 'YEARFRAC'"),
+        # Scenario 5: Input serial bounds (1..=2958465), swapped XNPV/XIRR dates, ShapePolicy order
+        ("YEAR(0)", "expected serial in 1..=2958465"),
+        ("MONTH(0.5)", "expected serial in 1..=2958465"),
+        ("DAY(-1)", "expected serial in 1..=2958465"),
+        ("DAYS(45292, 0)", "expected serial in 1..=2958465"),
+        ("EDATE(0, 1)", "expected serial in 1..=2958465"),
+        ("EOMONTH(2958466, 0)", "expected serial in 1..=2958465"),
+        ("YEARFRAC(0, 45292, 0)", "expected serial in 1..=2958465"),
+        ('IF(FALSE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"),
+        (
+            'XNPV(0.1, @table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
+            "expected serial in 1..=2958465",
+        ),
+        (
+            'XIRR(@table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
+            "expected serial in 1..=2958465",
+        ),
+        (
+            'XNPV(-2.0, @table["r1".."r2", "c1".."c2"], @table["r1".."r2", "c1".."c2"])',
+            "requires a 1D slice, found 2x2",
+        ),
+        (
+            'XNPV(0.1, @table["cf1".."cf3", "c1"], @table["zero_serial".."zero_serial", "c1"])',
+            "length mismatch in 'XNPV'",
+        ),
+    )
+
+    for formula, expected_substr in bad_cluster_b:
+        err_model = f8.Model(name="ClusterBErrorModel")
+        err_tbl = err_model.add_sheet("Main").add_table("T", title="Cluster B Error")
+        err_tbl.add_column("line_item", role="descriptor", header="Item")
+        err_tbl.add_column("c1", role="measure", header="C1")
+        err_tbl.add_column("c2", role="measure", header="C2")
+        err_tbl.add_row("r1", cells={"line_item": "Rev", "c1": 10.0, "c2": 1.0})
+        err_tbl.add_row("r2", cells={"line_item": "Cost", "c1": 20.0, "c2": 2.0})
+        err_tbl.add_row("r3", cells={"line_item": "OpEx", "c1": 30.0, "c2": 3.0})
+        err_tbl.add_row("txt1", cells={"line_item": "T1", "c1": "Alpha", "c2": 0.0})
+        err_tbl.add_row("txt2", cells={"line_item": "T2", "c1": "Beta", "c2": 0.0})
+        err_tbl.add_row("bool1", cells={"line_item": "B1", "c1": True, "c2": 0.0})
+        err_tbl.add_row("bool2", cells={"line_item": "B2", "c1": False, "c2": 0.0})
+        err_tbl.add_row("null1", cells={"line_item": "N1", "c1": None, "c2": 0.0})
+        err_tbl.add_row("cf1", cells={"line_item": "CF1", "c1": -1000.0, "c2": 0.0})
+        err_tbl.add_row("cf2", cells={"line_item": "CF2", "c1": 600.0, "c2": 0.0})
+        err_tbl.add_row("cf3", cells={"line_item": "CF3", "c1": 600.0, "c2": 0.0})
+        err_tbl.add_row("cf_hole1", cells={"line_item": "CFH1", "c1": -1000.0, "c2": 0.0})
+        err_tbl.add_row("cf_hole2", cells={"line_item": "CFH2", "c1": None, "c2": 0.0})
+        err_tbl.add_row("cf_hole3", cells={"line_item": "CFH3", "c1": 1200.0, "c2": 0.0})
+        err_tbl.add_row("d1", cells={"line_item": "D1", "c1": 45292.0, "c2": 0.0})
+        err_tbl.add_row("d2", cells={"line_item": "D2", "c1": 45658.0, "c2": 0.0})
+        err_tbl.add_row("d3", cells={"line_item": "D3", "c1": 46023.0, "c2": 0.0})
+        err_tbl.add_row("d_hole1", cells={"line_item": "DH1", "c1": 45292.0, "c2": 0.0})
+        err_tbl.add_row("d_hole2", cells={"line_item": "DH2", "c1": None, "c2": 0.0})
+        err_tbl.add_row("d_hole3", cells={"line_item": "DH3", "c1": 46023.0, "c2": 0.0})
+        err_tbl.add_row("yr_ok", cells={"line_item": "YOK", "c1": 2024.0, "c2": 0.0})
+        err_tbl.add_row("yr_24", cells={"line_item": "Y24", "c1": 24.0, "c2": 0.0})
+        err_tbl.add_row("day_29", cells={"line_item": "D29", "c1": 29.0, "c2": 0.0})
+        err_tbl.add_row("zero_serial", cells={"line_item": "ZS", "c1": 0.0, "c2": 0.0})
+        err_tbl.add_row(
+            "target",
+            cells={"line_item": "Target", "c1": f8.Cell(expr=formula), "c2": 0.0},
+        )
+        with pytest.raises(F8Error) as b_exc:
+            err_model.compile()
+        assert type(b_exc.value) is F8Error
+        assert not isinstance(b_exc.value, TypeError)
+        assert "dormant" not in b_exc.value.message
+        assert expected_substr in b_exc.value.message
+
+    # 2. Valid descriptor lookups, sparse slices, COUNT error skipping, overflow #NUM!, date parity
+    ok_model = f8.Model(name="ClusterBValidModel", theme="corporate_navy")
+    ok_tbl = ok_model.add_sheet("Main").add_table("T", title="Cluster B Valid")
+    ok_tbl.add_column("line_item", role="descriptor", header="Item")
+    ok_tbl.add_column("c1", role="measure", header="C1")
+    ok_tbl.add_column("w", role="measure", header="Weight")
+
+    ok_tbl.add_row("r1", cells={"line_item": "Rev", "c1": 10.0, "w": 1.0})
+    ok_tbl.add_row("r2", cells={"line_item": "Cost", "c1": 20.0, "w": 2.0})
+    ok_tbl.add_row("r3", cells={"line_item": "OpEx", "c1": 30.0, "w": 3.0})
+
+    ok_tbl.add_row("sp1", cells={"line_item": "S1", "c1": None, "w": 5.0})
+    ok_tbl.add_row("sp2", cells={"line_item": "S2", "c1": 0.0, "w": 2.0})
+    ok_tbl.add_row("sp3", cells={"line_item": "S3", "c1": 20.0, "w": 4.0})
+    ok_tbl.add_row("sp4", cells={"line_item": "S4", "c1": None, "w": 9.0})
+
+    ok_tbl.add_row("an1", cells={"line_item": "AN1", "c1": None, "w": 0.0})
+    ok_tbl.add_row("an2", cells={"line_item": "AN2", "c1": None, "w": 0.0})
+
+    ok_tbl.add_row("er1", cells={"line_item": "E1", "c1": 10.0, "w": 0.0})
+    ok_tbl.add_row("er2", cells={"line_item": "E2", "c1": f8.Cell(expr="1 / 0"), "w": 0.0})
+    ok_tbl.add_row("er3", cells={"line_item": "E3", "c1": 20.0, "w": 0.0})
+
+    ok_tbl.add_row("big1", cells={"line_item": "BG1", "c1": 1e308, "w": 1e200})
+    ok_tbl.add_row("big2", cells={"line_item": "BG2", "c1": 1e308, "w": 1e200})
+
+    ok_tbl.add_row("yr_ok", cells={"line_item": "Y", "c1": 2024.0, "w": 0.0})
+    ok_tbl.add_row("mo_feb", cells={"line_item": "M", "c1": 2.0, "w": 0.0})
+    ok_tbl.add_row("day_29", cells={"line_item": "D", "c1": 29.0, "w": 0.0})
+    ok_tbl.add_row("type_1", cells={"line_item": "T", "c1": 1.0, "w": 0.0})
+    ok_tbl.add_row("basis_3", cells={"line_item": "B", "c1": 3.0, "w": 0.0})
+    ok_tbl.add_row("zero_date", cells={"line_item": "ZD", "c1": 0.0, "w": 0.0}, format="date")
+
+    def add_check(row_id: str, formula: str) -> None:
+        ok_tbl.add_row(
+            row_id,
+            cells={"line_item": row_id, "c1": f8.Cell(expr=formula), "w": 0.0},
+        )
+
+    add_check("desc_counta", 'COUNTA(@table["r1".."r3", "line_item"])')
+    add_check(
+        "desc_xlookup", 'XLOOKUP("Rev", @table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])'
+    )
+    add_check("desc_index", 'INDEX(@table["r1".."r3", "line_item"], 2)')
+    add_check(
+        "desc_sumifs", 'SUMIFS(@table["r1".."r3", "c1"], @table["r1".."r3", "line_item"], "Rev")'
+    )
+    add_check("guard_sum", 'IF(ISBLANK(@table["sp1", "c1"]), 0, SUM(@table["sp1", "c1"]))')
+
+    add_check("sum_sparse", 'SUM(@table["sp1".."sp4", "c1"])')
+    add_check("avg_sparse", 'AVERAGE(@table["sp1".."sp4", "c1"])')
+    add_check("cnt_sparse", 'COUNT(@table["sp1".."sp4", "c1"])')
+    add_check("sp_sparse", 'SUMPRODUCT(@table["sp1".."sp4", "c1"], @table["sp1".."sp4", "w"])')
+
+    add_check("sum_all_null", 'SUM(@table["an1".."an2", "c1"])')
+    add_check("avg_all_null", 'AVERAGE(@table["an1".."an2", "c1"])')
+    add_check("med_all_null", 'MEDIAN(@table["an1".."an2", "c1"])')
+    add_check("min_all_null", 'MIN(@table["an1".."an2", "c1"])')
+    add_check("max_all_null", 'MAX(@table["an1".."an2", "c1"])')
+    add_check("cnt_all_null", 'COUNT(@table["an1".."an2", "c1"])')
+
+    add_check("cnt_err_slice", 'COUNT(@table["er1".."er3", "c1"])')
+    add_check("sum_err_slice", 'SUM(@table["er1".."er3", "c1"])')
+
+    add_check("sum_ovf", 'SUM(@table["big1".."big2", "c1"])')
+    add_check("sp_ovf", 'SUMPRODUCT(@table["big1".."big1", "w"], @table["big2".."big2", "w"])')
+    add_check(
+        "sumifs_ovf",
+        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], "BG*")',
+    )
+    add_check("max_big", 'MAX(@table["big1".."big2", "c1"])')
+
+    add_check("date_1900_leap", "DATE(1900, 2, 29)")
+    add_check(
+        "date_dyn",
+        'DATE(@table["yr_ok", "c1"], @table["mo_feb", "c1"], @table["day_29", "c1"])',
+    )
+    add_check("pmt_dyn", 'PMT(0.05, 10, -1000, 0, @table["type_1", "c1"])')
+    add_check("yf_dyn", 'YEARFRAC(45292, 45658, @table["basis_3", "c1"])')
+    add_check("yr_min", "YEAR(1)")
+    add_check("yr_max", "YEAR(2958465.9)")
+    add_check("edate_udf", "EDATE(DATE(1900, 1, 15), -2)")
+    add_check("eomonth_ovf", "EOMONTH(DATE(9999, 12, 1), 2)")
+    add_check("yr_edate_bubble", "YEAR(EDATE(DATE(1900, 1, 15), -2))")
+
+    compiled = ok_model.compile()
+    assert compiled.num("T", "desc_counta", "c1") == 3.0
+    assert compiled.num("T", "desc_xlookup", "c1") == 10.0
+    assert compiled.value("T", "desc_index", "c1") == "Cost"
+    assert compiled.num("T", "desc_sumifs", "c1") == 10.0
+    assert compiled.num("T", "guard_sum", "c1") == 0.0
+
+    assert compiled.num("T", "sum_sparse", "c1") == 20.0
+    assert compiled.num("T", "avg_sparse", "c1") == 10.0
+    assert compiled.num("T", "cnt_sparse", "c1") == 2.0
+    assert compiled.num("T", "sp_sparse", "c1") == 80.0
+
+    assert compiled.num("T", "sum_all_null", "c1") == 0.0
+    assert compiled.value("T", "avg_all_null", "c1") == "#DIV/0!"
+    assert compiled.value("T", "med_all_null", "c1") == "#NUM!"
+    assert compiled.num("T", "min_all_null", "c1") == 0.0
+    assert compiled.num("T", "max_all_null", "c1") == 0.0
+    assert compiled.num("T", "cnt_all_null", "c1") == 0.0
+
+    assert compiled.num("T", "cnt_err_slice", "c1") == 2.0
+    assert compiled.value("T", "sum_err_slice", "c1") == "#DIV/0!"
+
+    assert compiled.value("T", "sum_ovf", "c1") == "#NUM!"
+    assert compiled.value("T", "sp_ovf", "c1") == "#NUM!"
+    assert compiled.value("T", "sumifs_ovf", "c1") == "#NUM!"
+    assert compiled.num("T", "max_big", "c1") == 1e308
+
+    assert compiled.num("T", "date_1900_leap", "c1") == 60.0
+    assert compiled.num("T", "date_dyn", "c1") == 45351.0
+    assert compiled.num("T", "pmt_dyn", "c1") > 120.0
+    assert compiled.num("T", "yf_dyn", "c1") == pytest.approx(366.0 / 365.0)
+    assert compiled.num("T", "yr_min", "c1") == 1900.0
+    assert compiled.num("T", "yr_max", "c1") == 9999.0
+    assert compiled.formatted("T", "zero_date", "c1") == "1900-01-00"
+    assert compiled.value("T", "edate_udf", "c1") == "#NUM!"
+    assert compiled.value("T", "eomonth_ovf", "c1") == "#NUM!"
+    assert compiled.value("T", "yr_edate_bubble", "c1") == "#NUM!"

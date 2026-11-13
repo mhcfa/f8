@@ -117,7 +117,7 @@ static PMT_PARAMS: &[ParameterDef] = &[
         "type",
         "The integer 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::AnnuityType,
         CellValue::Number(0.0),
     ),
 ];
@@ -241,7 +241,7 @@ static AMORTIZATION_PARAMS: &[ParameterDef] = &[
         "type",
         "The integer 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::AnnuityType,
         CellValue::Number(0.0),
     ),
 ];

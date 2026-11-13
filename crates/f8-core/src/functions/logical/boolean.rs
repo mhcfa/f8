@@ -12,7 +12,8 @@ static AND_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The first condition or range to evaluate.",
     ParamKind::RangeOrArray,
     ParamType::Boolean,
-)];
+)
+.allow_empty_in_slice()];
 
 /// `AND(logical1, [logical2], ...)`: Returns TRUE if all of its arguments are TRUE.
 #[derive(Debug, Default, Clone, Copy)]
@@ -60,7 +61,8 @@ static OR_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The first condition or range to evaluate.",
     ParamKind::RangeOrArray,
     ParamType::Boolean,
-)];
+)
+.allow_empty_in_slice()];
 
 /// `OR(logical1, [logical2], ...)`: Returns TRUE if any argument is TRUE.
 #[derive(Debug, Default, Clone, Copy)]

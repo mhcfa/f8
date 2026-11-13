@@ -21,8 +21,10 @@ static SUMIFS_PARAMS: &[ParameterDef] = &[
         "sum_range",
         "The range of cells to sum if criteria are met.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only()
+    .allow_empty_in_slice(),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
@@ -57,8 +59,10 @@ static AVERAGEIFS_PARAMS: &[ParameterDef] = &[
         "average_range",
         "The range of cells to average if criteria are met.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only()
+    .allow_empty_in_slice(),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
@@ -78,8 +82,10 @@ static MINIFS_PARAMS: &[ParameterDef] = &[
         "min_range",
         "The range of cells to evaluate for the minimum value.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only()
+    .allow_empty_in_slice(),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
@@ -99,8 +105,10 @@ static MAXIFS_PARAMS: &[ParameterDef] = &[
         "max_range",
         "The range of cells to evaluate for the maximum value.",
         ParamKind::Range,
-        ParamType::Any,
-    ),
+        ParamType::Number,
+    )
+    .measure_only()
+    .allow_empty_in_slice(),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",

@@ -1367,7 +1367,7 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
         .with_format(Some(FormatPreset::Currency))
         .with_decimals(Some(1))
         .with_expr("IF(ISBLANK(T[\"a\", @col]), \"\", T[\"a\", @col])");
-    let count_a = RowSpec::new("count_a").with_expr("COUNT(T[\"a\", @col])");
+    let count_a = RowSpec::new("count_a").with_expr("COUNT(T[\"a\"..\"a\", @col])");
     let count_b = RowSpec::new("count_b").with_expr("COUNT(T[\"b\", @col])");
     let counta_a = RowSpec::new("counta_a").with_expr("COUNTA(T[\"a\", @col])");
     let counta_b = RowSpec::new("counta_b").with_expr("COUNTA(T[\"b\", @col])");
@@ -2426,4 +2426,191 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
     assert_eq!(get("ok_ifna_na_txt"), CellValue::Text("fallback".into()));
     assert_eq!(get("ok_and_na_slice"), CellValue::Error(ExcelError::Na));
     assert_eq!(get("ok_dormant_and_na_slice"), CellValue::Boolean(true));
+}
+
+#[test]
+fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness() {
+    let manifest = ProjectManifest {
+        model_name: "ClusterBTest".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+
+    let build_model_with_target = |target_formula: &str| -> TableSpec {
+        let line_item_col = ColumnSpec::descriptor("line_item", "Line Item");
+        let c1_col = ColumnSpec::new("c1");
+
+        let make_row = |id: &str, label: &str, val: CellInput| -> RowSpec {
+            RowSpec::new(id).with_cells(IndexMap::from([
+                (ColId::from("line_item"), CellInput::string(label)),
+                (ColId::from("c1"), val),
+            ]))
+        };
+
+        TableSpec {
+            id: TableId::from("T"),
+            title: "T".into(),
+            subtitle: None,
+            currency: None,
+            collapsible: false,
+            placement: f8_core::model::PlacementSpec::default(),
+            columns: vec![line_item_col, c1_col],
+            rows: vec![
+                make_row("n1", "Rev", CellInput::number(10.0)),
+                make_row("n2", "COGS", CellInput::number(20.0)),
+                make_row("txt", "Note", CellInput::string("N/A")),
+                make_row("flag", "Active", CellInput::boolean(true)),
+                make_row("hole", "Missing", CellInput::null()),
+                make_row("cf0", "CF0", CellInput::number(-1000.0)),
+                make_row("cf1", "CF1", CellInput::null()),
+                make_row("cf2", "CF2", CellInput::number(600.0)),
+                make_row("cf3", "CF3", CellInput::number(600.0)),
+                make_row("d0", "D0", CellInput::number(45292.0)),
+                make_row("d1", "D1", CellInput::number(45474.0)),
+                make_row("d2", "D2", CellInput::number(45658.0)),
+                make_row("d3", "D3", CellInput::number(46023.0)),
+                make_row("yr24", "Yr24", CellInput::number(24.0)),
+                make_row("zero", "Zero", CellInput::number(0.0)),
+                make_row("type2", "Type2", CellInput::number(2.0)),
+                make_row("basis5", "Basis5", CellInput::number(5.0)),
+                RowSpec::new("target").with_cells(IndexMap::from([
+                    (ColId::from("line_item"), CellInput::string("Target")),
+                    (ColId::from("c1"), CellInput::formula(target_formula)),
+                ])),
+            ],
+        }
+    };
+
+    // Scenario 1: Descriptor references rejected in Stage A (active and dormant)
+    for desc_formula in [
+        "SUM(T[\"n1\"..\"n2\", \"line_item\"])",
+        "SUM(T[\"n1\", \"line_item\"])",
+        "AVERAGE(T[\"n1\"..\"n2\", \"line_item\"])",
+        "MIN(T[\"n1\"..\"n2\", \"line_item\"])",
+        "MAX(T[\"n1\"..\"n2\", \"line_item\"])",
+        "MEDIAN(T[\"n1\"..\"n2\", \"line_item\"])",
+        "COUNT(T[\"n1\"..\"n2\", \"line_item\"])",
+        "SUMPRODUCT(T[\"n1\"..\"n2\", \"line_item\"], T[\"n1\"..\"n2\", \"c1\"])",
+        "SUMIFS(T[\"n1\"..\"n2\", \"line_item\"], T[\"n1\"..\"n2\", \"c1\"], 10)",
+        "NPV(0.1, T[\"n1\"..\"n2\", \"line_item\"])",
+        "IRR(T[\"n1\"..\"n2\", \"line_item\"])",
+        "XNPV(0.1, T[\"d0\"..\"d3\", \"line_item\"], T[\"d0\"..\"d3\", \"c1\"])",
+        "XIRR(T[\"cf0\"..\"cf3\", \"c1\"], T[\"cf0\"..\"cf3\", \"line_item\"])",
+        "IF(FALSE, SUM(T[\"n1\"..\"n2\", \"line_item\"]), 0)",
+    ] {
+        let err = Compiler::compile(&manifest, &[build_model_with_target(desc_formula)])
+            .expect_err(&format!(
+                "expected DescriptorReferenceNotAllowed on {desc_formula}"
+            ));
+        assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+        assert!(
+            matches!(
+                &err,
+                CompilerError::Eval(EvalError::Function {
+                    source,
+                    ..
+                }) if matches!(source.as_ref(), FunctionError::DescriptorReferenceNotAllowed { .. })
+            ),
+            "expected DescriptorReferenceNotAllowed on {desc_formula}, got {err:?}"
+        );
+    }
+
+    // Scenario 2: Non-numeric cells, SingleCell Empty, and NPV/IRR/XNPV/XIRR Empty holes rejected (even inside IFERROR)
+    for type_err_formula in [
+        "SUM(T[\"n1\"..\"txt\", \"c1\"])",
+        "SUM(T[\"txt\"..\"flag\", \"c1\"])",
+        "SUM(TRUE, 5)",
+        "SUM(T[\"hole\", \"c1\"])",
+        "IFERROR(SUM(T[\"hole\", \"c1\"]), 0)",
+        "AVERAGE(T[\"n1\", \"c1\"], T[\"hole\", \"c1\"])",
+        "MIN(T[\"txt\"..\"txt\", \"c1\"])",
+        "MAX(T[\"hole\", \"c1\"])",
+        "MEDIAN(T[\"flag\"..\"flag\", \"c1\"])",
+        "COUNT(T[\"txt\"..\"txt\", \"c1\"])",
+        "COUNT(T[\"hole\", \"c1\"])",
+        "SUMPRODUCT(T[\"n2\"..\"txt\", \"c1\"], T[\"n1\"..\"n2\", \"c1\"])",
+        "SUMIFS(T[\"n1\"..\"txt\", \"c1\"], T[\"n1\"..\"txt\", \"line_item\"], \"Rev\")",
+        "NPV(0.1, T[\"cf0\"..\"cf3\", \"c1\"])",
+        "IFERROR(NPV(0.1, T[\"cf0\"..\"cf3\", \"c1\"]), 0)",
+        "IRR(T[\"cf0\"..\"cf3\", \"c1\"])",
+        "XNPV(0.1, T[\"cf0\"..\"cf3\", \"c1\"], T[\"d0\"..\"d3\", \"c1\"])",
+        "XIRR(T[\"cf0\"..\"cf3\", \"c1\"], T[\"d0\"..\"d3\", \"c1\"])",
+        "XIRR(T[\"n1\"..\"flag\", \"c1\"], T[\"hole\"..\"cf2\", \"c1\"])",
+    ] {
+        let err = Compiler::compile(&manifest, &[build_model_with_target(type_err_formula)])
+            .expect_err(&format!("expected EvalError::Type on {type_err_formula}"));
+        assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+        assert!(
+            matches!(err, CompilerError::Eval(EvalError::Type { .. })),
+            "expected EvalError::Type on {type_err_formula}, got {err:?}"
+        );
+    }
+
+    // Scenario 4 & 5: Date, serial, annuity type, and day-count basis domain errors (Stage A & Stage B)
+    for domain_err_formula in [
+        "DATE(24, 12, 31)",
+        "DATE(2024, 6, 31)",
+        "DATE(2025, 2, 29)",
+        "IF(FALSE, DATE(2024, 6, 31), DATE(2024, 1, 1))",
+        "DATE(T[\"yr24\", \"c1\"], 14, 1)",
+        "IFERROR(DATE(T[\"yr24\", \"c1\"], 1, 1), 0)",
+        "IF(FALSE, DATE(T[\"yr24\", \"c1\"], 1, 1), DATE(2024, 1, 1))",
+        "PMT(0.05, 10, -1000, 0, T[\"type2\", \"c1\"])",
+        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), T[\"basis5\", \"c1\"])",
+        "YEAR(0)",
+        "YEAR(T[\"zero\", \"c1\"])",
+        "IF(FALSE, YEAR(T[\"zero\", \"c1\"]), 2024)",
+        "XNPV(0.1, T[\"n1\"..\"n2\", \"c1\"], T[\"cf0\"..\"cf0\", \"c1\"])",
+        "XNPV(0.1, T[\"d0\"..\"d1\", \"c1\"], T[\"yr24\"..\"zero\", \"c1\"])",
+        "XIRR(T[\"d0\"..\"d3\", \"c1\"], T[\"cf0\"..\"cf3\", \"c1\"])",
+    ] {
+        let err = Compiler::compile(&manifest, &[build_model_with_target(domain_err_formula)])
+            .expect_err(&format!("expected FunctionError on {domain_err_formula}"));
+        assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+        assert!(
+            matches!(err, CompilerError::Eval(EvalError::Function { .. })),
+            "expected EvalError::Function on {domain_err_formula}, got {err:?}"
+        );
+    }
+
+    // Valid Cluster B scenarios compile and evaluate cleanly
+    for (ok_formula, expected_val) in [
+        (
+            "COUNTA(T[\"n1\"..\"n2\", \"line_item\"])",
+            CellValue::Number(2.0),
+        ),
+        (
+            "XLOOKUP(\"COGS\", T[\"n1\"..\"n2\", \"line_item\"], T[\"n1\"..\"n2\", \"c1\"])",
+            CellValue::Number(20.0),
+        ),
+        (
+            "SUMIFS(T[\"n1\"..\"n2\", \"c1\"], T[\"n1\"..\"n2\", \"line_item\"], \"COGS\")",
+            CellValue::Number(20.0),
+        ),
+        (
+            "IF(ISBLANK(T[\"hole\", \"c1\"]), 0, SUM(T[\"hole\", \"c1\"]))",
+            CellValue::Number(0.0),
+        ),
+        ("DATE(1900, 2, 29)", CellValue::Number(60.0)),
+    ] {
+        let compiled = Compiler::compile(&manifest, &[build_model_with_target(ok_formula)])
+            .unwrap_or_else(|e| panic!("expected ok on {ok_formula}, got {e:?}"));
+        assert_eq!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("c1")
+                )
+                .unwrap(),
+            expected_val,
+            "mismatch on {ok_formula}"
+        );
+    }
 }
