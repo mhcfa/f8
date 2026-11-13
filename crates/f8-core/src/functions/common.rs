@@ -1,6 +1,8 @@
 use crate::functions::error::FunctionError;
-use crate::functions::traits::{EvalContext, FunctionArg};
-use crate::value::{CellValue, ExcelError, normalize_zero};
+use crate::functions::traits::{EvalContext, FunctionArg, ReferenceKind, TypeExpectation};
+use crate::value::{
+    CellValue, ExcelError, ExpectedType, StrictIntError, TypeError, ValueType, normalize_zero,
+};
 
 /// Aggregated numeric statistics gathered across arguments for arithmetic functions.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,59 +50,45 @@ impl NumericCollector {
     {
         for arg in args {
             match arg {
-                FunctionArg::Scalar(val) => match val {
-                    CellValue::Number(n) => f(*n),
-                    CellValue::Boolean(true) => f(1.0),
-                    CellValue::Boolean(false) => f(0.0),
-                    CellValue::Empty => f(0.0),
-                    CellValue::Error(e) => return Err(*e),
-                    CellValue::Text(_) => return Err(ExcelError::Value),
-                },
+                FunctionArg::Scalar(val) => {
+                    f(val.coerce_to_number()?);
+                }
+                FunctionArg::TypedErrorScalar { error, .. } => {
+                    return Err(*error);
+                }
                 FunctionArg::Array {
                     values,
-                    is_range_ref,
+                    ref_kind: ReferenceKind::SingleCell | ReferenceKind::Slice,
                     ..
                 } => {
-                    if *is_range_ref {
-                        for v in values {
-                            match v {
-                                CellValue::Number(n) => f(*n),
-                                CellValue::Error(e) => return Err(*e),
-                                CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {
-                                    // Range references silently ignore text, booleans, and empty cells
+                    for v in values {
+                        match v {
+                            CellValue::Number(n) => {
+                                if !n.is_finite() {
+                                    return Err(ExcelError::Num);
                                 }
+                                f(normalize_zero(*n));
                             }
-                        }
-                    } else {
-                        for v in values {
-                            match v {
-                                CellValue::Number(n) => f(*n),
-                                CellValue::Boolean(true) => f(1.0),
-                                CellValue::Boolean(false) => f(0.0),
-                                CellValue::Empty => f(0.0),
-                                CellValue::Error(e) => return Err(*e),
-                                CellValue::Text(_) => return Err(ExcelError::Value),
+                            CellValue::Error(e) => return Err(*e),
+                            CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {
+                                // Range references ignore text, booleans, and empty cells
                             }
                         }
                     }
                 }
-                FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                    // Lazy arguments in arithmetic positions or omitted trailing arguments contribute nothing
-                }
+                FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
             }
         }
         Ok(())
     }
 
     /// Collects numbers across arguments for arithmetic aggregators (`SUM`, `AVERAGE`, `MIN`, `MAX`).
-    ///
-    /// # Excel Parity Rules
-    /// - In range references (`is_range_ref: true`): text, booleans, and empty cells are ignored; cell errors bubble up immediately.
-    /// - In direct scalars: booleans convert to `1.0`/`0.0`, empty cells contribute `0.0`, text returns `ExcelError::Value`, and errors bubble immediately.
-    /// - In explicit array literals (`is_range_ref: false`): booleans and empty cells convert; text produces `ExcelError::Value`.
     pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
         let mut collector = Self::new();
         Self::for_each_numeric(args, |n| collector.record(n))?;
+        if !collector.sum.is_finite() {
+            return Err(ExcelError::Num);
+        }
         collector.sum = normalize_zero(collector.sum);
         Ok(collector)
     }
@@ -139,8 +127,21 @@ pub fn eval_branch_arg(
 ) -> Result<CellValue, FunctionError> {
     match arg {
         FunctionArg::Scalar(val) => Ok(val.clone()),
+        FunctionArg::TypedErrorScalar { error, .. } => Ok(CellValue::Error(*error)),
         FunctionArg::Lazy(expr) => ctx.eval_expr(expr),
-        FunctionArg::Array { .. } => Err(FunctionError::InvalidArgumentKind {
+        FunctionArg::Array {
+            rows,
+            cols,
+            ref_kind: ReferenceKind::Slice,
+            ..
+        } => Err(FunctionError::SliceInScalarContext {
+            rows: *rows,
+            cols: *cols,
+        }),
+        FunctionArg::Array {
+            ref_kind: ReferenceKind::SingleCell,
+            ..
+        } => Err(FunctionError::InvalidArgumentKind {
             function,
             expected: "scalar or expression",
             found: "array",
@@ -150,6 +151,192 @@ pub fn eval_branch_arg(
             expected: "scalar or expression",
             found: "omitted",
         }),
+    }
+}
+
+/// Unifies concrete non-`Empty`, non-`Error` `ValueType`s left-to-right across branch result arms.
+#[derive(Debug, Clone, Copy)]
+pub struct BranchTypeUnifier {
+    function: &'static str,
+    unified: Option<ValueType>,
+}
+
+impl BranchTypeUnifier {
+    /// Creates a new unifier for `function`.
+    #[must_use]
+    pub const fn new(function: &'static str) -> Self {
+        Self {
+            function,
+            unified: None,
+        }
+    }
+
+    /// Creates a new unifier pre-seeded with `initial` (when concrete non-`Empty`).
+    #[must_use]
+    pub const fn with_initial(function: &'static str, initial: Option<ValueType>) -> Self {
+        let seeded = match initial {
+            Some(ValueType::Number) => Some(ValueType::Number),
+            Some(ValueType::Text) => Some(ValueType::Text),
+            Some(ValueType::Boolean) => Some(ValueType::Boolean),
+            Some(ValueType::Empty) | None => None,
+        };
+        Self {
+            function,
+            unified: seeded,
+        }
+    }
+
+    /// Returns the unified concrete `ValueType`, if any.
+    #[must_use]
+    pub const fn unified(&self) -> Option<ValueType> {
+        self.unified
+    }
+
+    /// Records `candidate` at 1-indexed `position`, returning `TypeError::IncompatibleBranchTypes` on mismatch.
+    pub fn record(
+        &mut self,
+        position: usize,
+        candidate: Option<ValueType>,
+    ) -> Result<Option<ValueType>, TypeError> {
+        let concrete = match candidate {
+            Some(vt @ (ValueType::Number | ValueType::Text | ValueType::Boolean)) => vt,
+            Some(ValueType::Empty) | None => return Ok(self.unified),
+        };
+        match self.unified {
+            None => {
+                self.unified = Some(concrete);
+                Ok(self.unified)
+            }
+            Some(expected) => {
+                if concrete == expected {
+                    Ok(self.unified)
+                } else {
+                    Err(TypeError::IncompatibleBranchTypes {
+                        function: self.function,
+                        position,
+                        expected,
+                        found: concrete,
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// Evaluates a taken branch result arm and returns `(value, inferred_value_type)`.
+///
+/// When a lazy arm evaluates to `CellValue::Error(_)`, recursively validates its subtree via
+/// `EvalContext::validate_dormant_expr` to validate any short-circuited inner branches and infer
+/// its static/slice return `ValueType` (for example on `#REF!`/`#N/A`-producing `INDEX`/`XLOOKUP` calls).
+pub fn eval_taken_branch_arm(
+    arg: &FunctionArg<'_>,
+    function: &'static str,
+    ctx: &dyn EvalContext,
+) -> Result<(CellValue, Option<ValueType>), FunctionError> {
+    let val = eval_branch_arg(arg, function, ctx)?;
+    let vt = match &val {
+        CellValue::Number(_) => Some(ValueType::Number),
+        CellValue::Text(_) => Some(ValueType::Text),
+        CellValue::Boolean(_) => Some(ValueType::Boolean),
+        CellValue::Empty => None,
+        CellValue::Error(_) => match arg {
+            FunctionArg::Lazy(expr) => ctx.validate_dormant_expr(expr, None)?,
+            FunctionArg::TypedErrorScalar { inferred_type, .. } => Some(*inferred_type),
+            FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Omitted => None,
+        },
+    };
+    Ok((val, vt))
+}
+
+/// Validates an untaken (dormant) branch argument and returns its inferred `ValueType`, if any.
+pub fn validate_dormant_arm(
+    arg: &FunctionArg<'_>,
+    function: &'static str,
+    expected: Option<TypeExpectation>,
+    ctx: &dyn EvalContext,
+) -> Result<Option<ValueType>, FunctionError> {
+    match arg {
+        FunctionArg::Lazy(expr) => ctx.validate_dormant_expr(expr, expected),
+        FunctionArg::Scalar(val) => match val {
+            CellValue::Number(_) | CellValue::Text(_) | CellValue::Boolean(_) => {
+                let vt = match val {
+                    CellValue::Number(_) => ValueType::Number,
+                    CellValue::Text(_) => ValueType::Text,
+                    CellValue::Boolean(_) => ValueType::Boolean,
+                    CellValue::Empty | CellValue::Error(_) => return Ok(None),
+                };
+                if let Some(TypeExpectation {
+                    expected: exp_ty,
+                    origin,
+                }) = expected
+                {
+                    if exp_ty == ExpectedType::Integer {
+                        match val.strict_integer() {
+                            Ok(_) => {}
+                            Err(StrictIntError::WrongType(found)) => {
+                                return Err(FunctionError::Type(
+                                    origin.into_invalid_type(exp_ty, found),
+                                ));
+                            }
+                            Err(StrictIntError::NonInteger(value)) => {
+                                return Err(FunctionError::Type(origin.into_non_integer(value)));
+                            }
+                        }
+                    } else if !value_type_satisfies(vt, exp_ty) {
+                        return Err(FunctionError::Type(origin.into_invalid_type(exp_ty, vt)));
+                    }
+                }
+                Ok(Some(vt))
+            }
+            CellValue::Empty | CellValue::Error(_) => Ok(None),
+        },
+        FunctionArg::TypedErrorScalar { inferred_type, .. } => {
+            if let Some(TypeExpectation {
+                expected: exp_ty,
+                origin,
+            }) = expected
+                && !value_type_satisfies(*inferred_type, exp_ty)
+            {
+                return Err(FunctionError::Type(
+                    origin.into_invalid_type(exp_ty, *inferred_type),
+                ));
+            }
+            Ok(Some(*inferred_type))
+        }
+        FunctionArg::Array {
+            rows,
+            cols,
+            ref_kind: ReferenceKind::Slice,
+            ..
+        } => Err(FunctionError::SliceInScalarContext {
+            rows: *rows,
+            cols: *cols,
+        }),
+        FunctionArg::Array {
+            ref_kind: ReferenceKind::SingleCell,
+            ..
+        } => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "scalar or expression",
+            found: "array",
+        }),
+        FunctionArg::Omitted => Ok(None),
+    }
+}
+
+pub(crate) const fn value_type_satisfies(found: ValueType, expected: ExpectedType) -> bool {
+    match (expected, found) {
+        (ExpectedType::NonEmpty, ValueType::Number | ValueType::Text | ValueType::Boolean)
+        | (ExpectedType::Number | ExpectedType::Integer, ValueType::Number)
+        | (ExpectedType::Text, ValueType::Text)
+        | (ExpectedType::Boolean, ValueType::Boolean) => true,
+        (ExpectedType::NonEmpty, ValueType::Empty)
+        | (
+            ExpectedType::Number | ExpectedType::Integer,
+            ValueType::Text | ValueType::Boolean | ValueType::Empty,
+        )
+        | (ExpectedType::Text, ValueType::Number | ValueType::Boolean | ValueType::Empty)
+        | (ExpectedType::Boolean, ValueType::Number | ValueType::Text | ValueType::Empty) => false,
     }
 }
 
@@ -182,54 +369,147 @@ impl LogicalCollector {
         self.any_true = self.any_true || b;
     }
 
-    /// Collects logical truth values across arguments for `AND` and `OR`.
+    /// Collects strict boolean values across arguments for `AND` and `OR`.
     ///
-    /// # Excel Parity Rules
-    /// - In range references (`is_range_ref: true`): text, empty cells are ignored; cell errors bubble immediately.
-    /// - In direct scalars: numbers (0 = false, non-zero = true), booleans, text ("TRUE"/"FALSE" case-insensitive, else `#VALUE!`), empty cells evaluate to false; errors bubble immediately.
-    /// - In array literals (`is_range_ref: false`): text parses if "TRUE"/"FALSE", else `#VALUE!`.
-    /// - If no logical values are found across all arguments and ranges, returns `ExcelError::Value`.
-    pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
+    /// - Rejects `Number` and `Text` everywhere with `TypeError::InvalidArgumentType`.
+    /// - Rejects `Empty` on `Scalar`, `Lazy`, and `ReferenceKind::SingleCell` arguments.
+    /// - Skips sparse `Empty` cells strictly in `ReferenceKind::Slice` arguments.
+    /// - Validates types across all arguments before bubbling the first `ExcelError` or returning
+    ///   `ExcelError::Value` when `count == 0` (all-empty slice).
+    pub fn collect(
+        function: &'static str,
+        param: &'static str,
+        args: &[FunctionArg<'_>],
+        ctx: &dyn EvalContext,
+    ) -> Result<Result<Self, ExcelError>, FunctionError> {
         let mut collector = Self::new();
+        let mut first_error: Option<ExcelError> = None;
 
-        for arg in args {
+        for (idx, arg) in args.iter().enumerate() {
+            let position = idx + 1;
             match arg {
-                FunctionArg::Scalar(val) => {
-                    let b = val.coerce_to_bool()?;
-                    collector.record(b);
-                }
-                FunctionArg::Array {
-                    values,
-                    is_range_ref,
-                    ..
+                FunctionArg::Scalar(val) => match val.strict_bool() {
+                    Ok(Ok(b)) => collector.record(b),
+                    Ok(Err(err)) => {
+                        if first_error.is_none() {
+                            first_error = Some(err);
+                        }
+                    }
+                    Err(found) => {
+                        return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                            function,
+                            param,
+                            position,
+                            expected: ExpectedType::Boolean,
+                            found,
+                        }));
+                    }
+                },
+                FunctionArg::TypedErrorScalar {
+                    error,
+                    inferred_type,
                 } => {
-                    if *is_range_ref {
-                        for v in values {
-                            match v {
-                                CellValue::Boolean(b) => collector.record(*b),
-                                CellValue::Number(n) => collector.record(*n != 0.0),
-                                CellValue::Error(e) => return Err(*e),
-                                CellValue::Text(_) | CellValue::Empty => {
-                                    // Range references silently ignore text and empty cells
-                                }
+                    if *inferred_type != ValueType::Boolean {
+                        return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                            function,
+                            param,
+                            position,
+                            expected: ExpectedType::Boolean,
+                            found: *inferred_type,
+                        }));
+                    }
+                    if first_error.is_none() {
+                        first_error = Some(*error);
+                    }
+                }
+                FunctionArg::Lazy(_) => {
+                    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
+                    match val.strict_bool() {
+                        Ok(Ok(b)) => collector.record(b),
+                        Ok(Err(err)) => {
+                            if let Some(vt @ (ValueType::Number | ValueType::Text)) = inferred_vt {
+                                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                                    function,
+                                    param,
+                                    position,
+                                    expected: ExpectedType::Boolean,
+                                    found: vt,
+                                }));
+                            }
+                            if first_error.is_none() {
+                                first_error = Some(err);
                             }
                         }
-                    } else {
-                        for v in values {
-                            let b = v.coerce_to_bool()?;
-                            collector.record(b);
+                        Err(found) => {
+                            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                                function,
+                                param,
+                                position,
+                                expected: ExpectedType::Boolean,
+                                found,
+                            }));
                         }
                     }
                 }
-                FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+                FunctionArg::Array {
+                    values,
+                    error_types,
+                    ref_kind,
+                    ..
+                } => {
+                    let skip_empty = match ref_kind {
+                        ReferenceKind::Slice => true,
+                        ReferenceKind::SingleCell => false,
+                    };
+                    for (elem_idx, v) in values.iter().enumerate() {
+                        if skip_empty && matches!(v, CellValue::Empty) {
+                            continue;
+                        }
+                        match v.strict_bool() {
+                            Ok(Ok(b)) => collector.record(b),
+                            Ok(Err(err)) => {
+                                if let Some(vt @ (ValueType::Number | ValueType::Text)) =
+                                    error_types.get(elem_idx).copied().flatten()
+                                {
+                                    return Err(FunctionError::Type(
+                                        TypeError::InvalidArgumentType {
+                                            function,
+                                            param,
+                                            position,
+                                            expected: ExpectedType::Boolean,
+                                            found: vt,
+                                        },
+                                    ));
+                                }
+                                if first_error.is_none() {
+                                    first_error = Some(err);
+                                }
+                            }
+                            Err(found) => {
+                                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                                    function,
+                                    param,
+                                    position,
+                                    expected: ExpectedType::Boolean,
+                                    found,
+                                }));
+                            }
+                        }
+                    }
+                }
+                FunctionArg::Omitted => {}
             }
         }
 
-        if collector.count == 0 {
-            return Err(ExcelError::Value);
+        if let Some(err) = first_error {
+            return Ok(Err(err));
         }
 
-        Ok(collector)
+        if collector.count == 0 {
+            return Ok(Err(ExcelError::Value));
+        }
+
+        Ok(Ok(collector))
     }
 }
 
@@ -239,20 +519,13 @@ impl Default for LogicalCollector {
     }
 }
 
-/// Counts numeric cells across arguments according to Excel `COUNT` semantics:
-///
-/// - In ranges: only numeric cells are counted; text, booleans, empty cells, and cell errors are ignored (+0).
-/// - In direct scalars: numbers and booleans count as 1; text, empty cells, and errors count as 0.
+/// Counts numeric cells across range arguments according to Excel `COUNT` semantics.
 #[must_use]
 pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
     let mut count = 0;
 
     for arg in args {
         match arg {
-            FunctionArg::Scalar(val) => match val {
-                CellValue::Number(_) | CellValue::Boolean(_) => count += 1,
-                CellValue::Text(_) | CellValue::Empty | CellValue::Error(_) => {}
-            },
             FunctionArg::Array { values, .. } => {
                 for v in values {
                     if matches!(v, CellValue::Number(_)) {
@@ -260,34 +533,39 @@ pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
                     }
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+            FunctionArg::Scalar(val) => {
+                if matches!(val, CellValue::Number(_)) {
+                    count += 1;
+                }
+            }
+            FunctionArg::TypedErrorScalar { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
     }
 
     count
 }
 
-/// Counts non-empty cells across arguments according to Excel `COUNTA` semantics:
-///
-/// - In ranges: cells containing numbers, text, booleans, or errors count as 1; only `CellValue::Empty` is ignored.
-/// - In direct scalars: numbers, text, booleans, and errors count as 1; `CellValue::Empty` and omitted arguments count as 0.
+/// Counts non-empty cells across range arguments according to Excel `COUNTA` semantics.
 #[must_use]
 pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
     let mut count = 0;
 
     for arg in args {
         match arg {
-            FunctionArg::Scalar(val) => {
-                if !matches!(val, CellValue::Empty) {
-                    count += 1;
-                }
-            }
             FunctionArg::Array { values, .. } => {
                 for v in values {
                     if !matches!(v, CellValue::Empty) {
                         count += 1;
                     }
                 }
+            }
+            FunctionArg::Scalar(val) => {
+                if !matches!(val, CellValue::Empty) {
+                    count += 1;
+                }
+            }
+            FunctionArg::TypedErrorScalar { .. } => {
+                count += 1;
             }
             FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
@@ -297,7 +575,7 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
 }
 
 /// Clamps decimal places to prevent IEEE-754 exponent overflow / underflow.
-const MAX_DECIMAL_DIGITS: i32 = 308;
+pub const MAX_DECIMAL_DIGITS: i32 = 308;
 
 /// Performs symmetric rounding half away from zero (standard Excel `ROUND`).
 #[must_use]
@@ -391,7 +669,6 @@ pub fn parse_wildcard_tokens(pattern: &str) -> (Vec<WildcardToken>, bool) {
             }
             '*' => {
                 has_wildcard = true;
-                // Collapse consecutive asterisks
                 if !matches!(tokens.last(), Some(WildcardToken::AnyZeroOrMore)) {
                     tokens.push(WildcardToken::AnyZeroOrMore);
                 }
@@ -444,14 +721,115 @@ pub fn matches_wildcard(tokens: &[WildcardToken], text: &str) -> bool {
     p_idx == tokens.len()
 }
 
-/// Extracts a scalar numeric value from an argument, coercing booleans and empty cells,
-/// bubbling errors, and rejecting text with `#VALUE!`.
-pub fn extract_scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
-    match arg {
-        FunctionArg::Scalar(val) => val.coerce_to_number(),
-        FunctionArg::Array { values, .. } if values.len() == 1 => values[0].coerce_to_number(),
-        FunctionArg::Array { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-            Err(ExcelError::Value)
+/// Extracts a strict numeric scalar from `arg`, rejecting `Text`, `Boolean`, and `Empty` with `TypeError::InvalidArgumentType`
+/// while bubbling `CellValue::Error(e)` as `Ok(Err(e))` when its inferred type is compatible.
+pub fn extract_scalar_number(
+    arg: &FunctionArg<'_>,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    ctx: &dyn EvalContext,
+) -> Result<Result<f64, ExcelError>, FunctionError> {
+    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
+    match val.strict_number() {
+        Ok(Ok(n)) => Ok(Ok(n)),
+        Ok(Err(err)) => {
+            if let Some(vt @ (ValueType::Text | ValueType::Boolean)) = inferred_vt {
+                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected: ExpectedType::Number,
+                    found: vt,
+                }));
+            }
+            Ok(Err(err))
         }
+        Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function,
+            param,
+            position,
+            expected: ExpectedType::Number,
+            found,
+        })),
+    }
+}
+
+/// Extracts a strict safe integer from `arg`, rejecting wrong value types with `TypeError::InvalidArgumentType`
+/// and fractional/out-of-safe-range numbers with `TypeError::NonIntegerArgument`, while bubbling `CellValue::Error(e)`
+/// when its inferred type is compatible.
+pub fn extract_scalar_integer(
+    arg: &FunctionArg<'_>,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    ctx: &dyn EvalContext,
+) -> Result<Result<i64, ExcelError>, FunctionError> {
+    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
+    match val.strict_integer() {
+        Ok(Ok(i)) => Ok(Ok(i)),
+        Ok(Err(err)) => {
+            if let Some(vt @ (ValueType::Text | ValueType::Boolean)) = inferred_vt {
+                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected: ExpectedType::Integer,
+                    found: vt,
+                }));
+            }
+            Ok(Err(err))
+        }
+        Err(StrictIntError::WrongType(found)) => {
+            Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function,
+                param,
+                position,
+                expected: ExpectedType::Integer,
+                found,
+            }))
+        }
+        Err(StrictIntError::NonInteger(value)) => {
+            Err(FunctionError::Type(TypeError::NonIntegerArgument {
+                function,
+                param,
+                position,
+                value,
+            }))
+        }
+    }
+}
+
+/// Extracts a strict boolean scalar from `arg`, rejecting `Number`, `Text`, and `Empty` with `TypeError::InvalidArgumentType`
+/// while bubbling `CellValue::Error(e)` as `Ok(Err(e))` when its inferred type is compatible.
+pub fn extract_scalar_bool(
+    arg: &FunctionArg<'_>,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    ctx: &dyn EvalContext,
+) -> Result<Result<bool, ExcelError>, FunctionError> {
+    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
+    match val.strict_bool() {
+        Ok(Ok(b)) => Ok(Ok(b)),
+        Ok(Err(err)) => {
+            if let Some(vt @ (ValueType::Number | ValueType::Text)) = inferred_vt {
+                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected: ExpectedType::Boolean,
+                    found: vt,
+                }));
+            }
+            Ok(Err(err))
+        }
+        Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function,
+            param,
+            position,
+            expected: ExpectedType::Boolean,
+            found,
+        })),
     }
 }

@@ -4,11 +4,11 @@ use f8_core::compiler::eval::eval_expr;
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::Expr;
-use f8_core::functions::traits::{EvalContext, FunctionArg};
-use f8_core::functions::{FunctionCategory, FunctionRegistry};
+use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
+use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::value::{CellValue, ExcelError, TypeError};
 use indexmap::IndexMap;
 
 fn eval_str(
@@ -37,7 +37,7 @@ impl EvalContext for MockContext {
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 44);
+    assert_eq!(registry.len(), 45);
 
     let financial_names = ["NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"];
     for name in financial_names {
@@ -103,10 +103,10 @@ fn test_scenario_2_npv_periodic_discounting() {
     // Range reference with ignored empty and text cells
     let range_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.10)),
-        FunctionArg::Array {
-            rows: 6,
-            cols: 1,
-            values: vec![
+        FunctionArg::array(
+            6,
+            1,
+            vec![
                 CellValue::Number(-10000.0),
                 CellValue::Text("ignored text".into()),
                 CellValue::Number(3000.0),
@@ -114,8 +114,8 @@ fn test_scenario_2_npv_periodic_discounting() {
                 CellValue::Number(4200.0),
                 CellValue::Number(6800.0),
             ],
-            is_range_ref: true,
-        },
+            ReferenceKind::Slice,
+        ),
     ];
     let range_res = npv_func.evaluate(&range_args, &ctx).unwrap();
     if let CellValue::Number(val) = range_res {
@@ -173,28 +173,28 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
 
     let args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values: vec![
+        FunctionArg::array(
+            4,
+            1,
+            vec![
                 CellValue::Number(-10000.0),
                 CellValue::Number(2750.0),
                 CellValue::Number(4250.0),
                 CellValue::Number(5000.0),
             ],
-            is_range_ref: false,
-        },
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values: vec![
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::array(
+            4,
+            1,
+            vec![
                 CellValue::Number(d0),
                 CellValue::Number(d1),
                 CellValue::Number(d2),
                 CellValue::Number(d3),
             ],
-            is_range_ref: false,
-        },
+            ReferenceKind::Slice,
+        ),
     ];
     let res = xnpv_func.evaluate(&args, &ctx).unwrap();
     if let CellValue::Number(val) = res {
@@ -217,42 +217,60 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         CellValue::Error(ExcelError::Num)
     );
 
-    // Mismatched vector lengths return #NUM!
+    // Mismatched vector lengths fail strictly with LengthMismatch (even when values contain ExcelError)
     let mismatched_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
-        FunctionArg::Array {
-            rows: 2,
-            cols: 1,
-            values: vec![CellValue::Number(-1000.0), CellValue::Number(1000.0)],
-            is_range_ref: false,
-        },
-        FunctionArg::Array {
-            rows: 1,
-            cols: 1,
-            values: vec![CellValue::Number(d0)],
-            is_range_ref: false,
-        },
+        FunctionArg::array(
+            2,
+            1,
+            vec![
+                CellValue::Error(ExcelError::Div0),
+                CellValue::Number(1000.0),
+            ],
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::array(1, 1, vec![CellValue::Number(d0)], ReferenceKind::Slice),
     ];
     assert_eq!(
-        xnpv_func.evaluate(&mismatched_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
+        xnpv_func.evaluate(&mismatched_args, &ctx),
+        Err(FunctionError::LengthMismatch {
+            function: "XNPV",
+            expected: 2,
+            found: 1,
+        })
+    );
+
+    // 2D slice fails with ExpectedOneDimensionalSlice before rate <= -1.0 domain check
+    let two_d_args = vec![
+        FunctionArg::Scalar(CellValue::Number(-2.0)),
+        FunctionArg::array(2, 2, vec![CellValue::Number(1.0); 4], ReferenceKind::Slice),
+        FunctionArg::array(2, 2, vec![CellValue::Number(d0); 4], ReferenceKind::Slice),
+    ];
+    assert_eq!(
+        xnpv_func.evaluate(&two_d_args, &ctx),
+        Err(FunctionError::ExpectedOneDimensionalSlice {
+            function: "XNPV",
+            param: "values",
+            rows: 2,
+            cols: 2,
+        })
     );
 
     // Out-of-order date (di < d0) returns #NUM!
     let out_of_order_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
-        FunctionArg::Array {
-            rows: 2,
-            cols: 1,
-            values: vec![CellValue::Number(-1000.0), CellValue::Number(1000.0)],
-            is_range_ref: false,
-        },
-        FunctionArg::Array {
-            rows: 2,
-            cols: 1,
-            values: vec![CellValue::Number(d1), CellValue::Number(d0)],
-            is_range_ref: false,
-        },
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(-1000.0), CellValue::Number(1000.0)],
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(d1), CellValue::Number(d0)],
+            ReferenceKind::Slice,
+        ),
     ];
     assert_eq!(
         xnpv_func.evaluate(&out_of_order_args, &ctx).unwrap(),
@@ -263,17 +281,17 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
     let trunc_dates = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
         args[1].clone(),
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values: vec![
+        FunctionArg::array(
+            4,
+            1,
+            vec![
                 CellValue::Number(d0 + 0.5),
                 CellValue::Number(d1 + 0.25),
                 CellValue::Number(d2 + 0.75),
                 CellValue::Number(d3 + 0.9),
             ],
-            is_range_ref: false,
-        },
+            ReferenceKind::Slice,
+        ),
     ];
     let trunc_res = xnpv_func.evaluate(&trunc_dates, &ctx).unwrap();
     if let CellValue::Number(val) = trunc_res {
@@ -291,17 +309,17 @@ fn test_scenario_4_irr_periodic_solver() {
 
     // Standard cash flows: [-10000, 3000, 4200, 6800]
     // Target rate is approximately 16.34% (0.1634)
-    let args = vec![FunctionArg::Array {
-        rows: 4,
-        cols: 1,
-        values: vec![
+    let args = vec![FunctionArg::array(
+        4,
+        1,
+        vec![
             CellValue::Number(-10000.0),
             CellValue::Number(3000.0),
             CellValue::Number(4200.0),
             CellValue::Number(6800.0),
         ],
-        is_range_ref: true,
-    }];
+        ReferenceKind::Slice,
+    )];
     let res = irr_func.evaluate(&args, &ctx).unwrap();
     if let CellValue::Number(rate) = res {
         assert!((rate - 0.1634).abs() < 1e-3, "IRR was {rate}");
@@ -316,44 +334,44 @@ fn test_scenario_4_irr_periodic_solver() {
     }
 
     // All positive cash flows -> #NUM!
-    let all_pos = vec![FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
+    let all_pos = vec![FunctionArg::array(
+        3,
+        1,
+        vec![
             CellValue::Number(100.0),
             CellValue::Number(200.0),
             CellValue::Number(300.0),
         ],
-        is_range_ref: true,
-    }];
+        ReferenceKind::Slice,
+    )];
     assert_eq!(
         irr_func.evaluate(&all_pos, &ctx).unwrap(),
         CellValue::Error(ExcelError::Num)
     );
 
     // All negative cash flows -> #NUM!
-    let all_neg = vec![FunctionArg::Array {
-        rows: 3,
-        cols: 1,
-        values: vec![
-            CellValue::Number(-100.0),
+    let all_neg = vec![FunctionArg::array(
+        3,
+        1,
+        vec![
+            CellValue::Number(-1000.0 / 10.0),
             CellValue::Number(-200.0),
             CellValue::Number(-300.0),
         ],
-        is_range_ref: true,
-    }];
+        ReferenceKind::Slice,
+    )];
     assert_eq!(
         irr_func.evaluate(&all_neg, &ctx).unwrap(),
         CellValue::Error(ExcelError::Num)
     );
 
     // Fewer than 2 cash flows -> #NUM!
-    let too_few = vec![FunctionArg::Array {
-        rows: 1,
-        cols: 1,
-        values: vec![CellValue::Number(-100.0)],
-        is_range_ref: true,
-    }];
+    let too_few = vec![FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Number(-100.0)],
+        ReferenceKind::Slice,
+    )];
     assert_eq!(
         irr_func.evaluate(&too_few, &ctx).unwrap(),
         CellValue::Error(ExcelError::Num)
@@ -368,18 +386,18 @@ fn test_scenario_5_xirr_non_periodic_solver() {
 
     // Exactly 1 year apart: [-1000, 1100] gives exactly 10%
     let args = vec![
-        FunctionArg::Array {
-            rows: 2,
-            cols: 1,
-            values: vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
-            is_range_ref: false,
-        },
-        FunctionArg::Array {
-            rows: 2,
-            cols: 1,
-            values: vec![CellValue::Number(45292.0), CellValue::Number(45657.0)],
-            is_range_ref: false,
-        },
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(45292.0), CellValue::Number(45657.0)],
+            ReferenceKind::Slice,
+        ),
     ];
     let res = xirr_func.evaluate(&args, &ctx).unwrap();
     if let CellValue::Number(rate) = res {
@@ -402,18 +420,8 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         CellValue::Number(9000.0),
     ];
     let multi_args = vec![
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values,
-            is_range_ref: false,
-        },
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values: dates,
-            is_range_ref: false,
-        },
+        FunctionArg::array(4, 1, values, ReferenceKind::Slice),
+        FunctionArg::array(4, 1, dates, ReferenceKind::Slice),
     ];
     let multi_res = xirr_func.evaluate(&multi_args, &ctx).unwrap();
     if let CellValue::Number(rate) = multi_res {
@@ -430,23 +438,18 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         CellValue::Number(46022.4),
     ];
     let trunc_args = vec![
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values: vec![
+        FunctionArg::array(
+            4,
+            1,
+            vec![
                 CellValue::Number(-10000.0),
                 CellValue::Number(-2000.0),
                 CellValue::Number(6000.0),
                 CellValue::Number(9000.0),
             ],
-            is_range_ref: false,
-        },
-        FunctionArg::Array {
-            rows: 4,
-            cols: 1,
-            values: trunc_dates,
-            is_range_ref: false,
-        },
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::array(4, 1, trunc_dates, ReferenceKind::Slice),
     ];
     let trunc_res = xirr_func.evaluate(&trunc_args, &ctx).unwrap();
     if let CellValue::Number(rate) = trunc_res {
@@ -519,6 +522,24 @@ fn test_scenario_6_pmt_annuity_payments() {
     assert_eq!(
         pmt_func.evaluate(&args_zero_nper, &ctx).unwrap(),
         CellValue::Error(ExcelError::Div0)
+    );
+
+    // Non-integer `type` argument in PMT fails strictly with NonIntegerArgument
+    let args_fractional_type = vec![
+        FunctionArg::Scalar(CellValue::Number(0.05)),
+        FunctionArg::Scalar(CellValue::Number(10.0)),
+        FunctionArg::Scalar(CellValue::Number(-1000.0)),
+        FunctionArg::Scalar(CellValue::Number(0.0)),
+        FunctionArg::Scalar(CellValue::Number(0.5)),
+    ];
+    assert_eq!(
+        pmt_func.evaluate(&args_fractional_type, &ctx),
+        Err(FunctionError::Type(TypeError::NonIntegerArgument {
+            function: "PMT",
+            param: "type",
+            position: 5,
+            value: "0.5".into(),
+        }))
     );
 }
 

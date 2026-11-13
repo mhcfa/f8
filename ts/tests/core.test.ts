@@ -1002,24 +1002,20 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ["IFERROR(ABS(1, 2, 3), 0)", "too many arguments for 'ABS'"],
         ["IFNA(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
         ["CHOOSE(1, 10, SUM())", "too few arguments for 'SUM'"],
-        ["SWITCH(1, 1, 10, ABS())", "too few arguments for 'ABS'"],
+        ["SWITCH(1, 1, 10, 20)", "unknown function 'SWITCH'"],
+        ["IF(FALSE, SWITCH(1, 1, 10, 20), 0)", "unknown function 'SWITCH'"],
         [
           'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], UNKNOWN_FN())',
           "unknown function 'UNKNOWN_FN'",
         ],
         ["IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"],
         ["IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"],
-        [
-          "IF(FALSE, 10, _)",
-          "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
-        ],
-        [
-          "IF(TRUE, 10, _)",
-          "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
-        ],
+        ["IF(FALSE, 10)", "too few arguments for 'IF'"],
+        ["IF(FALSE, 10, _)", "argument 'value_if_false' at position 3 of 'IF' cannot be omitted"],
+        ["IF(TRUE, 10, _)", "argument 'value_if_false' at position 3 of 'IF' cannot be omitted"],
         [
           "IF(TRUE, 10, IF(FALSE, 1, _))",
-          "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'",
+          "argument 'value_if_false' at position 3 of 'IF' cannot be omitted",
         ],
         [
           'INDEX(@table["k1".."k2", @col], 2, _)',
@@ -1089,7 +1085,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         }
       }
 
-      // Valid IFERROR domain error trapping, 2-arg IF, and intermediate CallArg::Omitted lowering
+      // Valid IFERROR domain error trapping, 2-arg XMATCH, and intermediate CallArg::Omitted lowering
       const okModel = new Model({ name: "ValidCallArgModel" });
       const okSheet = okModel.addSheet("Main");
       const okTbl = okSheet.addTable("T", "Table");
@@ -1099,7 +1095,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       okTbl.addRow("v1", { cells: { c1: 10 } });
       okTbl.addRow("v2", { cells: { c1: 20 } });
       okTbl.addRow("iferror_ok", { expr: "IFERROR(10 / 0, 42)" });
-      okTbl.addRow("if_2arg", { expr: "IF(FALSE, 10)" });
+      okTbl.addRow("xmatch_2arg", { expr: 'XMATCH(200, @table["k1".."k2", @col])' });
       okTbl.addRow("pmt_skip", { expr: "PMT(0.05, 10, -1000, _, 1)" });
       okTbl.addRow("pmt_explicit", { expr: "PMT(0.05, 10, -1000, 0, 1)" });
       okTbl.addRow("xlookup_omitted", {
@@ -1111,13 +1107,15 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
 
       const compiled = okModel.compile();
       expect(compiled.num("T", "iferror_ok", "c1")).toBe(42);
+      expect(compiled.num("T", "xmatch_2arg", "c1")).toBe(2);
       expect(compiled.num("T", "pmt_skip", "c1")).toBe(compiled.num("T", "pmt_explicit", "c1"));
       expect(compiled.num("T", "xlookup_omitted", "c1")).toBe(10);
       expect(compiled.num("T", "xlookup_2skip", "c1")).toBe(10);
 
-      const ifCell = compiled.inspectCell("T", "if_2arg", "c1");
-      expect(ifCell.evaluatedValue).toEqual({ Boolean: false });
-      expect(ifCell.excelFormula).toBe("=IF(FALSE,10)");
+      const xmatchCell = compiled.inspectCell("T", "xmatch_2arg", "c1");
+      expect(xmatchCell.evaluatedValue).toEqual({ Number: 2 });
+      expect(xmatchCell.excelFormula).not.toBeNull();
+      expect(xmatchCell.excelFormula?.startsWith("=XMATCH(200,")).toBe(true);
 
       const pmtCell = compiled.inspectCell("T", "pmt_skip", "c1");
       expect(pmtCell.excelFormula).toBe("=PMT(0.05,10,-1000,,1)");
@@ -1144,114 +1142,149 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       }
     });
 
-    it("(j) materializes formula cell blank results to 0 and coerces Empty to FALSE against Boolean", () => {
-      const model = new Model({ name: "BlankCoercionModel", theme: "corporate_navy" });
-      const tbl = model.addSheet("Main").addTable("T", "Blank Coercion", { currency: "USD" });
+    it("(j) enforces Cluster A1 strict operator, scalar, slice, ISBLANK, and NA contracts", () => {
+      // 1. Grammar strictness: unary `+`, chained comparisons, and invalid prev/next offsets -> FormulaParseError
+      for (const badParse of [
+        "+10",
+        "+TRUE",
+        "1 = 1 = TRUE",
+        "1 < 2 < 3",
+        "@table[row.prev(0), @col]",
+        "@table[@row, col.next(0)]",
+        "@table[@row, col.prev(5000000000)]",
+      ]) {
+        const parseModel = new Model({ name: "ParseStrictModel" });
+        const parseTbl = parseModel.addSheet("Main").addTable("T", "Parse Strict");
+        parseTbl.addColumn("c1", { role: "measure", header: "C1" });
+        parseTbl.addRow("r1", { expr: badParse });
+
+        let caught: unknown;
+        try {
+          parseModel.compile();
+        } catch (err: unknown) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(FormulaParseError);
+      }
+
+      // 2. Type, EmptyFormulaResult, SliceInScalarContext, ParamKind::Range, and static shape/bounds -> exact F8Error (never TypeError)
+      for (const badF8 of [
+        '@table["a", @col]',
+        'INDEX(@table["a".."a", @col], 1)',
+        'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
+        '"5" + 1',
+        "TRUE * 10",
+        '@table["a", @col] + 1',
+        "ROUND(10, 2.5)",
+        "IF(1, 10, 20)",
+        'AND(@table["a", @col], TRUE)',
+        '100 < "1"',
+        '"" < FALSE',
+        '@table["a", @col] = ""',
+        '@table["a", @col] = FALSE',
+        'IFERROR(@table["a", @col] + 1, 0)',
+        '@table["r1".."r2", @col]',
+        '@table["r1".."r1", @col]',
+        'ISBLANK(@table["r1".."r1", @col])',
+        "COUNT(10)",
+        'SUMPRODUCT("abc")',
+        'SUMIFS(@table["r1".."r2", @col], @table["r1".."r1", @col], 10)',
+        "CHOOSE(5, 10, 20)",
+        'INDEX(@table["r1".."r2", @col], 5)',
+        "SWITCH(1, 1, 10, 20)",
+      ]) {
+        const errModel = new Model({ name: "StrictErrorModel" });
+        const errTbl = errModel.addSheet("Main").addTable("T", "Strict Error");
+        errTbl.addColumn("c1", { role: "measure", header: "C1" });
+        errTbl.addRow("a", { cells: { c1: null } });
+        errTbl.addRow("k", { cells: { c1: "match" } });
+        errTbl.addRow("r1", { cells: { c1: 10 } });
+        errTbl.addRow("r2", { cells: { c1: 20 } });
+        errTbl.addRow("target", { expr: badF8 });
+
+        let caught: unknown;
+        try {
+          errModel.compile();
+        } catch (err: unknown) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(F8Error);
+        expect(caught instanceof F8Error && caught.constructor === F8Error).toBe(true);
+        expect(caught instanceof TypeError).toBe(false);
+      }
+
+      // 3. Valid ISBLANK, NA(), guarded nullable formulas, parenthesized comparisons, and sparse Slice AND
+      const model = new Model({ name: "IsblankAndNaModel", theme: "corporate_navy" });
+      const tbl = model
+        .addSheet("Main")
+        .addTable("T", "Blank Guard & Information", { currency: "USD" });
       tbl.addColumn("c1", { role: "measure", header: "C1" });
 
       tbl.addRow("a", { cells: { c1: null }, format: "currency", decimals: 1 });
       tbl.addRow("k", { cells: { c1: "match" } });
-      tbl.addRow("b", { expr: '@table["a", @col]', format: "currency", decimals: 1 });
-      tbl.addRow("c", { expr: 'INDEX(@table["a".."a", @col], 1)' });
-      tbl.addRow("d", {
-        expr: 'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
-      });
-      tbl.addRow("e", { expr: 'IF(TRUE, @table["a", @col], 1)' });
-      tbl.addRow("f", { expr: 'IFS(TRUE, @table["a", @col])' });
-      tbl.addRow("g", { expr: 'CHOOSE(1, @table["a", @col])' });
-      tbl.addRow("h", { expr: 'SWITCH(1, 1, @table["a", @col])' });
-
-      tbl.addRow("a_eq_empty", { expr: '(@table["a", @col] = "")' });
-      tbl.addRow("xlookup_a_eq_empty", {
-        expr: '(XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col]) = "")',
-      });
-      tbl.addRow("if_guard_a", {
-        expr: 'IF(@table["a", @col] = "", "", @table["a", @col])',
+      tbl.addRow("f1", { cells: { c1: null } });
+      tbl.addRow("f2", { cells: { c1: true } });
+      tbl.addRow("b", {
+        expr: 'IF(ISBLANK(@table["a", @col]), 0, @table["a", @col])',
         format: "currency",
         decimals: 1,
       });
-      tbl.addRow("b_eq_empty", { expr: '(@table["b", @col] = "")' });
+      tbl.addRow("if_guard_a", {
+        expr: 'IF(ISBLANK(@table["a", @col]), "", @table["a", @col])',
+        format: "currency",
+        decimals: 1,
+      });
+      tbl.addRow("ib_null", { expr: 'ISBLANK(@table["a", @col])' });
+      tbl.addRow("ib_guarded", { expr: 'ISBLANK(@table["b", @col])' });
+      tbl.addRow("ib_empty_str", { expr: 'ISBLANK("")' });
+      tbl.addRow("ib_div0", { expr: "ISBLANK(1 / 0)" });
+      tbl.addRow("ib_xlookup", {
+        expr: 'ISBLANK(XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col], 0))',
+      });
+      tbl.addRow("na_cell", { expr: "NA()" });
+      tbl.addRow("na_trapped", { expr: "IFNA(IF(FALSE, 10, NA()), 0)" });
+      tbl.addRow("paren_cmp", { expr: "(1 = 1) = TRUE" });
+      tbl.addRow("and_sparse", { expr: 'AND(@table["f1".."f2", @col])' });
       tbl.addRow("b_eq_zero", { expr: '(@table["b", @col] = 0)' });
       tbl.addRow("count_a", { expr: 'COUNT(@table["a", @col])' });
       tbl.addRow("count_b", { expr: 'COUNT(@table["b", @col])' });
       tbl.addRow("counta_a", { expr: 'COUNTA(@table["a", @col])' });
       tbl.addRow("counta_b", { expr: 'COUNTA(@table["b", @col])' });
-      tbl.addRow("avg_a", { expr: 'AVERAGE(@table["a", @col], 10)' });
-      tbl.addRow("avg_b", { expr: 'AVERAGE(@table["b", @col], 10)' });
-      tbl.addRow("xlookup_zero_a", {
-        expr: 'XLOOKUP(0, @table["a".."a", @col], @table["k".."k", @col])',
-      });
-      tbl.addRow("xlookup_zero_b", {
-        expr: 'XLOOKUP(0, @table["b".."b", @col], @table["k".."k", @col])',
-      });
-      tbl.addRow("countifs_a_empty", { expr: 'COUNTIFS(@table["a".."a", @col], "")' });
-      tbl.addRow("countifs_b_empty", { expr: 'COUNTIFS(@table["b".."b", @col], "")' });
-
-      tbl.addRow("a_eq_false", { expr: '@table["a", @col] = FALSE' });
-      tbl.addRow("a_neq_false", { expr: '@table["a", @col] <> FALSE' });
-      tbl.addRow("a_lt_false", { expr: '@table["a", @col] < FALSE' });
-      tbl.addRow("a_lte_false", { expr: '@table["a", @col] <= FALSE' });
-      tbl.addRow("a_gt_false", { expr: '@table["a", @col] > FALSE' });
-      tbl.addRow("a_gte_false", { expr: '@table["a", @col] >= FALSE' });
-      tbl.addRow("a_lt_true", { expr: '@table["a", @col] < TRUE' });
-      tbl.addRow("a_eq_true", { expr: '@table["a", @col] = TRUE' });
-      tbl.addRow("empty_str_lt_false", { expr: '"" < FALSE' });
-      tbl.addRow("switch_a_bool", {
-        expr: 'SWITCH(@table["a", @col], FALSE, 10, TRUE, 20, 30)',
-      });
-      tbl.addRow("switch_a_zero", {
-        expr: 'SWITCH(@table["a", @col], "", 10, FALSE, 20, 0, 40, 50)',
-      });
 
       const compiled = model.compile();
 
-      // Literal null cell remains Empty
+      // Literal null cell remains Empty; .num() still throws host TypeError
       expect(compiled.value("T", "a", "c1")).toBeNull();
       expect(() => compiled.num("T", "a", "c1")).toThrow(TypeError);
       expect(compiled.formatted("T", "a", "c1")).toBe("");
       expect(compiled.inspectCell("T", "a", "c1").evaluatedValue).toBe("Empty");
 
-      // Formula cells referencing null materialize to +0 at cell boundary
+      // Guarded formula cell evaluates to +0
       expect(Object.is(compiled.value("T", "b", "c1"), 0)).toBe(true);
       expect(Object.is(compiled.num("T", "b", "c1"), 0)).toBe(true);
       expect(compiled.formatted("T", "b", "c1")).toBe("$0.0");
-      expect(compiled.inspectCell("T", "b", "c1").evaluatedValue).toEqual({ Number: 0 });
 
-      for (const rowId of ["c", "d", "e", "f", "g", "h"]) {
-        expect(Object.is(compiled.num("T", rowId, "c1"), 0)).toBe(true);
-        expect(compiled.formatted("T", rowId, "c1")).toBe("0");
-      }
-
-      // Mid-expression blank preservation vs downstream formula cell materialization
-      expect(compiled.value("T", "a_eq_empty", "c1")).toBe(true);
-      expect(compiled.value("T", "xlookup_a_eq_empty", "c1")).toBe(true);
       expect(compiled.value("T", "if_guard_a", "c1")).toBe("");
       expect(compiled.formatted("T", "if_guard_a", "c1")).toBe("");
-      expect(compiled.value("T", "b_eq_empty", "c1")).toBe(false);
+      expect(compiled.value("T", "ib_null", "c1")).toBe(true);
+      expect(compiled.value("T", "ib_guarded", "c1")).toBe(false);
+      expect(compiled.value("T", "ib_empty_str", "c1")).toBe(false);
+      expect(compiled.value("T", "ib_div0", "c1")).toBe(false);
+      expect(compiled.value("T", "ib_xlookup", "c1")).toBe(true);
+
+      const naInfo = compiled.inspectCell("T", "na_cell", "c1");
+      expect(compiled.value("T", "na_cell", "c1")).toBe("#N/A");
+      expect(naInfo.excelFormula).toBe("=NA()");
+      expect(() => compiled.num("T", "na_cell", "c1")).toThrow(TypeError);
+      expect(compiled.num("T", "na_trapped", "c1")).toBe(0);
+
+      expect(compiled.value("T", "paren_cmp", "c1")).toBe(true);
+      expect(compiled.value("T", "and_sparse", "c1")).toBe(true);
       expect(compiled.value("T", "b_eq_zero", "c1")).toBe(true);
       expect(compiled.num("T", "count_a", "c1")).toBe(0);
       expect(compiled.num("T", "count_b", "c1")).toBe(1);
       expect(compiled.num("T", "counta_a", "c1")).toBe(0);
       expect(compiled.num("T", "counta_b", "c1")).toBe(1);
-      expect(compiled.num("T", "avg_a", "c1")).toBe(10);
-      expect(compiled.num("T", "avg_b", "c1")).toBe(5);
-      expect(compiled.value("T", "xlookup_zero_a", "c1")).toBe("#N/A");
-      expect(compiled.value("T", "xlookup_zero_b", "c1")).toBe("match");
-      expect(compiled.num("T", "countifs_a_empty", "c1")).toBe(1);
-      expect(compiled.num("T", "countifs_b_empty", "c1")).toBe(0);
-
-      // Empty vs Boolean comparisons coerce Empty to FALSE; SWITCH coerces Empty operands to 0
-      expect(compiled.value("T", "a_eq_false", "c1")).toBe(true);
-      expect(compiled.value("T", "a_neq_false", "c1")).toBe(false);
-      expect(compiled.value("T", "a_lt_false", "c1")).toBe(false);
-      expect(compiled.value("T", "a_lte_false", "c1")).toBe(true);
-      expect(compiled.value("T", "a_gt_false", "c1")).toBe(false);
-      expect(compiled.value("T", "a_gte_false", "c1")).toBe(true);
-      expect(compiled.value("T", "a_lt_true", "c1")).toBe(true);
-      expect(compiled.value("T", "a_eq_true", "c1")).toBe(false);
-      expect(compiled.value("T", "empty_str_lt_false", "c1")).toBe(true);
-      expect(compiled.num("T", "switch_a_bool", "c1")).toBe(30);
-      expect(compiled.num("T", "switch_a_zero", "c1")).toBe(40);
     });
 
     it("(k) treats NaN/inf/Infinity strings as text in *IFS criteria and trims operator trailing spaces", () => {
@@ -1289,6 +1322,193 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "sum_42", "c1")).toBe(90);
       expect(compiled.num("T", "cnt_gt0", "c1")).toBe(1);
       expect(Object.is(compiled.value("T", "r6", "c1"), 0)).toBe(true);
+    });
+
+    it("(l) enforces Cluster A2 monomorphic branches, dormant memoized validation, and lookup/index strictness", () => {
+      // 1. Stage A & Stage B rejections throw exact F8Error (never host TypeError or 'dormant')
+      for (const badA2 of [
+        "IF(TRUE, 10)",
+        "SWITCH(1, 1, 10, 20)",
+        "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
+        'IF(TRUE, 10, "NM")',
+        'IFERROR(10 / 0, "N/A")',
+        'CHOOSE(1, 10, "NM")',
+        'IFS(TRUE, 10, FALSE, "NM")',
+        'IF(FALSE, IF(TRUE, "a", "b") = IF(FALSE, 1, 2), TRUE)',
+        "ROUND(10, 2.5)",
+        "ROUND(10, --2.5)",
+        "ROUND(10, ---2.5)",
+        'ROUND(10, @table["flt_cell", @col])',
+        "IF(FALSE, ROUND(10, 2.5), 0)",
+        'IF(@table["flag_false", @col], ROUND(10, @table["flt_cell", @col]), 0)',
+        "ROUND(10, IF(FALSE, 2, 2.5))",
+        'ROUND(10, IF(FALSE, 2, @table["flt_cell", @col]))',
+        'ROUND(10, IF(TRUE, "a", "b"))',
+        'ROUND(10, IF(TRUE, 2, "bad"))',
+        '1 + INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col])',
+        '1 = XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col])',
+        'ABS(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]))',
+        'IFS(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10, TRUE, 20)',
+        'XMATCH(IF(FALSE, "Alpha", NA()), @table["num1".."num2", @col])',
+        'XMATCH(INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col]), @table["num1".."num2", @col])',
+        'XLOOKUP(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), @table["num1".."num2", @col], @table["num1".."num2", @col])',
+        '1 + XLOOKUP("Beta", @table["cat1".."cat2", @col], @table["num1".."num2", @col], "NM")',
+        'IFERROR(@table["null_cell", @col], 1)',
+        'IFERROR(1 / 0, @table["null_cell", @col])',
+        'IFNA(@table["null_cell", @col], 1)',
+        'ISBLANK(IFERROR(@table["null_cell", @col], 1))',
+        'IF(TRUE, @table["num1", @col], @table["txt1", @col])',
+        'IF(@table["flag_false", @col], @table["txt1", @col] + 5, 0)',
+        'IF(@table["flag_false", @col], @table["num1", @col] < @table["txt1", @col], FALSE)',
+        'IF(TRUE, 10, XLOOKUP("Beta", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]))',
+        'IF(TRUE, 10, INDEX(@table["txt1".."txt2", @col], @table["dyn_idx", @col]))',
+        'IFERROR(INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col]), 10)',
+        'IFNA(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10)',
+        'IFNA(@table["err_txt", @col], 10)',
+        'IFERROR(@table["err_oob_txt", @col], 10)',
+        '1 + @table["err_txt", @col]',
+        '@table["err_txt", @col] = 10',
+        'IFERROR(@table["err_div0", @col], "fallback")',
+        'AND(@table["c1".."err_txt", @col])',
+        'AND(@table["err_txt".."err_txt", @col])',
+        'IF(FALSE, AND(@table["c1".."err_txt", @col]), FALSE)',
+        'XLOOKUP(10, @table["num_adj".."err_txt", @col], @table["txt1".."txt2", @col])',
+        'XMATCH(10, @table["err_txt".."err_txt", @col])',
+        'XMATCH(10, @table["err_txt".."err_txt", @col], 0, 2)',
+        'INDEX(@table["num_adj".."err_txt", @col], 1)',
+        'XLOOKUP("Alpha", @table["cat1".."cat2", @col], @table["num_adj".."err_txt", @col])',
+        'IFERROR(INDEX(@table["err_div0".."err_div0_2", @col], 1), "fallback")',
+        'XMATCH("Alpha", @table["txt1".."txt2", @col], 2)',
+        'XMATCH("Alpha", @table["txt1".."txt2", @col], @table["dyn_idx", @col])',
+        'XMATCH("Alpha", @table["txt1".."txt2", @col], 1.5)',
+        'INDEX(@table["num1".."txt1", @col], 1)',
+        'XMATCH(20, @table["unsort1".."unsort3", @col], 0, 2)',
+        'XMATCH(20, @table["num1".."num2", @col], 0, -2)',
+        'XMATCH(10, @table["errk1".."errk2", @col], 0, 2)',
+        'XMATCH(10, @table["null_cell".."num1", @col], 0, 2)',
+      ]) {
+        const errModel = new Model({ name: "ClusterA2ErrorModel" });
+        const errTbl = errModel.addSheet("Main").addTable("T", "Cluster A2 Error");
+        errTbl.addColumn("c1", { role: "measure", header: "C1" });
+        errTbl.addRow("null_cell", { cells: { c1: null } });
+        errTbl.addRow("num1", { cells: { c1: 10 } });
+        errTbl.addRow("num2", { cells: { c1: 20 } });
+        errTbl.addRow("txt1", { cells: { c1: "Alpha" } });
+        errTbl.addRow("txt2", { cells: { c1: "Beta" } });
+        errTbl.addRow("cat1", { cells: { c1: "Alpha" } });
+        errTbl.addRow("cat2", { cells: { c1: "Beta" } });
+        errTbl.addRow("flag_false", { cells: { c1: false } });
+        errTbl.addRow("flt_cell", { cells: { c1: 2.5 } });
+        errTbl.addRow("dyn_idx", { expr: "1 + 0" });
+        errTbl.addRow("dyn_oob_idx", { expr: "5 + 0" });
+        if (badA2.includes('"c1".."err_txt"')) {
+          errTbl.addRow("num_adj", { cells: { c1: 10 } });
+          errTbl.addRow("c1", { cells: { c1: true } });
+        } else {
+          errTbl.addRow("c1", { cells: { c1: true } });
+          errTbl.addRow("num_adj", { cells: { c1: 10 } });
+        }
+        errTbl.addRow("err_txt", {
+          expr: 'XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col])',
+        });
+        errTbl.addRow("err_oob_txt", {
+          expr: 'INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col])',
+        });
+        errTbl.addRow("err_div0", { expr: "1 / 0" });
+        errTbl.addRow("err_div0_2", { expr: "2 / 0" });
+        errTbl.addRow("unsort1", { cells: { c1: 10 } });
+        errTbl.addRow("unsort2", { cells: { c1: 30 } });
+        errTbl.addRow("unsort3", { cells: { c1: 20 } });
+        errTbl.addRow("errk1", { cells: { c1: 10 } });
+        errTbl.addRow("errk2", { expr: "1 / 0" });
+        errTbl.addRow("target", { expr: badA2 });
+
+        let caught: unknown;
+        try {
+          errModel.compile();
+        } catch (err: unknown) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(F8Error);
+        expect(caught instanceof F8Error && caught.constructor === F8Error).toBe(true);
+        expect(caught instanceof TypeError).toBe(false);
+        expect(caught instanceof F8Error && !caught.message.includes("dormant")).toBe(true);
+      }
+
+      // 2. Valid monomorphic branches, taken integer arm, error ValueType provenance, and binary search
+      const okModel = new Model({ name: "ClusterA2ValidModel" });
+      const okTbl = okModel.addSheet("Main").addTable("T", "Cluster A2 Valid");
+      okTbl.addColumn("c1", { role: "measure", header: "C1" });
+      okTbl.addRow("null_cell", { cells: { c1: null } });
+      okTbl.addRow("flt_cell", { cells: { c1: 2.5 } });
+      okTbl.addRow("cat1", { cells: { c1: "Alpha" } });
+      okTbl.addRow("cat2", { cells: { c1: "Beta" } });
+      okTbl.addRow("txt1", { cells: { c1: "one" } });
+      okTbl.addRow("txt2", { cells: { c1: "two" } });
+      okTbl.addRow("sp1", { cells: { c1: 10 } });
+      okTbl.addRow("sp2", { cells: { c1: null } });
+      okTbl.addRow("sp3", { cells: { c1: 30 } });
+      okTbl.addRow("asc1", { cells: { c1: 10 } });
+      okTbl.addRow("asc2", { cells: { c1: 20 } });
+      okTbl.addRow("asc3", { cells: { c1: 30 } });
+      okTbl.addRow("asc4", { cells: { c1: 40 } });
+      okTbl.addRow("desc1", { cells: { c1: 40 } });
+      okTbl.addRow("desc2", { cells: { c1: 30 } });
+      okTbl.addRow("desc3", { cells: { c1: 20 } });
+      okTbl.addRow("desc4", { cells: { c1: 10 } });
+      okTbl.addRow("if_text", { expr: 'IF(TRUE, "PASS", "FAIL")' });
+      okTbl.addRow("if_na_bottom", { expr: "IF(10 > 0, 100 / 10, NA())" });
+      okTbl.addRow("round_taken_lit", { expr: "ROUND(10, IF(TRUE, 2, 2.5))" });
+      okTbl.addRow("round_taken_cell", {
+        expr: 'ROUND(10, IF(TRUE, 2, @table["flt_cell", @col]))',
+      });
+      okTbl.addRow("is_null", { expr: 'ISBLANK(@table["null_cell", @col])' });
+      okTbl.addRow("helper_guard", {
+        expr: 'IF(@table["is_null", @col], 0, @table["null_cell", @col] + 5)',
+      });
+      okTbl.addRow("index_sparse", { expr: 'INDEX(@table["sp1".."sp3", @col], 3)' });
+      okTbl.addRow("xmatch_bin_asc", { expr: 'XMATCH(30, @table["asc1".."asc4", @col], 0, 2)' });
+      okTbl.addRow("xlookup_bin_desc", {
+        expr: 'XLOOKUP(25, @table["desc1".."desc4", @col], @table["asc1".."asc4", @col], -1, -1, -2)',
+      });
+      okTbl.addRow("add_na", { expr: "1 + IF(FALSE, 10, NA())" });
+      okTbl.addRow("xmatch_na", { expr: 'XMATCH(NA(), @table["asc1".."asc2", @col])' });
+      okTbl.addRow("err_txt", {
+        expr: 'XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col])',
+      });
+      okTbl.addRow("err_div0", { expr: "1 / 0" });
+      okTbl.addRow("err_div0_2", { expr: "2 / 0" });
+      okTbl.addRow("c1", { cells: { c1: true } });
+      okTbl.addRow("err_na", { expr: "NA()" });
+      okTbl.addRow("ok_ifna_txt", { expr: 'IFNA(@table["err_txt", @col], "fallback")' });
+      okTbl.addRow("ok_iferr_div0", { expr: 'IFERROR(@table["err_div0", @col], 0)' });
+      okTbl.addRow("ok_iferr_idx_div0", {
+        expr: 'IFERROR(INDEX(@table["err_div0".."err_div0_2", @col], 1), 0)',
+      });
+      okTbl.addRow("ok_add_div0", { expr: '1 + @table["err_div0", @col]' });
+      okTbl.addRow("ok_ifna_na_num", { expr: 'IFNA(@table["err_na", @col], 10)' });
+      okTbl.addRow("ok_ifna_na_txt", { expr: 'IFNA(@table["err_na", @col], "fallback")' });
+      okTbl.addRow("ok_and_na_slice", { expr: 'AND(@table["c1".."err_na", @col])' });
+
+      const compiled = okModel.compile();
+      expect(compiled.value("T", "if_text", "c1")).toBe("PASS");
+      expect(compiled.num("T", "if_na_bottom", "c1")).toBe(10);
+      expect(compiled.num("T", "round_taken_lit", "c1")).toBe(10);
+      expect(compiled.num("T", "round_taken_cell", "c1")).toBe(10);
+      expect(compiled.value("T", "is_null", "c1")).toBe(true);
+      expect(compiled.num("T", "helper_guard", "c1")).toBe(0);
+      expect(compiled.num("T", "index_sparse", "c1")).toBe(30);
+      expect(compiled.num("T", "xmatch_bin_asc", "c1")).toBe(3);
+      expect(compiled.num("T", "xlookup_bin_desc", "c1")).toBe(30);
+      expect(compiled.value("T", "add_na", "c1")).toBe("#N/A");
+      expect(compiled.value("T", "xmatch_na", "c1")).toBe("#N/A");
+      expect(compiled.value("T", "ok_ifna_txt", "c1")).toBe("fallback");
+      expect(compiled.num("T", "ok_iferr_div0", "c1")).toBe(0);
+      expect(compiled.num("T", "ok_iferr_idx_div0", "c1")).toBe(0);
+      expect(compiled.value("T", "ok_add_div0", "c1")).toBe("#DIV/0!");
+      expect(compiled.num("T", "ok_ifna_na_num", "c1")).toBe(10);
+      expect(compiled.value("T", "ok_ifna_na_txt", "c1")).toBe("fallback");
+      expect(compiled.value("T", "ok_and_na_slice", "c1")).toBe("#N/A");
     });
   });
 });

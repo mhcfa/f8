@@ -1,16 +1,18 @@
+use crate::functions::common::extract_scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, normalize_zero};
+use crate::value::{CellValue, ValueType};
 
 /// Positional parameter definitions for `ABS`.
 static ABS_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number",
     "The real number for which you want the absolute value.",
     ParamKind::Scalar,
+    ParamType::Number,
 )];
 
 /// `ABS(number)`: Returns the absolute value of a number.
@@ -30,6 +32,10 @@ impl ExcelFunction for AbsFunction {
         ABS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
     }
@@ -41,9 +47,8 @@ impl ExcelFunction for AbsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let val = args[0].eval_scalar(self.name(), ctx)?;
-        match val.coerce_to_number() {
-            Ok(n) => Ok(CellValue::Number(normalize_zero(n.abs()))),
+        match extract_scalar_number(&args[0], self.name(), "number", 1, ctx)? {
+            Ok(n) => Ok(CellValue::number(n.abs())),
             Err(err) => Ok(CellValue::Error(err)),
         }
     }

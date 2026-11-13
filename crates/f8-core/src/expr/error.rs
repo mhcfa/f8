@@ -67,4 +67,15 @@ pub enum ParseError {
         /// Byte offset in the formula string.
         offset: usize,
     },
+
+    /// Chained relational comparison without explicit parentheses.
+    #[error(
+        "Chained relational comparison '{operator}' at offset {offset} requires explicit parentheses"
+    )]
+    ChainedComparison {
+        /// Relational operator that was chained.
+        operator: &'static str,
+        /// Byte offset in the formula string.
+        offset: usize,
+    },
 }

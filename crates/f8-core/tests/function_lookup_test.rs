@@ -12,11 +12,11 @@ use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::{Expr, Literal};
-use f8_core::functions::traits::{EvalContext, FunctionArg};
+use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError};
+use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context for direct function execution and lazy branch counting.
 struct MockContext {
@@ -55,12 +55,7 @@ impl EvalContext for MockContext {
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
-    FunctionArg::Array {
-        rows,
-        cols,
-        values,
-        is_range_ref: true,
-    }
+    FunctionArg::array(rows, cols, values, ReferenceKind::Slice)
 }
 
 fn eval_str(
@@ -223,9 +218,23 @@ fn test_scenario_2_fallback_handling_xlookup() {
         .unwrap();
     assert_eq!(res_na, CellValue::Error(ExcelError::Na));
 
-    // Missing with explicit fallback -> "MissingValue"
+    // Missing with homogeneous numeric fallback -> -1.0
     let res_fb = xlookup
         .evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text("C".into())),
+                keys.clone(),
+                values.clone(),
+                FunctionArg::Scalar(CellValue::Number(-1.0)),
+            ],
+            &ctx,
+        )
+        .unwrap();
+    assert_eq!(res_fb, CellValue::Number(-1.0));
+
+    // Heterogeneous fallback ("MissingValue" vs numeric return_array) fails with IncompatibleBranchTypes
+    assert_eq!(
+        xlookup.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Text("C".into())),
                 keys,
@@ -233,9 +242,14 @@ fn test_scenario_2_fallback_handling_xlookup() {
                 FunctionArg::Scalar(CellValue::Text("MissingValue".into())),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res_fb, CellValue::Text("MissingValue".into()));
+        ),
+        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+            function: "XLOOKUP",
+            position: 4,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        }))
+    );
 }
 
 // ============================================================================
@@ -477,7 +491,7 @@ fn test_scenario_5_approximate_match() {
 }
 
 // ============================================================================
-// Scenario 6: Wildcard matching in XLOOKUP and XMATCH
+// Scenario 6: Strict lookup mode validation and wildcard retirement
 // ============================================================================
 
 #[test]
@@ -506,51 +520,119 @@ fn test_scenario_6_wildcard_matching() {
         ],
     );
 
-    // match_mode = 2: "Ap*" forward search matches "Apple" (pos 1)
-    let match_fwd = xmatch
-        .evaluate(
+    // Wildcard match_mode = 2 is retired on both XMATCH and XLOOKUP
+    assert_eq!(
+        xmatch.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Text("Ap*".into())),
                 keys.clone(),
                 FunctionArg::Scalar(CellValue::Number(2.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(match_fwd, CellValue::Number(1.0));
+        ),
+        Err(FunctionError::InvalidLookupMode {
+            function: "XMATCH",
+            param: "match_mode",
+            position: 3,
+            mode: 2,
+        })
+    );
 
-    // match_mode = 2: "Ap*" reverse search matches "Apricot" (pos 3)
-    let match_rev = xmatch
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Text("Ap*".into())),
-                keys.clone(),
-                FunctionArg::Scalar(CellValue::Number(2.0)),
-                FunctionArg::Scalar(CellValue::Number(-1.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(match_rev, CellValue::Number(3.0));
-
-    // Single character wildcard: "?anana" matches "Banana" -> returns 20.0
-    let val_wild = xlookup
-        .evaluate(
+    assert_eq!(
+        xlookup.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Text("?anana".into())),
-                keys,
-                values,
+                keys.clone(),
+                values.clone(),
                 FunctionArg::Omitted,
                 FunctionArg::Scalar(CellValue::Number(2.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(val_wild, CellValue::Number(20.0));
+        ),
+        Err(FunctionError::InvalidLookupMode {
+            function: "XLOOKUP",
+            param: "match_mode",
+            position: 5,
+            mode: 2,
+        })
+    );
+
+    // Validation order: ParamType::Integer ("abc" -> InvalidArgumentType, 1.5 -> NonIntegerArgument)
+    // -> Error scalar -> NonLiteralLookupMode -> invalid integer -> InvalidLookupMode
+    assert_eq!(
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text("Apple".into())),
+                keys.clone(),
+                FunctionArg::Scalar(CellValue::Text("abc".into())),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XMATCH",
+            param: "match_mode",
+            position: 3,
+            expected: ExpectedType::Integer,
+            found: ValueType::Text,
+        }))
+    );
+
+    assert_eq!(
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text("Apple".into())),
+                keys.clone(),
+                FunctionArg::Scalar(CellValue::Number(1.5)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::NonIntegerArgument {
+            function: "XMATCH",
+            param: "match_mode",
+            position: 3,
+            value: "1.5".into(),
+        }))
+    );
+
+    assert_eq!(
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text("Apple".into())),
+                keys.clone(),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::NonLiteralLookupMode {
+            function: "XMATCH",
+            param: "match_mode",
+            position: 3,
+        })
+    );
+
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text("Apple".into())),
+                keys,
+                values,
+                FunctionArg::Omitted,
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(99.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::InvalidLookupMode {
+            function: "XLOOKUP",
+            param: "search_mode",
+            position: 6,
+            mode: 99,
+        })
+    );
 }
 
 // ============================================================================
-// Scenario 7: Binary search ascending and descending
+// Scenario 7: Binary search ascending and descending (clean monotonic keys)
 // ============================================================================
 
 #[test]
@@ -613,19 +695,107 @@ fn test_scenario_7_binary_search() {
         .unwrap();
     assert_eq!(desc_res, CellValue::Number(2.0));
 
-    // Wildcard + binary search is rejected with #VALUE!
-    let wild_bin_err = xmatch
-        .evaluate(
+    // Binary search rejects Empty elements in lookup_array with ExpectedType::NonEmpty
+    assert_eq!(
+        xmatch.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Text("A*".into())),
-                make_array(1, 1, vec![CellValue::Text("A".into())]),
-                FunctionArg::Scalar(CellValue::Number(2.0)),
+                FunctionArg::Scalar(CellValue::Number(20.0)),
+                make_array(
+                    3,
+                    1,
+                    vec![
+                        CellValue::Number(10.0),
+                        CellValue::Empty,
+                        CellValue::Number(30.0),
+                    ],
+                ),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
                 FunctionArg::Scalar(CellValue::Number(2.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(wild_bin_err, CellValue::Error(ExcelError::Value));
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XMATCH",
+            param: "lookup_array",
+            position: 2,
+            expected: ExpectedType::NonEmpty,
+            found: ValueType::Empty,
+        }))
+    );
+
+    // Binary search rejects Error elements in lookup_array with ErrorInBinaryLookupArray
+    assert_eq!(
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(20.0)),
+                make_array(
+                    3,
+                    1,
+                    vec![
+                        CellValue::Number(10.0),
+                        CellValue::Error(ExcelError::Div0),
+                        CellValue::Number(30.0),
+                    ],
+                ),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(2.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::ErrorInBinaryLookupArray {
+            function: "XMATCH",
+            search_mode: 2,
+        })
+    );
+
+    // Binary search rejects unsorted ascending and unsorted descending lookup_array keys
+    assert_eq!(
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(20.0)),
+                make_array(
+                    3,
+                    1,
+                    vec![
+                        CellValue::Number(10.0),
+                        CellValue::Number(30.0),
+                        CellValue::Number(20.0),
+                    ],
+                ),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(2.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::UnsortedBinaryLookupArray {
+            function: "XMATCH",
+            search_mode: 2,
+        })
+    );
+
+    assert_eq!(
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(20.0)),
+                make_array(
+                    3,
+                    1,
+                    vec![
+                        CellValue::Number(10.0),
+                        CellValue::Number(20.0),
+                        CellValue::Number(30.0),
+                    ],
+                ),
+                FunctionArg::Scalar(CellValue::Number(0.0)),
+                FunctionArg::Scalar(CellValue::Number(-2.0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::UnsortedBinaryLookupArray {
+            function: "XMATCH",
+            search_mode: -2,
+        })
+    );
 }
 
 // ============================================================================
@@ -639,7 +809,7 @@ fn test_scenario_8_dimension_validation() {
     let xlookup = registry.lookup("XLOOKUP").unwrap();
     let ctx = MockContext::new();
 
-    // 2D lookup array (2x2) is rejected
+    // 2D lookup array (2x2) is rejected strictly with ExpectedOneDimensionalSlice
     let matrix_2d = make_array(
         2,
         2,
@@ -651,18 +821,24 @@ fn test_scenario_8_dimension_validation() {
         ],
     );
 
-    let err_2d = xmatch
-        .evaluate(
+    assert_eq!(
+        xmatch.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(1.0)),
                 matrix_2d.clone(),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_2d, CellValue::Error(ExcelError::Value));
+        ),
+        Err(FunctionError::ExpectedOneDimensionalSlice {
+            function: "XMATCH",
+            param: "lookup_array",
+            rows: 2,
+            cols: 2,
+        })
+    );
 
-    // Mismatched lengths between lookup_array (2) and return_array (3) in XLOOKUP
+    // Mismatched dimensions between lookup_array (2x1) and return_array (3x1) in XLOOKUP fail strictly
+    // (even when lookup_value is an ExcelError)
     let lookup_arr = make_array(2, 1, vec![CellValue::Number(1.0), CellValue::Number(2.0)]);
     let return_arr = make_array(
         3,
@@ -674,17 +850,23 @@ fn test_scenario_8_dimension_validation() {
         ],
     );
 
-    let err_len = xlookup
-        .evaluate(
+    assert_eq!(
+        xlookup.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
                 lookup_arr,
                 return_arr,
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_len, CellValue::Error(ExcelError::Value));
+        ),
+        Err(FunctionError::DimensionMismatch {
+            function: "XLOOKUP",
+            expected_rows: 2,
+            expected_cols: 1,
+            found_rows: 3,
+            found_cols: 1,
+        })
+    );
 
     // Error in lookup_value bubbles immediately
     let err_lookup_val = xmatch
@@ -774,14 +956,18 @@ fn test_scenario_9_index_dimensions_and_bounds() {
         .unwrap();
     assert_eq!(m_val, CellValue::Number(6.0));
 
-    // 2D matrix omitting column -> #VALUE! in scalar context
-    let err_missing_col = index
-        .evaluate(
+    // 2D matrix omitting column fails strictly with MissingColumnIndexFor2DSlice
+    assert_eq!(
+        index.evaluate(
             &[matrix.clone(), FunctionArg::Scalar(CellValue::Number(2.0))],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_missing_col, CellValue::Error(ExcelError::Value));
+        ),
+        Err(FunctionError::MissingColumnIndexFor2DSlice {
+            function: "INDEX",
+            rows: 2,
+            cols: 3,
+        })
+    );
 
     // Out-of-bounds row (3 > 2) -> #REF!
     let err_oob_row = index
@@ -1015,73 +1201,59 @@ fn test_excel_parity_edge_cases() {
         .unwrap();
     assert_eq!(match_zero, CellValue::Number(2.0));
 
-    let res_empty_str = xlookup
-        .evaluate(
+    // Empty lookup_value is strictly rejected with ExpectedType::NonEmpty
+    assert_eq!(
+        xlookup.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Text("".into())),
+                FunctionArg::Scalar(CellValue::Empty),
+                empty_and_zero_keys.clone(),
+                values.clone(),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XLOOKUP",
+            param: "lookup_value",
+            position: 1,
+            expected: ExpectedType::NonEmpty,
+            found: ValueType::Empty,
+        }))
+    );
+
+    // Cross-type lookup_value ("") against numeric lookup_array fails with InvalidArgumentType
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text(String::new())),
                 empty_and_zero_keys,
                 values,
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(res_empty_str, CellValue::Error(ExcelError::Na));
-
-    // 2. Wildcard mode on number and boolean
-    let num_keys = make_array(
-        2,
-        1,
-        vec![CellValue::Number(100.0), CellValue::Number(200.0)],
-    );
-    let labels = make_array(
-        2,
-        1,
-        vec![CellValue::Text("one".into()), CellValue::Text("two".into())],
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XLOOKUP",
+            param: "lookup_array",
+            position: 2,
+            expected: ExpectedType::Text,
+            found: ValueType::Number,
+        }))
     );
 
-    let res_wild_num = xlookup
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(200.0)),
-                num_keys.clone(),
-                labels,
-                FunctionArg::Omitted,
-                FunctionArg::Scalar(CellValue::Number(2.0)), // match_mode = 2
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res_wild_num, CellValue::Text("two".into()));
-
-    let match_wild_num = xmatch
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(100.0)),
-                num_keys,
-                FunctionArg::Scalar(CellValue::Number(2.0)), // match_mode = 2
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(match_wild_num, CellValue::Number(1.0));
-
-    // 3. Approximate matching ignoring heterogeneous types and errors
-    let mixed_keys = make_array(
-        5,
+    // 2. Linear approximate matching skips Empty and Error cells when keys are homogeneous
+    let sparse_error_keys = make_array(
+        4,
         1,
         vec![
-            CellValue::Text("Zebra".into()),
             CellValue::Error(ExcelError::Div0),
             CellValue::Number(10.0),
             CellValue::Empty,
             CellValue::Number(30.0),
         ],
     );
-    let mixed_vals = make_array(
-        5,
+    let sparse_vals = make_array(
+        4,
         1,
         vec![
-            CellValue::Number(1.0),
             CellValue::Number(2.0),
             CellValue::Number(3.0),
             CellValue::Number(4.0),
@@ -1093,76 +1265,183 @@ fn test_excel_parity_edge_cases() {
         .evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(25.0)),
-                mixed_keys.clone(),
-                mixed_vals.clone(),
+                sparse_error_keys.clone(),
+                sparse_vals.clone(),
                 FunctionArg::Omitted,
                 FunctionArg::Scalar(CellValue::Number(-1.0)),
             ],
             &ctx,
         )
         .unwrap();
-    assert_eq!(approx_smaller, CellValue::Number(3.0)); // matches 10.0, ignoring Zebra, Div0, Empty
+    assert_eq!(approx_smaller, CellValue::Number(3.0)); // matches 10.0, skipping Div0 and Empty
 
     let approx_larger = xlookup
         .evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(25.0)),
-                mixed_keys,
-                mixed_vals,
+                sparse_error_keys,
+                sparse_vals.clone(),
                 FunctionArg::Omitted,
                 FunctionArg::Scalar(CellValue::Number(1.0)),
             ],
             &ctx,
         )
         .unwrap();
-    assert_eq!(approx_larger, CellValue::Number(5.0)); // matches 30.0, ignoring Zebra and Div0
+    assert_eq!(approx_larger, CellValue::Number(5.0)); // matches 30.0, skipping Div0 and Empty
 
-    // 4. Direct scalar error bubbling in array arguments
-    let err_array_xlookup = xlookup
-        .evaluate(
+    // 3. Heterogeneous lookup_array, return_array, and INDEX array are rejected prior to Error bubbling
+    let mixed_keys = make_array(
+        4,
+        1,
+        vec![
+            CellValue::Text("Zebra".into()),
+            CellValue::Error(ExcelError::Div0),
+            CellValue::Number(10.0),
+            CellValue::Empty,
+        ],
+    );
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                mixed_keys,
+                sparse_vals,
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XLOOKUP",
+            param: "lookup_array",
+            position: 2,
+            expected: ExpectedType::Text,
+            found: ValueType::Number,
+        }))
+    );
+
+    let mixed_return = make_array(
+        2,
+        1,
+        vec![CellValue::Number(10.0), CellValue::Text("two".into())],
+    );
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                make_array(
+                    2,
+                    1,
+                    vec![CellValue::Text("a".into()), CellValue::Text("b".into())]
+                ),
+                mixed_return.clone(),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "XLOOKUP",
+            param: "return_array",
+            position: 3,
+            expected: ExpectedType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    assert_eq!(
+        index.evaluate(
+            &[
+                mixed_return,
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "INDEX",
+            param: "array",
+            position: 1,
+            expected: ExpectedType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    // 4. Scalar arguments in ParamKind::Range slots fail with InvalidArgumentKind,
+    // while 1x1 SingleCell range references propagate cell errors cleanly
+    assert_eq!(
+        xlookup.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Text("A".into())),
                 FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
                 make_array(1, 1, vec![CellValue::Number(1.0)]),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_array_xlookup, CellValue::Error(ExcelError::Div0));
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "XLOOKUP",
+            expected: "range",
+            found: "scalar",
+        })
+    );
 
-    let err_return_xlookup = xlookup
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Text("A".into())),
-                make_array(1, 1, vec![CellValue::Text("A".into())]),
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_return_xlookup, CellValue::Error(ExcelError::Div0));
+    let single_cell_div0 = FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Error(ExcelError::Div0)],
+        ReferenceKind::SingleCell,
+    );
+    assert_eq!(
+        xlookup
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Text("A".into())),
+                    make_array(1, 1, vec![CellValue::Text("A".into())]),
+                    single_cell_div0.clone(),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
 
-    let err_array_xmatch = xmatch
-        .evaluate(
+    assert_eq!(
+        xmatch.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Text("A".into())),
                 FunctionArg::Scalar(CellValue::Error(ExcelError::Ref)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_array_xmatch, CellValue::Error(ExcelError::Ref));
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "XMATCH",
+            expected: "range",
+            found: "scalar",
+        })
+    );
 
-    let err_array_index = index
-        .evaluate(
+    assert_eq!(
+        index.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-                FunctionArg::Scalar(CellValue::Number(2.0)),
+                FunctionArg::Scalar(CellValue::Number(1.0)),
             ],
             &ctx,
-        )
-        .unwrap();
-    assert_eq!(err_array_index, CellValue::Error(ExcelError::Div0));
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "INDEX",
+            expected: "range",
+            found: "scalar",
+        })
+    );
+
+    assert_eq!(
+        index
+            .evaluate(
+                &[
+                    single_cell_div0,
+                    FunctionArg::Scalar(CellValue::Number(1.0))
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
 }
 
 #[test]
@@ -1251,7 +1530,12 @@ fn test_lookup_positional_omission_contract() {
             ColumnSpec::new("v"),
             ColumnSpec::new("c3"),
         ],
-        rows: vec![RowSpec::new("r1"), RowSpec::new("r2"), RowSpec::new("r3")],
+        rows: vec![
+            RowSpec::new("r1"),
+            RowSpec::new("r2"),
+            RowSpec::new("r3"),
+            RowSpec::new("r_vec"),
+        ],
     };
     symbols.register_table(sheet, &table).unwrap();
 
@@ -1273,10 +1557,19 @@ fn test_lookup_positional_omission_contract() {
     values.insert(CellId::new("Lookup", "r1", "v"), CellValue::Number(10.0));
     values.insert(CellId::new("Lookup", "r2", "v"), CellValue::Number(20.0));
     values.insert(CellId::new("Lookup", "r3", "v"), CellValue::Number(30.0));
-    // Row vector across columns k, v, c3 on r2: [100, 200, 300]
-    values.insert(CellId::new("Lookup", "r2", "k"), CellValue::Number(100.0));
-    values.insert(CellId::new("Lookup", "r2", "v"), CellValue::Number(200.0));
-    values.insert(CellId::new("Lookup", "r2", "c3"), CellValue::Number(300.0));
+    // Row vector across columns k, v, c3 on r_vec: [100, 200, 300]
+    values.insert(
+        CellId::new("Lookup", "r_vec", "k"),
+        CellValue::Number(100.0),
+    );
+    values.insert(
+        CellId::new("Lookup", "r_vec", "v"),
+        CellValue::Number(200.0),
+    );
+    values.insert(
+        CellId::new("Lookup", "r_vec", "c3"),
+        CellValue::Number(300.0),
+    );
 
     // Scenario 1: XMATCH and XLOOKUP with intermediate `_` skips
     assert_eq!(
@@ -1313,7 +1606,7 @@ fn test_lookup_positional_omission_contract() {
     // Scenario 2: 2-argument INDEX on 1x3 row vector selects element 2 without trailing padding
     assert_eq!(
         eval_str(
-            "INDEX(Lookup[\"r2\", \"k\"..\"c3\"], 2)",
+            "INDEX(Lookup[\"r_vec\", \"k\"..\"c3\"], 2)",
             &symbols,
             &values,
             &registry,

@@ -1,12 +1,14 @@
 use crate::functions::common::extract_scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::financial::discounting::{collect_cash_flows, extract_vector_numbers};
+use crate::functions::financial::discounting::{
+    coerce_slice_numbers, collect_cash_flows, extract_1d_range_values,
+};
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
-    VariadicRule,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
+    ShapePolicy, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 const MAX_ITERATIONS: usize = 100;
 const CONVERGENCE_TOLERANCE: f64 = 1e-9;
@@ -16,13 +18,15 @@ const DERIVATIVE_TOLERANCE: f64 = 1e-14;
 static IRR_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "values",
-        "Array or reference to cells containing numbers for which you want to calculate IRR.",
-        ParamKind::RangeOrArray,
+        "Range of cells containing numbers for which you want to calculate IRR.",
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::with_default(
         "guess",
         "Number you guess is close to the result of IRR.",
         ParamKind::Scalar,
+        ParamType::Number,
         CellValue::Number(0.10),
     ),
 ];
@@ -44,6 +48,10 @@ impl ExcelFunction for IrrFunction {
         IRR_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
     }
@@ -51,9 +59,19 @@ impl ExcelFunction for IrrFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
+
+        let guess_res = match args.get(1) {
+            None | Some(FunctionArg::Omitted) => Ok(0.10),
+            Some(
+                guess_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => extract_scalar_number(guess_arg, self.name(), "guess", 2, ctx)?,
+        };
 
         let cfs = match collect_cash_flows(&args[0..1]) {
             Ok(c) => c,
@@ -77,13 +95,9 @@ impl ExcelFunction for IrrFunction {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let guess = if let Some(guess_arg) = args.get(1) {
-            match extract_scalar_number(guess_arg) {
-                Ok(g) => g,
-                Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.10
+        let guess = match guess_res {
+            Ok(g) => g,
+            Err(e) => return Ok(CellValue::Error(e)),
         };
 
         let mut rate = guess;
@@ -112,7 +126,7 @@ impl ExcelFunction for IrrFunction {
             }
 
             if f_val == 0.0 {
-                return Ok(CellValue::Number(normalize_zero(rate)));
+                return Ok(CellValue::number(rate));
             }
 
             if f_deriv.abs() < DERIVATIVE_TOLERANCE {
@@ -122,7 +136,7 @@ impl ExcelFunction for IrrFunction {
 
             let delta = f_val / f_deriv;
             if delta.abs() < CONVERGENCE_TOLERANCE {
-                return Ok(CellValue::Number(normalize_zero(rate - delta)));
+                return Ok(CellValue::number(rate - delta));
             }
 
             let next_rate = rate - delta;
@@ -141,18 +155,21 @@ impl ExcelFunction for IrrFunction {
 static XIRR_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "values",
-        "Series of cash flows corresponding to schedule of payments in dates.",
-        ParamKind::RangeOrArray,
+        "1D range of cash flows corresponding to schedule of payments in dates.",
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "dates",
-        "Schedule of payment dates corresponding to cash flow payments.",
-        ParamKind::RangeOrArray,
+        "1D range of payment dates corresponding to cash flow payments.",
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::with_default(
         "guess",
         "Number you guess is close to the result of XIRR.",
         ParamKind::Scalar,
+        ParamType::Number,
         CellValue::Number(0.10),
     ),
 ];
@@ -174,28 +191,62 @@ impl ExcelFunction for XirrFunction {
         XIRR_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::None
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::OneDimEqualLength {
+            first_idx: 0,
+            first_param: "values",
+            second_idx: 1,
+            second_param: "dates",
+        })
     }
 
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
+        ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let values = match extract_vector_numbers(&args[0]) {
+        let raw_values = extract_1d_range_values(&args[0], self.name(), "values")?;
+        let raw_dates = extract_1d_range_values(&args[1], self.name(), "dates")?;
+
+        if raw_values.len() != raw_dates.len() {
+            return Err(FunctionError::LengthMismatch {
+                function: self.name(),
+                expected: raw_values.len(),
+                found: raw_dates.len(),
+            });
+        }
+
+        let guess_res = match args.get(2) {
+            None | Some(FunctionArg::Omitted) => Ok(0.10),
+            Some(
+                guess_arg @ (FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_)),
+            ) => extract_scalar_number(guess_arg, self.name(), "guess", 3, ctx)?,
+        };
+
+        let values = match coerce_slice_numbers(raw_values) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let dates = match extract_vector_numbers(&args[1]) {
+        let dates = match coerce_slice_numbers(raw_dates) {
             Ok(d) => d,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        if values.len() != dates.len() || values.len() < 2 {
+        if values.len() < 2 {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
@@ -218,13 +269,9 @@ impl ExcelFunction for XirrFunction {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let guess = if let Some(guess_arg) = args.get(2) {
-            match extract_scalar_number(guess_arg) {
-                Ok(g) => g,
-                Err(e) => return Ok(CellValue::Error(e)),
-            }
-        } else {
-            0.10
+        let guess = match guess_res {
+            Ok(g) => g,
+            Err(e) => return Ok(CellValue::Error(e)),
         };
 
         let year_fractions: Vec<f64> = dates
@@ -256,7 +303,7 @@ impl ExcelFunction for XirrFunction {
             }
 
             if f_val == 0.0 {
-                return Ok(CellValue::Number(normalize_zero(rate)));
+                return Ok(CellValue::number(rate));
             }
 
             if f_deriv.abs() < DERIVATIVE_TOLERANCE {
@@ -266,7 +313,7 @@ impl ExcelFunction for XirrFunction {
 
             let delta = f_val / f_deriv;
             if delta.abs() < CONVERGENCE_TOLERANCE {
-                return Ok(CellValue::Number(normalize_zero(rate - delta)));
+                return Ok(CellValue::number(rate - delta));
             }
 
             let next_rate = rate - delta;

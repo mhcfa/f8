@@ -2,16 +2,17 @@ use crate::functions::common::{NumericCollector, count_non_empty, count_numbers}
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 /// Positional parameter definitions for `SUM`.
 static SUM_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range to sum.",
     ParamKind::RangeOrArray,
+    ParamType::Any,
 )];
 
 /// `SUM(number1, [number2], ...)`: Adds all numbers in a range of cells or scalar arguments.
@@ -31,6 +32,10 @@ impl ExcelFunction for SumFunction {
         SUM_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -43,7 +48,7 @@ impl ExcelFunction for SumFunction {
         validate_bound_args(self, args)?;
 
         match NumericCollector::collect(args) {
-            Ok(collector) => Ok(CellValue::Number(collector.sum)),
+            Ok(collector) => Ok(CellValue::number(collector.sum)),
             Err(err) => Ok(CellValue::Error(err)),
         }
     }
@@ -54,6 +59,7 @@ static AVERAGE_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the average.",
     ParamKind::RangeOrArray,
+    ParamType::Any,
 )];
 
 /// `AVERAGE(number1, [number2], ...)`: Computes the arithmetic mean of arguments.
@@ -73,6 +79,10 @@ impl ExcelFunction for AverageFunction {
         AVERAGE_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -90,7 +100,7 @@ impl ExcelFunction for AverageFunction {
                     Ok(CellValue::Error(ExcelError::Div0))
                 } else {
                     let avg = collector.sum / collector.count as f64;
-                    Ok(CellValue::Number(normalize_zero(avg)))
+                    Ok(CellValue::number(avg))
                 }
             }
             Err(err) => Ok(CellValue::Error(err)),
@@ -101,11 +111,12 @@ impl ExcelFunction for AverageFunction {
 /// Positional parameter definitions for `COUNT`.
 static COUNT_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "value1",
-    "The first item, cell reference, or range within which you want to count numbers.",
-    ParamKind::RangeOrArray,
+    "The first cell reference or range within which you want to count numbers.",
+    ParamKind::Range,
+    ParamType::Any,
 )];
 
-/// `COUNT(value1, [value2], ...)`: Counts the number of cells that contain numbers.
+/// `COUNT(value1, [value2], ...)`: Counts the number of cells in ranges that contain numbers.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CountFunction;
 
@@ -122,6 +133,10 @@ impl ExcelFunction for CountFunction {
         COUNT_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -134,18 +149,19 @@ impl ExcelFunction for CountFunction {
         validate_bound_args(self, args)?;
 
         let count = count_numbers(args);
-        Ok(CellValue::Number(count as f64))
+        Ok(CellValue::number(count as f64))
     }
 }
 
 /// Positional parameter definitions for `COUNTA`.
 static COUNTA_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "value1",
-    "The first item, cell reference, or range within which you want to count non-empty cells.",
-    ParamKind::RangeOrArray,
+    "The first cell reference or range within which you want to count non-empty cells.",
+    ParamKind::Range,
+    ParamType::Any,
 )];
 
-/// `COUNTA(value1, [value2], ...)`: Counts the number of cells that are not empty.
+/// `COUNTA(value1, [value2], ...)`: Counts the number of cells in ranges that are not empty.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CountaFunction;
 
@@ -162,6 +178,10 @@ impl ExcelFunction for CountaFunction {
         COUNTA_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -174,7 +194,7 @@ impl ExcelFunction for CountaFunction {
         validate_bound_args(self, args)?;
 
         let count = count_non_empty(args);
-        Ok(CellValue::Number(count as f64))
+        Ok(CellValue::number(count as f64))
     }
 }
 
@@ -183,6 +203,7 @@ static MAX_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the maximum.",
     ParamKind::RangeOrArray,
+    ParamType::Any,
 )];
 
 /// `MAX(number1, [number2], ...)`: Returns the largest numeric value in a set of values.
@@ -202,6 +223,10 @@ impl ExcelFunction for MaxFunction {
         MAX_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -214,7 +239,7 @@ impl ExcelFunction for MaxFunction {
         validate_bound_args(self, args)?;
 
         match NumericCollector::collect(args) {
-            Ok(collector) => Ok(CellValue::Number(collector.max_or_zero())),
+            Ok(collector) => Ok(CellValue::number(collector.max_or_zero())),
             Err(err) => Ok(CellValue::Error(err)),
         }
     }
@@ -225,6 +250,7 @@ static MIN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the minimum.",
     ParamKind::RangeOrArray,
+    ParamType::Any,
 )];
 
 /// `MIN(number1, [number2], ...)`: Returns the smallest numeric value in a set of values.
@@ -244,6 +270,10 @@ impl ExcelFunction for MinFunction {
         MIN_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Single
     }
@@ -256,7 +286,7 @@ impl ExcelFunction for MinFunction {
         validate_bound_args(self, args)?;
 
         match NumericCollector::collect(args) {
-            Ok(collector) => Ok(CellValue::Number(collector.min_or_zero())),
+            Ok(collector) => Ok(CellValue::number(collector.min_or_zero())),
             Err(err) => Ok(CellValue::Error(err)),
         }
     }
@@ -267,6 +297,7 @@ static MEDIAN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the median.",
     ParamKind::RangeOrArray,
+    ParamType::Any,
 )];
 
 /// `MEDIAN(number1, [number2], ...)`: Returns the median (middle number) of the given numbers.
@@ -284,6 +315,10 @@ impl ExcelFunction for MedianFunction {
 
     fn parameters(&self) -> &'static [ParameterDef] {
         MEDIAN_PARAMS
+    }
+
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
     }
 
     fn variadic_rule(&self) -> VariadicRule {
@@ -309,7 +344,7 @@ impl ExcelFunction for MedianFunction {
                     } else {
                         (values[n / 2 - 1] + values[n / 2]) / 2.0
                     };
-                    Ok(CellValue::Number(normalize_zero(median)))
+                    Ok(CellValue::number(median))
                 }
             }
             Err(err) => Ok(CellValue::Error(err)),

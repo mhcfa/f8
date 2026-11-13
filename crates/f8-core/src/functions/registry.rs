@@ -1,12 +1,85 @@
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use crate::expr::ast::{CallArg, Expr};
+use crate::expr::ast::{BinaryOp, CallArg, Expr, Literal, TableRef, UnaryOp};
+use crate::functions::common::{BranchTypeUnifier, value_type_satisfies};
 use crate::functions::error::FunctionError;
-use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, ParamKind, ParameterDef, VariadicRule,
+use crate::functions::lookup::search::{
+    MatchMode, SearchMode, validate_homogeneous_slice, validate_lookup_array,
 };
+use crate::functions::traits::{
+    BranchPolicy, ComparisonSide, EvalContext, ExcelFunction, ExpectationOrigin, FunctionArg,
+    LookupPolicy, ParamKind, ParamType, ParameterDef, ReferenceKind, ShapePolicy, TypeExpectation,
+    ValidationPolicy, VariadicRule,
+};
+use crate::value::{
+    CellValue, ExpectedType, MAX_SAFE_INTEGER, StrictIntError, TypeError, ValueType, normalize_zero,
+};
+
+/// Error produced during Stage A or Stage B AST expression and slice-shape validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StageAError<E> {
+    /// Static or dormant function signature, value-type, or slice-shape error.
+    Function(FunctionError),
+    /// Coordinate resolution error while inspecting a `TableRef`.
+    Resolve(E),
+}
+
+impl<E> From<FunctionError> for StageAError<E> {
+    fn from(err: FunctionError) -> Self {
+        Self::Function(err)
+    }
+}
+
+impl<E> From<TypeError> for StageAError<E> {
+    fn from(err: TypeError) -> Self {
+        Self::Function(FunctionError::Type(err))
+    }
+}
+
+/// Resolved shape and optional memoized runtime state for a [`TableRef`] during AST validation.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ResolvedRef {
+    /// Number of rows in the resolved reference.
+    pub(crate) rows: usize,
+    /// Number of columns in the resolved reference.
+    pub(crate) cols: usize,
+    /// Memoized cell values in row-major order (`Some` in Stage B dormant validation; `None` in Stage A).
+    pub(crate) values: Option<Vec<CellValue>>,
+    /// Per-cell concrete non-`Empty` inferred [`ValueType`]s for `CellValue::Error(_)` cells (`Some` in Stage B; `None` in Stage A).
+    pub(crate) error_types: Option<Vec<Option<ValueType>>>,
+}
+
+/// Strategy resolving [`TableRef`] coordinates during unified Stage A / Stage B AST validation.
+pub(crate) trait ReferenceResolver {
+    /// Coordinate resolution error type.
+    type Error;
+
+    /// Resolves `table_ref` to its shape and optional memoized values, or `Ok(None)` when shape inspection is unavailable.
+    fn resolve_ref(&mut self, table_ref: &TableRef) -> Result<Option<ResolvedRef>, Self::Error>;
+}
+
+struct ShapeOnlyResolver<F>(F);
+
+impl<E, F> ReferenceResolver for ShapeOnlyResolver<F>
+where
+    F: FnMut(&TableRef) -> Result<Option<(usize, usize)>, E>,
+{
+    type Error = E;
+
+    fn resolve_ref(&mut self, table_ref: &TableRef) -> Result<Option<ResolvedRef>, Self::Error> {
+        (self.0)(table_ref).map(|opt| {
+            opt.map(|(rows, cols)| ResolvedRef {
+                rows,
+                cols,
+                values: None,
+                error_types: None,
+            })
+        })
+    }
+}
 
 /// Thread-safe registry and dispatcher of built-in and user-defined Excel functions.
 #[derive(Clone, Default)]
@@ -23,7 +96,7 @@ impl FunctionRegistry {
         }
     }
 
-    /// Constructs a standard function registry populated with core canonical archetypes (`ABS`, `SUM`, `IF`).
+    /// Constructs a standard function registry populated with the 45 built-in Excel functions.
     #[must_use]
     pub fn standard() -> Self {
         let mut registry = Self::new();
@@ -32,6 +105,7 @@ impl FunctionRegistry {
         crate::functions::financial::register(&mut registry);
         crate::functions::lookup::register(&mut registry);
         crate::functions::date::register(&mut registry);
+        crate::functions::information::register(&mut registry);
         registry
     }
 
@@ -95,24 +169,750 @@ impl FunctionRegistry {
         Ok(func)
     }
 
-    /// Recursively validates all function invocations within an expression AST in pre-order.
+    /// Statically validates function signatures, static types, syntactic scalar-slice exclusions,
+    /// and constant index bounds across all active and dormant branches of `expr`.
     pub fn validate_expr(&self, expr: &Expr) -> Result<(), FunctionError> {
+        match self.validate_expr_with_shapes(expr, |_| Ok::<_, Infallible>(None)) {
+            Ok(()) => Ok(()),
+            Err(StageAError::Function(err)) => Err(err),
+            Err(StageAError::Resolve(never)) => match never {},
+        }
+    }
+
+    /// Performs two-pass Stage A static validation over `expr` using `resolve_shape` to inspect `TableRef` dimensions.
+    ///
+    /// - Pass 1 validates function existence, arity, variadic pair parity, and `_` omission across the full AST first.
+    /// - Pass 2 validates static value types, discrete integer literals, syntactic scalar-slice exclusion, `ParamKind::Range`
+    ///   reference constraints, slice dimension/length/rank rules, 2D `INDEX` arity, and constant `INDEX`/`CHOOSE` bounds.
+    pub fn validate_expr_with_shapes<E, F>(
+        &self,
+        expr: &Expr,
+        resolve_shape: F,
+    ) -> Result<(), StageAError<E>>
+    where
+        F: FnMut(&TableRef) -> Result<Option<(usize, usize)>, E>,
+    {
+        self.validate_signatures_pass1(expr)?;
+        let mut resolver = ShapeOnlyResolver(resolve_shape);
+        self.validate_ast_with_resolver(expr, None, &mut resolver)?;
+        Ok(())
+    }
+
+    fn validate_signatures_pass1(&self, expr: &Expr) -> Result<(), FunctionError> {
         match expr {
             Expr::Literal(_) | Expr::Reference(_) => Ok(()),
-            Expr::Unary { expr, .. } => self.validate_expr(expr),
+            Expr::Unary { expr, .. } => self.validate_signatures_pass1(expr),
             Expr::Binary { left, right, .. } => {
-                self.validate_expr(left)?;
-                self.validate_expr(right)
+                self.validate_signatures_pass1(left)?;
+                self.validate_signatures_pass1(right)
             }
             Expr::FunctionCall { name, args } => {
                 self.validate_call(name, args)?;
                 for arg in args {
                     match arg {
-                        CallArg::Expr(arg_expr) => self.validate_expr(arg_expr)?,
+                        CallArg::Expr(arg_expr) => self.validate_signatures_pass1(arg_expr)?,
                         CallArg::Omitted => {}
                     }
                 }
                 Ok(())
+            }
+        }
+    }
+
+    /// Unified Stage A / Stage B AST validator parameterized over [`ReferenceResolver`].
+    ///
+    /// Validates literal, operator, branch, lookup, mode-literal, and slice-shape contracts,
+    /// returning the inferred scalar [`ValueType`] of `expr` when statically or runtime-known.
+    pub(crate) fn validate_ast_with_resolver<R: ReferenceResolver>(
+        &self,
+        expr: &Expr,
+        expected: Option<TypeExpectation>,
+        resolver: &mut R,
+    ) -> Result<Option<ValueType>, StageAError<R::Error>> {
+        match expr {
+            Expr::Literal(lit) => {
+                let vt = match lit {
+                    Literal::Number(_) => ValueType::Number,
+                    Literal::String(_) => ValueType::Text,
+                    Literal::Boolean(_) => ValueType::Boolean,
+                };
+                check_type_expectation(expr, vt, expected)?;
+                Ok(Some(vt))
+            }
+
+            Expr::Reference(table_ref) => {
+                let resolved = resolver
+                    .resolve_ref(table_ref)
+                    .map_err(StageAError::Resolve)?;
+                if table_ref.is_slice() {
+                    let (rows, cols) = resolved.as_ref().map_or((0, 0), |r| (r.rows, r.cols));
+                    return Err(StageAError::Function(FunctionError::SliceInScalarContext {
+                        rows,
+                        cols,
+                    }));
+                }
+                let Some(res) = resolved else {
+                    return Ok(None);
+                };
+                if res.rows * res.cols > 1 {
+                    return Err(StageAError::Function(FunctionError::SliceInScalarContext {
+                        rows: res.rows,
+                        cols: res.cols,
+                    }));
+                }
+                let Some(values) = res.values.as_deref() else {
+                    return Ok(None);
+                };
+                match values {
+                    [] | [CellValue::Empty] => Ok(None),
+                    [CellValue::Error(_)] => {
+                        if let Some(err_vt) = res
+                            .error_types
+                            .as_deref()
+                            .and_then(|ets| ets.first().copied().flatten())
+                            .filter(|vt| *vt != ValueType::Empty)
+                        {
+                            check_type_expectation(expr, err_vt, expected)?;
+                            Ok(Some(err_vt))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    [val @ (CellValue::Number(_) | CellValue::Text(_) | CellValue::Boolean(_))] => {
+                        let vt = match val {
+                            CellValue::Number(_) => ValueType::Number,
+                            CellValue::Text(_) => ValueType::Text,
+                            CellValue::Boolean(_) => ValueType::Boolean,
+                            CellValue::Empty | CellValue::Error(_) => return Ok(None),
+                        };
+                        if let Some(TypeExpectation {
+                            expected: ExpectedType::Integer,
+                            origin,
+                        }) = expected
+                        {
+                            match val.strict_integer() {
+                                Ok(_) => {}
+                                Err(StrictIntError::WrongType(found)) => {
+                                    return Err(StageAError::Function(FunctionError::Type(
+                                        origin.into_invalid_type(ExpectedType::Integer, found),
+                                    )));
+                                }
+                                Err(StrictIntError::NonInteger(value)) => {
+                                    return Err(StageAError::Function(FunctionError::Type(
+                                        origin.into_non_integer(value),
+                                    )));
+                                }
+                            }
+                        } else {
+                            check_type_expectation(expr, vt, expected)?;
+                        }
+                        Ok(Some(vt))
+                    }
+                    [_, _, ..] => Err(StageAError::Function(FunctionError::SliceInScalarContext {
+                        rows: res.rows,
+                        cols: res.cols,
+                    })),
+                }
+            }
+
+            Expr::Unary { op, expr: inner } => {
+                let child_exp = match op {
+                    UnaryOp::Neg => TypeExpectation {
+                        expected: ExpectedType::Number,
+                        origin: ExpectationOrigin::UnaryOp(op.as_str()),
+                    },
+                };
+                self.validate_ast_with_resolver(inner, Some(child_exp), resolver)?;
+                check_type_expectation(expr, ValueType::Number, expected)?;
+                Ok(Some(ValueType::Number))
+            }
+
+            Expr::Binary { op, left, right } => match op {
+                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => {
+                    let child_exp = TypeExpectation {
+                        expected: ExpectedType::Number,
+                        origin: ExpectationOrigin::BinaryOp(op.as_str()),
+                    };
+                    self.validate_ast_with_resolver(left, Some(child_exp), resolver)?;
+                    self.validate_ast_with_resolver(right, Some(child_exp), resolver)?;
+                    check_type_expectation(expr, ValueType::Number, expected)?;
+                    Ok(Some(ValueType::Number))
+                }
+                BinaryOp::Eq
+                | BinaryOp::NotEq
+                | BinaryOp::Lt
+                | BinaryOp::Lte
+                | BinaryOp::Gt
+                | BinaryOp::Gte => {
+                    let left_vt = self.validate_ast_with_resolver(left, None, resolver)?;
+                    let right_exp = left_vt.and_then(|l_vt| {
+                        ExpectedType::from_value_type(l_vt).map(|exp_ty| TypeExpectation {
+                            expected: exp_ty,
+                            origin: ExpectationOrigin::ComparisonOp {
+                                operator: op.as_str(),
+                                other_side: l_vt,
+                                side: ComparisonSide::Right,
+                            },
+                        })
+                    });
+                    let right_vt = self.validate_ast_with_resolver(right, right_exp, resolver)?;
+                    if left_vt.is_none()
+                        && let Some(r_vt) = right_vt
+                        && let Some(exp_ty) = ExpectedType::from_value_type(r_vt)
+                    {
+                        let left_exp = TypeExpectation {
+                            expected: exp_ty,
+                            origin: ExpectationOrigin::ComparisonOp {
+                                operator: op.as_str(),
+                                other_side: r_vt,
+                                side: ComparisonSide::Left,
+                            },
+                        };
+                        self.validate_ast_with_resolver(left, Some(left_exp), resolver)?;
+                    }
+                    if let (Some(l_vt), Some(r_vt)) = (left_vt, right_vt)
+                        && l_vt != r_vt
+                    {
+                        return Err(StageAError::Function(FunctionError::Type(
+                            TypeError::IncompatibleComparison {
+                                operator: op.as_str(),
+                                left: l_vt,
+                                right: r_vt,
+                            },
+                        )));
+                    }
+                    check_type_expectation(expr, ValueType::Boolean, expected)?;
+                    Ok(Some(ValueType::Boolean))
+                }
+            },
+
+            Expr::FunctionCall { name, args } => {
+                let func = self
+                    .lookup(name)
+                    .ok_or_else(|| FunctionError::UnknownFunction(name.clone()))?;
+
+                match func.validation_policy() {
+                    ValidationPolicy::Standard => self.validate_standard_or_shaped_call(
+                        expr, func, args, None, expected, resolver,
+                    ),
+                    ValidationPolicy::ShapeCoupled(shape_policy) => self
+                        .validate_standard_or_shaped_call(
+                            expr,
+                            func,
+                            args,
+                            Some(shape_policy),
+                            expected,
+                            resolver,
+                        ),
+                    ValidationPolicy::Branch(branch_policy) => self.validate_branch_call(
+                        expr,
+                        func,
+                        args,
+                        branch_policy,
+                        expected,
+                        resolver,
+                    ),
+                    ValidationPolicy::Lookup(lookup_policy) => self.validate_lookup_call(
+                        expr,
+                        func,
+                        args,
+                        lookup_policy,
+                        expected,
+                        resolver,
+                    ),
+                }
+            }
+        }
+    }
+
+    fn validate_standard_or_shaped_call<R: ReferenceResolver>(
+        &self,
+        call_expr: &Expr,
+        func: &dyn ExcelFunction,
+        args: &[CallArg],
+        shape_policy: Option<ShapePolicy>,
+        expected: Option<TypeExpectation>,
+        resolver: &mut R,
+    ) -> Result<Option<ValueType>, StageAError<R::Error>> {
+        let mut shapes: Vec<Option<(usize, usize)>> = Vec::with_capacity(args.len());
+
+        for (idx, call_arg) in args.iter().enumerate() {
+            let param = resolve_parameter(func, idx)?;
+            match call_arg {
+                CallArg::Omitted => shapes.push(None),
+                CallArg::Expr(arg_expr) => {
+                    match param.kind {
+                        ParamKind::Scalar | ParamKind::Lazy => {
+                            let arg_exp =
+                                param
+                                    .param_type
+                                    .to_expected_type()
+                                    .map(|exp_ty| TypeExpectation {
+                                        expected: exp_ty,
+                                        origin: ExpectationOrigin::FunctionParam {
+                                            function: func.name(),
+                                            param: param.name,
+                                            position: idx + 1,
+                                        },
+                                    });
+                            self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                            shapes.push(Some((1, 1)));
+                        }
+                        ParamKind::Range => match arg_expr {
+                            Expr::Reference(table_ref) => {
+                                let resolved = resolver
+                                    .resolve_ref(table_ref)
+                                    .map_err(StageAError::Resolve)?;
+                                if let Some(res) = &resolved {
+                                    validate_resolved_range_values(
+                                        res,
+                                        func.name(),
+                                        param.name,
+                                        idx + 1,
+                                        param.param_type,
+                                    )?;
+                                }
+                                shapes.push(resolved.map(|r| (r.rows, r.cols)));
+                            }
+                            Expr::Literal(_)
+                            | Expr::Unary { .. }
+                            | Expr::Binary { .. }
+                            | Expr::FunctionCall { .. } => {
+                                return Err(StageAError::Function(
+                                    FunctionError::InvalidArgumentKind {
+                                        function: func.name(),
+                                        expected: "range",
+                                        found: "scalar",
+                                    },
+                                ));
+                            }
+                        },
+                        ParamKind::RangeOrArray => match arg_expr {
+                            Expr::Reference(table_ref) => {
+                                let resolved = resolver
+                                    .resolve_ref(table_ref)
+                                    .map_err(StageAError::Resolve)?;
+                                if let Some(res) = &resolved {
+                                    validate_resolved_range_values(
+                                        res,
+                                        func.name(),
+                                        param.name,
+                                        idx + 1,
+                                        param.param_type,
+                                    )?;
+                                }
+                                shapes.push(resolved.map(|r| (r.rows, r.cols)));
+                            }
+                            Expr::Literal(_)
+                            | Expr::Unary { .. }
+                            | Expr::Binary { .. }
+                            | Expr::FunctionCall { .. } => {
+                                let arg_exp = param.param_type.to_expected_type().map(|exp_ty| {
+                                    TypeExpectation {
+                                        expected: exp_ty,
+                                        origin: ExpectationOrigin::FunctionParam {
+                                            function: func.name(),
+                                            param: param.name,
+                                            position: idx + 1,
+                                        },
+                                    }
+                                });
+                                self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                                shapes.push(Some((1, 1)));
+                            }
+                        },
+                    }
+                }
+            }
+        }
+
+        if let Some(policy) = shape_policy {
+            validate_shape_policy(func.name(), policy, &shapes)?;
+        }
+
+        let ret_vt = func.return_type();
+        if let Some(vt) = ret_vt {
+            check_type_expectation(call_expr, vt, expected)?;
+        }
+        Ok(ret_vt)
+    }
+
+    fn validate_branch_call<R: ReferenceResolver>(
+        &self,
+        call_expr: &Expr,
+        func: &dyn ExcelFunction,
+        args: &[CallArg],
+        branch_policy: BranchPolicy,
+        expected: Option<TypeExpectation>,
+        resolver: &mut R,
+    ) -> Result<Option<ValueType>, StageAError<R::Error>> {
+        let result_indices: Vec<usize> = match branch_policy {
+            BranchPolicy::If => {
+                if let Some(CallArg::Expr(cond_expr)) = args.first() {
+                    let cond_exp = TypeExpectation {
+                        expected: ExpectedType::Boolean,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "logical_test",
+                            position: 1,
+                        },
+                    };
+                    self.validate_ast_with_resolver(cond_expr, Some(cond_exp), resolver)?;
+                }
+                vec![1, 2]
+            }
+            BranchPolicy::Ifs => {
+                for idx in (0..args.len()).step_by(2) {
+                    if let Some(CallArg::Expr(cond_expr)) = args.get(idx) {
+                        let cond_exp = TypeExpectation {
+                            expected: ExpectedType::Boolean,
+                            origin: ExpectationOrigin::FunctionParam {
+                                function: func.name(),
+                                param: "logical_test1",
+                                position: idx + 1,
+                            },
+                        };
+                        self.validate_ast_with_resolver(cond_expr, Some(cond_exp), resolver)?;
+                    }
+                }
+                (1..args.len()).step_by(2).collect()
+            }
+            BranchPolicy::Choose => {
+                if let Some(CallArg::Expr(idx_expr)) = args.first() {
+                    let idx_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "index_num",
+                            position: 1,
+                        },
+                    };
+                    self.validate_ast_with_resolver(idx_expr, Some(idx_exp), resolver)?;
+                    let choices_len = args.len().saturating_sub(1);
+                    if choices_len > 0
+                        && let Some(idx) = extract_const_integer_literal(idx_expr)
+                        && !index_in_bounds(idx, choices_len)
+                    {
+                        return Err(StageAError::Function(FunctionError::IndexOutOfBounds {
+                            function: func.name(),
+                            param: "index_num",
+                            index: idx,
+                            min: 1,
+                            max: choices_len,
+                        }));
+                    }
+                }
+                (1..args.len()).collect()
+            }
+            BranchPolicy::ErrorTrap => vec![0, 1],
+        };
+
+        let mut unifier = BranchTypeUnifier::new(func.name());
+        for idx in result_indices {
+            if let Some(CallArg::Expr(arm_expr)) = args.get(idx) {
+                let arm_exp = match branch_policy {
+                    BranchPolicy::ErrorTrap => {
+                        let param = resolve_parameter(func, idx)?;
+                        Some(TypeExpectation {
+                            expected: ExpectedType::NonEmpty,
+                            origin: ExpectationOrigin::FunctionParam {
+                                function: func.name(),
+                                param: param.name,
+                                position: idx + 1,
+                            },
+                        })
+                    }
+                    BranchPolicy::If | BranchPolicy::Ifs | BranchPolicy::Choose => {
+                        unifier.unified().and_then(|u_vt| {
+                            ExpectedType::from_value_type(u_vt).map(|exp_ty| TypeExpectation {
+                                expected: exp_ty,
+                                origin: ExpectationOrigin::BranchResult {
+                                    function: func.name(),
+                                    position: idx + 1,
+                                },
+                            })
+                        })
+                    }
+                };
+                let arm_vt = self.validate_ast_with_resolver(arm_expr, arm_exp, resolver)?;
+                unifier.record(idx + 1, arm_vt)?;
+            }
+        }
+
+        let unified_vt = unifier.unified();
+        if let Some(vt) = unified_vt {
+            check_type_expectation(call_expr, vt, expected)?;
+        }
+        Ok(unified_vt)
+    }
+
+    fn validate_lookup_call<R: ReferenceResolver>(
+        &self,
+        call_expr: &Expr,
+        func: &dyn ExcelFunction,
+        args: &[CallArg],
+        lookup_policy: LookupPolicy,
+        expected: Option<TypeExpectation>,
+        resolver: &mut R,
+    ) -> Result<Option<ValueType>, StageAError<R::Error>> {
+        match lookup_policy {
+            LookupPolicy::Index => {
+                let Some(CallArg::Expr(Expr::Reference(arr_ref))) = args.first() else {
+                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
+                        function: func.name(),
+                        expected: "range",
+                        found: "scalar",
+                    }));
+                };
+                let resolved_arr = resolver
+                    .resolve_ref(arr_ref)
+                    .map_err(StageAError::Resolve)?;
+
+                if let Some(CallArg::Expr(row_expr)) = args.get(1) {
+                    let row_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "row_num",
+                            position: 2,
+                        },
+                    };
+                    self.validate_ast_with_resolver(row_expr, Some(row_exp), resolver)?;
+                }
+
+                if let Some(CallArg::Expr(col_expr)) = args.get(2) {
+                    let col_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "col_num",
+                            position: 3,
+                        },
+                    };
+                    self.validate_ast_with_resolver(col_expr, Some(col_exp), resolver)?;
+                }
+
+                if let Some(res) = &resolved_arr
+                    && res.rows > 0
+                    && res.cols > 0
+                {
+                    validate_index_bounds(func.name(), args, res.rows, res.cols)?;
+                }
+
+                if let Some(res) = &resolved_arr
+                    && let Some(values) = res.values.as_deref()
+                {
+                    let error_types = res.error_types.as_deref().unwrap_or(&[]);
+                    let arr_vt =
+                        validate_homogeneous_slice(values, error_types, func.name(), "array", 1)?;
+                    if let Some(vt) = arr_vt {
+                        check_type_expectation(call_expr, vt, expected)?;
+                    }
+                    Ok(arr_vt)
+                } else {
+                    Ok(None)
+                }
+            }
+
+            LookupPolicy::Xlookup => {
+                let lookup_vt = if let Some(CallArg::Expr(lv_expr)) = args.first() {
+                    let lv_exp = TypeExpectation {
+                        expected: ExpectedType::NonEmpty,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "lookup_value",
+                            position: 1,
+                        },
+                    };
+                    self.validate_ast_with_resolver(lv_expr, Some(lv_exp), resolver)?
+                } else {
+                    None
+                };
+
+                let Some(CallArg::Expr(Expr::Reference(l_ref))) = args.get(1) else {
+                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
+                        function: func.name(),
+                        expected: "range",
+                        found: "scalar",
+                    }));
+                };
+                let Some(CallArg::Expr(Expr::Reference(r_ref))) = args.get(2) else {
+                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
+                        function: func.name(),
+                        expected: "range",
+                        found: "scalar",
+                    }));
+                };
+
+                let resolved_l = resolver.resolve_ref(l_ref).map_err(StageAError::Resolve)?;
+                let resolved_r = resolver.resolve_ref(r_ref).map_err(StageAError::Resolve)?;
+
+                if let Some(CallArg::Expr(mm_expr)) = args.get(4) {
+                    let mm_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "match_mode",
+                            position: 5,
+                        },
+                    };
+                    self.validate_ast_with_resolver(mm_expr, Some(mm_exp), resolver)?;
+                    validate_match_mode_literal(func.name(), "match_mode", 5, mm_expr)?;
+                }
+
+                let search_mode = if let Some(CallArg::Expr(sm_expr)) = args.get(5) {
+                    let sm_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "search_mode",
+                            position: 6,
+                        },
+                    };
+                    self.validate_ast_with_resolver(sm_expr, Some(sm_exp), resolver)?;
+                    parse_search_mode_literal(func.name(), "search_mode", 6, sm_expr)?
+                } else {
+                    SearchMode::FirstToLast
+                };
+
+                let l_shape = resolved_l.as_ref().map(|r| (r.rows, r.cols));
+                let r_shape = resolved_r.as_ref().map(|r| (r.rows, r.cols));
+                require_1d_slice(func.name(), "lookup_array", l_shape)?;
+                require_1d_slice(func.name(), "return_array", r_shape)?;
+                if let (Some((lr, lc)), Some((rr, rc))) = (l_shape, r_shape)
+                    && (lr, lc) != (rr, rc)
+                {
+                    return Err(StageAError::Function(FunctionError::DimensionMismatch {
+                        function: func.name(),
+                        expected_rows: lr,
+                        expected_cols: lc,
+                        found_rows: rr,
+                        found_cols: rc,
+                    }));
+                }
+
+                if let Some(res_l) = &resolved_l
+                    && let Some(l_vals) = res_l.values.as_deref()
+                {
+                    let l_err_types = res_l.error_types.as_deref().unwrap_or(&[]);
+                    validate_lookup_array(
+                        l_vals,
+                        l_err_types,
+                        lookup_vt,
+                        search_mode,
+                        func.name(),
+                    )?;
+                }
+
+                let ret_vt = match &resolved_r {
+                    Some(res_r) => match res_r.values.as_deref() {
+                        Some(r_vals) => {
+                            let r_err_types = res_r.error_types.as_deref().unwrap_or(&[]);
+                            validate_homogeneous_slice(
+                                r_vals,
+                                r_err_types,
+                                func.name(),
+                                "return_array",
+                                3,
+                            )?
+                        }
+                        None => None,
+                    },
+                    None => None,
+                };
+                let mut unifier = BranchTypeUnifier::with_initial(func.name(), ret_vt);
+
+                if let Some(CallArg::Expr(nf_expr)) = args.get(3) {
+                    let nf_exp = unifier.unified().and_then(|u_vt| {
+                        ExpectedType::from_value_type(u_vt).map(|exp_ty| TypeExpectation {
+                            expected: exp_ty,
+                            origin: ExpectationOrigin::BranchResult {
+                                function: func.name(),
+                                position: 4,
+                            },
+                        })
+                    });
+                    let nf_vt = self.validate_ast_with_resolver(nf_expr, nf_exp, resolver)?;
+                    unifier.record(4, nf_vt)?;
+                }
+
+                let unified_vt = unifier.unified();
+                if let Some(vt) = unified_vt {
+                    check_type_expectation(call_expr, vt, expected)?;
+                }
+                Ok(unified_vt)
+            }
+
+            LookupPolicy::Xmatch => {
+                let lookup_vt = if let Some(CallArg::Expr(lv_expr)) = args.first() {
+                    let lv_exp = TypeExpectation {
+                        expected: ExpectedType::NonEmpty,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "lookup_value",
+                            position: 1,
+                        },
+                    };
+                    self.validate_ast_with_resolver(lv_expr, Some(lv_exp), resolver)?
+                } else {
+                    None
+                };
+
+                let Some(CallArg::Expr(Expr::Reference(l_ref))) = args.get(1) else {
+                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
+                        function: func.name(),
+                        expected: "range",
+                        found: "scalar",
+                    }));
+                };
+                let resolved_l = resolver.resolve_ref(l_ref).map_err(StageAError::Resolve)?;
+
+                if let Some(CallArg::Expr(mm_expr)) = args.get(2) {
+                    let mm_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "match_mode",
+                            position: 3,
+                        },
+                    };
+                    self.validate_ast_with_resolver(mm_expr, Some(mm_exp), resolver)?;
+                    validate_match_mode_literal(func.name(), "match_mode", 3, mm_expr)?;
+                }
+
+                let search_mode = if let Some(CallArg::Expr(sm_expr)) = args.get(3) {
+                    let sm_exp = TypeExpectation {
+                        expected: ExpectedType::Integer,
+                        origin: ExpectationOrigin::FunctionParam {
+                            function: func.name(),
+                            param: "search_mode",
+                            position: 4,
+                        },
+                    };
+                    self.validate_ast_with_resolver(sm_expr, Some(sm_exp), resolver)?;
+                    parse_search_mode_literal(func.name(), "search_mode", 4, sm_expr)?
+                } else {
+                    SearchMode::FirstToLast
+                };
+
+                let l_shape = resolved_l.as_ref().map(|r| (r.rows, r.cols));
+                require_1d_slice(func.name(), "lookup_array", l_shape)?;
+
+                if let Some(res_l) = &resolved_l
+                    && let Some(l_vals) = res_l.values.as_deref()
+                {
+                    let l_err_types = res_l.error_types.as_deref().unwrap_or(&[]);
+                    validate_lookup_array(
+                        l_vals,
+                        l_err_types,
+                        lookup_vt,
+                        search_mode,
+                        func.name(),
+                    )?;
+                }
+
+                check_type_expectation(call_expr, ValueType::Number, expected)?;
+                Ok(Some(ValueType::Number))
             }
         }
     }
@@ -143,33 +943,517 @@ impl FunctionRegistry {
                 }
             };
 
+            let param_exp = param
+                .param_type
+                .to_expected_type()
+                .map(|exp_ty| TypeExpectation {
+                    expected: exp_ty,
+                    origin: ExpectationOrigin::FunctionParam {
+                        function: func.name(),
+                        param: param.name,
+                        position: i + 1,
+                    },
+                });
+
             match param.kind {
                 ParamKind::Lazy => {
                     bound.push(FunctionArg::Lazy(arg_expr));
                 }
                 ParamKind::Scalar => {
                     let val = ctx.eval_expr(arg_expr)?;
-                    bound.push(FunctionArg::Scalar(val));
+                    let mut inferred_err_vt: Option<ValueType> = None;
+                    if let Some(mode_slot) = lookup_mode_slot(func.validation_policy(), i) {
+                        validate_value_against_param_type(
+                            &val,
+                            func.name(),
+                            param.name,
+                            i + 1,
+                            ParamType::Integer,
+                            EmptyValidation::RejectEmpty,
+                        )?;
+                        if val.is_error() {
+                            inferred_err_vt = ctx.validate_dormant_expr(arg_expr, param_exp)?;
+                        }
+                        match mode_slot {
+                            LookupModeSlot::MatchMode { param, position } => {
+                                validate_match_mode_literal(
+                                    func.name(),
+                                    param,
+                                    position,
+                                    arg_expr,
+                                )?;
+                            }
+                            LookupModeSlot::SearchMode { param, position } => {
+                                parse_search_mode_literal(func.name(), param, position, arg_expr)?;
+                            }
+                        }
+                    } else if val.is_error() {
+                        inferred_err_vt = ctx.validate_dormant_expr(arg_expr, param_exp)?;
+                    }
+                    bound.push(bind_scalar_value(val, inferred_err_vt));
                 }
-                ParamKind::RangeOrArray => {
-                    if matches!(arg_expr, Expr::Reference(_)) {
-                        let (rows, cols, values) = ctx.eval_range(arg_expr)?;
+                ParamKind::Range => match arg_expr {
+                    Expr::Reference(table_ref) => {
+                        let (rows, cols, values, error_types) = ctx.eval_typed_range(arg_expr)?;
+                        let ref_kind = if table_ref.is_slice() {
+                            ReferenceKind::Slice
+                        } else {
+                            ReferenceKind::SingleCell
+                        };
                         bound.push(FunctionArg::Array {
                             rows,
                             cols,
                             values,
-                            is_range_ref: true,
+                            error_types,
+                            ref_kind,
                         });
-                    } else {
-                        let val = ctx.eval_expr(arg_expr)?;
-                        bound.push(FunctionArg::Scalar(val));
                     }
-                }
+                    Expr::Literal(_)
+                    | Expr::Unary { .. }
+                    | Expr::Binary { .. }
+                    | Expr::FunctionCall { .. } => {
+                        return Err(FunctionError::InvalidArgumentKind {
+                            function: func.name(),
+                            expected: "range",
+                            found: "scalar",
+                        });
+                    }
+                },
+                ParamKind::RangeOrArray => match arg_expr {
+                    Expr::Reference(table_ref) => {
+                        let (rows, cols, values, error_types) = ctx.eval_typed_range(arg_expr)?;
+                        let ref_kind = if table_ref.is_slice() {
+                            ReferenceKind::Slice
+                        } else {
+                            ReferenceKind::SingleCell
+                        };
+                        bound.push(FunctionArg::Array {
+                            rows,
+                            cols,
+                            values,
+                            error_types,
+                            ref_kind,
+                        });
+                    }
+                    Expr::Literal(_)
+                    | Expr::Unary { .. }
+                    | Expr::Binary { .. }
+                    | Expr::FunctionCall { .. } => {
+                        let val = ctx.eval_expr(arg_expr)?;
+                        let inferred_err_vt = if val.is_error() {
+                            ctx.validate_dormant_expr(arg_expr, param_exp)?
+                        } else {
+                            None
+                        };
+                        bound.push(bind_scalar_value(val, inferred_err_vt));
+                    }
+                },
             }
         }
 
         Ok(bound)
     }
+}
+
+fn bind_scalar_value<'a>(val: CellValue, inferred_vt: Option<ValueType>) -> FunctionArg<'a> {
+    if let CellValue::Error(error) = val
+        && let Some(vt @ (ValueType::Number | ValueType::Text | ValueType::Boolean)) = inferred_vt
+    {
+        FunctionArg::TypedErrorScalar {
+            error,
+            inferred_type: vt,
+        }
+    } else {
+        FunctionArg::Scalar(val)
+    }
+}
+
+fn validate_resolved_range_values(
+    res: &ResolvedRef,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    param_type: ParamType,
+) -> Result<(), FunctionError> {
+    let Some(values) = res.values.as_deref() else {
+        return Ok(());
+    };
+    let error_types = res.error_types.as_deref().unwrap_or(&[]);
+    for (idx, val) in values.iter().enumerate() {
+        if matches!(val, CellValue::Error(_)) {
+            if let Some(err_vt) = error_types.get(idx).copied().flatten()
+                && err_vt != ValueType::Empty
+                && let Some(expected) = param_type.to_expected_type()
+                && !value_type_satisfies(err_vt, expected)
+            {
+                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected,
+                    found: err_vt,
+                }));
+            }
+            continue;
+        }
+        validate_value_against_param_type(
+            val,
+            function,
+            param,
+            position,
+            param_type,
+            EmptyValidation::SkipSliceEmpty,
+        )?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LookupModeSlot {
+    MatchMode {
+        param: &'static str,
+        position: usize,
+    },
+    SearchMode {
+        param: &'static str,
+        position: usize,
+    },
+}
+
+const fn lookup_mode_slot(policy: ValidationPolicy, arg_idx: usize) -> Option<LookupModeSlot> {
+    match policy {
+        ValidationPolicy::Lookup(LookupPolicy::Xlookup) => {
+            if arg_idx == 4 {
+                Some(LookupModeSlot::MatchMode {
+                    param: "match_mode",
+                    position: 5,
+                })
+            } else if arg_idx == 5 {
+                Some(LookupModeSlot::SearchMode {
+                    param: "search_mode",
+                    position: 6,
+                })
+            } else {
+                None
+            }
+        }
+        ValidationPolicy::Lookup(LookupPolicy::Xmatch) => {
+            if arg_idx == 2 {
+                Some(LookupModeSlot::MatchMode {
+                    param: "match_mode",
+                    position: 3,
+                })
+            } else if arg_idx == 3 {
+                Some(LookupModeSlot::SearchMode {
+                    param: "search_mode",
+                    position: 4,
+                })
+            } else {
+                None
+            }
+        }
+        ValidationPolicy::Lookup(LookupPolicy::Index)
+        | ValidationPolicy::Standard
+        | ValidationPolicy::ShapeCoupled(_)
+        | ValidationPolicy::Branch(_) => None,
+    }
+}
+
+fn validate_match_mode_literal(
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    arg_expr: &Expr,
+) -> Result<MatchMode, FunctionError> {
+    let mode =
+        extract_const_integer_literal(arg_expr).ok_or(FunctionError::NonLiteralLookupMode {
+            function,
+            param,
+            position,
+        })?;
+    MatchMode::from_mode_int(mode, function, param, position)
+}
+
+fn parse_search_mode_literal(
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    arg_expr: &Expr,
+) -> Result<SearchMode, FunctionError> {
+    let mode =
+        extract_const_integer_literal(arg_expr).ok_or(FunctionError::NonLiteralLookupMode {
+            function,
+            param,
+            position,
+        })?;
+    SearchMode::from_mode_int(mode, function, param, position)
+}
+
+fn extract_const_number_literal(expr: &Expr) -> Option<f64> {
+    match expr {
+        Expr::Literal(Literal::Number(n)) => Some(*n),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr: inner,
+        } => match inner.as_ref() {
+            Expr::Literal(Literal::Number(n)) => Some(-*n),
+            Expr::Literal(Literal::String(_) | Literal::Boolean(_))
+            | Expr::Reference(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. } => None,
+        },
+        Expr::Literal(Literal::String(_) | Literal::Boolean(_))
+        | Expr::Reference(_)
+        | Expr::Binary { .. }
+        | Expr::FunctionCall { .. } => None,
+    }
+}
+
+fn extract_signed_const_number(expr: &Expr) -> Option<f64> {
+    match expr {
+        Expr::Literal(Literal::Number(n)) => Some(*n),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr: inner,
+        } => extract_signed_const_number(inner).map(|n| -n),
+        Expr::Literal(Literal::String(_) | Literal::Boolean(_))
+        | Expr::Reference(_)
+        | Expr::Binary { .. }
+        | Expr::FunctionCall { .. } => None,
+    }
+}
+
+fn extract_const_integer_literal(expr: &Expr) -> Option<i64> {
+    let raw = extract_const_number_literal(expr)?;
+    if !raw.is_finite() {
+        return None;
+    }
+    let norm = normalize_zero(raw);
+    if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
+        return None;
+    }
+    Some(norm as i64)
+}
+
+fn check_type_expectation(
+    expr: &Expr,
+    found: ValueType,
+    expected: Option<TypeExpectation>,
+) -> Result<(), FunctionError> {
+    let Some(TypeExpectation { expected, origin }) = expected else {
+        return Ok(());
+    };
+
+    match expected {
+        ExpectedType::NonEmpty => match found {
+            ValueType::Number | ValueType::Text | ValueType::Boolean => Ok(()),
+            ValueType::Empty => Err(FunctionError::Type(
+                origin.into_invalid_type(expected, found),
+            )),
+        },
+        ExpectedType::Number => match found {
+            ValueType::Number => Ok(()),
+            ValueType::Text | ValueType::Boolean | ValueType::Empty => Err(FunctionError::Type(
+                origin.into_invalid_type(expected, found),
+            )),
+        },
+        ExpectedType::Text => match found {
+            ValueType::Text => Ok(()),
+            ValueType::Number | ValueType::Boolean | ValueType::Empty => Err(FunctionError::Type(
+                origin.into_invalid_type(expected, found),
+            )),
+        },
+        ExpectedType::Boolean => match found {
+            ValueType::Boolean => Ok(()),
+            ValueType::Number | ValueType::Text | ValueType::Empty => Err(FunctionError::Type(
+                origin.into_invalid_type(expected, found),
+            )),
+        },
+        ExpectedType::Integer => match found {
+            ValueType::Number => {
+                if let Some(raw) = extract_signed_const_number(expr)
+                    && raw.is_finite()
+                {
+                    let norm = normalize_zero(raw);
+                    if norm.fract() != 0.0
+                        || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm)
+                    {
+                        return Err(FunctionError::Type(
+                            origin.into_non_integer(norm.to_string()),
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            ValueType::Text | ValueType::Boolean | ValueType::Empty => Err(FunctionError::Type(
+                origin.into_invalid_type(expected, found),
+            )),
+        },
+    }
+}
+
+fn require_1d_slice(
+    function: &'static str,
+    param: &'static str,
+    shape: Option<(usize, usize)>,
+) -> Result<(), FunctionError> {
+    if let Some((rows, cols)) = shape
+        && rows > 1
+        && cols > 1
+    {
+        return Err(FunctionError::ExpectedOneDimensionalSlice {
+            function,
+            param,
+            rows,
+            cols,
+        });
+    }
+    Ok(())
+}
+
+fn validate_shape_policy(
+    function: &'static str,
+    policy: ShapePolicy,
+    shapes: &[Option<(usize, usize)>],
+) -> Result<(), FunctionError> {
+    match policy {
+        ShapePolicy::EqualAllRanges => {
+            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
+                for shape in shapes.iter().skip(1) {
+                    if let Some((r, c)) = *shape
+                        && (r, c) != (exp_r, exp_c)
+                    {
+                        return Err(FunctionError::DimensionMismatch {
+                            function,
+                            expected_rows: exp_r,
+                            expected_cols: exp_c,
+                            found_rows: r,
+                            found_cols: c,
+                        });
+                    }
+                }
+            }
+        }
+        ShapePolicy::EqualTargetAndOddPairRanges => {
+            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
+                for idx in (1..shapes.len()).step_by(2) {
+                    if let Some((r, c)) = shapes[idx]
+                        && (r, c) != (exp_r, exp_c)
+                    {
+                        return Err(FunctionError::DimensionMismatch {
+                            function,
+                            expected_rows: exp_r,
+                            expected_cols: exp_c,
+                            found_rows: r,
+                            found_cols: c,
+                        });
+                    }
+                }
+            }
+        }
+        ShapePolicy::EqualEvenPairRanges => {
+            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
+                for idx in (2..shapes.len()).step_by(2) {
+                    if let Some((r, c)) = shapes[idx]
+                        && (r, c) != (exp_r, exp_c)
+                    {
+                        return Err(FunctionError::DimensionMismatch {
+                            function,
+                            expected_rows: exp_r,
+                            expected_cols: exp_c,
+                            found_rows: r,
+                            found_cols: c,
+                        });
+                    }
+                }
+            }
+        }
+        ShapePolicy::OneDimEqualLength {
+            first_idx,
+            first_param,
+            second_idx,
+            second_param,
+        } => {
+            let first_shape = shapes.get(first_idx).copied().flatten();
+            let second_shape = shapes.get(second_idx).copied().flatten();
+            require_1d_slice(function, first_param, first_shape)?;
+            require_1d_slice(function, second_param, second_shape)?;
+            if let (Some((r1, c1)), Some((r2, c2))) = (first_shape, second_shape) {
+                let len1 = r1 * c1;
+                let len2 = r2 * c2;
+                if len1 != len2 {
+                    return Err(FunctionError::LengthMismatch {
+                        function,
+                        expected: len1,
+                        found: len2,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_index_bounds(
+    function: &'static str,
+    args: &[CallArg],
+    rows: usize,
+    cols: usize,
+) -> Result<(), FunctionError> {
+    if args.len() == 2 {
+        if rows > 1 && cols > 1 {
+            return Err(FunctionError::MissingColumnIndexFor2DSlice {
+                function,
+                rows,
+                cols,
+            });
+        }
+        let len = rows.max(cols);
+        if let Some(CallArg::Expr(row_expr)) = args.get(1)
+            && let Some(idx) = extract_const_integer_literal(row_expr)
+            && !index_in_bounds(idx, len)
+        {
+            return Err(FunctionError::IndexOutOfBounds {
+                function,
+                param: "row_num",
+                index: idx,
+                min: 1,
+                max: len,
+            });
+        }
+    } else if args.len() == 3 {
+        if let Some(CallArg::Expr(row_expr)) = args.get(1)
+            && let Some(r_idx) = extract_const_integer_literal(row_expr)
+            && !index_in_bounds(r_idx, rows)
+        {
+            return Err(FunctionError::IndexOutOfBounds {
+                function,
+                param: "row_num",
+                index: r_idx,
+                min: 1,
+                max: rows,
+            });
+        }
+        if let Some(CallArg::Expr(col_expr)) = args.get(2)
+            && let Some(c_idx) = extract_const_integer_literal(col_expr)
+            && !index_in_bounds(c_idx, cols)
+        {
+            return Err(FunctionError::IndexOutOfBounds {
+                function,
+                param: "col_num",
+                index: c_idx,
+                min: 1,
+                max: cols,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Returns `true` when 1-based integer index `idx` lies within `1..=max`.
+fn index_in_bounds(idx: i64, max: usize) -> bool {
+    matches!(usize::try_from(idx), Ok(u) if u >= 1 && u <= max)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,7 +1478,10 @@ impl ArgSlot for CallArg {
 impl ArgSlot for FunctionArg<'_> {
     fn presence(&self) -> ArgPresence {
         match self {
-            Self::Scalar(_) | Self::Array { .. } | Self::Lazy(_) => ArgPresence::Present,
+            Self::Scalar(_)
+            | Self::TypedErrorScalar { .. }
+            | Self::Array { .. }
+            | Self::Lazy(_) => ArgPresence::Present,
             Self::Omitted => ArgPresence::Omitted,
         }
     }
@@ -205,12 +1492,224 @@ fn validate_signature(func: &dyn ExcelFunction, args: &[CallArg]) -> Result<(), 
     validate_arg_slots(func, args)
 }
 
-/// Validates runtime bound argument count, variadic pair parity, and omitted parameter eligibility against a resolved function.
+/// Validates runtime bound argument count, variadic pair parity, omitted parameter eligibility,
+/// argument kinds (`Range` vs scalar/slice), and declarative `ParamType` constraints across all arguments.
 pub(crate) fn validate_bound_args(
     func: &dyn ExcelFunction,
     args: &[FunctionArg<'_>],
 ) -> Result<(), FunctionError> {
-    validate_arg_slots(func, args)
+    validate_arg_slots(func, args)?;
+
+    for (i, arg) in args.iter().enumerate() {
+        let param = resolve_parameter(func, i)?;
+        let position = i + 1;
+
+        match (param.kind, arg) {
+            (_, FunctionArg::Omitted) => continue,
+            (ParamKind::Range, FunctionArg::Array { .. }) => {}
+            (ParamKind::Range, FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. }) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "range",
+                    found: "scalar",
+                });
+            }
+            (ParamKind::Range, FunctionArg::Lazy(_)) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "range",
+                    found: "lazy",
+                });
+            }
+            (
+                ParamKind::Scalar | ParamKind::Lazy,
+                FunctionArg::Array {
+                    rows,
+                    cols,
+                    ref_kind: ReferenceKind::Slice,
+                    ..
+                },
+            ) => {
+                return Err(FunctionError::SliceInScalarContext {
+                    rows: *rows,
+                    cols: *cols,
+                });
+            }
+            (
+                ParamKind::Scalar | ParamKind::Lazy,
+                FunctionArg::Array {
+                    ref_kind: ReferenceKind::SingleCell,
+                    ..
+                },
+            ) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "scalar",
+                    found: "array",
+                });
+            }
+            (
+                ParamKind::Scalar | ParamKind::Lazy,
+                FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Lazy(_),
+            )
+            | (
+                ParamKind::RangeOrArray,
+                FunctionArg::Scalar(_)
+                | FunctionArg::TypedErrorScalar { .. }
+                | FunctionArg::Array { .. }
+                | FunctionArg::Lazy(_),
+            ) => {}
+        }
+
+        match arg {
+            FunctionArg::Scalar(val) => {
+                validate_value_against_param_type(
+                    val,
+                    func.name(),
+                    param.name,
+                    position,
+                    param.param_type,
+                    EmptyValidation::RejectEmpty,
+                )?;
+            }
+            FunctionArg::TypedErrorScalar { inferred_type, .. } => {
+                if let Some(expected) = param.param_type.to_expected_type()
+                    && !value_type_satisfies(*inferred_type, expected)
+                {
+                    return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                        function: func.name(),
+                        param: param.name,
+                        position,
+                        expected,
+                        found: *inferred_type,
+                    }));
+                }
+            }
+            FunctionArg::Array {
+                values,
+                error_types,
+                ref_kind,
+                ..
+            } => {
+                let empty_policy = match ref_kind {
+                    ReferenceKind::Slice => EmptyValidation::SkipSliceEmpty,
+                    ReferenceKind::SingleCell => EmptyValidation::RejectEmpty,
+                };
+                for (elem_idx, val) in values.iter().enumerate() {
+                    if matches!(val, CellValue::Error(_)) {
+                        if let Some(err_vt) = error_types.get(elem_idx).copied().flatten()
+                            && err_vt != ValueType::Empty
+                            && let Some(expected) = param.param_type.to_expected_type()
+                            && !value_type_satisfies(err_vt, expected)
+                        {
+                            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                                function: func.name(),
+                                param: param.name,
+                                position,
+                                expected,
+                                found: err_vt,
+                            }));
+                        }
+                        continue;
+                    }
+                    validate_value_against_param_type(
+                        val,
+                        func.name(),
+                        param.name,
+                        position,
+                        param.param_type,
+                        empty_policy,
+                    )?;
+                }
+            }
+            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmptyValidation {
+    RejectEmpty,
+    SkipSliceEmpty,
+}
+
+fn validate_value_against_param_type(
+    val: &CellValue,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    param_type: ParamType,
+    empty_policy: EmptyValidation,
+) -> Result<(), FunctionError> {
+    match empty_policy {
+        EmptyValidation::SkipSliceEmpty => {
+            if matches!(val, CellValue::Empty) {
+                return Ok(());
+            }
+        }
+        EmptyValidation::RejectEmpty => {}
+    }
+
+    match param_type {
+        ParamType::Any => Ok(()),
+        ParamType::NonEmpty => match val {
+            CellValue::Number(_)
+            | CellValue::Text(_)
+            | CellValue::Boolean(_)
+            | CellValue::Error(_) => Ok(()),
+            CellValue::Empty => Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function,
+                param,
+                position,
+                expected: ExpectedType::NonEmpty,
+                found: ValueType::Empty,
+            })),
+        },
+        ParamType::Number => match val.strict_number() {
+            Ok(_) => Ok(()),
+            Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function,
+                param,
+                position,
+                expected: ExpectedType::Number,
+                found,
+            })),
+        },
+        ParamType::Integer => match val.strict_integer() {
+            Ok(_) => Ok(()),
+            Err(StrictIntError::WrongType(found)) => {
+                Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected: ExpectedType::Integer,
+                    found,
+                }))
+            }
+            Err(StrictIntError::NonInteger(value)) => {
+                Err(FunctionError::Type(TypeError::NonIntegerArgument {
+                    function,
+                    param,
+                    position,
+                    value,
+                }))
+            }
+        },
+        ParamType::Boolean => match val.strict_bool() {
+            Ok(_) => Ok(()),
+            Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function,
+                param,
+                position,
+                expected: ExpectedType::Boolean,
+                found,
+            })),
+        },
+    }
 }
 
 fn validate_arg_slots<T: ArgSlot>(

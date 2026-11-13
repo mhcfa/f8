@@ -617,6 +617,7 @@ pub(crate) fn parse_expr_str(input: &str) -> Result<Expr, ParseError> {
 
 fn parse_expression(stream: &mut TokenStream<'_>, min_bp: u8) -> Result<Expr, ParseError> {
     let mut left = parse_prefix(stream)?;
+    let mut saw_relational = false;
 
     while let Some(tok) = stream.peek() {
         let Some(op) = tok.token.as_binary_op() else {
@@ -626,6 +627,16 @@ fn parse_expression(stream: &mut TokenStream<'_>, min_bp: u8) -> Result<Expr, Pa
         let op_prec = op.precedence();
         if op_prec < min_bp {
             break;
+        }
+
+        if op.is_relational() {
+            if saw_relational {
+                return Err(ParseError::ChainedComparison {
+                    operator: op.as_str(),
+                    offset: tok.offset,
+                });
+            }
+            saw_relational = true;
         }
 
         // Consume binary operator
@@ -657,14 +668,6 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
 
     let offset = st.offset;
     match &st.token {
-        Token::Plus => {
-            stream.advance();
-            let expr = parse_expression(stream, UnaryOp::Pos.precedence())?;
-            Ok(Expr::Unary {
-                op: UnaryOp::Pos,
-                expr: Box::new(expr),
-            })
-        }
         Token::Minus => {
             stream.advance();
             let expr = parse_expression(stream, UnaryOp::Neg.precedence())?;
@@ -742,6 +745,7 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
         | Token::DotDot
         | Token::AtCol
         | Token::AtRow
+        | Token::Plus
         | Token::Star
         | Token::Slash
         | Token::Caret
@@ -908,13 +912,14 @@ fn parse_relative_offset(
         let k = match stream.consume() {
             Some(num_st) => {
                 if let Token::Number(n) = num_st.token
+                    && n.is_finite()
                     && n.fract() == 0.0
-                    && n >= 0.0
+                    && (1.0..=f64::from(i32::MAX)).contains(&n)
                 {
                     n as u32
                 } else {
                     return Err(ParseError::UnexpectedToken {
-                        expected: "integer offset",
+                        expected: "positive integer offset",
                         found: num_st.token.to_string(),
                         offset: num_st.offset,
                     });

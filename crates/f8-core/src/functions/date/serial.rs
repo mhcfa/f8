@@ -1,4 +1,3 @@
-pub use crate::functions::common::extract_scalar_number;
 use crate::value::ExcelError;
 
 /// Serial day number for Unix epoch (`1970-01-01`).
@@ -106,7 +105,7 @@ impl DateSerial {
     /// Converts a year, month, and day into an Excel serial day number.
     ///
     /// Supports:
-    /// - 2-digit / offset years: $0 \le \text{year} \le 1899 \rightarrow \text{year} + 1900$.
+    /// - 2-digit / offset years: `0 <= year <= 1899` maps to `year + 1900`.
     /// - Out-of-range months and days: propagates integer rollovers across month and year boundaries.
     /// - Lotus 1-2-3 / Excel 1900 leap year bug: serial `60.0 = 1900-02-29`.
     pub fn from_ymd(raw_year: i32, raw_month: i32, raw_day: i32) -> Result<f64, ExcelError> {

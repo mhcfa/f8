@@ -822,15 +822,25 @@ fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesizati
 
     let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
 
-    // 1. Right-hand relational comparisons wrap in parentheses; left-associated chains do not
+    // 1. Both left-hand and right-hand parenthesized relational subexpressions preserve parentheses
     let rel_cases = [
         ("TRUE = (1 = 1)", "=TRUE=(1=1)", CellValue::Boolean(true)),
-        ("TRUE = 1 = 1", "=TRUE=1=1", CellValue::Boolean(false)),
-        ("1 < (2 < 3)", "=1<(2<3)", CellValue::Boolean(true)),
-        ("1 < 2 < 3", "=1<2<3", CellValue::Boolean(false)),
-        ("1 <> (2 = 2)", "=1<>(2=2)", CellValue::Boolean(true)),
-        ("1 >= (2 >= 3)", "=1>=(2>=3)", CellValue::Boolean(false)),
-        ("1 <= (2 >= 3)", "=1<=(2>=3)", CellValue::Boolean(true)),
+        ("(1 = 1) = TRUE", "=(1=1)=TRUE", CellValue::Boolean(true)),
+        (
+            "FALSE <> (2 < 3)",
+            "=FALSE<>(2<3)",
+            CellValue::Boolean(true),
+        ),
+        (
+            "(2 >= 3) = (1 > 2)",
+            "=(2>=3)=(1>2)",
+            CellValue::Boolean(true),
+        ),
+        (
+            "FALSE <= (2 >= 3)",
+            "=FALSE<=(2>=3)",
+            CellValue::Boolean(true),
+        ),
     ];
 
     for (formula, expected_excel, expected_val) in rel_cases {
@@ -845,6 +855,18 @@ fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesizati
             "Pass 6a lowering mismatch on {formula}"
         );
     }
+
+    // 1b. ISBLANK and NA() lower directly to standard Excel functions
+    let isblank_expr = Expr::parse("ISBLANK(IncomeStatement[\"revenue\", @col])").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &isblank_expr, &symbol_table, &layout_map).unwrap(),
+        "=ISBLANK(C6)"
+    );
+    let na_expr = Expr::parse("IF(FALSE, 10, NA())").unwrap();
+    assert_eq!(
+        FormulaLowerer::lower_cell(&origin, &na_expr, &symbol_table, &layout_map).unwrap(),
+        "=IF(FALSE,10,NA())"
+    );
 
     // 2. Right-hand same-precedence arithmetic preserves grouping; left-heavy chains stay minimal
     let arith_cases = [

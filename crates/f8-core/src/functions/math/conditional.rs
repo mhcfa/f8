@@ -7,10 +7,10 @@ use crate::functions::error::FunctionError;
 use crate::functions::math::criteria::Criterion;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParameterDef,
-    VariadicRule,
+    EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
+    ShapePolicy, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 // ============================================================================
 // Parameter Definitions
@@ -20,17 +20,20 @@ static SUMIFS_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "sum_range",
         "The range of cells to sum if criteria are met.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria1",
         "The condition that determines which cells in criteria_range1 to sum.",
         ParamKind::Scalar,
+        ParamType::Any,
     ),
 ];
 
@@ -38,12 +41,14 @@ static COUNTIFS_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "criteria_range1",
         "The first range of cells to evaluate.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria1",
         "The condition that defines which cells will be counted.",
         ParamKind::Scalar,
+        ParamType::Any,
     ),
 ];
 
@@ -51,17 +56,20 @@ static AVERAGEIFS_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "average_range",
         "The range of cells to average if criteria are met.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria1",
         "The condition that determines which cells to average.",
         ParamKind::Scalar,
+        ParamType::Any,
     ),
 ];
 
@@ -69,17 +77,20 @@ static MINIFS_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "min_range",
         "The range of cells to evaluate for the minimum value.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria1",
         "The condition that determines which cells to evaluate.",
         ParamKind::Scalar,
+        ParamType::Any,
     ),
 ];
 
@@ -87,17 +98,20 @@ static MAXIFS_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "max_range",
         "The range of cells to evaluate for the maximum value.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria_range1",
         "The range of cells to evaluate against criteria1.",
-        ParamKind::RangeOrArray,
+        ParamKind::Range,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "criteria1",
         "The condition that determines which cells to evaluate.",
         ParamKind::Scalar,
+        ParamType::Any,
     ),
 ];
 
@@ -108,10 +122,35 @@ static MAXIFS_PARAMS: &[ParameterDef] = &[
 /// Pair of criteria range cell values and compiled criterion.
 type CriteriaPair<'a> = (&'a [CellValue], Criterion);
 
-/// Helper extracting and validating paired criteria ranges and criteria values.
-///
-/// Returns `Ok(Some(pairs))` on success, or `Ok(None)` if dimensional conformity
-/// is violated (resulting in `#VALUE!`).
+fn extract_range_slot<'a>(
+    func_name: &'static str,
+    arg: &'a FunctionArg<'a>,
+) -> Result<(usize, usize, &'a [CellValue]), FunctionError> {
+    match arg {
+        FunctionArg::Array {
+            rows, cols, values, ..
+        } => Ok((*rows, *cols, values.as_slice())),
+        FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
+            Err(FunctionError::InvalidArgumentKind {
+                function: func_name,
+                expected: "range",
+                found: "scalar",
+            })
+        }
+        FunctionArg::Lazy(_) => Err(FunctionError::InvalidArgumentKind {
+            function: func_name,
+            expected: "range",
+            found: "lazy",
+        }),
+        FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
+            function: func_name,
+            expected: "range",
+            found: "omitted",
+        }),
+    }
+}
+
+/// Extracts and validates paired criteria ranges and criteria values, enforcing identical `(rows, cols)`.
 fn collect_criteria_pairs<'a>(
     func_name: &'static str,
     args: &'a [FunctionArg<'a>],
@@ -119,7 +158,7 @@ fn collect_criteria_pairs<'a>(
     expected_rows: usize,
     expected_cols: usize,
     ctx: &dyn EvalContext,
-) -> Result<Option<Vec<CriteriaPair<'a>>>, FunctionError> {
+) -> Result<Vec<CriteriaPair<'a>>, FunctionError> {
     let remaining = args.len() - start_arg_idx;
     let num_pairs = remaining / 2;
     let mut pairs = Vec::with_capacity(num_pairs);
@@ -128,17 +167,16 @@ fn collect_criteria_pairs<'a>(
         let cr_idx = start_arg_idx + 2 * p;
         let crit_idx = cr_idx + 1;
 
-        let (cr_rows, cr_cols, cr_values) = match &args[cr_idx] {
-            FunctionArg::Array {
-                rows, cols, values, ..
-            } => (*rows, *cols, values.as_slice()),
-            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                return Ok(None);
-            }
-        };
+        let (cr_rows, cr_cols, cr_values) = extract_range_slot(func_name, &args[cr_idx])?;
 
         if cr_rows != expected_rows || cr_cols != expected_cols {
-            return Ok(None);
+            return Err(FunctionError::DimensionMismatch {
+                function: func_name,
+                expected_rows,
+                expected_cols,
+                found_rows: cr_rows,
+                found_cols: cr_cols,
+            });
         }
 
         let crit_val = args[crit_idx].eval_scalar(func_name, ctx)?;
@@ -146,7 +184,7 @@ fn collect_criteria_pairs<'a>(
         pairs.push((cr_values, criterion));
     }
 
-    Ok(Some(pairs))
+    Ok(pairs)
 }
 
 /// Evaluates whether all criteria match for a given cell position index.
@@ -183,8 +221,16 @@ impl ExcelFunction for SumifsFunction {
         SUMIFS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Pairs
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::EqualTargetAndOddPairRanges)
     }
 
     fn evaluate<'a>(
@@ -194,33 +240,26 @@ impl ExcelFunction for SumifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values) = match &args[0] {
-            FunctionArg::Array {
-                rows, cols, values, ..
-            } => (*rows, *cols, values.as_slice()),
-            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                return Ok(CellValue::Error(ExcelError::Value));
-            }
-        };
-
-        let Some(pairs) =
-            collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?
-        else {
-            return Ok(CellValue::Error(ExcelError::Value));
-        };
+        let (target_rows, target_cols, target_values) = extract_range_slot(self.name(), &args[0])?;
+        let pairs = collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?;
 
         let mut sum = 0.0;
         for (i, cell) in target_values.iter().enumerate() {
             if all_criteria_match(&pairs, i) {
                 match cell {
                     CellValue::Error(e) => return Ok(CellValue::Error(*e)),
-                    CellValue::Number(n) => sum += *n,
-                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {} // Text, empty, boolean ignored in sum_range
+                    CellValue::Number(n) => {
+                        if !n.is_finite() {
+                            return Ok(CellValue::Error(ExcelError::Num));
+                        }
+                        sum += *n;
+                    }
+                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
                 }
             }
         }
 
-        Ok(CellValue::Number(sum))
+        Ok(CellValue::number(sum))
     }
 }
 
@@ -245,8 +284,16 @@ impl ExcelFunction for CountifsFunction {
         COUNTIFS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Pairs
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::EqualEvenPairRanges)
     }
 
     fn evaluate<'a>(
@@ -256,17 +303,8 @@ impl ExcelFunction for CountifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (cr1_rows, cr1_cols) = match &args[0] {
-            FunctionArg::Array { rows, cols, .. } => (*rows, *cols),
-            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                return Ok(CellValue::Error(ExcelError::Value));
-            }
-        };
-
-        let Some(pairs) = collect_criteria_pairs(self.name(), args, 0, cr1_rows, cr1_cols, ctx)?
-        else {
-            return Ok(CellValue::Error(ExcelError::Value));
-        };
+        let (cr1_rows, cr1_cols, _) = extract_range_slot(self.name(), &args[0])?;
+        let pairs = collect_criteria_pairs(self.name(), args, 0, cr1_rows, cr1_cols, ctx)?;
 
         let total_cells = cr1_rows * cr1_cols;
         let mut count = 0.0;
@@ -276,7 +314,7 @@ impl ExcelFunction for CountifsFunction {
             }
         }
 
-        Ok(CellValue::Number(count))
+        Ok(CellValue::number(count))
     }
 }
 
@@ -301,8 +339,16 @@ impl ExcelFunction for AverageifsFunction {
         AVERAGEIFS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Pairs
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::EqualTargetAndOddPairRanges)
     }
 
     fn evaluate<'a>(
@@ -312,20 +358,8 @@ impl ExcelFunction for AverageifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values) = match &args[0] {
-            FunctionArg::Array {
-                rows, cols, values, ..
-            } => (*rows, *cols, values.as_slice()),
-            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                return Ok(CellValue::Error(ExcelError::Value));
-            }
-        };
-
-        let Some(pairs) =
-            collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?
-        else {
-            return Ok(CellValue::Error(ExcelError::Value));
-        };
+        let (target_rows, target_cols, target_values) = extract_range_slot(self.name(), &args[0])?;
+        let pairs = collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?;
 
         let mut sum = 0.0;
         let mut count = 0usize;
@@ -335,10 +369,13 @@ impl ExcelFunction for AverageifsFunction {
                 match cell {
                     CellValue::Error(e) => return Ok(CellValue::Error(*e)),
                     CellValue::Number(n) => {
+                        if !n.is_finite() {
+                            return Ok(CellValue::Error(ExcelError::Num));
+                        }
                         sum += *n;
                         count += 1;
                     }
-                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {} // Text, empty, boolean ignored in average_range
+                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
                 }
             }
         }
@@ -346,7 +383,7 @@ impl ExcelFunction for AverageifsFunction {
         if count == 0 {
             Ok(CellValue::Error(ExcelError::Div0))
         } else {
-            Ok(CellValue::Number(sum / count as f64))
+            Ok(CellValue::number(sum / count as f64))
         }
     }
 }
@@ -372,8 +409,16 @@ impl ExcelFunction for MinifsFunction {
         MINIFS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Pairs
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::EqualTargetAndOddPairRanges)
     }
 
     fn evaluate<'a>(
@@ -383,20 +428,8 @@ impl ExcelFunction for MinifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values) = match &args[0] {
-            FunctionArg::Array {
-                rows, cols, values, ..
-            } => (*rows, *cols, values.as_slice()),
-            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                return Ok(CellValue::Error(ExcelError::Value));
-            }
-        };
-
-        let Some(pairs) =
-            collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?
-        else {
-            return Ok(CellValue::Error(ExcelError::Value));
-        };
+        let (target_rows, target_cols, target_values) = extract_range_slot(self.name(), &args[0])?;
+        let pairs = collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?;
 
         let mut min_val: Option<f64> = None;
 
@@ -405,6 +438,9 @@ impl ExcelFunction for MinifsFunction {
                 match cell {
                     CellValue::Error(e) => return Ok(CellValue::Error(*e)),
                     CellValue::Number(n) => {
+                        if !n.is_finite() {
+                            return Ok(CellValue::Error(ExcelError::Num));
+                        }
                         min_val = Some(min_val.map_or(*n, |m| f64::min(m, *n)));
                     }
                     CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
@@ -412,7 +448,7 @@ impl ExcelFunction for MinifsFunction {
             }
         }
 
-        Ok(CellValue::Number(min_val.unwrap_or(0.0)))
+        Ok(CellValue::number(min_val.unwrap_or(0.0)))
     }
 }
 
@@ -437,8 +473,16 @@ impl ExcelFunction for MaxifsFunction {
         MAXIFS_PARAMS
     }
 
+    fn return_type(&self) -> Option<ValueType> {
+        Some(ValueType::Number)
+    }
+
     fn variadic_rule(&self) -> VariadicRule {
         VariadicRule::Pairs
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::ShapeCoupled(ShapePolicy::EqualTargetAndOddPairRanges)
     }
 
     fn evaluate<'a>(
@@ -448,20 +492,8 @@ impl ExcelFunction for MaxifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values) = match &args[0] {
-            FunctionArg::Array {
-                rows, cols, values, ..
-            } => (*rows, *cols, values.as_slice()),
-            FunctionArg::Scalar(_) | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
-                return Ok(CellValue::Error(ExcelError::Value));
-            }
-        };
-
-        let Some(pairs) =
-            collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?
-        else {
-            return Ok(CellValue::Error(ExcelError::Value));
-        };
+        let (target_rows, target_cols, target_values) = extract_range_slot(self.name(), &args[0])?;
+        let pairs = collect_criteria_pairs(self.name(), args, 1, target_rows, target_cols, ctx)?;
 
         let mut max_val: Option<f64> = None;
 
@@ -470,6 +502,9 @@ impl ExcelFunction for MaxifsFunction {
                 match cell {
                     CellValue::Error(e) => return Ok(CellValue::Error(*e)),
                     CellValue::Number(n) => {
+                        if !n.is_finite() {
+                            return Ok(CellValue::Error(ExcelError::Num));
+                        }
                         max_val = Some(max_val.map_or(*n, |m| f64::max(m, *n)));
                     }
                     CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
@@ -477,6 +512,6 @@ impl ExcelFunction for MaxifsFunction {
             }
         }
 
-        Ok(CellValue::Number(max_val.unwrap_or(0.0)))
+        Ok(CellValue::number(max_val.unwrap_or(0.0)))
     }
 }

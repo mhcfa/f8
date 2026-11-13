@@ -4,6 +4,7 @@ use crate::compiler::graph::ResolveError;
 use crate::compiler::ir::id::CellId;
 use crate::functions::error::FunctionError;
 use crate::model::id::{RowId, TableId};
+use crate::value::TypeError;
 
 /// Structured compiler and evaluation errors encountered during formula calculation.
 #[derive(Debug, Error)]
@@ -28,6 +29,27 @@ pub enum EvalError {
         /// Underlying function error.
         #[source]
         source: Box<FunctionError>,
+    },
+
+    /// Static or dynamic formula type error.
+    #[error("Type error in cell '{cell}': {source}")]
+    Type {
+        /// Cell coordinate where the type failure occurred.
+        cell: Box<CellId>,
+        /// Underlying type error.
+        #[source]
+        source: TypeError,
+    },
+
+    /// Range slice evaluated in a scalar expression or parameter context.
+    #[error("Range slice ({rows}x{cols}) cannot be evaluated as a scalar in cell '{cell}'")]
+    SliceInScalarContext {
+        /// Cell coordinate where the scalar slice violation occurred.
+        cell: Box<CellId>,
+        /// Resolved row count of the slice.
+        rows: usize,
+        /// Resolved column count of the slice.
+        cols: usize,
     },
 
     /// The specified table was not found in the symbol table.
@@ -57,12 +79,40 @@ impl EvalError {
         Self::UnevaluatedDependency(Box::new(cell))
     }
 
-    /// Creates a `Function` evaluation error.
+    /// Creates a normalized `EvalError` from a `FunctionError`, promoting `FunctionError::Type`
+    /// and `FunctionError::SliceInScalarContext` into their canonical `EvalError` variants.
     #[must_use]
     pub fn function(cell: CellId, source: FunctionError) -> Self {
-        Self::Function {
-            cell: Box::new(cell),
-            source: Box::new(source),
+        match source {
+            FunctionError::Type(source) => Self::Type {
+                cell: Box::new(cell),
+                source,
+            },
+            FunctionError::SliceInScalarContext { rows, cols } => Self::SliceInScalarContext {
+                cell: Box::new(cell),
+                rows,
+                cols,
+            },
+            other @ (FunctionError::UnknownFunction(_)
+            | FunctionError::TooFewArguments { .. }
+            | FunctionError::TooManyArguments { .. }
+            | FunctionError::CannotOmitRequiredArgument { .. }
+            | FunctionError::CannotOmitTrailingArgument { .. }
+            | FunctionError::InvalidVariadicPairs { .. }
+            | FunctionError::InvalidArgumentKind { .. }
+            | FunctionError::EvaluationFailure { .. }
+            | FunctionError::DimensionMismatch { .. }
+            | FunctionError::LengthMismatch { .. }
+            | FunctionError::ExpectedOneDimensionalSlice { .. }
+            | FunctionError::MissingColumnIndexFor2DSlice { .. }
+            | FunctionError::IndexOutOfBounds { .. }
+            | FunctionError::NonLiteralLookupMode { .. }
+            | FunctionError::InvalidLookupMode { .. }
+            | FunctionError::ErrorInBinaryLookupArray { .. }
+            | FunctionError::UnsortedBinaryLookupArray { .. }) => Self::Function {
+                cell: Box::new(cell),
+                source: Box::new(other),
+            },
         }
     }
 
@@ -99,11 +149,30 @@ mod tests {
         );
 
         let func_err = FunctionError::UnknownFunction("FOO".into());
-        let err4 = EvalError::function(origin, func_err);
+        let err4 = EvalError::function(origin.clone(), func_err);
         assert_eq!(
             err4.to_string(),
             "Function error in cell 'Table[\"r1\", \"c1\"]': unknown function 'FOO'"
         );
+
+        let type_err = EvalError::function(
+            origin.clone(),
+            FunctionError::Type(TypeError::EmptyFormulaResult),
+        );
+        assert!(matches!(type_err, EvalError::Type { .. }));
+
+        let slice_err = EvalError::function(
+            origin,
+            FunctionError::SliceInScalarContext { rows: 2, cols: 1 },
+        );
+        assert!(matches!(
+            slice_err,
+            EvalError::SliceInScalarContext {
+                rows: 2,
+                cols: 1,
+                ..
+            }
+        ));
 
         let err5 = EvalError::table_not_found(TableId::from("NonExistentTable"));
         assert_eq!(
