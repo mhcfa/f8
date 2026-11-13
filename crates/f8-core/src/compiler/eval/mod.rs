@@ -44,7 +44,7 @@ impl Evaluator {
                     registry
                         .validate_expr_with_shapes(expr, |table_ref| {
                             resolve_table_ref(cell_id, table_ref, symbol_table)
-                                .map(|slice| Some((slice.rows, slice.cols)))
+                                .map(|slice| Some((slice.rows, slice.cols, slice.axis_role)))
                         })
                         .map_err(|err| match err {
                             StageAError::Function(source) => {

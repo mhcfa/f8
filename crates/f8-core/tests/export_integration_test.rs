@@ -380,6 +380,26 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         "XMATCH(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], 0, 2)",
         "XMATCH(20, SeedData[\"r1\"..\"r4\", \"num_a\"], 0, -2)",
         "INDEX(SeedData[\"r1\"..\"r4\", \"num_desc\"..\"category\"], 1, 1)",
+        // Cluster B migrated parity cases & strict aggregation / descriptor / date-domain checks
+        "SUM(SeedData[\"r1\"..\"r4\", \"category\"], TRUE, 5)",
+        "COUNT(SeedData[\"r1\"..\"r4\", \"category\"])",
+        "SUM(SeedData[\"r1\"..\"r4\", \"row_id\"])",
+        "IF(FALSE, SUM(SeedData[\"r1\"..\"r4\", \"row_id\"]), 0)",
+        "SUM(SeedData[\"r1\", \"sparse\"])",
+        "IFERROR(SUM(SeedData[\"r1\", \"sparse\"]), 0)",
+        "NPV(0.1, SeedData[\"r1\"..\"r4\", \"sparse\"])",
+        "IRR(SeedData[\"r1\"..\"r4\", \"sparse\"])",
+        "XNPV(0.1, SeedData[\"r1\"..\"r4\", \"date\"], SeedData[\"r1\"..\"r4\", \"cash_flow\"])",
+        "DATE(24, 12, 31)",
+        "DATE(2024, 14, 1)",
+        "DATE(2024, 6, 31)",
+        "DATE(2025, 2, 29)",
+        "DATE(10000, 1, 1)",
+        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5)",
+        "PMT(0.05, 10, -1000, 0, 2)",
+        "YEAR(0)",
+        "YEAR(SeedData[\"r2\", \"sparse\"])",
+        "IF(FALSE, YEAR(SeedData[\"r2\", \"sparse\"]), 2024)",
     ];
 
     for formula in migrated_compile_errors {

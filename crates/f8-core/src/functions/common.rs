@@ -43,23 +43,23 @@ impl NumericCollector {
         });
     }
 
-    /// Iterates over numeric observations across arguments following Excel parity rules.
+    /// Iterates over validated numeric observations across arguments, skipping sparse `Empty` cells in slices.
     fn for_each_numeric<F>(args: &[FunctionArg<'_>], mut f: F) -> Result<(), ExcelError>
     where
         F: FnMut(f64),
     {
         for arg in args {
             match arg {
-                FunctionArg::Scalar(val) => {
-                    f(val.coerce_to_number()?);
-                }
+                FunctionArg::Scalar(val) => match val.strict_number() {
+                    Ok(Ok(n)) => f(n),
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => return Err(ExcelError::Value),
+                },
                 FunctionArg::TypedErrorScalar { error, .. } => {
                     return Err(*error);
                 }
                 FunctionArg::Array {
-                    values,
-                    ref_kind: ReferenceKind::SingleCell | ReferenceKind::Slice,
-                    ..
+                    values, ref_kind, ..
                 } => {
                     for v in values {
                         match v {
@@ -70,8 +70,12 @@ impl NumericCollector {
                                 f(normalize_zero(*n));
                             }
                             CellValue::Error(e) => return Err(*e),
-                            CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {
-                                // Range references ignore text, booleans, and empty cells
+                            CellValue::Empty => match ref_kind {
+                                ReferenceKind::Slice => {}
+                                ReferenceKind::SingleCell => return Err(ExcelError::Value),
+                            },
+                            CellValue::Text(_) | CellValue::Boolean(_) => {
+                                return Err(ExcelError::Value);
                             }
                         }
                     }
@@ -86,9 +90,6 @@ impl NumericCollector {
     pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
         let mut collector = Self::new();
         Self::for_each_numeric(args, |n| collector.record(n))?;
-        if !collector.sum.is_finite() {
-            return Err(ExcelError::Num);
-        }
         collector.sum = normalize_zero(collector.sum);
         Ok(collector)
     }
@@ -519,7 +520,8 @@ impl Default for LogicalCollector {
     }
 }
 
-/// Counts numeric cells across range arguments according to Excel `COUNT` semantics.
+/// Counts finite numeric cells across range arguments according to Excel `COUNT` semantics
+/// (skipping sparse `Empty` and `Error` cells).
 #[must_use]
 pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
     let mut count = 0;
@@ -528,13 +530,13 @@ pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
         match arg {
             FunctionArg::Array { values, .. } => {
                 for v in values {
-                    if matches!(v, CellValue::Number(_)) {
+                    if matches!(v, CellValue::Number(n) if n.is_finite()) {
                         count += 1;
                     }
                 }
             }
             FunctionArg::Scalar(val) => {
-                if matches!(val, CellValue::Number(_)) {
+                if matches!(val, CellValue::Number(n) if n.is_finite()) {
                     count += 1;
                 }
             }

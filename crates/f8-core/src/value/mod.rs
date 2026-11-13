@@ -2,9 +2,14 @@
 //!
 //! Defines `CellValue`, `ExcelError`, and calculation/coercion rules.
 
+pub mod date;
 pub mod error;
 pub mod format;
 
+pub use date::{
+    DateSerial, DateTuple, EXCEL_1900_LEAP_DAY_SERIAL, MAX_EXCEL_SERIAL, MIN_INPUT_DATE_SERIAL,
+    UNIX_EPOCH_SERIAL, is_valid_input_date_serial, validate_date_serial,
+};
 pub use error::{ExcelError, ExpectedType, ParseExcelError, StrictIntError, TypeError, ValueType};
 pub use format::{format_accounting_number, format_cell_value};
 
@@ -236,24 +241,6 @@ impl CellValue {
             (Self::Boolean(a), Self::Boolean(b)) => Ok(Ok(a.cmp(b))),
         }
     }
-
-    /// Coerces a scalar value in legacy/variadic collectors (`Number`, `Boolean`, `Empty` -> `f64`).
-    pub(crate) fn coerce_to_number(&self) -> Result<f64, ExcelError> {
-        match self {
-            Self::Number(n) => {
-                if n.is_finite() {
-                    Ok(normalize_zero(*n))
-                } else {
-                    Err(ExcelError::Num)
-                }
-            }
-            Self::Boolean(true) => Ok(1.0),
-            Self::Boolean(false) => Ok(0.0),
-            Self::Empty => Ok(0.0),
-            Self::Error(e) => Err(*e),
-            Self::Text(_) => Err(ExcelError::Value),
-        }
-    }
 }
 
 /// Compares two strings case-insensitively using ASCII case folding.
@@ -397,28 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cell_value_coercions_and_strict_extractors() {
-        assert_eq!(CellValue::Number(12.5).coerce_to_number(), Ok(12.5));
-        assert_eq!(
-            CellValue::Number(-0.0).coerce_to_number().map(f64::to_bits),
-            Ok(0.0_f64.to_bits())
-        );
-        assert_eq!(
-            CellValue::Number(f64::INFINITY).coerce_to_number(),
-            Err(ExcelError::Num)
-        );
-        assert_eq!(CellValue::Boolean(true).coerce_to_number(), Ok(1.0));
-        assert_eq!(CellValue::Boolean(false).coerce_to_number(), Ok(0.0));
-        assert_eq!(CellValue::Empty.coerce_to_number(), Ok(0.0));
-        assert_eq!(
-            CellValue::Text("foo".into()).coerce_to_number(),
-            Err(ExcelError::Value)
-        );
-        assert_eq!(
-            CellValue::Error(ExcelError::Ref).coerce_to_number(),
-            Err(ExcelError::Ref)
-        );
-
+    fn test_cell_value_strict_extractors() {
         assert_eq!(CellValue::Number(12.5).strict_number(), Ok(Ok(12.5)));
         assert_eq!(
             CellValue::Number(f64::NAN).strict_number(),

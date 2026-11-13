@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::expr::ast::Expr;
 use crate::functions::error::FunctionError;
+use crate::model::table::AxisRole;
 use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Functional taxonomy categories for Excel built-in functions.
@@ -79,6 +80,12 @@ pub enum ParamType {
     Number,
     /// Requires an exact safe integer (`ExpectedType::Integer`).
     Integer,
+    /// Requires a finite calendar date serial in `1.0..=2_958_465.0`.
+    DateSerial,
+    /// Requires an exact annuity timing integer in `{0, 1}`.
+    AnnuityType,
+    /// Requires an exact `YEARFRAC` day-count basis integer in `0..=4`.
+    DayCountBasis,
     /// Requires a boolean value (`ExpectedType::Boolean`).
     Boolean,
 }
@@ -90,11 +97,31 @@ impl ParamType {
         match self {
             Self::Any => None,
             Self::NonEmpty => Some(ExpectedType::NonEmpty),
-            Self::Number => Some(ExpectedType::Number),
-            Self::Integer => Some(ExpectedType::Integer),
+            Self::Number | Self::DateSerial => Some(ExpectedType::Number),
+            Self::Integer | Self::AnnuityType | Self::DayCountBasis => Some(ExpectedType::Integer),
             Self::Boolean => Some(ExpectedType::Boolean),
         }
     }
+}
+
+/// Declarative column-role constraint for reference arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum RolePolicy {
+    /// Accepts both `AxisRole::Measure` and `AxisRole::Descriptor` columns.
+    #[default]
+    AnyRole,
+    /// Rejects references whose resolved column has `AxisRole::Descriptor`.
+    MeasureOnly,
+}
+
+/// Declarative empty-cell handling policy for non-`ParamType::Any` parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum EmptyPolicy {
+    /// Rejects `CellValue::Empty` across `Scalar`, `ReferenceKind::SingleCell`, and `ReferenceKind::Slice`.
+    #[default]
+    ForbidAll,
+    /// Rejects `CellValue::Empty` on `Scalar` and `ReferenceKind::SingleCell`, while permitting sparse `Empty` inside `ReferenceKind::Slice`.
+    AllowInSlice,
 }
 
 /// Variadic tail behavior for function signatures.
@@ -147,6 +174,10 @@ pub struct ParameterDef {
     pub kind: ParamKind,
     /// Declarative value-type constraint.
     pub param_type: ParamType,
+    /// Column axis-role policy for reference arguments.
+    pub role_policy: RolePolicy,
+    /// Empty-cell policy for non-`ParamType::Any` parameters.
+    pub empty_policy: EmptyPolicy,
     /// Requirement and default policy for this parameter.
     pub requirement: ParamRequirement,
 }
@@ -165,6 +196,8 @@ impl ParameterDef {
             description,
             kind,
             param_type,
+            role_policy: RolePolicy::AnyRole,
+            empty_policy: EmptyPolicy::ForbidAll,
             requirement: ParamRequirement::Required,
         }
     }
@@ -182,6 +215,8 @@ impl ParameterDef {
             description,
             kind,
             param_type,
+            role_policy: RolePolicy::AnyRole,
+            empty_policy: EmptyPolicy::ForbidAll,
             requirement: ParamRequirement::Optional,
         }
     }
@@ -200,8 +235,24 @@ impl ParameterDef {
             description,
             kind,
             param_type,
+            role_policy: RolePolicy::AnyRole,
+            empty_policy: EmptyPolicy::ForbidAll,
             requirement: ParamRequirement::OptionalWithDefault(default_value),
         }
+    }
+
+    /// Restricts reference arguments on this parameter to `AxisRole::Measure` columns.
+    #[must_use]
+    pub const fn measure_only(mut self) -> Self {
+        self.role_policy = RolePolicy::MeasureOnly;
+        self
+    }
+
+    /// Permits sparse `CellValue::Empty` elements inside syntactic `ReferenceKind::Slice` ranges.
+    #[must_use]
+    pub const fn allow_empty_in_slice(mut self) -> Self {
+        self.empty_policy = EmptyPolicy::AllowInSlice;
+        self
     }
 }
 
@@ -229,6 +280,8 @@ pub enum FunctionArg<'a> {
         error_types: Vec<Option<ValueType>>,
         /// Syntactic reference classification (`SingleCell` vs `Slice`).
         ref_kind: ReferenceKind,
+        /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
+        axis_role: AxisRole,
     },
     /// Unevaluated AST expression for lazy conditional branches.
     Lazy(&'a Expr),
@@ -244,6 +297,7 @@ impl<'a> FunctionArg<'a> {
         cols: usize,
         values: Vec<CellValue>,
         ref_kind: ReferenceKind,
+        axis_role: AxisRole,
     ) -> Self {
         let error_types = vec![None; values.len()];
         Self::Array {
@@ -252,6 +306,7 @@ impl<'a> FunctionArg<'a> {
             values,
             error_types,
             ref_kind,
+            axis_role,
         }
     }
     /// Resolves this argument to a single scalar `CellValue`, evaluating lazy expressions if necessary.
@@ -568,10 +623,24 @@ pub enum ValidationPolicy {
     Branch(BranchPolicy),
     /// Coordinate/vector lookup shape, mode-literal, and slice homogeneity validation.
     Lookup(LookupPolicy),
+    /// Calendar `(year, month, day)` integer domain validation (`DATE`).
+    CalendarDate,
 }
 
-/// Evaluated 2D range grid `(rows, cols, values, error_types)` carrying per-cell error [`ValueType`] provenance.
-pub type TypedRangeGrid = (usize, usize, Vec<CellValue>, Vec<Option<ValueType>>);
+/// Evaluated 2D range grid carrying per-cell error [`ValueType`] provenance and uniform column [`AxisRole`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedRangeGrid {
+    /// Number of rows.
+    pub rows: usize,
+    /// Number of columns.
+    pub cols: usize,
+    /// Flattened row-major cell values.
+    pub values: Vec<CellValue>,
+    /// Per-element concrete non-`Empty` inferred [`ValueType`] provenance for `CellValue::Error(_)` cells.
+    pub error_types: Vec<Option<ValueType>>,
+    /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
+    pub axis_role: AxisRole,
+}
 
 /// Contextual evaluation interface passed to function evaluation routines.
 pub trait EvalContext {
@@ -586,14 +655,21 @@ pub trait EvalContext {
         Ok((1, 1, vec![val]))
     }
 
-    /// Evaluates a range or multi-cell expression to `(rows, cols, values, error_types)`,
-    /// preserving per-cell inferred [`ValueType`] provenance for `CellValue::Error(_)` cells.
+    /// Evaluates a range or multi-cell expression to a [`TypedRangeGrid`],
+    /// preserving per-cell inferred [`ValueType`] provenance and column [`AxisRole`].
     ///
-    /// The default implementation delegates to [`Self::eval_range`] with `None` error types.
+    /// The default implementation delegates to [`Self::eval_range`] with `None` error types
+    /// and [`AxisRole::Measure`].
     fn eval_typed_range(&self, expr: &Expr) -> Result<TypedRangeGrid, FunctionError> {
         let (rows, cols, values) = self.eval_range(expr)?;
         let error_types = vec![None; values.len()];
-        Ok((rows, cols, values, error_types))
+        Ok(TypedRangeGrid {
+            rows,
+            cols,
+            values,
+            error_types,
+            axis_role: AxisRole::Measure,
+        })
     }
 
     /// Validates a dormant lazy expression subtree against function contracts and memoized values

@@ -7,11 +7,11 @@ use f8_core::expr::ast::{
 };
 use f8_core::functions::common::eval_branch_arg;
 use f8_core::functions::{
-    BranchPolicy, EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
-    LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef, ReferenceKind, ShapePolicy,
-    StageAError, ValidationPolicy,
+    BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory, FunctionError,
+    FunctionRegistry, LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef,
+    ReferenceKind, RolePolicy, ShapePolicy, StageAError, ValidationPolicy,
 };
-use f8_core::model::table::ValueLiteral;
+use f8_core::model::table::{AxisRole, ValueLiteral};
 use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context tracking evaluated expressions.
@@ -450,28 +450,26 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     let sum = registry.lookup("SUM").unwrap();
     let ctx = MockEvalContext::default();
 
-    // Range slice containing numbers, text, booleans, and empty cells
+    assert_eq!(sum.parameters()[0].role_policy, RolePolicy::MeasureOnly);
+    assert_eq!(sum.parameters()[0].empty_policy, EmptyPolicy::AllowInSlice);
+
+    // Sparse numeric range slice containing numbers and Empty cells succeeds
     let range_arg = FunctionArg::array(
         2,
-        3,
+        2,
         vec![
             CellValue::Number(10.0),
-            CellValue::Text("N/A text".into()), // Ignored in range
-            CellValue::Boolean(true),           // Ignored in range
             CellValue::Number(25.5),
-            CellValue::Empty, // Contributes 0.0
+            CellValue::Empty, // Contributes 0.0 in Slice
             CellValue::Number(14.5),
         ],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     );
 
     let scalar_arg = FunctionArg::Scalar(CellValue::Number(50.0));
-    let empty_arg = FunctionArg::Scalar(CellValue::Empty);
-
-    let res = sum
-        .evaluate(&[range_arg, scalar_arg, empty_arg], &ctx)
-        .unwrap();
-    // 10.0 + 25.5 + 14.5 + 50.0 + 0.0 = 100.0
+    let res = sum.evaluate(&[range_arg, scalar_arg], &ctx).unwrap();
+    // 10.0 + 25.5 + 0.0 + 14.5 + 50.0 = 100.0
     assert_eq!(res, CellValue::Number(100.0));
 
     // Range reference with an error bubbles up immediately
@@ -480,19 +478,81 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
         2,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     );
     let res = sum.evaluate(&[err_range_arg], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 
-    // Scalar text argument in SUM produces #VALUE!
-    let scalar_text_arg = FunctionArg::Scalar(CellValue::Text("error".into()));
-    let res = sum.evaluate(&[scalar_text_arg], &ctx).unwrap();
-    assert_eq!(res, CellValue::Error(ExcelError::Value));
+    // Descriptor range fails with DescriptorReferenceNotAllowed
+    let desc_range_arg = FunctionArg::array(
+        1,
+        1,
+        vec![CellValue::Number(10.0)],
+        ReferenceKind::Slice,
+        AxisRole::Descriptor,
+    );
+    assert_eq!(
+        sum.evaluate(&[desc_range_arg], &ctx),
+        Err(FunctionError::DescriptorReferenceNotAllowed {
+            function: "SUM",
+            param: "number1",
+            position: 1,
+        })
+    );
 
-    // Scalar boolean argument coerces to 1.0
-    let scalar_bool_arg = FunctionArg::Scalar(CellValue::Boolean(true));
-    let res = sum.evaluate(&[scalar_bool_arg], &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(1.0));
+    // Text or Boolean inside Slice, and Empty/Text/Boolean on Scalar or SingleCell fail strictly
+    for (bad_arg, found_type) in [
+        (
+            FunctionArg::array(
+                1,
+                2,
+                vec![CellValue::Number(10.0), CellValue::Text("N/A text".into())],
+                ReferenceKind::Slice,
+                AxisRole::Measure,
+            ),
+            ValueType::Text,
+        ),
+        (
+            FunctionArg::array(
+                1,
+                2,
+                vec![CellValue::Number(10.0), CellValue::Boolean(true)],
+                ReferenceKind::Slice,
+                AxisRole::Measure,
+            ),
+            ValueType::Boolean,
+        ),
+        (
+            FunctionArg::array(
+                1,
+                1,
+                vec![CellValue::Empty],
+                ReferenceKind::SingleCell,
+                AxisRole::Measure,
+            ),
+            ValueType::Empty,
+        ),
+        (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
+        (
+            FunctionArg::Scalar(CellValue::Text("error".into())),
+            ValueType::Text,
+        ),
+        (
+            FunctionArg::Scalar(CellValue::Boolean(true)),
+            ValueType::Boolean,
+        ),
+    ] {
+        assert_eq!(
+            sum.evaluate(&[bad_arg], &ctx),
+            Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "SUM",
+                param: "number1",
+                position: 1,
+                expected: ExpectedType::Number,
+                found: found_type,
+            }))
+        );
+    }
 }
 
 #[test]
@@ -722,6 +782,7 @@ fn test_bind_arguments_integration() {
                 CellValue::Number(30.0)
             ],
             ReferenceKind::Slice,
+            AxisRole::Measure,
         )
     );
     assert_eq!(bound_sum[1], FunctionArg::Scalar(CellValue::Number(40.0)));
@@ -834,6 +895,7 @@ fn test_registry_metadata_and_iteration() {
                 second_idx: 1,
                 second_param: "dates",
             }),
+            "DATE" => ValidationPolicy::CalendarDate,
             _ => ValidationPolicy::Standard,
         };
         if expected_policy != ValidationPolicy::Standard {
@@ -845,7 +907,7 @@ fn test_registry_metadata_and_iteration() {
             "unexpected ValidationPolicy for {name}"
         );
     }
-    assert_eq!(non_standard_count, 16);
+    assert_eq!(non_standard_count, 17);
 }
 
 #[test]
@@ -1043,6 +1105,7 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
             CellValue::Number(30.0),
         ],
         ReferenceKind::Slice,
+        AxisRole::Measure,
     );
 
     // Direct required FunctionArg::Omitted on 3rd argument of IF fails with CannotOmitRequiredArgument
@@ -1371,7 +1434,7 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
     }
 
     // Scenario 4: Shape-resolving Stage A validation (including 1x1 syntactic slices, ParamKind::Range, rank, and constant bounds)
-    let resolve_shape = |tr: &TableRef| -> Result<Option<(usize, usize)>, &'static str> {
+    let resolve_shape = |tr: &TableRef| -> Result<Option<(usize, usize, AxisRole)>, &'static str> {
         let rows = match &tr.row {
             RowSelector::Range(s, e) => match (s, e) {
                 (RowEndpoint::Key(sk), RowEndpoint::Key(ek)) => match (sk.as_str(), ek.as_str()) {
@@ -1397,7 +1460,14 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
             },
             ColSelector::Active | ColSelector::Key(_) | ColSelector::Offset(_) => 1,
         };
-        Ok(Some((rows, cols)))
+        let role = match &tr.col {
+            ColSelector::Key(k) if k.as_str() == "line_item" => AxisRole::Descriptor,
+            ColSelector::Active
+            | ColSelector::Key(_)
+            | ColSelector::Offset(_)
+            | ColSelector::Range(_, _) => AxisRole::Measure,
+        };
+        Ok(Some((rows, cols, role)))
     };
 
     for slice_in_scalar in [
@@ -1746,6 +1816,417 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
         "ROUND(10, -IF(TRUE, 2, 3))",
         "ROUND(10, IF(TRUE, 2, 2.5))",
         "ROUND(10, --2)",
+    ] {
+        let expr = Expr::parse(valid_formula).unwrap();
+        assert!(
+            registry.validate_expr(&expr).is_ok(),
+            "expected Stage A ok on '{valid_formula}'"
+        );
+    }
+}
+
+#[test]
+fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
+    let registry = FunctionRegistry::standard();
+    let resolve_shape = |tr: &TableRef| -> Result<Option<(usize, usize, AxisRole)>, &'static str> {
+        let rows = match &tr.row {
+            RowSelector::Range(s, e) => match (s, e) {
+                (RowEndpoint::Key(sk), RowEndpoint::Key(ek)) => match (sk.as_str(), ek.as_str()) {
+                    ("r1", "r2") => 2,
+                    ("r1", "r4") => 4,
+                    _ => 1,
+                },
+                (RowEndpoint::Active | RowEndpoint::Offset(_), _)
+                | (_, RowEndpoint::Active | RowEndpoint::Offset(_)) => 1,
+            },
+            RowSelector::Active | RowSelector::Key(_) | RowSelector::Offset(_) => 1,
+        };
+        let cols = match &tr.col {
+            ColSelector::Range(_, _) => 2,
+            ColSelector::Active | ColSelector::Key(_) | ColSelector::Offset(_) => 1,
+        };
+        let role = match &tr.col {
+            ColSelector::Key(k) if k.as_str() == "line_item" => AxisRole::Descriptor,
+            ColSelector::Active
+            | ColSelector::Key(_)
+            | ColSelector::Offset(_)
+            | ColSelector::Range(_, _) => AxisRole::Measure,
+        };
+        Ok(Some((rows, cols, role)))
+    };
+
+    // Scenario 1: Descriptor references rejected in numeric and financial aggregations (active & dormant)
+    for (formula, fn_name, param, position) in [
+        ("SUM(T[\"r1\"..\"r4\", \"line_item\"])", "SUM", "number1", 1),
+        ("SUM(T[\"r1\", \"line_item\"])", "SUM", "number1", 1),
+        (
+            "AVERAGE(T[\"r1\"..\"r4\", \"line_item\"])",
+            "AVERAGE",
+            "number1",
+            1,
+        ),
+        ("MIN(T[\"r1\"..\"r4\", \"line_item\"])", "MIN", "number1", 1),
+        ("MAX(T[\"r1\"..\"r4\", \"line_item\"])", "MAX", "number1", 1),
+        (
+            "MEDIAN(T[\"r1\"..\"r4\", \"line_item\"])",
+            "MEDIAN",
+            "number1",
+            1,
+        ),
+        (
+            "COUNT(T[\"r1\"..\"r4\", \"line_item\"])",
+            "COUNT",
+            "value1",
+            1,
+        ),
+        (
+            "SUMPRODUCT(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"])",
+            "SUMPRODUCT",
+            "array1",
+            1,
+        ),
+        (
+            "SUMPRODUCT(T[\"r1\"..\"r4\", \"amount\"], T[\"r1\"..\"r4\", \"line_item\"])",
+            "SUMPRODUCT",
+            "array1",
+            2,
+        ),
+        (
+            "SUMIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
+            "SUMIFS",
+            "sum_range",
+            1,
+        ),
+        (
+            "AVERAGEIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
+            "AVERAGEIFS",
+            "average_range",
+            1,
+        ),
+        (
+            "MINIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
+            "MINIFS",
+            "min_range",
+            1,
+        ),
+        (
+            "MAXIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
+            "MAXIFS",
+            "max_range",
+            1,
+        ),
+        (
+            "NPV(0.1, T[\"r1\"..\"r4\", \"line_item\"])",
+            "NPV",
+            "value1",
+            2,
+        ),
+        ("IRR(T[\"r1\"..\"r4\", \"line_item\"])", "IRR", "values", 1),
+        (
+            "XNPV(0.1, T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"date\"])",
+            "XNPV",
+            "values",
+            2,
+        ),
+        (
+            "XIRR(T[\"r1\"..\"r4\", \"amount\"], T[\"r1\"..\"r4\", \"line_item\"])",
+            "XIRR",
+            "dates",
+            2,
+        ),
+        (
+            "IF(FALSE, SUM(T[\"r1\"..\"r4\", \"line_item\"]), 0)",
+            "SUM",
+            "number1",
+            1,
+        ),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry
+                .validate_expr_with_shapes(&expr, resolve_shape)
+                .unwrap_err(),
+            StageAError::Function(FunctionError::DescriptorReferenceNotAllowed {
+                function: fn_name,
+                param,
+                position,
+            }),
+            "expected DescriptorReferenceNotAllowed on {formula}"
+        );
+    }
+
+    // Precedence: ShapePolicy runs before RolePolicy on ShapeCoupled functions
+    let shape_first =
+        Expr::parse("XNPV(0.1, T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r2\", \"date\"])")
+            .unwrap();
+    assert!(matches!(
+        registry
+            .validate_expr_with_shapes(&shape_first, resolve_shape)
+            .unwrap_err(),
+        StageAError::Function(FunctionError::LengthMismatch { .. })
+    ));
+
+    // Descriptor references remain permitted on COUNTA, XLOOKUP, XMATCH, INDEX, and *IFS criteria_range
+    for allowed_descriptor in [
+        "COUNTA(T[\"r1\"..\"r4\", \"line_item\"])",
+        "XLOOKUP(\"Rev\", T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"])",
+        "XMATCH(\"Rev\", T[\"r1\"..\"r4\", \"line_item\"])",
+        "INDEX(T[\"r1\"..\"r4\", \"line_item\"], 1)",
+        "SUMIFS(T[\"r1\"..\"r4\", \"amount\"], T[\"r1\"..\"r4\", \"line_item\"], \"Rev\")",
+    ] {
+        let expr = Expr::parse(allowed_descriptor).unwrap();
+        assert!(
+            registry
+                .validate_expr_with_shapes(&expr, resolve_shape)
+                .is_ok(),
+            "expected Descriptor ok on {allowed_descriptor}"
+        );
+    }
+
+    // Scenario 4 & 5: Stage A CalendarDate, AnnuityType, DayCountBasis, and DateSerial domain bounds
+    let domain_cases: &[(&str, FunctionError)] = &[
+        (
+            "DATE(24, 12, 31)",
+            FunctionError::InvalidDateYear { year: 24 },
+        ),
+        (
+            "DATE(--24, 12, 31)",
+            FunctionError::InvalidDateYear { year: 24 },
+        ),
+        ("DATE(0, 1, 1)", FunctionError::InvalidDateYear { year: 0 }),
+        (
+            "DATE(1899, 12, 31)",
+            FunctionError::InvalidDateYear { year: 1899 },
+        ),
+        (
+            "DATE(-1, 1, 1)",
+            FunctionError::InvalidDateYear { year: -1 },
+        ),
+        (
+            "DATE(10000, 1, 1)",
+            FunctionError::InvalidDateYear { year: 10000 },
+        ),
+        (
+            "DATE(2024, 0, 1)",
+            FunctionError::InvalidDateMonth { month: 0 },
+        ),
+        (
+            "DATE(2024, 14, 1)",
+            FunctionError::InvalidDateMonth { month: 14 },
+        ),
+        (
+            "DATE(9999, 13, 1)",
+            FunctionError::InvalidDateMonth { month: 13 },
+        ),
+        (
+            "DATE(T[\"y\", @col], 14, 1)",
+            FunctionError::InvalidDateMonth { month: 14 },
+        ),
+        (
+            "DATE(T[\"y\", @col], T[\"m\", @col], 0)",
+            FunctionError::InvalidDateDay {
+                day: 0,
+                max_day: 31,
+            },
+        ),
+        (
+            "DATE(T[\"y\", @col], T[\"m\", @col], 32)",
+            FunctionError::InvalidDateDay {
+                day: 32,
+                max_day: 31,
+            },
+        ),
+        (
+            "DATE(T[\"y\", @col], 6, 31)",
+            FunctionError::InvalidDateDay {
+                day: 31,
+                max_day: 30,
+            },
+        ),
+        (
+            "DATE(T[\"y\", @col], 2, 30)",
+            FunctionError::InvalidDateDay {
+                day: 30,
+                max_day: 29,
+            },
+        ),
+        (
+            "DATE(2024, 1, 0)",
+            FunctionError::InvalidDateDay {
+                day: 0,
+                max_day: 31,
+            },
+        ),
+        (
+            "DATE(2024, 6, 31)",
+            FunctionError::InvalidDateDay {
+                day: 31,
+                max_day: 30,
+            },
+        ),
+        (
+            "DATE(2025, 2, 29)",
+            FunctionError::InvalidDateDay {
+                day: 29,
+                max_day: 28,
+            },
+        ),
+        (
+            "IF(FALSE, DATE(2024, 6, 31), DATE(2024, 1, 1))",
+            FunctionError::InvalidDateDay {
+                day: 31,
+                max_day: 30,
+            },
+        ),
+        (
+            "DATE(\"2024\", 1, 1)",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "DATE",
+                param: "year",
+                position: 1,
+                expected: ExpectedType::Integer,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "DATE(2024.5, 1, 1)",
+            FunctionError::Type(TypeError::NonIntegerArgument {
+                function: "DATE",
+                param: "year",
+                position: 1,
+                value: "2024.5".into(),
+            }),
+        ),
+        (
+            "PMT(0.05, 10, -1000, 0, 2)",
+            FunctionError::InvalidAnnuityType {
+                function: "PMT",
+                found: 2,
+            },
+        ),
+        (
+            "IPMT(0.05, 1, 10, -1000, 0, -1)",
+            FunctionError::InvalidAnnuityType {
+                function: "IPMT",
+                found: -1,
+            },
+        ),
+        (
+            "PPMT(0.05, 1, 10, -1000, 0, 3)",
+            FunctionError::InvalidAnnuityType {
+                function: "PPMT",
+                found: 3,
+            },
+        ),
+        (
+            "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5)",
+            FunctionError::InvalidDayCountBasis { found: 5 },
+        ),
+        (
+            "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), -1)",
+            FunctionError::InvalidDayCountBasis { found: -1 },
+        ),
+        (
+            "YEAR(0)",
+            FunctionError::InvalidDateSerial {
+                function: "YEAR",
+                param: "serial_number",
+                position: 1,
+                serial: "0".into(),
+            },
+        ),
+        (
+            "YEAR(-0)",
+            FunctionError::InvalidDateSerial {
+                function: "YEAR",
+                param: "serial_number",
+                position: 1,
+                serial: "0".into(),
+            },
+        ),
+        (
+            "MONTH(0.5)",
+            FunctionError::InvalidDateSerial {
+                function: "MONTH",
+                param: "serial_number",
+                position: 1,
+                serial: "0.5".into(),
+            },
+        ),
+        (
+            "DAY(-1)",
+            FunctionError::InvalidDateSerial {
+                function: "DAY",
+                param: "serial_number",
+                position: 1,
+                serial: "-1".into(),
+            },
+        ),
+        (
+            "DAYS(2958466, 1)",
+            FunctionError::InvalidDateSerial {
+                function: "DAYS",
+                param: "end_date",
+                position: 1,
+                serial: "2958466".into(),
+            },
+        ),
+        (
+            "EDATE(0, 1)",
+            FunctionError::InvalidDateSerial {
+                function: "EDATE",
+                param: "start_date",
+                position: 1,
+                serial: "0".into(),
+            },
+        ),
+        (
+            "EOMONTH(3000000, 0)",
+            FunctionError::InvalidDateSerial {
+                function: "EOMONTH",
+                param: "start_date",
+                position: 1,
+                serial: "3000000".into(),
+            },
+        ),
+        (
+            "YEARFRAC(1, 0)",
+            FunctionError::InvalidDateSerial {
+                function: "YEARFRAC",
+                param: "end_date",
+                position: 2,
+                serial: "0".into(),
+            },
+        ),
+    ];
+
+    for (formula, expected_err) in domain_cases {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr).unwrap_err(),
+            *expected_err,
+            "mismatch on Cluster B Stage A formula: {formula}"
+        );
+    }
+
+    // Valid calendar dates, nested expressions (parameter-boundary isolation), and serial boundaries pass Stage A
+    for valid_formula in [
+        "DATE(1900, 1, 1)",
+        "DATE(1900, 2, 29)",
+        "DATE(2024, 2, 29)",
+        "DATE(T[\"y\", @col], 2, 29)",
+        "DATE(9999, 12, 31)",
+        "YEAR(DATE(2024, 1, 15))",
+        "YEAR(1)",
+        "YEAR(60)",
+        "YEAR(45292.5)",
+        "YEAR(2958465.9)",
+        "PMT(0.05, 10, -1000, 0, 0)",
+        "PMT(0.05, 10, -1000, 0, 1)",
+        "PMT(0.05, 10, -1000, 0, T[\"type\", @col])",
+        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 0)",
+        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 4)",
+        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), T[\"basis\", @col])",
     ] {
         let expr = Expr::parse(valid_formula).unwrap();
         assert!(

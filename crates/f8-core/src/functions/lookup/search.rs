@@ -1041,7 +1041,13 @@ mod tests {
             })
         );
 
-        let mat = FunctionArg::array(2, 2, vec![CellValue::Number(1.0); 4], ReferenceKind::Slice);
+        let mat = FunctionArg::array(
+            2,
+            2,
+            vec![CellValue::Number(1.0); 4],
+            ReferenceKind::Slice,
+            crate::model::table::AxisRole::Measure,
+        );
         assert_eq!(
             extract_1d_range_slice(&mat, "XMATCH", "lookup_array"),
             Err(FunctionError::ExpectedOneDimensionalSlice {

@@ -1,10 +1,12 @@
+//! Excel 1900 calendar date serial bounds and conversion routines.
+
 use crate::value::ExcelError;
 
 /// Serial day number for Unix epoch (`1970-01-01`).
 pub const UNIX_EPOCH_SERIAL: f64 = 25569.0;
 
-/// Minimum valid Excel serial day number (`1900-01-00`).
-pub const MIN_EXCEL_SERIAL: f64 = 0.0;
+/// Minimum valid input calendar date serial (`1900-01-01`).
+pub const MIN_INPUT_DATE_SERIAL: f64 = 1.0;
 
 /// Maximum valid Excel serial day number (`9999-12-31`).
 pub const MAX_EXCEL_SERIAL: f64 = 2958465.0;
@@ -12,14 +14,22 @@ pub const MAX_EXCEL_SERIAL: f64 = 2958465.0;
 /// Fictitious Excel leap day serial number (`1900-02-29`).
 pub const EXCEL_1900_LEAP_DAY_SERIAL: f64 = 60.0;
 
-/// Validates that an Excel serial date number is within the valid date bounds (`0.0..=2958465.0`).
+/// Returns `true` when `serial` is a finite input calendar date serial in `1.0..=2_958_465.0`
+/// (permitting intra-day fractional serials up to `2958465.999...`).
+#[inline]
+#[must_use]
+pub fn is_valid_input_date_serial(serial: f64) -> bool {
+    serial.is_finite() && serial >= MIN_INPUT_DATE_SERIAL && serial.floor() <= MAX_EXCEL_SERIAL
+}
+
+/// Validates that an input Excel serial date number lies within `1.0..=2_958_465.0`
+/// and floors valid serials to integer day counts.
 ///
-/// Disallows NaN and negative numbers (e.g. `-0.5`).
-/// Floors valid serials to integer day counts so that timestamps on the maximum date
-/// (`9999-12-31`, e.g. `2958465.9`) are accepted.
+/// Rejects `NaN`, infinities, negative serials, sub-`1.0` serials (`1900-01-00`),
+/// and serials beyond `9999-12-31` (`>= 2_958_466.0`).
 #[inline]
 pub fn validate_date_serial(serial: f64) -> Result<f64, ExcelError> {
-    if serial.is_nan() || serial < MIN_EXCEL_SERIAL || serial.floor() > MAX_EXCEL_SERIAL {
+    if !is_valid_input_date_serial(serial) {
         Err(ExcelError::Num)
     } else {
         Ok(serial.floor())
@@ -40,6 +50,7 @@ pub struct DateSerial;
 impl DateSerial {
     /// Checks whether a year is a leap year under the standard Gregorian calendar rules.
     #[inline]
+    #[must_use]
     pub fn is_gregorian_leap_year(year: i32) -> bool {
         year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
     }
@@ -48,6 +59,7 @@ impl DateSerial {
     ///
     /// Replicates the Lotus 1-2-3 bug where 1900 is treated as a leap year.
     #[inline]
+    #[must_use]
     pub fn is_excel_leap_year(year: i32) -> bool {
         if year == 1900 {
             true
@@ -58,6 +70,7 @@ impl DateSerial {
 
     /// Returns the number of days in a given year under Excel's date system.
     #[inline]
+    #[must_use]
     pub fn days_in_year(year: i32) -> u32 {
         if Self::is_excel_leap_year(year) {
             366
@@ -67,6 +80,7 @@ impl DateSerial {
     }
 
     /// Returns the number of days in a given calendar month of a given year (1-based month).
+    #[must_use]
     pub fn days_in_month(year: i32, month: u32) -> u32 {
         match month {
             1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
@@ -102,42 +116,24 @@ impl DateSerial {
         }
     }
 
-    /// Converts a year, month, and day into an Excel serial day number.
+    /// Converts a strict 4-digit calendar year (`1900..=9999`), month (`1..=12`), and day (`1..=days_in_month`)
+    /// into an Excel serial day number without two-digit year expansion or month/day rollover.
     ///
-    /// Supports:
-    /// - 2-digit / offset years: `0 <= year <= 1899` maps to `year + 1900`.
-    /// - Out-of-range months and days: propagates integer rollovers across month and year boundaries.
-    /// - Lotus 1-2-3 / Excel 1900 leap year bug: serial `60.0 = 1900-02-29`.
-    pub fn from_ymd(raw_year: i32, raw_month: i32, raw_day: i32) -> Result<f64, ExcelError> {
-        // Expand 2-digit / offset years: 0..=1899 -> +1900
-        let year = if (0..=1899).contains(&raw_year) {
-            raw_year + 1900
-        } else {
-            raw_year
-        };
-
-        if !(1900..=9999).contains(&year) {
+    /// Preserves the Lotus 1-2-3 / Excel 1900 leap year bug (`1900-02-29` -> `60.0`).
+    pub fn from_ymd(year: i32, month: u32, day: u32) -> Result<f64, ExcelError> {
+        if !(1900..=9999).contains(&year) || !(1..=12).contains(&month) {
             return Err(ExcelError::Num);
         }
 
-        // Normalize month rollover (1-based to 0-based euclidean division)
-        let month_offset = (raw_month as i64) - 1;
-        let year_adj = month_offset.div_euclid(12);
-        let normalized_month = (month_offset.rem_euclid(12) + 1) as u32;
-        let normalized_year = (year as i64) + year_adj;
-
-        if !(1900..=9999).contains(&normalized_year) {
+        let max_day = Self::days_in_month(year, month);
+        if day < 1 || day > max_day {
             return Err(ExcelError::Num);
         }
-        let norm_year_i32 = normalized_year as i32;
 
-        // Base serial for normalized_year-normalized_month-01
-        let base_serial = Self::first_of_month_serial(norm_year_i32, normalized_month)?;
+        let base_serial = Self::first_of_month_serial(year, month)?;
+        let final_serial = base_serial + f64::from(day - 1);
 
-        // Apply day offset: day 1 is already included in base_serial
-        let final_serial = base_serial + (raw_day as f64 - 1.0);
-
-        if !(MIN_EXCEL_SERIAL..=MAX_EXCEL_SERIAL).contains(&final_serial) {
+        if !(MIN_INPUT_DATE_SERIAL..=MAX_EXCEL_SERIAL).contains(&final_serial) {
             return Err(ExcelError::Num);
         }
 
@@ -187,21 +183,12 @@ impl DateSerial {
         Ok((total_greg_days + 2) as f64)
     }
 
-    /// Converts an Excel serial date number into a decomposed calendar date.
+    /// Converts an input Excel serial date (`1.0..=2_958_465.0`) into a decomposed calendar date.
     ///
-    /// Truncates fractional day times to integer day counts.
+    /// Truncates fractional day times to integer day counts and rejects `< 1.0` (including `0.0`).
     pub fn to_ymd(serial: f64) -> Result<DateTuple, ExcelError> {
         let s_f64 = validate_date_serial(serial)?;
         let s = s_f64 as i64;
-
-        // Excel day 0 is 1900-01-00
-        if s == 0 {
-            return Ok(DateTuple {
-                year: 1900,
-                month: 1,
-                day: 0,
-            });
-        }
 
         // Serial 60 is the fictitious Lotus 1-2-3 / Excel leap day: 1900-02-29
         if s == EXCEL_1900_LEAP_DAY_SERIAL as i64 {
@@ -265,6 +252,22 @@ impl DateSerial {
         let day = (rem_days + 1) as u32;
 
         Ok(DateTuple { year, month, day })
+    }
+
+    /// Converts a display serial (`0.0..=2_958_465.0`) into a decomposed calendar date solely for
+    /// Tier-2 `FormatPreset::Date` formatting, preserving Excel's `0.0 -> 1900-01-00` display parity.
+    pub(crate) fn to_display_ymd(serial: f64) -> Result<DateTuple, ExcelError> {
+        if !serial.is_finite() || serial < 0.0 || serial.floor() > MAX_EXCEL_SERIAL {
+            return Err(ExcelError::Num);
+        }
+        if serial < MIN_INPUT_DATE_SERIAL {
+            return Ok(DateTuple {
+                year: 1900,
+                month: 1,
+                day: 0,
+            });
+        }
+        Self::to_ymd(serial)
     }
 }
 
@@ -350,59 +353,65 @@ mod tests {
     }
 
     #[test]
-    fn test_month_and_day_rollovers() {
-        // 2024-13-01 -> 2025-01-01
-        assert_eq!(
-            DateSerial::from_ymd(2024, 13, 1).unwrap(),
-            DateSerial::from_ymd(2025, 1, 1).unwrap()
-        );
+    fn test_strict_from_ymd_rejects_rollover_and_short_years() {
+        assert_eq!(DateSerial::from_ymd(0, 1, 1), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(24, 12, 31), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(100, 1, 1), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(1899, 12, 31), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(10000, 1, 1), Err(ExcelError::Num));
 
-        // 2024-01-32 -> 2024-02-01
-        assert_eq!(
-            DateSerial::from_ymd(2024, 1, 32).unwrap(),
-            DateSerial::from_ymd(2024, 2, 1).unwrap()
-        );
+        assert_eq!(DateSerial::from_ymd(2024, 0, 1), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(2024, 13, 1), Err(ExcelError::Num));
 
-        // 2024-01-00 -> 2023-12-31
-        assert_eq!(
-            DateSerial::from_ymd(2024, 1, 0).unwrap(),
-            DateSerial::from_ymd(2023, 12, 31).unwrap()
-        );
-
-        // 2024-00-01 -> 2023-12-01
-        assert_eq!(
-            DateSerial::from_ymd(2024, 0, 1).unwrap(),
-            DateSerial::from_ymd(2023, 12, 1).unwrap()
-        );
+        assert_eq!(DateSerial::from_ymd(2024, 1, 0), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(2024, 1, 32), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(2024, 6, 31), Err(ExcelError::Num));
+        assert_eq!(DateSerial::from_ymd(2025, 2, 29), Err(ExcelError::Num));
     }
 
     #[test]
-    fn test_two_digit_years() {
-        // 100 -> 2000
-        assert_eq!(
-            DateSerial::from_ymd(100, 1, 1).unwrap(),
-            DateSerial::from_ymd(2000, 1, 1).unwrap()
-        );
-        // 0 -> 1900
-        assert_eq!(DateSerial::from_ymd(0, 1, 1).unwrap(), 1.0);
+    fn test_input_date_serial_bounds() {
+        assert!(!is_valid_input_date_serial(0.0));
+        assert!(!is_valid_input_date_serial(0.5));
+        assert!(!is_valid_input_date_serial(-1.0));
+        assert!(!is_valid_input_date_serial(f64::NAN));
+        assert!(!is_valid_input_date_serial(f64::INFINITY));
+        assert!(!is_valid_input_date_serial(2958466.0));
+        assert!(is_valid_input_date_serial(1.0));
+        assert!(is_valid_input_date_serial(60.0));
+        assert!(is_valid_input_date_serial(2958465.0));
+        assert!(is_valid_input_date_serial(2958465.9));
     }
 
     #[test]
-    fn test_validate_date_serial_and_boundary_fractions() {
-        // Negative serial numbers must be rejected
-        assert_eq!(validate_date_serial(-0.5), Err(ExcelError::Num));
-        assert_eq!(validate_date_serial(-0.0001), Err(ExcelError::Num));
-        assert_eq!(validate_date_serial(-1.0), Err(ExcelError::Num));
-        assert_eq!(DateSerial::to_ymd(-0.5), Err(ExcelError::Num));
-        assert_eq!(DateSerial::to_ymd(-0.001), Err(ExcelError::Num));
+    fn test_validate_date_serial_vs_display_ymd() {
+        // Negative, sub-1.0, and non-finite serials are rejected by validate_date_serial & to_ymd
+        for bad in [-1.0, -0.5, -0.0001, 0.0, 0.5, f64::NAN, f64::INFINITY] {
+            assert_eq!(validate_date_serial(bad), Err(ExcelError::Num));
+            assert_eq!(DateSerial::to_ymd(bad), Err(ExcelError::Num));
+        }
 
-        // NaN must be rejected
-        assert_eq!(validate_date_serial(f64::NAN), Err(ExcelError::Num));
+        // Display helper preserves 0.0..1.0 -> 1900-01-00 while rejecting < 0.0 and > MAX
+        assert_eq!(
+            DateSerial::to_display_ymd(0.0).unwrap(),
+            DateTuple {
+                year: 1900,
+                month: 1,
+                day: 0
+            }
+        );
+        assert_eq!(
+            DateSerial::to_display_ymd(0.75).unwrap(),
+            DateTuple {
+                year: 1900,
+                month: 1,
+                day: 0
+            }
+        );
+        assert_eq!(DateSerial::to_display_ymd(-0.001), Err(ExcelError::Num));
+        assert_eq!(DateSerial::to_display_ymd(2958466.0), Err(ExcelError::Num));
 
-        // Boundary: 0.0 is valid
-        assert_eq!(validate_date_serial(0.0).unwrap(), 0.0);
-
-        // Fractional times on maximum date (9999-12-31 at 6:00 PM) must be accepted
+        // Fractional times on maximum date (9999-12-31 at 6:00 PM) are accepted
         assert_eq!(validate_date_serial(2958465.75).unwrap(), 2958465.0);
         assert_eq!(
             DateSerial::to_ymd(2958465.75).unwrap(),
@@ -413,7 +422,7 @@ mod tests {
             }
         );
 
-        // Numbers >= 2958466.0 (year >= 10000) must be rejected
+        // Numbers >= 2958466.0 (year >= 10000) are rejected
         assert_eq!(validate_date_serial(2958466.0), Err(ExcelError::Num));
         assert_eq!(DateSerial::to_ymd(2958466.0), Err(ExcelError::Num));
     }

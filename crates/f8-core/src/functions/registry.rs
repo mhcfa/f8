@@ -10,12 +10,14 @@ use crate::functions::lookup::search::{
     MatchMode, SearchMode, validate_homogeneous_slice, validate_lookup_array,
 };
 use crate::functions::traits::{
-    BranchPolicy, ComparisonSide, EvalContext, ExcelFunction, ExpectationOrigin, FunctionArg,
-    LookupPolicy, ParamKind, ParamType, ParameterDef, ReferenceKind, ShapePolicy, TypeExpectation,
-    ValidationPolicy, VariadicRule,
+    BranchPolicy, ComparisonSide, EmptyPolicy, EvalContext, ExcelFunction, ExpectationOrigin,
+    FunctionArg, LookupPolicy, ParamKind, ParamType, ParameterDef, ReferenceKind, RolePolicy,
+    ShapePolicy, TypeExpectation, TypedRangeGrid, ValidationPolicy, VariadicRule,
 };
+use crate::model::table::AxisRole;
 use crate::value::{
-    CellValue, ExpectedType, MAX_SAFE_INTEGER, StrictIntError, TypeError, ValueType, normalize_zero,
+    CellValue, DateSerial, ExpectedType, MAX_SAFE_INTEGER, StrictIntError, TypeError, ValueType,
+    is_valid_input_date_serial, normalize_zero,
 };
 
 /// Error produced during Stage A or Stage B AST expression and slice-shape validation.
@@ -39,13 +41,15 @@ impl<E> From<TypeError> for StageAError<E> {
     }
 }
 
-/// Resolved shape and optional memoized runtime state for a [`TableRef`] during AST validation.
+/// Resolved shape, column role, and optional memoized runtime state for a [`TableRef`] during AST validation.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ResolvedRef {
     /// Number of rows in the resolved reference.
     pub(crate) rows: usize,
     /// Number of columns in the resolved reference.
     pub(crate) cols: usize,
+    /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
+    pub(crate) axis_role: AxisRole,
     /// Memoized cell values in row-major order (`Some` in Stage B dormant validation; `None` in Stage A).
     pub(crate) values: Option<Vec<CellValue>>,
     /// Per-cell concrete non-`Empty` inferred [`ValueType`]s for `CellValue::Error(_)` cells (`Some` in Stage B; `None` in Stage A).
@@ -57,7 +61,7 @@ pub(crate) trait ReferenceResolver {
     /// Coordinate resolution error type.
     type Error;
 
-    /// Resolves `table_ref` to its shape and optional memoized values, or `Ok(None)` when shape inspection is unavailable.
+    /// Resolves `table_ref` to its shape, axis role, and optional memoized values, or `Ok(None)` when shape inspection is unavailable.
     fn resolve_ref(&mut self, table_ref: &TableRef) -> Result<Option<ResolvedRef>, Self::Error>;
 }
 
@@ -65,15 +69,16 @@ struct ShapeOnlyResolver<F>(F);
 
 impl<E, F> ReferenceResolver for ShapeOnlyResolver<F>
 where
-    F: FnMut(&TableRef) -> Result<Option<(usize, usize)>, E>,
+    F: FnMut(&TableRef) -> Result<Option<(usize, usize, AxisRole)>, E>,
 {
     type Error = E;
 
     fn resolve_ref(&mut self, table_ref: &TableRef) -> Result<Option<ResolvedRef>, Self::Error> {
         (self.0)(table_ref).map(|opt| {
-            opt.map(|(rows, cols)| ResolvedRef {
+            opt.map(|(rows, cols, axis_role)| ResolvedRef {
                 rows,
                 cols,
+                axis_role,
                 values: None,
                 error_types: None,
             })
@@ -179,18 +184,19 @@ impl FunctionRegistry {
         }
     }
 
-    /// Performs two-pass Stage A static validation over `expr` using `resolve_shape` to inspect `TableRef` dimensions.
+    /// Performs two-pass Stage A static validation over `expr` using `resolve_shape` to inspect `TableRef` dimensions and column axis role.
     ///
     /// - Pass 1 validates function existence, arity, variadic pair parity, and `_` omission across the full AST first.
-    /// - Pass 2 validates static value types, discrete integer literals, syntactic scalar-slice exclusion, `ParamKind::Range`
-    ///   reference constraints, slice dimension/length/rank rules, 2D `INDEX` arity, and constant `INDEX`/`CHOOSE` bounds.
+    /// - Pass 2 validates static value types, discrete integer/domain literals, syntactic scalar-slice exclusion,
+    ///   `ParamKind::Range` and `RolePolicy::MeasureOnly` reference constraints, slice dimension/length/rank rules,
+    ///   2D `INDEX` arity, and constant `INDEX`/`CHOOSE` bounds.
     pub fn validate_expr_with_shapes<E, F>(
         &self,
         expr: &Expr,
         resolve_shape: F,
     ) -> Result<(), StageAError<E>>
     where
-        F: FnMut(&TableRef) -> Result<Option<(usize, usize)>, E>,
+        F: FnMut(&TableRef) -> Result<Option<(usize, usize, AxisRole)>, E>,
     {
         self.validate_signatures_pass1(expr)?;
         let mut resolver = ShapeOnlyResolver(resolve_shape);
@@ -392,18 +398,30 @@ impl FunctionRegistry {
                     .ok_or_else(|| FunctionError::UnknownFunction(name.clone()))?;
 
                 match func.validation_policy() {
-                    ValidationPolicy::Standard => self.validate_standard_or_shaped_call(
-                        expr, func, args, None, expected, resolver,
+                    ValidationPolicy::Standard => self.validate_positional_call(
+                        expr,
+                        func,
+                        args,
+                        PositionalPolicy::Standard,
+                        expected,
+                        resolver,
                     ),
-                    ValidationPolicy::ShapeCoupled(shape_policy) => self
-                        .validate_standard_or_shaped_call(
-                            expr,
-                            func,
-                            args,
-                            Some(shape_policy),
-                            expected,
-                            resolver,
-                        ),
+                    ValidationPolicy::ShapeCoupled(shape_policy) => self.validate_positional_call(
+                        expr,
+                        func,
+                        args,
+                        PositionalPolicy::ShapeCoupled(shape_policy),
+                        expected,
+                        resolver,
+                    ),
+                    ValidationPolicy::CalendarDate => self.validate_positional_call(
+                        expr,
+                        func,
+                        args,
+                        PositionalPolicy::CalendarDate,
+                        expected,
+                        resolver,
+                    ),
                     ValidationPolicy::Branch(branch_policy) => self.validate_branch_call(
                         expr,
                         func,
@@ -425,83 +443,153 @@ impl FunctionRegistry {
         }
     }
 
-    fn validate_standard_or_shaped_call<R: ReferenceResolver>(
+    fn validate_positional_call<R: ReferenceResolver>(
         &self,
         call_expr: &Expr,
         func: &dyn ExcelFunction,
         args: &[CallArg],
-        shape_policy: Option<ShapePolicy>,
+        call_policy: PositionalPolicy,
         expected: Option<TypeExpectation>,
         resolver: &mut R,
     ) -> Result<Option<ValueType>, StageAError<R::Error>> {
         let mut shapes: Vec<Option<(usize, usize)>> = Vec::with_capacity(args.len());
+        let mut resolved_refs: Vec<Option<ResolvedRef>> = Vec::with_capacity(args.len());
 
+        // Pass A: Resolve reference shapes/roles and validate `ParamKind::Range` / scalar-slice exclusions.
         for (idx, call_arg) in args.iter().enumerate() {
             let param = resolve_parameter(func, idx)?;
             match call_arg {
-                CallArg::Omitted => shapes.push(None),
-                CallArg::Expr(arg_expr) => {
-                    match param.kind {
-                        ParamKind::Scalar | ParamKind::Lazy => {
-                            let arg_exp =
-                                param
-                                    .param_type
-                                    .to_expected_type()
-                                    .map(|exp_ty| TypeExpectation {
-                                        expected: exp_ty,
-                                        origin: ExpectationOrigin::FunctionParam {
-                                            function: func.name(),
-                                            param: param.name,
-                                            position: idx + 1,
-                                        },
-                                    });
-                            self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
-                            shapes.push(Some((1, 1)));
+                CallArg::Omitted => {
+                    shapes.push(None);
+                    resolved_refs.push(None);
+                }
+                CallArg::Expr(arg_expr) => match param.kind {
+                    ParamKind::Range => match arg_expr {
+                        Expr::Reference(table_ref) => {
+                            let resolved = resolver
+                                .resolve_ref(table_ref)
+                                .map_err(StageAError::Resolve)?;
+                            shapes.push(resolved.as_ref().map(|r| (r.rows, r.cols)));
+                            resolved_refs.push(resolved);
                         }
-                        ParamKind::Range => match arg_expr {
-                            Expr::Reference(table_ref) => {
-                                let resolved = resolver
-                                    .resolve_ref(table_ref)
-                                    .map_err(StageAError::Resolve)?;
-                                if let Some(res) = &resolved {
-                                    validate_resolved_range_values(
-                                        res,
-                                        func.name(),
-                                        param.name,
-                                        idx + 1,
-                                        param.param_type,
-                                    )?;
-                                }
-                                shapes.push(resolved.map(|r| (r.rows, r.cols)));
-                            }
-                            Expr::Literal(_)
-                            | Expr::Unary { .. }
-                            | Expr::Binary { .. }
-                            | Expr::FunctionCall { .. } => {
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            return Err(StageAError::Function(
+                                FunctionError::InvalidArgumentKind {
+                                    function: func.name(),
+                                    expected: "range",
+                                    found: "scalar",
+                                },
+                            ));
+                        }
+                    },
+                    ParamKind::RangeOrArray => match arg_expr {
+                        Expr::Reference(table_ref) => {
+                            let resolved = resolver
+                                .resolve_ref(table_ref)
+                                .map_err(StageAError::Resolve)?;
+                            shapes.push(resolved.as_ref().map(|r| (r.rows, r.cols)));
+                            resolved_refs.push(resolved);
+                        }
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            shapes.push(Some((1, 1)));
+                            resolved_refs.push(None);
+                        }
+                    },
+                    ParamKind::Scalar | ParamKind::Lazy => match arg_expr {
+                        Expr::Reference(table_ref) => {
+                            let resolved = resolver
+                                .resolve_ref(table_ref)
+                                .map_err(StageAError::Resolve)?;
+                            if table_ref.is_slice() {
+                                let (rows, cols) =
+                                    resolved.as_ref().map_or((0, 0), |r| (r.rows, r.cols));
                                 return Err(StageAError::Function(
-                                    FunctionError::InvalidArgumentKind {
-                                        function: func.name(),
-                                        expected: "range",
-                                        found: "scalar",
+                                    FunctionError::SliceInScalarContext { rows, cols },
+                                ));
+                            }
+                            if let Some(res) = &resolved
+                                && res.rows * res.cols > 1
+                            {
+                                return Err(StageAError::Function(
+                                    FunctionError::SliceInScalarContext {
+                                        rows: res.rows,
+                                        cols: res.cols,
                                     },
                                 ));
                             }
-                        },
+                            shapes.push(Some((1, 1)));
+                            resolved_refs.push(resolved);
+                        }
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            shapes.push(Some((1, 1)));
+                            resolved_refs.push(None);
+                        }
+                    },
+                },
+            }
+        }
+
+        // Pass B: Coupled slice-shape invariants run before role and element type/domain checks.
+        if let PositionalPolicy::ShapeCoupled(shape_policy) = call_policy {
+            validate_shape_policy(func.name(), shape_policy, &shapes)?;
+        }
+
+        // Pass C: Declarative `RolePolicy::MeasureOnly` runs before element `ParamType` checks.
+        for (idx, res_opt) in resolved_refs.iter().enumerate() {
+            let param = resolve_parameter(func, idx)?;
+            if param.role_policy == RolePolicy::MeasureOnly
+                && let Some(res) = res_opt
+                && res.axis_role == AxisRole::Descriptor
+            {
+                return Err(StageAError::Function(
+                    FunctionError::DescriptorReferenceNotAllowed {
+                        function: func.name(),
+                        param: param.name,
+                        position: idx + 1,
+                    },
+                ));
+            }
+        }
+
+        // Pass D: Per-argument value-type, subtree, and parameter-boundary domain validation.
+        for (idx, call_arg) in args.iter().enumerate() {
+            let param = resolve_parameter(func, idx)?;
+            let position = idx + 1;
+            match call_arg {
+                CallArg::Omitted => {}
+                CallArg::Expr(arg_expr) => {
+                    match param.kind {
+                        ParamKind::Range => {
+                            if let Some(res) = &resolved_refs[idx] {
+                                validate_resolved_range_values(
+                                    res,
+                                    func.name(),
+                                    param.name,
+                                    position,
+                                    param.param_type,
+                                )?;
+                            }
+                        }
                         ParamKind::RangeOrArray => match arg_expr {
-                            Expr::Reference(table_ref) => {
-                                let resolved = resolver
-                                    .resolve_ref(table_ref)
-                                    .map_err(StageAError::Resolve)?;
-                                if let Some(res) = &resolved {
+                            Expr::Reference(_) => {
+                                if let Some(res) = &resolved_refs[idx] {
                                     validate_resolved_range_values(
                                         res,
                                         func.name(),
                                         param.name,
-                                        idx + 1,
+                                        position,
                                         param.param_type,
                                     )?;
                                 }
-                                shapes.push(resolved.map(|r| (r.rows, r.cols)));
                             }
                             Expr::Literal(_)
                             | Expr::Unary { .. }
@@ -513,21 +601,82 @@ impl FunctionRegistry {
                                         origin: ExpectationOrigin::FunctionParam {
                                             function: func.name(),
                                             param: param.name,
-                                            position: idx + 1,
+                                            position,
                                         },
                                     }
                                 });
                                 self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
-                                shapes.push(Some((1, 1)));
+                                validate_param_const_domain(
+                                    arg_expr,
+                                    func.name(),
+                                    param.name,
+                                    position,
+                                    param.param_type,
+                                )?;
                             }
                         },
+                        ParamKind::Scalar | ParamKind::Lazy => {
+                            let arg_exp =
+                                param
+                                    .param_type
+                                    .to_expected_type()
+                                    .map(|exp_ty| TypeExpectation {
+                                        expected: exp_ty,
+                                        origin: ExpectationOrigin::FunctionParam {
+                                            function: func.name(),
+                                            param: param.name,
+                                            position,
+                                        },
+                                    });
+                            match arg_expr {
+                                Expr::Reference(_) => {
+                                    if let Some(res) = &resolved_refs[idx] {
+                                        validate_resolved_scalar_ref(
+                                            arg_expr,
+                                            res,
+                                            func.name(),
+                                            param.name,
+                                            position,
+                                            param.param_type,
+                                            arg_exp,
+                                        )?;
+                                    }
+                                }
+                                Expr::Literal(_)
+                                | Expr::Unary { .. }
+                                | Expr::Binary { .. }
+                                | Expr::FunctionCall { .. } => {
+                                    self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                                    validate_param_const_domain(
+                                        arg_expr,
+                                        func.name(),
+                                        param.name,
+                                        position,
+                                        param.param_type,
+                                    )?;
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if let Some(policy) = shape_policy {
-            validate_shape_policy(func.name(), policy, &shapes)?;
+        // Pass E: Calendar `(year, month, day)` validation after `ParamType::Integer` checks.
+        if call_policy == PositionalPolicy::CalendarDate {
+            let year = extract_resolved_calendar_int(
+                args.first(),
+                resolved_refs.first().and_then(Option::as_ref),
+            );
+            let month = extract_resolved_calendar_int(
+                args.get(1),
+                resolved_refs.get(1).and_then(Option::as_ref),
+            );
+            let day = extract_resolved_calendar_int(
+                args.get(2),
+                resolved_refs.get(2).and_then(Option::as_ref),
+            );
+            validate_calendar_date_components(year, month, day)?;
         }
 
         let ret_vt = func.return_type();
@@ -994,7 +1143,13 @@ impl FunctionRegistry {
                 }
                 ParamKind::Range => match arg_expr {
                     Expr::Reference(table_ref) => {
-                        let (rows, cols, values, error_types) = ctx.eval_typed_range(arg_expr)?;
+                        let TypedRangeGrid {
+                            rows,
+                            cols,
+                            values,
+                            error_types,
+                            axis_role,
+                        } = ctx.eval_typed_range(arg_expr)?;
                         let ref_kind = if table_ref.is_slice() {
                             ReferenceKind::Slice
                         } else {
@@ -1006,6 +1161,7 @@ impl FunctionRegistry {
                             values,
                             error_types,
                             ref_kind,
+                            axis_role,
                         });
                     }
                     Expr::Literal(_)
@@ -1021,7 +1177,13 @@ impl FunctionRegistry {
                 },
                 ParamKind::RangeOrArray => match arg_expr {
                     Expr::Reference(table_ref) => {
-                        let (rows, cols, values, error_types) = ctx.eval_typed_range(arg_expr)?;
+                        let TypedRangeGrid {
+                            rows,
+                            cols,
+                            values,
+                            error_types,
+                            axis_role,
+                        } = ctx.eval_typed_range(arg_expr)?;
                         let ref_kind = if table_ref.is_slice() {
                             ReferenceKind::Slice
                         } else {
@@ -1033,6 +1195,7 @@ impl FunctionRegistry {
                             values,
                             error_types,
                             ref_kind,
+                            axis_role,
                         });
                     }
                     Expr::Literal(_)
@@ -1066,6 +1229,171 @@ fn bind_scalar_value<'a>(val: CellValue, inferred_vt: Option<ValueType>) -> Func
     } else {
         FunctionArg::Scalar(val)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PositionalPolicy {
+    Standard,
+    ShapeCoupled(ShapePolicy),
+    CalendarDate,
+}
+
+fn validate_resolved_scalar_ref(
+    arg_expr: &Expr,
+    res: &ResolvedRef,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    param_type: ParamType,
+    expected: Option<TypeExpectation>,
+) -> Result<(), FunctionError> {
+    let Some(values) = res.values.as_deref() else {
+        return Ok(());
+    };
+    match values {
+        [] | [CellValue::Empty] => Ok(()),
+        [CellValue::Error(_)] => {
+            if let Some(err_vt) = res
+                .error_types
+                .as_deref()
+                .and_then(|ets| ets.first().copied().flatten())
+                .filter(|vt| *vt != ValueType::Empty)
+            {
+                check_type_expectation(arg_expr, err_vt, expected)?;
+            }
+            Ok(())
+        }
+        [val @ (CellValue::Number(_) | CellValue::Text(_) | CellValue::Boolean(_))] => {
+            validate_value_against_param_type(
+                val,
+                function,
+                param,
+                position,
+                param_type,
+                EmptyValidation::SkipEmpty,
+            )
+        }
+        [_, _, ..] => Err(FunctionError::SliceInScalarContext {
+            rows: res.rows,
+            cols: res.cols,
+        }),
+    }
+}
+
+fn validate_param_const_domain(
+    arg_expr: &Expr,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    param_type: ParamType,
+) -> Result<(), FunctionError> {
+    match param_type {
+        ParamType::Any
+        | ParamType::NonEmpty
+        | ParamType::Number
+        | ParamType::Integer
+        | ParamType::Boolean => Ok(()),
+        ParamType::DateSerial => {
+            if let Some(raw) = extract_signed_const_number(arg_expr)
+                && raw.is_finite()
+            {
+                let serial = normalize_zero(raw);
+                if !is_valid_input_date_serial(serial) {
+                    return Err(FunctionError::InvalidDateSerial {
+                        function,
+                        param,
+                        position,
+                        serial: serial.to_string(),
+                    });
+                }
+            }
+            Ok(())
+        }
+        ParamType::AnnuityType => {
+            if let Some(iv) = extract_signed_const_integer(arg_expr)
+                && !(0..=1).contains(&iv)
+            {
+                return Err(FunctionError::InvalidAnnuityType {
+                    function,
+                    found: iv,
+                });
+            }
+            Ok(())
+        }
+        ParamType::DayCountBasis => {
+            if let Some(iv) = extract_signed_const_integer(arg_expr)
+                && !(0..=4).contains(&iv)
+            {
+                return Err(FunctionError::InvalidDayCountBasis { found: iv });
+            }
+            Ok(())
+        }
+    }
+}
+
+fn extract_resolved_calendar_int(
+    call_arg: Option<&CallArg>,
+    resolved_ref: Option<&ResolvedRef>,
+) -> Option<i64> {
+    match call_arg {
+        Some(CallArg::Expr(arg_expr)) => {
+            if let Some(iv) = extract_signed_const_integer(arg_expr) {
+                return Some(iv);
+            }
+            if let Some(res) = resolved_ref
+                && let Some([val]) = res.values.as_deref()
+                && let Ok(Ok(iv)) = val.strict_integer()
+            {
+                return Some(iv);
+            }
+            None
+        }
+        Some(CallArg::Omitted) | None => None,
+    }
+}
+
+fn extract_bound_calendar_int(arg: Option<&FunctionArg<'_>>) -> Option<i64> {
+    match arg {
+        Some(FunctionArg::Scalar(val)) => match val.strict_integer() {
+            Ok(Ok(iv)) => Some(iv),
+            Ok(Err(_)) | Err(_) => None,
+        },
+        Some(
+            FunctionArg::TypedErrorScalar { .. }
+            | FunctionArg::Array { .. }
+            | FunctionArg::Lazy(_)
+            | FunctionArg::Omitted,
+        )
+        | None => None,
+    }
+}
+
+fn validate_calendar_date_components(
+    year: Option<i64>,
+    month: Option<i64>,
+    day: Option<i64>,
+) -> Result<(), FunctionError> {
+    if let Some(y) = year
+        && !(1900..=9999).contains(&y)
+    {
+        return Err(FunctionError::InvalidDateYear { year: y });
+    }
+    if let Some(m) = month
+        && !(1..=12).contains(&m)
+    {
+        return Err(FunctionError::InvalidDateMonth { month: m });
+    }
+    if let Some(d) = day {
+        let max_day = match (year, month) {
+            (Some(y), Some(m)) => DateSerial::days_in_month(y as i32, m as u32),
+            (None, Some(m)) => DateSerial::days_in_month(2000, m as u32),
+            (_, None) => 31,
+        };
+        if d < 1 || d > i64::from(max_day) {
+            return Err(FunctionError::InvalidDateDay { day: d, max_day });
+        }
+    }
+    Ok(())
 }
 
 fn validate_resolved_range_values(
@@ -1102,7 +1430,7 @@ fn validate_resolved_range_values(
             param,
             position,
             param_type,
-            EmptyValidation::SkipSliceEmpty,
+            EmptyValidation::SkipEmpty,
         )?;
     }
     Ok(())
@@ -1155,7 +1483,8 @@ const fn lookup_mode_slot(policy: ValidationPolicy, arg_idx: usize) -> Option<Lo
         ValidationPolicy::Lookup(LookupPolicy::Index)
         | ValidationPolicy::Standard
         | ValidationPolicy::ShapeCoupled(_)
-        | ValidationPolicy::Branch(_) => None,
+        | ValidationPolicy::Branch(_)
+        | ValidationPolicy::CalendarDate => None,
     }
 }
 
@@ -1222,6 +1551,18 @@ fn extract_signed_const_number(expr: &Expr) -> Option<f64> {
         | Expr::Binary { .. }
         | Expr::FunctionCall { .. } => None,
     }
+}
+
+fn extract_signed_const_integer(expr: &Expr) -> Option<i64> {
+    let raw = extract_signed_const_number(expr)?;
+    if !raw.is_finite() {
+        return None;
+    }
+    let norm = normalize_zero(raw);
+    if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
+        return None;
+    }
+    Some(norm as i64)
 }
 
 fn extract_const_integer_literal(expr: &Expr) -> Option<i64> {
@@ -1493,20 +1834,25 @@ fn validate_signature(func: &dyn ExcelFunction, args: &[CallArg]) -> Result<(), 
 }
 
 /// Validates runtime bound argument count, variadic pair parity, omitted parameter eligibility,
-/// argument kinds (`Range` vs scalar/slice), and declarative `ParamType` constraints across all arguments.
+/// argument kinds (`Range` vs scalar/slice), coupled slice shapes, column `RolePolicy`, `EmptyPolicy`,
+/// and declarative `ParamType` / `CalendarDate` constraints across all arguments.
 pub(crate) fn validate_bound_args(
     func: &dyn ExcelFunction,
     args: &[FunctionArg<'_>],
 ) -> Result<(), FunctionError> {
     validate_arg_slots(func, args)?;
 
+    let mut shapes: Vec<Option<(usize, usize)>> = Vec::with_capacity(args.len());
+
+    // Pass 1: Validate `ParamKind` vs bound `FunctionArg` variant and collect array shapes.
     for (i, arg) in args.iter().enumerate() {
         let param = resolve_parameter(func, i)?;
-        let position = i + 1;
 
         match (param.kind, arg) {
-            (_, FunctionArg::Omitted) => continue,
-            (ParamKind::Range, FunctionArg::Array { .. }) => {}
+            (_, FunctionArg::Omitted) => shapes.push(None),
+            (ParamKind::Range, FunctionArg::Array { rows, cols, .. }) => {
+                shapes.push(Some((*rows, *cols)));
+            }
             (ParamKind::Range, FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. }) => {
                 return Err(FunctionError::InvalidArgumentKind {
                     function: func.name(),
@@ -1553,15 +1899,49 @@ pub(crate) fn validate_bound_args(
                 FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Lazy(_),
-            )
-            | (
+            ) => {
+                shapes.push(Some((1, 1)));
+            }
+            (ParamKind::RangeOrArray, FunctionArg::Array { rows, cols, .. }) => {
+                shapes.push(Some((*rows, *cols)));
+            }
+            (
                 ParamKind::RangeOrArray,
                 FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
                 | FunctionArg::Lazy(_),
-            ) => {}
+            ) => {
+                shapes.push(Some((1, 1)));
+            }
         }
+    }
+
+    // Pass 2: Coupled slice-shape invariants run before role and element `ParamType` checks.
+    if let ValidationPolicy::ShapeCoupled(shape_policy) = func.validation_policy() {
+        validate_shape_policy(func.name(), shape_policy, &shapes)?;
+    }
+
+    // Pass 3: Declarative `RolePolicy::MeasureOnly` runs before element `ParamType` checks.
+    for (i, arg) in args.iter().enumerate() {
+        let param = resolve_parameter(func, i)?;
+        if param.role_policy == RolePolicy::MeasureOnly
+            && let FunctionArg::Array {
+                axis_role: AxisRole::Descriptor,
+                ..
+            } = arg
+        {
+            return Err(FunctionError::DescriptorReferenceNotAllowed {
+                function: func.name(),
+                param: param.name,
+                position: i + 1,
+            });
+        }
+    }
+
+    // Pass 4: Per-argument `ParamType` and `EmptyPolicy` validation.
+    for (i, arg) in args.iter().enumerate() {
+        let param = resolve_parameter(func, i)?;
+        let position = i + 1;
 
         match arg {
             FunctionArg::Scalar(val) => {
@@ -1593,9 +1973,12 @@ pub(crate) fn validate_bound_args(
                 ref_kind,
                 ..
             } => {
-                let empty_policy = match ref_kind {
-                    ReferenceKind::Slice => EmptyValidation::SkipSliceEmpty,
-                    ReferenceKind::SingleCell => EmptyValidation::RejectEmpty,
+                let empty_validation = match (param.empty_policy, ref_kind) {
+                    (EmptyPolicy::AllowInSlice, ReferenceKind::Slice) => EmptyValidation::SkipEmpty,
+                    (EmptyPolicy::AllowInSlice, ReferenceKind::SingleCell)
+                    | (EmptyPolicy::ForbidAll, ReferenceKind::SingleCell | ReferenceKind::Slice) => {
+                        EmptyValidation::RejectEmpty
+                    }
                 };
                 for (elem_idx, val) in values.iter().enumerate() {
                     if matches!(val, CellValue::Error(_)) {
@@ -1620,12 +2003,20 @@ pub(crate) fn validate_bound_args(
                         param.name,
                         position,
                         param.param_type,
-                        empty_policy,
+                        empty_validation,
                     )?;
                 }
             }
             FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
+    }
+
+    // Pass 5: Calendar `(year, month, day)` domain validation after `ParamType::Integer` checks.
+    if func.validation_policy() == ValidationPolicy::CalendarDate {
+        let year = extract_bound_calendar_int(args.first());
+        let month = extract_bound_calendar_int(args.get(1));
+        let day = extract_bound_calendar_int(args.get(2));
+        validate_calendar_date_components(year, month, day)?;
     }
 
     Ok(())
@@ -1634,7 +2025,7 @@ pub(crate) fn validate_bound_args(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EmptyValidation {
     RejectEmpty,
-    SkipSliceEmpty,
+    SkipEmpty,
 }
 
 fn validate_value_against_param_type(
@@ -1645,8 +2036,12 @@ fn validate_value_against_param_type(
     param_type: ParamType,
     empty_policy: EmptyValidation,
 ) -> Result<(), FunctionError> {
+    if param_type == ParamType::Any {
+        return Ok(());
+    }
+
     match empty_policy {
-        EmptyValidation::SkipSliceEmpty => {
+        EmptyValidation::SkipEmpty => {
             if matches!(val, CellValue::Empty) {
                 return Ok(());
             }
@@ -1679,8 +2074,87 @@ fn validate_value_against_param_type(
                 found,
             })),
         },
+        ParamType::DateSerial => match val.strict_number() {
+            Ok(Ok(serial)) => {
+                if is_valid_input_date_serial(serial) {
+                    Ok(())
+                } else {
+                    Err(FunctionError::InvalidDateSerial {
+                        function,
+                        param,
+                        position,
+                        serial: serial.to_string(),
+                    })
+                }
+            }
+            Ok(Err(_)) => Ok(()),
+            Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function,
+                param,
+                position,
+                expected: ExpectedType::Number,
+                found,
+            })),
+        },
         ParamType::Integer => match val.strict_integer() {
             Ok(_) => Ok(()),
+            Err(StrictIntError::WrongType(found)) => {
+                Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected: ExpectedType::Integer,
+                    found,
+                }))
+            }
+            Err(StrictIntError::NonInteger(value)) => {
+                Err(FunctionError::Type(TypeError::NonIntegerArgument {
+                    function,
+                    param,
+                    position,
+                    value,
+                }))
+            }
+        },
+        ParamType::AnnuityType => match val.strict_integer() {
+            Ok(Ok(iv)) => {
+                if (0..=1).contains(&iv) {
+                    Ok(())
+                } else {
+                    Err(FunctionError::InvalidAnnuityType {
+                        function,
+                        found: iv,
+                    })
+                }
+            }
+            Ok(Err(_)) => Ok(()),
+            Err(StrictIntError::WrongType(found)) => {
+                Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                    function,
+                    param,
+                    position,
+                    expected: ExpectedType::Integer,
+                    found,
+                }))
+            }
+            Err(StrictIntError::NonInteger(value)) => {
+                Err(FunctionError::Type(TypeError::NonIntegerArgument {
+                    function,
+                    param,
+                    position,
+                    value,
+                }))
+            }
+        },
+        ParamType::DayCountBasis => match val.strict_integer() {
+            Ok(Ok(iv)) => {
+                if (0..=4).contains(&iv) {
+                    Ok(())
+                } else {
+                    Err(FunctionError::InvalidDayCountBasis { found: iv })
+                }
+            }
+            Ok(Err(_)) => Ok(()),
             Err(StrictIntError::WrongType(found)) => {
                 Err(FunctionError::Type(TypeError::InvalidArgumentType {
                     function,

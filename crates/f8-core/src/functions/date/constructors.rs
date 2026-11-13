@@ -1,36 +1,36 @@
 //! Date constructor and monthly stepping functions (`DATE`, `EDATE`, `EOMONTH`).
 
 use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
-use crate::functions::date::serial::{DateSerial, validate_date_serial};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
+    ValidationPolicy,
 };
-use crate::value::{CellValue, ExcelError, ValueType};
+use crate::value::{CellValue, DateSerial, ExcelError, ValueType, validate_date_serial};
 
 static DATE_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "year",
-        "The year of the date (0-9999; 0-1899 adds 1900).",
+        "The 4-digit calendar year of the date (1900-9999).",
         ParamKind::Scalar,
         ParamType::Integer,
     ),
     ParameterDef::required(
         "month",
-        "The month of the year (1-12; rolls over if outside 1-12).",
+        "The calendar month of the year (1-12).",
         ParamKind::Scalar,
         ParamType::Integer,
     ),
     ParameterDef::required(
         "day",
-        "The day of the month (1-31; rolls over if outside month days).",
+        "The calendar day of the month (1..=days_in_month).",
         ParamKind::Scalar,
         ParamType::Integer,
     ),
 ];
 
-/// `DATE(year, month, day)`: Constructs an Excel serial date number from year, month, and day components.
+/// `DATE(year, month, day)`: Constructs an Excel serial date number from strict calendar year, month, and day components.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DateFunction;
 
@@ -49,6 +49,10 @@ impl ExcelFunction for DateFunction {
 
     fn return_type(&self) -> Option<ValueType> {
         Some(ValueType::Number)
+    }
+
+    fn validation_policy(&self) -> ValidationPolicy {
+        ValidationPolicy::CalendarDate
     }
 
     fn evaluate(
@@ -75,16 +79,15 @@ impl ExcelFunction for DateFunction {
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        if !(-10_000..=20_000).contains(&year_i64)
-            || month_i64.abs() > 1_000_000
-            || day_i64.abs() > 10_000_000
-        {
+        let Ok(y) = i32::try_from(year_i64) else {
             return Ok(CellValue::Error(ExcelError::Num));
-        }
-
-        let y = year_i64 as i32;
-        let m = month_i64 as i32;
-        let d = day_i64 as i32;
+        };
+        let Ok(m) = u32::try_from(month_i64) else {
+            return Ok(CellValue::Error(ExcelError::Num));
+        };
+        let Ok(d) = u32::try_from(day_i64) else {
+            return Ok(CellValue::Error(ExcelError::Num));
+        };
 
         match DateSerial::from_ymd(y, m, d) {
             Ok(serial) => Ok(CellValue::number(serial)),
@@ -98,7 +101,7 @@ static EDATE_PARAMS: &[ParameterDef] = &[
         "start_date",
         "A serial number that represents the start date.",
         ParamKind::Scalar,
-        ParamType::Number,
+        ParamType::DateSerial,
     ),
     ParameterDef::required(
         "months",
@@ -173,7 +176,7 @@ impl ExcelFunction for EdateFunction {
         let max_day = DateSerial::days_in_month(target_year, target_month);
         let target_day = date.day.min(max_day);
 
-        match DateSerial::from_ymd(target_year, target_month as i32, target_day as i32) {
+        match DateSerial::from_ymd(target_year, target_month, target_day) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
         }
@@ -185,7 +188,7 @@ static EOMONTH_PARAMS: &[ParameterDef] = &[
         "start_date",
         "A serial number that represents the start date.",
         ParamKind::Scalar,
-        ParamType::Number,
+        ParamType::DateSerial,
     ),
     ParameterDef::required(
         "months",
@@ -259,7 +262,7 @@ impl ExcelFunction for EomonthFunction {
 
         let max_day = DateSerial::days_in_month(target_year, target_month);
 
-        match DateSerial::from_ymd(target_year, target_month as i32, max_day as i32) {
+        match DateSerial::from_ymd(target_year, target_month, max_day) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
         }
