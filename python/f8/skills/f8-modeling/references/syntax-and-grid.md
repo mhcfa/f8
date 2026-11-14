@@ -90,7 +90,7 @@ table = sheet.add_table(
 | `Model`   | `model.tables`                | `list[Table]`                                   | Ordered list of all tables across all worksheets                                              |
 | `Model`   | `model.compile()`             | `CompiledModel`                                 | Validates, expands, evaluates, lays out, and lowers model                                     |
 | `Model`   | `model.__f8_spec__()`         | `tuple[ProjectManifestDict, list[TableSpecDict]]` | Serializes model into raw manifest and table spec dictionaries                                |
-| `Sheet`   | `sheet.add_table(...)`        | `Table`                                         | Appends table; duplicate `id` across model or `gap < 0` raises `ValueError`                   |
+| `Sheet`   | `sheet.add_table(...)`        | `Table`                                         | Appends table; duplicate `id` across model, both `right_of` and `below`, or `gap < 0` raises `ValueError` |
 | `Sheet`   | `sheet.get_table(id)`         | `Table`                                         | Looks up table on this worksheet by `id` (raises `KeyError` if absent)                        |
 | `Sheet`   | `sheet.tables`                | `list[Table]`                                   | Ordered list of tables on this worksheet                                                      |
 | `Sheet`   | `sheet.__f8_spec__()`         | `SheetSpecDict`                                 | Serializes worksheet into raw specification dictionary                                        |
