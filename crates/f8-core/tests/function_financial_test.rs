@@ -277,16 +277,19 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         panic!("Expected Number, got {res:?}");
     }
 
-    // Rate <= -1.0 returns #NUM!
-    let bad_rate_args = vec![
-        FunctionArg::Scalar(CellValue::Number(-1.0)),
-        args[1].clone(),
-        args[2].clone(),
-    ];
-    assert_eq!(
-        xnpv_func.evaluate(&bad_rate_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
-    );
+    // Rate <= 0.0 returns #NUM! (matching Excel's XNPV non-positive rate guard)
+    for non_positive_rate in [0.0, -1e-9, -0.05, -1.0, -2.0] {
+        let bad_rate_args = vec![
+            FunctionArg::Scalar(CellValue::Number(non_positive_rate)),
+            args[1].clone(),
+            args[2].clone(),
+        ];
+        assert_eq!(
+            xnpv_func.evaluate(&bad_rate_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for XNPV rate = {non_positive_rate}"
+        );
+    }
 
     // Mismatched vector lengths fail strictly with LengthMismatch before InvalidDateSerial or ExcelError
     let mismatched_args = vec![
@@ -743,16 +746,40 @@ fn test_scenario_6_pmt_annuity_payments() {
     let res_zero = pmt_func.evaluate(&args_zero_rate, &ctx).unwrap();
     assert_eq!(res_zero, CellValue::Number(-100.0));
 
-    // nper = 0 returns #DIV/0!
-    let args_zero_nper = vec![
-        FunctionArg::Scalar(CellValue::Number(0.05)),
-        FunctionArg::Scalar(CellValue::Number(0.0)),
-        FunctionArg::Scalar(CellValue::Number(1000.0)),
-    ];
-    assert_eq!(
-        pmt_func.evaluate(&args_zero_nper, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Div0)
-    );
+    // nper = 0 and rate <= -1.0 return #NUM!
+    for bad_pmt_args in [
+        vec![
+            FunctionArg::Scalar(CellValue::Number(0.05)),
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(1000.0)),
+        ],
+        vec![
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(1000.0)),
+        ],
+        vec![
+            FunctionArg::Scalar(CellValue::Number(-1.0)),
+            FunctionArg::Scalar(CellValue::Number(5.0)),
+            FunctionArg::Scalar(CellValue::Number(1000.0)),
+        ],
+        vec![
+            FunctionArg::Scalar(CellValue::Number(-1.5)),
+            FunctionArg::Scalar(CellValue::Number(4.0)),
+            FunctionArg::Scalar(CellValue::Number(1000.0)),
+        ],
+        vec![
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(1.0)),
+            FunctionArg::Scalar(CellValue::Number(1e308)),
+            FunctionArg::Scalar(CellValue::Number(1e308)),
+        ],
+    ] {
+        assert_eq!(
+            pmt_func.evaluate(&bad_pmt_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num)
+        );
+    }
 
     // Non-integer `type` argument in PMT fails strictly with NonIntegerArgument
     let args_fractional_type = vec![
@@ -859,21 +886,82 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
     let ipmt_p1_res = ipmt_func.evaluate(&args_type1_p1, &ctx).unwrap();
     assert_eq!(ipmt_p1_res, CellValue::Number(0.0));
 
-    // Out of bounds period (per > nper or per < 1) returns #NUM!
-    let bad_per_args = vec![
-        FunctionArg::Scalar(CellValue::Number(rate)),
-        FunctionArg::Scalar(CellValue::Number(121.0)),
-        FunctionArg::Scalar(CellValue::Number(nper)),
-        FunctionArg::Scalar(CellValue::Number(pv)),
-    ];
-    assert_eq!(
-        ipmt_func.evaluate(&bad_per_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
-    );
-    assert_eq!(
-        ppmt_func.evaluate(&bad_per_args, &ctx).unwrap(),
-        CellValue::Error(ExcelError::Num)
-    );
+    // Out of bounds period (per > nper or per < 1), nper = 0, and rate <= -1.0 return #NUM!
+    for bad_amort_args in [
+        vec![
+            FunctionArg::Scalar(CellValue::Number(rate)),
+            FunctionArg::Scalar(CellValue::Number(121.0)),
+            FunctionArg::Scalar(CellValue::Number(nper)),
+            FunctionArg::Scalar(CellValue::Number(pv)),
+        ],
+        // Fractional per > nper (5.5 > 5.0) must not be masked by truncation
+        vec![
+            FunctionArg::Scalar(CellValue::Number(0.1)),
+            FunctionArg::Scalar(CellValue::Number(5.5)),
+            FunctionArg::Scalar(CellValue::Number(5.0)),
+            FunctionArg::Scalar(CellValue::Number(-1000.0)),
+        ],
+        // nper = 0 returns #NUM!
+        vec![
+            FunctionArg::Scalar(CellValue::Number(0.05)),
+            FunctionArg::Scalar(CellValue::Number(1.0)),
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(-1000.0)),
+        ],
+        // rate <= -1.0 returns #NUM! even when type = 1 and per = 1
+        vec![
+            FunctionArg::Scalar(CellValue::Number(-1.0)),
+            FunctionArg::Scalar(CellValue::Number(1.0)),
+            FunctionArg::Scalar(CellValue::Number(5.0)),
+            FunctionArg::Scalar(CellValue::Number(1000.0)),
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(1.0)),
+        ],
+    ] {
+        assert_eq!(
+            ipmt_func.evaluate(&bad_amort_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num)
+        );
+        assert_eq!(
+            ppmt_func.evaluate(&bad_amort_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num)
+        );
+    }
+
+    // Fractional per & nper preserve IPMT + PPMT == PMT across type 0 and type 1
+    for annuity_type in [0.0, 1.0] {
+        let pmt_frac = pmt_func
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.1)),
+                    FunctionArg::Scalar(CellValue::Number(5.5)),
+                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                    FunctionArg::Scalar(CellValue::Number(annuity_type)),
+                ],
+                &ctx,
+            )
+            .unwrap();
+        let amort_frac_args = [
+            FunctionArg::Scalar(CellValue::Number(0.1)),
+            FunctionArg::Scalar(CellValue::Number(2.5)),
+            FunctionArg::Scalar(CellValue::Number(5.5)),
+            FunctionArg::Scalar(CellValue::Number(-1000.0)),
+            FunctionArg::Scalar(CellValue::Number(0.0)),
+            FunctionArg::Scalar(CellValue::Number(annuity_type)),
+        ];
+        let ipmt_frac = ipmt_func.evaluate(&amort_frac_args, &ctx).unwrap();
+        let ppmt_frac = ppmt_func.evaluate(&amort_frac_args, &ctx).unwrap();
+        match (pmt_frac, ipmt_frac, ppmt_frac) {
+            (CellValue::Number(p), CellValue::Number(i), CellValue::Number(pr)) => {
+                assert!(
+                    (i + pr - p).abs() < 1e-12,
+                    "fractional type {annuity_type}: IPMT ({i}) + PPMT ({pr}) != PMT ({p})"
+                );
+            }
+            other => panic!("Expected Numbers, got {other:?}"),
+        }
+    }
 
     // Invalid integer `type` in IPMT and PPMT fails strictly with InvalidAnnuityType
     assert_eq!(

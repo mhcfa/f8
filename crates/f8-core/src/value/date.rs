@@ -96,6 +96,23 @@ impl DateSerial {
         }
     }
 
+    /// Returns the number of days in a given calendar month under standard Gregorian leap-year rules (`1900-02` -> `28`).
+    #[must_use]
+    pub fn gregorian_days_in_month(year: i32, month: u32) -> u32 {
+        match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 => {
+                if Self::is_gregorian_leap_year(year) {
+                    29
+                } else {
+                    28
+                }
+            }
+            _ => 0,
+        }
+    }
+
     /// Counts Gregorian leap years strictly between year 1901 and `end_year` inclusive.
     fn count_gregorian_leaps_since_1900(end_year: i32) -> i64 {
         if end_year < 1901 {
@@ -161,21 +178,8 @@ impl DateSerial {
         // For year > 1900, all dates fall after 1900-02-28 and carry the +2 offset relative to true Gregorian 1900-01-01
         let greg_year_days = Self::gregorian_days_to_year_start(year);
         let mut days_in_year_before_month = 0;
-        let is_leap = Self::is_gregorian_leap_year(year);
         for m in 1..month {
-            let dim = match m {
-                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-                4 | 6 | 9 | 11 => 30,
-                2 => {
-                    if is_leap {
-                        29
-                    } else {
-                        28
-                    }
-                }
-                _ => 0,
-            };
-            days_in_year_before_month += dim;
+            days_in_year_before_month += Self::gregorian_days_in_month(year, m);
         }
 
         let total_greg_days = greg_year_days + days_in_year_before_month as i64;
@@ -226,22 +230,10 @@ impl DateSerial {
         }
 
         let mut rem_days = gregorian_days - Self::gregorian_days_to_year_start(year);
-        let is_leap = Self::is_gregorian_leap_year(year);
 
         let mut month = 1;
         for m in 1..=12 {
-            let dim = match m {
-                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-                4 | 6 | 9 | 11 => 30,
-                2 => {
-                    if is_leap {
-                        29
-                    } else {
-                        28
-                    }
-                }
-                _ => 30,
-            };
+            let dim = Self::gregorian_days_in_month(year, m);
             if rem_days < dim as i64 {
                 month = m;
                 break;
@@ -425,5 +417,22 @@ mod tests {
         // Numbers >= 2958466.0 (year >= 10000) are rejected
         assert_eq!(validate_date_serial(2958466.0), Err(ExcelError::Num));
         assert_eq!(DateSerial::to_ymd(2958466.0), Err(ExcelError::Num));
+    }
+
+    #[test]
+    fn test_days_in_month_vs_gregorian_days_in_month() {
+        // 1900 split: Excel calendar preserves 29 days in Feb 1900, Gregorian uses 28
+        assert_eq!(DateSerial::days_in_month(1900, 2), 29);
+        assert_eq!(DateSerial::gregorian_days_in_month(1900, 2), 28);
+
+        // Standard leap and non-leap years agree across both helpers
+        assert_eq!(DateSerial::days_in_month(2000, 2), 29);
+        assert_eq!(DateSerial::gregorian_days_in_month(2000, 2), 29);
+        assert_eq!(DateSerial::days_in_month(2024, 2), 29);
+        assert_eq!(DateSerial::gregorian_days_in_month(2024, 2), 29);
+        assert_eq!(DateSerial::days_in_month(2023, 2), 28);
+        assert_eq!(DateSerial::gregorian_days_in_month(2023, 2), 28);
+        assert_eq!(DateSerial::days_in_month(2100, 2), 28);
+        assert_eq!(DateSerial::gregorian_days_in_month(2100, 2), 28);
     }
 }

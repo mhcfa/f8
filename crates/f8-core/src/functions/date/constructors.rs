@@ -173,7 +173,7 @@ impl ExcelFunction for EdateFunction {
         let target_year = target_year_i64 as i32;
         let target_month = (total_months.rem_euclid(12) + 1) as u32;
 
-        let max_day = DateSerial::days_in_month(target_year, target_month);
+        let max_day = DateSerial::gregorian_days_in_month(target_year, target_month);
         let target_day = date.day.min(max_day);
 
         match DateSerial::from_ymd(target_year, target_month, target_day) {
@@ -260,7 +260,7 @@ impl ExcelFunction for EomonthFunction {
         let target_year = target_year_i64 as i32;
         let target_month = (total_months.rem_euclid(12) + 1) as u32;
 
-        let max_day = DateSerial::days_in_month(target_year, target_month);
+        let max_day = DateSerial::gregorian_days_in_month(target_year, target_month);
 
         match DateSerial::from_ymd(target_year, target_month, max_day) {
             Ok(serial) => Ok(CellValue::number(serial)),

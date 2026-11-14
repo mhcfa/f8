@@ -66,17 +66,17 @@ pub fn calculate_yearfrac(
             let is_d1_last_of_feb = m1 == 2 && d1_day == DateSerial::days_in_month(y1, 2) as i32;
             let is_d2_last_of_feb = m2 == 2 && d2_day == DateSerial::days_in_month(y2, 2) as i32;
 
+            if d2_day == 31 && d1_day >= 30 {
+                d2_day = 30;
+            }
+            if d1_day == 31 {
+                d1_day = 30;
+            }
             if is_d1_last_of_feb {
                 d1_day = 30;
                 if is_d2_last_of_feb {
                     d2_day = 30;
                 }
-            } else if d1_day == 31 {
-                d1_day = 30;
-            }
-
-            if d2_day == 31 && d1_day >= 30 {
-                d2_day = 30;
             }
 
             let days = 360 * (y2 - y1) + 30 * (m2 - m1) + (d2_day - d1_day);

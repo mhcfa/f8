@@ -5,7 +5,7 @@ use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ValueType};
+use crate::value::{CellValue, ExcelError, ValueType, normalize_zero};
 
 /// Calculates the periodic payment for an annuity based on constant payments and a constant interest rate.
 pub(crate) fn calculate_pmt(
@@ -15,26 +15,38 @@ pub(crate) fn calculate_pmt(
     fv: f64,
     type_val: f64,
 ) -> Result<f64, ExcelError> {
-    if nper == 0.0 {
-        return Err(ExcelError::Div0);
+    if !rate.is_finite()
+        || !nper.is_finite()
+        || !pv.is_finite()
+        || !fv.is_finite()
+        || !type_val.is_finite()
+    {
+        return Err(ExcelError::Num);
+    }
+    if rate <= -1.0 || nper == 0.0 {
+        return Err(ExcelError::Num);
+    }
+    if rate == 0.0 {
+        let pmt = -(pv + fv) / nper;
+        if !pmt.is_finite() {
+            return Err(ExcelError::Num);
+        }
+        return Ok(normalize_zero(pmt));
     }
     let t = if type_val != 0.0 { 1.0 } else { 0.0 };
-    if rate == 0.0 {
-        return Ok(-(pv + fv) / nper);
-    }
     let term = (1.0 + rate).powf(nper);
-    if term.is_nan() || term.is_infinite() {
+    if !term.is_finite() {
         return Err(ExcelError::Num);
     }
     let denom = (1.0 + rate * t) * (term - 1.0) / rate;
-    if denom == 0.0 {
-        return Err(ExcelError::Div0);
-    }
-    let pmt = -(pv * term + fv) / denom;
-    if pmt.is_nan() || pmt.is_infinite() {
+    if denom == 0.0 || !denom.is_finite() {
         return Err(ExcelError::Num);
     }
-    Ok(pmt)
+    let pmt = -(pv * term + fv) / denom;
+    if !pmt.is_finite() {
+        return Err(ExcelError::Num);
+    }
+    Ok(normalize_zero(pmt))
 }
 
 /// Calculates the interest payment for a given period for an investment based on periodic, constant payments and a constant interest rate.
@@ -46,30 +58,43 @@ pub(crate) fn calculate_ipmt(
     fv: f64,
     type_val: f64,
 ) -> Result<f64, ExcelError> {
-    let k = per.trunc();
-    let n = nper.trunc();
-    if k < 1.0 || k > n || n <= 0.0 {
+    if !rate.is_finite()
+        || !per.is_finite()
+        || !nper.is_finite()
+        || !pv.is_finite()
+        || !fv.is_finite()
+        || !type_val.is_finite()
+    {
         return Err(ExcelError::Num);
     }
+    if rate <= -1.0 || per < 1.0 || per > nper {
+        return Err(ExcelError::Num);
+    }
+    let pmt = calculate_pmt(rate, nper, pv, fv, type_val)?;
     if rate == 0.0 {
         return Ok(0.0);
     }
     let t = if type_val != 0.0 { 1.0 } else { 0.0 };
-    if t == 1.0 && k == 1.0 {
+    if t == 1.0 && per == 1.0 {
         return Ok(0.0);
     }
-    let pmt = calculate_pmt(rate, nper, pv, fv, type_val)?;
     let ipmt = if t == 0.0 {
-        let term = (1.0 + rate).powf(k - 1.0);
+        let term = (1.0 + rate).powf(per - 1.0);
+        if !term.is_finite() {
+            return Err(ExcelError::Num);
+        }
         -(pv * term * rate + pmt * (term - 1.0))
     } else {
-        let term = (1.0 + rate).powf(k - 2.0);
+        let term = (1.0 + rate).powf(per - 2.0);
+        if !term.is_finite() {
+            return Err(ExcelError::Num);
+        }
         -((pv + pmt) * term * rate + pmt * (term - 1.0))
     };
-    if ipmt.is_nan() || ipmt.is_infinite() {
+    if !ipmt.is_finite() {
         return Err(ExcelError::Num);
     }
-    Ok(ipmt)
+    Ok(normalize_zero(ipmt))
 }
 
 /// Calculates the payment on the principal for a given investment based on periodic, constant payments and a constant interest rate.
@@ -81,9 +106,22 @@ pub(crate) fn calculate_ppmt(
     fv: f64,
     type_val: f64,
 ) -> Result<f64, ExcelError> {
-    let pmt = calculate_pmt(rate, nper, pv, fv, type_val)?;
+    if !rate.is_finite()
+        || !per.is_finite()
+        || !nper.is_finite()
+        || !pv.is_finite()
+        || !fv.is_finite()
+        || !type_val.is_finite()
+    {
+        return Err(ExcelError::Num);
+    }
     let ipmt = calculate_ipmt(rate, per, nper, pv, fv, type_val)?;
-    Ok(pmt - ipmt)
+    let pmt = calculate_pmt(rate, nper, pv, fv, type_val)?;
+    let ppmt = pmt - ipmt;
+    if !ppmt.is_finite() {
+        return Err(ExcelError::Num);
+    }
+    Ok(normalize_zero(ppmt))
 }
 
 /// Positional parameter definitions for `PMT`.
@@ -421,5 +459,90 @@ impl ExcelFunction for PpmtFunction {
             Ok(val) => Ok(CellValue::number(val)),
             Err(e) => Ok(CellValue::Error(e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{calculate_ipmt, calculate_pmt, calculate_ppmt};
+    use crate::value::ExcelError;
+
+    #[test]
+    fn helpers_reject_non_finite_inputs_and_overflow() -> Result<(), ExcelError> {
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                calculate_pmt(bad, 10.0, 1000.0, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_pmt(0.0, bad, 1000.0, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_pmt(0.0, 10.0, bad, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_pmt(0.0, 10.0, 1000.0, bad, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_pmt(0.0, 10.0, 1000.0, 0.0, bad),
+                Err(ExcelError::Num)
+            );
+
+            assert_eq!(
+                calculate_ipmt(bad, 1.0, 10.0, 1000.0, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_ipmt(0.0, bad, 10.0, 1000.0, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_ipmt(0.0, 1.0, bad, 1000.0, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_ipmt(0.0, 1.0, 10.0, bad, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_ipmt(0.0, 1.0, 10.0, 1000.0, bad, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_ipmt(0.0, 1.0, 10.0, 1000.0, 0.0, bad),
+                Err(ExcelError::Num)
+            );
+
+            assert_eq!(
+                calculate_ppmt(0.05, bad, 10.0, 1000.0, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+            assert_eq!(
+                calculate_ppmt(0.0, 1.0, 10.0, bad, 0.0, 0.0),
+                Err(ExcelError::Num)
+            );
+        }
+
+        // Zero-rate pv + fv overflow fails across all three helpers
+        assert_eq!(
+            calculate_pmt(0.0, 1.0, 1e308, 1e308, 0.0),
+            Err(ExcelError::Num)
+        );
+        assert_eq!(
+            calculate_ipmt(0.0, 1.0, 1.0, 1e308, 1e308, 0.0),
+            Err(ExcelError::Num)
+        );
+        assert_eq!(
+            calculate_ppmt(0.0, 1.0, 1.0, 1e308, 1e308, 0.0),
+            Err(ExcelError::Num)
+        );
+
+        // Zero principal/future value normalizes -0.0 to +0.0
+        let zero_pmt = calculate_pmt(0.0, 10.0, 0.0, 0.0, 0.0)?;
+        assert!(zero_pmt.is_sign_positive() && zero_pmt == 0.0);
+        Ok(())
     }
 }
