@@ -116,7 +116,10 @@ impl EvalError {
             | FunctionError::InvalidDateDay { .. }
             | FunctionError::InvalidDateSerial { .. }
             | FunctionError::InvalidAnnuityType { .. }
-            | FunctionError::InvalidDayCountBasis { .. }) => Self::Function {
+            | FunctionError::InvalidDayCountBasis { .. }
+            | FunctionError::UnexpectedCriteriaSyntax { .. }
+            | FunctionError::InvalidTextCriterion { .. }
+            | FunctionError::ErrorInCriteria { .. }) => Self::Function {
                 cell: Box::new(cell),
                 source: Box::new(other),
             },

@@ -36,7 +36,7 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
                     }
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
         }
     }
     Ok(cfs)
@@ -73,6 +73,11 @@ pub(crate) fn extract_1d_range_values<'a>(
             function,
             expected: "range",
             found: "lazy",
+        }),
+        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "range",
+            found: "criterion",
         }),
         FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
             function,

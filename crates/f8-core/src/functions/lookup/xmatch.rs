@@ -96,7 +96,8 @@ impl ExcelFunction for XmatchFunction {
                 match_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => {
                 let val = match_arg.eval_scalar(self.name(), ctx)?;
                 MatchMode::parse(&val, self.name(), "match_mode", 3)?
@@ -109,7 +110,8 @@ impl ExcelFunction for XmatchFunction {
                 search_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => {
                 let val = search_arg.eval_scalar(self.name(), ctx)?;
                 SearchMode::parse(&val, self.name(), "search_mode", 4)?

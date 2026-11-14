@@ -122,7 +122,8 @@ impl ExcelFunction for XlookupFunction {
                 match_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => {
                 let val = match_arg.eval_scalar(self.name(), ctx)?;
                 MatchMode::parse(&val, self.name(), "match_mode", 5)?
@@ -135,7 +136,8 @@ impl ExcelFunction for XlookupFunction {
                 search_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => {
                 let val = search_arg.eval_scalar(self.name(), ctx)?;
                 SearchMode::parse(&val, self.name(), "search_mode", 6)?
@@ -183,7 +185,8 @@ impl ExcelFunction for XlookupFunction {
                     not_found_arg @ (FunctionArg::Scalar(_)
                     | FunctionArg::TypedErrorScalar { .. }
                     | FunctionArg::Array { .. }
-                    | FunctionArg::Lazy(_)),
+                    | FunctionArg::Lazy(_)
+                    | FunctionArg::Criterion(_)),
                 ) => {
                     let (nf_val, nf_vt) = eval_taken_branch_arm(not_found_arg, self.name(), ctx)?;
                     unifier.record(4, nf_vt).map_err(FunctionError::Type)?;

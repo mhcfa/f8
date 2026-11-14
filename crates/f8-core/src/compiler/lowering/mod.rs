@@ -18,7 +18,12 @@ use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::LayoutMap;
-use crate::expr::ast::{BinaryOp, CallArg, Expr, Literal, TableRef, UnaryOp};
+use crate::expr::ast::{
+    BinaryOp, BlankCheck, CallArg, CriteriaComparator, Expr, Literal, TableRef, UnaryOp,
+};
+use crate::functions::registry::{FunctionRegistry, resolve_parameter};
+use crate::functions::traits::ParamKind;
+use crate::value::{format_criteria_number, normalize_zero, validate_text_criterion};
 
 /// Deterministic map of lowered Excel formula strings indexed by [`CellId`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -60,7 +65,8 @@ impl LoweredFormulaMap {
 pub struct FormulaLowerer;
 
 impl FormulaLowerer {
-    /// Lowers a single formula expression for a given cell into an Excel formula string prefixed with `=`.
+    /// Lowers a single formula expression for a given cell into an Excel formula string prefixed with `=`,
+    /// consulting the standard function registry for `ParamKind::Criteria` slots.
     ///
     /// # Errors
     /// Returns [`LoweringError`] if reference resolution fails, coordinates are missing from the layout map,
@@ -71,11 +77,33 @@ impl FormulaLowerer {
         symbol_table: &SymbolTable,
         layout_map: &LayoutMap,
     ) -> Result<String, LoweringError> {
-        let inner = lower_expr_inner(expr, origin, symbol_table, layout_map)?;
+        Self::lower_cell_with_registry(
+            origin,
+            expr,
+            symbol_table,
+            layout_map,
+            &FunctionRegistry::standard(),
+        )
+    }
+
+    /// Lowers a single formula expression for a given cell using an explicit [`FunctionRegistry`].
+    ///
+    /// # Errors
+    /// Returns [`LoweringError`] if reference resolution fails, coordinates are missing from the layout map,
+    /// or a syntax error occurs.
+    pub fn lower_cell_with_registry(
+        origin: &CellId,
+        expr: &Expr,
+        symbol_table: &SymbolTable,
+        layout_map: &LayoutMap,
+        registry: &FunctionRegistry,
+    ) -> Result<String, LoweringError> {
+        let inner = lower_expr_inner(expr, origin, symbol_table, layout_map, registry)?;
         Ok(format!("={inner}"))
     }
 
-    /// Lowers all formula cells in the workbook grid into a deterministic [`LoweredFormulaMap`].
+    /// Lowers all formula cells in the workbook grid into a deterministic [`LoweredFormulaMap`],
+    /// consulting the standard function registry for `ParamKind::Criteria` slots.
     ///
     /// # Errors
     /// Returns [`LoweringError`] if any formula fails to lower.
@@ -84,10 +112,34 @@ impl FormulaLowerer {
         symbol_table: &SymbolTable,
         layout_map: &LayoutMap,
     ) -> Result<LoweredFormulaMap, LoweringError> {
+        Self::lower_grid_with_registry(
+            grid,
+            symbol_table,
+            layout_map,
+            &FunctionRegistry::standard(),
+        )
+    }
+
+    /// Lowers all formula cells in the workbook grid using an explicit [`FunctionRegistry`].
+    ///
+    /// # Errors
+    /// Returns [`LoweringError`] if any formula fails to lower.
+    pub fn lower_grid_with_registry(
+        grid: &CellGrid,
+        symbol_table: &SymbolTable,
+        layout_map: &LayoutMap,
+        registry: &FunctionRegistry,
+    ) -> Result<LoweredFormulaMap, LoweringError> {
         let mut formulas = IndexMap::new();
         for (cell_id, cell_node) in grid.iter() {
             if let CellPayload::Formula(expr) = &cell_node.payload {
-                let lowered = Self::lower_cell(cell_id, expr, symbol_table, layout_map)?;
+                let lowered = Self::lower_cell_with_registry(
+                    cell_id,
+                    expr,
+                    symbol_table,
+                    layout_map,
+                    registry,
+                )?;
                 formulas.insert(cell_id.clone(), lowered);
             }
         }
@@ -219,6 +271,7 @@ fn lower_expr_inner(
     origin: &CellId,
     symbol_table: &SymbolTable,
     layout_map: &LayoutMap,
+    registry: &FunctionRegistry,
 ) -> Result<String, LoweringError> {
     match expr {
         Expr::Literal(lit) => match lit {
@@ -239,13 +292,13 @@ fn lower_expr_inner(
         },
         Expr::Reference(table_ref) => lower_table_ref(origin, table_ref, symbol_table, layout_map),
         Expr::Unary { op, expr } => {
-            let inner_str = lower_expr_inner(expr, origin, symbol_table, layout_map)?;
+            let inner_str = lower_expr_inner(expr, origin, symbol_table, layout_map, registry)?;
             let formatted = format_unary_operand(expr, inner_str, *op);
             Ok(format!("{}{formatted}", op.as_str()))
         }
         Expr::Binary { op, left, right } => {
-            let left_str = lower_expr_inner(left, origin, symbol_table, layout_map)?;
-            let right_str = lower_expr_inner(right, origin, symbol_table, layout_map)?;
+            let left_str = lower_expr_inner(left, origin, symbol_table, layout_map, registry)?;
+            let right_str = lower_expr_inner(right, origin, symbol_table, layout_map, registry)?;
 
             let formatted_left = format_binary_operand(left, left_str, *op, false);
             let formatted_right = format_binary_operand(right, right_str, *op, true);
@@ -261,13 +314,68 @@ fn lower_expr_inner(
                     ),
                 });
             }
+            let func_opt = registry.lookup(name);
             let mut arg_strings = Vec::with_capacity(args.len());
-            for arg in args {
+            for (idx, arg) in args.iter().enumerate() {
+                let is_criteria_slot = func_opt.is_some_and(|func| {
+                    func.max_args().is_none_or(|max| idx < max)
+                        && resolve_parameter(func, idx)
+                            .is_ok_and(|param| param.kind == ParamKind::Criteria)
+                });
+
                 let lowered = match arg {
-                    CallArg::Expr(arg_expr) => {
-                        lower_expr_inner(arg_expr, origin, symbol_table, layout_map)?
-                    }
                     CallArg::Omitted => String::new(),
+                    CallArg::BlankCheck(check) => {
+                        if !is_criteria_slot {
+                            return Err(LoweringError::SyntaxError {
+                                message: format!(
+                                    "criteria keyword '{}' at position {} is not allowed in '{}'",
+                                    check.as_str(),
+                                    idx + 1,
+                                    name.to_uppercase()
+                                ),
+                            });
+                        }
+                        match check {
+                            BlankCheck::Blank => "\"=\"".to_string(),
+                            BlankCheck::NotBlank => "\"<>\"".to_string(),
+                        }
+                    }
+                    CallArg::Comparator { op, expr: arg_expr } => {
+                        if !is_criteria_slot {
+                            return Err(LoweringError::SyntaxError {
+                                message: format!(
+                                    "criteria comparator '{}' at position {} is not allowed in '{}'",
+                                    op.as_str(),
+                                    idx + 1,
+                                    name.to_uppercase()
+                                ),
+                            });
+                        }
+                        lower_comparator_arg(
+                            name,
+                            *op,
+                            arg_expr,
+                            origin,
+                            symbol_table,
+                            layout_map,
+                            registry,
+                        )?
+                    }
+                    CallArg::Expr(arg_expr) => {
+                        if is_criteria_slot && let Expr::Literal(Literal::String(s)) = arg_expr {
+                            validate_text_criterion(s, 0).map_err(|reason| {
+                                LoweringError::SyntaxError {
+                                    message: format!(
+                                        "invalid text criterion at position {} of '{}': {reason}",
+                                        idx + 1,
+                                        name.to_uppercase()
+                                    ),
+                                }
+                            })?;
+                        }
+                        lower_expr_inner(arg_expr, origin, symbol_table, layout_map, registry)?
+                    }
                 };
                 arg_strings.push(lowered);
             }
@@ -276,6 +384,97 @@ fn lower_expr_inner(
                 name.to_uppercase(),
                 arg_strings.join(",")
             ))
+        }
+    }
+}
+
+fn lower_comparator_arg(
+    func_name: &str,
+    op: CriteriaComparator,
+    expr: &Expr,
+    origin: &CellId,
+    symbol_table: &SymbolTable,
+    layout_map: &LayoutMap,
+    registry: &FunctionRegistry,
+) -> Result<String, LoweringError> {
+    match expr {
+        Expr::Literal(Literal::Number(n)) => {
+            if !n.is_finite() {
+                return Err(LoweringError::SyntaxError {
+                    message: format!("invalid numeric literal '{n}' in formula"),
+                });
+            }
+            let formatted = format_criteria_number(*n);
+            Ok(format!("\"{}{formatted}\"", op.as_str()))
+        }
+        Expr::Literal(Literal::Boolean(b)) => {
+            if op.is_ordering() {
+                return Err(LoweringError::SyntaxError {
+                    message: format!(
+                        "ordering comparator '{}' in '{}' requires a numeric operand, found boolean literal",
+                        op.as_str(),
+                        func_name.to_uppercase()
+                    ),
+                });
+            }
+            let b_str = if *b { "TRUE" } else { "FALSE" };
+            Ok(format!("\"{}{b_str}\"", op.as_str()))
+        }
+        Expr::Literal(Literal::String(s)) => {
+            if op.is_ordering() {
+                return Err(LoweringError::SyntaxError {
+                    message: format!(
+                        "ordering comparator '{}' in '{}' requires a numeric operand, found string literal",
+                        op.as_str(),
+                        func_name.to_uppercase()
+                    ),
+                });
+            }
+            validate_text_criterion(s, 2).map_err(|reason| LoweringError::SyntaxError {
+                message: format!(
+                    "invalid text criterion in '{}': {reason}",
+                    func_name.to_uppercase()
+                ),
+            })?;
+            let escaped = s.replace('"', "\"\"");
+            Ok(format!("\"{}{escaped}\"", op.as_str()))
+        }
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr: inner,
+        } => match inner.as_ref() {
+            Expr::Literal(Literal::Number(n)) => {
+                if !n.is_finite() {
+                    return Err(LoweringError::SyntaxError {
+                        message: format!("invalid numeric literal '{n}' in formula"),
+                    });
+                }
+                let formatted = format_criteria_number(normalize_zero(-*n));
+                Ok(format!("\"{}{formatted}\"", op.as_str()))
+            }
+            Expr::Literal(Literal::Boolean(_) | Literal::String(_)) => {
+                Err(LoweringError::SyntaxError {
+                    message: format!(
+                        "invalid negated non-numeric literal in '{}' comparator",
+                        func_name.to_uppercase()
+                    ),
+                })
+            }
+            Expr::Reference(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. } => {
+                let rhs = lower_expr_inner(expr, origin, symbol_table, layout_map, registry)?;
+                Ok(format!("\"{}\"&({rhs})", op.as_str()))
+            }
+        },
+        Expr::Binary { .. } => {
+            let rhs = lower_expr_inner(expr, origin, symbol_table, layout_map, registry)?;
+            Ok(format!("\"{}\"&({rhs})", op.as_str()))
+        }
+        Expr::Reference(_) | Expr::FunctionCall { .. } => {
+            let rhs = lower_expr_inner(expr, origin, symbol_table, layout_map, registry)?;
+            Ok(format!("\"{}\"&{rhs}", op.as_str()))
         }
     }
 }

@@ -201,7 +201,8 @@ impl ExcelFunction for YearfracFunction {
                 basis_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => extract_scalar_integer(basis_arg, self.name(), "basis", 3, ctx)?,
         };
 

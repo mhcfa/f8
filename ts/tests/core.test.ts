@@ -1288,41 +1288,52 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "counta_b", "c1")).toBe(1);
     });
 
-    it("(k) treats NaN/inf/Infinity strings as text in *IFS criteria and trims operator trailing spaces", () => {
+    it("(k) treats NaN/inf/Infinity strings as text in *IFS criteria and evaluates typed numeric comparators", () => {
       const model = new Model({ name: "CriteriaNanModel" });
       const tbl = model.addSheet("Main").addTable("T", "Criteria NaN");
-      tbl.addColumn("c1", { role: "measure", header: "C1" });
+      tbl.addColumn("txt", { role: "measure", header: "Text" });
+      tbl.addColumn("num", { role: "measure", header: "Number" });
       tbl.addColumn("w", { role: "measure", header: "Weight" });
 
-      tbl.addRow("r1", { cells: { c1: "NAN", w: 10 } });
-      tbl.addRow("r2", { cells: { c1: "Infinity", w: 20 } });
-      tbl.addRow("r3", { cells: { c1: "inf", w: 30 } });
-      tbl.addRow("r4", { cells: { c1: " 42 ", w: 40 } });
-      tbl.addRow("r5", { cells: { c1: 42, w: 50 } });
-      tbl.addRow("r6", { cells: { c1: -0, w: 60 } });
+      tbl.addRow("r1", { cells: { txt: "NAN", num: 42, w: 10 } });
+      tbl.addRow("r2", { cells: { txt: "Infinity", num: -0, w: 20 } });
+      tbl.addRow("r3", { cells: { txt: "inf", num: 15, w: 30 } });
 
       tbl.addRow("cnt_nan", {
-        cells: { c1: new Cell({ expr: 'COUNTIFS(@table["r1".."r6", "c1"], "nan")' }), w: 0 },
+        cells: {
+          txt: "check",
+          num: new Cell({ expr: 'COUNTIFS(@table["r1".."r3", "txt"], "nan")' }),
+          w: 0,
+        },
       });
       tbl.addRow("cnt_inf", {
-        cells: { c1: new Cell({ expr: 'COUNTIFS(@table["r1".."r6", "c1"], "Infinity")' }), w: 0 },
+        cells: {
+          txt: "check",
+          num: new Cell({ expr: 'COUNTIFS(@table["r1".."r3", "txt"], "Infinity")' }),
+          w: 0,
+        },
       });
       tbl.addRow("sum_42", {
         cells: {
-          c1: new Cell({ expr: 'SUMIFS(@table["r1".."r6", "w"], @table["r1".."r6", "c1"], 42)' }),
+          txt: "check",
+          num: new Cell({ expr: 'SUMIFS(@table["r1".."r3", "w"], @table["r1".."r3", "num"], 42)' }),
           w: 0,
         },
       });
       tbl.addRow("cnt_gt0", {
-        cells: { c1: new Cell({ expr: 'COUNTIFS(@table["r1".."r6", "c1"], "> 0 ")' }), w: 0 },
+        cells: {
+          txt: "check",
+          num: new Cell({ expr: 'COUNTIFS(@table["r1".."r3", "num"], > 0)' }),
+          w: 0,
+        },
       });
 
       const compiled = model.compile();
-      expect(compiled.num("T", "cnt_nan", "c1")).toBe(1);
-      expect(compiled.num("T", "cnt_inf", "c1")).toBe(1);
-      expect(compiled.num("T", "sum_42", "c1")).toBe(90);
-      expect(compiled.num("T", "cnt_gt0", "c1")).toBe(1);
-      expect(Object.is(compiled.value("T", "r6", "c1"), 0)).toBe(true);
+      expect(compiled.num("T", "cnt_nan", "num")).toBe(1);
+      expect(compiled.num("T", "cnt_inf", "num")).toBe(1);
+      expect(compiled.num("T", "sum_42", "num")).toBe(10);
+      expect(compiled.num("T", "cnt_gt0", "num")).toBe(2);
+      expect(Object.is(compiled.value("T", "r2", "num"), 0)).toBe(true);
     });
 
     it("(l) enforces Cluster A2 monomorphic branches, dormant memoized validation, and lookup/index strictness", () => {
@@ -1749,7 +1760,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       addCheck("sp_ovf", 'SUMPRODUCT(@table["big1".."big1", "w"], @table["big2".."big2", "w"])');
       addCheck(
         "sumifs_ovf",
-        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], "BG*")',
+        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], NOT_BLANK)',
       );
       addCheck("max_big", 'MAX(@table["big1".."big2", "c1"])');
 
@@ -1803,6 +1814,204 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.value("T", "edate_udf", "c1")).toBe("#NUM!");
       expect(compiled.value("T", "eomonth_ovf", "c1")).toBe("#NUM!");
       expect(compiled.value("T", "yr_edate_bubble", "c1")).toBe("#NUM!");
+    });
+
+    it("(n) enforces Cluster C typed criteria DSL, text/error criteria guards, and error introspection", () => {
+      const redundantFormula = 'COUNTIFS(@table["r1".."r2", "num_a"], = 10)';
+      const pm = new Model({ name: "RedundantEqModel" });
+      const pt = pm.addSheet("Main").addTable("T", "Parse");
+      pt.addColumn("num_a", { role: "measure", header: "Num" });
+      pt.addRow("r1", { cells: { num_a: 10 } });
+      pt.addRow("r2", { cells: { num_a: 20 } });
+      pt.addRow("bad", { expr: redundantFormula });
+
+      let caughtRedundant: unknown;
+      try {
+        pm.compile();
+      } catch (err: unknown) {
+        caughtRedundant = err;
+      }
+      expect(caughtRedundant).toBeInstanceOf(FormulaParseError);
+      expect((caughtRedundant as FormulaParseError).tokenOffset).toBe(
+        redundantFormula.indexOf("="),
+      );
+
+      for (const badParse of [
+        'COUNTIFS(@table["r1".."r2", "num_a"], <> 1 = 1)',
+        'COUNTIFS(@table["r1".."r2", "num_a"], blank)',
+        "ERROR . TYPE(1 / 0)",
+        "error.type(1 / 0)",
+      ]) {
+        const m = new Model({ name: "ParseCheck" });
+        const t = m.addSheet("Main").addTable("T", "Parse");
+        t.addColumn("num_a", { role: "measure", header: "Num" });
+        t.addRow("r1", { cells: { num_a: 10 } });
+        t.addRow("r2", { cells: { num_a: 20 } });
+        t.addRow("bad", { expr: badParse });
+        expect(() => m.compile()).toThrow(FormulaParseError);
+      }
+
+      const buildBase = (targetExpr: string): Model => {
+        const m = new Model({ name: "ClusterCCheck" });
+        const t = m.addSheet("Main").addTable("T", "Cluster C");
+        t.addColumn("num_a", { role: "measure", header: "Num A" });
+        t.addColumn("cat", { role: "measure", header: "Category" });
+        t.addColumn("date", { role: "measure", header: "Date" });
+        t.addRow("r1", { cells: { num_a: 10, cat: "Alpha", date: 45292 } });
+        t.addRow("r2", { cells: { num_a: 20, cat: "Beta", date: 45474 } });
+        t.addRow("helpers", {
+          cells: {
+            num_a: null,
+            cat: null,
+            date: new Cell({
+              expr: 'XLOOKUP("Missing", @table["r1".."r2", "cat"], @table["r1".."r2", "date"])',
+            }),
+          },
+        });
+        t.addRow("target", {
+          cells: { num_a: new Cell({ expr: targetExpr }), cat: null, date: null },
+        });
+        return m;
+      };
+
+      for (const badF8 of [
+        "ABS(> 5)",
+        "SUM(BLANK)",
+        'COUNTIFS(@table["r1".."r2", "cat"], > "Alpha")',
+        'COUNTIFS(@table["r1".."r2", "cat"], > 10)',
+        'COUNTIFS(@table["r1".."r2", "cat"], "")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "A*")',
+        'COUNTIFS(@table["r1".."r2", "cat"], ">15")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "10%")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "1,000")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "2024-01-01")',
+        'COUNTIFS(@table["r1".."r2", "num_a"], <= (1 / 0))',
+        'SUMIFS(@table["r1".."r2", "num_a"], @table["r1".."r2", "date"], <= @table["helpers", "date"])',
+        'ISERROR("5" + 1)',
+      ]) {
+        let caught: unknown;
+        try {
+          buildBase(badF8).compile();
+        } catch (err: unknown) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(F8Error);
+      }
+
+      const okModel = new Model({ name: "ClusterCOk" });
+      const okTbl = okModel.addSheet("Main").addTable("T", "Cluster C Parity");
+      for (const colId of ["num_a", "cat", "date", "sparse", "empty_str", "one_third", "res"]) {
+        okTbl.addColumn(colId, { role: "measure", header: colId });
+      }
+
+      okTbl.addRow("r1", {
+        cells: {
+          num_a: 10,
+          cat: "Alpha",
+          date: 45292,
+          sparse: null,
+          empty_str: "",
+          one_third: new Cell({ expr: "1 / 3" }),
+          res: 0,
+        },
+      });
+      okTbl.addRow("r2", {
+        cells: {
+          num_a: 20,
+          cat: "Beta",
+          date: 45474,
+          sparse: 0,
+          empty_str: "Alpha",
+          one_third: 0.5,
+          res: 0,
+        },
+      });
+      okTbl.addRow("r3", {
+        cells: {
+          num_a: 30,
+          cat: "Alpha",
+          date: 45658,
+          sparse: 20,
+          empty_str: null,
+          one_third: 0.5,
+          res: 0,
+        },
+      });
+      okTbl.addRow("r4", {
+        cells: {
+          num_a: 40,
+          cat: "May",
+          date: 46023,
+          sparse: null,
+          empty_str: null,
+          one_third: 0.5,
+          res: 0,
+        },
+      });
+
+      const addRes = (rowId: string, formula: string): void => {
+        okTbl.addRow(rowId, {
+          cells: {
+            num_a: null,
+            cat: null,
+            date: null,
+            sparse: null,
+            empty_str: null,
+            one_third: null,
+            res: new Cell({ expr: formula }),
+          },
+        });
+      };
+
+      addRes(
+        "sumifs_gt",
+        'SUMIFS(@table["r1".."r4", "num_a"], @table["r1".."r4", "cat"], "Alpha", @table["r1".."r4", "num_a"], > 15)',
+      );
+      addRes("cnt_dyn_date", 'COUNTIFS(@table["r1".."r4", "date"], <= @table["r3", "date"])');
+      addRes("cnt_exact_third", 'COUNTIFS(@table["r1".."r4", "one_third"], 1 / 3)');
+      addRes("cnt_cmp_third", 'COUNTIFS(@table["r1".."r4", "one_third"], <= (1 / 3))');
+      addRes("cnt_blank", 'COUNTIFS(@table["r1".."r4", "empty_str"], BLANK)');
+      addRes("cnt_not_blank", 'COUNTIFS(@table["r1".."r4", "empty_str"], NOT_BLANK)');
+      addRes("cnt_sparse_neq", 'COUNTIFS(@table["r1".."r4", "sparse"], <> 20)');
+      addRes(
+        "sum_iferror_guard",
+        'SUMIFS(@table["r1".."r4", "num_a"], @table["r1".."r4", "num_a"], >= IFERROR(1 / 0, 15))',
+      );
+      addRes(
+        "cnt_isna_guard",
+        'IF(ISNA(XLOOKUP("Missing", @table["r1".."r4", "cat"], @table["r1".."r4", "date"])), 0, COUNTIFS(@table["r1".."r4", "date"], <= XLOOKUP("Missing", @table["r1".."r4", "cat"], @table["r1".."r4", "date"])))',
+      );
+      addRes("iserror_div0", "ISERROR(1 / 0)");
+      addRes("isna_div0", "ISNA(1 / 0)");
+      addRes("isna_na", 'ISNA(XMATCH("Missing", @table["r1".."r4", "cat"]))');
+      addRes("errtype_div0", "ERROR.TYPE(1 / 0)");
+      addRes("errtype_na", 'ERROR.TYPE(XMATCH("Missing", @table["r1".."r4", "cat"]))');
+      addRes("errtype_non_err", "ERROR.TYPE(42)");
+      addRes("cnt_utf8_euro", 'COUNTIFS(@table["r1".."r4", "cat"], "€")');
+      addRes("cnt_utf8_colon", 'COUNTIFS(@table["r1".."r4", "cat"], <> "Note: café")');
+
+      const compiled = okModel.compile();
+      expect(compiled.num("T", "sumifs_gt", "res")).toBe(30);
+      expect(compiled.num("T", "cnt_dyn_date", "res")).toBe(3);
+      expect(compiled.num("T", "cnt_exact_third", "res")).toBe(1);
+      expect(compiled.num("T", "cnt_cmp_third", "res")).toBe(0);
+      expect(compiled.num("T", "cnt_blank", "res")).toBe(2);
+      expect(compiled.num("T", "cnt_not_blank", "res")).toBe(2);
+      expect(compiled.num("T", "cnt_sparse_neq", "res")).toBe(3);
+      expect(compiled.num("T", "sum_iferror_guard", "res")).toBe(90);
+      expect(compiled.num("T", "cnt_isna_guard", "res")).toBe(0);
+      expect(compiled.value("T", "iserror_div0", "res")).toBe(true);
+      expect(compiled.value("T", "isna_div0", "res")).toBe(false);
+      expect(compiled.value("T", "isna_na", "res")).toBe(true);
+      expect(compiled.num("T", "errtype_div0", "res")).toBe(2);
+      expect(compiled.num("T", "errtype_na", "res")).toBe(7);
+      expect(compiled.value("T", "errtype_non_err", "res")).toBe("#N/A");
+      expect(compiled.num("T", "cnt_utf8_euro", "res")).toBe(0);
+      expect(compiled.num("T", "cnt_utf8_colon", "res")).toBe(4);
+      expect(compiled.inspectCell("T", "sumifs_gt", "res").excelFormula).toContain('">15"');
+      expect(compiled.inspectCell("T", "errtype_div0", "res").excelFormula).toContain(
+        "ERROR.TYPE(",
+      );
     });
   });
 });

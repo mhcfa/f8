@@ -70,7 +70,8 @@ impl ExcelFunction for IrrFunction {
                 guess_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => extract_scalar_number(guess_arg, self.name(), "guess", 2, ctx)?,
         };
 
@@ -235,7 +236,8 @@ impl ExcelFunction for XirrFunction {
                 guess_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => extract_scalar_number(guess_arg, self.name(), "guess", 3, ctx)?,
         };
 
