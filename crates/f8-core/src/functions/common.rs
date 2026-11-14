@@ -80,7 +80,7 @@ impl NumericCollector {
                         }
                     }
                 }
-                FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+                FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
             }
         }
         Ok(())
@@ -146,6 +146,11 @@ pub fn eval_branch_arg(
             function,
             expected: "scalar or expression",
             found: "array",
+        }),
+        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "scalar or expression",
+            found: "criterion",
         }),
         FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
             function,
@@ -243,7 +248,10 @@ pub fn eval_taken_branch_arm(
         CellValue::Error(_) => match arg {
             FunctionArg::Lazy(expr) => ctx.validate_dormant_expr(expr, None)?,
             FunctionArg::TypedErrorScalar { inferred_type, .. } => Some(*inferred_type),
-            FunctionArg::Scalar(_) | FunctionArg::Array { .. } | FunctionArg::Omitted => None,
+            FunctionArg::Scalar(_)
+            | FunctionArg::Array { .. }
+            | FunctionArg::Criterion(_)
+            | FunctionArg::Omitted => None,
         },
     };
     Ok((val, vt))
@@ -320,6 +328,11 @@ pub fn validate_dormant_arm(
             function,
             expected: "scalar or expression",
             found: "array",
+        }),
+        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "scalar or expression",
+            found: "criterion",
         }),
         FunctionArg::Omitted => Ok(None),
     }
@@ -498,6 +511,13 @@ impl LogicalCollector {
                         }
                     }
                 }
+                FunctionArg::Criterion(_) => {
+                    return Err(FunctionError::InvalidArgumentKind {
+                        function,
+                        expected: "scalar or array",
+                        found: "criterion",
+                    });
+                }
                 FunctionArg::Omitted => {}
             }
         }
@@ -540,7 +560,10 @@ pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
                     count += 1;
                 }
             }
-            FunctionArg::TypedErrorScalar { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+            FunctionArg::TypedErrorScalar { .. }
+            | FunctionArg::Lazy(_)
+            | FunctionArg::Criterion(_)
+            | FunctionArg::Omitted => {}
         }
     }
 
@@ -569,7 +592,7 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
             FunctionArg::TypedErrorScalar { .. } => {
                 count += 1;
             }
-            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
         }
     }
 
@@ -631,96 +654,6 @@ pub fn round_towards_zero(val: f64, digits: i32) -> f64 {
         let scaled = (val / factor).abs().floor() * sign;
         normalize_zero(scaled * factor)
     }
-}
-
-/// Token in a compiled Excel wildcard pattern.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WildcardToken {
-    /// Exact character to match (ASCII-lowercased for case-insensitivity).
-    Char(char),
-    /// Wildcard `?` matching exactly one character.
-    AnySingle,
-    /// Wildcard `*` matching zero or more characters.
-    AnyZeroOrMore,
-}
-
-/// Parses a pattern string into wildcard tokens, handling the `~` escape sequence.
-#[must_use]
-pub fn parse_wildcard_tokens(pattern: &str) -> (Vec<WildcardToken>, bool) {
-    let mut tokens = Vec::new();
-    let mut chars = pattern.chars().peekable();
-    let mut has_wildcard = false;
-
-    while let Some(c) = chars.next() {
-        match c {
-            '~' => {
-                if let Some(&next_c) = chars.peek() {
-                    if next_c == '?' || next_c == '*' || next_c == '~' {
-                        chars.next();
-                        tokens.push(WildcardToken::Char(next_c.to_ascii_lowercase()));
-                    } else {
-                        tokens.push(WildcardToken::Char('~'));
-                    }
-                } else {
-                    tokens.push(WildcardToken::Char('~'));
-                }
-            }
-            '?' => {
-                has_wildcard = true;
-                tokens.push(WildcardToken::AnySingle);
-            }
-            '*' => {
-                has_wildcard = true;
-                if !matches!(tokens.last(), Some(WildcardToken::AnyZeroOrMore)) {
-                    tokens.push(WildcardToken::AnyZeroOrMore);
-                }
-            }
-            other => {
-                tokens.push(WildcardToken::Char(other.to_ascii_lowercase()));
-            }
-        }
-    }
-
-    (tokens, has_wildcard)
-}
-
-/// Evaluates whether a text string matches a slice of wildcard tokens using linear-time backtracking.
-#[must_use]
-pub fn matches_wildcard(tokens: &[WildcardToken], text: &str) -> bool {
-    let s: Vec<char> = text.chars().map(|c| c.to_ascii_lowercase()).collect();
-    let mut s_idx = 0;
-    let mut p_idx = 0;
-    let mut star_idx: Option<usize> = None;
-    let mut s_match_idx = 0;
-
-    while s_idx < s.len() {
-        if p_idx < tokens.len()
-            && match tokens[p_idx] {
-                WildcardToken::Char(c) => c == s[s_idx],
-                WildcardToken::AnySingle => true,
-                WildcardToken::AnyZeroOrMore => false,
-            }
-        {
-            s_idx += 1;
-            p_idx += 1;
-        } else if p_idx < tokens.len() && tokens[p_idx] == WildcardToken::AnyZeroOrMore {
-            star_idx = Some(p_idx);
-            s_match_idx = s_idx;
-            p_idx += 1;
-        } else if let Some(star) = star_idx {
-            p_idx = star + 1;
-            s_match_idx += 1;
-            s_idx = s_match_idx;
-        } else {
-            return false;
-        }
-    }
-
-    while p_idx < tokens.len() && tokens[p_idx] == WildcardToken::AnyZeroOrMore {
-        p_idx += 1;
-    }
-
-    p_idx == tokens.len()
 }
 
 /// Extracts a strict numeric scalar from `arg`, rejecting `Text`, `Boolean`, and `Empty` with `TypeError::InvalidArgumentType`

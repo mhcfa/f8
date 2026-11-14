@@ -1390,46 +1390,57 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
     assert compiled.num("T", "counta_b", "c1") == 1.0
 
 
-def test_scenario_19_criteria_nan_infinity_and_operator_trailing_spaces() -> None:
+def test_scenario_19_criteria_nan_infinity_and_typed_numeric_comparators() -> None:
     model = f8.Model(name="CriteriaNanModel")
     tbl = model.add_sheet("Main").add_table("T", title="Criteria NaN")
-    tbl.add_column("c1", role="measure", header="C1")
+    tbl.add_column("txt", role="measure", header="Text")
+    tbl.add_column("num", role="measure", header="Number")
     tbl.add_column("w", role="measure", header="Weight")
 
-    tbl.add_row("r1", cells={"c1": "NAN", "w": 10.0})
-    tbl.add_row("r2", cells={"c1": "Infinity", "w": 20.0})
-    tbl.add_row("r3", cells={"c1": "inf", "w": 30.0})
-    tbl.add_row("r4", cells={"c1": " 42 ", "w": 40.0})
-    tbl.add_row("r5", cells={"c1": 42.0, "w": 50.0})
-    tbl.add_row("r6", cells={"c1": -0.0, "w": 60.0})
+    tbl.add_row("r1", cells={"txt": "NAN", "num": 42.0, "w": 10.0})
+    tbl.add_row("r2", cells={"txt": "Infinity", "num": -0.0, "w": 20.0})
+    tbl.add_row("r3", cells={"txt": "inf", "num": 15.0, "w": 30.0})
 
     tbl.add_row(
         "cnt_nan",
-        cells={"c1": f8.Cell(expr='COUNTIFS(@table["r1".."r6", "c1"], "nan")'), "w": 0.0},
+        cells={
+            "txt": "check",
+            "num": f8.Cell(expr='COUNTIFS(@table["r1".."r3", "txt"], "nan")'),
+            "w": 0.0,
+        },
     )
     tbl.add_row(
         "cnt_inf",
-        cells={"c1": f8.Cell(expr='COUNTIFS(@table["r1".."r6", "c1"], "Infinity")'), "w": 0.0},
+        cells={
+            "txt": "check",
+            "num": f8.Cell(expr='COUNTIFS(@table["r1".."r3", "txt"], "Infinity")'),
+            "w": 0.0,
+        },
     )
     tbl.add_row(
         "sum_42",
         cells={
-            "c1": f8.Cell(expr='SUMIFS(@table["r1".."r6", "w"], @table["r1".."r6", "c1"], 42)'),
+            "txt": "check",
+            "num": f8.Cell(expr='SUMIFS(@table["r1".."r3", "w"], @table["r1".."r3", "num"], 42)'),
             "w": 0.0,
         },
     )
     tbl.add_row(
         "cnt_gt0",
-        cells={"c1": f8.Cell(expr='COUNTIFS(@table["r1".."r6", "c1"], "> 0 ")'), "w": 0.0},
+        cells={
+            "txt": "check",
+            "num": f8.Cell(expr='COUNTIFS(@table["r1".."r3", "num"], > 0)'),
+            "w": 0.0,
+        },
     )
 
     compiled = model.compile()
-    assert compiled.num("T", "cnt_nan", "c1") == 1.0
-    assert compiled.num("T", "cnt_inf", "c1") == 1.0
-    assert compiled.num("T", "sum_42", "c1") == 90.0
-    assert compiled.num("T", "cnt_gt0", "c1") == 1.0
+    assert compiled.num("T", "cnt_nan", "num") == 1.0
+    assert compiled.num("T", "cnt_inf", "num") == 1.0
+    assert compiled.num("T", "sum_42", "num") == 10.0
+    assert compiled.num("T", "cnt_gt0", "num") == 2.0
 
-    neg_zero_val = compiled.value("T", "r6", "c1")
+    neg_zero_val = compiled.value("T", "r2", "num")
     assert isinstance(neg_zero_val, float) and math.copysign(1.0, neg_zero_val) == 1.0
 
 
@@ -1861,7 +1872,7 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     add_check("sp_ovf", 'SUMPRODUCT(@table["big1".."big1", "w"], @table["big2".."big2", "w"])')
     add_check(
         "sumifs_ovf",
-        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], "BG*")',
+        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], NOT_BLANK)',
     )
     add_check("max_big", 'MAX(@table["big1".."big2", "c1"])')
 
@@ -1915,3 +1926,205 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     assert compiled.value("T", "edate_udf", "c1") == "#NUM!"
     assert compiled.value("T", "eomonth_ovf", "c1") == "#NUM!"
     assert compiled.value("T", "yr_edate_bubble", "c1") == "#NUM!"
+
+
+def test_scenario_22_cluster_c_typed_criteria_and_error_introspection() -> None:
+    # 1. Redundant '=' raises FormulaParseError with exact token_offset; invalid grammar rejected
+    redundant_formula = 'COUNTIFS(@table["r1".."r2", "num_a"], = 10)'
+    pm = f8.Model(name="RedundantEqModel")
+    pt = pm.add_sheet("Main").add_table("T", title="Parse")
+    pt.add_column("num_a", role="measure", header="Num")
+    pt.add_row("r1", cells={"num_a": 10.0})
+    pt.add_row("r2", cells={"num_a": 20.0})
+    pt.add_row("bad", expr=redundant_formula)
+
+    with pytest.raises(FormulaParseError) as parse_exc:
+        pm.compile()
+    assert parse_exc.value.token_offset == redundant_formula.index("=")
+
+    for bad_parse in (
+        'COUNTIFS(@table["r1".."r2", "num_a"], <> 1 = 1)',
+        'COUNTIFS(@table["r1".."r2", "num_a"], blank)',
+        "ERROR . TYPE(1 / 0)",
+        "error.type(1 / 0)",
+    ):
+        m = f8.Model(name="ParseCheck")
+        t = m.add_sheet("Main").add_table("T", title="Parse")
+        t.add_column("num_a", role="measure", header="Num")
+        t.add_row("r1", cells={"num_a": 10.0})
+        t.add_row("r2", cells={"num_a": 20.0})
+        t.add_row("bad", expr=bad_parse)
+        with pytest.raises(FormulaParseError):
+            m.compile()
+
+    # 2. Invalid criteria syntax, ordering, coercible text, and ErrorInCriteria raise F8Error
+    def build_base(target_expr: str) -> f8.Model:
+        m = f8.Model(name="ClusterCCheck")
+        t = m.add_sheet("Main").add_table("T", title="Cluster C")
+        t.add_column("num_a", role="measure", header="Num A")
+        t.add_column("cat", role="measure", header="Category")
+        t.add_column("date", role="measure", header="Date")
+        t.add_row("r1", cells={"num_a": 10.0, "cat": "Alpha", "date": 45292.0})
+        t.add_row("r2", cells={"num_a": 20.0, "cat": "Beta", "date": 45474.0})
+        t.add_row(
+            "helpers",
+            cells={
+                "num_a": None,
+                "cat": None,
+                "date": f8.Cell(
+                    expr='XLOOKUP("Missing", @table["r1".."r2", "cat"], @table["r1".."r2", "date"])'
+                ),
+            },
+        )
+        t.add_row("target", cells={"num_a": f8.Cell(expr=target_expr), "cat": None, "date": None})
+        return m
+
+    for bad_f8 in (
+        "ABS(> 5)",
+        "SUM(BLANK)",
+        'COUNTIFS(@table["r1".."r2", "cat"], > "Alpha")',
+        'COUNTIFS(@table["r1".."r2", "cat"], > 10)',
+        'COUNTIFS(@table["r1".."r2", "cat"], "")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "A*")',
+        'COUNTIFS(@table["r1".."r2", "cat"], ">15")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "10%")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "1,000")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "2024-01-01")',
+        'COUNTIFS(@table["r1".."r2", "num_a"], <= (1 / 0))',
+        (
+            'SUMIFS(@table["r1".."r2", "num_a"], '
+            '@table["r1".."r2", "date"], <= @table["helpers", "date"])'
+        ),
+        'ISERROR("5" + 1)',
+    ):
+        with pytest.raises(F8Error) as f8_exc:
+            build_base(bad_f8).compile()
+        assert type(f8_exc.value) is F8Error
+
+    # 3. Accepted typed *IFS criteria, 15-sig-digit precision, BLANK, and error introspection
+    ok_model = f8.Model(name="ClusterCOk")
+    ok_tbl = ok_model.add_sheet("Main").add_table("T", title="Cluster C Parity")
+    for col_id in ("num_a", "cat", "date", "sparse", "empty_str", "one_third", "res"):
+        ok_tbl.add_column(col_id, role="measure", header=col_id)
+
+    ok_tbl.add_row(
+        "r1",
+        cells={
+            "num_a": 10.0,
+            "cat": "Alpha",
+            "date": 45292.0,
+            "sparse": None,
+            "empty_str": "",
+            "one_third": f8.Cell(expr="1 / 3"),
+            "res": 0.0,
+        },
+    )
+    ok_tbl.add_row(
+        "r2",
+        cells={
+            "num_a": 20.0,
+            "cat": "Beta",
+            "date": 45474.0,
+            "sparse": 0.0,
+            "empty_str": "Alpha",
+            "one_third": 0.5,
+            "res": 0.0,
+        },
+    )
+    ok_tbl.add_row(
+        "r3",
+        cells={
+            "num_a": 30.0,
+            "cat": "Alpha",
+            "date": 45658.0,
+            "sparse": 20.0,
+            "empty_str": None,
+            "one_third": 0.5,
+            "res": 0.0,
+        },
+    )
+    ok_tbl.add_row(
+        "r4",
+        cells={
+            "num_a": 40.0,
+            "cat": "May",
+            "date": 46023.0,
+            "sparse": None,
+            "empty_str": None,
+            "one_third": 0.5,
+            "res": 0.0,
+        },
+    )
+
+    def add_res(row_id: str, formula: str) -> None:
+        ok_tbl.add_row(
+            row_id,
+            cells={
+                "num_a": None,
+                "cat": None,
+                "date": None,
+                "sparse": None,
+                "empty_str": None,
+                "one_third": None,
+                "res": f8.Cell(expr=formula),
+            },
+        )
+
+    add_res(
+        "sumifs_gt",
+        (
+            'SUMIFS(@table["r1".."r4", "num_a"], @table["r1".."r4", "cat"], "Alpha", '
+            '@table["r1".."r4", "num_a"], > 15)'
+        ),
+    )
+    add_res("cnt_dyn_date", 'COUNTIFS(@table["r1".."r4", "date"], <= @table["r3", "date"])')
+    add_res("cnt_exact_third", 'COUNTIFS(@table["r1".."r4", "one_third"], 1 / 3)')
+    add_res("cnt_cmp_third", 'COUNTIFS(@table["r1".."r4", "one_third"], <= (1 / 3))')
+    add_res("cnt_blank", 'COUNTIFS(@table["r1".."r4", "empty_str"], BLANK)')
+    add_res("cnt_not_blank", 'COUNTIFS(@table["r1".."r4", "empty_str"], NOT_BLANK)')
+    add_res("cnt_sparse_neq", 'COUNTIFS(@table["r1".."r4", "sparse"], <> 20)')
+    add_res(
+        "sum_iferror_guard",
+        'SUMIFS(@table["r1".."r4", "num_a"], @table["r1".."r4", "num_a"], >= IFERROR(1 / 0, 15))',
+    )
+    add_res(
+        "cnt_isna_guard",
+        (
+            'IF(ISNA(XLOOKUP("Missing", @table["r1".."r4", "cat"], '
+            '@table["r1".."r4", "date"])), 0, '
+            'COUNTIFS(@table["r1".."r4", "date"], <= XLOOKUP("Missing", '
+            '@table["r1".."r4", "cat"], @table["r1".."r4", "date"])))'
+        ),
+    )
+    add_res("iserror_div0", "ISERROR(1 / 0)")
+    add_res("isna_div0", "ISNA(1 / 0)")
+    add_res("isna_na", 'ISNA(XMATCH("Missing", @table["r1".."r4", "cat"]))')
+    add_res("errtype_div0", "ERROR.TYPE(1 / 0)")
+    add_res("errtype_na", 'ERROR.TYPE(XMATCH("Missing", @table["r1".."r4", "cat"]))')
+    add_res("errtype_non_err", "ERROR.TYPE(42)")
+    add_res("cnt_utf8_euro", 'COUNTIFS(@table["r1".."r4", "cat"], "€")')
+    add_res("cnt_utf8_colon", 'COUNTIFS(@table["r1".."r4", "cat"], <> "Note: café")')
+
+    compiled = ok_model.compile()
+    assert compiled.num("T", "sumifs_gt", "res") == 30.0
+    assert compiled.num("T", "cnt_dyn_date", "res") == 3.0
+    assert compiled.num("T", "cnt_exact_third", "res") == 1.0
+    assert compiled.num("T", "cnt_cmp_third", "res") == 0.0
+    assert compiled.num("T", "cnt_blank", "res") == 2.0
+    assert compiled.num("T", "cnt_not_blank", "res") == 2.0
+    assert compiled.num("T", "cnt_sparse_neq", "res") == 3.0
+    assert compiled.num("T", "sum_iferror_guard", "res") == 90.0
+    assert compiled.num("T", "cnt_isna_guard", "res") == 0.0
+    assert compiled.value("T", "iserror_div0", "res") is True
+    assert compiled.value("T", "isna_div0", "res") is False
+    assert compiled.value("T", "isna_na", "res") is True
+    assert compiled.num("T", "errtype_div0", "res") == 2.0
+    assert compiled.num("T", "errtype_na", "res") == 7.0
+    assert compiled.value("T", "errtype_non_err", "res") == "#N/A"
+    assert compiled.num("T", "cnt_utf8_euro", "res") == 0.0
+    assert compiled.num("T", "cnt_utf8_colon", "res") == 4.0
+    sumifs_cell = compiled.inspect_cell("T", "sumifs_gt", "res")
+    errtype_cell = compiled.inspect_cell("T", "errtype_div0", "res")
+    assert sumifs_cell["excel_formula"] is not None
+    assert '">15"' in (sumifs_cell["excel_formula"] or "")
+    assert "ERROR.TYPE(" in (errtype_cell["excel_formula"] or "")

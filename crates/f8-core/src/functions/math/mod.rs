@@ -5,6 +5,10 @@ pub mod criteria;
 pub mod product;
 pub mod rounding;
 
+use std::sync::Arc;
+
+use crate::functions::registry::FunctionRegistry;
+
 pub use aggregation::{
     AverageFunction, CountFunction, CountaFunction, MaxFunction, MedianFunction, MinFunction,
     SumFunction,
@@ -13,12 +17,9 @@ pub use basic::AbsFunction;
 pub use conditional::{
     AverageifsFunction, CountifsFunction, MaxifsFunction, MinifsFunction, SumifsFunction,
 };
-pub use criteria::{ComparisonOp, CriteriaTarget, Criterion, WildcardToken};
+pub use criteria::{EqualityOp, TypedCriterion};
 pub use product::SumproductFunction;
 pub use rounding::{RoundFunction, RounddownFunction, RoundupFunction};
-
-use crate::functions::registry::FunctionRegistry;
-use std::sync::Arc;
 
 /// Registers all standard mathematical and conditional aggregation functions into the registry.
 pub fn register(registry: &mut FunctionRegistry) {

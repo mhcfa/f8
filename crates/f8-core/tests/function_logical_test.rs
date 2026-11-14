@@ -58,7 +58,7 @@ fn eval_str(
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 45);
+    assert_eq!(registry.len(), 48);
     assert!(registry.lookup("SWITCH").is_none());
     assert!(registry.lookup("switch").is_none());
 

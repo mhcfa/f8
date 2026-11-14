@@ -3,21 +3,22 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-use crate::expr::ast::{BinaryOp, CallArg, Expr, Literal, TableRef, UnaryOp};
+use crate::expr::ast::{BinaryOp, CallArg, CriteriaComparator, Expr, Literal, TableRef, UnaryOp};
 use crate::functions::common::{BranchTypeUnifier, value_type_satisfies};
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{
     MatchMode, SearchMode, validate_homogeneous_slice, validate_lookup_array,
 };
 use crate::functions::traits::{
-    BranchPolicy, ComparisonSide, EmptyPolicy, EvalContext, ExcelFunction, ExpectationOrigin,
-    FunctionArg, LookupPolicy, ParamKind, ParamType, ParameterDef, ReferenceKind, RolePolicy,
-    ShapePolicy, TypeExpectation, TypedRangeGrid, ValidationPolicy, VariadicRule,
+    BoundCriterion, BranchPolicy, ComparisonSide, EmptyPolicy, EvalContext, ExcelFunction,
+    ExpectationOrigin, FunctionArg, LookupPolicy, ParamKind, ParamType, ParameterDef,
+    ReferenceKind, RolePolicy, ShapePolicy, TypeExpectation, TypedRangeGrid, ValidationPolicy,
+    VariadicRule,
 };
 use crate::model::table::AxisRole;
 use crate::value::{
     CellValue, DateSerial, ExpectedType, MAX_SAFE_INTEGER, StrictIntError, TypeError, ValueType,
-    is_valid_input_date_serial, normalize_zero,
+    is_valid_input_date_serial, normalize_zero, validate_text_criterion,
 };
 
 /// Error produced during Stage A or Stage B AST expression and slice-shape validation.
@@ -101,7 +102,7 @@ impl FunctionRegistry {
         }
     }
 
-    /// Constructs a standard function registry populated with the 45 built-in Excel functions.
+    /// Constructs a standard function registry populated with the 48 built-in Excel functions.
     #[must_use]
     pub fn standard() -> Self {
         let mut registry = Self::new();
@@ -216,8 +217,10 @@ impl FunctionRegistry {
                 self.validate_call(name, args)?;
                 for arg in args {
                     match arg {
-                        CallArg::Expr(arg_expr) => self.validate_signatures_pass1(arg_expr)?,
-                        CallArg::Omitted => {}
+                        CallArg::Expr(arg_expr) | CallArg::Comparator { expr: arg_expr, .. } => {
+                            self.validate_signatures_pass1(arg_expr)?;
+                        }
+                        CallArg::BlankCheck(_) | CallArg::Omitted => {}
                     }
                 }
                 Ok(())
@@ -396,6 +399,7 @@ impl FunctionRegistry {
                 let func = self
                     .lookup(name)
                     .ok_or_else(|| FunctionError::UnknownFunction(name.clone()))?;
+                validate_criteria_slots(func, args)?;
 
                 match func.validation_policy() {
                     ValidationPolicy::Standard => self.validate_positional_call(
@@ -463,6 +467,63 @@ impl FunctionRegistry {
                     shapes.push(None);
                     resolved_refs.push(None);
                 }
+                CallArg::BlankCheck(_) => {
+                    if param.kind != ParamKind::Criteria {
+                        return Err(StageAError::Function(
+                            FunctionError::UnexpectedCriteriaSyntax {
+                                function: func.name(),
+                                param: param.name,
+                                position: idx + 1,
+                            },
+                        ));
+                    }
+                    shapes.push(Some((1, 1)));
+                    resolved_refs.push(None);
+                }
+                CallArg::Comparator { expr: arg_expr, .. } => {
+                    if param.kind != ParamKind::Criteria {
+                        return Err(StageAError::Function(
+                            FunctionError::UnexpectedCriteriaSyntax {
+                                function: func.name(),
+                                param: param.name,
+                                position: idx + 1,
+                            },
+                        ));
+                    }
+                    match arg_expr {
+                        Expr::Reference(table_ref) => {
+                            let resolved = resolver
+                                .resolve_ref(table_ref)
+                                .map_err(StageAError::Resolve)?;
+                            if table_ref.is_slice() {
+                                let (rows, cols) =
+                                    resolved.as_ref().map_or((0, 0), |r| (r.rows, r.cols));
+                                return Err(StageAError::Function(
+                                    FunctionError::SliceInScalarContext { rows, cols },
+                                ));
+                            }
+                            if let Some(res) = &resolved
+                                && res.rows * res.cols > 1
+                            {
+                                return Err(StageAError::Function(
+                                    FunctionError::SliceInScalarContext {
+                                        rows: res.rows,
+                                        cols: res.cols,
+                                    },
+                                ));
+                            }
+                            shapes.push(Some((1, 1)));
+                            resolved_refs.push(resolved);
+                        }
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            shapes.push(Some((1, 1)));
+                            resolved_refs.push(None);
+                        }
+                    }
+                }
                 CallArg::Expr(arg_expr) => match param.kind {
                     ParamKind::Range => match arg_expr {
                         Expr::Reference(table_ref) => {
@@ -501,7 +562,7 @@ impl FunctionRegistry {
                             resolved_refs.push(None);
                         }
                     },
-                    ParamKind::Scalar | ParamKind::Lazy => match arg_expr {
+                    ParamKind::Scalar | ParamKind::Lazy | ParamKind::Criteria => match arg_expr {
                         Expr::Reference(table_ref) => {
                             let resolved = resolver
                                 .resolve_ref(table_ref)
@@ -564,11 +625,38 @@ impl FunctionRegistry {
         for (idx, call_arg) in args.iter().enumerate() {
             let param = resolve_parameter(func, idx)?;
             let position = idx + 1;
-            match call_arg {
-                CallArg::Omitted => {}
-                CallArg::Expr(arg_expr) => {
-                    match param.kind {
-                        ParamKind::Range => {
+            match param.kind {
+                ParamKind::Criteria => {
+                    self.validate_criteria_call_arg(
+                        func,
+                        idx,
+                        param,
+                        call_arg,
+                        &resolved_refs,
+                        resolver,
+                    )?;
+                }
+                ParamKind::Range => {
+                    if extract_non_criteria_expr(func, param, position, call_arg)?.is_some()
+                        && let Some(res) = &resolved_refs[idx]
+                    {
+                        validate_resolved_range_values(
+                            res,
+                            func.name(),
+                            param.name,
+                            position,
+                            param.param_type,
+                        )?;
+                    }
+                }
+                ParamKind::RangeOrArray => {
+                    let Some(arg_expr) =
+                        extract_non_criteria_expr(func, param, position, call_arg)?
+                    else {
+                        continue;
+                    };
+                    match arg_expr {
+                        Expr::Reference(_) => {
                             if let Some(res) = &resolved_refs[idx] {
                                 validate_resolved_range_values(
                                     res,
@@ -579,43 +667,10 @@ impl FunctionRegistry {
                                 )?;
                             }
                         }
-                        ParamKind::RangeOrArray => match arg_expr {
-                            Expr::Reference(_) => {
-                                if let Some(res) = &resolved_refs[idx] {
-                                    validate_resolved_range_values(
-                                        res,
-                                        func.name(),
-                                        param.name,
-                                        position,
-                                        param.param_type,
-                                    )?;
-                                }
-                            }
-                            Expr::Literal(_)
-                            | Expr::Unary { .. }
-                            | Expr::Binary { .. }
-                            | Expr::FunctionCall { .. } => {
-                                let arg_exp = param.param_type.to_expected_type().map(|exp_ty| {
-                                    TypeExpectation {
-                                        expected: exp_ty,
-                                        origin: ExpectationOrigin::FunctionParam {
-                                            function: func.name(),
-                                            param: param.name,
-                                            position,
-                                        },
-                                    }
-                                });
-                                self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
-                                validate_param_const_domain(
-                                    arg_expr,
-                                    func.name(),
-                                    param.name,
-                                    position,
-                                    param.param_type,
-                                )?;
-                            }
-                        },
-                        ParamKind::Scalar | ParamKind::Lazy => {
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
                             let arg_exp =
                                 param
                                     .param_type
@@ -628,34 +683,61 @@ impl FunctionRegistry {
                                             position,
                                         },
                                     });
-                            match arg_expr {
-                                Expr::Reference(_) => {
-                                    if let Some(res) = &resolved_refs[idx] {
-                                        validate_resolved_scalar_ref(
-                                            arg_expr,
-                                            res,
-                                            func.name(),
-                                            param.name,
-                                            position,
-                                            param.param_type,
-                                            arg_exp,
-                                        )?;
-                                    }
-                                }
-                                Expr::Literal(_)
-                                | Expr::Unary { .. }
-                                | Expr::Binary { .. }
-                                | Expr::FunctionCall { .. } => {
-                                    self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
-                                    validate_param_const_domain(
-                                        arg_expr,
-                                        func.name(),
-                                        param.name,
-                                        position,
-                                        param.param_type,
-                                    )?;
-                                }
+                            self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                            validate_param_const_domain(
+                                arg_expr,
+                                func.name(),
+                                param.name,
+                                position,
+                                param.param_type,
+                            )?;
+                        }
+                    }
+                }
+                ParamKind::Scalar | ParamKind::Lazy => {
+                    let Some(arg_expr) =
+                        extract_non_criteria_expr(func, param, position, call_arg)?
+                    else {
+                        continue;
+                    };
+                    let arg_exp =
+                        param
+                            .param_type
+                            .to_expected_type()
+                            .map(|exp_ty| TypeExpectation {
+                                expected: exp_ty,
+                                origin: ExpectationOrigin::FunctionParam {
+                                    function: func.name(),
+                                    param: param.name,
+                                    position,
+                                },
+                            });
+                    match arg_expr {
+                        Expr::Reference(_) => {
+                            if let Some(res) = &resolved_refs[idx] {
+                                validate_resolved_scalar_ref(
+                                    arg_expr,
+                                    res,
+                                    func.name(),
+                                    param.name,
+                                    position,
+                                    param.param_type,
+                                    arg_exp,
+                                )?;
                             }
+                        }
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                            validate_param_const_domain(
+                                arg_expr,
+                                func.name(),
+                                param.name,
+                                position,
+                                param.param_type,
+                            )?;
                         }
                     }
                 }
@@ -684,6 +766,179 @@ impl FunctionRegistry {
             check_type_expectation(call_expr, vt, expected)?;
         }
         Ok(ret_vt)
+    }
+
+    fn validate_criteria_call_arg<R: ReferenceResolver>(
+        &self,
+        func: &dyn ExcelFunction,
+        idx: usize,
+        param: &ParameterDef,
+        call_arg: &CallArg,
+        resolved_refs: &[Option<ResolvedRef>],
+        resolver: &mut R,
+    ) -> Result<(), StageAError<R::Error>> {
+        let position = idx + 1;
+        let paired_range = if idx > 0 {
+            let prev_param = resolve_parameter(func, idx - 1)?;
+            if prev_param.kind == ParamKind::Range {
+                Some((idx - 1, prev_param.name))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let range_vt = if let Some((cr_idx, cr_param_name)) = paired_range
+            && let Some(res_cr) = &resolved_refs[cr_idx]
+            && let Some(cr_vals) = res_cr.values.as_deref()
+        {
+            let cr_err_types = res_cr.error_types.as_deref().unwrap_or(&[]);
+            validate_homogeneous_slice(
+                cr_vals,
+                cr_err_types,
+                func.name(),
+                cr_param_name,
+                cr_idx + 1,
+            )?
+        } else {
+            None
+        };
+
+        match call_arg {
+            CallArg::Omitted | CallArg::BlankCheck(_) => Ok(()),
+
+            CallArg::Comparator {
+                op:
+                    CriteriaComparator::Lt
+                    | CriteriaComparator::Lte
+                    | CriteriaComparator::Gt
+                    | CriteriaComparator::Gte,
+                expr: arg_expr,
+            } => {
+                if let Some((cr_idx, cr_param_name)) = paired_range
+                    && let Some(r_vt) = range_vt
+                    && r_vt != ValueType::Number
+                {
+                    return Err(StageAError::Function(FunctionError::Type(
+                        TypeError::InvalidArgumentType {
+                            function: func.name(),
+                            param: cr_param_name,
+                            position: cr_idx + 1,
+                            expected: ExpectedType::Number,
+                            found: r_vt,
+                        },
+                    )));
+                }
+                let arg_exp = Some(TypeExpectation {
+                    expected: ExpectedType::Number,
+                    origin: ExpectationOrigin::FunctionParam {
+                        function: func.name(),
+                        param: param.name,
+                        position,
+                    },
+                });
+                match arg_expr {
+                    Expr::Reference(_) => {
+                        if let Some(res) = &resolved_refs[idx] {
+                            validate_resolved_scalar_ref(
+                                arg_expr,
+                                res,
+                                func.name(),
+                                param.name,
+                                position,
+                                ParamType::Number,
+                                arg_exp,
+                            )?;
+                        }
+                    }
+                    Expr::Literal(_)
+                    | Expr::Unary { .. }
+                    | Expr::Binary { .. }
+                    | Expr::FunctionCall { .. } => {
+                        self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                    }
+                }
+                Ok(())
+            }
+
+            CallArg::Expr(arg_expr) => self.validate_equality_criteria_expr(
+                (func, idx, param),
+                range_vt,
+                0,
+                arg_expr,
+                resolved_refs[idx].as_ref(),
+                resolver,
+            ),
+
+            CallArg::Comparator {
+                op: CriteriaComparator::NotEq,
+                expr: arg_expr,
+            } => self.validate_equality_criteria_expr(
+                (func, idx, param),
+                range_vt,
+                2,
+                arg_expr,
+                resolved_refs[idx].as_ref(),
+                resolver,
+            ),
+        }
+    }
+
+    fn validate_equality_criteria_expr<R: ReferenceResolver>(
+        &self,
+        (func, idx, param): (&dyn ExcelFunction, usize, &ParameterDef),
+        range_vt: Option<ValueType>,
+        prefix_utf16_len: usize,
+        arg_expr: &Expr,
+        resolved_ref: Option<&ResolvedRef>,
+        resolver: &mut R,
+    ) -> Result<(), StageAError<R::Error>> {
+        let position = idx + 1;
+        let expected_ty = range_vt
+            .and_then(ExpectedType::from_value_type)
+            .unwrap_or(ExpectedType::NonEmpty);
+        let arg_exp = Some(TypeExpectation {
+            expected: expected_ty,
+            origin: ExpectationOrigin::FunctionParam {
+                function: func.name(),
+                param: param.name,
+                position,
+            },
+        });
+
+        match arg_expr {
+            Expr::Reference(_) => {
+                if let Some(res) = resolved_ref {
+                    validate_resolved_criteria_ref(
+                        arg_expr,
+                        res,
+                        func.name(),
+                        param.name,
+                        position,
+                        prefix_utf16_len,
+                        arg_exp,
+                    )?;
+                }
+            }
+            Expr::Literal(_)
+            | Expr::Unary { .. }
+            | Expr::Binary { .. }
+            | Expr::FunctionCall { .. } => {
+                self.validate_ast_with_resolver(arg_expr, arg_exp, resolver)?;
+                if let Expr::Literal(Literal::String(s)) = arg_expr {
+                    validate_text_criterion(s, prefix_utf16_len).map_err(|reason| {
+                        StageAError::Function(FunctionError::InvalidTextCriterion {
+                            function: func.name(),
+                            param: param.name,
+                            position,
+                            reason,
+                        })
+                    })?;
+                }
+            }
+        }
+        Ok(())
     }
 
     fn validate_branch_call<R: ReferenceResolver>(
@@ -1079,18 +1334,7 @@ impl FunctionRegistry {
 
         for (i, call_arg) in expr_args.iter().enumerate() {
             let param = resolve_parameter(func, i)?;
-
-            let arg_expr = match call_arg {
-                CallArg::Expr(expr) => expr,
-                CallArg::Omitted => {
-                    if let Some(default_val) = param.requirement.default_value() {
-                        bound.push(FunctionArg::Scalar(default_val.clone()));
-                    } else {
-                        bound.push(FunctionArg::Omitted);
-                    }
-                    continue;
-                }
-            };
+            let position = i + 1;
 
             let param_exp = param
                 .param_type
@@ -1100,15 +1344,30 @@ impl FunctionRegistry {
                     origin: ExpectationOrigin::FunctionParam {
                         function: func.name(),
                         param: param.name,
-                        position: i + 1,
+                        position,
                     },
                 });
 
             match param.kind {
+                ParamKind::Criteria => {
+                    bound.push(bind_criteria_arg(param, call_arg, ctx)?);
+                }
                 ParamKind::Lazy => {
+                    let Some(arg_expr) =
+                        extract_non_criteria_expr(func, param, position, call_arg)?
+                    else {
+                        bound.push(bind_omitted_non_criteria(param));
+                        continue;
+                    };
                     bound.push(FunctionArg::Lazy(arg_expr));
                 }
                 ParamKind::Scalar => {
+                    let Some(arg_expr) =
+                        extract_non_criteria_expr(func, param, position, call_arg)?
+                    else {
+                        bound.push(bind_omitted_non_criteria(param));
+                        continue;
+                    };
                     let val = ctx.eval_expr(arg_expr)?;
                     let mut inferred_err_vt: Option<ValueType> = None;
                     if let Some(mode_slot) = lookup_mode_slot(func.validation_policy(), i) {
@@ -1116,7 +1375,7 @@ impl FunctionRegistry {
                             &val,
                             func.name(),
                             param.name,
-                            i + 1,
+                            position,
                             ParamType::Integer,
                             EmptyValidation::RejectEmpty,
                         )?;
@@ -1141,80 +1400,177 @@ impl FunctionRegistry {
                     }
                     bound.push(bind_scalar_value(val, inferred_err_vt));
                 }
-                ParamKind::Range => match arg_expr {
-                    Expr::Reference(table_ref) => {
-                        let TypedRangeGrid {
-                            rows,
-                            cols,
-                            values,
-                            error_types,
-                            axis_role,
-                        } = ctx.eval_typed_range(arg_expr)?;
-                        let ref_kind = if table_ref.is_slice() {
-                            ReferenceKind::Slice
-                        } else {
-                            ReferenceKind::SingleCell
-                        };
-                        bound.push(FunctionArg::Array {
-                            rows,
-                            cols,
-                            values,
-                            error_types,
-                            ref_kind,
-                            axis_role,
-                        });
+                ParamKind::Range => {
+                    let Some(arg_expr) =
+                        extract_non_criteria_expr(func, param, position, call_arg)?
+                    else {
+                        bound.push(bind_omitted_non_criteria(param));
+                        continue;
+                    };
+                    match arg_expr {
+                        Expr::Reference(table_ref) => {
+                            let TypedRangeGrid {
+                                rows,
+                                cols,
+                                values,
+                                error_types,
+                                axis_role,
+                            } = ctx.eval_typed_range(arg_expr)?;
+                            let ref_kind = if table_ref.is_slice() {
+                                ReferenceKind::Slice
+                            } else {
+                                ReferenceKind::SingleCell
+                            };
+                            bound.push(FunctionArg::Array {
+                                rows,
+                                cols,
+                                values,
+                                error_types,
+                                ref_kind,
+                                axis_role,
+                            });
+                        }
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            return Err(FunctionError::InvalidArgumentKind {
+                                function: func.name(),
+                                expected: "range",
+                                found: "scalar",
+                            });
+                        }
                     }
-                    Expr::Literal(_)
-                    | Expr::Unary { .. }
-                    | Expr::Binary { .. }
-                    | Expr::FunctionCall { .. } => {
-                        return Err(FunctionError::InvalidArgumentKind {
-                            function: func.name(),
-                            expected: "range",
-                            found: "scalar",
-                        });
+                }
+                ParamKind::RangeOrArray => {
+                    let Some(arg_expr) =
+                        extract_non_criteria_expr(func, param, position, call_arg)?
+                    else {
+                        bound.push(bind_omitted_non_criteria(param));
+                        continue;
+                    };
+                    match arg_expr {
+                        Expr::Reference(table_ref) => {
+                            let TypedRangeGrid {
+                                rows,
+                                cols,
+                                values,
+                                error_types,
+                                axis_role,
+                            } = ctx.eval_typed_range(arg_expr)?;
+                            let ref_kind = if table_ref.is_slice() {
+                                ReferenceKind::Slice
+                            } else {
+                                ReferenceKind::SingleCell
+                            };
+                            bound.push(FunctionArg::Array {
+                                rows,
+                                cols,
+                                values,
+                                error_types,
+                                ref_kind,
+                                axis_role,
+                            });
+                        }
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. } => {
+                            let val = ctx.eval_expr(arg_expr)?;
+                            let inferred_err_vt = if val.is_error() {
+                                ctx.validate_dormant_expr(arg_expr, param_exp)?
+                            } else {
+                                None
+                            };
+                            bound.push(bind_scalar_value(val, inferred_err_vt));
+                        }
                     }
-                },
-                ParamKind::RangeOrArray => match arg_expr {
-                    Expr::Reference(table_ref) => {
-                        let TypedRangeGrid {
-                            rows,
-                            cols,
-                            values,
-                            error_types,
-                            axis_role,
-                        } = ctx.eval_typed_range(arg_expr)?;
-                        let ref_kind = if table_ref.is_slice() {
-                            ReferenceKind::Slice
-                        } else {
-                            ReferenceKind::SingleCell
-                        };
-                        bound.push(FunctionArg::Array {
-                            rows,
-                            cols,
-                            values,
-                            error_types,
-                            ref_kind,
-                            axis_role,
-                        });
-                    }
-                    Expr::Literal(_)
-                    | Expr::Unary { .. }
-                    | Expr::Binary { .. }
-                    | Expr::FunctionCall { .. } => {
-                        let val = ctx.eval_expr(arg_expr)?;
-                        let inferred_err_vt = if val.is_error() {
-                            ctx.validate_dormant_expr(arg_expr, param_exp)?
-                        } else {
-                            None
-                        };
-                        bound.push(bind_scalar_value(val, inferred_err_vt));
-                    }
-                },
+                }
             }
         }
 
         Ok(bound)
+    }
+}
+
+fn extract_non_criteria_expr<'a>(
+    func: &dyn ExcelFunction,
+    param: &ParameterDef,
+    position: usize,
+    call_arg: &'a CallArg,
+) -> Result<Option<&'a Expr>, FunctionError> {
+    match call_arg {
+        CallArg::Expr(expr) => Ok(Some(expr)),
+        CallArg::Omitted => Ok(None),
+        CallArg::Comparator { .. } | CallArg::BlankCheck(_) => {
+            Err(FunctionError::UnexpectedCriteriaSyntax {
+                function: func.name(),
+                param: param.name,
+                position,
+            })
+        }
+    }
+}
+
+fn bind_omitted_non_criteria<'a>(param: &ParameterDef) -> FunctionArg<'a> {
+    if let Some(default_val) = param.requirement.default_value() {
+        FunctionArg::Scalar(default_val.clone())
+    } else {
+        FunctionArg::Omitted
+    }
+}
+
+fn bind_criteria_arg<'a>(
+    param: &ParameterDef,
+    call_arg: &CallArg,
+    ctx: &dyn EvalContext,
+) -> Result<FunctionArg<'a>, FunctionError> {
+    match call_arg {
+        CallArg::Omitted => {
+            if let Some(default_val) = param.requirement.default_value() {
+                Ok(FunctionArg::Criterion(BoundCriterion::Exact(
+                    default_val.clone(),
+                )))
+            } else {
+                Ok(FunctionArg::Omitted)
+            }
+        }
+        CallArg::BlankCheck(check) => {
+            Ok(FunctionArg::Criterion(BoundCriterion::BlankCheck(*check)))
+        }
+        CallArg::Expr(arg_expr) => {
+            let val = ctx.eval_expr(arg_expr)?;
+            if let CellValue::Error(error) = val {
+                let inferred_type = ctx
+                    .validate_dormant_expr(arg_expr, None)?
+                    .filter(|vt| *vt != ValueType::Empty);
+                Ok(FunctionArg::Criterion(BoundCriterion::Errored {
+                    op: None,
+                    error,
+                    inferred_type,
+                }))
+            } else {
+                Ok(FunctionArg::Criterion(BoundCriterion::Exact(val)))
+            }
+        }
+        CallArg::Comparator { op, expr: arg_expr } => {
+            let val = ctx.eval_expr(arg_expr)?;
+            if let CellValue::Error(error) = val {
+                let inferred_type = ctx
+                    .validate_dormant_expr(arg_expr, None)?
+                    .filter(|vt| *vt != ValueType::Empty);
+                Ok(FunctionArg::Criterion(BoundCriterion::Errored {
+                    op: Some(*op),
+                    error,
+                    inferred_type,
+                }))
+            } else {
+                Ok(FunctionArg::Criterion(BoundCriterion::Comparator {
+                    op: *op,
+                    value: val,
+                }))
+            }
+        }
     }
 }
 
@@ -1272,6 +1628,58 @@ fn validate_resolved_scalar_ref(
                 param_type,
                 EmptyValidation::SkipEmpty,
             )
+        }
+        [_, _, ..] => Err(FunctionError::SliceInScalarContext {
+            rows: res.rows,
+            cols: res.cols,
+        }),
+    }
+}
+
+fn validate_resolved_criteria_ref(
+    arg_expr: &Expr,
+    res: &ResolvedRef,
+    function: &'static str,
+    param: &'static str,
+    position: usize,
+    prefix_utf16_len: usize,
+    expected: Option<TypeExpectation>,
+) -> Result<(), FunctionError> {
+    let Some(values) = res.values.as_deref() else {
+        return Ok(());
+    };
+    match values {
+        [] | [CellValue::Empty] => Ok(()),
+        [CellValue::Error(_)] => {
+            if let Some(err_vt) = res
+                .error_types
+                .as_deref()
+                .and_then(|ets| ets.first().copied().flatten())
+                .filter(|vt| *vt != ValueType::Empty)
+            {
+                check_type_expectation(arg_expr, err_vt, expected)?;
+            }
+            Ok(())
+        }
+        [val @ (CellValue::Number(_) | CellValue::Text(_) | CellValue::Boolean(_))] => {
+            let vt = match val {
+                CellValue::Number(_) => ValueType::Number,
+                CellValue::Text(_) => ValueType::Text,
+                CellValue::Boolean(_) => ValueType::Boolean,
+                CellValue::Empty | CellValue::Error(_) => return Ok(()),
+            };
+            check_type_expectation(arg_expr, vt, expected)?;
+            if let CellValue::Text(s) = val {
+                validate_text_criterion(s, prefix_utf16_len).map_err(|reason| {
+                    FunctionError::InvalidTextCriterion {
+                        function,
+                        param,
+                        position,
+                        reason,
+                    }
+                })?;
+            }
+            Ok(())
         }
         [_, _, ..] => Err(FunctionError::SliceInScalarContext {
             rows: res.rows,
@@ -1348,7 +1756,7 @@ fn extract_resolved_calendar_int(
             }
             None
         }
-        Some(CallArg::Omitted) | None => None,
+        Some(CallArg::Comparator { .. } | CallArg::BlankCheck(_) | CallArg::Omitted) | None => None,
     }
 }
 
@@ -1362,6 +1770,7 @@ fn extract_bound_calendar_int(arg: Option<&FunctionArg<'_>>) -> Option<i64> {
             FunctionArg::TypedErrorScalar { .. }
             | FunctionArg::Array { .. }
             | FunctionArg::Lazy(_)
+            | FunctionArg::Criterion(_)
             | FunctionArg::Omitted,
         )
         | None => None,
@@ -1810,7 +2219,7 @@ trait ArgSlot {
 impl ArgSlot for CallArg {
     fn presence(&self) -> ArgPresence {
         match self {
-            Self::Expr(_) => ArgPresence::Present,
+            Self::Expr(_) | Self::Comparator { .. } | Self::BlankCheck(_) => ArgPresence::Present,
             Self::Omitted => ArgPresence::Omitted,
         }
     }
@@ -1822,15 +2231,40 @@ impl ArgSlot for FunctionArg<'_> {
             Self::Scalar(_)
             | Self::TypedErrorScalar { .. }
             | Self::Array { .. }
-            | Self::Lazy(_) => ArgPresence::Present,
+            | Self::Lazy(_)
+            | Self::Criterion(_) => ArgPresence::Present,
             Self::Omitted => ArgPresence::Omitted,
         }
     }
 }
 
-/// Validates argument count, variadic pair parity, and omitted parameter eligibility against a resolved function.
+/// Validates argument count, variadic pair parity, omitted parameter eligibility, and scoped criteria syntax against a resolved function.
 fn validate_signature(func: &dyn ExcelFunction, args: &[CallArg]) -> Result<(), FunctionError> {
-    validate_arg_slots(func, args)
+    validate_arg_slots(func, args)?;
+    validate_criteria_slots(func, args)
+}
+
+/// Rejects `CallArg::Comparator` and `CallArg::BlankCheck` outside `ParamKind::Criteria` slots.
+fn validate_criteria_slots(
+    func: &dyn ExcelFunction,
+    args: &[CallArg],
+) -> Result<(), FunctionError> {
+    for (i, arg) in args.iter().enumerate() {
+        match arg {
+            CallArg::Expr(_) | CallArg::Omitted => {}
+            CallArg::Comparator { .. } | CallArg::BlankCheck(_) => {
+                let param = resolve_parameter(func, i)?;
+                if param.kind != ParamKind::Criteria {
+                    return Err(FunctionError::UnexpectedCriteriaSyntax {
+                        function: func.name(),
+                        param: param.name,
+                        position: i + 1,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Validates runtime bound argument count, variadic pair parity, omitted parameter eligibility,
@@ -1867,6 +2301,13 @@ pub(crate) fn validate_bound_args(
                     found: "lazy",
                 });
             }
+            (ParamKind::Range, FunctionArg::Criterion(_)) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "range",
+                    found: "criterion",
+                });
+            }
             (
                 ParamKind::Scalar | ParamKind::Lazy,
                 FunctionArg::Array {
@@ -1894,6 +2335,13 @@ pub(crate) fn validate_bound_args(
                     found: "array",
                 });
             }
+            (ParamKind::Scalar | ParamKind::Lazy, FunctionArg::Criterion(_)) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "scalar",
+                    found: "criterion",
+                });
+            }
             (
                 ParamKind::Scalar | ParamKind::Lazy,
                 FunctionArg::Scalar(_)
@@ -1912,6 +2360,60 @@ pub(crate) fn validate_bound_args(
                 | FunctionArg::Lazy(_),
             ) => {
                 shapes.push(Some((1, 1)));
+            }
+            (ParamKind::RangeOrArray, FunctionArg::Criterion(_)) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "range or scalar",
+                    found: "criterion",
+                });
+            }
+            (ParamKind::Criteria, FunctionArg::Criterion(_)) => {
+                shapes.push(Some((1, 1)));
+            }
+            (
+                ParamKind::Criteria,
+                FunctionArg::Array {
+                    rows,
+                    cols,
+                    ref_kind: ReferenceKind::Slice,
+                    ..
+                },
+            ) => {
+                return Err(FunctionError::SliceInScalarContext {
+                    rows: *rows,
+                    cols: *cols,
+                });
+            }
+            (
+                ParamKind::Criteria,
+                FunctionArg::Array {
+                    ref_kind: ReferenceKind::SingleCell,
+                    ..
+                },
+            ) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "criterion",
+                    found: "array",
+                });
+            }
+            (
+                ParamKind::Criteria,
+                FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. },
+            ) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "criterion",
+                    found: "scalar",
+                });
+            }
+            (ParamKind::Criteria, FunctionArg::Lazy(_)) => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: func.name(),
+                    expected: "criterion",
+                    found: "lazy",
+                });
             }
         }
     }
@@ -2007,7 +2509,7 @@ pub(crate) fn validate_bound_args(
                     )?;
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
         }
     }
 
@@ -2251,7 +2753,7 @@ fn validate_arg_slots<T: ArgSlot>(
 
 /// Resolves the expected parameter definition for a given 0-indexed argument position,
 /// applying cyclical pairs alternation when `VariadicRule::Pairs` is enabled.
-fn resolve_parameter(
+pub(crate) fn resolve_parameter(
     func: &dyn ExcelFunction,
     index: usize,
 ) -> Result<&ParameterDef, FunctionError> {

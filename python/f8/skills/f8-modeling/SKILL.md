@@ -34,12 +34,12 @@ CLI commands (`f8` or `python -m f8`):
 ## Core Invariants
 
 - Explicit 2D coordinates: All references require bare table identifier or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) raise `FormulaParseError`.
-- Uppercase identifiers: Built-in functions (`SUM`, `IF`, `XLOOKUP`) and booleans (`TRUE`, `FALSE`) must be uppercase.
+- Uppercase identifiers: Built-in functions (`SUM`, `IF`, `XLOOKUP`, `ERROR.TYPE`), booleans (`TRUE`, `FALSE`), and `*IFS` blank criteria (`BLANK`, `NOT_BLANK`) must be uppercase.
 - Argument omission: Use `_` strictly for intermediate optional function parameters followed by a later explicit argument (`PMT(rate, nper, pv, _, type)`); omit trailing optional parameters directly (`PMT(rate, nper, pv)`, not `PMT(rate, nper, pv, _)`).
 - Cell-level indentation: `indent` is restricted to `role="descriptor"` cells (`Cell("Label", indent=1)`) and section headers; setting `indent > 0` on a `measure` cell raises `SpecificationError`.
 
 ## Reference Index
 
 - `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`get_sheet`, `get_table`, `set_cell`, `set_cells`), 2D coordinate grammar, 3-tier resolution rules, layout placement, formatting presets, and themes.
-- `references/functions.md`: 45 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, `*IFS` criteria grammar, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
+- `references/functions.md`: 48 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, typed `*IFS` criteria grammar, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, `MarkdownTable` and dictionary/DataFrame exports, `TypedDict` inspection schemas, and `F8Error` exception attributes.

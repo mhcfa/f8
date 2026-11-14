@@ -25,7 +25,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 45);
+    assert_eq!(registry.len(), 48);
     assert!(registry.lookup("SWITCH").is_none());
 
     let expected_functions = [
@@ -65,6 +65,9 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("XMATCH", FunctionCategory::Lookup),
         ("INDEX", FunctionCategory::Lookup),
         ("ISBLANK", FunctionCategory::Information),
+        ("ISERROR", FunctionCategory::Information),
+        ("ISNA", FunctionCategory::Information),
+        ("ERROR.TYPE", FunctionCategory::Information),
         ("NA", FunctionCategory::Information),
     ];
 

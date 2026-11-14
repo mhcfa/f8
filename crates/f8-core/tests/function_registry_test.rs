@@ -3,16 +3,19 @@
 use std::cell::RefCell;
 
 use f8_core::expr::ast::{
-    CallArg, ColEndpoint, ColSelector, Expr, Literal, RowEndpoint, RowSelector, TableRef, UnaryOp,
+    BlankCheck, CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal, RowEndpoint,
+    RowSelector, TableRef, UnaryOp,
 };
 use f8_core::functions::common::eval_branch_arg;
 use f8_core::functions::{
-    BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory, FunctionError,
-    FunctionRegistry, LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef,
-    ReferenceKind, RolePolicy, ShapePolicy, StageAError, ValidationPolicy,
+    BoundCriterion, BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory,
+    FunctionError, FunctionRegistry, LookupPolicy, ParamKind, ParamRequirement, ParamType,
+    ParameterDef, ReferenceKind, RolePolicy, ShapePolicy, StageAError, ValidationPolicy,
 };
 use f8_core::model::table::{AxisRole, ValueLiteral};
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{
+    CellValue, ExcelError, ExpectedType, TextCriterionError, TypeError, ValueType,
+};
 
 /// Mock evaluation context tracking evaluated expressions.
 #[derive(Default)]
@@ -794,7 +797,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 45);
+    assert_eq!(registry.len(), 48);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -845,6 +848,9 @@ fn test_registry_metadata_and_iteration() {
             "DAY",
             "DAYS",
             "ISBLANK",
+            "ISERROR",
+            "ISNA",
+            "ERROR.TYPE",
             "NA",
         ]
     );
@@ -867,7 +873,7 @@ fn test_registry_metadata_and_iteration() {
     assert!(registry.get("UNKNOWN_FN").is_none());
     assert!(registry.get("unknown_fn").is_none());
 
-    // Exhaustive ValidationPolicy matrix across all 45 standard functions
+    // Exhaustive ValidationPolicy matrix across all 48 standard functions
     let mut non_standard_count = 0usize;
     for (name, func) in registry.iter() {
         let expected_policy = match name {
@@ -1237,7 +1243,7 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
         })
     );
 
-    // Direct required-parameter FunctionArg::Omitted calls fail across SUM, ABS, and all 45 functions
+    // Direct required-parameter FunctionArg::Omitted calls fail across SUM, ABS, and all 48 functions
     let sum_fn = registry.lookup("SUM").unwrap();
     assert_eq!(
         sum_fn.evaluate(&[FunctionArg::Omitted], &ctx),
@@ -2232,6 +2238,318 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
         assert!(
             registry.validate_expr(&expr).is_ok(),
             "expected Stage A ok on '{valid_formula}'"
+        );
+    }
+}
+
+#[test]
+fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
+    let registry = FunctionRegistry::standard();
+    let ctx = MockEvalContext::default();
+
+    // Exclusive ParamKind::Criteria metadata on *IFS functions
+    for (name, func) in registry.iter() {
+        let criteria_params: Vec<&str> = func
+            .parameters()
+            .iter()
+            .filter(|p| p.kind == ParamKind::Criteria)
+            .map(|p| p.name)
+            .collect();
+        if matches!(
+            name,
+            "SUMIFS" | "COUNTIFS" | "AVERAGEIFS" | "MINIFS" | "MAXIFS"
+        ) {
+            assert_eq!(criteria_params, vec!["criteria1"], "mismatch on {name}");
+        } else {
+            assert!(
+                criteria_params.is_empty(),
+                "unexpected ParamKind::Criteria on {name}"
+            );
+        }
+    }
+
+    // Error introspection metadata and evaluation
+    for (name, expected_ret) in [
+        ("ISERROR", ValueType::Boolean),
+        ("ISNA", ValueType::Boolean),
+        ("ERROR.TYPE", ValueType::Number),
+    ] {
+        let func = registry.lookup(name).unwrap();
+        assert_eq!(func.name(), name);
+        assert_eq!(func.category(), FunctionCategory::Information);
+        assert_eq!(func.min_args(), 1);
+        assert_eq!(func.max_args(), Some(1));
+        assert_eq!(func.return_type(), Some(expected_ret));
+        assert_eq!(func.parameters()[0].kind, ParamKind::Scalar);
+        assert_eq!(func.parameters()[0].param_type, ParamType::Any);
+    }
+
+    let iserror = registry.lookup("ISERROR").unwrap();
+    let isna = registry.lookup("ISNA").unwrap();
+    let err_type = registry.lookup("ERROR.TYPE").unwrap();
+
+    for (err, expected_code, expected_isna) in [
+        (ExcelError::Div0, 2.0, false),
+        (ExcelError::Value, 3.0, false),
+        (ExcelError::Ref, 4.0, false),
+        (ExcelError::Name, 5.0, false),
+        (ExcelError::Num, 6.0, false),
+        (ExcelError::Na, 7.0, true),
+    ] {
+        let scalar_err = FunctionArg::Scalar(CellValue::Error(err));
+        assert_eq!(
+            iserror.evaluate(std::slice::from_ref(&scalar_err), &ctx),
+            Ok(CellValue::Boolean(true))
+        );
+        assert_eq!(
+            isna.evaluate(std::slice::from_ref(&scalar_err), &ctx),
+            Ok(CellValue::Boolean(expected_isna))
+        );
+        assert_eq!(
+            err_type.evaluate(std::slice::from_ref(&scalar_err), &ctx),
+            Ok(CellValue::Number(expected_code))
+        );
+
+        let typed_err = FunctionArg::TypedErrorScalar {
+            error: err,
+            inferred_type: ValueType::Number,
+        };
+        assert_eq!(
+            iserror.evaluate(std::slice::from_ref(&typed_err), &ctx),
+            Ok(CellValue::Boolean(true))
+        );
+        assert_eq!(
+            isna.evaluate(std::slice::from_ref(&typed_err), &ctx),
+            Ok(CellValue::Boolean(expected_isna))
+        );
+        assert_eq!(
+            err_type.evaluate(std::slice::from_ref(&typed_err), &ctx),
+            Ok(CellValue::Number(expected_code))
+        );
+    }
+
+    for non_err in [
+        CellValue::Number(42.0),
+        CellValue::Text("#DIV/0!".into()),
+        CellValue::Boolean(true),
+        CellValue::Empty,
+    ] {
+        let arg = FunctionArg::Scalar(non_err);
+        assert_eq!(
+            iserror.evaluate(std::slice::from_ref(&arg), &ctx),
+            Ok(CellValue::Boolean(false))
+        );
+        assert_eq!(
+            isna.evaluate(std::slice::from_ref(&arg), &ctx),
+            Ok(CellValue::Boolean(false))
+        );
+        assert_eq!(
+            err_type.evaluate(std::slice::from_ref(&arg), &ctx),
+            Ok(CellValue::Error(ExcelError::Na))
+        );
+    }
+
+    // UnexpectedCriteriaSyntax outside ParamKind::Criteria slots (active and dormant)
+    for (formula, fn_name, param_name, pos) in [
+        ("ABS(> 5)", "ABS", "number", 1),
+        ("IF(> 5, 1, 2)", "IF", "logical_test", 1),
+        ("SUM(BLANK)", "SUM", "number1", 1),
+        (
+            "SUMIFS(> 5, T[\"r1\"..\"r2\", @col], 1)",
+            "SUMIFS",
+            "sum_range",
+            1,
+        ),
+        ("COUNTIFS(NOT_BLANK, 1)", "COUNTIFS", "criteria_range1", 1),
+        ("IF(TRUE, 1, ABS(NOT_BLANK))", "ABS", "number", 1),
+        ("ISERROR(BLANK)", "ISERROR", "value", 1),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr),
+            Err(FunctionError::UnexpectedCriteriaSyntax {
+                function: fn_name,
+                param: param_name,
+                position: pos,
+            }),
+            "expected UnexpectedCriteriaSyntax on {formula}"
+        );
+    }
+
+    // SliceInScalarContext on ISERROR, ISNA, ERROR.TYPE, and *IFS criteria operands
+    for formula in [
+        "ISERROR(T[\"r1\"..\"r2\", @col])",
+        "ISNA(T[\"r1\"..\"r2\", @col])",
+        "ERROR.TYPE(T[\"r1\"..\"r2\", @col])",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], <= T[\"r1\"..\"r2\", @col])",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], T[\"r1\"..\"r2\", @col])",
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert!(
+            matches!(
+                registry.validate_expr(&expr),
+                Err(FunctionError::SliceInScalarContext { .. })
+            ),
+            "expected SliceInScalarContext on {formula}"
+        );
+    }
+
+    // Compile-time type errors inside ISERROR are not masked
+    let bad_iserror = Expr::parse("ISERROR(\"5\" + 1)").unwrap();
+    assert!(matches!(
+        registry.validate_expr(&bad_iserror),
+        Err(FunctionError::Type(_))
+    ));
+
+    // validate_bound_args rejects FunctionArg::Criterion in non-criteria slots
+    let abs_func = registry.lookup("ABS").unwrap();
+    assert_eq!(
+        abs_func.evaluate(
+            &[FunctionArg::Criterion(BoundCriterion::BlankCheck(
+                BlankCheck::Blank
+            ))],
+            &ctx
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "ABS",
+            expected: "scalar",
+            found: "criterion",
+        })
+    );
+
+    // Stage A constant ordering type checks and text criterion validation
+    for (formula, expected_err) in [
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], > \"Alpha\")",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                expected: ExpectedType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], >= TRUE)",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                expected: ExpectedType::Number,
+                found: ValueType::Boolean,
+            }),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::EmptyString,
+            },
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"A*\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::ContainsWildcardOrEscape,
+            },
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], \">15\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::LeadingOperatorPrefix,
+            },
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"10%\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::CoercibleNumericString,
+            },
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"2024-01-01\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::CoercibleDateOrTimeString,
+            },
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"TRUE\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::CoercibleBooleanString,
+            },
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"#DIV/0!\")",
+            FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: TextCriterionError::CoercibleErrorString,
+            },
+        ),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr),
+            Err(expected_err),
+            "mismatch on {formula}"
+        );
+    }
+
+    // Valid typed criteria expressions pass Stage A
+    for valid in [
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], > 15)",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], >= -10)",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], <= T[\"cutoff\", @col])",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"Alpha\")",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> (10 > 5))",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], 10 > 5)",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], BLANK)",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], NOT_BLANK)",
+        "ERROR.TYPE(1 / 0)",
+    ] {
+        let expr = Expr::parse(valid).unwrap();
+        assert!(
+            registry.validate_expr(&expr).is_ok(),
+            "expected Stage A ok on {valid}"
+        );
+    }
+
+    // Confirm BoundCriterion::Comparator variant constructible and bound cleanly
+    let countifs = registry.lookup("COUNTIFS").unwrap();
+    let crit_expr = Expr::parse("COUNTIFS(T[\"r1\"..\"r2\", @col], >= 10)").unwrap();
+    if let Expr::FunctionCall { args, .. } = &crit_expr {
+        let ctx_range = MockEvalContext::with_range(
+            1,
+            2,
+            vec![CellValue::Number(5.0), CellValue::Number(15.0)],
+        );
+        let bound = registry.bind_arguments(countifs, args, &ctx_range).unwrap();
+        assert_eq!(
+            bound[1],
+            FunctionArg::Criterion(BoundCriterion::Comparator {
+                op: CriteriaComparator::Gte,
+                value: CellValue::Number(10.0),
+            })
+        );
+        assert_eq!(
+            countifs.evaluate(&bound, &ctx_range),
+            Ok(CellValue::Number(1.0))
         );
     }
 }

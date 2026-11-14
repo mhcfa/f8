@@ -38,6 +38,19 @@ impl ExcelError {
             Self::Name => "#NAME?",
         }
     }
+
+    /// Returns the numeric `ERROR.TYPE` code for this Excel error (`2.0..=7.0`).
+    #[must_use]
+    pub const fn error_type_code(self) -> f64 {
+        match self {
+            Self::Div0 => 2.0,
+            Self::Value => 3.0,
+            Self::Ref => 4.0,
+            Self::Name => 5.0,
+            Self::Num => 6.0,
+            Self::Na => 7.0,
+        }
+    }
 }
 
 /// Error returned when parsing an unrecognized Excel error literal.
@@ -228,6 +241,41 @@ pub enum TypeError {
     },
 }
 
+/// Validation failure reasons for `Text` criteria in conditional aggregation (`*IFS`) functions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum TextCriterionError {
+    /// Empty string `""` passed instead of `BLANK` or `NOT_BLANK`.
+    #[error("empty string criterion \"\" is ambiguous in Excel *IFS; use BLANK or NOT_BLANK")]
+    EmptyString,
+    /// Contains Excel wildcard or escape characters (`*`, `?`, `~`).
+    #[error("text criterion cannot contain Excel wildcard or escape characters ('*', '?', '~')")]
+    ContainsWildcardOrEscape,
+    /// Starts with a comparison operator character (`=`, `<`, `>`).
+    #[error(
+        "text criterion cannot start with comparison operator ('=', '<', '>'); use a typed comparator expression"
+    )]
+    LeadingOperatorPrefix,
+    /// Criterion exceeds Excel's 255-UTF-16-code-unit `*IFS` limit.
+    #[error("text criterion exceeds Excel's 255-character *IFS limit")]
+    TooLong,
+    /// Criterion trims/parses as a number, percentage, currency, grouped/parenthesized number, or mixed fraction in Excel `*IFS`.
+    #[error("text criterion parses as a number, percentage, currency, or fraction in Excel *IFS")]
+    CoercibleNumericString,
+    /// Criterion trims/parses as a date or time in Excel `*IFS`.
+    #[error(
+        "text criterion parses as a date or time in Excel *IFS; use numeric DATE serials instead"
+    )]
+    CoercibleDateOrTimeString,
+    /// Criterion trims/parses as a boolean in Excel `*IFS`.
+    #[error("text criterion parses as a boolean in Excel *IFS and would fail to match text")]
+    CoercibleBooleanString,
+    /// Criterion trims/parses as an Excel error literal in `*IFS`.
+    #[error(
+        "text criterion parses as an Excel error literal in *IFS; use ISERROR, ISNA, or ERROR.TYPE for error checks"
+    )]
+    CoercibleErrorString,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +299,15 @@ mod tests {
         assert_eq!("#N/A".parse::<ExcelError>(), Ok(ExcelError::Na));
         assert_eq!("#NAME?".parse::<ExcelError>(), Ok(ExcelError::Name));
         assert!("#UNKNOWN!".parse::<ExcelError>().is_err());
+    }
+
+    #[test]
+    fn test_excel_error_type_codes() {
+        assert_eq!(ExcelError::Div0.error_type_code(), 2.0);
+        assert_eq!(ExcelError::Value.error_type_code(), 3.0);
+        assert_eq!(ExcelError::Ref.error_type_code(), 4.0);
+        assert_eq!(ExcelError::Name.error_type_code(), 5.0);
+        assert_eq!(ExcelError::Num.error_type_code(), 6.0);
+        assert_eq!(ExcelError::Na.error_type_code(), 7.0);
     }
 }

@@ -145,7 +145,12 @@ impl Compiler {
         let evaluated = eval::Evaluator::evaluate(&grid, &graph, &symbol_table, registry)?;
         let layout_map =
             layout::LayoutPlanner::plan(manifest, tables, &grid, &theme, Some(&evaluated))?;
-        let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, &layout_map)?;
+        let lowered_map = lowering::FormulaLowerer::lower_grid_with_registry(
+            &grid,
+            &symbol_table,
+            &layout_map,
+            registry,
+        )?;
 
         let tables_map = tables.iter().map(|t| (t.id.clone(), t.clone())).collect();
 

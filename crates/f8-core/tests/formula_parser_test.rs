@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::expr::{
-    BinaryOp, CallArg, ColEndpoint, ColSelector, Expr, ParseError, RelativeOffset, RowEndpoint,
-    RowSelector, TableRef, TableSelector,
+    BinaryOp, BlankCheck, CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, ParseError,
+    RelativeOffset, RowEndpoint, RowSelector, TableRef, TableSelector,
 };
 use f8_core::model::id::{ColId, RowId, TableId};
 
@@ -484,5 +484,111 @@ fn test_cluster_a1_scenario_1_grammar_strictness() {
         let displayed = parsed.to_string();
         assert_eq!(displayed, valid, "Display roundtrip mismatch for '{valid}'");
         assert_eq!(Expr::parse(&displayed).unwrap(), parsed);
+    }
+}
+
+#[test]
+fn test_cluster_c_scenario_1_criteria_grammar_roundtrip_and_diagnostics() {
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic};
+
+    let roundtrip_cases = [
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], > 15)",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], >= -10)",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], <= Summary[\"cutoff\", @col])",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], <> \"Alpha\")",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], <> (T[\"a\", @col] > T[\"b\", @col]))",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], T[\"a\", @col] > T[\"b\", @col])",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], BLANK)",
+        "COUNTIFS(T[\"r1\"..\"r4\", @col], NOT_BLANK)",
+        "COUNTIFS(BLANK[\"r1\"..\"r4\", @col], NOT_BLANK[\"r1\", @col])",
+        "ERROR.TYPE(1 / 0)",
+    ];
+
+    for formula in roundtrip_cases {
+        let parsed = Expr::parse(formula).unwrap_or_else(|e| panic!("'{formula}' must parse: {e}"));
+        let displayed = parsed.to_string();
+        assert_eq!(displayed, formula, "Display mismatch for '{formula}'");
+        let reparsed = Expr::parse(&displayed).unwrap();
+        assert_eq!(reparsed, parsed, "Round-trip AST mismatch for '{formula}'");
+    }
+
+    // Programmatic relational Comparator AST parenthesizes operand in Display for round-trip equality
+    let programmatic = Expr::FunctionCall {
+        name: "COUNTIFS".into(),
+        args: vec![
+            CallArg::Expr(Expr::Reference(TableRef::new(
+                TableSelector::from("T"),
+                RowSelector::Range(RowEndpoint::from("r1"), RowEndpoint::from("r2")),
+                ColSelector::Active,
+            ))),
+            CallArg::Comparator {
+                op: CriteriaComparator::NotEq,
+                expr: Expr::Binary {
+                    op: BinaryOp::Gt,
+                    left: Box::new(Expr::number(10.0)),
+                    right: Box::new(Expr::number(5.0)),
+                },
+            },
+            CallArg::BlankCheck(BlankCheck::Blank),
+        ],
+    };
+    let rendered = programmatic.to_string();
+    assert_eq!(
+        rendered,
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> (10 > 5), BLANK)"
+    );
+    assert_eq!(Expr::parse(&rendered).unwrap(), programmatic);
+
+    // Redundant '=' prefix fails with RedundantCriteriaEquals and exact token_offset
+    let redundant_eq = "COUNTIFS(T[\"r1\"..\"r2\", @col], = 10)";
+    let expected_offset = redundant_eq.find('=').unwrap();
+    let parse_err = Expr::parse(redundant_eq).unwrap_err();
+    assert_eq!(
+        parse_err,
+        ParseError::RedundantCriteriaEquals {
+            offset: expected_offset,
+        }
+    );
+    let comp_err = CompilerError::Ir(f8_core::compiler::ir::IrError::FormulaParse {
+        table: TableId::from("T"),
+        row: Some(RowId::from("r1")),
+        column: Some(ColId::from("c1")),
+        source: parse_err,
+    });
+    assert_eq!(
+        comp_err.diagnostic(),
+        ErrorDiagnostic::FormulaParseError {
+            message: comp_err.to_string(),
+            table: "T".into(),
+            row: Some("r1".into()),
+            col: Some("c1".into()),
+            token_offset: Some(expected_offset),
+        }
+    );
+
+    // Unparenthesized trailing relational operator after comparator raises ChainedComparison
+    let chained =
+        Expr::parse("COUNTIFS(T[\"r1\"..\"r2\", @col], <> T[\"a\", @col] = T[\"b\", @col])")
+            .unwrap_err();
+    assert!(matches!(
+        chained,
+        ParseError::ChainedComparison { operator: "=", .. }
+    ));
+
+    // Lowercase blank/not_blank and malformed dotted function names fail parsing
+    for bad in [
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], blank)",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], not_blank)",
+        "ERROR . TYPE(1)",
+        "ERROR. TYPE(1)",
+        "ERROR .TYPE(1)",
+        "ERROR..TYPE(1)",
+        "error.type(1)",
+        "ERROR.type(1)",
+        "> 5",
+        "BLANK",
+        "NOT_BLANK",
+    ] {
+        assert!(Expr::parse(bad).is_err(), "expected parse error on '{bad}'");
     }
 }

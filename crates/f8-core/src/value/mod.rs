@@ -10,7 +10,10 @@ pub use date::{
     DateSerial, DateTuple, EXCEL_1900_LEAP_DAY_SERIAL, MAX_EXCEL_SERIAL, MIN_INPUT_DATE_SERIAL,
     UNIX_EPOCH_SERIAL, is_valid_input_date_serial, validate_date_serial,
 };
-pub use error::{ExcelError, ExpectedType, ParseExcelError, StrictIntError, TypeError, ValueType};
+pub use error::{
+    ExcelError, ExpectedType, ParseExcelError, StrictIntError, TextCriterionError, TypeError,
+    ValueType,
+};
 pub use format::{format_accounting_number, format_cell_value};
 
 use std::cmp::Ordering;
@@ -43,6 +46,427 @@ pub(crate) fn parse_excel_number(s: &str) -> Option<f64> {
         return None;
     }
     Some(normalize_zero(num))
+}
+
+/// Rounds a finite non-zero `f64` to 15 significant decimal digits (half-away-from-zero),
+/// returning `(is_negative, trimmed_mantissa_digits, base10_exponent)`.
+fn round_to_15_sig_digits(val: f64) -> Option<(bool, String, i32)> {
+    if !val.is_finite() || val == 0.0 {
+        return None;
+    }
+    let is_neg = val.is_sign_negative();
+    let sci = format!("{:.35e}", val.abs());
+    let (coeff, exp_str) = sci.split_once('e')?;
+    let mut exp10 = exp_str.parse::<i32>().ok()?;
+
+    let mut sig15: u64 = 0;
+    let mut d16: u64 = 0;
+    let mut digit_idx = 0usize;
+    for b in coeff.bytes() {
+        if b == b'.' {
+            continue;
+        }
+        if !b.is_ascii_digit() {
+            return None;
+        }
+        let d = u64::from(b - b'0');
+        if digit_idx < 15 {
+            sig15 = sig15 * 10 + d;
+        } else if digit_idx == 15 {
+            d16 = d;
+            break;
+        }
+        digit_idx += 1;
+    }
+
+    if d16 >= 5 {
+        sig15 += 1;
+        if sig15 == 1_000_000_000_000_000 {
+            sig15 = 100_000_000_000_000;
+            exp10 += 1;
+        }
+    }
+    if exp10 == 308 && sig15 > 179_769_313_486_231 {
+        sig15 = 179_769_313_486_231;
+    }
+
+    let raw_digits = sig15.to_string();
+    let trimmed = raw_digits.trim_end_matches('0').to_string();
+    Some((is_neg, trimmed, exp10))
+}
+
+/// Normalizes a finite `f64` comparator threshold to Excel's 15-significant-digit decimal value
+/// (half-away-from-zero, `-0.0` normalized to `0.0`).
+#[must_use]
+pub fn normalize_criteria_number(val: f64) -> f64 {
+    let norm = normalize_zero(val);
+    if !norm.is_finite() || norm == 0.0 {
+        return norm;
+    }
+    let formatted = format_criteria_number(norm);
+    match formatted.parse::<f64>() {
+        Ok(parsed) => normalize_zero(parsed),
+        Err(_) => f64::NAN,
+    }
+}
+
+/// Formats a finite `f64` comparator literal using Excel's 15-significant-digit decimal representation,
+/// emitting uppercase `E` scientific notation on extreme exponents to stay compact (`<= 23` chars).
+#[must_use]
+pub fn format_criteria_number(val: f64) -> String {
+    let norm = normalize_zero(val);
+    if !norm.is_finite() {
+        return norm.to_string();
+    }
+    if norm == 0.0 {
+        return "0".to_string();
+    }
+    let Some((is_neg, digits, exp10)) = round_to_15_sig_digits(norm) else {
+        return "0".to_string();
+    };
+    let sign = if is_neg { "-" } else { "" };
+    if (0..15).contains(&exp10) {
+        let int_len = (exp10 + 1) as usize;
+        if let (Some(int_part), Some(frac_part)) = (digits.get(..int_len), digits.get(int_len..))
+            && !frac_part.is_empty()
+        {
+            format!("{sign}{int_part}.{frac_part}")
+        } else {
+            let zeros = "0".repeat(int_len.saturating_sub(digits.len()));
+            format!("{sign}{digits}{zeros}")
+        }
+    } else if (-6..0).contains(&exp10) {
+        let leading_zeros = "0".repeat((-exp10 - 1) as usize);
+        format!("{sign}0.{leading_zeros}{digits}")
+    } else if let (Some(first), Some(rest)) = (digits.get(..1), digits.get(1..))
+        && !rest.is_empty()
+    {
+        format!("{sign}{first}.{rest}E{exp10}")
+    } else {
+        format!("{sign}{digits}E{exp10}")
+    }
+}
+
+const EXCEL_ERROR_LITERALS: &[&str] = &[
+    "#NULL!",
+    "#DIV/0!",
+    "#VALUE!",
+    "#REF!",
+    "#NAME?",
+    "#NUM!",
+    "#N/A",
+    "#GETTING_DATA",
+    "#SPILL!",
+    "#CALC!",
+    "#FIELD!",
+    "#BLOCKED!",
+    "#UNKNOWN!",
+    "#CONNECT!",
+    "#PYTHON!",
+];
+
+fn is_excel_error_literal(trimmed: &str) -> bool {
+    EXCEL_ERROR_LITERALS
+        .iter()
+        .any(|lit| trimmed.eq_ignore_ascii_case(lit))
+}
+
+fn strip_digit_group_commas(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    for (idx, ch) in s.char_indices() {
+        if ch == ','
+            && idx
+                .checked_sub(1)
+                .and_then(|prev| bytes.get(prev))
+                .is_some_and(u8::is_ascii_digit)
+            && bytes.get(idx + 1).is_some_and(u8::is_ascii_digit)
+        {
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
+
+fn is_coercible_numeric_string(trimmed: &str) -> bool {
+    if trimmed.is_empty() {
+        return false;
+    }
+    if parse_excel_number(trimmed).is_some() {
+        return true;
+    }
+
+    // Formatted numeric tokens: outer accounting (...), +/-, %, $/€/£/¥, and ',' between digits.
+    let mut cur = trimmed;
+    let mut used_parens = false;
+    let mut used_sign = false;
+    let mut used_curr = false;
+    let mut used_pct = false;
+    loop {
+        cur = cur.trim();
+        if !used_parens && let Some(rest) = cur.strip_prefix('(').and_then(|r| r.strip_suffix(')'))
+        {
+            cur = rest;
+            used_parens = true;
+            continue;
+        }
+        if !used_sign {
+            if let Some(rest) = cur.strip_prefix(['+', '-']) {
+                cur = rest;
+                used_sign = true;
+                continue;
+            }
+            if let Some(rest) = cur.strip_suffix(['+', '-']) {
+                cur = rest;
+                used_sign = true;
+                continue;
+            }
+        }
+        if !used_curr {
+            if let Some(rest) = cur.strip_prefix(['$', '€', '£', '¥']) {
+                cur = rest;
+                used_curr = true;
+                continue;
+            }
+            if let Some(rest) = cur.strip_suffix(['$', '€', '£', '¥']) {
+                cur = rest;
+                used_curr = true;
+                continue;
+            }
+        }
+        if !used_pct {
+            if let Some(rest) = cur.strip_prefix('%') {
+                cur = rest;
+                used_pct = true;
+                continue;
+            }
+            if let Some(rest) = cur.strip_suffix('%') {
+                cur = rest;
+                used_pct = true;
+                continue;
+            }
+        }
+        break;
+    }
+    let degrouped = strip_digit_group_commas(cur.trim());
+    if !degrouped.is_empty() && parse_excel_number(&degrouped).is_some() {
+        return true;
+    }
+
+    // Mixed ASCII-digit fractions: [-]INT NUM/DEN (e.g. "1 1/2")
+    let unsigned = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
+    let mut parts = unsigned.split_ascii_whitespace();
+    if let (Some(int_part), Some(frac_part), None) = (parts.next(), parts.next(), parts.next())
+        && !int_part.is_empty()
+        && int_part.bytes().all(|b| b.is_ascii_digit())
+        && let Some((num, den)) = frac_part.split_once('/')
+        && !num.is_empty()
+        && !den.is_empty()
+        && num.bytes().all(|b| b.is_ascii_digit())
+        && den.bytes().all(|b| b.is_ascii_digit())
+    {
+        return true;
+    }
+
+    false
+}
+
+fn is_english_month_token(tok: &str) -> bool {
+    const MONTHS: &[&str] = &[
+        "jan",
+        "january",
+        "feb",
+        "february",
+        "mar",
+        "march",
+        "apr",
+        "april",
+        "may",
+        "jun",
+        "june",
+        "jul",
+        "july",
+        "aug",
+        "august",
+        "sep",
+        "sept",
+        "september",
+        "oct",
+        "october",
+        "nov",
+        "november",
+        "dec",
+        "december",
+    ];
+    MONTHS.iter().any(|m| tok.eq_ignore_ascii_case(m))
+}
+
+fn is_digits_or_decimal_seconds(s: &str) -> bool {
+    if let Some((sec, frac)) = s.split_once('.') {
+        !sec.is_empty()
+            && !frac.is_empty()
+            && sec.bytes().all(|b| b.is_ascii_digit())
+            && frac.bytes().all(|b| b.is_ascii_digit())
+    } else {
+        !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+    }
+}
+
+fn strip_ascii_am_pm(s: &str) -> Option<&str> {
+    if let [.., b1, b2] = s.as_bytes()
+        && matches!(
+            [b1.to_ascii_lowercase(), b2.to_ascii_lowercase()],
+            [b'a', b'm'] | [b'p', b'm']
+        )
+    {
+        s.get(..s.len() - 2)
+    } else {
+        None
+    }
+}
+
+fn is_clock_time_token(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() {
+        return false;
+    }
+    if t.contains(':') {
+        let without_meridiem = if let Some(rest) = strip_ascii_am_pm(t) {
+            rest.trim_end()
+        } else if let Some(rest) = t.strip_suffix(['a', 'A', 'p', 'P']) {
+            rest.trim_end()
+        } else {
+            t
+        };
+        let segs: Vec<&str> = without_meridiem.split(':').collect();
+        match segs.as_slice() {
+            [h, m] => {
+                !h.is_empty()
+                    && h.bytes().all(|b| b.is_ascii_digit())
+                    && is_digits_or_decimal_seconds(m)
+            }
+            [h, m, sec] => {
+                !h.is_empty()
+                    && h.bytes().all(|b| b.is_ascii_digit())
+                    && !m.is_empty()
+                    && m.bytes().all(|b| b.is_ascii_digit())
+                    && is_digits_or_decimal_seconds(sec)
+            }
+            [] | [_] | [_, _, _, ..] => false,
+        }
+    } else if let Some(rest) = strip_ascii_am_pm(t) {
+        let digits = rest.trim_end();
+        !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+    } else {
+        false
+    }
+}
+
+fn is_uniform_digit_date_segments(date_part: &str) -> bool {
+    let has_slash = date_part.contains('/');
+    let has_hyphen = date_part.contains('-');
+    let sep = match (has_slash, has_hyphen) {
+        (true, false) => '/',
+        (false, true) => '-',
+        (true, true) | (false, false) => return false,
+    };
+    let segs: Vec<&str> = date_part.split(sep).collect();
+    matches!(segs.len(), 2 | 3)
+        && segs
+            .iter()
+            .all(|seg| !seg.is_empty() && seg.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn is_english_month_date_segments(s: &str) -> bool {
+    let mut month_count = 0usize;
+    let mut digit_count = 0usize;
+    let mut other_count = 0usize;
+    for tok in s
+        .split(|c: char| matches!(c, '/' | '-' | ',') || c.is_ascii_whitespace())
+        .filter(|tok| !tok.is_empty())
+    {
+        if is_english_month_token(tok) {
+            month_count += 1;
+        } else if tok.bytes().all(|b| b.is_ascii_digit()) {
+            digit_count += 1;
+        } else {
+            other_count += 1;
+        }
+    }
+    other_count == 0 && month_count == 1 && digit_count >= 1
+}
+
+fn is_coercible_date_or_time_string(trimmed: &str) -> bool {
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // 1. 2 or 3 non-empty ASCII-digit segments separated uniformly by '/' or '-'
+    //    with optional ' ' / 'T' clock-time suffix.
+    if is_uniform_digit_date_segments(trimmed) {
+        return true;
+    }
+    if let Some((date_part, rest)) = trimmed.split_once([' ', 'T', 't']) {
+        let raw_time = rest.trim();
+        let time_part = raw_time.strip_suffix(['Z', 'z']).unwrap_or(raw_time);
+        if is_uniform_digit_date_segments(date_part) && is_clock_time_token(time_part) {
+            return true;
+        }
+    }
+
+    // 2. Clock time tokens: H:MM[:SS[.fff]] [AM|PM|A|P] or DIGITS[ ]AM|PM
+    if is_clock_time_token(trimmed) {
+        return true;
+    }
+
+    // 3. English month-name/abbreviation paired solely with >= 1 '/', '-', ',', or space-separated ASCII-digit tokens
+    //    (with optional trailing clock-time suffix).
+    if is_english_month_date_segments(trimmed) {
+        return true;
+    }
+    for (idx, ch) in trimmed.char_indices() {
+        if ch.is_ascii_whitespace()
+            && let (Some(date_part), Some(rest)) = (trimmed.get(..idx), trimmed.get(idx + 1..))
+            && is_english_month_date_segments(date_part.trim())
+            && is_clock_time_token(rest.trim())
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Validates a `Text` criterion string for conditional aggregation (`*IFS`) functions.
+///
+/// `prefix_utf16_len` is `0` for exact criteria and `2` (`"<>".len()`) for `NotEq` criteria.
+pub fn validate_text_criterion(s: &str, prefix_utf16_len: usize) -> Result<(), TextCriterionError> {
+    if s.is_empty() {
+        return Err(TextCriterionError::EmptyString);
+    }
+    if s.contains(['*', '?', '~']) {
+        return Err(TextCriterionError::ContainsWildcardOrEscape);
+    }
+    if s.starts_with(['=', '<', '>']) {
+        return Err(TextCriterionError::LeadingOperatorPrefix);
+    }
+    if prefix_utf16_len.saturating_add(s.encode_utf16().count()) > 255 {
+        return Err(TextCriterionError::TooLong);
+    }
+    let trimmed = s.trim();
+    if trimmed.eq_ignore_ascii_case("true") || trimmed.eq_ignore_ascii_case("false") {
+        return Err(TextCriterionError::CoercibleBooleanString);
+    }
+    if is_excel_error_literal(trimmed) {
+        return Err(TextCriterionError::CoercibleErrorString);
+    }
+    if is_coercible_numeric_string(trimmed) {
+        return Err(TextCriterionError::CoercibleNumericString);
+    }
+    if is_coercible_date_or_time_string(trimmed) {
+        return Err(TextCriterionError::CoercibleDateOrTimeString);
+    }
+    Ok(())
 }
 
 /// Runtime representation of a spreadsheet cell calculation result or literal value.
@@ -566,6 +990,211 @@ mod tests {
             assert_eq!(
                 CellValue::from(&Literal::Number(non_finite)),
                 CellValue::Error(ExcelError::Num)
+            );
+        }
+    }
+
+    #[test]
+    fn test_criteria_number_normalization_and_formatting() {
+        assert_eq!(format_criteria_number(0.0), "0");
+        assert_eq!(format_criteria_number(-0.0), "0");
+        assert_eq!(format_criteria_number(15.0), "15");
+        assert_eq!(format_criteria_number(-10.0), "-10");
+        assert_eq!(format_criteria_number(100.0), "100");
+        assert_eq!(format_criteria_number(1.0 / 3.0), "0.333333333333333");
+        assert_eq!(format_criteria_number(2.0 / 3.0), "0.666666666666667");
+        assert_eq!(
+            format_criteria_number(0.33333333333333337),
+            "0.333333333333333"
+        );
+        assert_eq!(format_criteria_number(1e-300), "1E-300");
+        assert_eq!(
+            format_criteria_number(100_000_000_000_000.5),
+            "100000000000001"
+        );
+
+        assert_eq!(normalize_criteria_number(1.0 / 3.0), 0.333333333333333);
+        assert_eq!(normalize_criteria_number(2.0 / 3.0), 0.666666666666667);
+        assert_eq!(
+            normalize_criteria_number(100_000_000_000_000.5),
+            100_000_000_000_001.0
+        );
+        assert_eq!(format_criteria_number(f64::MAX), "1.79769313486231E308");
+        assert_eq!(format_criteria_number(-f64::MAX), "-1.79769313486231E308");
+        assert_eq!(
+            normalize_criteria_number(f64::MAX),
+            1.797_693_134_862_31e308
+        );
+        assert_eq!(
+            normalize_criteria_number(-f64::MAX),
+            -1.797_693_134_862_31e308
+        );
+
+        for x in [
+            f64::MAX,
+            -f64::MAX,
+            1.797_693_134_862_315e308,
+            -1.797_693_134_862_315e308,
+            f64::MIN_POSITIVE,
+            -f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            -f64::from_bits(1),
+            1.0 / 3.0,
+            2.0 / 3.0,
+            0.0,
+            -0.0,
+        ] {
+            let formatted = format_criteria_number(x);
+            let normalized = normalize_criteria_number(x);
+            assert!(
+                normalized.is_finite(),
+                "expected finite normalized threshold for {x}"
+            );
+            assert_eq!(
+                parse_excel_number(&formatted),
+                Some(normalized),
+                "Pass 4 vs Pass 6a 15-sig-digit parity mismatch for {x} ({formatted:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_text_criterion() {
+        assert_eq!(
+            validate_text_criterion("", 0),
+            Err(TextCriterionError::EmptyString)
+        );
+        for wc in ["A*", "a?b", "~*", "foo~bar"] {
+            assert_eq!(
+                validate_text_criterion(wc, 0),
+                Err(TextCriterionError::ContainsWildcardOrEscape)
+            );
+        }
+        for op_str in [">15", "=Alpha", "<>0", "<10"] {
+            assert_eq!(
+                validate_text_criterion(op_str, 0),
+                Err(TextCriterionError::LeadingOperatorPrefix)
+            );
+        }
+        assert_eq!(validate_text_criterion(&"a".repeat(255), 0), Ok(()));
+        assert_eq!(
+            validate_text_criterion(&"a".repeat(256), 0),
+            Err(TextCriterionError::TooLong)
+        );
+        assert_eq!(validate_text_criterion(&"a".repeat(253), 2), Ok(()));
+        assert_eq!(
+            validate_text_criterion(&"a".repeat(254), 2),
+            Err(TextCriterionError::TooLong)
+        );
+
+        // Surrogate-pair (4-byte UTF-8 / 2 UTF-16 code units) 255-UTF-16 boundary checks
+        assert_eq!(
+            validate_text_criterion(&format!("{}a", "😀".repeat(127)), 0),
+            Ok(())
+        );
+        assert_eq!(
+            validate_text_criterion(&"😀".repeat(128), 0),
+            Err(TextCriterionError::TooLong)
+        );
+        assert_eq!(
+            validate_text_criterion(&format!("{}a", "😀".repeat(126)), 2),
+            Ok(())
+        );
+        assert_eq!(
+            validate_text_criterion(&"😀".repeat(127), 2),
+            Err(TextCriterionError::TooLong)
+        );
+
+        for b_str in ["TRUE", "false", " true "] {
+            assert_eq!(
+                validate_text_criterion(b_str, 0),
+                Err(TextCriterionError::CoercibleBooleanString)
+            );
+        }
+        for err_str in ["#DIV/0!", "#N/A", " #value! ", "#SPILL!", "#CALC!"] {
+            assert_eq!(
+                validate_text_criterion(err_str, 0),
+                Err(TextCriterionError::CoercibleErrorString)
+            );
+        }
+        for num_str in [
+            "42",
+            "042",
+            " 42 ",
+            "1e2",
+            "10%",
+            "1,000",
+            "$50",
+            "€100",
+            "100€",
+            "£50",
+            "¥1,000",
+            "($1,200.50)",
+            "(100)",
+            "1 1/2",
+        ] {
+            assert_eq!(
+                validate_text_criterion(num_str, 0),
+                Err(TextCriterionError::CoercibleNumericString),
+                "expected CoercibleNumericString for {num_str:?}"
+            );
+        }
+        for dt_str in [
+            "2024-01-01",
+            "2024-01-01 09:30",
+            "2024-01-01T12:30:00Z",
+            "01/15/2024",
+            "2024-01",
+            "1/2",
+            "1-2",
+            "Jan 2024",
+            "Jan-24",
+            "15-Jan-2024",
+            "15-Jan-2024 09:30",
+            "January 1, 2024",
+            "Jan 1, 2024 12:00 PM",
+            "12:30",
+            "9:00 AM",
+            "5 PM",
+            "5pm",
+        ] {
+            assert_eq!(
+                validate_text_criterion(dt_str, 0),
+                Err(TextCriterionError::CoercibleDateOrTimeString),
+                "expected CoercibleDateOrTimeString for {dt_str:?}"
+            );
+        }
+        for valid in [
+            "Alpha",
+            "nan",
+            "Infinity",
+            "#1 Priority",
+            "Q1-2024",
+            "2024E",
+            "FY24",
+            "Tier-1",
+            "May",
+            "1A",
+            "2P",
+            "€",
+            "España",
+            "東京",
+            "café!",
+            "Note: café",
+            "Note: caféa",
+            "Note: caféam",
+            "T:東京",
+            "😀",
+        ] {
+            assert_eq!(
+                validate_text_criterion(valid, 0),
+                Ok(()),
+                "expected Ok(0) for {valid:?}"
+            );
+            assert_eq!(
+                validate_text_criterion(valid, 2),
+                Ok(()),
+                "expected Ok(2) for {valid:?}"
             );
         }
     }
