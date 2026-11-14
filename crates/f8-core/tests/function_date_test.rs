@@ -543,6 +543,26 @@ fn test_scenario_6_edate_month_shifting_and_clamping() {
         )
         .unwrap();
     assert_eq!(res, CellValue::Number(feb29_2024));
+
+    // Gregorian Feb 1900 clamping: EDATE clamps 1900-02 to serial 59 (1900-02-28), not serial 60
+    let jan31_1900 = DateSerial::from_ymd(1900, 1, 31).unwrap();
+    let feb29_1900 = DateSerial::from_ymd(1900, 2, 29).unwrap();
+    let mar31_1900 = DateSerial::from_ymd(1900, 3, 31).unwrap();
+    assert_eq!(feb29_1900, 60.0);
+    for (start_serial, offset) in [(jan31_1900, 1.0), (mar31_1900, -1.0), (feb29_1900, 0.0)] {
+        assert_eq!(
+            edate_fn
+                .evaluate(
+                    &[
+                        FunctionArg::Scalar(CellValue::Number(start_serial)),
+                        FunctionArg::Scalar(CellValue::Number(offset)),
+                    ],
+                    &ctx,
+                )
+                .unwrap(),
+            CellValue::Number(59.0)
+        );
+    }
 }
 
 // ============================================================================
@@ -595,6 +615,25 @@ fn test_scenario_7_eomonth_calculation() {
         .unwrap();
     let dec31_2023 = DateSerial::from_ymd(2023, 12, 31).unwrap();
     assert_eq!(res, CellValue::Number(dec31_2023));
+
+    // Gregorian Feb 1900 end-of-month: EOMONTH returns serial 59 (1900-02-28), including EOMONTH(60, 0)
+    let jan15_1900 = DateSerial::from_ymd(1900, 1, 15).unwrap();
+    let feb01_1900 = DateSerial::from_ymd(1900, 2, 1).unwrap();
+    let feb29_1900 = DateSerial::from_ymd(1900, 2, 29).unwrap();
+    for (start_serial, offset) in [(jan15_1900, 1.0), (feb01_1900, 0.0), (feb29_1900, 0.0)] {
+        assert_eq!(
+            eomonth_fn
+                .evaluate(
+                    &[
+                        FunctionArg::Scalar(CellValue::Number(start_serial)),
+                        FunctionArg::Scalar(CellValue::Number(offset)),
+                    ],
+                    &ctx,
+                )
+                .unwrap(),
+            CellValue::Number(59.0)
+        );
+    }
 }
 
 // ============================================================================
@@ -698,6 +737,39 @@ fn test_scenario_8_yearfrac_bases() {
         )
         .unwrap();
     assert_eq!(res, CellValue::Number(0.50));
+
+    // Basis 0 US (NASD) 30/360 rule ordering: d2=31 checks original d1 >= 30 before end-of-Feb adjustment
+    for ((y1, m1, d1), (y2, m2, d2), expected_num_days) in [
+        ((2023, 2, 28), (2023, 3, 31), 31.0),
+        ((2024, 2, 29), (2024, 3, 31), 31.0),
+        ((1900, 2, 29), (1900, 3, 31), 31.0),
+        ((1900, 2, 28), (1900, 3, 31), 33.0),
+        ((2023, 2, 28), (2024, 2, 29), 360.0),
+        ((2023, 1, 31), (2023, 2, 28), 28.0),
+        ((2023, 1, 31), (2023, 3, 31), 60.0),
+        ((2023, 4, 30), (2023, 5, 31), 30.0),
+    ] {
+        let s = DateSerial::from_ymd(y1, m1, d1).unwrap();
+        let e = DateSerial::from_ymd(y2, m2, d2).unwrap();
+        let CellValue::Number(actual) = yearfrac_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(s)),
+                    FunctionArg::Scalar(CellValue::Number(e)),
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                ],
+                &ctx,
+            )
+            .unwrap()
+        else {
+            panic!("expected Number for YEARFRAC ({y1}-{m1}-{d1}..{y2}-{m2}-{d2})");
+        };
+        let expected = expected_num_days / 360.0;
+        assert!(
+            (actual - expected).abs() < 1e-12,
+            "YEARFRAC Basis 0 ({y1}-{m1}-{d1}..{y2}-{m2}-{d2}): got {actual}, expected {expected}"
+        );
+    }
 
     // Order independence: start > end gives identical fraction
     let rev_res = yearfrac_fn
