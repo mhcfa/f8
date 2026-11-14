@@ -39,6 +39,7 @@ description: >-
 - [ ] Single source of truth (`Blocker`): Domain models, identifiers, schemas, coordinate mappings, and errors have one authoritative definition; no duplicated domain logic across modules/passes. Incidental code similarity is not a finding.
 - [ ] Clean boundaries (`Blocker`): Passes and modules consume only upstream outputs; higher-level presets stay out of low-level primitives; no unexpected I/O in pure core modules.
 - [ ] Canonical contracts & IR (`Blocker`): One representation per concept; no implicit fallbacks, untyped dicts, or syntactic sugar in core; ergonomics confined to outer adapters.
+- [ ] Behavioral symmetry & uniformity (`Blocker`): Analogous inputs, invalid states, and edge cases follow consistent validation and error policies across sibling modules, passes, and entrypoints (never by copying a rule violation); variants and boundary sizes handled through general logic without unjustified special-case branches, flags, or carve-outs.
 - [ ] Typed semantics (`Blocker`): Explicit enums, `Literal` types, interned IDs, newtypes, and typed structs/models; no string inspection to infer semantics outside parsing/ingest.
 - [ ] Pure data flow (`Blocker`): Explicit inputs and outputs; no hidden or shared mutable state.
 - [ ] Root-cause correctness (`Blocker`): Defects fixed at origin (parser, ingest, IR, schema, solver); no downstream workarounds, symptom patches (special-casing specific inputs or tests), masking fallbacks (`.get()`, `or default`, lossy `.ok()`), bypass flags (`skip_validation`, `force`), or single-use callsite patches.
@@ -51,6 +52,7 @@ description: >-
 - [ ] Exhaustive matching (`Blocker`): No wildcard arms (`_ =>`) on AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges.
 - [ ] No shims (`Blocker`): No `#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, or placeholder stubs. Public `__all__` deprecations only when the user or spec requires them.
 - [ ] Bool toggles (`Blocker` in public or IR signatures, `Minor` in private helpers): 2-variant enums/unions instead of `bool` behavior flags.
+- [ ] Consistent conventions (`Blocker` in public API/CLI signatures, `Minor` internally): Naming, parameter order, error shapes, and code/test idioms match sibling modules and entrypoints without copying rule violations.
 - [ ] Minimal surface (`Minor`): No commented-out tombstones, unused functions/imports, single-use helper shims, or single-use trait/generic abstractions.
 
 ### 3. Rust Standards (2024 Edition, when the diff touches Rust crates)
