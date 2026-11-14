@@ -691,6 +691,42 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::ApproxNum(0.127_147_484_418_566_38),
     },
     ParityCase {
+        id: "irr_leading_zero",
+        label: "IRR([0, 0, -100, 110]) [leading zero cash flows]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cf_lead_zero\"])",
+        expected: ParityExpected::ApproxNum(0.1),
+    },
+    ParityCase {
+        id: "xirr_leading_zero",
+        label: "XIRR([0, 0, -100, 110], dates) [leading zero cash flows]",
+        formula: "XIRR(SeedData[\"r1\"..\"r4\", \"cf_lead_zero\"], SeedData[\"r1\"..\"r4\", \"date\"])",
+        expected: ParityExpected::ApproxNum(0.1),
+    },
+    ParityCase {
+        id: "irr_multi_root_low_guess",
+        label: "IRR([-1600, 10000, -10000, 0]) [default guess -> 0.25 root]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cf_multi_root\"])",
+        expected: ParityExpected::ApproxNum(0.25),
+    },
+    ParityCase {
+        id: "irr_multi_root_high_guess",
+        label: "IRR([-1600, 10000, -10000, 0], 3) [high guess -> 4.0 root]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cf_multi_root\"], 3)",
+        expected: ParityExpected::ApproxNum(4.0),
+    },
+    ParityCase {
+        id: "irr_salvage_wipeout",
+        label: "IRR([-1000000, 1, 0, 0]) [severe-loss root near -1.0]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cf_salvage\"])",
+        expected: ParityExpected::ApproxNum(-0.999_999),
+    },
+    ParityCase {
+        id: "xirr_salvage_wipeout",
+        label: "XIRR([-1000000, 1], r1..r2 dates) [severe-loss root near -1.0]",
+        formula: "XIRR(SeedData[\"r1\"..\"r2\", \"cf_salvage\"], SeedData[\"r1\"..\"r2\", \"date\"])",
+        expected: ParityExpected::ApproxNum(-0.999_999_999_999_025),
+    },
+    ParityCase {
         id: "pmt_zero_rate",
         label: "PMT(0, 10, -1000) [zero interest rate]",
         formula: "PMT(0, 10, -1000)",
@@ -722,9 +758,45 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::Error(ExcelError::Num),
     },
     ParityCase {
+        id: "irr_guess_neg_one_err",
+        label: "IRR(cash_flows, -1.0) [guess <= -1 -> #NUM!]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], -1.0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "irr_guess_lt_neg_one_err",
+        label: "IRR(cash_flows, -1.5) [guess <= -1 -> #NUM!]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], -1.5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "irr_rootless_err",
+        label: "IRR([100, -10, 100, 0]) [no real root -> #NUM!]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cf_rootless\"])",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
         id: "xirr_no_sign_change_err",
         label: "XIRR(r2..r4, dates) [all positive cash flows -> #NUM!]",
         formula: "XIRR(SeedData[\"r2\"..\"r4\", \"cash_flow\"], SeedData[\"r2\"..\"r4\", \"date\"])",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "xirr_guess_neg_one_err",
+        label: "XIRR(cash_flows, dates, -1.0) [guess <= -1 -> #NUM!]",
+        formula: "XIRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], SeedData[\"r1\"..\"r4\", \"date\"], -1.0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "xirr_guess_lt_neg_one_err",
+        label: "XIRR(cash_flows, dates, -1.5) [guess <= -1 -> #NUM!]",
+        formula: "XIRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], SeedData[\"r1\"..\"r4\", \"date\"], -1.5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "xirr_rootless_err",
+        label: "XIRR([100, -10, 100, 0], dates) [no real root -> #NUM!]",
+        formula: "XIRR(SeedData[\"r1\"..\"r4\", \"cf_rootless\"], SeedData[\"r1\"..\"r4\", \"date\"])",
         expected: ParityExpected::Error(ExcelError::Num),
     },
     ParityCase {
@@ -1439,6 +1511,10 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_measure_col_label("one_third", "One Third"),
         build_measure_col_label("num_dup_asc", "Vector Dup Asc"),
         build_measure_col_label("num_dup_desc", "Vector Dup Desc"),
+        build_measure_col_label("cf_lead_zero", "CF Lead Zero"),
+        build_measure_col_label("cf_multi_root", "CF Multi Root"),
+        build_measure_col_label("cf_rootless", "CF Rootless"),
+        build_measure_col_label("cf_salvage", "CF Salvage"),
     ];
 
     let seed_rows = vec![
@@ -1459,6 +1535,10 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_formula("one_third", "1 / 3")
             .cell_num("num_dup_asc", 20.0)
             .cell_num("num_dup_desc", 40.0)
+            .cell_num("cf_lead_zero", 0.0)
+            .cell_num("cf_multi_root", -1600.0)
+            .cell_num("cf_rootless", 100.0)
+            .cell_num("cf_salvage", -1_000_000.0)
             .build(),
         RowBuilder::descriptor("r2", "row_id", "Row 2")
             .cell_num("num_a", 20.0)
@@ -1480,6 +1560,10 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("one_third", 0.5)
             .cell_num("num_dup_asc", 20.0)
             .cell_num("num_dup_desc", 40.0)
+            .cell_num("cf_lead_zero", 0.0)
+            .cell_num("cf_multi_root", 10000.0)
+            .cell_num("cf_rootless", -10.0)
+            .cell_num("cf_salvage", 1.0)
             .build(),
         RowBuilder::descriptor("r3", "row_id", "Row 3")
             .cell_num("num_a", 30.0)
@@ -1498,6 +1582,10 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("one_third", 0.5)
             .cell_num("num_dup_asc", 40.0)
             .cell_num("num_dup_desc", 20.0)
+            .cell_num("cf_lead_zero", -100.0)
+            .cell_num("cf_multi_root", -10000.0)
+            .cell_num("cf_rootless", 100.0)
+            .cell_num("cf_salvage", 0.0)
             .build(),
         RowBuilder::descriptor("r4", "row_id", "Row 4")
             .cell_num("num_a", 40.0)
@@ -1516,6 +1604,10 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("one_third", 0.5)
             .cell_num("num_dup_asc", 40.0)
             .cell_num("num_dup_desc", 20.0)
+            .cell_num("cf_lead_zero", 110.0)
+            .cell_num("cf_multi_root", 0.0)
+            .cell_num("cf_rootless", 0.0)
+            .cell_num("cf_salvage", 0.0)
             .build(),
     ];
 
