@@ -74,6 +74,13 @@ impl ExcelFunction for SumproductFunction {
                         found: "lazy",
                     });
                 }
+                FunctionArg::Criterion(_) => {
+                    return Err(FunctionError::InvalidArgumentKind {
+                        function: self.name(),
+                        expected: "range",
+                        found: "criterion",
+                    });
+                }
                 FunctionArg::Omitted => {
                     return Err(FunctionError::InvalidArgumentKind {
                         function: self.name(),

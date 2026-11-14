@@ -29,8 +29,10 @@ fn collect_refs_recursive<'a>(expr: &'a Expr, out: &mut Vec<&'a TableRef>) {
         Expr::FunctionCall { args, .. } => {
             for arg in args {
                 match arg {
-                    CallArg::Expr(arg_expr) => collect_refs_recursive(arg_expr, out),
-                    CallArg::Omitted => {}
+                    CallArg::Expr(arg_expr) | CallArg::Comparator { expr: arg_expr, .. } => {
+                        collect_refs_recursive(arg_expr, out);
+                    }
+                    CallArg::Omitted | CallArg::BlankCheck(_) => {}
                 }
             }
         }

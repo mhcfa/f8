@@ -1,16 +1,19 @@
 //! Integration tests for Excel conditional aggregation functions (*IFS family).
 //!
 //! Covers `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, and `MAXIFS` conforming to
-//! Excel calculation parity and criteria semantics.
+//! Cluster C typed criteria semantics and Excel calculation parity.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
-use f8_core::expr::ast::Expr;
+use f8_core::expr::ast::{BlankCheck, CriteriaComparator, Expr};
 use f8_core::functions::{
-    EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry, ReferenceKind,
+    BoundCriterion, EvalContext, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
+    ReferenceKind,
 };
 use f8_core::model::table::AxisRole;
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{
+    CellValue, ExcelError, ExpectedType, TextCriterionError, TypeError, ValueType,
+};
 
 /// Mock evaluation context for testing function execution.
 struct TestEvalContext;
@@ -29,8 +32,20 @@ fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'
     FunctionArg::array(rows, cols, values, ReferenceKind::Slice, AxisRole::Measure)
 }
 
+fn exact_crit(val: CellValue) -> FunctionArg<'static> {
+    FunctionArg::Criterion(BoundCriterion::Exact(val))
+}
+
+fn cmp_crit(op: CriteriaComparator, val: CellValue) -> FunctionArg<'static> {
+    FunctionArg::Criterion(BoundCriterion::Comparator { op, value: val })
+}
+
+fn blank_crit(check: BlankCheck) -> FunctionArg<'static> {
+    FunctionArg::Criterion(BoundCriterion::BlankCheck(check))
+}
+
 // ============================================================================
-// Scenario 1: SUMIFS multi-criteria evaluation with numeric and text criteria
+// Scenario 1: SUMIFS multi-criteria evaluation with typed numeric and text criteria
 // ============================================================================
 
 #[test]
@@ -39,9 +54,6 @@ fn test_scenario_1_sumifs_multi_criteria_numeric_and_text() {
     let sumifs = registry.lookup("SUMIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // sum_range: [10, 20, 30, 40]
-    // cr1: ["A", "B", "A", "B"], crit1: "A"
-    // cr2: [1, 2, 1, 2], crit2: ">0"
     let sum_range = make_array(
         1,
         4,
@@ -62,7 +74,7 @@ fn test_scenario_1_sumifs_multi_criteria_numeric_and_text() {
             CellValue::Text("B".into()),
         ],
     );
-    let crit1 = FunctionArg::Scalar(CellValue::Text("A".into()));
+    let crit1 = exact_crit(CellValue::Text("A".into()));
     let cr2 = make_array(
         1,
         4,
@@ -73,12 +85,12 @@ fn test_scenario_1_sumifs_multi_criteria_numeric_and_text() {
             CellValue::Number(2.0),
         ],
     );
-    let crit2 = FunctionArg::Scalar(CellValue::Text(">0".into()));
+    let crit2 = cmp_crit(CriteriaComparator::Gt, CellValue::Number(0.0));
 
     let res = sumifs
         .evaluate(&[sum_range, cr1, crit1, cr2, crit2], &ctx)
         .unwrap();
-    assert_eq!(res, CellValue::Number(40.0)); // 10 + 30 = 40.0
+    assert_eq!(res, CellValue::Number(40.0));
 }
 
 #[test]
@@ -113,7 +125,7 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
         ReferenceKind::Slice,
         AxisRole::Descriptor,
     );
-    let crit_alpha = FunctionArg::Scalar(CellValue::Text("Alpha".into()));
+    let crit_alpha = exact_crit(CellValue::Text("Alpha".into()));
 
     assert_eq!(
         sumifs
@@ -161,7 +173,7 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
                 CellValue::Number(100.0),
                 CellValue::Number(50.0),
                 CellValue::Empty,
-                bad_cell, // Row 4 is "Beta" (unmatched by "Alpha"), still rejected eagerly
+                bad_cell,
             ],
         );
         for (fn_name, param_name) in [
@@ -187,7 +199,7 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
         }
     }
 
-    // SingleCell Empty in target_range is rejected, while SingleCell Empty in criteria_range is allowed
+    // SingleCell Empty in target_range is rejected, while SingleCell Empty in criteria_range is allowed with BLANK
     let single_empty_target = FunctionArg::array(
         1,
         1,
@@ -207,7 +219,7 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
             &[
                 single_empty_target,
                 single_crit_range.clone(),
-                FunctionArg::Scalar(CellValue::Text("".into())),
+                blank_crit(BlankCheck::Blank),
             ],
             &ctx,
         ),
@@ -232,7 +244,7 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
                 &[
                     single_num_target,
                     single_crit_range,
-                    FunctionArg::Scalar(CellValue::Text("".into())),
+                    blank_crit(BlankCheck::Blank),
                 ],
                 &ctx,
             )
@@ -289,7 +301,7 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
 }
 
 // ============================================================================
-// Scenario 2: COUNTIFS multi-criteria counting
+// Scenario 2: COUNTIFS multi-criteria counting with typed comparators
 // ============================================================================
 
 #[test]
@@ -298,8 +310,6 @@ fn test_scenario_2_countifs_multi_criteria_counting() {
     let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // cr1: [10, 20, 30, 40], crit1: ">=20"
-    // cr2: ["East", "West", "East", "West"], crit2: "*st"
     let cr1 = make_array(
         1,
         4,
@@ -310,7 +320,7 @@ fn test_scenario_2_countifs_multi_criteria_counting() {
             CellValue::Number(40.0),
         ],
     );
-    let crit1 = FunctionArg::Scalar(CellValue::Text(">=20".into()));
+    let crit1 = cmp_crit(CriteriaComparator::Gte, CellValue::Number(20.0));
     let cr2 = make_array(
         1,
         4,
@@ -318,17 +328,17 @@ fn test_scenario_2_countifs_multi_criteria_counting() {
             CellValue::Text("East".into()),
             CellValue::Text("West".into()),
             CellValue::Text("East".into()),
-            CellValue::Text("West".into()),
+            CellValue::Text("North".into()),
         ],
     );
-    let crit2 = FunctionArg::Scalar(CellValue::Text("*st".into()));
+    let crit2 = cmp_crit(CriteriaComparator::NotEq, CellValue::Text("North".into()));
 
     let res = countifs.evaluate(&[cr1, crit1, cr2, crit2], &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(3.0)); // positions 2, 3, 4 match
+    assert_eq!(res, CellValue::Number(2.0)); // positions 2 and 3 match
 }
 
 // ============================================================================
-// Scenario 3: AVERAGEIFS empty match #DIV/0! fallback
+// Scenario 3: AVERAGEIFS empty match #DIV/0! fallback & case-insensitive text
 // ============================================================================
 
 #[test]
@@ -355,7 +365,7 @@ fn test_scenario_3_averageifs_empty_match_div0_fallback() {
             CellValue::Text("Z".into()),
         ],
     );
-    let crit1 = FunctionArg::Scalar(CellValue::Text("W".into()));
+    let crit1 = exact_crit(CellValue::Text("W".into()));
 
     let res = avgifs.evaluate(&[avg_range, cr1, crit1], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Div0));
@@ -387,14 +397,14 @@ fn test_averageifs_successful_mean() {
             CellValue::Text("Ops".into()),
         ],
     );
-    let crit1 = FunctionArg::Scalar(CellValue::Text("tech".into())); // case-insensitive
+    let crit1 = exact_crit(CellValue::Text("tech".into()));
 
     let res = avgifs.evaluate(&[avg_range, cr1, crit1], &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(20.0)); // (10 + 30) / 2 = 20.0
+    assert_eq!(res, CellValue::Number(20.0));
 }
 
 // ============================================================================
-// Scenario 4: MINIFS and MAXIFS zero fallback on no match
+// Scenario 4: MINIFS and MAXIFS zero fallback and calculation
 // ============================================================================
 
 #[test]
@@ -422,15 +432,18 @@ fn test_scenario_4_minifs_and_maxifs_zero_fallback_on_no_match() {
             CellValue::Text("Green".into()),
         ],
     );
-    let crit = FunctionArg::Scalar(CellValue::Text("Yellow".into()));
+    let crit = exact_crit(CellValue::Text("Yellow".into()));
 
-    let min_res = minifs
-        .evaluate(&[data.clone(), cr.clone(), crit.clone()], &ctx)
-        .unwrap();
-    assert_eq!(min_res, CellValue::Number(0.0));
-
-    let max_res = maxifs.evaluate(&[data, cr, crit], &ctx).unwrap();
-    assert_eq!(max_res, CellValue::Number(0.0));
+    assert_eq!(
+        minifs
+            .evaluate(&[data.clone(), cr.clone(), crit.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        maxifs.evaluate(&[data, cr, crit], &ctx).unwrap(),
+        CellValue::Number(0.0)
+    );
 }
 
 #[test]
@@ -460,92 +473,308 @@ fn test_minifs_and_maxifs_calculation() {
             CellValue::Text("DeptA".into()),
         ],
     );
-    let crit = FunctionArg::Scalar(CellValue::Text("DeptA".into()));
+    let crit = exact_crit(CellValue::Text("DeptA".into()));
 
-    let min_res = minifs
-        .evaluate(&[data.clone(), cr.clone(), crit.clone()], &ctx)
-        .unwrap();
-    assert_eq!(min_res, CellValue::Number(30.0)); // min of 50, 80, 30
-
-    let max_res = maxifs.evaluate(&[data, cr, crit], &ctx).unwrap();
-    assert_eq!(max_res, CellValue::Number(80.0)); // max of 50, 80, 30
-}
-
-// ============================================================================
-// Scenario 5: Wildcard matching with escape sequences
-// ============================================================================
-
-#[test]
-fn test_scenario_5_wildcard_matching_with_escape_sequences() {
-    let registry = FunctionRegistry::standard();
-    let countifs = registry.lookup("COUNTIFS").unwrap();
-    let ctx = TestEvalContext;
-
-    let cr = make_array(
-        1,
-        4,
-        vec![
-            CellValue::Text("abc".into()),
-            CellValue::Text("a*c".into()),
-            CellValue::Text("axc".into()),
-            CellValue::Text("a?c".into()),
-        ],
+    assert_eq!(
+        minifs
+            .evaluate(&[data.clone(), cr.clone(), crit.clone()], &ctx)
+            .unwrap(),
+        CellValue::Number(30.0)
     );
-
-    // Literal escaped star: "a~*c" should match only "a*c"
-    let crit_escaped_star = FunctionArg::Scalar(CellValue::Text("a~*c".into()));
-    let res = countifs
-        .evaluate(&[cr.clone(), crit_escaped_star], &ctx)
-        .unwrap();
-    assert_eq!(res, CellValue::Number(1.0));
-
-    // Literal escaped question: "a~?c" should match only "a?c"
-    let crit_escaped_q = FunctionArg::Scalar(CellValue::Text("a~?c".into()));
-    let res_q = countifs
-        .evaluate(&[cr.clone(), crit_escaped_q], &ctx)
-        .unwrap();
-    assert_eq!(res_q, CellValue::Number(1.0));
-
-    // Unescaped wildcard "a?c" should match "abc", "a*c", "axc", "a?c"
-    let crit_wildcard = FunctionArg::Scalar(CellValue::Text("a?c".into()));
-    let res_all = countifs.evaluate(&[cr, crit_wildcard], &ctx).unwrap();
-    assert_eq!(res_all, CellValue::Number(4.0));
+    assert_eq!(
+        maxifs.evaluate(&[data, cr, crit], &ctx).unwrap(),
+        CellValue::Number(80.0)
+    );
 }
 
 // ============================================================================
-// Scenario 6: Blank and non-blank criteria sentinels
+// Scenario 5: BLANK / NOT_BLANK, 15-sig-digit precision, and <> Empty/Error parity
 // ============================================================================
 
 #[test]
-fn test_scenario_6_blank_and_non_blank_sentinels() {
+fn test_blank_and_not_blank_strict_empty_vs_empty_string_parity() {
     let registry = FunctionRegistry::standard();
     let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
+    // Homogeneous text range with Empty, "Alpha", "", and Error(Div0)
     let cr = make_array(
         1,
         4,
         vec![
             CellValue::Empty,
-            CellValue::Text("Text".into()),
-            CellValue::Number(10.0),
-            CellValue::Text("".into()),
+            CellValue::Text("Alpha".into()),
+            CellValue::Text(String::new()),
+            CellValue::Error(ExcelError::Div0),
         ],
     );
 
-    // Empty sentinel "" matches Empty and ""
-    let crit_empty = FunctionArg::Scalar(CellValue::Text("".into()));
-    let res_empty = countifs.evaluate(&[cr.clone(), crit_empty], &ctx).unwrap();
-    assert_eq!(res_empty, CellValue::Number(2.0));
+    // BLANK ("=") matches strictly CellValue::Empty (not "")
+    assert_eq!(
+        countifs
+            .evaluate(&[cr.clone(), blank_crit(BlankCheck::Blank)], &ctx)
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
 
-    // Non-blank sentinel "<>" matches "Text" and 10.0
-    let crit_non_blank = FunctionArg::Scalar(CellValue::Text("<>".into()));
-    let res_non_blank = countifs.evaluate(&[cr, crit_non_blank], &ctx).unwrap();
-    assert_eq!(res_non_blank, CellValue::Number(2.0));
+    // NOT_BLANK ("<>") matches "Alpha", "", and Error(Div0)
+    assert_eq!(
+        countifs
+            .evaluate(&[cr, blank_crit(BlankCheck::NotBlank)], &ctx)
+            .unwrap(),
+        CellValue::Number(3.0)
+    );
+}
+
+#[test]
+fn test_number_exact_vs_15sig_comparator_and_not_eq_empty_error_matching() {
+    let registry = FunctionRegistry::standard();
+    let countifs = registry.lookup("COUNTIFS").unwrap();
+    let ctx = TestEvalContext;
+
+    let one_third_range = make_array(1, 1, vec![CellValue::Number(1.0 / 3.0)]);
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    one_third_range.clone(),
+                    exact_crit(CellValue::Number(1.0 / 3.0))
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    one_third_range,
+                    cmp_crit(CriteriaComparator::Lte, CellValue::Number(1.0 / 3.0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(0.0)
+    );
+
+    // NotEq matches non-20 numbers, Empty, and Error(Div0)
+    let sparse_err_nums = make_array(
+        1,
+        4,
+        vec![
+            CellValue::Number(10.0),
+            CellValue::Number(20.0),
+            CellValue::Empty,
+            CellValue::Error(ExcelError::Div0),
+        ],
+    );
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    sparse_err_nums.clone(),
+                    cmp_crit(CriteriaComparator::NotEq, CellValue::Number(20.0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(3.0)
+    );
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    sparse_err_nums.clone(),
+                    blank_crit(BlankCheck::NotBlank),
+                    sparse_err_nums,
+                    cmp_crit(CriteriaComparator::NotEq, CellValue::Number(20.0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(2.0) // 10.0 and Error(Div0)
+    );
 }
 
 // ============================================================================
-// Scenario 7: Dimension conformity validation
+// Scenario 6: Stage B strict homogeneity, ordering, ErrorInCriteria, and text validation
+// ============================================================================
+
+#[test]
+fn test_stage_b_homogeneity_ordering_error_in_criteria_and_text_validation() {
+    let registry = FunctionRegistry::standard();
+    let countifs = registry.lookup("COUNTIFS").unwrap();
+    let sumifs = registry.lookup("SUMIFS").unwrap();
+    let ctx = TestEvalContext;
+
+    // Mixed criteria_range [10.0, "Alpha"] fails homogeneity check
+    let mixed_cr = make_array(
+        1,
+        2,
+        vec![CellValue::Number(10.0), CellValue::Text("Alpha".into())],
+    );
+    assert_eq!(
+        countifs.evaluate(&[mixed_cr, blank_crit(BlankCheck::NotBlank)], &ctx),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "COUNTIFS",
+            param: "criteria_range1",
+            position: 1,
+            expected: ExpectedType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    // Ordering comparator on Text criteria_range fails on criteria_range1
+    let text_cr = make_array(
+        1,
+        2,
+        vec![
+            CellValue::Text("Alpha".into()),
+            CellValue::Text("Beta".into()),
+        ],
+    );
+    assert_eq!(
+        countifs.evaluate(
+            &[
+                text_cr.clone(),
+                cmp_crit(CriteriaComparator::Gt, CellValue::Number(10.0)),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "COUNTIFS",
+            param: "criteria_range1",
+            position: 1,
+            expected: ExpectedType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    // Cross-type exact/NotEq criterion vs criteria_range fails with InvalidArgumentType
+    let num_cr = make_array(1, 2, vec![CellValue::Number(10.0), CellValue::Number(20.0)]);
+    assert_eq!(
+        countifs.evaluate(
+            &[num_cr.clone(), exact_crit(CellValue::Text("Alpha".into()))],
+            &ctx
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "COUNTIFS",
+            param: "criteria1",
+            position: 2,
+            expected: ExpectedType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    // Empty criterion fails with InvalidArgumentType
+    assert_eq!(
+        countifs.evaluate(&[num_cr.clone(), exact_crit(CellValue::Empty)], &ctx),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "COUNTIFS",
+            param: "criteria1",
+            position: 2,
+            expected: ExpectedType::Number,
+            found: ValueType::Empty,
+        }))
+    );
+
+    // Errored criterion checks inferred_type provenance before ErrorInCriteria
+    assert_eq!(
+        countifs.evaluate(
+            &[
+                num_cr.clone(),
+                FunctionArg::Criterion(BoundCriterion::Errored {
+                    op: None,
+                    error: ExcelError::Na,
+                    inferred_type: Some(ValueType::Text),
+                }),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "COUNTIFS",
+            param: "criteria1",
+            position: 2,
+            expected: ExpectedType::Number,
+            found: ValueType::Text,
+        }))
+    );
+
+    // Type-compatible errored criterion fails with ErrorInCriteria
+    assert_eq!(
+        countifs.evaluate(
+            &[
+                num_cr.clone(),
+                FunctionArg::Criterion(BoundCriterion::Errored {
+                    op: Some(CriteriaComparator::Lte),
+                    error: ExcelError::Na,
+                    inferred_type: Some(ValueType::Number),
+                }),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::ErrorInCriteria {
+            function: "COUNTIFS",
+            param: "criteria1",
+            position: 2,
+            error: ExcelError::Na,
+        })
+    );
+
+    // Second pair validation runs BEFORE bubbling matched target_range ExcelError
+    let target_with_err = make_array(
+        1,
+        2,
+        vec![CellValue::Error(ExcelError::Div0), CellValue::Number(10.0)],
+    );
+    assert_eq!(
+        sumifs.evaluate(
+            &[
+                target_with_err,
+                num_cr,
+                exact_crit(CellValue::Number(10.0)),
+                text_cr.clone(),
+                exact_crit(CellValue::Text("A*".into())),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::InvalidTextCriterion {
+            function: "SUMIFS",
+            param: "criteria1",
+            position: 5,
+            reason: TextCriterionError::ContainsWildcardOrEscape,
+        })
+    );
+
+    // Invalid dynamic text criterion variants fail with InvalidTextCriterion
+    for (bad_str, expected_reason) in [
+        ("", TextCriterionError::EmptyString),
+        ("a?b", TextCriterionError::ContainsWildcardOrEscape),
+        (">=10", TextCriterionError::LeadingOperatorPrefix),
+        ("10%", TextCriterionError::CoercibleNumericString),
+        ("2024-01-01", TextCriterionError::CoercibleDateOrTimeString),
+        ("false", TextCriterionError::CoercibleBooleanString),
+        ("#N/A", TextCriterionError::CoercibleErrorString),
+    ] {
+        assert_eq!(
+            countifs.evaluate(
+                &[text_cr.clone(), exact_crit(CellValue::Text(bad_str.into()))],
+                &ctx
+            ),
+            Err(FunctionError::InvalidTextCriterion {
+                function: "COUNTIFS",
+                param: "criteria1",
+                position: 2,
+                reason: expected_reason,
+            }),
+            "mismatch on {bad_str:?}"
+        );
+    }
+}
+
+// ============================================================================
+// Scenario 7: Dimension conformity and FunctionArg kind validation
 // ============================================================================
 
 #[test]
@@ -555,13 +784,12 @@ fn test_scenario_7_dimension_conformity_validation() {
     let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // Target (1, 4) vs criteria range (1, 3) -> DimensionMismatch
     let target = make_array(1, 4, vec![CellValue::Number(10.0); 4]);
     let mismatched = make_array(1, 3, vec![CellValue::Text("A".into()); 3]);
-    let crit = FunctionArg::Scalar(CellValue::Text("A".into()));
+    let crit = exact_crit(CellValue::Text("A".into()));
 
     assert_eq!(
-        sumifs.evaluate(&[target, mismatched.clone(), crit.clone()], &ctx),
+        sumifs.evaluate(&[target.clone(), mismatched.clone(), crit.clone()], &ctx),
         Err(FunctionError::DimensionMismatch {
             function: "SUMIFS",
             expected_rows: 1,
@@ -588,11 +816,29 @@ fn test_scenario_7_dimension_conformity_validation() {
         })
     );
 
+    // Scalar in ParamKind::Criteria slot -> InvalidArgumentKind
+    let cr_four = make_array(1, 4, vec![CellValue::Text("A".into()); 4]);
+    assert_eq!(
+        sumifs.evaluate(
+            &[
+                target,
+                cr_four,
+                FunctionArg::Scalar(CellValue::Text("A".into())),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "SUMIFS",
+            expected: "criterion",
+            found: "scalar",
+        })
+    );
+
     // COUNTIFS dimension mismatch: cr1 (2, 2) vs cr2 (1, 4) -> DimensionMismatch
     let cr1 = make_array(2, 2, vec![CellValue::Number(1.0); 4]);
     let cr2 = make_array(1, 4, vec![CellValue::Number(1.0); 4]);
-    let crit1 = FunctionArg::Scalar(CellValue::Number(1.0));
-    let crit2 = FunctionArg::Scalar(CellValue::Number(1.0));
+    let crit1 = exact_crit(CellValue::Number(1.0));
+    let crit2 = exact_crit(CellValue::Number(1.0));
 
     assert_eq!(
         countifs.evaluate(&[cr1, crit1, cr2, crit2], &ctx),
@@ -607,7 +853,7 @@ fn test_scenario_7_dimension_conformity_validation() {
 }
 
 // ============================================================================
-// Error Bubbling and Domain Error Handling
+// Error Bubbling, 2D Slices, Leading Whitespace, and Arity Guards
 // ============================================================================
 
 #[test]
@@ -616,8 +862,6 @@ fn test_error_bubbling_in_target_range() {
     let sumifs = registry.lookup("SUMIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // Row 1 matches and has #DIV/0! -> must bubble
-    // Row 2 does not match and has #VALUE! -> must not bubble
     let target = make_array(
         1,
         2,
@@ -631,7 +875,7 @@ fn test_error_bubbling_in_target_range() {
         2,
         vec![CellValue::Text("Yes".into()), CellValue::Text("No".into())],
     );
-    let crit = FunctionArg::Scalar(CellValue::Text("Yes".into()));
+    let crit = exact_crit(CellValue::Text("Yes".into()));
 
     let res = sumifs.evaluate(&[target, cr, crit], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Div0));
@@ -653,7 +897,7 @@ fn test_error_in_unmatched_target_is_ignored() {
         2,
         vec![CellValue::Text("Yes".into()), CellValue::Text("No".into())],
     );
-    let crit = FunctionArg::Scalar(CellValue::Text("Yes".into()));
+    let crit = exact_crit(CellValue::Text("Yes".into()));
 
     let res = sumifs.evaluate(&[target, cr, crit], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(100.0));
@@ -665,9 +909,6 @@ fn test_2d_range_slices() {
     let sumifs = registry.lookup("SUMIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // 2x2 grid
-    // target: [1, 2; 3, 4]
-    // cr: ["X", "Y"; "X", "Y"]
     let target = make_array(
         2,
         2,
@@ -688,10 +929,10 @@ fn test_2d_range_slices() {
             CellValue::Text("Y".into()),
         ],
     );
-    let crit = FunctionArg::Scalar(CellValue::Text("X".into()));
+    let crit = exact_crit(CellValue::Text("X".into()));
 
     let res = sumifs.evaluate(&[target, cr, crit], &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(4.0)); // 1.0 + 3.0 = 4.0
+    assert_eq!(res, CellValue::Number(4.0));
 }
 
 #[test]
@@ -706,245 +947,61 @@ fn test_metadata_and_categories() {
     }
 }
 
-// ============================================================================
-// Whitespace Preservation and Operator Spacing Integration Tests
-// ============================================================================
-
 #[test]
-fn test_criteria_leading_whitespace_and_space_only_matching() {
+fn test_criteria_leading_whitespace_space_only_and_nan_text_labels() {
     let registry = FunctionRegistry::standard();
     let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
     let cr = make_array(
         1,
-        4,
+        5,
         vec![
             CellValue::Text("  DeptA".into()),
             CellValue::Text("DeptA".into()),
             CellValue::Text(" ".into()),
-            CellValue::Empty,
-        ],
-    );
-
-    // Criterion with leading spaces matches "  DeptA", not "DeptA"
-    let crit_spaces = FunctionArg::Scalar(CellValue::Text("  DeptA".into()));
-    let res = countifs.evaluate(&[cr.clone(), crit_spaces], &ctx).unwrap();
-    assert_eq!(res, CellValue::Number(1.0));
-
-    // Criterion with only a space matches " ", not Empty
-    let crit_space_only = FunctionArg::Scalar(CellValue::Text(" ".into()));
-    let res_space = countifs.evaluate(&[cr, crit_space_only], &ctx).unwrap();
-    assert_eq!(res_space, CellValue::Number(1.0));
-}
-
-#[test]
-fn test_criteria_operator_with_spaces() {
-    let registry = FunctionRegistry::standard();
-    let sumifs = registry.lookup("SUMIFS").unwrap();
-    let ctx = TestEvalContext;
-
-    let sum_range = make_array(
-        1,
-        3,
-        vec![
-            CellValue::Number(10.0),
-            CellValue::Number(20.0),
-            CellValue::Number(30.0),
-        ],
-    );
-    let cr = make_array(
-        1,
-        3,
-        vec![
-            CellValue::Number(5.0),
-            CellValue::Number(15.0),
-            CellValue::Number(25.0),
-        ],
-    );
-
-    // Criteria with leading and trailing spaces after operator ("> 10 ")
-    let crit = FunctionArg::Scalar(CellValue::Text("> 10".into()));
-    let res = sumifs
-        .evaluate(&[sum_range.clone(), cr.clone(), crit], &ctx)
-        .unwrap();
-    assert_eq!(res, CellValue::Number(50.0)); // 20.0 + 30.0
-
-    let crit_trailing = FunctionArg::Scalar(CellValue::Text("> 10 ".into()));
-    let res_trailing = sumifs
-        .evaluate(&[sum_range, cr, crit_trailing], &ctx)
-        .unwrap();
-    assert_eq!(res_trailing, CellValue::Number(50.0));
-}
-
-#[test]
-fn test_criteria_nan_and_infinity_strings_treated_as_text() {
-    let registry = FunctionRegistry::standard();
-    let countifs = registry.lookup("COUNTIFS").unwrap();
-    let sumifs = registry.lookup("SUMIFS").unwrap();
-    let avgifs = registry.lookup("AVERAGEIFS").unwrap();
-    let minifs = registry.lookup("MINIFS").unwrap();
-    let maxifs = registry.lookup("MAXIFS").unwrap();
-    let ctx = TestEvalContext;
-
-    // Mixed criteria range: ticker "NAN", "Infinity", "inf", "42", numeric 42.0, numeric 100.0
-    let mixed = make_array(
-        1,
-        6,
-        vec![
             CellValue::Text("NAN".into()),
-            CellValue::Text("Infinity".into()),
-            CellValue::Text("inf".into()),
-            CellValue::Text("42".into()),
-            CellValue::Number(42.0),
-            CellValue::Number(100.0),
-        ],
-    );
-    let weights = make_array(
-        1,
-        6,
-        vec![
-            CellValue::Number(1.0),
-            CellValue::Number(2.0),
-            CellValue::Number(4.0),
-            CellValue::Number(8.0),
-            CellValue::Number(16.0),
-            CellValue::Number(32.0),
-        ],
-    );
-
-    // Criterion "NAN" matches only "NAN" (case-insensitive), never numbers
-    assert_eq!(
-        countifs
-            .evaluate(
-                &[
-                    mixed.clone(),
-                    FunctionArg::Scalar(CellValue::Text("nan".into()))
-                ],
-                &ctx
-            )
-            .unwrap(),
-        CellValue::Number(1.0)
-    );
-    assert_eq!(
-        sumifs
-            .evaluate(
-                &[
-                    weights.clone(),
-                    mixed.clone(),
-                    FunctionArg::Scalar(CellValue::Text("NAN".into()))
-                ],
-                &ctx
-            )
-            .unwrap(),
-        CellValue::Number(1.0)
-    );
-
-    // Criterion "Infinity" and "inf" match only their respective text strings
-    assert_eq!(
-        countifs
-            .evaluate(
-                &[
-                    mixed.clone(),
-                    FunctionArg::Scalar(CellValue::Text("Infinity".into()))
-                ],
-                &ctx
-            )
-            .unwrap(),
-        CellValue::Number(1.0)
-    );
-    assert_eq!(
-        countifs
-            .evaluate(
-                &[
-                    mixed.clone(),
-                    FunctionArg::Scalar(CellValue::Text("INF".into()))
-                ],
-                &ctx
-            )
-            .unwrap(),
-        CellValue::Number(1.0)
-    );
-
-    // Numeric criterion 42 matches "42" and 42.0 (weights 8 + 16 = 24), never "NAN"/"Infinity"/"inf"
-    let crit_42 = FunctionArg::Scalar(CellValue::Number(42.0));
-    assert_eq!(
-        countifs
-            .evaluate(&[mixed.clone(), crit_42.clone()], &ctx)
-            .unwrap(),
-        CellValue::Number(2.0)
-    );
-    assert_eq!(
-        sumifs
-            .evaluate(&[weights.clone(), mixed.clone(), crit_42.clone()], &ctx)
-            .unwrap(),
-        CellValue::Number(24.0)
-    );
-    assert_eq!(
-        avgifs
-            .evaluate(&[weights.clone(), mixed.clone(), crit_42.clone()], &ctx)
-            .unwrap(),
-        CellValue::Number(12.0)
-    );
-    assert_eq!(
-        minifs
-            .evaluate(&[weights.clone(), mixed.clone(), crit_42.clone()], &ctx)
-            .unwrap(),
-        CellValue::Number(8.0)
-    );
-    assert_eq!(
-        maxifs
-            .evaluate(&[weights.clone(), mixed.clone(), crit_42], &ctx)
-            .unwrap(),
-        CellValue::Number(16.0)
-    );
-
-    // Relational ">0" matches only numeric cells 42.0 and 100.0, never "Infinity" or "42"
-    assert_eq!(
-        countifs
-            .evaluate(
-                &[mixed, FunctionArg::Scalar(CellValue::Text(">0".into()))],
-                &ctx
-            )
-            .unwrap(),
-        CellValue::Number(2.0)
-    );
-}
-
-#[test]
-fn test_criteria_not_equal_to_space_vs_non_blank_sentinel() {
-    let registry = FunctionRegistry::standard();
-    let countifs = registry.lookup("COUNTIFS").unwrap();
-    let ctx = TestEvalContext;
-
-    // Range with Empty, "Text", 10.0, and a single space " "
-    let cr = make_array(
-        1,
-        4,
-        vec![
             CellValue::Empty,
-            CellValue::Text("Text".into()),
-            CellValue::Number(10.0),
-            CellValue::Text(" ".into()),
         ],
     );
 
-    // Non-blank sentinel "<>" matches non-empty cells ("Text", 10.0, " ") -> 3
-    let crit_non_blank = FunctionArg::Scalar(CellValue::Text("<>".into()));
-    let res_non_blank = countifs
-        .evaluate(&[cr.clone(), crit_non_blank], &ctx)
-        .unwrap();
-    assert_eq!(res_non_blank, CellValue::Number(3.0));
-
-    // Not-equal-to-space sentinel "<> " matches all cells EXCEPT " " (Empty, "Text", 10.0) -> 3
-    let crit_not_space = FunctionArg::Scalar(CellValue::Text("<> ".into()));
-    let res_not_space = countifs.evaluate(&[cr, crit_not_space], &ctx).unwrap();
-    assert_eq!(res_not_space, CellValue::Number(3.0));
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[cr.clone(), exact_crit(CellValue::Text("  DeptA".into()))],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        countifs
+            .evaluate(&[cr.clone(), exact_crit(CellValue::Text(" ".into()))], &ctx)
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[cr.clone(), exact_crit(CellValue::Text("nan".into()))],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(1.0)
+    );
+    assert_eq!(
+        countifs
+            .evaluate(
+                &[
+                    cr,
+                    cmp_crit(CriteriaComparator::NotEq, CellValue::Text(" ".into()))
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Number(4.0)
+    );
 }
-
-// ============================================================================
-// Arity and Variadic Pairs Validation in evaluate()
-// ============================================================================
 
 #[test]
 fn test_evaluate_arity_and_variadic_pairs_guards() {
@@ -953,10 +1010,8 @@ fn test_evaluate_arity_and_variadic_pairs_guards() {
     let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // SUMIFS with 0 args
-    let err_empty = sumifs.evaluate(&[], &ctx).unwrap_err();
     assert_eq!(
-        err_empty,
+        sumifs.evaluate(&[], &ctx).unwrap_err(),
         FunctionError::TooFewArguments {
             function: "SUMIFS",
             expected: 3,
@@ -964,65 +1019,51 @@ fn test_evaluate_arity_and_variadic_pairs_guards() {
         }
     );
 
-    // SUMIFS with 2 args (too few)
     let dummy = FunctionArg::Scalar(CellValue::Number(1.0));
-    let err_two = sumifs
-        .evaluate(&[dummy.clone(), dummy.clone()], &ctx)
-        .unwrap_err();
     assert_eq!(
-        err_two,
+        sumifs
+            .evaluate(&[dummy.clone(), dummy.clone()], &ctx)
+            .unwrap_err(),
         FunctionError::TooFewArguments {
             function: "SUMIFS",
             expected: 3,
             found: 2,
         }
     );
-
-    // SUMIFS with 4 args (invalid variadic pairs)
-    let err_four = sumifs
-        .evaluate(
-            &[dummy.clone(), dummy.clone(), dummy.clone(), dummy.clone()],
-            &ctx,
-        )
-        .unwrap_err();
     assert_eq!(
-        err_four,
+        sumifs
+            .evaluate(
+                &[dummy.clone(), dummy.clone(), dummy.clone(), dummy.clone()],
+                &ctx,
+            )
+            .unwrap_err(),
         FunctionError::InvalidVariadicPairs {
             function: "SUMIFS",
             count: 4,
         }
     );
-
-    // COUNTIFS with 0 args
-    let err_count_empty = countifs.evaluate(&[], &ctx).unwrap_err();
     assert_eq!(
-        err_count_empty,
+        countifs.evaluate(&[], &ctx).unwrap_err(),
         FunctionError::TooFewArguments {
             function: "COUNTIFS",
             expected: 2,
             found: 0,
         }
     );
-
-    // COUNTIFS with 1 arg
-    let err_count_one = countifs
-        .evaluate(std::slice::from_ref(&dummy), &ctx)
-        .unwrap_err();
     assert_eq!(
-        err_count_one,
+        countifs
+            .evaluate(std::slice::from_ref(&dummy), &ctx)
+            .unwrap_err(),
         FunctionError::TooFewArguments {
             function: "COUNTIFS",
             expected: 2,
             found: 1,
         }
     );
-
-    // COUNTIFS with 3 args (invalid variadic pairs)
-    let err_count_three = countifs
-        .evaluate(&[dummy.clone(), dummy.clone(), dummy], &ctx)
-        .unwrap_err();
     assert_eq!(
-        err_count_three,
+        countifs
+            .evaluate(&[dummy.clone(), dummy.clone(), dummy], &ctx)
+            .unwrap_err(),
         FunctionError::InvalidVariadicPairs {
             function: "COUNTIFS",
             count: 3,

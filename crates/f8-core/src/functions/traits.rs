@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::expr::ast::Expr;
+use crate::expr::ast::{BlankCheck, CriteriaComparator, Expr};
 use crate::functions::error::FunctionError;
 use crate::model::table::AxisRole;
 use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
@@ -58,6 +58,8 @@ pub enum ParamKind {
     RangeOrArray,
     /// Unevaluated lazy expression evaluated conditionally on demand.
     Lazy,
+    /// Typed conditional-aggregation criterion (`CallArg::{Expr, Comparator, BlankCheck}`).
+    Criteria,
 }
 
 /// Syntactic reference classification for `FunctionArg::Array` bindings.
@@ -256,6 +258,31 @@ impl ParameterDef {
     }
 }
 
+/// Bound runtime criterion argument supplied to `ParamKind::Criteria` slots.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoundCriterion {
+    /// Exact-equality criterion (`CallArg::Expr`).
+    Exact(CellValue),
+    /// Scoped comparator criterion (`CallArg::Comparator`).
+    Comparator {
+        /// Scoped comparison operator (`<>`, `<`, `<=`, `>`, `>=`).
+        op: CriteriaComparator,
+        /// Evaluated threshold or comparison value.
+        value: CellValue,
+    },
+    /// Scoped blank-status keyword (`BLANK` or `NOT_BLANK`).
+    BlankCheck(BlankCheck),
+    /// Criterion operand that evaluated to a runtime Excel error.
+    Errored {
+        /// Optional comparator prefix (`None` for exact `CallArg::Expr`).
+        op: Option<CriteriaComparator>,
+        /// Evaluated Excel domain error.
+        error: ExcelError,
+        /// Inferred non-`Empty` value type of the errored operand when known.
+        inferred_type: Option<ValueType>,
+    },
+}
+
 /// Bound runtime argument supplied to an `ExcelFunction::evaluate` call.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FunctionArg<'a> {
@@ -285,6 +312,8 @@ pub enum FunctionArg<'a> {
     },
     /// Unevaluated AST expression for lazy conditional branches.
     Lazy(&'a Expr),
+    /// Bound conditional-aggregation criterion.
+    Criterion(BoundCriterion),
     /// Intermediate omitted optional-parameter placeholder (`_`) without a static default.
     Omitted,
 }
@@ -336,6 +365,11 @@ impl<'a> FunctionArg<'a> {
                 expected: "scalar",
                 found: "array",
             }),
+            Self::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+                function,
+                expected: "scalar",
+                found: "criterion",
+            }),
             Self::Omitted => Err(FunctionError::InvalidArgumentKind {
                 function,
                 expected: "scalar",
@@ -383,6 +417,11 @@ impl<'a> FunctionArg<'a> {
                 expected: "scalar",
                 found: "array",
             }),
+            Self::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+                function,
+                expected: "scalar",
+                found: "criterion",
+            }),
             Self::Omitted => Err(FunctionError::InvalidArgumentKind {
                 function,
                 expected: "scalar",
@@ -407,6 +446,11 @@ impl<'a> FunctionArg<'a> {
                 let val = ctx.eval_expr(expr)?;
                 Ok((1, 1, vec![val]))
             }
+            Self::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+                function,
+                expected: "array",
+                found: "criterion",
+            }),
             Self::Omitted => Err(FunctionError::InvalidArgumentKind {
                 function,
                 expected: "array",

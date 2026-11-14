@@ -17,8 +17,8 @@ pub mod traits;
 pub use error::FunctionError;
 pub use registry::{FunctionRegistry, StageAError};
 pub use traits::{
-    BranchPolicy, ComparisonSide, EmptyPolicy, EvalContext, ExcelFunction, ExpectationOrigin,
-    FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamRequirement, ParamType,
-    ParameterDef, ReferenceKind, RolePolicy, ShapePolicy, TypeExpectation, TypedRangeGrid,
-    ValidationPolicy, VariadicRule,
+    BoundCriterion, BranchPolicy, ComparisonSide, EmptyPolicy, EvalContext, ExcelFunction,
+    ExpectationOrigin, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamRequirement,
+    ParamType, ParameterDef, ReferenceKind, RolePolicy, ShapePolicy, TypeExpectation,
+    TypedRangeGrid, ValidationPolicy, VariadicRule,
 };

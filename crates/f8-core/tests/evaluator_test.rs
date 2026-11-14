@@ -2614,3 +2614,702 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
         );
     }
 }
+
+#[test]
+fn test_scenario_18_cluster_c_typed_criteria_and_error_introspection() {
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic, EvalError};
+    use f8_core::functions::FunctionError;
+
+    let manifest = manifest_for_table("T");
+
+    let build_model = |target_formula: &str,
+                       dyn_text_val: Option<&str>,
+                       na_or_valid_formula: &str,
+                       err_or_valid_formula: &str| {
+        let mut num_row_1 = RowSpec::new("r1");
+        let mut num_row_2 = RowSpec::new("r2");
+        let mut num_row_3 = RowSpec::new("r3");
+        let mut num_row_4 = RowSpec::new("r4");
+
+        for (
+            row,
+            num_a,
+            cat,
+            flag,
+            special,
+            date_v,
+            div0_col,
+            mixed_col,
+            empty_str_col,
+            one_third,
+        ) in [
+            (
+                &mut num_row_1,
+                CellInput::number(10.0),
+                CellInput::string("Alpha"),
+                CellInput::boolean(true),
+                CellInput::string("nan"),
+                CellInput::number(45292.0),
+                CellInput::number(10.0),
+                CellInput::number(10.0),
+                CellInput::string(""),
+                CellInput::formula("1 / 3"),
+            ),
+            (
+                &mut num_row_2,
+                CellInput::number(20.0),
+                CellInput::string("Beta"),
+                CellInput::boolean(false),
+                CellInput::string("#1 Priority"),
+                CellInput::number(45474.0),
+                CellInput::number(20.0),
+                CellInput::string("Alpha"),
+                CellInput::string(""),
+                CellInput::number(0.5),
+            ),
+            (
+                &mut num_row_3,
+                CellInput::number(30.0),
+                CellInput::string("Alpha"),
+                CellInput::boolean(true),
+                CellInput::string("Q1-2024"),
+                CellInput::number(45658.0),
+                CellInput::formula("1 / 0"),
+                CellInput::number(30.0),
+                CellInput::string(""),
+                CellInput::number(0.5),
+            ),
+            (
+                &mut num_row_4,
+                CellInput::number(40.0),
+                CellInput::string("Gamma"),
+                CellInput::boolean(false),
+                CellInput::string("May"),
+                CellInput::number(46023.0),
+                CellInput::number(40.0),
+                CellInput::number(40.0),
+                CellInput::string(""),
+                CellInput::number(0.5),
+            ),
+        ] {
+            if let RowSpec::Data(d) = row {
+                d.cells.insert(ColId::from("num_a"), num_a);
+                d.cells.insert(ColId::from("cat"), cat);
+                d.cells.insert(ColId::from("flags"), flag);
+                d.cells.insert(ColId::from("special_text"), special);
+                d.cells.insert(ColId::from("date"), date_v);
+                d.cells.insert(ColId::from("num_with_div0"), div0_col);
+                d.cells.insert(ColId::from("mixed"), mixed_col);
+                d.cells.insert(ColId::from("only_empty_str"), empty_str_col);
+                d.cells.insert(ColId::from("one_third"), one_third);
+                d.cells.insert(ColId::from("nulls"), CellInput::null());
+            }
+        }
+
+        let mut helper_row = RowSpec::new("helpers");
+        if let RowSpec::Data(d) = &mut helper_row {
+            for col in [
+                "num_a",
+                "cat",
+                "flags",
+                "special_text",
+                "date",
+                "num_with_div0",
+                "mixed",
+                "only_empty_str",
+                "one_third",
+                "nulls",
+            ] {
+                d.cells.insert(ColId::from(col), CellInput::null());
+            }
+            d.cells.insert(ColId::from("num_a"), CellInput::number(9.0)); // dyn_9
+            if let Some(txt) = dyn_text_val {
+                d.cells.insert(ColId::from("cat"), CellInput::string(txt));
+            }
+            d.cells
+                .insert(ColId::from("date"), CellInput::formula(na_or_valid_formula));
+            d.cells.insert(
+                ColId::from("one_third"),
+                CellInput::formula(err_or_valid_formula),
+            );
+        }
+
+        let mut target_row = RowSpec::new("target");
+        if let RowSpec::Data(d) = &mut target_row {
+            for col in [
+                "cat",
+                "flags",
+                "special_text",
+                "date",
+                "num_with_div0",
+                "mixed",
+                "only_empty_str",
+                "one_third",
+                "nulls",
+            ] {
+                d.cells.insert(ColId::from(col), CellInput::null());
+            }
+            d.cells
+                .insert(ColId::from("num_a"), CellInput::formula(target_formula));
+        }
+
+        TableSpec {
+            id: TableId::from("T"),
+            title: "Cluster C Test".into(),
+            subtitle: None,
+            currency: None,
+            collapsible: false,
+            placement: Default::default(),
+            columns: [
+                "num_a",
+                "cat",
+                "flags",
+                "special_text",
+                "date",
+                "num_with_div0",
+                "mixed",
+                "only_empty_str",
+                "one_third",
+                "nulls",
+            ]
+            .into_iter()
+            .map(|id| ColumnSpec::new(id).with_header(id))
+            .collect(),
+            rows: vec![
+                num_row_1, num_row_2, num_row_3, num_row_4, helper_row, target_row,
+            ],
+        }
+    };
+
+    let default_na =
+        "XLOOKUP(\"Missing\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"date\"])";
+    let default_err = "1 / 0";
+
+    // Scenario 2: COUNTIFS on num_with_div0 (<> 20 matches #DIV/0! and non-20 numbers -> 3.0),
+    // only_empty_str (BLANK -> 0.0, NOT_BLANK -> 4.0), and 1 / 3 exact vs <= (1 / 3)
+    for (formula, expected) in [
+        (
+            "COUNTIFS(T[\"r1\"..\"r4\", \"num_with_div0\"], <> 20)",
+            CellValue::Number(3.0),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r1\", \"only_empty_str\"], BLANK)",
+            CellValue::Number(0.0),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r1\", \"only_empty_str\"], NOT_BLANK)",
+            CellValue::Number(1.0),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r1\", \"one_third\"], 1 / 3)",
+            CellValue::Number(1.0),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r1\", \"one_third\"], <= (1 / 3))",
+            CellValue::Number(0.0),
+        ),
+    ] {
+        let compiled = Compiler::compile(
+            &manifest,
+            &[build_model(formula, None, default_na, default_err)],
+        )
+        .unwrap_or_else(|e| panic!("expected ok on {formula}, got {e:?}"));
+        assert_eq!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("num_a")
+                )
+                .unwrap(),
+            expected,
+            "mismatch on {formula}"
+        );
+    }
+
+    // Scenario 3: Ordering comparators on non-numeric ranges/operands, mixed criteria_range, and cross-type criteria fail
+    for type_err_formula in [
+        "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], > \"Alpha\")",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], > 10)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"flags\"], >= TRUE)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"flags\"], < 1)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"mixed\"], NOT_BLANK)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], \"Alpha\")",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"special_text\"], 42)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], TRUE)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], IF(FALSE, \"Alpha\", NA()))",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= T[\"helpers\", \"nulls\"])",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"nulls\"])",
+        "IFERROR(COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= T[\"helpers\", \"nulls\"]), 0)",
+    ] {
+        let err = Compiler::compile(
+            &manifest,
+            &[build_model(type_err_formula, None, default_na, default_err)],
+        )
+        .expect_err(&format!("expected type F8Error on {type_err_formula}"));
+        assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+        assert!(
+            matches!(err, CompilerError::Eval(EvalError::Type { .. })),
+            "expected EvalError::Type on {type_err_formula}, got {err:?}"
+        );
+    }
+
+    // Scenario 3: Invalid Text criteria rejected via constant literals, dynamic Text cells, IFERROR, and dormant IF branches
+    let exact_256 = "a".repeat(256);
+    let not_eq_254 = "a".repeat(254);
+    let bad_text_literals: Vec<String> = [
+        "",
+        "A*",
+        "a?b",
+        "~*",
+        ">15",
+        "=Alpha",
+        "<>0",
+        "42",
+        "042",
+        " 42 ",
+        "10%",
+        "1,000",
+        "$50",
+        "(100)",
+        "1 1/2",
+        "2024-01-01",
+        "01/15/2024",
+        "1/2",
+        "Jan 2024",
+        "12:30",
+        "5 PM",
+        "5pm",
+        "TRUE",
+        "false",
+        "#DIV/0!",
+        "#N/A",
+    ]
+    .into_iter()
+    .map(String::from)
+    .chain(std::iter::once(exact_256))
+    .collect();
+
+    for bad_txt in &bad_text_literals {
+        let const_formula = format!("COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], \"{bad_txt}\")");
+        let iferror_formula =
+            format!("IFERROR(COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], \"{bad_txt}\"), 0)");
+        let dormant_const_formula =
+            format!("IF(TRUE, 0, COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], \"{bad_txt}\"))");
+        for f in [&const_formula, &iferror_formula, &dormant_const_formula] {
+            let err =
+                Compiler::compile(&manifest, &[build_model(f, None, default_na, default_err)])
+                    .expect_err(&format!("expected InvalidTextCriterion on {f}"));
+            assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+            assert!(
+                matches!(
+                    &err,
+                    CompilerError::Eval(EvalError::Function { source, .. })
+                        if matches!(source.as_ref(), FunctionError::InvalidTextCriterion { .. })
+                ),
+                "expected InvalidTextCriterion on {f}, got {err:?}"
+            );
+        }
+
+        // Dynamic Text cell (active, IFERROR, and dormant IF)
+        for dyn_f in [
+            "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"])",
+            "IFERROR(COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"]), 0)",
+            "IF(TRUE, 0, COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"]))",
+        ] {
+            let err = Compiler::compile(
+                &manifest,
+                &[build_model(dyn_f, Some(bad_txt), default_na, default_err)],
+            )
+            .expect_err(&format!(
+                "expected dynamic InvalidTextCriterion on {dyn_f} with {bad_txt:?}"
+            ));
+            assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+            assert!(
+                matches!(
+                    &err,
+                    CompilerError::Eval(EvalError::Function { source, .. })
+                        if matches!(source.as_ref(), FunctionError::InvalidTextCriterion { .. })
+                ),
+                "expected dynamic InvalidTextCriterion on {dyn_f} ({bad_txt:?}), got {err:?}"
+            );
+        }
+    }
+
+    // 254-char <> comparator string exceeds 255 UTF-16 code units ("<>" + 254 = 256) via literal and dynamic cell
+    let bad_not_eq_lit = format!("COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], <> \"{not_eq_254}\")");
+    assert!(
+        Compiler::compile(
+            &manifest,
+            &[build_model(&bad_not_eq_lit, None, default_na, default_err)],
+        )
+        .is_err()
+    );
+    assert!(
+        Compiler::compile(
+            &manifest,
+            &[build_model(
+                "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], <> T[\"helpers\", \"cat\"])",
+                Some(&not_eq_254),
+                default_na,
+                default_err
+            )],
+        )
+        .is_err()
+    );
+
+    // Scenario 3: ErrorInCriteria rejected on evaluated Error criteria (even inside IFERROR)
+    for err_crit_formula in [
+        "COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], 1 / 0)",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= (1 / 0))",
+        "COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <> (1 / 0))",
+        "SUMIFS(T[\"r1\"..\"r4\", \"num_a\"], T[\"r1\"..\"r4\", \"date\"], <= T[\"helpers\", \"date\"])",
+        "IFERROR(COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= (1 / 0)), 0)",
+        "IFERROR(SUMIFS(T[\"r1\"..\"r4\", \"num_a\"], T[\"r1\"..\"r4\", \"date\"], <= T[\"helpers\", \"date\"]), 0)",
+    ] {
+        let err = Compiler::compile(
+            &manifest,
+            &[build_model(err_crit_formula, None, default_na, default_err)],
+        )
+        .expect_err(&format!("expected ErrorInCriteria on {err_crit_formula}"));
+        assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+        assert!(
+            matches!(
+                &err,
+                CompilerError::Eval(EvalError::Function { source, .. })
+                    if matches!(source.as_ref(), FunctionError::ErrorInCriteria { .. })
+            ),
+            "expected ErrorInCriteria on {err_crit_formula}, got {err:?}"
+        );
+    }
+
+    // Scenario 3: Valid guards (IFERROR operand, ISBLANK, ISNA, ISERROR across both errored and valid states),
+    // 255-char exact, 253-char <>, and valid business labels succeed
+    let exact_255 = "a".repeat(255);
+    let not_eq_253 = "a".repeat(253);
+
+    for (ok_formula, dyn_txt, na_state, err_state, expected) in [
+        (
+            "SUMIFS(T[\"r1\"..\"r4\", \"num_a\"], T[\"r1\"..\"r4\", \"num_a\"], >= IFERROR(1 / 0, 15))",
+            None,
+            default_na,
+            default_err,
+            CellValue::Number(90.0),
+        ),
+        (
+            "IF(ISBLANK(T[\"helpers\", \"nulls\"]), 0, COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= T[\"helpers\", \"nulls\"]))",
+            None,
+            default_na,
+            default_err,
+            CellValue::Number(0.0),
+        ),
+        (
+            "IF(ISNA(T[\"helpers\", \"date\"]), 0, COUNTIFS(T[\"r1\"..\"r4\", \"date\"], <= T[\"helpers\", \"date\"]))",
+            None,
+            default_na,
+            default_err,
+            CellValue::Number(0.0),
+        ),
+        (
+            "IF(ISNA(T[\"helpers\", \"date\"]), 0, COUNTIFS(T[\"r1\"..\"r4\", \"date\"], <= T[\"helpers\", \"date\"]))",
+            None,
+            "45658",
+            default_err,
+            CellValue::Number(3.0),
+        ),
+        (
+            "IF(ISERROR(T[\"helpers\", \"one_third\"]), 0, COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= T[\"helpers\", \"one_third\"]))",
+            None,
+            default_na,
+            default_err,
+            CellValue::Number(0.0),
+        ),
+        (
+            "IF(ISERROR(T[\"helpers\", \"one_third\"]), 0, COUNTIFS(T[\"r1\"..\"r4\", \"num_a\"], <= T[\"helpers\", \"one_third\"]))",
+            None,
+            default_na,
+            "25",
+            CellValue::Number(2.0),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"])",
+            Some(exact_255.as_str()),
+            default_na,
+            default_err,
+            CellValue::Number(0.0),
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], <> T[\"helpers\", \"cat\"])",
+            Some(not_eq_253.as_str()),
+            default_na,
+            default_err,
+            CellValue::Number(4.0),
+        ),
+    ] {
+        let compiled = Compiler::compile(
+            &manifest,
+            &[build_model(ok_formula, dyn_txt, na_state, err_state)],
+        )
+        .unwrap_or_else(|e| panic!("expected ok on {ok_formula}, got {e:?}"));
+        assert_eq!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("num_a")
+                )
+                .unwrap(),
+            expected,
+            "mismatch on {ok_formula}"
+        );
+    }
+
+    for valid_label in [
+        "nan",
+        "#1 Priority",
+        "Q1-2024",
+        "2024E",
+        "FY24",
+        "Tier-1",
+        "May",
+        "1A",
+        "2P",
+    ] {
+        let f = format!("COUNTIFS(T[\"r1\"..\"r4\", \"special_text\"], \"{valid_label}\")");
+        let compiled = Compiler::compile(
+            &manifest,
+            &[build_model(&f, Some(valid_label), default_na, default_err)],
+        )
+        .unwrap_or_else(|e| panic!("expected valid label '{valid_label}' to compile, got {e:?}"));
+        assert!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("num_a")
+                )
+                .is_ok()
+        );
+    }
+
+    // Scenario 4: Dynamic OOB INDEX(r1..r4, dyn_9) -> #REF! (4.0), ISERROR, ISNA, ERROR.TYPE
+    for (formula, expected) in [
+        (
+            "ISERROR(INDEX(T[\"r1\"..\"r4\", \"num_a\"], T[\"helpers\", \"num_a\"]))",
+            CellValue::Boolean(true),
+        ),
+        (
+            "ISNA(INDEX(T[\"r1\"..\"r4\", \"num_a\"], T[\"helpers\", \"num_a\"]))",
+            CellValue::Boolean(false),
+        ),
+        (
+            "ERROR.TYPE(INDEX(T[\"r1\"..\"r4\", \"num_a\"], T[\"helpers\", \"num_a\"]))",
+            CellValue::Number(4.0),
+        ),
+        ("ERROR.TYPE(42)", CellValue::Error(ExcelError::Na)),
+        (
+            "ERROR.TYPE(T[\"helpers\", \"nulls\"])",
+            CellValue::Error(ExcelError::Na),
+        ),
+    ] {
+        let compiled = Compiler::compile(
+            &manifest,
+            &[build_model(formula, None, default_na, default_err)],
+        )
+        .unwrap_or_else(|e| panic!("expected ok on {formula}, got {e:?}"));
+        assert_eq!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("num_a")
+                )
+                .unwrap(),
+            expected,
+            "mismatch on {formula}"
+        );
+    }
+}
+
+#[test]
+fn test_utf8_text_criteria_and_extreme_float_threshold_parity() {
+    use f8_core::value::TextCriterionError;
+
+    let manifest = ProjectManifest {
+        model_name: "Utf8AndExtremeFloatModel".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+
+    let build_utf8_table = |formula: &str, helper_label: &str| TableSpec {
+        id: TableId::from("T"),
+        title: "UTF-8 & Extreme Float Criteria".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: Default::default(),
+        columns: vec![
+            ColumnSpec::new("label").with_header("Label"),
+            ColumnSpec::new("val").with_header("Value"),
+        ],
+        rows: vec![
+            RowSpec::new("r1")
+                .with_cell("label", "€")
+                .with_cell("val", f64::MAX),
+            RowSpec::new("r2")
+                .with_cell("label", "España")
+                .with_cell("val", 1.797_693_134_862_31e308),
+            RowSpec::new("r3")
+                .with_cell("label", "東京")
+                .with_cell("val", -1.797_693_134_862_31e308),
+            RowSpec::new("r4")
+                .with_cell("label", "café!")
+                .with_cell("val", -f64::MAX),
+            RowSpec::new("r5")
+                .with_cell("label", "Note: café")
+                .with_cell("val", f64::MIN_POSITIVE),
+            RowSpec::new("helper")
+                .with_cell("label", helper_label)
+                .with_cell("val", f64::MAX),
+            RowSpec::new("helper_neg")
+                .with_cell("label", "aux")
+                .with_cell("val", -f64::MAX),
+            RowSpec::new("out")
+                .with_cell("label", "result")
+                .with_cell("val", CellInput::formula(formula)),
+        ],
+    };
+
+    // Multi-byte UTF-8 text criteria (with and without ':') via literal exact, literal <>, and dynamic cell reference
+    for label in ["€", "España", "東京", "café!", "Note: café"] {
+        let lit_eq = format!("COUNTIFS(T[\"r1\"..\"r5\", \"label\"], \"{label}\")");
+        let compiled_eq = Compiler::compile(&manifest, &[build_utf8_table(&lit_eq, label)])
+            .unwrap_or_else(|e| panic!("expected literal '{label}' to compile, got {e:?}"));
+        assert_eq!(
+            compiled_eq
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("out"),
+                    &ColId::from("val")
+                )
+                .unwrap(),
+            CellValue::Number(1.0)
+        );
+
+        let lit_ne = format!("COUNTIFS(T[\"r1\"..\"r5\", \"label\"], <> \"{label}\")");
+        let compiled_ne = Compiler::compile(&manifest, &[build_utf8_table(&lit_ne, label)])
+            .unwrap_or_else(|e| panic!("expected <> '{label}' to compile, got {e:?}"));
+        assert_eq!(
+            compiled_ne
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("out"),
+                    &ColId::from("val")
+                )
+                .unwrap(),
+            CellValue::Number(4.0)
+        );
+
+        let dyn_eq = "COUNTIFS(T[\"r1\"..\"r5\", \"label\"], T[\"helper\", \"label\"])";
+        let compiled_dyn = Compiler::compile(&manifest, &[build_utf8_table(dyn_eq, label)])
+            .unwrap_or_else(|e| panic!("expected dynamic '{label}' to compile, got {e:?}"));
+        assert_eq!(
+            compiled_dyn
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("out"),
+                    &ColId::from("val")
+                )
+                .unwrap(),
+            CellValue::Number(1.0)
+        );
+    }
+
+    // Surrogate-pair emoji (4 UTF-8 bytes / 2 UTF-16 code units) 255-UTF-16-code-unit boundary
+    let emoji_255 = format!("{}a", "😀".repeat(127));
+    let emoji_256 = "😀".repeat(128);
+    let emoji_ne_255 = format!("{}a", "😀".repeat(126));
+    let emoji_ne_256 = "😀".repeat(127);
+
+    assert!(
+        Compiler::compile(
+            &manifest,
+            &[build_utf8_table(
+                &format!("COUNTIFS(T[\"r1\"..\"r5\", \"label\"], \"{emoji_255}\")"),
+                &emoji_255
+            )]
+        )
+        .is_ok()
+    );
+    assert!(
+        Compiler::compile(
+            &manifest,
+            &[build_utf8_table(
+                &format!("COUNTIFS(T[\"r1\"..\"r5\", \"label\"], <> \"{emoji_ne_255}\")"),
+                &emoji_ne_255
+            )]
+        )
+        .is_ok()
+    );
+    for (bad_formula, bad_helper) in [
+        (
+            format!("COUNTIFS(T[\"r1\"..\"r5\", \"label\"], \"{emoji_256}\")"),
+            emoji_256.as_str(),
+        ),
+        (
+            format!("COUNTIFS(T[\"r1\"..\"r5\", \"label\"], <> \"{emoji_ne_256}\")"),
+            emoji_ne_256.as_str(),
+        ),
+    ] {
+        let err = Compiler::compile(&manifest, &[build_utf8_table(&bad_formula, bad_helper)])
+            .expect_err("expected surrogate-pair TooLong rejection");
+        assert!(matches!(
+            &err,
+            CompilerError::Eval(EvalError::Function { source, .. })
+                if matches!(
+                    source.as_ref(),
+                    FunctionError::InvalidTextCriterion {
+                        reason: TextCriterionError::TooLong,
+                        ..
+                    }
+                )
+        ));
+    }
+
+    // Extreme +/-f64::MAX comparator threshold caps to +/-1.79769313486231e308 in Pass 4:
+    // r1 = f64::MAX (> 1.79769313486231e308), r2 = 1.79769313486231e308, r3 = -1.79769313486231e308,
+    // r4 = -f64::MAX (< -1.79769313486231e308), r5 = f64::MIN_POSITIVE
+    for (formula, expected_count) in [
+        (
+            "COUNTIFS(T[\"r1\"..\"r5\", \"val\"], T[\"helper\", \"val\"])",
+            1.0,
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r5\", \"val\"], <= T[\"helper\", \"val\"])",
+            4.0,
+        ),
+        (
+            "COUNTIFS(T[\"r1\"..\"r5\", \"val\"], >= T[\"helper_neg\", \"val\"])",
+            4.0,
+        ),
+    ] {
+        let compiled = Compiler::compile(&manifest, &[build_utf8_table(formula, "Alpha")]).unwrap();
+        assert_eq!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("out"),
+                    &ColId::from("val")
+                )
+                .unwrap(),
+            CellValue::Number(expected_count),
+            "extreme float parity mismatch on {formula}"
+        );
+    }
+}

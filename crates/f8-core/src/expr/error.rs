@@ -31,7 +31,9 @@ pub enum ParseError {
     },
 
     /// Function identifier was not uppercase.
-    #[error("Invalid function name '{name}' at offset {offset}: must be uppercase [A-Z][A-Z0-9_]*")]
+    #[error(
+        "Invalid function name '{name}' at offset {offset}: must be uppercase [A-Z][A-Z0-9_]*('.'[A-Z][A-Z0-9_]*)*"
+    )]
     InvalidFunctionName {
         /// The invalid function name.
         name: String,
@@ -75,6 +77,15 @@ pub enum ParseError {
     ChainedComparison {
         /// Relational operator that was chained.
         operator: &'static str,
+        /// Byte offset in the formula string.
+        offset: usize,
+    },
+
+    /// Redundant leading '=' in a function argument.
+    #[error(
+        "Redundant leading '=' at offset {offset}: omit '=' and pass a bare expression for exact equality"
+    )]
+    RedundantCriteriaEquals {
         /// Byte offset in the formula string.
         offset: usize,
     },

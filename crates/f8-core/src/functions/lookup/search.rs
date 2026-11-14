@@ -398,6 +398,11 @@ pub fn extract_1d_range_slice<'a>(
             expected: "range",
             found: "lazy",
         }),
+        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
+            function,
+            expected: "range",
+            found: "criterion",
+        }),
         FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
             function,
             expected: "range",

@@ -163,7 +163,8 @@ impl ExcelFunction for PmtFunction {
                 fv_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => extract_scalar_number(fv_arg, self.name(), "fv", 4, ctx)?,
         };
         let type_res = match args.get(4) {
@@ -172,7 +173,8 @@ impl ExcelFunction for PmtFunction {
                 type_arg @ (FunctionArg::Scalar(_)
                 | FunctionArg::TypedErrorScalar { .. }
                 | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)),
+                | FunctionArg::Lazy(_)
+                | FunctionArg::Criterion(_)),
             ) => extract_scalar_integer(type_arg, self.name(), "type", 5, ctx)?,
         };
 
@@ -270,7 +272,8 @@ fn extract_amortization_args(
             fv_arg @ (FunctionArg::Scalar(_)
             | FunctionArg::TypedErrorScalar { .. }
             | FunctionArg::Array { .. }
-            | FunctionArg::Lazy(_)),
+            | FunctionArg::Lazy(_)
+            | FunctionArg::Criterion(_)),
         ) => extract_scalar_number(fv_arg, func_name, "fv", 5, ctx)?,
     };
     let type_res = match args.get(5) {
@@ -279,7 +282,8 @@ fn extract_amortization_args(
             type_arg @ (FunctionArg::Scalar(_)
             | FunctionArg::TypedErrorScalar { .. }
             | FunctionArg::Array { .. }
-            | FunctionArg::Lazy(_)),
+            | FunctionArg::Lazy(_)
+            | FunctionArg::Criterion(_)),
         ) => extract_scalar_integer(type_arg, func_name, "type", 6, ctx)?,
     };
 
