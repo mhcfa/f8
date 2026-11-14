@@ -206,6 +206,10 @@ static XNPV_PARAMS: &[ParameterDef] = &[
 ];
 
 /// `XNPV(rate, values, dates)`: Calculates net present value of non-periodic cash flows using Actual/365 year fractions.
+///
+/// Rejects `rate <= 0.0` with runtime `#NUM!` (`ExcelError::Num`) for exact recalculation parity with emitted
+/// `=XNPV(...)` formulas: although `-1.0 < rate <= 0.0` is mathematically well-defined (`1.0 + rate > 0.0`),
+/// Excel's legacy `XNPV` implementation rejects non-positive discount rates with `#NUM!`.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct XnpvFunction;
 
@@ -263,7 +267,8 @@ impl ExcelFunction for XnpvFunction {
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        if rate <= -1.0 {
+        // Excel quirk: XNPV rejects all non-positive rates (including 0.0 and -1.0 < rate < 0.0) with #NUM!.
+        if rate <= 0.0 {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
@@ -291,9 +296,6 @@ impl ExcelFunction for XnpvFunction {
             }
             let year_fraction = (d_trunc - start_date) / 365.0;
             let denom = (1.0 + rate).powf(year_fraction);
-            if denom == 0.0 {
-                return Ok(CellValue::Error(ExcelError::Div0));
-            }
             xnpv += v / denom;
         }
 
