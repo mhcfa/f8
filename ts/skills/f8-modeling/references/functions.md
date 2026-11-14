@@ -106,7 +106,7 @@ Signatures, parameter defaults, compile-time type/shape rules, argument omission
 
 - Literal-only modes: Both `match_mode` and `search_mode` must be integer literals when supplied (non-literal expressions, floats, or unsupported mode codes throw `F8Error`).
 - `match_mode`: `0` (default) = exact match (ASCII case-insensitive for text); `-1` = exact or next smaller; `1` = exact or next larger (wildcard `match_mode = 2` is not supported).
-- `search_mode`: `1` (default) = first-to-last; `-1` = last-to-first; `2` = binary search ascending; `-2` = binary search descending. Binary search modes (`2`, `-2`) require every `lookup_array` cell to be non-`Empty`, non-`Error`, homogeneous, and monotonically sorted (`F8Error` on violation).
+- `search_mode`: `1` (default) = first-to-last; `-1` = last-to-first; `2` = binary search ascending (first exact match on duplicates); `-2` = binary search descending (last exact match on duplicates). Binary search modes (`2`, `-2`) require every `lookup_array` cell to be non-`Empty`, non-`Error`, homogeneous, and monotonically sorted (`F8Error` on violation).
 
 ---
 

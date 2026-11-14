@@ -638,6 +638,7 @@ fn test_scenario_6_wildcard_matching() {
 #[test]
 fn test_scenario_7_binary_search() {
     let registry = FunctionRegistry::standard();
+    let xlookup = registry.lookup("XLOOKUP").unwrap();
     let xmatch = registry.lookup("XMATCH").unwrap();
     let ctx = MockContext::new();
 
@@ -694,6 +695,105 @@ fn test_scenario_7_binary_search() {
         )
         .unwrap();
     assert_eq!(desc_res, CellValue::Number(2.0));
+
+    // Duplicate keys: search_mode = 2 selects first match; search_mode = -2 selects last match
+    let dup_asc = make_array(
+        5,
+        1,
+        vec![
+            CellValue::Number(10.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(30.0),
+        ],
+    );
+    let dup_desc = make_array(
+        5,
+        1,
+        vec![
+            CellValue::Number(30.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(10.0),
+        ],
+    );
+    let labels = make_array(
+        5,
+        1,
+        vec![
+            CellValue::Text("r1".into()),
+            CellValue::Text("r2".into()),
+            CellValue::Text("r3".into()),
+            CellValue::Text("r4".into()),
+            CellValue::Text("r5".into()),
+        ],
+    );
+
+    for match_mode in [0.0, -1.0, 1.0] {
+        assert_eq!(
+            xmatch
+                .evaluate(
+                    &[
+                        FunctionArg::Scalar(CellValue::Number(20.0)),
+                        dup_asc.clone(),
+                        FunctionArg::Scalar(CellValue::Number(match_mode)),
+                        FunctionArg::Scalar(CellValue::Number(2.0)),
+                    ],
+                    &ctx,
+                )
+                .unwrap(),
+            CellValue::Number(2.0)
+        );
+        assert_eq!(
+            xlookup
+                .evaluate(
+                    &[
+                        FunctionArg::Scalar(CellValue::Number(20.0)),
+                        dup_asc.clone(),
+                        labels.clone(),
+                        FunctionArg::Omitted,
+                        FunctionArg::Scalar(CellValue::Number(match_mode)),
+                        FunctionArg::Scalar(CellValue::Number(2.0)),
+                    ],
+                    &ctx,
+                )
+                .unwrap(),
+            CellValue::Text("r2".into())
+        );
+
+        assert_eq!(
+            xmatch
+                .evaluate(
+                    &[
+                        FunctionArg::Scalar(CellValue::Number(20.0)),
+                        dup_desc.clone(),
+                        FunctionArg::Scalar(CellValue::Number(match_mode)),
+                        FunctionArg::Scalar(CellValue::Number(-2.0)),
+                    ],
+                    &ctx,
+                )
+                .unwrap(),
+            CellValue::Number(4.0)
+        );
+        assert_eq!(
+            xlookup
+                .evaluate(
+                    &[
+                        FunctionArg::Scalar(CellValue::Number(20.0)),
+                        dup_desc.clone(),
+                        labels.clone(),
+                        FunctionArg::Omitted,
+                        FunctionArg::Scalar(CellValue::Number(match_mode)),
+                        FunctionArg::Scalar(CellValue::Number(-2.0)),
+                    ],
+                    &ctx,
+                )
+                .unwrap(),
+            CellValue::Text("r4".into())
+        );
+    }
 
     // Binary search rejects Empty elements in lookup_array with ExpectedType::NonEmpty
     assert_eq!(
