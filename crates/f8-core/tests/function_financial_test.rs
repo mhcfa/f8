@@ -561,6 +561,152 @@ fn test_scenario_4_irr_periodic_solver() {
         irr_func.evaluate(&too_few, &ctx).unwrap(),
         CellValue::Error(ExcelError::Num)
     );
+
+    // guess <= -1.0 returns #NUM! (matching live Excel and PMT/XNPV rate domain handling)
+    for bad_guess in [-1.0, -1.5, -100.0] {
+        let bad_guess_args = vec![
+            args[0].clone(),
+            FunctionArg::Scalar(CellValue::Number(bad_guess)),
+        ];
+        assert_eq!(
+            irr_func.evaluate(&bad_guess_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for IRR guess = {bad_guess}"
+        );
+    }
+
+    // Runtime ExcelError in `guess` bubbles before sign-alternation `#NUM!`
+    let guess_err_args = vec![
+        all_pos[0].clone(),
+        FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+    ];
+    assert_eq!(
+        irr_func.evaluate(&guess_err_args, &ctx).unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+
+    // 30-year monthly mortgage ([-100_000] + [600; 360]) converges from default guess = 0.10
+    let mut mortgage_cfs = vec![CellValue::Number(-100_000.0)];
+    mortgage_cfs.extend(std::iter::repeat_n(CellValue::Number(600.0), 360));
+    let mortgage_args = vec![FunctionArg::array(
+        361,
+        1,
+        mortgage_cfs,
+        ReferenceKind::Slice,
+        AxisRole::Measure,
+    )];
+    let mortgage_res = irr_func.evaluate(&mortgage_args, &ctx).unwrap();
+    if let CellValue::Number(rate) = mortgage_res {
+        assert!(
+            (rate - 0.005_005_825_006_762_407).abs() < 1e-12,
+            "30y monthly mortgage IRR was {rate}"
+        );
+    } else {
+        panic!("Expected Number, got {mortgage_res:?}");
+    }
+
+    // Leading-zero cash flows with extreme guess = 1e160 find true root 0.10 rather than overflow 0.0
+    let lead_zero_args = vec![
+        FunctionArg::array(
+            4,
+            1,
+            vec![
+                CellValue::Number(0.0),
+                CellValue::Number(0.0),
+                CellValue::Number(-100.0),
+                CellValue::Number(110.0),
+            ],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+        FunctionArg::Scalar(CellValue::Number(1e160)),
+    ];
+    if let CellValue::Number(rate) = irr_func.evaluate(&lead_zero_args, &ctx).unwrap() {
+        assert!((rate - 0.10).abs() < 1e-12, "Leading-zero IRR was {rate}");
+    } else {
+        panic!("Expected Number for leading-zero IRR");
+    }
+
+    // Multi-root cash flows [-1600, 10000, -10000] select root nearest guess (0.25 vs 4.0)
+    let multi_root_slice = FunctionArg::array(
+        3,
+        1,
+        vec![
+            CellValue::Number(-1600.0),
+            CellValue::Number(10_000.0),
+            CellValue::Number(-10_000.0),
+        ],
+        ReferenceKind::Slice,
+        AxisRole::Measure,
+    );
+    if let CellValue::Number(low_root) = irr_func
+        .evaluate(std::slice::from_ref(&multi_root_slice), &ctx)
+        .unwrap()
+    {
+        assert!((low_root - 0.25).abs() < 1e-12);
+    } else {
+        panic!("Expected low IRR root 0.25");
+    }
+    if let CellValue::Number(high_root) = irr_func
+        .evaluate(
+            &[
+                multi_root_slice,
+                FunctionArg::Scalar(CellValue::Number(3.0)),
+            ],
+            &ctx,
+        )
+        .unwrap()
+    {
+        assert!((high_root - 4.0).abs() < 1e-12);
+    } else {
+        panic!("Expected high IRR root 4.0");
+    }
+
+    // Rootless sign-alternating cash flows return #NUM!
+    for rootless in [
+        vec![
+            CellValue::Number(100.0),
+            CellValue::Number(-10.0),
+            CellValue::Number(100.0),
+        ],
+        vec![
+            CellValue::Number(-100.0),
+            CellValue::Number(50.0),
+            CellValue::Number(-100.0),
+        ],
+    ] {
+        let rootless_args = vec![FunctionArg::array(
+            3,
+            1,
+            rootless,
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        )];
+        assert_eq!(
+            irr_func.evaluate(&rootless_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num)
+        );
+    }
+
+    // Severe-loss salvage schedule [-1_000_000, 1] converges to -0.999999
+    let salvage_slice = FunctionArg::array(
+        2,
+        1,
+        vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],
+        ReferenceKind::Slice,
+        AxisRole::Measure,
+    );
+    if let CellValue::Number(rate) = irr_func
+        .evaluate(std::slice::from_ref(&salvage_slice), &ctx)
+        .unwrap()
+    {
+        assert!(
+            (rate - (-0.999_999)).abs() < 1e-14,
+            "Salvage IRR was {rate}"
+        );
+    } else {
+        panic!("Expected Number for salvage IRR");
+    }
 }
 
 #[test]
@@ -695,6 +841,111 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         );
     } else {
         panic!("Expected Number, got {trunc_res:?}");
+    }
+
+    // guess <= -1.0 in XIRR returns #NUM!
+    for bad_guess in [-1.0, -1.5, -100.0] {
+        let bad_guess_args = vec![
+            args[0].clone(),
+            args[1].clone(),
+            FunctionArg::Scalar(CellValue::Number(bad_guess)),
+        ];
+        assert_eq!(
+            xirr_func.evaluate(&bad_guess_args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for XIRR guess = {bad_guess}"
+        );
+    }
+
+    // Runtime ExcelError in `guess` bubbles before sign-alternation `#NUM!`
+    let xirr_guess_err_args = vec![
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(100.0), CellValue::Number(200.0)],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+        args[1].clone(),
+        FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+    ];
+    assert_eq!(
+        xirr_func.evaluate(&xirr_guess_err_args, &ctx).unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+
+    // Leading-zero XIRR cash flows with extreme guess = 1e160 converge to true root 0.10
+    let xirr_lead_zero = vec![
+        FunctionArg::array(
+            3,
+            1,
+            vec![
+                CellValue::Number(0.0),
+                CellValue::Number(-1000.0),
+                CellValue::Number(1100.0),
+            ],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+        FunctionArg::array(
+            3,
+            1,
+            vec![
+                CellValue::Number(45292.0),
+                CellValue::Number(45657.0),
+                CellValue::Number(46022.0),
+            ],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+        FunctionArg::Scalar(CellValue::Number(1e160)),
+    ];
+    if let CellValue::Number(rate) = xirr_func.evaluate(&xirr_lead_zero, &ctx).unwrap() {
+        assert!((rate - 0.10).abs() < 1e-12, "Leading-zero XIRR was {rate}");
+    } else {
+        panic!("Expected Number for leading-zero XIRR");
+    }
+
+    // Rootless and same-day cancelling XIRR schedules return #NUM!
+    let xirr_same_day_cancel = vec![
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(-100.0), CellValue::Number(100.0)],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(45292.0), CellValue::Number(45292.0)],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+    ];
+    assert_eq!(
+        xirr_func.evaluate(&xirr_same_day_cancel, &ctx).unwrap(),
+        CellValue::Error(ExcelError::Num)
+    );
+
+    // Severe-loss salvage XIRR and same-day huge-notional cancellation preserve precision
+    let xirr_salvage = vec![
+        FunctionArg::array(
+            2,
+            1,
+            vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],
+            ReferenceKind::Slice,
+            AxisRole::Measure,
+        ),
+        args[1].clone(),
+    ];
+    if let CellValue::Number(rate) = xirr_func.evaluate(&xirr_salvage, &ctx).unwrap() {
+        assert!(
+            (rate - (-0.999_999)).abs() < 1e-14,
+            "Salvage XIRR was {rate}"
+        );
+    } else {
+        panic!("Expected Number for salvage XIRR");
     }
 }
 
