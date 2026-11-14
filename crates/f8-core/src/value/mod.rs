@@ -1,6 +1,14 @@
 //! Runtime value representations and Excel parity calculation semantics.
 //!
-//! Defines `CellValue`, `ExcelError`, and calculation/coercion rules.
+//! Defines `CellValue`, `ExcelError`, and calculation rules.
+
+use std::cmp::Ordering;
+use std::fmt;
+
+use serde::{Deserialize, Serialize};
+
+use crate::expr::ast::Literal;
+use crate::model::table::ValueLiteral;
 
 pub mod date;
 pub mod error;
@@ -15,14 +23,6 @@ pub use error::{
     ValueType,
 };
 pub use format::{format_accounting_number, format_cell_value};
-
-use std::cmp::Ordering;
-use std::fmt;
-
-use serde::{Deserialize, Serialize};
-
-use crate::expr::ast::Literal;
-use crate::model::table::ValueLiteral;
 
 /// Maximum exact integer magnitude representable without precision loss in IEEE-754 `f64` (`2^53 - 1`).
 pub(crate) const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
@@ -48,51 +48,212 @@ pub(crate) fn parse_excel_number(s: &str) -> Option<f64> {
     Some(normalize_zero(num))
 }
 
-/// Rounds a finite non-zero `f64` to 15 significant decimal digits (half-away-from-zero),
-/// returning `(is_negative, trimmed_mantissa_digits, base10_exponent)`.
-fn round_to_15_sig_digits(val: f64) -> Option<(bool, String, i32)> {
-    if !val.is_finite() || val == 0.0 {
-        return None;
-    }
-    let is_neg = val.is_sign_negative();
-    let sci = format!("{:.35e}", val.abs());
-    let (coeff, exp_str) = sci.split_once('e')?;
-    let mut exp10 = exp_str.parse::<i32>().ok()?;
+/// Base-10 15-significant-digit representation of a finite non-zero `f64`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Decimal15 {
+    /// Sign of the original finite non-zero value.
+    pub is_neg: bool,
+    /// Unrounded base-10 exponent `floor(log10(abs(val)))`.
+    pub raw_exp10: i32,
+    /// 15-digit decimal significand in `100_000_000_000_000..=999_999_999_999_999`,
+    /// rounded half-away-from-zero at the 16th significant digit (capped at Excel's
+    /// `1.79769313486231e308` ceiling when `exp10 == 308`).
+    pub sig15: u64,
+    /// Post-rounding base-10 exponent (`raw_exp10` or `raw_exp10 + 1` on 15-digit carry),
+    /// representing exact decimal magnitude `sig15 * 10^(exp10 - 14)`.
+    pub exp10: i32,
+}
 
-    let mut sig15: u64 = 0;
-    let mut d16: u64 = 0;
-    let mut digit_idx = 0usize;
-    for b in coeff.bytes() {
-        if b == b'.' {
-            continue;
-        }
-        if !b.is_ascii_digit() {
+impl Decimal15 {
+    /// Extracts the 15-significant-digit base-10 representation of a finite non-zero `f64`.
+    #[must_use]
+    pub(crate) fn from_f64(val: f64) -> Option<Self> {
+        if !val.is_finite() || val == 0.0 {
             return None;
         }
-        let d = u64::from(b - b'0');
-        if digit_idx < 15 {
-            sig15 = sig15 * 10 + d;
-        } else if digit_idx == 15 {
-            d16 = d;
-            break;
+        let is_neg = val.is_sign_negative();
+        let sci = format!("{:.35e}", val.abs());
+        let (coeff, exp_str) = sci.split_once('e')?;
+        let raw_exp10 = exp_str.parse::<i32>().ok()?;
+        let mut exp10 = raw_exp10;
+
+        let mut sig15: u64 = 0;
+        let mut d16: u64 = 0;
+        let mut digit_idx = 0usize;
+        for b in coeff.bytes() {
+            if b == b'.' {
+                continue;
+            }
+            if !b.is_ascii_digit() {
+                return None;
+            }
+            let d = u64::from(b - b'0');
+            if digit_idx < 15 {
+                sig15 = sig15 * 10 + d;
+            } else if digit_idx == 15 {
+                d16 = d;
+                break;
+            }
+            digit_idx += 1;
         }
-        digit_idx += 1;
+
+        if d16 >= 5 {
+            sig15 += 1;
+            if sig15 == 1_000_000_000_000_000 {
+                sig15 = 100_000_000_000_000;
+                exp10 += 1;
+            }
+        }
+        if exp10 == 308 && sig15 > 179_769_313_486_231 {
+            sig15 = 179_769_313_486_231;
+        }
+
+        Some(Self {
+            is_neg,
+            raw_exp10,
+            sig15,
+            exp10,
+        })
     }
 
-    if d16 >= 5 {
-        sig15 += 1;
-        if sig15 == 1_000_000_000_000_000 {
-            sig15 = 100_000_000_000_000;
-            exp10 += 1;
+    /// Rounds `self * 10^scale_exp10` to `digits` decimal places under `mode`,
+    /// returning `None` when the rounded magnitude is zero.
+    #[must_use]
+    pub(crate) fn round_scaled(
+        self,
+        scale_exp10: i32,
+        digits: i64,
+        mode: DecimalRoundingMode,
+    ) -> Option<RoundedDecimal> {
+        let scaled_exp10 = i128::from(self.exp10) + i128::from(scale_exp10);
+        let k = scaled_exp10 + i128::from(digits) + 1;
+        if k <= 0 {
+            return match mode {
+                DecimalRoundingMode::Truncate => None,
+                DecimalRoundingMode::HalfAway => {
+                    if k == 0 && self.sig15 >= 500_000_000_000_000 {
+                        Some(RoundedDecimal {
+                            coeff: 1,
+                            num_digits: 1,
+                            top_exp10: -i128::from(digits),
+                        })
+                    } else {
+                        None
+                    }
+                }
+                DecimalRoundingMode::Away => Some(RoundedDecimal {
+                    coeff: 1,
+                    num_digits: 1,
+                    top_exp10: -i128::from(digits),
+                }),
+            };
         }
-    }
-    if exp10 == 308 && sig15 > 179_769_313_486_231 {
-        sig15 = 179_769_313_486_231;
+        if k <= 15 {
+            let eff_k = k as u32;
+            let drop = (15 - k) as u32;
+            let scale = 10_u64.pow(drop);
+            let mut q = self.sig15 / scale;
+            let rem = self.sig15 % scale;
+            let bump = match mode {
+                DecimalRoundingMode::HalfAway => drop > 0 && rem >= scale / 2,
+                DecimalRoundingMode::Away => rem > 0,
+                DecimalRoundingMode::Truncate => false,
+            };
+            if bump {
+                q += 1;
+                if q == 10_u64.pow(eff_k) {
+                    return Some(RoundedDecimal {
+                        coeff: 1,
+                        num_digits: 1,
+                        top_exp10: scaled_exp10 + 1,
+                    });
+                }
+            }
+            return Some(RoundedDecimal {
+                coeff: q,
+                num_digits: eff_k,
+                top_exp10: scaled_exp10,
+            });
+        }
+        Some(RoundedDecimal {
+            coeff: self.sig15,
+            num_digits: 15,
+            top_exp10: scaled_exp10,
+        })
     }
 
-    let raw_digits = sig15.to_string();
-    let trimmed = raw_digits.trim_end_matches('0').to_string();
-    Some((is_neg, trimmed, exp10))
+    fn parse_sci_f64(self, coeff: u64, exp10: i32) -> f64 {
+        if coeff == 0 {
+            return 0.0;
+        }
+        let sign = if self.is_neg { "-" } else { "" };
+        let formatted = format!("{sign}{coeff}e{exp10}");
+        match formatted.parse::<f64>() {
+            Ok(parsed) => normalize_zero(parsed),
+            Err(_) => {
+                if self.is_neg {
+                    f64::NEG_INFINITY
+                } else {
+                    f64::INFINITY
+                }
+            }
+        }
+    }
+}
+
+/// Non-zero base-10 value rounded at a target decimal place (`coeff * 10^(top_exp10 - (num_digits - 1))`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RoundedDecimal {
+    /// Unsigned decimal significand (`1..=999_999_999_999_999`, `num_digits` digits, no leading zeros).
+    pub coeff: u64,
+    /// Exact decimal digit count of `coeff` (`1..=15`).
+    pub num_digits: u32,
+    /// Base-10 exponent of the leading digit of `coeff`.
+    pub top_exp10: i128,
+}
+
+/// Directional decimal rounding mode for Excel `ROUND`, `ROUNDUP`, and `ROUNDDOWN`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecimalRoundingMode {
+    /// Symmetric half away from zero (`ROUND`).
+    HalfAway,
+    /// Strictly away from zero (`ROUNDUP`).
+    Away,
+    /// Strictly toward zero / truncation (`ROUNDDOWN`).
+    Truncate,
+}
+
+/// Rounds `val` to `digits` decimal places in base 10 using Excel's 15-significant-digit decimal model.
+///
+/// - Preserves `val` unchanged when `digits >= 15 - floor(log10(abs(val)))` (exceeding 15 significant digits).
+/// - Returns `+/-f64::INFINITY` when rounding overflows IEEE-754 `f64::MAX` (for `CellValue::number` -> `#NUM!`).
+/// - Normalizes `-0.0` to `0.0`.
+#[must_use]
+pub(crate) fn round_decimal_f64(val: f64, digits: i64, mode: DecimalRoundingMode) -> f64 {
+    if !val.is_finite() || val == 0.0 {
+        return normalize_zero(val);
+    }
+    let Some(dec) = Decimal15::from_f64(val) else {
+        return normalize_zero(val);
+    };
+    if i128::from(digits) >= 15 - i128::from(dec.raw_exp10) {
+        return normalize_zero(val);
+    }
+    let Some(rounded) = dec.round_scaled(0, digits, mode) else {
+        return 0.0;
+    };
+    if rounded.top_exp10 > 308 {
+        return if dec.is_neg {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
+    }
+    let place_exp10 = rounded.top_exp10 - i128::from(rounded.num_digits - 1);
+    let Ok(exp10) = i32::try_from(place_exp10) else {
+        return 0.0;
+    };
+    dec.parse_sci_f64(rounded.coeff, exp10)
 }
 
 /// Normalizes a finite `f64` comparator threshold to Excel's 15-significant-digit decimal value
@@ -121,10 +282,13 @@ pub fn format_criteria_number(val: f64) -> String {
     if norm == 0.0 {
         return "0".to_string();
     }
-    let Some((is_neg, digits, exp10)) = round_to_15_sig_digits(norm) else {
+    let Some(dec) = Decimal15::from_f64(norm) else {
         return "0".to_string();
     };
-    let sign = if is_neg { "-" } else { "" };
+    let raw_digits = dec.sig15.to_string();
+    let digits = raw_digits.trim_end_matches('0');
+    let exp10 = dec.exp10;
+    let sign = if dec.is_neg { "-" } else { "" };
     if (0..15).contains(&exp10) {
         let int_len = (exp10 + 1) as usize;
         if let (Some(int_part), Some(frac_part)) = (digits.get(..int_len), digits.get(int_len..))

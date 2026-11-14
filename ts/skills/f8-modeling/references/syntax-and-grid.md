@@ -294,7 +294,7 @@ table.addColumnGutter(): this;
 | `"integer"`      | `null`             | No                  | No                  | `2024`, `-2024`, `0`                 | `"2024"` / `"(2024)"` / `"0"` (Excel: `2024` / `(-2024)` / `-`) |
 | `"date"`         | `null`             | No                  | No                  | `45657` (Excel serial)               | `"2024-12-31"`                                              |
 | `"text"`         | `null`             | No                  | No                  | `"Sample"`                           | `"Sample"`                                                  |
-| `null` (default) | `null`             | Yes (in-memory)     | No                  | `1250`, `-12.5`, `0`                 | `"1,250"` / `"(12.5)"` / `"0"` (uses explicit `decimals` if set, else `0` if integer and `1` if fractional; Excel `General`) |
+| `null` (default) | `null`             | Yes (in-memory)     | No                  | `1250`, `-12.5`, `0`                 | `"1,250"` / `"(12.5)"` / `"0"` (uses explicit `decimals` if set, else rounds to `1` decimal place and trims trailing `.0`; Excel `General`) |
 
 ### Semantic Styles (`SemanticStyle`)
 

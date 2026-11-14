@@ -599,63 +599,6 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
     count
 }
 
-/// Clamps decimal places to prevent IEEE-754 exponent overflow / underflow.
-pub const MAX_DECIMAL_DIGITS: i32 = 308;
-
-/// Performs symmetric rounding half away from zero (standard Excel `ROUND`).
-#[must_use]
-pub fn round_half_away_from_zero(val: f64, digits: i32) -> f64 {
-    if !val.is_finite() || val == 0.0 {
-        return normalize_zero(val);
-    }
-    let clamped_digits = digits.clamp(-MAX_DECIMAL_DIGITS, MAX_DECIMAL_DIGITS);
-    if clamped_digits >= 0 {
-        let factor = 10_f64.powi(clamped_digits);
-        normalize_zero((val * factor).round() / factor)
-    } else {
-        let factor = 10_f64.powi(-clamped_digits);
-        normalize_zero((val / factor).round() * factor)
-    }
-}
-
-/// Rounds away from zero (standard Excel `ROUNDUP`: ceil for positive, floor for negative).
-#[must_use]
-pub fn round_away_from_zero(val: f64, digits: i32) -> f64 {
-    if !val.is_finite() || val == 0.0 {
-        return normalize_zero(val);
-    }
-    let clamped_digits = digits.clamp(-MAX_DECIMAL_DIGITS, MAX_DECIMAL_DIGITS);
-    let sign = if val < 0.0 { -1.0 } else { 1.0 };
-    if clamped_digits >= 0 {
-        let factor = 10_f64.powi(clamped_digits);
-        let scaled = (val * factor).abs().ceil() * sign;
-        normalize_zero(scaled / factor)
-    } else {
-        let factor = 10_f64.powi(-clamped_digits);
-        let scaled = (val / factor).abs().ceil() * sign;
-        normalize_zero(scaled * factor)
-    }
-}
-
-/// Rounds towards zero (standard Excel `ROUNDDOWN`: truncate toward zero).
-#[must_use]
-pub fn round_towards_zero(val: f64, digits: i32) -> f64 {
-    if !val.is_finite() || val == 0.0 {
-        return normalize_zero(val);
-    }
-    let clamped_digits = digits.clamp(-MAX_DECIMAL_DIGITS, MAX_DECIMAL_DIGITS);
-    let sign = if val < 0.0 { -1.0 } else { 1.0 };
-    if clamped_digits >= 0 {
-        let factor = 10_f64.powi(clamped_digits);
-        let scaled = (val * factor).abs().floor() * sign;
-        normalize_zero(scaled / factor)
-    } else {
-        let factor = 10_f64.powi(-clamped_digits);
-        let scaled = (val / factor).abs().floor() * sign;
-        normalize_zero(scaled * factor)
-    }
-}
-
 /// Extracts a strict numeric scalar from `arg`, rejecting `Text`, `Boolean`, and `Empty` with `TypeError::InvalidArgumentType`
 /// while bubbling `CellValue::Error(e)` as `Ok(Err(e))` when its inferred type is compatible.
 pub fn extract_scalar_number(

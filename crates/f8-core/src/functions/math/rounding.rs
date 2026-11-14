@@ -1,14 +1,11 @@
-use crate::functions::common::{
-    MAX_DECIMAL_DIGITS, extract_scalar_integer, extract_scalar_number, round_away_from_zero,
-    round_half_away_from_zero, round_towards_zero,
-};
+use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ValueType};
+use crate::value::{CellValue, DecimalRoundingMode, ValueType, round_decimal_f64};
 
 /// Positional parameter definitions for rounding functions (`ROUND`, `ROUNDUP`, `ROUNDDOWN`).
 static ROUND_PARAMS: &[ParameterDef] = &[
@@ -28,7 +25,7 @@ static ROUND_PARAMS: &[ParameterDef] = &[
 
 /// Helper macro to implement rounding functions.
 macro_rules! impl_rounding_function {
-    ($struct_name:ident, $func_name:literal, $round_op:path, $doc:expr) => {
+    ($struct_name:ident, $func_name:literal, $round_mode:expr, $doc:expr) => {
         #[doc = $doc]
         #[derive(Debug, Default, Clone, Copy)]
         pub struct $struct_name;
@@ -74,11 +71,7 @@ macro_rules! impl_rounding_function {
                     Err(err) => return Ok(CellValue::Error(err)),
                 };
 
-                let clamped = digits_i64.clamp(
-                    -i64::from(MAX_DECIMAL_DIGITS),
-                    i64::from(MAX_DECIMAL_DIGITS),
-                ) as i32;
-                let result = $round_op(num, clamped);
+                let result = round_decimal_f64(num, digits_i64, $round_mode);
                 Ok(CellValue::number(result))
             }
         }
@@ -88,20 +81,20 @@ macro_rules! impl_rounding_function {
 impl_rounding_function!(
     RoundFunction,
     "ROUND",
-    round_half_away_from_zero,
+    DecimalRoundingMode::HalfAway,
     "`ROUND(number, num_digits)`: Rounds a number to a specified number of digits (half away from zero)."
 );
 
 impl_rounding_function!(
     RoundupFunction,
     "ROUNDUP",
-    round_away_from_zero,
+    DecimalRoundingMode::Away,
     "`ROUNDUP(number, num_digits)`: Rounds a number upward, away from zero."
 );
 
 impl_rounding_function!(
     RounddownFunction,
     "ROUNDDOWN",
-    round_towards_zero,
+    DecimalRoundingMode::Truncate,
     "`ROUNDDOWN(number, num_digits)`: Rounds a number downward, toward zero."
 );
