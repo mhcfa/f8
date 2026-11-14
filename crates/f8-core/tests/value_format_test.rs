@@ -129,3 +129,93 @@ fn test_format_number_comma_separation() {
         "(123,456,789.5)"
     );
 }
+
+#[test]
+fn test_format_accounting_number_half_away_from_zero_and_auto_decimals() {
+    // Commercial half-away-from-zero (not banker's round-half-to-even)
+    assert_eq!(
+        format_accounting_number(2.5, Some(FormatPreset::Number), Some(0), None),
+        "3"
+    );
+    assert_eq!(
+        format_accounting_number(-2.5, Some(FormatPreset::Number), Some(0), None),
+        "(3)"
+    );
+    assert_eq!(
+        format_accounting_number(1.005, Some(FormatPreset::Number), Some(2), None),
+        "1.01"
+    );
+    assert_eq!(
+        format_accounting_number(2.675, Some(FormatPreset::Number), Some(2), None),
+        "2.68"
+    );
+    assert_eq!(
+        format_accounting_number(0.145, Some(FormatPreset::Percentage), Some(0), None),
+        "15%"
+    );
+    assert_eq!(
+        format_accounting_number(0.00285, Some(FormatPreset::Percentage), Some(2), None),
+        "0.29%"
+    );
+    assert_eq!(
+        format_accounting_number(0.00015, Some(FormatPreset::BasisPoints), Some(0), None),
+        "2 bps"
+    );
+    assert_eq!(
+        format_accounting_number(9.95, Some(FormatPreset::Number), Some(1), None),
+        "10.0"
+    );
+    assert_eq!(
+        format_accounting_number(0.995, Some(FormatPreset::Number), Some(2), None),
+        "1.00"
+    );
+    assert_eq!(
+        format_accounting_number(0.0995, Some(FormatPreset::Number), Some(2), None),
+        "0.10"
+    );
+
+    // Leading-digit tie boundaries (k == 0 at decimals == 0 and decimals > 0)
+    assert_eq!(
+        format_accounting_number(0.5, Some(FormatPreset::Number), Some(0), None),
+        "1"
+    );
+    assert_eq!(
+        format_accounting_number(-0.5, Some(FormatPreset::Number), Some(0), None),
+        "(1)"
+    );
+    assert_eq!(
+        format_accounting_number(0.005, Some(FormatPreset::Number), Some(2), None),
+        "0.01"
+    );
+    assert_eq!(
+        format_accounting_number(-0.005, Some(FormatPreset::Number), Some(2), None),
+        "(0.01)"
+    );
+    assert_eq!(
+        format_accounting_number(0.004, Some(FormatPreset::Number), Some(2), None),
+        "0.00"
+    );
+
+    // Post-rounding auto-decimal detection when format and decimals are None
+    assert_eq!(format_accounting_number(1.9999999, None, None, None), "2");
+    assert_eq!(
+        format_accounting_number(-1.9999999, None, None, None),
+        "(2)"
+    );
+    assert_eq!(format_accounting_number(1.0000001, None, None, None), "1");
+    assert_eq!(format_accounting_number(12.5, None, None, None), "12.5");
+    assert_eq!(format_accounting_number(-12.5, None, None, None), "(12.5)");
+    assert_eq!(format_accounting_number(-0.05, None, None, None), "(0.1)");
+    assert_eq!(format_accounting_number(-0.04, None, None, None), "0");
+    assert_eq!(format_accounting_number(2.0, None, Some(1), None), "2.0");
+
+    // Non-finite guard
+    assert_eq!(
+        format_accounting_number(f64::NAN, Some(FormatPreset::Number), Some(2), None),
+        "#NUM!"
+    );
+    assert_eq!(
+        format_accounting_number(f64::INFINITY, Some(FormatPreset::Currency), Some(0), None),
+        "#NUM!"
+    );
+}

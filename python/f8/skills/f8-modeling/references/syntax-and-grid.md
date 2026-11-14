@@ -303,7 +303,7 @@ table.add_column_gutter() -> Table
 | `"integer"`      | `None`             | No                  | No                  | `2024`, `-2024`, `0`                 | `"2024"` / `"(2024)"` / `"0"` (Excel: `2024` / `(-2024)` / `-`) |
 | `"date"`         | `None`             | No                  | No                  | `45657` (Excel serial)               | `"2024-12-31"`                                              |
 | `"text"`         | `None`             | No                  | No                  | `"Sample"`                           | `"Sample"`                                                  |
-| `None` (default) | `None`             | Yes (in-memory)     | No                  | `1250`, `-12.5`, `0`                 | `"1,250"` / `"(12.5)"` / `"0"` (uses explicit `decimals` if set, else `0` if integer and `1` if fractional; Excel `General`) |
+| `None` (default) | `None`             | Yes (in-memory)     | No                  | `1250`, `-12.5`, `0`                 | `"1,250"` / `"(12.5)"` / `"0"` (uses explicit `decimals` if set, else rounds to `1` decimal place and trims trailing `.0`; Excel `General`) |
 
 ### Semantic Styles (`SemanticStyle`)
 

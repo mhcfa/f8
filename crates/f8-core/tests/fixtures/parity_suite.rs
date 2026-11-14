@@ -253,6 +253,42 @@ const MATH_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(-123.45),
     },
     ParityCase {
+        id: "round_dec_1005",
+        label: "ROUND(1.005, 2) [base-10 tie -> 1.01]",
+        formula: "ROUND(1.005, 2)",
+        expected: ParityExpected::ExactNum(1.01),
+    },
+    ParityCase {
+        id: "round_dec_2675",
+        label: "ROUND(2.675, 2) [base-10 tie -> 2.68]",
+        formula: "ROUND(2.675, 2)",
+        expected: ParityExpected::ExactNum(2.68),
+    },
+    ParityCase {
+        id: "roundup_exact_007",
+        label: "ROUNDUP(0.07, 2) [no binary drift -> 0.07]",
+        formula: "ROUNDUP(0.07, 2)",
+        expected: ParityExpected::ExactNum(0.07),
+    },
+    ParityCase {
+        id: "rounddown_exact_029",
+        label: "ROUNDDOWN(0.29, 2) [no binary drift -> 0.29]",
+        formula: "ROUNDDOWN(0.29, 2)",
+        expected: ParityExpected::ExactNum(0.29),
+    },
+    ParityCase {
+        id: "round_large_digits_noop",
+        label: "ROUND(100, 308) [> 15 sig digits no-op -> 100]",
+        formula: "ROUND(100, 308)",
+        expected: ParityExpected::ExactNum(100.0),
+    },
+    ParityCase {
+        id: "round_small_exp_22",
+        label: "ROUND(1.2345 * (10 ^ -20), 22) [tiny exponent decimal round]",
+        formula: "ROUND(1.2345 * (10 ^ -20), 22)",
+        expected: ParityExpected::ExactNum(1.23e-20),
+    },
+    ParityCase {
         id: "sumifs_typed_gt",
         label: "SUMIFS(num_a, cat, \"Alpha\", num_a, > 15) [typed comparator]",
         formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\", SeedData[\"r1\"..\"r4\", \"num_a\"], > 15)",
@@ -431,6 +467,18 @@ const MATH_CASES: &[ParityCase] = &[
         id: "median_empty_err",
         label: "MEDIAN(all_null) [no numeric cells -> #NUM!]",
         formula: "MEDIAN(SeedData[\"r1\"..\"r4\", \"all_null\"])",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "roundup_overflow_neg309_err",
+        label: "ROUNDUP(1, -309) [10^309 overflow -> #NUM!]",
+        formula: "ROUNDUP(1, -309)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "roundup_overflow_max_err",
+        label: "ROUNDUP(1.5 * (10 ^ 308), -308) [2e308 overflow -> #NUM!]",
+        formula: "ROUNDUP(1.5 * (10 ^ 308), -308)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
 ];
