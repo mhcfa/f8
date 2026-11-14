@@ -817,6 +817,66 @@ const LOOKUP_CASES: &[ParityCase] = &[
         expected: ParityExpected::Text("Beta"),
     },
     ParityCase {
+        id: "xmatch_binary_asc_dup_exact",
+        label: "XMATCH(20, num_dup_asc, 0, 2) [binary asc exact duplicate -> first]",
+        formula: "XMATCH(20, SeedData[\"r1\"..\"r4\", \"num_dup_asc\"], 0, 2)",
+        expected: ParityExpected::ExactNum(1.0),
+    },
+    ParityCase {
+        id: "xlookup_binary_asc_dup_smaller_hit",
+        label: "XLOOKUP(20, num_dup_asc, num_a, -1, -1, 2) [binary asc -1 duplicate hit -> first]",
+        formula: "XLOOKUP(20, SeedData[\"r1\"..\"r4\", \"num_dup_asc\"], SeedData[\"r1\"..\"r4\", \"num_a\"], -1, -1, 2)",
+        expected: ParityExpected::ExactNum(10.0),
+    },
+    ParityCase {
+        id: "xlookup_binary_asc_dup_larger_hit",
+        label: "XLOOKUP(20, num_dup_asc, num_a, -1, 1, 2) [binary asc 1 duplicate hit -> first]",
+        formula: "XLOOKUP(20, SeedData[\"r1\"..\"r4\", \"num_dup_asc\"], SeedData[\"r1\"..\"r4\", \"num_a\"], -1, 1, 2)",
+        expected: ParityExpected::ExactNum(10.0),
+    },
+    ParityCase {
+        id: "xmatch_binary_asc_dup_smaller_miss",
+        label: "XMATCH(30, num_dup_asc, -1, 2) [binary asc -1 miss -> last smaller]",
+        formula: "XMATCH(30, SeedData[\"r1\"..\"r4\", \"num_dup_asc\"], -1, 2)",
+        expected: ParityExpected::ExactNum(2.0),
+    },
+    ParityCase {
+        id: "xmatch_binary_asc_dup_larger_miss",
+        label: "XMATCH(30, num_dup_asc, 1, 2) [binary asc 1 miss -> first larger]",
+        formula: "XMATCH(30, SeedData[\"r1\"..\"r4\", \"num_dup_asc\"], 1, 2)",
+        expected: ParityExpected::ExactNum(3.0),
+    },
+    ParityCase {
+        id: "xmatch_binary_desc_dup_exact",
+        label: "XMATCH(20, num_dup_desc, 0, -2) [binary desc exact duplicate -> last]",
+        formula: "XMATCH(20, SeedData[\"r1\"..\"r4\", \"num_dup_desc\"], 0, -2)",
+        expected: ParityExpected::ExactNum(4.0),
+    },
+    ParityCase {
+        id: "xlookup_binary_desc_dup_smaller_hit",
+        label: "XLOOKUP(20, num_dup_desc, num_a, -1, -1, -2) [binary desc -1 duplicate hit -> last]",
+        formula: "XLOOKUP(20, SeedData[\"r1\"..\"r4\", \"num_dup_desc\"], SeedData[\"r1\"..\"r4\", \"num_a\"], -1, -1, -2)",
+        expected: ParityExpected::ExactNum(40.0),
+    },
+    ParityCase {
+        id: "xlookup_binary_desc_dup_larger_hit",
+        label: "XLOOKUP(20, num_dup_desc, num_a, -1, 1, -2) [binary desc 1 duplicate hit -> last]",
+        formula: "XLOOKUP(20, SeedData[\"r1\"..\"r4\", \"num_dup_desc\"], SeedData[\"r1\"..\"r4\", \"num_a\"], -1, 1, -2)",
+        expected: ParityExpected::ExactNum(40.0),
+    },
+    ParityCase {
+        id: "xmatch_binary_desc_dup_smaller_miss",
+        label: "XMATCH(30, num_dup_desc, -1, -2) [binary desc -1 miss -> first smaller]",
+        formula: "XMATCH(30, SeedData[\"r1\"..\"r4\", \"num_dup_desc\"], -1, -2)",
+        expected: ParityExpected::ExactNum(3.0),
+    },
+    ParityCase {
+        id: "xmatch_binary_desc_dup_larger_miss",
+        label: "XMATCH(30, num_dup_desc, 1, -2) [binary desc 1 miss -> last larger]",
+        formula: "XMATCH(30, SeedData[\"r1\"..\"r4\", \"num_dup_desc\"], 1, -2)",
+        expected: ParityExpected::ExactNum(2.0),
+    },
+    ParityCase {
         id: "index_sparse_homogeneous",
         label: "INDEX(sparse, 3) [homogeneous sparse numeric array]",
         formula: "INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 3)",
@@ -1311,6 +1371,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_measure_col_label("flags", "Flags"),
         build_measure_col_label("empty_text", "Empty Text"),
         build_measure_col_label("one_third", "One Third"),
+        build_measure_col_label("num_dup_asc", "Vector Dup Asc"),
+        build_measure_col_label("num_dup_desc", "Vector Dup Desc"),
     ];
 
     let seed_rows = vec![
@@ -1329,6 +1391,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("flags", CellInput::boolean(true))
             .cell_str("empty_text", "")
             .cell_formula("one_third", "1 / 3")
+            .cell_num("num_dup_asc", 20.0)
+            .cell_num("num_dup_desc", 40.0)
             .build(),
         RowBuilder::descriptor("r2", "row_id", "Row 2")
             .cell_num("num_a", 20.0)
@@ -1348,6 +1412,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("flags", CellInput::boolean(false))
             .cell_str("empty_text", "Alpha")
             .cell_num("one_third", 0.5)
+            .cell_num("num_dup_asc", 20.0)
+            .cell_num("num_dup_desc", 40.0)
             .build(),
         RowBuilder::descriptor("r3", "row_id", "Row 3")
             .cell_num("num_a", 30.0)
@@ -1364,6 +1430,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("flags", CellInput::boolean(true))
             .cell("empty_text", CellInput::null())
             .cell_num("one_third", 0.5)
+            .cell_num("num_dup_asc", 40.0)
+            .cell_num("num_dup_desc", 20.0)
             .build(),
         RowBuilder::descriptor("r4", "row_id", "Row 4")
             .cell_num("num_a", 40.0)
@@ -1380,6 +1448,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("flags", CellInput::boolean(false))
             .cell("empty_text", CellInput::null())
             .cell_num("one_third", 0.5)
+            .cell_num("num_dup_asc", 40.0)
+            .cell_num("num_dup_desc", 20.0)
             .build(),
     ];
 
