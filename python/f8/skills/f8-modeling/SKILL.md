@@ -33,10 +33,20 @@ CLI commands (`f8` or `python -m f8`):
 
 ## Core Invariants
 
-- Explicit 2D coordinates: All references require bare table identifier or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) raise `FormulaParseError`.
+- Explicit 2D coordinates: All references require bare table identifier or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`), positive integer `prev(k)`/`next(k)` offsets (`k >= 1`), and contiguous `start..end` slices (ranges cannot cross `Gutter`s, `SectionHeader`s, or horizontal `descriptor` columns). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) raise `FormulaParseError`.
 - Uppercase identifiers: Built-in functions (`SUM`, `IF`, `XLOOKUP`, `ERROR.TYPE`), booleans (`TRUE`, `FALSE`), and `*IFS` blank criteria (`BLANK`, `NOT_BLANK`) must be uppercase.
-- Argument omission: Use `_` strictly for intermediate optional function parameters followed by a later explicit argument (`PMT(rate, nper, pv, _, type)`); omit trailing optional parameters directly (`PMT(rate, nper, pv)`, not `PMT(rate, nper, pv, _)`).
-- Cell-level indentation: `indent` is restricted to `role="descriptor"` cells (`Cell("Label", indent=1)`) and section headers; setting `indent > 0` on a `measure` cell raises `SpecificationError`.
+- Argument omission: Use `_` only for intermediate optional function parameters followed by a later explicit argument (`PMT(rate, nper, pv, _, type)`); omit trailing optional parameters directly (`PMT(rate, nper, pv)`, not `PMT(rate, nper, pv, _)`).
+- Cell-level indentation: `indent` applies only to `role="descriptor"` cells (`Cell("Label", indent=1)`) and section headers; setting `indent > 0` on a `measure` cell raises `SpecificationError`.
+
+## Strict Formula Rules (Excel Divergences)
+
+`f8` rejects permissive Excel coercions and string-encoded mini-languages at compile time (`F8Error`), then lowers valid ASTs into native Excel syntax (`">10"`, `"<="&G$4`) during workbook emission:
+
+- Operators & comparisons: Use `=` and `<>` (no `==`, `!=`, `&` concatenation, or prefix `+`). Relational operators (`=`, `<>`, `<`, `<=`, `>`, `>=`) are non-associative (parenthesize `(a = b) = c`) and require matching non-`Empty` operand types (`Number`, `Text`, or `Boolean`).
+- Scalars, blanks & cash flows: Arithmetic, scalar parameters, `1x1` single-cell references, and root formula results reject `Text`, `Boolean`, and `Empty` (`None`). Guard nullable cells explicitly with `IF(ISBLANK(ref), 0, ref)`. Numeric aggregations (`SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `COUNT`, `SUMPRODUCT`, `*IFS` target ranges) reject `descriptor` columns; `NPV`, `IRR`, `XNPV`, and `XIRR` reject `Empty` across cash-flow and date slices (use `0.0`).
+- Monomorphic branches & error traps: `IF(cond, t, f)` requires 3 arguments and `Boolean` conditions (`IF(rev <> 0, ...)`, not `IF(rev, ...)`). Result arms across `IF`, `IFS`, `CHOOSE`, `IFERROR`, `IFNA`, and `XLOOKUP` must unify to one scalar type—use `NA()` for suppressed ratios (`IF(ebitda > 0, ev / ebitda, NA())`), not `"NM"` text; `SWITCH` is omitted (`IFS` or `CHOOSE`).
+- Typed `*IFS` criteria: Pass unquoted expressions and prefix comparators instead of Excel operator/wildcard strings (`SUMIFS(rev, yr, 2025, dt, <= Cutoff, seg, <> "Internal", note, NOT_BLANK)`). Ordering (`>`, `>=`, `<`, `<=`) requires `Number`; `*`/`?`/`~` wildcards, leading `= expr`, `""`, coercible numeric/date/boolean/error text literals (`"42"`, `"2024-01-01"`), and `Empty`/error criterion values fail compilation.
+- Lookups & calendar dates: Range slots require matching-shape `Table[...]` references; `XLOOKUP`/`XMATCH` require integer-literal modes (wildcard mode `2` omitted) and sorted non-`Empty`, non-error keys on binary search (`2`/`-2`). `DATE(yyyy, m, d)` requires 4-digit years (`1900..=9999`) and valid calendar days without month/day rollover (use `EDATE` or `EOMONTH` for month stepping); input date serials require `1..=2958465`.
 
 ## Reference Index
 
