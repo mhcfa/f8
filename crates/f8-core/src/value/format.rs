@@ -1,7 +1,9 @@
 //! Accounting typography and cell value formatting.
 
+use std::iter::repeat_n;
+
 use crate::model::format::{CurrencyCode, FormatPreset};
-use crate::value::CellValue;
+use crate::value::{CellValue, Decimal15, DecimalRoundingMode, ExcelError};
 
 /// Formats a cell value according to accounting rules and format presets.
 #[must_use]
@@ -41,39 +43,55 @@ pub fn format_accounting_number(
         };
     }
 
-    let abs_val = val.abs();
+    if !val.is_finite() {
+        return ExcelError::Num.as_str().to_string();
+    }
 
-    let dec = match format {
-        Some(FormatPreset::Percentage) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::Multiple) => decimals.unwrap_or(1) as usize,
-        Some(FormatPreset::BasisPoints) => decimals.unwrap_or(0) as usize,
-        Some(FormatPreset::Currency) => decimals.unwrap_or(0) as usize,
-        Some(FormatPreset::Number) => decimals.unwrap_or(0) as usize,
-        Some(FormatPreset::Integer) => 0,
-        _ => decimals
-            .map(|d| d as usize)
-            .unwrap_or(if abs_val.fract().abs() > 1e-6 { 1 } else { 0 }),
+    let (dec_u32, auto_trim_zero_tenths) = match format {
+        Some(FormatPreset::Percentage) | Some(FormatPreset::Multiple) => {
+            (decimals.unwrap_or(1), false)
+        }
+        Some(FormatPreset::BasisPoints)
+        | Some(FormatPreset::Currency)
+        | Some(FormatPreset::Number) => (decimals.unwrap_or(0), false),
+        Some(FormatPreset::Integer) => (0, false),
+        Some(FormatPreset::Text) | Some(FormatPreset::Date) | None => match decimals {
+            Some(d) => (d, false),
+            None => (1, true),
+        },
     };
 
-    let (scaled_val, suffix) = match format {
-        Some(FormatPreset::Percentage) => (abs_val * 100.0, "%"),
-        Some(FormatPreset::Multiple) => (abs_val, "x"),
-        Some(FormatPreset::BasisPoints) => (abs_val * 10000.0, " bps"),
-        _ => (abs_val, ""),
+    let (scale_exp10, suffix) = match format {
+        Some(FormatPreset::Percentage) => (2, "%"),
+        Some(FormatPreset::Multiple) => (0, "x"),
+        Some(FormatPreset::BasisPoints) => (4, " bps"),
+        Some(FormatPreset::Currency)
+        | Some(FormatPreset::Number)
+        | Some(FormatPreset::Integer)
+        | Some(FormatPreset::Text)
+        | Some(FormatPreset::Date)
+        | None => (0, ""),
     };
 
-    let omit_commas = matches!(format, Some(FormatPreset::Integer));
+    let (int_digits, mut frac_digits) = round_scaled_decimal(val, scale_exp10, dec_u32);
+    if auto_trim_zero_tenths && frac_digits == "0" {
+        frac_digits.clear();
+    }
 
-    let formatted_num = if omit_commas {
-        format!("{scaled_val:.dec$}")
-    } else {
-        format_with_commas(scaled_val, dec)
-    };
-
-    let is_non_zero = formatted_num
-        .chars()
-        .any(|c| c.is_ascii_digit() && c != '0');
+    let is_non_zero =
+        int_digits.bytes().any(|b| b != b'0') || frac_digits.bytes().any(|b| b != b'0');
     let is_neg = val < 0.0 && is_non_zero;
+
+    let grouped_int = if matches!(format, Some(FormatPreset::Integer)) {
+        int_digits
+    } else {
+        format_int_with_commas(int_digits)
+    };
+    let formatted_num = if frac_digits.is_empty() {
+        grouped_int
+    } else {
+        format!("{grouped_int}.{frac_digits}")
+    };
 
     match format {
         Some(FormatPreset::Currency) => {
@@ -93,7 +111,11 @@ pub fn format_accounting_number(
                 format!("{formatted_num}{suffix}")
             }
         }
-        _ => {
+        Some(FormatPreset::Number)
+        | Some(FormatPreset::Integer)
+        | Some(FormatPreset::Text)
+        | Some(FormatPreset::Date)
+        | None => {
             if is_neg {
                 format!("({formatted_num})")
             } else {
@@ -103,26 +125,65 @@ pub fn format_accounting_number(
     }
 }
 
-fn format_with_commas(val: f64, decimals: usize) -> String {
-    let raw = format!("{val:.decimals$}");
-    let parts: Vec<&str> = raw.split('.').collect();
-    let int_part = parts[0];
-    let frac_part = parts.get(1);
-
-    let mut result = String::new();
-    let chars: Vec<char> = int_part.chars().collect();
-    let len = chars.len();
-    for (i, &ch) in chars.iter().enumerate() {
-        if i > 0 && (len - i).is_multiple_of(3) {
-            result.push(',');
+fn format_int_with_commas(int_digits: String) -> String {
+    if int_digits.len() <= 3 {
+        return int_digits;
+    }
+    let bytes = int_digits.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len + (len - 1) / 3);
+    for (idx, &b) in bytes.iter().enumerate() {
+        if idx > 0 && (len - idx).is_multiple_of(3) {
+            out.push(',');
         }
-        result.push(ch);
+        out.push(char::from(b));
     }
-    if let Some(frac) = frac_part {
-        result.push('.');
-        result.push_str(frac);
+    out
+}
+
+fn zero_frac(decimals: usize) -> String {
+    repeat_n('0', decimals).collect()
+}
+
+fn round_scaled_decimal(val: f64, scale_exp10: i32, decimals: u32) -> (String, String) {
+    let dec_usize = decimals as usize;
+    let Some(dec) = Decimal15::from_f64(val) else {
+        return ("0".to_string(), zero_frac(dec_usize));
+    };
+    let Some(rounded) = dec.round_scaled(
+        scale_exp10,
+        i64::from(decimals),
+        DecimalRoundingMode::HalfAway,
+    ) else {
+        return ("0".to_string(), zero_frac(dec_usize));
+    };
+
+    let mantissa = rounded.coeff.to_string();
+    let m = rounded.num_digits as usize;
+    if rounded.top_exp10 >= 0 {
+        let int_len = (rounded.top_exp10 + 1) as usize;
+        if let (Some(int_part), Some(frac_prefix)) =
+            (mantissa.get(..int_len), mantissa.get(int_len..))
+            && !frac_prefix.is_empty()
+        {
+            let mut frac_digits = String::with_capacity(dec_usize);
+            frac_digits.push_str(frac_prefix);
+            frac_digits.extend(repeat_n('0', dec_usize.saturating_sub(frac_prefix.len())));
+            (int_part.to_string(), frac_digits)
+        } else {
+            let mut int_digits = mantissa;
+            int_digits.extend(repeat_n('0', int_len.saturating_sub(m)));
+            (int_digits, zero_frac(dec_usize))
+        }
+    } else {
+        let leading_zeros = (-rounded.top_exp10 - 1) as usize;
+        let trailing_zeros = dec_usize.saturating_sub(leading_zeros + m);
+        let mut frac_digits = String::with_capacity(dec_usize);
+        frac_digits.extend(repeat_n('0', leading_zeros));
+        frac_digits.push_str(&mantissa);
+        frac_digits.extend(repeat_n('0', trailing_zeros));
+        ("0".to_string(), frac_digits)
     }
-    result
 }
 
 #[cfg(test)]

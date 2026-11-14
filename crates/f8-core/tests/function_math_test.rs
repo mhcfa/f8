@@ -567,6 +567,97 @@ fn test_scenario_5_round_roundup_and_rounddown_variants() {
             }))
         );
     }
+
+    // Exact base-10 15-significant-digit rounding (no binary float * 10^d drift)
+    for (num, digits, expected) in [
+        (1.005, 2.0, 1.01),
+        (-1.005, 2.0, -1.01),
+        (2.675, 2.0, 2.68),
+        (-2.675, 2.0, -2.68),
+        (100.0, 308.0, 100.0),
+        (100.0, 1000.0, 100.0),
+        (1.0 / 3.0, 16.0, 1.0 / 3.0),
+        (1.0 / 3.0, 15.0, 0.333_333_333_333_333),
+        (1.2345e-20, 22.0, 1.23e-20),
+        (1.2345e-20, 23.0, 1.235e-20),
+        (1.2345e-310, 312.0, 1.23e-310),
+        (-1.0, -500.0, 0.0),
+        (5e307, -308.0, 1e308),
+    ] {
+        let args = [
+            FunctionArg::Scalar(CellValue::Number(num)),
+            FunctionArg::Scalar(CellValue::Number(digits)),
+        ];
+        let actual = round_func.evaluate(&args, &ctx).unwrap();
+        assert_eq!(
+            actual,
+            CellValue::Number(expected),
+            "ROUND({num:?}, {digits}) mismatch"
+        );
+        if let CellValue::Number(n) = actual {
+            assert_eq!(n.to_bits(), expected.to_bits());
+        }
+    }
+
+    // Carry boundary monotonicity at 1 - eps/2
+    let near_one = 1.0 - f64::EPSILON / 2.0;
+    for (digits, expected) in [(16.0, near_one), (15.0, 1.0), (14.0, 1.0)] {
+        let args = [
+            FunctionArg::Scalar(CellValue::Number(near_one)),
+            FunctionArg::Scalar(CellValue::Number(digits)),
+        ];
+        assert_eq!(
+            round_func.evaluate(&args, &ctx).unwrap(),
+            CellValue::Number(expected)
+        );
+    }
+
+    // Exact decimal ROUNDUP / ROUNDDOWN without binary representation drift
+    for (num, digits, expected) in [(0.07, 2.0, 0.07), (-0.07, 2.0, -0.07), (1.0, 500.0, 1.0)] {
+        let args = [
+            FunctionArg::Scalar(CellValue::Number(num)),
+            FunctionArg::Scalar(CellValue::Number(digits)),
+        ];
+        assert_eq!(
+            roundup_func.evaluate(&args, &ctx).unwrap(),
+            CellValue::Number(expected)
+        );
+    }
+    for (num, digits, expected) in [
+        (0.29, 2.0, 0.29),
+        (-0.29, 2.0, -0.29),
+        (-1e308, -500.0, 0.0),
+    ] {
+        let args = [
+            FunctionArg::Scalar(CellValue::Number(num)),
+            FunctionArg::Scalar(CellValue::Number(digits)),
+        ];
+        let actual = rounddown_func.evaluate(&args, &ctx).unwrap();
+        assert_eq!(actual, CellValue::Number(expected));
+        if let CellValue::Number(n) = actual {
+            assert_eq!(n.to_bits(), expected.to_bits());
+        }
+    }
+
+    // Overflow beyond IEEE-754 f64::MAX returns #NUM!
+    for (func, num, digits) in [
+        (&roundup_func, 1.0, -309.0),
+        (&roundup_func, -1.0, -309.0),
+        (&roundup_func, 1.5e308, -308.0),
+        (&roundup_func, 1.0, -9_007_199_254_740_991.0),
+        (&round_func, 1.6e308, -308.0),
+    ] {
+        let args = [
+            FunctionArg::Scalar(CellValue::Number(num)),
+            FunctionArg::Scalar(CellValue::Number(digits)),
+        ];
+        assert_eq!(
+            func.evaluate(&args, &ctx).unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for {}({num:?}, {digits})",
+            func.name()
+        );
+    }
 }
 
 #[test]
