@@ -613,7 +613,23 @@ fn compare_binary_cell(cell: &CellValue, lookup_val: &CellValue) -> Result<Order
     }
 }
 
-/// Performs binary search on validated monotonically non-decreasing `slice`.
+fn is_exact_match_at(
+    slice: &[CellValue],
+    idx: Option<usize>,
+    lookup_val: &CellValue,
+) -> Result<bool, ExcelError> {
+    match idx.and_then(|i| slice.get(i)) {
+        Some(cell) => Ok(compare_binary_cell(cell, lookup_val)? == Ordering::Equal),
+        None => Ok(false),
+    }
+}
+
+/// Performs lower-bound binary search on validated monotonically non-decreasing `slice`.
+///
+/// Bisects `slice` at `low = min { i | slice[i] >= lookup_val }` (`0..=slice.len()`):
+/// - `Exact`: first index equal to `lookup_val`, else `None`.
+/// - `ExactOrNextSmaller`: first index equal to `lookup_val`, else `low - 1` (last `< lookup_val`).
+/// - `ExactOrNextLarger`: `low` when `low < slice.len()` (first `>= lookup_val`), else `None`.
 fn find_binary_ascending(
     lookup_val: &CellValue,
     slice: &[CellValue],
@@ -621,43 +637,37 @@ fn find_binary_ascending(
 ) -> Result<Option<usize>, ExcelError> {
     let mut low = 0;
     let mut high = slice.len();
-    let mut best = None;
 
     while low < high {
         let mid = low + (high - low) / 2;
         let Some(cell) = slice.get(mid) else {
             break;
         };
-        let ord = compare_binary_cell(cell, lookup_val)?;
-        match match_mode {
-            MatchMode::Exact => match ord {
-                Ordering::Equal => return Ok(Some(mid)),
-                Ordering::Less => low = mid + 1,
-                Ordering::Greater => high = mid,
-            },
-            MatchMode::ExactOrNextSmaller => match ord {
-                Ordering::Equal => return Ok(Some(mid)),
-                Ordering::Less => {
-                    best = Some(mid);
-                    low = mid + 1;
-                }
-                Ordering::Greater => high = mid,
-            },
-            MatchMode::ExactOrNextLarger => match ord {
-                Ordering::Equal => return Ok(Some(mid)),
-                Ordering::Less => low = mid + 1,
-                Ordering::Greater => {
-                    best = Some(mid);
-                    high = mid;
-                }
-            },
+        match compare_binary_cell(cell, lookup_val)? {
+            Ordering::Less => low = mid + 1,
+            Ordering::Equal | Ordering::Greater => high = mid,
         }
     }
 
-    Ok(best)
+    match match_mode {
+        MatchMode::Exact => Ok(is_exact_match_at(slice, Some(low), lookup_val)?.then_some(low)),
+        MatchMode::ExactOrNextSmaller => {
+            if is_exact_match_at(slice, Some(low), lookup_val)? {
+                Ok(Some(low))
+            } else {
+                Ok(low.checked_sub(1))
+            }
+        }
+        MatchMode::ExactOrNextLarger => Ok((low < slice.len()).then_some(low)),
+    }
 }
 
-/// Performs binary search on validated monotonically non-increasing `slice`.
+/// Performs reverse-mirror binary search on validated monotonically non-increasing `slice`.
+///
+/// Bisects `slice` at `low = min { i | slice[i] < lookup_val }` (`0..=slice.len()`):
+/// - `Exact`: last index equal to `lookup_val` (`low - 1`), else `None`.
+/// - `ExactOrNextSmaller`: last index equal to `lookup_val` (`low - 1`), else `low` (first `< lookup_val`).
+/// - `ExactOrNextLarger`: `low - 1` when `low > 0` (last `>= lookup_val`), else `None`.
 fn find_binary_descending(
     lookup_val: &CellValue,
     slice: &[CellValue],
@@ -665,40 +675,33 @@ fn find_binary_descending(
 ) -> Result<Option<usize>, ExcelError> {
     let mut low = 0;
     let mut high = slice.len();
-    let mut best = None;
 
     while low < high {
         let mid = low + (high - low) / 2;
         let Some(cell) = slice.get(mid) else {
             break;
         };
-        let ord = compare_binary_cell(cell, lookup_val)?;
-        match match_mode {
-            MatchMode::Exact => match ord {
-                Ordering::Equal => return Ok(Some(mid)),
-                Ordering::Greater => low = mid + 1,
-                Ordering::Less => high = mid,
-            },
-            MatchMode::ExactOrNextSmaller => match ord {
-                Ordering::Equal => return Ok(Some(mid)),
-                Ordering::Greater => low = mid + 1,
-                Ordering::Less => {
-                    best = Some(mid);
-                    high = mid;
-                }
-            },
-            MatchMode::ExactOrNextLarger => match ord {
-                Ordering::Equal => return Ok(Some(mid)),
-                Ordering::Greater => {
-                    best = Some(mid);
-                    low = mid + 1;
-                }
-                Ordering::Less => high = mid,
-            },
+        match compare_binary_cell(cell, lookup_val)? {
+            Ordering::Greater | Ordering::Equal => low = mid + 1,
+            Ordering::Less => high = mid,
         }
     }
 
-    Ok(best)
+    let prev = low.checked_sub(1);
+    match match_mode {
+        MatchMode::Exact => {
+            let exact = is_exact_match_at(slice, prev, lookup_val)?;
+            Ok(prev.filter(|_| exact))
+        }
+        MatchMode::ExactOrNextSmaller => {
+            if is_exact_match_at(slice, prev, lookup_val)? {
+                Ok(prev)
+            } else {
+                Ok((low < slice.len()).then_some(low))
+            }
+        }
+        MatchMode::ExactOrNextLarger => Ok(prev),
+    }
 }
 
 #[cfg(test)]
@@ -833,6 +836,231 @@ mod tests {
         )
         .unwrap();
         assert_eq!(res_desc, Some(1));
+    }
+
+    #[test]
+    fn test_binary_search_duplicate_keys_and_boundaries() {
+        let all_modes = [
+            MatchMode::Exact,
+            MatchMode::ExactOrNextSmaller,
+            MatchMode::ExactOrNextLarger,
+        ];
+
+        // 1. Even-length duplicate interior [10, 20, 20, 30] where initial mid = 2 hits second 20
+        let even_asc = vec![
+            CellValue::Number(10.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(30.0),
+        ];
+        for mode in all_modes {
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &even_asc,
+                    mode,
+                    SearchMode::BinaryAscending
+                )
+                .unwrap(),
+                Some(1),
+                "even_asc mode={mode:?}"
+            );
+        }
+
+        // 2. Odd-length duplicate interior [10, 20, 20, 20, 30] and descending mirror
+        // where initial mid = 2 hits middle 20 strictly inside indices 1..=3
+        let odd_asc = vec![
+            CellValue::Number(10.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(20.0),
+            CellValue::Number(30.0),
+        ];
+        let odd_desc: Vec<CellValue> = odd_asc.iter().cloned().rev().collect();
+        for mode in all_modes {
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &odd_asc,
+                    mode,
+                    SearchMode::BinaryAscending
+                )
+                .unwrap(),
+                Some(1),
+                "odd_asc mode={mode:?}"
+            );
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &odd_desc,
+                    mode,
+                    SearchMode::BinaryDescending
+                )
+                .unwrap(),
+                Some(3),
+                "odd_desc mode={mode:?}"
+            );
+        }
+
+        // 3. Adjacent duplicate blocks [10, 10, 30, 30] and [30, 30, 10, 10]:
+        // verify exact hits, inter-block approximate misses, out-of-range misses, and reverse duality
+        let blocks_asc = vec![
+            CellValue::Number(10.0),
+            CellValue::Number(10.0),
+            CellValue::Number(30.0),
+            CellValue::Number(30.0),
+        ];
+        let blocks_desc: Vec<CellValue> = blocks_asc.iter().cloned().rev().collect();
+
+        let expected_asc = [
+            // (query, Exact, ExactOrNextSmaller, ExactOrNextLarger)
+            (5.0, None, None, Some(0)),
+            (10.0, Some(0), Some(0), Some(0)),
+            (20.0, None, Some(1), Some(2)),
+            (30.0, Some(2), Some(2), Some(2)),
+            (35.0, None, Some(3), None),
+        ];
+        let n = blocks_asc.len();
+        for (q, exp_exact, exp_smaller, exp_larger) in expected_asc {
+            let qv = CellValue::Number(q);
+            let cases = [
+                (MatchMode::Exact, exp_exact),
+                (MatchMode::ExactOrNextSmaller, exp_smaller),
+                (MatchMode::ExactOrNextLarger, exp_larger),
+            ];
+            for (mode, exp) in cases {
+                let got_asc =
+                    find_match_index(&qv, &blocks_asc, mode, SearchMode::BinaryAscending).unwrap();
+                assert_eq!(got_asc, exp, "blocks_asc q={q} mode={mode:?}");
+
+                let got_desc =
+                    find_match_index(&qv, &blocks_desc, mode, SearchMode::BinaryDescending)
+                        .unwrap();
+                assert_eq!(
+                    got_desc,
+                    exp.map(|idx| n - 1 - idx),
+                    "blocks_desc mirror q={q} mode={mode:?}"
+                );
+            }
+        }
+
+        // 4. All-equal slice, case-insensitive ASCII text duplicates, boolean duplicates, and empty slice
+        let all_same = vec![CellValue::Number(20.0); 4];
+        for mode in all_modes {
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &all_same,
+                    mode,
+                    SearchMode::BinaryAscending
+                )
+                .unwrap(),
+                Some(0)
+            );
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &all_same,
+                    mode,
+                    SearchMode::BinaryDescending
+                )
+                .unwrap(),
+                Some(3)
+            );
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &[],
+                    mode,
+                    SearchMode::BinaryAscending
+                )
+                .unwrap(),
+                None
+            );
+            assert_eq!(
+                find_match_index(
+                    &CellValue::Number(20.0),
+                    &[],
+                    mode,
+                    SearchMode::BinaryDescending
+                )
+                .unwrap(),
+                None
+            );
+        }
+
+        let text_asc = vec![
+            CellValue::Text("alpha".into()),
+            CellValue::Text("BETA".into()),
+            CellValue::Text("beta".into()),
+            CellValue::Text("Beta".into()),
+            CellValue::Text("gamma".into()),
+        ];
+        let text_desc: Vec<CellValue> = text_asc.iter().cloned().rev().collect();
+        validate_lookup_array(
+            &text_asc,
+            &[],
+            Some(ValueType::Text),
+            SearchMode::BinaryAscending,
+            "XLOOKUP",
+        )
+        .unwrap();
+        validate_lookup_array(
+            &text_desc,
+            &[],
+            Some(ValueType::Text),
+            SearchMode::BinaryDescending,
+            "XLOOKUP",
+        )
+        .unwrap();
+        assert_eq!(
+            find_match_index(
+                &CellValue::Text("bEtA".into()),
+                &text_asc,
+                MatchMode::Exact,
+                SearchMode::BinaryAscending
+            )
+            .unwrap(),
+            Some(1)
+        );
+        assert_eq!(
+            find_match_index(
+                &CellValue::Text("bEtA".into()),
+                &text_desc,
+                MatchMode::Exact,
+                SearchMode::BinaryDescending
+            )
+            .unwrap(),
+            Some(3)
+        );
+
+        let bool_asc = vec![
+            CellValue::Boolean(false),
+            CellValue::Boolean(false),
+            CellValue::Boolean(true),
+            CellValue::Boolean(true),
+        ];
+        let bool_desc: Vec<CellValue> = bool_asc.iter().cloned().rev().collect();
+        assert_eq!(
+            find_match_index(
+                &CellValue::Boolean(true),
+                &bool_asc,
+                MatchMode::Exact,
+                SearchMode::BinaryAscending
+            )
+            .unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            find_match_index(
+                &CellValue::Boolean(false),
+                &bool_desc,
+                MatchMode::Exact,
+                SearchMode::BinaryDescending
+            )
+            .unwrap(),
+            Some(3)
+        );
     }
 
     #[test]
