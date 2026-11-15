@@ -7,7 +7,6 @@ use crate::expr::ast::CriteriaComparator;
 use crate::functions::binder::resolve_parameter;
 use crate::functions::common::{NumericCollector, value_type_satisfies};
 use crate::functions::error::FunctionError;
-use crate::functions::lookup::search::{RangeSlice, validate_homogeneous_slice};
 use crate::functions::math::criteria::{EqualityOp, TypedCriterion};
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -136,23 +135,6 @@ static MAXIFS_PARAMS: &[ParameterDef] = &[
 
 /// Pair of criteria range cell values and compiled typed criterion.
 type CriteriaPair<'a> = (&'a [CellValue], TypedCriterion);
-
-fn extract_range_slot<'a>(
-    func_name: &'static str,
-    arg: &'a FunctionArg<'a>,
-) -> Result<RangeSlice<'a>, FunctionError> {
-    let FunctionArg::Array {
-        rows, cols, values, ..
-    } = arg
-    else {
-        return Err(FunctionError::InvalidArgumentKind {
-            function: func_name,
-            expected: "range",
-            found: "scalar",
-        });
-    };
-    Ok((*rows, *cols, values.as_slice()))
-}
 
 fn compile_equality_criterion(
     func_name: &'static str,
@@ -367,7 +349,7 @@ fn collect_criteria_pairs<'a>(
         let cr_param = resolve_parameter(func, cr_idx)?.name;
         let crit_param = resolve_parameter(func, crit_idx)?.name;
 
-        let (_, _, cr_values) = extract_range_slot(func_name, &args[cr_idx])?;
+        let cr_values = args[cr_idx].as_range_slice(func_name)?;
         let FunctionArg::Criterion(bound_crit) = &args[crit_idx] else {
             return Err(FunctionError::InvalidArgumentKind {
                 function: func_name,
@@ -376,7 +358,9 @@ fn collect_criteria_pairs<'a>(
             });
         };
 
-        let range_vt = validate_homogeneous_slice(cr_values, func_name, cr_param, cr_idx + 1)?;
+        let range_vt = cr_values
+            .iter()
+            .find_map(|c| c.value_type().filter(|vt| *vt != ValueType::Empty));
         let criterion = compile_bound_criterion(
             func_name,
             cr_param,
@@ -410,7 +394,7 @@ fn collect_conditional_numbers<'a>(
     func: &dyn ExcelFunction,
     args: &'a [FunctionArg<'a>],
 ) -> Result<Result<NumericCollector, ExcelError>, FunctionError> {
-    let (_, _, target_values) = extract_range_slot(func.name(), &args[0])?;
+    let target_values = args[0].as_range_slice(func.name())?;
     let pairs = collect_criteria_pairs(func, args, 1)?;
 
     let mut collector = NumericCollector::new();
@@ -519,10 +503,10 @@ impl ExcelFunction for CountifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (cr1_rows, cr1_cols, _) = extract_range_slot(self.name(), &args[0])?;
+        let cr1_values = args[0].as_range_slice(self.name())?;
         let pairs = collect_criteria_pairs(self, args, 0)?;
 
-        let total_cells = cr1_rows * cr1_cols;
+        let total_cells = cr1_values.len();
         let mut count = 0.0;
         for i in 0..total_cells {
             if all_criteria_match(&pairs, i) {

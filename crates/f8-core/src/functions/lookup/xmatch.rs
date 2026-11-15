@@ -3,7 +3,7 @@
 use crate::functions::common::optional_scalar_integer;
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{
-    MatchMode, SearchMode, extract_1d_range_slice, find_match_index, validate_lookup_array,
+    MatchMode, SearchMode, find_match_index, validate_lookup_array,
 };
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -88,9 +88,7 @@ impl ExcelFunction for XmatchFunction {
         };
 
         let lookup_val = lookup_arg.eval_scalar(self.name(), ctx)?;
-        let lookup_vt = lookup_val.value_type().filter(|vt| *vt != ValueType::Empty);
-        let (_rows, _cols, slice) =
-            extract_1d_range_slice(lookup_arr_arg, self.name(), "lookup_array")?;
+        let slice = lookup_arr_arg.as_range_slice(self.name())?;
 
         let match_mode_int = optional_scalar_integer(args, 2, 0).map_err(|_| {
             FunctionError::NonLiteralLookupMode {
@@ -111,7 +109,7 @@ impl ExcelFunction for XmatchFunction {
         let search_mode =
             SearchMode::from_mode_int(search_mode_int, self.name(), "search_mode", 4)?;
 
-        validate_lookup_array(slice, lookup_vt, search_mode, self.name())?;
+        validate_lookup_array(slice, search_mode, self.name())?;
 
         if let CellValue::Error(err) = lookup_val {
             return Ok(CellValue::Error(err));

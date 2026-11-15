@@ -4,8 +4,7 @@ use std::convert::Infallible;
 
 use crate::expr::ast::{BinaryOp, CallArg, CriteriaComparator, Expr, Literal, TableRef, UnaryOp};
 use crate::functions::binder::{
-    extract_non_criteria_expr, require_1d_slice, resolve_parameter, validate_arg_slots,
-    validate_calendar_date_components, validate_shape_policy,
+    extract_non_criteria_expr, resolve_parameter, validate_calendar_date_components,
 };
 use crate::functions::common::{BranchTypeUnifier, value_type_satisfies};
 use crate::functions::error::FunctionError;
@@ -13,7 +12,7 @@ use crate::functions::lookup::search::{MatchMode, SearchMode};
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     BranchPolicy, ExcelFunction, LookupPolicy, ParamKind, ParamType, ParameterDef, RolePolicy,
-    ShapePolicy, ValidationPolicy,
+    ShapePolicy, ValidationPolicy, VariadicRule,
 };
 use crate::model::table::AxisRole;
 use crate::value::{
@@ -1200,23 +1199,166 @@ fn index_in_bounds(idx: i64, max: usize) -> bool {
     matches!(usize::try_from(idx), Ok(u) if u >= 1 && u <= max)
 }
 
+fn require_1d_slice(
+    function: &'static str,
+    param: &'static str,
+    shape: Option<(usize, usize)>,
+) -> Result<(), FunctionError> {
+    if let Some((rows, cols)) = shape
+        && rows > 1
+        && cols > 1
+    {
+        return Err(FunctionError::ExpectedOneDimensionalSlice {
+            function,
+            param,
+            rows,
+            cols,
+        });
+    }
+    Ok(())
+}
+
+fn validate_shape_policy(
+    function: &'static str,
+    policy: ShapePolicy,
+    shapes: &[Option<(usize, usize)>],
+) -> Result<(), FunctionError> {
+    match policy {
+        ShapePolicy::EqualAllRanges => {
+            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
+                for shape in shapes.iter().skip(1) {
+                    if let Some((r, c)) = *shape
+                        && (r, c) != (exp_r, exp_c)
+                    {
+                        return Err(FunctionError::DimensionMismatch {
+                            function,
+                            expected_rows: exp_r,
+                            expected_cols: exp_c,
+                            found_rows: r,
+                            found_cols: c,
+                        });
+                    }
+                }
+            }
+        }
+        ShapePolicy::EqualTargetAndOddPairRanges => {
+            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
+                for idx in (1..shapes.len()).step_by(2) {
+                    if let Some((r, c)) = shapes[idx]
+                        && (r, c) != (exp_r, exp_c)
+                    {
+                        return Err(FunctionError::DimensionMismatch {
+                            function,
+                            expected_rows: exp_r,
+                            expected_cols: exp_c,
+                            found_rows: r,
+                            found_cols: c,
+                        });
+                    }
+                }
+            }
+        }
+        ShapePolicy::EqualEvenPairRanges => {
+            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
+                for idx in (2..shapes.len()).step_by(2) {
+                    if let Some((r, c)) = shapes[idx]
+                        && (r, c) != (exp_r, exp_c)
+                    {
+                        return Err(FunctionError::DimensionMismatch {
+                            function,
+                            expected_rows: exp_r,
+                            expected_cols: exp_c,
+                            found_rows: r,
+                            found_cols: c,
+                        });
+                    }
+                }
+            }
+        }
+        ShapePolicy::OneDimEqualLength {
+            first_idx,
+            first_param,
+            second_idx,
+            second_param,
+        } => {
+            let first_shape = shapes.get(first_idx).copied().flatten();
+            let second_shape = shapes.get(second_idx).copied().flatten();
+            require_1d_slice(function, first_param, first_shape)?;
+            require_1d_slice(function, second_param, second_shape)?;
+            if let (Some((r1, c1)), Some((r2, c2))) = (first_shape, second_shape) {
+                let len1 = r1 * c1;
+                let len2 = r2 * c2;
+                if len1 != len2 {
+                    return Err(FunctionError::LengthMismatch {
+                        function,
+                        expected: len1,
+                        found: len2,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Validates argument count, variadic pair parity, omitted parameter eligibility, and scoped criteria syntax against a resolved function.
 pub(crate) fn validate_signature(
     func: &dyn ExcelFunction,
     args: &[CallArg],
 ) -> Result<(), FunctionError> {
-    validate_arg_slots(func, args)?;
-    validate_criteria_slots(func, args)
-}
+    let min = func.min_args();
+    if args.len() < min {
+        return Err(FunctionError::TooFewArguments {
+            function: func.name(),
+            expected: min,
+            found: args.len(),
+        });
+    }
 
-/// Rejects `CallArg::Comparator` and `CallArg::BlankCheck` outside `ParamKind::Criteria` slots.
-fn validate_criteria_slots(
-    func: &dyn ExcelFunction,
-    args: &[CallArg],
-) -> Result<(), FunctionError> {
+    if let Some(max) = func.max_args()
+        && args.len() > max
+    {
+        return Err(FunctionError::TooManyArguments {
+            function: func.name(),
+            expected: max,
+            found: args.len(),
+        });
+    }
+
+    if func.variadic_rule() == VariadicRule::Pairs {
+        let fixed_count = func.parameters().len();
+        if args.len() > fixed_count && !(args.len() - fixed_count).is_multiple_of(2) {
+            return Err(FunctionError::InvalidVariadicPairs {
+                function: func.name(),
+                count: args.len(),
+            });
+        }
+    }
+
+    let last_present = args
+        .iter()
+        .rposition(|arg| !matches!(arg, CallArg::Omitted));
+
     for (i, arg) in args.iter().enumerate() {
         match arg {
-            CallArg::Expr(_) | CallArg::Omitted => {}
+            CallArg::Expr(_) => {}
+            CallArg::Omitted => {
+                let param = resolve_parameter(func, i)?;
+                if !param.requirement.is_optional() {
+                    return Err(FunctionError::CannotOmitRequiredArgument {
+                        function: func.name(),
+                        param: param.name,
+                        position: i + 1,
+                    });
+                }
+                if last_present.is_none_or(|last| i >= last) {
+                    return Err(FunctionError::CannotOmitTrailingArgument {
+                        function: func.name(),
+                        param: param.name,
+                        position: i + 1,
+                    });
+                }
+            }
             CallArg::Comparator { .. } | CallArg::BlankCheck(_) => {
                 let param = resolve_parameter(func, i)?;
                 if param.kind != ParamKind::Criteria {

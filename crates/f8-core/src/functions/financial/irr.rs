@@ -1,8 +1,6 @@
 use crate::functions::common::optional_scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::financial::discounting::{
-    coerce_slice_numbers, collect_cash_flows, extract_1d_range_values,
-};
+use crate::functions::financial::discounting::{coerce_slice_numbers, collect_cash_flows};
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
@@ -156,8 +154,8 @@ impl ExcelFunction for XirrFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let raw_values = extract_1d_range_values(&args[0], self.name())?;
-        let raw_dates = extract_1d_range_values(&args[1], self.name())?;
+        let raw_values = args[0].as_range_slice(self.name())?;
+        let raw_dates = args[1].as_range_slice(self.name())?;
 
         let values = match coerce_slice_numbers(raw_values) {
             Ok(v) => v,

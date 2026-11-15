@@ -39,24 +39,6 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
     Ok(cfs)
 }
 
-/// Extracts the cell slice from a validated 1D range argument for `XNPV` and `XIRR`.
-pub(crate) fn extract_1d_range_values<'a>(
-    arg: &'a FunctionArg<'_>,
-    function: &'static str,
-) -> Result<&'a [CellValue], FunctionError> {
-    match arg {
-        FunctionArg::Array { values, .. } => Ok(values.as_slice()),
-        FunctionArg::Scalar(_)
-        | FunctionArg::Lazy(_)
-        | FunctionArg::Criterion(_)
-        | FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "range",
-            found: arg.kind_name(),
-        }),
-    }
-}
-
 /// Extracts strict numeric entries from a validated 1D slice for `XNPV` and `XIRR`.
 pub(crate) fn coerce_slice_numbers(slice: &[CellValue]) -> Result<Vec<f64>, ExcelError> {
     let mut result = Vec::with_capacity(slice.len());
@@ -220,8 +202,8 @@ impl ExcelFunction for XnpvFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let raw_values = extract_1d_range_values(&args[1], self.name())?;
-        let raw_dates = extract_1d_range_values(&args[2], self.name())?;
+        let raw_values = args[1].as_range_slice(self.name())?;
+        let raw_dates = args[2].as_range_slice(self.name())?;
 
         let rate = match scalar_number(&args[0]) {
             Ok(r) => r,

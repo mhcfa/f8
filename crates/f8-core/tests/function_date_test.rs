@@ -1231,17 +1231,9 @@ fn test_yearfrac_omitted_basis_and_fractional_boundaries() {
         .unwrap();
     assert_eq!(res, CellValue::Number(0.50));
 
-    // Trailing FunctionArg::Omitted for final optional basis is rejected
-    let err = yearfrac_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(start)),
-                FunctionArg::Scalar(CellValue::Number(end)),
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        )
-        .unwrap_err();
+    // Trailing omission for final optional basis is rejected statically
+    let expr = f8_core::expr::Expr::parse("YEARFRAC(45292, 45474, _)").unwrap();
+    let err = registry.validate_expr(&expr).unwrap_err();
     assert_eq!(
         err,
         f8_core::functions::FunctionError::CannotOmitTrailingArgument {

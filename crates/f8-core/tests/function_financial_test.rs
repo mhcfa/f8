@@ -181,26 +181,27 @@ fn test_scenario_2_npv_periodic_discounting() {
         );
     }
 
-    // Descriptor range fails with DescriptorReferenceNotAllowed
+    // Descriptor range fails statically with DescriptorReferenceNotAllowed
+    let npv_desc_expr =
+        f8_core::expr::Expr::parse("NPV(0.10, T[\"r1\"..\"r2\", \"desc\"])").unwrap();
+    let mut resolve_npv_desc =
+        |_: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 2,
+                cols: 1,
+                axis_role: AxisRole::Descriptor,
+                elem_types: vec![Some(ValueType::Number); 2],
+            }))
+        };
     assert_eq!(
-        npv_func.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(0.10)),
-                FunctionArg::array(
-                    2,
-                    1,
-                    vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
-                    ReferenceKind::Slice,
-                    AxisRole::Descriptor,
-                ),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::DescriptorReferenceNotAllowed {
-            function: "NPV",
-            param: "value1",
-            position: 2,
-        })
+        registry.validate_expr_with_shapes(&npv_desc_expr, &mut resolve_npv_desc),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DescriptorReferenceNotAllowed {
+                function: "NPV",
+                param: "value1",
+                position: 2,
+            }
+        ))
     );
 
     // Rate = -1.0 with non-zero cash flows returns #DIV/0!
@@ -291,62 +292,53 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         );
     }
 
-    // Mismatched vector lengths fail strictly with LengthMismatch before InvalidDateSerial or ExcelError
-    let mismatched_args = vec![
-        FunctionArg::Scalar(CellValue::Number(0.09)),
-        FunctionArg::array(
-            2,
-            1,
-            vec![
-                CellValue::Error(ExcelError::Div0),
-                CellValue::Number(1000.0),
-            ],
-            ReferenceKind::Slice,
-            AxisRole::Measure,
-        ),
-        FunctionArg::array(
-            1,
-            1,
-            vec![CellValue::Number(0.0)],
-            ReferenceKind::Slice,
-            AxisRole::Measure,
-        ),
-    ];
+    // Mismatched vector lengths and 2D slices fail statically in validate_expr_with_shapes
+    let xnpv_shape_expr =
+        f8_core::expr::Expr::parse("XNPV(0.09, T[\"v1\"..\"v2\", @col], T[\"d1\", @col])").unwrap();
+    let mut resolve_xnpv_len =
+        |r: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            let rows = if matches!(r.row, f8_core::expr::RowSelector::Range(_, _)) {
+                2
+            } else {
+                1
+            };
+            Ok(Some(f8_core::functions::StaticRef {
+                rows,
+                cols: 1,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![Some(ValueType::Number); rows],
+            }))
+        };
     assert_eq!(
-        xnpv_func.evaluate(&mismatched_args, &ctx),
-        Err(FunctionError::LengthMismatch {
-            function: "XNPV",
-            expected: 2,
-            found: 1,
-        })
+        registry.validate_expr_with_shapes(&xnpv_shape_expr, &mut resolve_xnpv_len),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::LengthMismatch {
+                function: "XNPV",
+                expected: 2,
+                found: 1,
+            }
+        ))
     );
 
-    // 2D slice fails with ExpectedOneDimensionalSlice before role, serial, or rate <= -1.0 checks
-    let two_d_args = vec![
-        FunctionArg::Scalar(CellValue::Number(-2.0)),
-        FunctionArg::array(
-            2,
-            2,
-            vec![CellValue::Number(1.0); 4],
-            ReferenceKind::Slice,
-            AxisRole::Descriptor,
-        ),
-        FunctionArg::array(
-            2,
-            2,
-            vec![CellValue::Number(0.0); 4],
-            ReferenceKind::Slice,
-            AxisRole::Measure,
-        ),
-    ];
+    let mut resolve_xnpv_2d =
+        |_: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 2,
+                cols: 2,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![Some(ValueType::Number); 4],
+            }))
+        };
     assert_eq!(
-        xnpv_func.evaluate(&two_d_args, &ctx),
-        Err(FunctionError::ExpectedOneDimensionalSlice {
-            function: "XNPV",
-            param: "values",
-            rows: 2,
-            cols: 2,
-        })
+        registry.validate_expr_with_shapes(&xnpv_shape_expr, &mut resolve_xnpv_2d),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::ExpectedOneDimensionalSlice {
+                function: "XNPV",
+                param: "values",
+                rows: 2,
+                cols: 2,
+            }
+        ))
     );
 
     // Empty in values or dates fails strictly with InvalidArgumentType; swapped/OOB dates fail with InvalidDateSerial
