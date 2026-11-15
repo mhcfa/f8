@@ -791,7 +791,7 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
         (
-            "IF(1 / 0, UNKNOWN_FN(), 10)",
+            "IF((1 / 0) > 0, UNKNOWN_FN(), 10)",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
         (
@@ -834,7 +834,7 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
         let graph = DependencyGraph::from_grid(&grid, &symbols).expect("build graph");
 
         assert_eval_function_err(
-            Evaluator::validate_grid(&grid, &symbols, &registry),
+            Evaluator::validate_grid(&grid, &graph, &symbols, &registry),
             &target_cell,
             expected_err,
         );
@@ -873,8 +873,8 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
 }
 
 #[test]
-fn test_scenario_8_validate_grid_reports_in_declaration_order() {
-    // r1 is declared first in CellGrid, but depends on r2 so topological order evaluates r2 before r1.
+fn test_scenario_8_validate_grid_reports_in_topological_order() {
+    // r1 is declared first in CellGrid, but depends on r2 so topological order validates and evaluates r2 before r1.
     let r1 = RowSpec::new("r1").with_expr("T[\"r2\", @col] + IF(TRUE, 1, UNKNOWN_FIRST())");
     let r2 = RowSpec::new("r2").with_expr("IF(TRUE, 1, UNKNOWN_SECOND())");
     let table = create_table("T", &["c1"], vec![r1, r2]);
@@ -893,24 +893,27 @@ fn test_scenario_8_validate_grid_reports_in_declaration_order() {
     let r2_cell = CellId::new("T", "r2", "c1");
     let grid_order: Vec<CellId> = grid.iter().map(|(id, _)| id.clone()).collect();
     assert_eq!(grid_order, vec![r1_cell.clone(), r2_cell.clone()]);
-    assert_eq!(graph.topological_order(), &[r2_cell, r1_cell.clone()]);
+    assert_eq!(
+        graph.topological_order(),
+        &[r2_cell.clone(), r1_cell.clone()]
+    );
 
     let registry = FunctionRegistry::standard();
-    let expected_err = FunctionError::UnknownFunction("UNKNOWN_FIRST".into());
+    let expected_err = FunctionError::UnknownFunction("UNKNOWN_SECOND".into());
 
     assert_eval_function_err(
-        Evaluator::validate_grid(&grid, &symbols, &registry),
-        &r1_cell,
+        Evaluator::validate_grid(&grid, &graph, &symbols, &registry),
+        &r2_cell,
         &expected_err,
     );
     assert_eval_function_err(
         Evaluator::evaluate(&grid, &graph, &symbols, &registry),
-        &r1_cell,
+        &r2_cell,
         &expected_err,
     );
     assert_compiler_function_err(
         Compiler::compile(&manifest, &tables),
-        &r1_cell,
+        &r2_cell,
         &expected_err,
     );
 }
@@ -1883,6 +1886,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
             cell("cat2", CellInput::string("Beta")),
             cell("null_cell", CellInput::null()),
             RowSpec::new("is_null").with_expr("ISBLANK(T[\"null_cell\", @col])"),
+            RowSpec::new("f_txt").with_expr("IF(TRUE, \"hello\", \"world\")"),
             // Mixed slice [10.0, "two"]
             cell("mixed1", CellInput::number(10.0)),
             cell("mixed2", CellInput::string("two")),
@@ -1942,8 +1946,10 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "IFNA(T[\"null_cell\", @col], 1)",
         "ISBLANK(IFERROR(T[\"null_cell\", @col], 1))",
         "IF(TRUE, T[\"num1\", @col], T[\"txt_cell\", @col])",
+        "1 + T[\"f_txt\", @col]",
+        "IF(FALSE, 1 + T[\"f_txt\", @col], 0)",
         "IF(T[\"flag_false\", @col], T[\"txt_cell\", @col] + 5, 0)",
-        "IF(T[\"flag_false\", @col], ROUND(10, T[\"float_cell\", @col]), 0)",
+        "IF(T[\"c1\", @col], ROUND(10, T[\"float_cell\", @col]), 0)",
         "IF(T[\"flag_false\", @col], T[\"num1\", @col] < T[\"txt_cell\", @col], FALSE)",
         "IF(TRUE, 10, XLOOKUP(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]))",
         "IF(TRUE, 10, INDEX(T[\"txt1\"..\"txt2\", @col], 1))",
@@ -1970,8 +1976,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "XMATCH(10, T[\"errk1\"..\"errk3\", @col], 0, 2)",
         "XMATCH(20, T[\"unsort1\"..\"unsort3\", @col], 0, 2)",
         "XMATCH(20, T[\"asc1\"..\"asc3\", @col], 0, -2)",
-        // Dormant binary search / mixed slice inside untaken IF branch also fails in Stage B!
-        "IF(TRUE, 0, XMATCH(20, T[\"unsort1\"..\"unsort3\", @col], 0, 2))",
+        // Mixed slice inside untaken IF branch still fails statically in Pass 4a
         "IF(TRUE, 0, INDEX(T[\"mixed1\"..\"mixed2\", @col], 1))",
         // Signed literal integer checks & lookup mode literal checks
         "ROUND(10, --2.5)",
@@ -2002,7 +2007,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         ("ROUND(10, T[\"float_cell\", @col])", "2.5"),
         ("IF(FALSE, ROUND(10, 2.5), 0)", "2.5"),
         (
-            "IF(T[\"flag_false\", @col], ROUND(10, T[\"float_cell\", @col]), 0)",
+            "IF(T[\"c1\", @col], ROUND(10, T[\"float_cell\", @col]), 0)",
             "2.5",
         ),
         ("ROUND(10, IF(FALSE, 2, 2.5))", "2.5"),
@@ -2063,6 +2068,10 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         RowSpec::new("ok_round_taken_lit").with_expr("ROUND(10, IF(TRUE, 2, 2.5))"),
         RowSpec::new("ok_round_taken_cell")
             .with_expr("ROUND(10, IF(TRUE, 2, T[\"float_cell\", @col]))"),
+        RowSpec::new("ok_dormant_dyn_int")
+            .with_expr("IF(T[\"flag_false\", @col], ROUND(10, T[\"float_cell\", @col]), 0)"),
+        RowSpec::new("ok_dormant_bin_unsort")
+            .with_expr("IF(TRUE, 0, XMATCH(20, T[\"unsort1\"..\"unsort3\", @col], 0, 2))"),
         RowSpec::new("ok_guard_str")
             .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), \"\", T[\"null_cell\", @col])"),
         RowSpec::new("ok_guard_arith")
@@ -2107,6 +2116,8 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
     assert_eq!(get("ok_if_na"), CellValue::Number(10.0));
     assert_eq!(get("ok_round_taken_lit"), CellValue::Number(10.0));
     assert_eq!(get("ok_round_taken_cell"), CellValue::Number(10.0));
+    assert_eq!(get("ok_dormant_dyn_int"), CellValue::Number(0.0));
+    assert_eq!(get("ok_dormant_bin_unsort"), CellValue::Number(0.0));
     assert_eq!(get("ok_guard_str"), CellValue::Text(String::new()));
     assert_eq!(get("ok_guard_arith"), CellValue::Number(0.0));
     assert_eq!(get("ok_guard_cmp"), CellValue::Boolean(false));
@@ -2560,12 +2571,13 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
         "IF(FALSE, DATE(2024, 6, 31), DATE(2024, 1, 1))",
         "DATE(T[\"yr24\", \"c1\"], 14, 1)",
         "IFERROR(DATE(T[\"yr24\", \"c1\"], 1, 1), 0)",
-        "IF(FALSE, DATE(T[\"yr24\", \"c1\"], 1, 1), DATE(2024, 1, 1))",
+        "IF(TRUE, DATE(T[\"yr24\", \"c1\"], 1, 1), DATE(2024, 1, 1))",
         "PMT(0.05, 10, -1000, 0, T[\"type2\", \"c1\"])",
         "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), T[\"basis5\", \"c1\"])",
         "YEAR(0)",
+        "IF(FALSE, YEAR(0), 2024)",
         "YEAR(T[\"zero\", \"c1\"])",
-        "IF(FALSE, YEAR(T[\"zero\", \"c1\"]), 2024)",
+        "IF(TRUE, YEAR(T[\"zero\", \"c1\"]), 2024)",
         "XNPV(0.1, T[\"n1\"..\"n2\", \"c1\"], T[\"cf0\"..\"cf0\", \"c1\"])",
         "XNPV(0.1, T[\"d0\"..\"d1\", \"c1\"], T[\"yr24\"..\"zero\", \"c1\"])",
         "XIRR(T[\"d0\"..\"d3\", \"c1\"], T[\"cf0\"..\"cf3\", \"c1\"])",
@@ -2596,6 +2608,14 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
         (
             "IF(ISBLANK(T[\"hole\", \"c1\"]), 0, SUM(T[\"hole\", \"c1\"]))",
             CellValue::Number(0.0),
+        ),
+        (
+            "IF(FALSE, DATE(T[\"yr24\", \"c1\"], 1, 1), DATE(2024, 1, 1))",
+            CellValue::Number(45292.0),
+        ),
+        (
+            "IF(FALSE, YEAR(T[\"zero\", \"c1\"]), 2024)",
+            CellValue::Number(2024.0),
         ),
         ("DATE(1900, 2, 29)", CellValue::Number(60.0)),
     ] {
@@ -2858,32 +2878,8 @@ fn test_scenario_18_cluster_c_typed_criteria_and_error_introspection() {
     let exact_256 = "a".repeat(256);
     let not_eq_254 = "a".repeat(254);
     let bad_text_literals: Vec<String> = [
-        "",
-        "A*",
-        "a?b",
-        "~*",
-        ">15",
-        "=Alpha",
-        "<>0",
-        "42",
-        "042",
-        " 42 ",
-        "10%",
-        "1,000",
-        "$50",
-        "(100)",
-        "1 1/2",
-        "2024-01-01",
-        "01/15/2024",
-        "1/2",
-        "Jan 2024",
-        "12:30",
-        "5 PM",
-        "5pm",
-        "TRUE",
-        "false",
-        "#DIV/0!",
-        "#N/A",
+        "", "A*", "a?b", "~*", ">15", "=Alpha", "<>0", "42", "042", " 42 ", "-3.5e2", "TRUE",
+        "false", "#DIV/0!", "#N/A",
     ]
     .into_iter()
     .map(String::from)
@@ -2911,11 +2907,10 @@ fn test_scenario_18_cluster_c_typed_criteria_and_error_introspection() {
             );
         }
 
-        // Dynamic Text cell (active, IFERROR, and dormant IF)
+        // Dynamic Text cell (active and IFERROR)
         for dyn_f in [
             "COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"])",
             "IFERROR(COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"]), 0)",
-            "IF(TRUE, 0, COUNTIFS(T[\"r1\"..\"r4\", \"cat\"], T[\"helpers\", \"cat\"]))",
         ] {
             let err = Compiler::compile(
                 &manifest,
@@ -3074,6 +3069,14 @@ fn test_scenario_18_cluster_c_typed_criteria_and_error_introspection() {
         "May",
         "1A",
         "2P",
+        "10%",
+        "$100",
+        "1,000",
+        "(5)",
+        "1/2",
+        "2024-01-01",
+        "Jan 1, 2024",
+        "12:30",
     ] {
         let f = format!("COUNTIFS(T[\"r1\"..\"r4\", \"special_text\"], \"{valid_label}\")");
         let compiled = Compiler::compile(

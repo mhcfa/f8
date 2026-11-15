@@ -1,4 +1,4 @@
-use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
+use crate::functions::common::{optional_scalar_integer, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -189,42 +189,19 @@ impl ExcelFunction for YearfracFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let start_res = extract_scalar_number(&args[0], self.name(), "start_date", 1, ctx)?;
-        let end_res = extract_scalar_number(&args[1], self.name(), "end_date", 2, ctx)?;
-        let basis_res = match args.get(2) {
-            None | Some(FunctionArg::Omitted) => Ok(0_i64),
-            Some(
-                basis_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => extract_scalar_integer(basis_arg, self.name(), "basis", 3, ctx)?,
+        let eval = || -> Result<f64, ExcelError> {
+            let start_val = scalar_number(&args[0])?;
+            let end_val = scalar_number(&args[1])?;
+            let basis_i64 = optional_scalar_integer(args, 2, 0)?;
+            let basis = DayCountBasis::from_i64(basis_i64)?;
+            calculate_yearfrac(start_val, end_val, basis)
         };
 
-        let start_val = match start_res {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let end_val = match end_res {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let basis_i64 = match basis_res {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        let basis = match DayCountBasis::from_i64(basis_i64) {
-            Ok(b) => b,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        match calculate_yearfrac(start_val, end_val, basis) {
+        match eval() {
             Ok(frac) => Ok(CellValue::number(frac)),
             Err(e) => Ok(CellValue::Error(e)),
         }

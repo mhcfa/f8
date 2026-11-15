@@ -229,56 +229,13 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         CellValue::Error(ExcelError::Div0)
     );
 
-    // Slice containing typed non-Boolean error provenance fails strictly with InvalidArgumentType
-    let typed_err_slice = vec![FunctionArg::Array {
-        rows: 2,
-        cols: 1,
-        values: vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Na)],
-        error_types: vec![None, Some(ValueType::Text)],
-        ref_kind: ReferenceKind::Slice,
-        axis_role: AxisRole::Measure,
-    }];
-    assert_eq!(
-        and_func.evaluate(&typed_err_slice, &ctx),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "AND",
-            param: "logical1",
-            position: 1,
-            expected: ExpectedType::Boolean,
-            found: ValueType::Text,
-        }))
-    );
-
-    // LogicalCollector::collect preserves inferred error ValueType on FunctionArg::Lazy
-    struct TypedLazyErrorCtx;
-    impl EvalContext for TypedLazyErrorCtx {
-        fn eval_expr(&self, _expr: &Expr) -> Result<CellValue, FunctionError> {
-            Ok(CellValue::Error(ExcelError::Div0))
-        }
-        fn validate_dormant_expr(
-            &self,
-            _expr: &Expr,
-            _expected: Option<f8_core::functions::TypeExpectation>,
-        ) -> Result<Option<ValueType>, FunctionError> {
-            Ok(Some(ValueType::Number))
-        }
-    }
-    let lazy_err_expr = Expr::number(0.0);
-    assert_eq!(
-        f8_core::functions::common::LogicalCollector::collect(
-            "AND",
-            "logical1",
-            &[FunctionArg::Lazy(&lazy_err_expr)],
-            &TypedLazyErrorCtx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "AND",
-            param: "logical1",
-            position: 1,
-            expected: ExpectedType::Boolean,
-            found: ValueType::Number,
-        }))
-    );
+    // LogicalCollector::collect aggregates validated boolean arguments cleanly
+    let col = f8_core::functions::common::LogicalCollector::collect(&[
+        FunctionArg::Scalar(CellValue::Boolean(true)),
+        FunctionArg::Scalar(CellValue::Boolean(false)),
+    ])
+    .unwrap();
+    assert_eq!((col.count, col.all_true, col.any_true), (2, false, true));
 }
 
 #[test]
@@ -866,99 +823,31 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
 }
 
 #[test]
-fn test_scenario_10_runtime_monomorphic_branch_unification_and_iferror_non_empty() {
+fn test_scenario_10_static_monomorphic_branch_unification_and_iferror_non_empty() {
     let registry = FunctionRegistry::standard();
-    let if_fn = registry.lookup("IF").unwrap();
-    let ifs_fn = registry.lookup("IFS").unwrap();
-    let choose_fn = registry.lookup("CHOOSE").unwrap();
     let iferror_fn = registry.lookup("IFERROR").unwrap();
     let ifna_fn = registry.lookup("IFNA").unwrap();
     let ctx = MockContext::new();
 
-    // Runtime IncompatibleBranchTypes across IF, IFS, CHOOSE, IFERROR, IFNA
-    assert_eq!(
-        if_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Boolean(true)),
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Text("NM".into())),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
-            function: "IF",
-            position: 3,
-            expected: ValueType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
-    assert_eq!(
-        ifs_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Boolean(true)),
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Boolean(false)),
-                FunctionArg::Scalar(CellValue::Text("NM".into())),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
-            function: "IFS",
-            position: 4,
-            expected: ValueType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
-    assert_eq!(
-        choose_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Text("NM".into())),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
-            function: "CHOOSE",
-            position: 3,
-            expected: ValueType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
-    assert_eq!(
-        iferror_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Text("N/A".into())),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
-            function: "IFERROR",
-            position: 2,
-            expected: ValueType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
-    assert_eq!(
-        ifna_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Text("N/A".into())),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
-            function: "IFNA",
-            position: 2,
-            expected: ValueType::Number,
-            found: ValueType::Text,
-        }))
-    );
+    // Static IncompatibleBranchTypes across IF, IFS, CHOOSE, IFERROR, IFNA
+    for (formula, fn_name, pos) in [
+        ("IF(TRUE, 10, \"NM\")", "IF", 3),
+        ("IFS(TRUE, 10, FALSE, \"NM\")", "IFS", 4),
+        ("CHOOSE(1, 10, \"NM\")", "CHOOSE", 3),
+        ("IFERROR(10, \"N/A\")", "IFERROR", 2),
+        ("IFNA(10, \"N/A\")", "IFNA", 2),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr),
+            Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: fn_name,
+                position: pos,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }))
+        );
+    }
 
     // IFERROR and IFNA reject CellValue::Empty on evaluated non-Error arms with ExpectedType::NonEmpty
     assert_eq!(

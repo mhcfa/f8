@@ -1102,7 +1102,7 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
             'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], UNKNOWN_FN())',
             "unknown function 'UNKNOWN_FN'",
         ),
-        ("IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"),
+        ("IF((1 / 0) > 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"),
         ("IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"),
         (
             "IF(FALSE, 10)",
@@ -1462,7 +1462,7 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
         "ROUND(10, ---2.5)",
         'ROUND(10, @table["flt_cell", @col])',
         "IF(FALSE, ROUND(10, 2.5), 0)",
-        'IF(@table["flag_false", @col], ROUND(10, @table["flt_cell", @col]), 0)',
+        'IF(TRUE, ROUND(10, @table["flt_cell", @col]), 0)',
         "ROUND(10, IF(FALSE, 2, 2.5))",
         'ROUND(10, IF(FALSE, 2, @table["flt_cell", @col]))',
         'ROUND(10, IF(TRUE, "a", "b"))',
@@ -1586,6 +1586,7 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
     ok_tbl.add_row("if_na_bottom", expr="IF(10 > 0, 100 / 10, NA())")
     ok_tbl.add_row("round_taken_lit", expr="ROUND(10, IF(TRUE, 2, 2.5))")
     ok_tbl.add_row("round_taken_cell", expr='ROUND(10, IF(TRUE, 2, @table["flt_cell", @col]))')
+    ok_tbl.add_row("round_guard_cell", expr='IF(FALSE, ROUND(10, @table["flt_cell", @col]), 0)')
     ok_tbl.add_row("is_null", expr='ISBLANK(@table["null_cell", @col])')
     ok_tbl.add_row(
         "helper_guard",
@@ -1625,6 +1626,7 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
     assert compiled.num("T", "if_na_bottom", "c1") == 10.0
     assert compiled.num("T", "round_taken_lit", "c1") == 10.0
     assert compiled.num("T", "round_taken_cell", "c1") == 10.0
+    assert compiled.num("T", "round_guard_cell", "c1") == 0.0
     assert compiled.value("T", "is_null", "c1") is True
     assert compiled.num("T", "helper_guard", "c1") == 0.0
     assert compiled.num("T", "index_sparse", "c1") == 30.0
@@ -1729,7 +1731,7 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
         ("IF(FALSE, DATE(2024, 6, 31), 45292)", "invalid day 31 in 'DATE'"),
         ('DATE(@table["yr_ok", "c1"], 14, 1)', "invalid month 14 in 'DATE'"),
         ('IFERROR(DATE(@table["yr_24", "c1"], 1, 1), 0)', "invalid year 24 in 'DATE'"),
-        ('IF(FALSE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"),
+        ('IF(TRUE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"),
         ('DATE(2025, 2, @table["day_29", "c1"])', "invalid day 29 in 'DATE'"),
         ('DATE(@table["yr_24", "c1"], 1 / 0, 1)', "invalid year 24 in 'DATE'"),
         ("PMT(0.05, 10, -1000, 0, 2)", "invalid payment timing 'type' 2 in 'PMT'"),
@@ -1738,13 +1740,14 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
         ("YEARFRAC(45292, 45658, 5)", "invalid day-count 'basis' 5 in 'YEARFRAC'"),
         # Scenario 5: Input serial bounds (1..=2958465), swapped XNPV/XIRR dates, ShapePolicy order
         ("YEAR(0)", "expected serial in 1..=2958465"),
+        ("IF(FALSE, YEAR(0), 2024)", "expected serial in 1..=2958465"),
         ("MONTH(0.5)", "expected serial in 1..=2958465"),
         ("DAY(-1)", "expected serial in 1..=2958465"),
         ("DAYS(45292, 0)", "expected serial in 1..=2958465"),
         ("EDATE(0, 1)", "expected serial in 1..=2958465"),
         ("EOMONTH(2958466, 0)", "expected serial in 1..=2958465"),
         ("YEARFRAC(0, 45292, 0)", "expected serial in 1..=2958465"),
-        ('IF(FALSE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"),
+        ('IF(TRUE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"),
         (
             'XNPV(0.1, @table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
             "expected serial in 1..=2958465",
@@ -1885,6 +1888,10 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     add_check("yf_dyn", 'YEARFRAC(45292, 45658, @table["basis_3", "c1"])')
     add_check("yr_min", "YEAR(1)")
     add_check("yr_max", "YEAR(2958465.9)")
+    add_check(
+        "yr_guard",
+        'IF(@table["zero_date", "c1"] >= 1, YEAR(@table["zero_date", "c1"]), 2024)',
+    )
     add_check("edate_udf", "EDATE(DATE(1900, 1, 15), -2)")
     add_check("eomonth_ovf", "EOMONTH(DATE(9999, 12, 1), 2)")
     add_check("yr_edate_bubble", "YEAR(EDATE(DATE(1900, 1, 15), -2))")
@@ -1922,6 +1929,7 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     assert compiled.num("T", "yf_dyn", "c1") == pytest.approx(366.0 / 365.0)
     assert compiled.num("T", "yr_min", "c1") == 1900.0
     assert compiled.num("T", "yr_max", "c1") == 9999.0
+    assert compiled.num("T", "yr_guard", "c1") == 2024.0
     assert compiled.formatted("T", "zero_date", "c1") == "1900-01-00"
     assert compiled.value("T", "edate_udf", "c1") == "#NUM!"
     assert compiled.value("T", "eomonth_ovf", "c1") == "#NUM!"
@@ -1987,9 +1995,9 @@ def test_scenario_22_cluster_c_typed_criteria_and_error_introspection() -> None:
         'COUNTIFS(@table["r1".."r2", "cat"], "")',
         'COUNTIFS(@table["r1".."r2", "cat"], "A*")',
         'COUNTIFS(@table["r1".."r2", "cat"], ">15")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "10%")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "1,000")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "2024-01-01")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "42")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "TRUE")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "#N/A")',
         'COUNTIFS(@table["r1".."r2", "num_a"], <= (1 / 0))',
         (
             'SUMIFS(@table["r1".."r2", "num_a"], '
@@ -2104,6 +2112,8 @@ def test_scenario_22_cluster_c_typed_criteria_and_error_introspection() -> None:
     add_res("errtype_non_err", "ERROR.TYPE(42)")
     add_res("cnt_utf8_euro", 'COUNTIFS(@table["r1".."r4", "cat"], "€")')
     add_res("cnt_utf8_colon", 'COUNTIFS(@table["r1".."r4", "cat"], <> "Note: café")')
+    add_res("cnt_pct_label", 'COUNTIFS(@table["r1".."r4", "cat"], "10%")')
+    add_res("cnt_date_label", 'COUNTIFS(@table["r1".."r4", "cat"], "2024-01-01")')
 
     compiled = ok_model.compile()
     assert compiled.num("T", "sumifs_gt", "res") == 30.0

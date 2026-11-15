@@ -1,4 +1,4 @@
-use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
+use crate::functions::common::{optional_scalar_integer, optional_scalar_number, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -188,51 +188,27 @@ impl ExcelFunction for PmtFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate_res = extract_scalar_number(&args[0], self.name(), "rate", 1, ctx)?;
-        let nper_res = extract_scalar_number(&args[1], self.name(), "nper", 2, ctx)?;
-        let pv_res = extract_scalar_number(&args[2], self.name(), "pv", 3, ctx)?;
-        let fv_res = match args.get(3) {
-            None | Some(FunctionArg::Omitted) => Ok(0.0),
-            Some(
-                fv_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => extract_scalar_number(fv_arg, self.name(), "fv", 4, ctx)?,
-        };
-        let type_res = match args.get(4) {
-            None | Some(FunctionArg::Omitted) => Ok(0_i64),
-            Some(
-                type_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => extract_scalar_integer(type_arg, self.name(), "type", 5, ctx)?,
-        };
-
-        let rate = match rate_res {
+        let rate = match scalar_number(&args[0]) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let nper = match nper_res {
+        let nper = match scalar_number(&args[1]) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let pv = match pv_res {
+        let pv = match scalar_number(&args[2]) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let fv = match fv_res {
+        let fv = match optional_scalar_number(args, 3, 0.0) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let type_val = match type_res {
+        let type_val = match optional_scalar_integer(args, 4, 0) {
             Ok(v) => v as f64,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -295,69 +271,22 @@ struct AmortizationArgs {
     type_val: f64,
 }
 
-fn extract_amortization_args(
-    func_name: &'static str,
-    args: &[FunctionArg<'_>],
-    ctx: &dyn EvalContext,
-) -> Result<Result<AmortizationArgs, ExcelError>, FunctionError> {
-    let rate_res = extract_scalar_number(&args[0], func_name, "rate", 1, ctx)?;
-    let per_res = extract_scalar_number(&args[1], func_name, "per", 2, ctx)?;
-    let nper_res = extract_scalar_number(&args[2], func_name, "nper", 3, ctx)?;
-    let pv_res = extract_scalar_number(&args[3], func_name, "pv", 4, ctx)?;
-    let fv_res = match args.get(4) {
-        None | Some(FunctionArg::Omitted) => Ok(0.0),
-        Some(
-            fv_arg @ (FunctionArg::Scalar(_)
-            | FunctionArg::TypedErrorScalar { .. }
-            | FunctionArg::Array { .. }
-            | FunctionArg::Lazy(_)
-            | FunctionArg::Criterion(_)),
-        ) => extract_scalar_number(fv_arg, func_name, "fv", 5, ctx)?,
-    };
-    let type_res = match args.get(5) {
-        None | Some(FunctionArg::Omitted) => Ok(0_i64),
-        Some(
-            type_arg @ (FunctionArg::Scalar(_)
-            | FunctionArg::TypedErrorScalar { .. }
-            | FunctionArg::Array { .. }
-            | FunctionArg::Lazy(_)
-            | FunctionArg::Criterion(_)),
-        ) => extract_scalar_integer(type_arg, func_name, "type", 6, ctx)?,
-    };
+fn extract_amortization_args(args: &[FunctionArg<'_>]) -> Result<AmortizationArgs, ExcelError> {
+    let rate = scalar_number(&args[0])?;
+    let per = scalar_number(&args[1])?;
+    let nper = scalar_number(&args[2])?;
+    let pv = scalar_number(&args[3])?;
+    let fv = optional_scalar_number(args, 4, 0.0)?;
+    let type_val = optional_scalar_integer(args, 5, 0)? as f64;
 
-    let rate = match rate_res {
-        Ok(v) => v,
-        Err(e) => return Ok(Err(e)),
-    };
-    let per = match per_res {
-        Ok(v) => v,
-        Err(e) => return Ok(Err(e)),
-    };
-    let nper = match nper_res {
-        Ok(v) => v,
-        Err(e) => return Ok(Err(e)),
-    };
-    let pv = match pv_res {
-        Ok(v) => v,
-        Err(e) => return Ok(Err(e)),
-    };
-    let fv = match fv_res {
-        Ok(v) => v,
-        Err(e) => return Ok(Err(e)),
-    };
-    let type_val = match type_res {
-        Ok(v) => v as f64,
-        Err(e) => return Ok(Err(e)),
-    };
-
-    Ok(Ok(AmortizationArgs {
+    Ok(AmortizationArgs {
         rate,
         per,
         nper,
         pv,
         fv,
         type_val,
-    }))
+    })
 }
 
 /// `IPMT(rate, per, nper, pv, [fv], [type])`: Calculates interest portion of annuity payment for a given period.
@@ -388,11 +317,11 @@ impl ExcelFunction for IpmtFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let parsed = match extract_amortization_args(self.name(), args, ctx)? {
+        let parsed = match extract_amortization_args(args) {
             Ok(parsed) => parsed,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -439,11 +368,11 @@ impl ExcelFunction for PpmtFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let parsed = match extract_amortization_args(self.name(), args, ctx)? {
+        let parsed = match extract_amortization_args(args) {
             Ok(parsed) => parsed,
             Err(e) => return Ok(CellValue::Error(e)),
         };

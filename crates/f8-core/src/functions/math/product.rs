@@ -53,74 +53,32 @@ impl ExcelFunction for SumproductFunction {
         validate_bound_args(self, args)?;
 
         let mut arrays = Vec::with_capacity(args.len());
-        let mut target_dims: Option<(usize, usize)> = None;
+        let mut num_elements = 0;
 
         for arg in args {
-            let (rows, cols, slice) = match arg {
-                FunctionArg::Array {
-                    rows, cols, values, ..
-                } => (*rows, *cols, values.as_slice()),
-                FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
-                    return Err(FunctionError::InvalidArgumentKind {
-                        function: self.name(),
-                        expected: "range",
-                        found: "scalar",
-                    });
-                }
-                FunctionArg::Lazy(_) => {
-                    return Err(FunctionError::InvalidArgumentKind {
-                        function: self.name(),
-                        expected: "range",
-                        found: "lazy",
-                    });
-                }
-                FunctionArg::Criterion(_) => {
-                    return Err(FunctionError::InvalidArgumentKind {
-                        function: self.name(),
-                        expected: "range",
-                        found: "criterion",
-                    });
-                }
-                FunctionArg::Omitted => {
-                    return Err(FunctionError::InvalidArgumentKind {
-                        function: self.name(),
-                        expected: "range",
-                        found: "omitted",
-                    });
-                }
+            let FunctionArg::Array {
+                rows, cols, values, ..
+            } = arg
+            else {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: self.name(),
+                    expected: "range",
+                    found: "scalar",
+                });
             };
-
-            if slice.len() != rows * cols {
+            if values.len() != *rows * *cols {
                 return Err(FunctionError::EvaluationFailure {
                     function: self.name(),
                     message: format!(
                         "array element count ({}) does not match dimensions ({rows}x{cols})",
-                        slice.len()
+                        values.len()
                     ),
                 });
             }
-
-            if let Some((target_rows, target_cols)) = target_dims {
-                if rows != target_rows || cols != target_cols {
-                    return Err(FunctionError::DimensionMismatch {
-                        function: self.name(),
-                        expected_rows: target_rows,
-                        expected_cols: target_cols,
-                        found_rows: rows,
-                        found_cols: cols,
-                    });
-                }
-            } else {
-                target_dims = Some((rows, cols));
-            }
-
-            arrays.push(slice);
+            num_elements = values.len();
+            arrays.push(values.as_slice());
         }
 
-        let (target_rows, target_cols) = target_dims.unwrap_or((0, 0));
-        let num_elements = target_rows * target_cols;
-
-        // Cell errors bubble after all range shapes have been verified
         for slice in &arrays {
             for v in *slice {
                 if let CellValue::Error(err) = v {

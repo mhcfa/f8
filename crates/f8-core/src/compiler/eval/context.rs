@@ -6,10 +6,10 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::expr::ast::{Expr, TableRef};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::{FunctionRegistry, ReferenceResolver, ResolvedRef, StageAError};
-use crate::functions::traits::{EvalContext, TypeExpectation, TypedRangeGrid};
+use crate::functions::registry::FunctionRegistry;
+use crate::functions::traits::{EvalContext, RangeGrid};
 use crate::model::table::AxisRole;
-use crate::value::{CellValue, ValueType};
+use crate::value::CellValue;
 
 /// Concrete evaluation context bridging cell coordinates and memoized values to function implementations
 /// for already-validated formula ASTs.
@@ -19,8 +19,6 @@ pub(crate) struct CellEvalContext<'a> {
     pub(crate) origin: &'a CellId,
     /// Pre-evaluated cell values keyed by cell coordinate.
     pub(crate) memoized_values: &'a IndexMap<CellId, CellValue>,
-    /// Concrete non-`Empty` inferred value types for formula cells that evaluated to `CellValue::Error(_)`.
-    pub(crate) memoized_error_types: &'a IndexMap<CellId, ValueType>,
     /// Model metadata and symbol definitions.
     pub(crate) symbol_table: &'a SymbolTable,
     /// Registered Excel functions.
@@ -33,56 +31,21 @@ impl<'a> CellEvalContext<'a> {
     pub(crate) const fn new(
         origin: &'a CellId,
         memoized_values: &'a IndexMap<CellId, CellValue>,
-        memoized_error_types: &'a IndexMap<CellId, ValueType>,
         symbol_table: &'a SymbolTable,
         registry: &'a FunctionRegistry,
     ) -> Self {
         Self {
             origin,
             memoized_values,
-            memoized_error_types,
             symbol_table,
             registry,
         }
     }
-}
 
-impl ReferenceResolver for CellEvalContext<'_> {
-    type Error = FunctionError;
-
-    fn resolve_ref(&mut self, table_ref: &TableRef) -> Result<Option<ResolvedRef>, Self::Error> {
-        let slice =
-            resolve_table_ref(self.origin, table_ref, self.symbol_table).map_err(|err| {
-                FunctionError::EvaluationFailure {
-                    function: "validate_dormant_expr",
-                    message: err.to_string(),
-                }
-            })?;
-
-        let mut values = Vec::with_capacity(slice.cells.len());
-        let mut error_types = Vec::with_capacity(slice.cells.len());
-        for cell_id in &slice.cells {
-            if let Some(val) = self.memoized_values.get(cell_id) {
-                values.push(val.clone());
-                error_types.push(self.memoized_error_types.get(cell_id).copied());
-            }
-        }
-
-        Ok(Some(ResolvedRef {
-            rows: slice.rows,
-            cols: slice.cols,
-            axis_role: slice.axis_role,
-            values: Some(values),
-            error_types: Some(error_types),
-        }))
-    }
-}
-
-impl CellEvalContext<'_> {
     fn resolve_evaluated_table_ref(
         &self,
         table_ref: &TableRef,
-    ) -> Result<TypedRangeGrid, FunctionError> {
+    ) -> Result<RangeGrid, FunctionError> {
         let slice =
             resolve_table_ref(self.origin, table_ref, self.symbol_table).map_err(|err| {
                 FunctionError::EvaluationFailure {
@@ -92,7 +55,6 @@ impl CellEvalContext<'_> {
             })?;
 
         let mut values = Vec::with_capacity(slice.cells.len());
-        let mut error_types = Vec::with_capacity(slice.cells.len());
         for cell_id in &slice.cells {
             let val = self.memoized_values.get(cell_id).cloned().ok_or_else(|| {
                 FunctionError::EvaluationFailure {
@@ -103,16 +65,13 @@ impl CellEvalContext<'_> {
                     ),
                 }
             })?;
-            let err_vt = self.memoized_error_types.get(cell_id).copied();
             values.push(val);
-            error_types.push(err_vt);
         }
 
-        Ok(TypedRangeGrid {
+        Ok(RangeGrid {
             rows: slice.rows,
             cols: slice.cols,
             values,
-            error_types,
             axis_role: slice.axis_role,
         })
     }
@@ -124,7 +83,6 @@ impl EvalContext for CellEvalContext<'_> {
             expr,
             self.origin,
             self.memoized_values,
-            self.memoized_error_types,
             self.symbol_table,
             self.registry,
         )
@@ -145,23 +103,7 @@ impl EvalContext for CellEvalContext<'_> {
         })
     }
 
-    fn eval_range(&self, expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
-        match expr {
-            Expr::Reference(table_ref) => {
-                let grid = self.resolve_evaluated_table_ref(table_ref)?;
-                Ok((grid.rows, grid.cols, grid.values))
-            }
-            Expr::Literal(_)
-            | Expr::Unary { .. }
-            | Expr::Binary { .. }
-            | Expr::FunctionCall { .. } => {
-                let val = self.eval_expr(expr)?;
-                Ok((1, 1, vec![val]))
-            }
-        }
-    }
-
-    fn eval_typed_range(&self, expr: &Expr) -> Result<TypedRangeGrid, FunctionError> {
+    fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
         match expr {
             Expr::Reference(table_ref) => self.resolve_evaluated_table_ref(table_ref),
             Expr::Literal(_)
@@ -169,35 +111,13 @@ impl EvalContext for CellEvalContext<'_> {
             | Expr::Binary { .. }
             | Expr::FunctionCall { .. } => {
                 let val = self.eval_expr(expr)?;
-                let err_vt = if matches!(val, CellValue::Error(_)) {
-                    self.validate_dormant_expr(expr, None)?
-                        .filter(|vt| *vt != ValueType::Empty)
-                } else {
-                    None
-                };
-                Ok(TypedRangeGrid {
+                Ok(RangeGrid {
                     rows: 1,
                     cols: 1,
                     values: vec![val],
-                    error_types: vec![err_vt],
                     axis_role: AxisRole::Measure,
                 })
             }
-        }
-    }
-
-    fn validate_dormant_expr(
-        &self,
-        expr: &Expr,
-        expected: Option<TypeExpectation>,
-    ) -> Result<Option<ValueType>, FunctionError> {
-        let mut resolver = *self;
-        match self
-            .registry
-            .validate_ast_with_resolver(expr, expected, &mut resolver)
-        {
-            Ok(vt) => Ok(vt),
-            Err(StageAError::Function(err) | StageAError::Resolve(err)) => Err(err),
         }
     }
 }

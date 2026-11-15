@@ -1,6 +1,6 @@
 //! `INDEX` function implementation.
 
-use crate::functions::common::extract_scalar_integer;
+use crate::functions::common::scalar_integer;
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::validate_homogeneous_slice;
 use crate::functions::registry::validate_bound_args;
@@ -65,55 +65,25 @@ impl ExcelFunction for IndexFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let [arr_arg, row_arg, ..] = args else {
+        let [
+            FunctionArg::Array {
+                rows, cols, values, ..
+            },
+            row_arg,
+            ..,
+        ] = args
+        else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
                 expected: 2,
                 found: args.len(),
             });
         };
-
-        let (rows, cols, values, error_types) = match arr_arg {
-            FunctionArg::Array {
-                rows,
-                cols,
-                values,
-                error_types,
-                ..
-            } => (*rows, *cols, values.as_slice(), error_types.as_slice()),
-            FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: self.name(),
-                    expected: "range",
-                    found: "scalar",
-                });
-            }
-            FunctionArg::Lazy(_) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: self.name(),
-                    expected: "range",
-                    found: "lazy",
-                });
-            }
-            FunctionArg::Criterion(_) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: self.name(),
-                    expected: "range",
-                    found: "criterion",
-                });
-            }
-            FunctionArg::Omitted => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: self.name(),
-                    expected: "range",
-                    found: "omitted",
-                });
-            }
-        };
+        let (rows, cols, values) = (*rows, *cols, values.as_slice());
 
         if args.len() == 2 && rows > 1 && cols > 1 {
             return Err(FunctionError::MissingColumnIndexFor2DSlice {
@@ -123,18 +93,12 @@ impl ExcelFunction for IndexFunction {
             });
         }
 
-        validate_homogeneous_slice(values, error_types, self.name(), "array", 1)?;
+        validate_homogeneous_slice(values, self.name(), "array", 1)?;
 
-        let row_res = extract_scalar_integer(row_arg, self.name(), "row_num", 2, ctx)?;
+        let row_res = scalar_integer(row_arg);
         let col_res = match args.get(2) {
-            Some(col_slot) => Some(extract_scalar_integer(
-                col_slot,
-                self.name(),
-                "col_num",
-                3,
-                ctx,
-            )?),
-            None => None,
+            None | Some(FunctionArg::Omitted) => None,
+            Some(col_slot) => Some(scalar_integer(col_slot)),
         };
 
         if rows == 0 || cols == 0 || values.is_empty() {

@@ -4,11 +4,12 @@
 //! `COUNTIFS`, `MAXIFS`, and `MINIFS` conforming to Excel calculation semantics.
 
 use crate::expr::ast::CriteriaComparator;
-use crate::functions::common::value_type_satisfies;
+use crate::functions::binder::resolve_parameter;
+use crate::functions::common::{NumericCollector, value_type_satisfies};
 use crate::functions::error::FunctionError;
-use crate::functions::lookup::search::{TypedRangeSlice, validate_homogeneous_slice};
+use crate::functions::lookup::search::{RangeSlice, validate_homogeneous_slice};
 use crate::functions::math::criteria::{EqualityOp, TypedCriterion};
-use crate::functions::registry::{resolve_parameter, validate_bound_args};
+use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     BoundCriterion, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind,
     ParamType, ParameterDef, ShapePolicy, ValidationPolicy, VariadicRule,
@@ -139,38 +140,18 @@ type CriteriaPair<'a> = (&'a [CellValue], TypedCriterion);
 fn extract_range_slot<'a>(
     func_name: &'static str,
     arg: &'a FunctionArg<'a>,
-) -> Result<TypedRangeSlice<'a>, FunctionError> {
-    match arg {
-        FunctionArg::Array {
-            rows,
-            cols,
-            values,
-            error_types,
-            ..
-        } => Ok((*rows, *cols, values.as_slice(), error_types.as_slice())),
-        FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
-            Err(FunctionError::InvalidArgumentKind {
-                function: func_name,
-                expected: "range",
-                found: "scalar",
-            })
-        }
-        FunctionArg::Lazy(_) => Err(FunctionError::InvalidArgumentKind {
+) -> Result<RangeSlice<'a>, FunctionError> {
+    let FunctionArg::Array {
+        rows, cols, values, ..
+    } = arg
+    else {
+        return Err(FunctionError::InvalidArgumentKind {
             function: func_name,
             expected: "range",
-            found: "lazy",
-        }),
-        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-            function: func_name,
-            expected: "range",
-            found: "criterion",
-        }),
-        FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
-            function: func_name,
-            expected: "range",
-            found: "omitted",
-        }),
-    }
+            found: "scalar",
+        });
+    };
+    Ok((*rows, *cols, values.as_slice()))
 }
 
 fn compile_equality_criterion(
@@ -346,74 +327,6 @@ fn compile_bound_criterion(
             }
         }
 
-        BoundCriterion::Errored {
-            op:
-                Some(
-                    CriteriaComparator::Lt
-                    | CriteriaComparator::Lte
-                    | CriteriaComparator::Gt
-                    | CriteriaComparator::Gte,
-                ),
-            error,
-            inferred_type,
-        } => {
-            if let Some(r_vt) = range_vt
-                && r_vt != ValueType::Number
-            {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function: func_name,
-                    param: cr_param,
-                    position: cr_pos,
-                    expected: ExpectedType::Number,
-                    found: r_vt,
-                }));
-            }
-            if let Some(c_vt) = *inferred_type
-                && c_vt != ValueType::Number
-            {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function: func_name,
-                    param: crit_param,
-                    position: crit_pos,
-                    expected: ExpectedType::Number,
-                    found: c_vt,
-                }));
-            }
-            Err(FunctionError::ErrorInCriteria {
-                function: func_name,
-                param: crit_param,
-                position: crit_pos,
-                error: *error,
-            })
-        }
-
-        BoundCriterion::Errored {
-            op: None | Some(CriteriaComparator::NotEq),
-            error,
-            inferred_type,
-        } => {
-            let expected_ty = range_vt
-                .and_then(ExpectedType::from_value_type)
-                .unwrap_or(ExpectedType::NonEmpty);
-            if let Some(c_vt) = *inferred_type
-                && !value_type_satisfies(c_vt, expected_ty)
-            {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function: func_name,
-                    param: crit_param,
-                    position: crit_pos,
-                    expected: expected_ty,
-                    found: c_vt,
-                }));
-            }
-            Err(FunctionError::ErrorInCriteria {
-                function: func_name,
-                param: crit_param,
-                position: crit_pos,
-                error: *error,
-            })
-        }
-
         BoundCriterion::Exact(value) => compile_equality_criterion(
             func_name,
             crit_param,
@@ -437,13 +350,11 @@ fn compile_bound_criterion(
     }
 }
 
-/// Extracts and validates paired criteria ranges and bound criteria across all pairs.
+/// Extracts and validates paired criteria ranges and bound criteria across all pairs after `validate_bound_args`.
 fn collect_criteria_pairs<'a>(
     func: &dyn ExcelFunction,
     args: &'a [FunctionArg<'a>],
     start_arg_idx: usize,
-    expected_rows: usize,
-    expected_cols: usize,
 ) -> Result<Vec<CriteriaPair<'a>>, FunctionError> {
     let func_name = func.name();
     let remaining = args.len() - start_arg_idx;
@@ -456,53 +367,16 @@ fn collect_criteria_pairs<'a>(
         let cr_param = resolve_parameter(func, cr_idx)?.name;
         let crit_param = resolve_parameter(func, crit_idx)?.name;
 
-        let (cr_rows, cr_cols, cr_values, cr_error_types) =
-            extract_range_slot(func_name, &args[cr_idx])?;
-
-        if cr_rows != expected_rows || cr_cols != expected_cols {
-            return Err(FunctionError::DimensionMismatch {
+        let (_, _, cr_values) = extract_range_slot(func_name, &args[cr_idx])?;
+        let FunctionArg::Criterion(bound_crit) = &args[crit_idx] else {
+            return Err(FunctionError::InvalidArgumentKind {
                 function: func_name,
-                expected_rows,
-                expected_cols,
-                found_rows: cr_rows,
-                found_cols: cr_cols,
+                expected: "criterion",
+                found: "scalar",
             });
-        }
-
-        let bound_crit = match &args[crit_idx] {
-            FunctionArg::Criterion(crit) => crit,
-            FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func_name,
-                    expected: "criterion",
-                    found: "scalar",
-                });
-            }
-            FunctionArg::Array { .. } => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func_name,
-                    expected: "criterion",
-                    found: "array",
-                });
-            }
-            FunctionArg::Lazy(_) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func_name,
-                    expected: "criterion",
-                    found: "lazy",
-                });
-            }
-            FunctionArg::Omitted => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func_name,
-                    expected: "criterion",
-                    found: "omitted",
-                });
-            }
         };
 
-        let range_vt =
-            validate_homogeneous_slice(cr_values, cr_error_types, func_name, cr_param, cr_idx + 1)?;
+        let range_vt = validate_homogeneous_slice(cr_values, func_name, cr_param, cr_idx + 1)?;
         let criterion = compile_bound_criterion(
             func_name,
             cr_param,
@@ -529,6 +403,33 @@ fn all_criteria_match(pairs: &[CriteriaPair<'_>], index: usize) -> bool {
         }
     }
     true
+}
+
+/// Accumulates numeric observations from `args[0]` across cells matching all criteria pairs (`SUMIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`).
+fn collect_conditional_numbers<'a>(
+    func: &dyn ExcelFunction,
+    args: &'a [FunctionArg<'a>],
+) -> Result<Result<NumericCollector, ExcelError>, FunctionError> {
+    let (_, _, target_values) = extract_range_slot(func.name(), &args[0])?;
+    let pairs = collect_criteria_pairs(func, args, 1)?;
+
+    let mut collector = NumericCollector::new();
+    for (i, cell) in target_values.iter().enumerate() {
+        if all_criteria_match(&pairs, i) {
+            match cell {
+                CellValue::Error(e) => return Ok(Err(*e)),
+                CellValue::Number(n) => {
+                    if !n.is_finite() {
+                        return Ok(Err(ExcelError::Num));
+                    }
+                    collector.record(normalize_zero(*n));
+                }
+                CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
+            }
+        }
+    }
+    collector.sum = normalize_zero(collector.sum);
+    Ok(Ok(collector))
 }
 
 // ============================================================================
@@ -571,27 +472,10 @@ impl ExcelFunction for SumifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values, _) =
-            extract_range_slot(self.name(), &args[0])?;
-        let pairs = collect_criteria_pairs(self, args, 1, target_rows, target_cols)?;
-
-        let mut sum = 0.0;
-        for (i, cell) in target_values.iter().enumerate() {
-            if all_criteria_match(&pairs, i) {
-                match cell {
-                    CellValue::Error(e) => return Ok(CellValue::Error(*e)),
-                    CellValue::Number(n) => {
-                        if !n.is_finite() {
-                            return Ok(CellValue::Error(ExcelError::Num));
-                        }
-                        sum += *n;
-                    }
-                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
-                }
-            }
+        match collect_conditional_numbers(self, args)? {
+            Ok(c) => Ok(CellValue::number(c.sum)),
+            Err(e) => Ok(CellValue::Error(e)),
         }
-
-        Ok(CellValue::number(sum))
     }
 }
 
@@ -635,8 +519,8 @@ impl ExcelFunction for CountifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (cr1_rows, cr1_cols, _, _) = extract_range_slot(self.name(), &args[0])?;
-        let pairs = collect_criteria_pairs(self, args, 0, cr1_rows, cr1_cols)?;
+        let (cr1_rows, cr1_cols, _) = extract_range_slot(self.name(), &args[0])?;
+        let pairs = collect_criteria_pairs(self, args, 0)?;
 
         let total_cells = cr1_rows * cr1_cols;
         let mut count = 0.0;
@@ -690,33 +574,10 @@ impl ExcelFunction for AverageifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values, _) =
-            extract_range_slot(self.name(), &args[0])?;
-        let pairs = collect_criteria_pairs(self, args, 1, target_rows, target_cols)?;
-
-        let mut sum = 0.0;
-        let mut count = 0usize;
-
-        for (i, cell) in target_values.iter().enumerate() {
-            if all_criteria_match(&pairs, i) {
-                match cell {
-                    CellValue::Error(e) => return Ok(CellValue::Error(*e)),
-                    CellValue::Number(n) => {
-                        if !n.is_finite() {
-                            return Ok(CellValue::Error(ExcelError::Num));
-                        }
-                        sum += *n;
-                        count += 1;
-                    }
-                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
-                }
-            }
-        }
-
-        if count == 0 {
-            Ok(CellValue::Error(ExcelError::Div0))
-        } else {
-            Ok(CellValue::number(sum / count as f64))
+        match collect_conditional_numbers(self, args)? {
+            Ok(c) if c.count == 0 => Ok(CellValue::Error(ExcelError::Div0)),
+            Ok(c) => Ok(CellValue::number(c.sum / c.count as f64)),
+            Err(e) => Ok(CellValue::Error(e)),
         }
     }
 }
@@ -761,28 +622,10 @@ impl ExcelFunction for MinifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values, _) =
-            extract_range_slot(self.name(), &args[0])?;
-        let pairs = collect_criteria_pairs(self, args, 1, target_rows, target_cols)?;
-
-        let mut min_val: Option<f64> = None;
-
-        for (i, cell) in target_values.iter().enumerate() {
-            if all_criteria_match(&pairs, i) {
-                match cell {
-                    CellValue::Error(e) => return Ok(CellValue::Error(*e)),
-                    CellValue::Number(n) => {
-                        if !n.is_finite() {
-                            return Ok(CellValue::Error(ExcelError::Num));
-                        }
-                        min_val = Some(min_val.map_or(*n, |m| f64::min(m, *n)));
-                    }
-                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
-                }
-            }
+        match collect_conditional_numbers(self, args)? {
+            Ok(c) => Ok(CellValue::number(c.min_or_zero())),
+            Err(e) => Ok(CellValue::Error(e)),
         }
-
-        Ok(CellValue::number(min_val.unwrap_or(0.0)))
     }
 }
 
@@ -826,27 +669,9 @@ impl ExcelFunction for MaxifsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let (target_rows, target_cols, target_values, _) =
-            extract_range_slot(self.name(), &args[0])?;
-        let pairs = collect_criteria_pairs(self, args, 1, target_rows, target_cols)?;
-
-        let mut max_val: Option<f64> = None;
-
-        for (i, cell) in target_values.iter().enumerate() {
-            if all_criteria_match(&pairs, i) {
-                match cell {
-                    CellValue::Error(e) => return Ok(CellValue::Error(*e)),
-                    CellValue::Number(n) => {
-                        if !n.is_finite() {
-                            return Ok(CellValue::Error(ExcelError::Num));
-                        }
-                        max_val = Some(max_val.map_or(*n, |m| f64::max(m, *n)));
-                    }
-                    CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty => {}
-                }
-            }
+        match collect_conditional_numbers(self, args)? {
+            Ok(c) => Ok(CellValue::number(c.max_or_zero())),
+            Err(e) => Ok(CellValue::Error(e)),
         }
-
-        Ok(CellValue::number(max_val.unwrap_or(0.0)))
     }
 }

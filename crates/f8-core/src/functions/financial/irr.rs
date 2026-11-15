@@ -1,4 +1,4 @@
-use crate::functions::common::extract_scalar_number;
+use crate::functions::common::optional_scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::financial::discounting::{
     coerce_slice_numbers, collect_cash_flows, extract_1d_range_values,
@@ -69,27 +69,16 @@ impl ExcelFunction for IrrFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
-
-        let guess_res = match args.get(1) {
-            None | Some(FunctionArg::Omitted) => Ok(0.10),
-            Some(
-                guess_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => extract_scalar_number(guess_arg, self.name(), "guess", 2, ctx)?,
-        };
 
         let cfs = match collect_cash_flows(&args[0..1]) {
             Ok(c) => c,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let guess = match guess_res {
+        let guess = match optional_scalar_number(args, 1, 0.10) {
             Ok(g) => g,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -163,31 +152,12 @@ impl ExcelFunction for XirrFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let raw_values = extract_1d_range_values(&args[0], self.name(), "values")?;
-        let raw_dates = extract_1d_range_values(&args[1], self.name(), "dates")?;
-
-        if raw_values.len() != raw_dates.len() {
-            return Err(FunctionError::LengthMismatch {
-                function: self.name(),
-                expected: raw_values.len(),
-                found: raw_dates.len(),
-            });
-        }
-
-        let guess_res = match args.get(2) {
-            None | Some(FunctionArg::Omitted) => Ok(0.10),
-            Some(
-                guess_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => extract_scalar_number(guess_arg, self.name(), "guess", 3, ctx)?,
-        };
+        let raw_values = extract_1d_range_values(&args[0], self.name())?;
+        let raw_dates = extract_1d_range_values(&args[1], self.name())?;
 
         let values = match coerce_slice_numbers(raw_values) {
             Ok(v) => v,
@@ -199,7 +169,7 @@ impl ExcelFunction for XirrFunction {
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let guess = match guess_res {
+        let guess = match optional_scalar_number(args, 2, 0.10) {
             Ok(g) => g,
             Err(e) => return Ok(CellValue::Error(e)),
         };

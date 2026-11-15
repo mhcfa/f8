@@ -48,10 +48,6 @@ impl EvalContext for MockContext {
             | Expr::FunctionCall { .. } => Ok(CellValue::Text("FallbackEvaluated".into())),
         }
     }
-
-    fn eval_range(&self, _expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
-        Ok((0, 0, Vec::new()))
-    }
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
@@ -232,23 +228,39 @@ fn test_scenario_2_fallback_handling_xlookup() {
         .unwrap();
     assert_eq!(res_fb, CellValue::Number(-1.0));
 
-    // Heterogeneous fallback ("MissingValue" vs numeric return_array) fails with IncompatibleBranchTypes
+    // Heterogeneous fallback ("MissingValue" vs numeric return_array) fails statically with IncompatibleBranchTypes
+    let bad_fb_expr = Expr::parse(
+        "XLOOKUP(\"C\", T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col], \"MissingValue\")",
+    )
+    .unwrap();
     assert_eq!(
-        xlookup.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Text("C".into())),
-                keys,
-                values,
-                FunctionArg::Scalar(CellValue::Text("MissingValue".into())),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::IncompatibleBranchTypes {
-            function: "XLOOKUP",
-            position: 4,
-            expected: ValueType::Number,
-            found: ValueType::Text,
-        }))
+        registry.validate_expr_with_shapes(&bad_fb_expr, |tr| {
+            let elem_types = if matches!(
+                &tr.row,
+                f8_core::expr::ast::RowSelector::Range(
+                    f8_core::expr::ast::RowEndpoint::Key(s),
+                    _,
+                ) if s.as_str() == "k1"
+            ) {
+                vec![Some(ValueType::Text), Some(ValueType::Text)]
+            } else {
+                vec![Some(ValueType::Number), Some(ValueType::Number)]
+            };
+            Ok::<_, std::convert::Infallible>(Some(f8_core::functions::StaticRef {
+                rows: 2,
+                cols: 1,
+                axis_role: AxisRole::Measure,
+                elem_types,
+            }))
+        }),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::Type(TypeError::IncompatibleBranchTypes {
+                function: "XLOOKUP",
+                position: 4,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            })
+        ))
     );
 }
 
@@ -595,13 +607,8 @@ fn test_scenario_6_wildcard_matching() {
     );
 
     assert_eq!(
-        xmatch.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Text("Apple".into())),
-                keys.clone(),
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-            ],
-            &ctx,
+        registry.validate_expr(
+            &Expr::parse("XMATCH(\"Apple\", T[\"k1\"..\"k3\", @col], 1 / 0)").unwrap()
         ),
         Err(FunctionError::NonLiteralLookupMode {
             function: "XMATCH",

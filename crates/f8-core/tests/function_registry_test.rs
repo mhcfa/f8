@@ -6,11 +6,11 @@ use f8_core::expr::ast::{
     BlankCheck, CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal, RowEndpoint,
     RowSelector, TableRef, UnaryOp,
 };
-use f8_core::functions::common::eval_branch_arg;
 use f8_core::functions::{
     BoundCriterion, BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory,
     FunctionError, FunctionRegistry, LookupPolicy, ParamKind, ParamRequirement, ParamType,
-    ParameterDef, ReferenceKind, RolePolicy, ShapePolicy, StageAError, ValidationPolicy,
+    ParameterDef, RangeGrid, ReferenceKind, RolePolicy, ShapePolicy, StageAError, StaticRef,
+    ValidationPolicy,
 };
 use f8_core::model::table::{AxisRole, ValueLiteral};
 use f8_core::value::{
@@ -61,13 +61,23 @@ impl EvalContext for MockEvalContext {
         }
     }
 
-    fn eval_range(&self, expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
+    fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
         self.evaluated_exprs.borrow_mut().push(expr.to_string());
-        if let Some(range) = self.range_data.borrow().clone() {
-            Ok(range)
+        if let Some((rows, cols, values)) = self.range_data.borrow().clone() {
+            Ok(RangeGrid {
+                rows,
+                cols,
+                values,
+                axis_role: AxisRole::Measure,
+            })
         } else {
             let val = self.eval_expr(expr)?;
-            Ok((1, 1, vec![val]))
+            Ok(RangeGrid {
+                rows: 1,
+                cols: 1,
+                values: vec![val],
+                axis_role: AxisRole::Measure,
+            })
         }
     }
 }
@@ -1005,7 +1015,7 @@ fn test_validate_expr_preorder_and_nested_ast() {
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
         (
-            "IF(1 / 0, UNKNOWN_FN(), 10)",
+            "IF((1 / 0) > 0, UNKNOWN_FN(), 10)",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
         // Nested unary/binary inside dormant branch
@@ -1071,7 +1081,7 @@ fn test_bind_arguments_uses_resolved_function_without_duplicate_lookup() {
 }
 
 #[test]
-fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
+fn test_direct_evaluate_and_omission_invariants() {
     let req_required = ParameterDef::required("x", "required x", ParamKind::Scalar, ParamType::Any);
     assert_eq!(req_required.requirement, ParamRequirement::Required);
     assert!(!req_required.requirement.is_optional());
@@ -1378,12 +1388,12 @@ fn test_direct_evaluate_and_eval_branch_arg_omission_invariants() {
             .unwrap(),
     );
 
-    // eval_branch_arg rejects FunctionArg::Omitted
+    // eval_scalar rejects FunctionArg::Omitted
     assert_eq!(
-        eval_branch_arg(&FunctionArg::Omitted, "IF", &ctx),
+        FunctionArg::Omitted.eval_scalar("IF", &ctx),
         Err(FunctionError::InvalidArgumentKind {
             function: "IF",
-            expected: "scalar or expression",
+            expected: "scalar",
             found: "omitted",
         })
     );
@@ -1440,7 +1450,7 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
     }
 
     // Scenario 4: Shape-resolving Stage A validation (including 1x1 syntactic slices, ParamKind::Range, rank, and constant bounds)
-    let resolve_shape = |tr: &TableRef| -> Result<Option<(usize, usize, AxisRole)>, &'static str> {
+    let resolve_shape = |tr: &TableRef| -> Result<Option<StaticRef>, &'static str> {
         let rows = match &tr.row {
             RowSelector::Range(s, e) => match (s, e) {
                 (RowEndpoint::Key(sk), RowEndpoint::Key(ek)) => match (sk.as_str(), ek.as_str()) {
@@ -1466,14 +1476,19 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
             },
             ColSelector::Active | ColSelector::Key(_) | ColSelector::Offset(_) => 1,
         };
-        let role = match &tr.col {
+        let axis_role = match &tr.col {
             ColSelector::Key(k) if k.as_str() == "line_item" => AxisRole::Descriptor,
             ColSelector::Active
             | ColSelector::Key(_)
             | ColSelector::Offset(_)
             | ColSelector::Range(_, _) => AxisRole::Measure,
         };
-        Ok(Some((rows, cols, role)))
+        Ok(Some(StaticRef {
+            rows,
+            cols,
+            axis_role,
+            elem_types: vec![],
+        }))
     };
 
     for slice_in_scalar in [
@@ -1834,7 +1849,7 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
 #[test]
 fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
     let registry = FunctionRegistry::standard();
-    let resolve_shape = |tr: &TableRef| -> Result<Option<(usize, usize, AxisRole)>, &'static str> {
+    let resolve_shape = |tr: &TableRef| -> Result<Option<StaticRef>, &'static str> {
         let rows = match &tr.row {
             RowSelector::Range(s, e) => match (s, e) {
                 (RowEndpoint::Key(sk), RowEndpoint::Key(ek)) => match (sk.as_str(), ek.as_str()) {
@@ -1851,14 +1866,19 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
             ColSelector::Range(_, _) => 2,
             ColSelector::Active | ColSelector::Key(_) | ColSelector::Offset(_) => 1,
         };
-        let role = match &tr.col {
+        let axis_role = match &tr.col {
             ColSelector::Key(k) if k.as_str() == "line_item" => AxisRole::Descriptor,
             ColSelector::Active
             | ColSelector::Key(_)
             | ColSelector::Offset(_)
             | ColSelector::Range(_, _) => AxisRole::Measure,
         };
-        Ok(Some((rows, cols, role)))
+        Ok(Some(StaticRef {
+            rows,
+            cols,
+            axis_role,
+            elem_types: vec![],
+        }))
     };
 
     // Scenario 1: Descriptor references rejected in numeric and financial aggregations (active & dormant)
@@ -2309,23 +2329,6 @@ fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
             err_type.evaluate(std::slice::from_ref(&scalar_err), &ctx),
             Ok(CellValue::Number(expected_code))
         );
-
-        let typed_err = FunctionArg::TypedErrorScalar {
-            error: err,
-            inferred_type: ValueType::Number,
-        };
-        assert_eq!(
-            iserror.evaluate(std::slice::from_ref(&typed_err), &ctx),
-            Ok(CellValue::Boolean(true))
-        );
-        assert_eq!(
-            isna.evaluate(std::slice::from_ref(&typed_err), &ctx),
-            Ok(CellValue::Boolean(expected_isna))
-        );
-        assert_eq!(
-            err_type.evaluate(std::slice::from_ref(&typed_err), &ctx),
-            Ok(CellValue::Number(expected_code))
-        );
     }
 
     for non_err in [
@@ -2467,21 +2470,12 @@ fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
             },
         ),
         (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"10%\")",
+            "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"42\")",
             FunctionError::InvalidTextCriterion {
                 function: "COUNTIFS",
                 param: "criteria1",
                 position: 2,
                 reason: TextCriterionError::CoercibleNumericString,
-            },
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"2024-01-01\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::CoercibleDateOrTimeString,
             },
         ),
         (
@@ -2517,6 +2511,8 @@ fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
         "COUNTIFS(T[\"r1\"..\"r2\", @col], >= -10)",
         "COUNTIFS(T[\"r1\"..\"r2\", @col], <= T[\"cutoff\", @col])",
         "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"Alpha\")",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"10%\")",
+        "COUNTIFS(T[\"r1\"..\"r2\", @col], \"2024-01-01\")",
         "COUNTIFS(T[\"r1\"..\"r2\", @col], <> (10 > 5))",
         "COUNTIFS(T[\"r1\"..\"r2\", @col], 10 > 5)",
         "COUNTIFS(T[\"r1\"..\"r2\", @col], BLANK)",

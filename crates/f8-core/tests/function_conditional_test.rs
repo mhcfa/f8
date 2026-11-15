@@ -22,10 +22,6 @@ impl EvalContext for TestEvalContext {
     fn eval_expr(&self, _expr: &Expr) -> Result<CellValue, FunctionError> {
         Ok(CellValue::Empty)
     }
-
-    fn eval_range(&self, _expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
-        Ok((0, 0, Vec::new()))
-    }
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
@@ -679,38 +675,24 @@ fn test_stage_b_homogeneity_ordering_error_in_criteria_and_text_validation() {
         }))
     );
 
-    // Errored criterion checks inferred_type provenance before ErrorInCriteria
+    // Errored criterion fails with ErrorInCriteria
     assert_eq!(
         countifs.evaluate(
-            &[
-                num_cr.clone(),
-                FunctionArg::Criterion(BoundCriterion::Errored {
-                    op: None,
-                    error: ExcelError::Na,
-                    inferred_type: Some(ValueType::Text),
-                }),
-            ],
+            &[num_cr.clone(), exact_crit(CellValue::Error(ExcelError::Na))],
             &ctx
         ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+        Err(FunctionError::ErrorInCriteria {
             function: "COUNTIFS",
             param: "criteria1",
             position: 2,
-            expected: ExpectedType::Number,
-            found: ValueType::Text,
-        }))
+            error: ExcelError::Na,
+        })
     );
-
-    // Type-compatible errored criterion fails with ErrorInCriteria
     assert_eq!(
         countifs.evaluate(
             &[
                 num_cr.clone(),
-                FunctionArg::Criterion(BoundCriterion::Errored {
-                    op: Some(CriteriaComparator::Lte),
-                    error: ExcelError::Na,
-                    inferred_type: Some(ValueType::Number),
-                }),
+                cmp_crit(CriteriaComparator::Lte, CellValue::Error(ExcelError::Na)),
             ],
             &ctx
         ),
@@ -752,8 +734,7 @@ fn test_stage_b_homogeneity_ordering_error_in_criteria_and_text_validation() {
         ("", TextCriterionError::EmptyString),
         ("a?b", TextCriterionError::ContainsWildcardOrEscape),
         (">=10", TextCriterionError::LeadingOperatorPrefix),
-        ("10%", TextCriterionError::CoercibleNumericString),
-        ("2024-01-01", TextCriterionError::CoercibleDateOrTimeString),
+        ("42", TextCriterionError::CoercibleNumericString),
         ("false", TextCriterionError::CoercibleBooleanString),
         ("#N/A", TextCriterionError::CoercibleErrorString),
     ] {
@@ -769,6 +750,30 @@ fn test_stage_b_homogeneity_ordering_error_in_criteria_and_text_validation() {
                 reason: expected_reason,
             }),
             "mismatch on {bad_str:?}"
+        );
+    }
+
+    // Locale-independent literal text criteria succeed
+    for valid_str in [
+        "10%",
+        "$100",
+        "1,000",
+        "(5)",
+        "1/2",
+        "2024-01-01",
+        "Jan 1, 2024",
+        "12:30",
+    ] {
+        assert_eq!(
+            countifs.evaluate(
+                &[
+                    text_cr.clone(),
+                    exact_crit(CellValue::Text(valid_str.into()))
+                ],
+                &ctx
+            ),
+            Ok(CellValue::Number(0.0)),
+            "expected valid text criterion for {valid_str:?}"
         );
     }
 }

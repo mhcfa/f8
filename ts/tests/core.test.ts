@@ -1008,7 +1008,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
           'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], UNKNOWN_FN())',
           "unknown function 'UNKNOWN_FN'",
         ],
-        ["IF(1 / 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"],
+        ["IF((1 / 0) > 0, UNKNOWN_FN(), 10)", "unknown function 'UNKNOWN_FN'"],
         ["IF(TRUE, 10, -(1 + UNKNOWN_FN()))", "unknown function 'UNKNOWN_FN'"],
         ["IF(FALSE, 10)", "too few arguments for 'IF'"],
         ["IF(FALSE, 10, _)", "argument 'value_if_false' at position 3 of 'IF' cannot be omitted"],
@@ -1352,7 +1352,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         "ROUND(10, ---2.5)",
         'ROUND(10, @table["flt_cell", @col])',
         "IF(FALSE, ROUND(10, 2.5), 0)",
-        'IF(@table["flag_false", @col], ROUND(10, @table["flt_cell", @col]), 0)',
+        'IF(TRUE, ROUND(10, @table["flt_cell", @col]), 0)',
         "ROUND(10, IF(FALSE, 2, 2.5))",
         'ROUND(10, IF(FALSE, 2, @table["flt_cell", @col]))',
         'ROUND(10, IF(TRUE, "a", "b"))',
@@ -1474,6 +1474,9 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       okTbl.addRow("round_taken_cell", {
         expr: 'ROUND(10, IF(TRUE, 2, @table["flt_cell", @col]))',
       });
+      okTbl.addRow("round_guard_cell", {
+        expr: 'IF(FALSE, ROUND(10, @table["flt_cell", @col]), 0)',
+      });
       okTbl.addRow("is_null", { expr: 'ISBLANK(@table["null_cell", @col])' });
       okTbl.addRow("helper_guard", {
         expr: 'IF(@table["is_null", @col], 0, @table["null_cell", @col] + 5)',
@@ -1507,6 +1510,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "if_na_bottom", "c1")).toBe(10);
       expect(compiled.num("T", "round_taken_lit", "c1")).toBe(10);
       expect(compiled.num("T", "round_taken_cell", "c1")).toBe(10);
+      expect(compiled.num("T", "round_guard_cell", "c1")).toBe(0);
       expect(compiled.value("T", "is_null", "c1")).toBe(true);
       expect(compiled.num("T", "helper_guard", "c1")).toBe(0);
       expect(compiled.num("T", "index_sparse", "c1")).toBe(30);
@@ -1605,7 +1609,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ["IF(FALSE, DATE(2024, 6, 31), 45292)", "invalid day 31 in 'DATE'"],
         ['DATE(@table["yr_ok", "c1"], 14, 1)', "invalid month 14 in 'DATE'"],
         ['IFERROR(DATE(@table["yr_24", "c1"], 1, 1), 0)', "invalid year 24 in 'DATE'"],
-        ['IF(FALSE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"],
+        ['IF(TRUE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"],
         ['DATE(2025, 2, @table["day_29", "c1"])', "invalid day 29 in 'DATE'"],
         ['DATE(@table["yr_24", "c1"], 1 / 0, 1)', "invalid year 24 in 'DATE'"],
         ["PMT(0.05, 10, -1000, 0, 2)", "invalid payment timing 'type' 2 in 'PMT'"],
@@ -1614,13 +1618,14 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ["YEARFRAC(45292, 45658, 5)", "invalid day-count 'basis' 5 in 'YEARFRAC'"],
         // Scenario 5: Input serial bounds (1..=2958465), swapped XNPV/XIRR dates, ShapePolicy precedence
         ["YEAR(0)", "expected serial in 1..=2958465"],
+        ["IF(FALSE, YEAR(0), 2024)", "expected serial in 1..=2958465"],
         ["MONTH(0.5)", "expected serial in 1..=2958465"],
         ["DAY(-1)", "expected serial in 1..=2958465"],
         ["DAYS(45292, 0)", "expected serial in 1..=2958465"],
         ["EDATE(0, 1)", "expected serial in 1..=2958465"],
         ["EOMONTH(2958466, 0)", "expected serial in 1..=2958465"],
         ["YEARFRAC(0, 45292, 0)", "expected serial in 1..=2958465"],
-        ['IF(FALSE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"],
+        ['IF(TRUE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"],
         [
           'XNPV(0.1, @table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
           "expected serial in 1..=2958465",
@@ -1773,6 +1778,10 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       addCheck("yf_dyn", 'YEARFRAC(45292, 45658, @table["basis_3", "c1"])');
       addCheck("yr_min", "YEAR(1)");
       addCheck("yr_max", "YEAR(2958465.9)");
+      addCheck(
+        "yr_guard",
+        'IF(@table["zero_date", "c1"] >= 1, YEAR(@table["zero_date", "c1"]), 2024)',
+      );
       addCheck("edate_udf", "EDATE(DATE(1900, 1, 15), -2)");
       addCheck("eomonth_ovf", "EOMONTH(DATE(9999, 12, 1), 2)");
       addCheck("yr_edate_bubble", "YEAR(EDATE(DATE(1900, 1, 15), -2))");
@@ -1810,6 +1819,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "yf_dyn", "c1")).toBeCloseTo(366 / 365, 10);
       expect(compiled.num("T", "yr_min", "c1")).toBe(1900);
       expect(compiled.num("T", "yr_max", "c1")).toBe(9999);
+      expect(compiled.num("T", "yr_guard", "c1")).toBe(2024);
       expect(compiled.formatted("T", "zero_date", "c1")).toBe("1900-01-00");
       expect(compiled.value("T", "edate_udf", "c1")).toBe("#NUM!");
       expect(compiled.value("T", "eomonth_ovf", "c1")).toBe("#NUM!");
@@ -1882,9 +1892,9 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         'COUNTIFS(@table["r1".."r2", "cat"], "")',
         'COUNTIFS(@table["r1".."r2", "cat"], "A*")',
         'COUNTIFS(@table["r1".."r2", "cat"], ">15")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "10%")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "1,000")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "2024-01-01")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "42")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "TRUE")',
+        'COUNTIFS(@table["r1".."r2", "cat"], "#N/A")',
         'COUNTIFS(@table["r1".."r2", "num_a"], <= (1 / 0))',
         'SUMIFS(@table["r1".."r2", "num_a"], @table["r1".."r2", "date"], <= @table["helpers", "date"])',
         'ISERROR("5" + 1)',
@@ -1989,6 +1999,8 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       addRes("errtype_non_err", "ERROR.TYPE(42)");
       addRes("cnt_utf8_euro", 'COUNTIFS(@table["r1".."r4", "cat"], "€")');
       addRes("cnt_utf8_colon", 'COUNTIFS(@table["r1".."r4", "cat"], <> "Note: café")');
+      addRes("cnt_pct_label", 'COUNTIFS(@table["r1".."r4", "cat"], "10%")');
+      addRes("cnt_date_label", 'COUNTIFS(@table["r1".."r4", "cat"], "2024-01-01")');
 
       const compiled = okModel.compile();
       expect(compiled.num("T", "sumifs_gt", "res")).toBe(30);

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::expr::ast::{BlankCheck, CriteriaComparator, Expr};
 use crate::functions::error::FunctionError;
 use crate::model::table::AxisRole;
-use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use crate::value::{CellValue, ExpectedType, ValueType};
 
 /// Functional taxonomy categories for Excel built-in functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -272,15 +272,6 @@ pub enum BoundCriterion {
     },
     /// Scoped blank-status keyword (`BLANK` or `NOT_BLANK`).
     BlankCheck(BlankCheck),
-    /// Criterion operand that evaluated to a runtime Excel error.
-    Errored {
-        /// Optional comparator prefix (`None` for exact `CallArg::Expr`).
-        op: Option<CriteriaComparator>,
-        /// Evaluated Excel domain error.
-        error: ExcelError,
-        /// Inferred non-`Empty` value type of the errored operand when known.
-        inferred_type: Option<ValueType>,
-    },
 }
 
 /// Bound runtime argument supplied to an `ExcelFunction::evaluate` call.
@@ -288,13 +279,6 @@ pub enum BoundCriterion {
 pub enum FunctionArg<'a> {
     /// Eagerly resolved scalar value.
     Scalar(CellValue),
-    /// Eagerly resolved Excel error scalar carrying a concrete non-`Empty` inferred [`ValueType`].
-    TypedErrorScalar {
-        /// Evaluated Excel domain error.
-        error: ExcelError,
-        /// Concrete inferred value type of the errored expression.
-        inferred_type: ValueType,
-    },
     /// Multi-dimensional array or evaluated range slice.
     Array {
         /// Number of rows.
@@ -303,8 +287,6 @@ pub enum FunctionArg<'a> {
         cols: usize,
         /// Flattened row-major cell values.
         values: Vec<CellValue>,
-        /// Per-element concrete non-`Empty` inferred [`ValueType`] provenance for `CellValue::Error(_)` cells.
-        error_types: Vec<Option<ValueType>>,
         /// Syntactic reference classification (`SingleCell` vs `Slice`).
         ref_kind: ReferenceKind,
         /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
@@ -319,7 +301,19 @@ pub enum FunctionArg<'a> {
 }
 
 impl<'a> FunctionArg<'a> {
-    /// Constructs an [`Self::Array`] with empty (`None`) per-element error type provenance.
+    /// Returns the human-readable kind name of this argument for diagnostic messages.
+    #[must_use]
+    pub(crate) const fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Scalar(_) => "scalar",
+            Self::Array { .. } => "array",
+            Self::Lazy(_) => "lazy",
+            Self::Criterion(_) => "criterion",
+            Self::Omitted => "omitted",
+        }
+    }
+
+    /// Constructs an [`Self::Array`].
     #[must_use]
     pub fn array(
         rows: usize,
@@ -328,16 +322,15 @@ impl<'a> FunctionArg<'a> {
         ref_kind: ReferenceKind,
         axis_role: AxisRole,
     ) -> Self {
-        let error_types = vec![None; values.len()];
         Self::Array {
             rows,
             cols,
             values,
-            error_types,
             ref_kind,
             axis_role,
         }
     }
+
     /// Resolves this argument to a single scalar `CellValue`, evaluating lazy expressions if necessary.
     pub fn eval_scalar(
         &self,
@@ -346,7 +339,6 @@ impl<'a> FunctionArg<'a> {
     ) -> Result<CellValue, FunctionError> {
         match self {
             Self::Scalar(val) => Ok(val.clone()),
-            Self::TypedErrorScalar { error, .. } => Ok(CellValue::Error(*error)),
             Self::Lazy(expr) => ctx.eval_expr(expr),
             Self::Array {
                 rows,
@@ -377,236 +369,6 @@ impl<'a> FunctionArg<'a> {
             }),
         }
     }
-
-    /// Resolves this argument to `(CellValue, Option<ValueType>)`, preserving the concrete inferred
-    /// [`ValueType`] when an eagerly bound scalar or lazy expression evaluates to `CellValue::Error(_)`.
-    pub fn eval_scalar_with_type(
-        &self,
-        function: &'static str,
-        ctx: &dyn EvalContext,
-    ) -> Result<(CellValue, Option<ValueType>), FunctionError> {
-        match self {
-            Self::Scalar(val) => Ok((val.clone(), val.value_type())),
-            Self::TypedErrorScalar {
-                error,
-                inferred_type,
-            } => Ok((CellValue::Error(*error), Some(*inferred_type))),
-            Self::Lazy(expr) => {
-                let val = ctx.eval_expr(expr)?;
-                let vt = if matches!(val, CellValue::Error(_)) {
-                    ctx.validate_dormant_expr(expr, None)?
-                } else {
-                    val.value_type()
-                };
-                Ok((val, vt))
-            }
-            Self::Array {
-                rows,
-                cols,
-                ref_kind: ReferenceKind::Slice,
-                ..
-            } => Err(FunctionError::SliceInScalarContext {
-                rows: *rows,
-                cols: *cols,
-            }),
-            Self::Array {
-                ref_kind: ReferenceKind::SingleCell,
-                ..
-            } => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "scalar",
-                found: "array",
-            }),
-            Self::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "scalar",
-                found: "criterion",
-            }),
-            Self::Omitted => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "scalar",
-                found: "omitted",
-            }),
-        }
-    }
-
-    /// Resolves this argument to a 2D array `(rows, cols, values)`, evaluating lazy expressions if necessary.
-    pub fn eval_array(
-        &self,
-        function: &'static str,
-        ctx: &dyn EvalContext,
-    ) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
-        match self {
-            Self::Array {
-                rows, cols, values, ..
-            } => Ok((*rows, *cols, values.clone())),
-            Self::Scalar(val) => Ok((1, 1, vec![val.clone()])),
-            Self::TypedErrorScalar { error, .. } => Ok((1, 1, vec![CellValue::Error(*error)])),
-            Self::Lazy(expr) => {
-                let val = ctx.eval_expr(expr)?;
-                Ok((1, 1, vec![val]))
-            }
-            Self::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "array",
-                found: "criterion",
-            }),
-            Self::Omitted => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "array",
-                found: "omitted",
-            }),
-        }
-    }
-}
-
-/// Operand side of a relational comparison (`=`, `<>`, `<`, `<=`, `>`, `>=`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ComparisonSide {
-    /// Left-hand side operand.
-    Left,
-    /// Right-hand side operand.
-    Right,
-}
-
-/// Origin provenance for a value-type expectation during static or dormant AST validation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExpectationOrigin {
-    /// Unary operator operand (e.g. `"-"`).
-    UnaryOp(&'static str),
-    /// Binary arithmetic or non-empty relational operator operand.
-    BinaryOp(&'static str),
-    /// Relational comparison operand checked against the opposite side's concrete [`ValueType`].
-    ComparisonOp {
-        /// Operator token string.
-        operator: &'static str,
-        /// Concrete value type of the other operand.
-        other_side: ValueType,
-        /// Operand side being checked.
-        side: ComparisonSide,
-    },
-    /// Positional function parameter expectation.
-    FunctionParam {
-        /// Canonical function name.
-        function: &'static str,
-        /// Parameter identifier name.
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-    },
-    /// Branch or lookup fallback arm unified against preceding result arms.
-    BranchResult {
-        /// Canonical branching or lookup function name.
-        function: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-    },
-}
-
-impl ExpectationOrigin {
-    /// Converts this expectation origin into a structured [`TypeError`] when `found` violates `expected`.
-    #[must_use]
-    pub fn into_invalid_type(self, expected: ExpectedType, found: ValueType) -> TypeError {
-        match self {
-            Self::UnaryOp(operator) | Self::BinaryOp(operator) => TypeError::InvalidOperandType {
-                operator,
-                expected,
-                found,
-            },
-            Self::ComparisonOp {
-                operator,
-                other_side,
-                side,
-            } => {
-                let (left, right) = match side {
-                    ComparisonSide::Left => (found, other_side),
-                    ComparisonSide::Right => (other_side, found),
-                };
-                TypeError::IncompatibleComparison {
-                    operator,
-                    left,
-                    right,
-                }
-            }
-            Self::FunctionParam {
-                function,
-                param,
-                position,
-            } => TypeError::InvalidArgumentType {
-                function,
-                param,
-                position,
-                expected,
-                found,
-            },
-            Self::BranchResult { function, position } => {
-                let expected_vt = match expected {
-                    ExpectedType::Number | ExpectedType::Integer => ValueType::Number,
-                    ExpectedType::Text => ValueType::Text,
-                    ExpectedType::Boolean => ValueType::Boolean,
-                    ExpectedType::NonEmpty => found,
-                };
-                TypeError::IncompatibleBranchTypes {
-                    function,
-                    position,
-                    expected: expected_vt,
-                    found,
-                }
-            }
-        }
-    }
-
-    /// Converts this expectation origin into a structured [`TypeError`] when a constant or scalar numeric value is non-integer.
-    #[must_use]
-    pub fn into_non_integer(self, value: String) -> TypeError {
-        match self {
-            Self::FunctionParam {
-                function,
-                param,
-                position,
-            } => TypeError::NonIntegerArgument {
-                function,
-                param,
-                position,
-                value,
-            },
-            Self::UnaryOp(operator) | Self::BinaryOp(operator) => TypeError::InvalidOperandType {
-                operator,
-                expected: ExpectedType::Integer,
-                found: ValueType::Number,
-            },
-            Self::ComparisonOp {
-                operator,
-                other_side,
-                side,
-            } => {
-                let (left, right) = match side {
-                    ComparisonSide::Left => (ValueType::Number, other_side),
-                    ComparisonSide::Right => (other_side, ValueType::Number),
-                };
-                TypeError::IncompatibleComparison {
-                    operator,
-                    left,
-                    right,
-                }
-            }
-            Self::BranchResult { function, position } => TypeError::NonIntegerArgument {
-                function,
-                param: "result",
-                position,
-                value,
-            },
-        }
-    }
-}
-
-/// Value-type expectation paired with its diagnostic [`ExpectationOrigin`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeExpectation {
-    /// Expected value type or integer refinement.
-    pub expected: ExpectedType,
-    /// Diagnostic origin provenance.
-    pub origin: ExpectationOrigin,
 }
 
 /// Declarative AST validation policy for short-circuiting conditional branching functions.
@@ -671,17 +433,15 @@ pub enum ValidationPolicy {
     CalendarDate,
 }
 
-/// Evaluated 2D range grid carrying per-cell error [`ValueType`] provenance and uniform column [`AxisRole`].
+/// Evaluated 2D range grid carrying dimensions, cell values, and uniform column [`AxisRole`].
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypedRangeGrid {
+pub struct RangeGrid {
     /// Number of rows.
     pub rows: usize,
     /// Number of columns.
     pub cols: usize,
     /// Flattened row-major cell values.
     pub values: Vec<CellValue>,
-    /// Per-element concrete non-`Empty` inferred [`ValueType`] provenance for `CellValue::Error(_)` cells.
-    pub error_types: Vec<Option<ValueType>>,
     /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
     pub axis_role: AxisRole,
 }
@@ -691,40 +451,17 @@ pub trait EvalContext {
     /// Evaluates a single formula AST expression to a scalar `CellValue`.
     fn eval_expr(&self, expr: &Expr) -> Result<CellValue, FunctionError>;
 
-    /// Evaluates a range or multi-cell expression to a 2D grid `(rows, cols, values)`.
+    /// Evaluates a range or multi-cell expression to a [`RangeGrid`].
     ///
-    /// The default implementation delegates to `eval_expr` returning a 1x1 grid.
-    fn eval_range(&self, expr: &Expr) -> Result<(usize, usize, Vec<CellValue>), FunctionError> {
+    /// The default implementation delegates to `eval_expr` returning a 1x1 `Measure` grid.
+    fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
         let val = self.eval_expr(expr)?;
-        Ok((1, 1, vec![val]))
-    }
-
-    /// Evaluates a range or multi-cell expression to a [`TypedRangeGrid`],
-    /// preserving per-cell inferred [`ValueType`] provenance and column [`AxisRole`].
-    ///
-    /// The default implementation delegates to [`Self::eval_range`] with `None` error types
-    /// and [`AxisRole::Measure`].
-    fn eval_typed_range(&self, expr: &Expr) -> Result<TypedRangeGrid, FunctionError> {
-        let (rows, cols, values) = self.eval_range(expr)?;
-        let error_types = vec![None; values.len()];
-        Ok(TypedRangeGrid {
-            rows,
-            cols,
-            values,
-            error_types,
+        Ok(RangeGrid {
+            rows: 1,
+            cols: 1,
+            values: vec![val],
             axis_role: AxisRole::Measure,
         })
-    }
-
-    /// Validates a dormant lazy expression subtree against function contracts and memoized values
-    /// without bubbling runtime Excel errors, returning its inferred [`ValueType`] when known.
-    fn validate_dormant_expr(
-        &self,
-        expr: &Expr,
-        expected: Option<TypeExpectation>,
-    ) -> Result<Option<ValueType>, FunctionError> {
-        let _ = (expr, expected);
-        Ok(None)
     }
 }
 
