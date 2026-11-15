@@ -40,39 +40,6 @@ impl<'a> CellEvalContext<'a> {
             registry,
         }
     }
-
-    fn resolve_evaluated_table_ref(
-        &self,
-        table_ref: &TableRef,
-    ) -> Result<RangeGrid, FunctionError> {
-        let slice =
-            resolve_table_ref(self.origin, table_ref, self.symbol_table).map_err(|err| {
-                FunctionError::EvaluationFailure {
-                    function: "eval_range",
-                    message: err.to_string(),
-                }
-            })?;
-
-        let mut values = Vec::with_capacity(slice.cells.len());
-        for cell_id in &slice.cells {
-            let val = self.memoized_values.get(cell_id).cloned().ok_or_else(|| {
-                FunctionError::EvaluationFailure {
-                    function: "eval_range",
-                    message: format!(
-                        "referenced cell '{cell_id}' has not been evaluated prior to origin '{}'",
-                        self.origin
-                    ),
-                }
-            })?;
-            values.push(val);
-        }
-
-        Ok(RangeGrid {
-            rows: slice.rows,
-            cols: slice.cols,
-            values,
-        })
-    }
 }
 
 impl EvalContext for CellEvalContext<'_> {
@@ -101,20 +68,33 @@ impl EvalContext for CellEvalContext<'_> {
         })
     }
 
-    fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
-        match expr {
-            Expr::Reference(table_ref) => self.resolve_evaluated_table_ref(table_ref),
-            Expr::Literal(_)
-            | Expr::Unary { .. }
-            | Expr::Binary { .. }
-            | Expr::FunctionCall { .. } => {
-                let val = self.eval_expr(expr)?;
-                Ok(RangeGrid {
-                    rows: 1,
-                    cols: 1,
-                    values: vec![val],
-                })
-            }
+    fn eval_range(&self, table_ref: &TableRef) -> Result<RangeGrid, FunctionError> {
+        let slice =
+            resolve_table_ref(self.origin, table_ref, self.symbol_table).map_err(|err| {
+                FunctionError::EvaluationFailure {
+                    function: "eval_range",
+                    message: err.to_string(),
+                }
+            })?;
+
+        let mut values = Vec::with_capacity(slice.cells.len());
+        for cell_id in &slice.cells {
+            let val = self.memoized_values.get(cell_id).cloned().ok_or_else(|| {
+                FunctionError::EvaluationFailure {
+                    function: "eval_range",
+                    message: format!(
+                        "referenced cell '{cell_id}' has not been evaluated prior to origin '{}'",
+                        self.origin
+                    ),
+                }
+            })?;
+            values.push(val);
         }
+
+        Ok(RangeGrid {
+            rows: slice.rows,
+            cols: slice.cols,
+            values,
+        })
     }
 }

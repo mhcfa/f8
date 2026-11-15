@@ -10,7 +10,7 @@ use crate::value::{CellValue, ValueType};
 static AND_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "logical1",
     "The first condition or range to evaluate.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Boolean,
 )
 .allow_empty_in_slice()];
@@ -57,7 +57,7 @@ impl ExcelFunction for AndFunction {
 static OR_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "logical1",
     "The first condition or range to evaluate.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Boolean,
 )
 .allow_empty_in_slice()];

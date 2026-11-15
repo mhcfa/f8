@@ -94,7 +94,7 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
     let ctx = MockEvalContext;
 
     // Sparse numeric slice: [10.0, Empty, 20.0, Empty, 30.0] -> 20.0
-    let range_arg = FunctionArg::array(
+    let range_arg = FunctionArg::range(
         5,
         1,
         vec![
@@ -111,7 +111,7 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
     assert_eq!(res, CellValue::Number(20.0));
 
     // All-empty numeric slice returns #DIV/0!
-    let empty_range = FunctionArg::array(
+    let empty_range = FunctionArg::range(
         2,
         1,
         vec![CellValue::Empty, CellValue::Empty],
@@ -121,7 +121,7 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
     assert_eq!(res, CellValue::Error(ExcelError::Div0));
 
     // Error in range bubbles immediately
-    let err_range = FunctionArg::array(
+    let err_range = FunctionArg::range(
         2,
         1,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
@@ -142,11 +142,11 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
         ),
         (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
         (
-            FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+            FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
             ValueType::Empty,
         ),
         (
-            FunctionArg::array(
+            FunctionArg::range(
                 2,
                 1,
                 vec![CellValue::Number(10.0), CellValue::Text("bad".into())],
@@ -177,7 +177,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
     let ctx = MockEvalContext;
 
     // COUNT on sparse numeric Measure slice skips both Empty and Error(_) (+0), counting finite numbers (+1)
-    let numeric_sparse_err_slice = FunctionArg::array(
+    let numeric_sparse_err_slice = FunctionArg::range(
         4,
         1,
         vec![
@@ -205,7 +205,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
     // COUNT rejects Text, Boolean, SingleCell Empty, and Descriptor role
     assert_eq!(
         count_func.evaluate(
-            &[FunctionArg::array(
+            &[FunctionArg::range(
                 2,
                 1,
                 vec![CellValue::Number(10.0), CellValue::Text("text".into())],
@@ -223,7 +223,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
     );
     assert_eq!(
         count_func.evaluate(
-            &[FunctionArg::array(
+            &[FunctionArg::range(
                 1,
                 1,
                 vec![CellValue::Empty],
@@ -263,7 +263,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
     );
 
     // COUNTA accepts mixed types, Empty, and Descriptor role: non-empty cells counted -> 4.0
-    let mixed_descriptor_range = FunctionArg::array(
+    let mixed_descriptor_range = FunctionArg::range(
         5,
         1,
         vec![
@@ -284,13 +284,13 @@ fn test_scenario_3_count_vs_counta_semantics() {
 
     // Single-cell numeric/error references are accepted by COUNT; mixed single-cell references accepted by COUNTA
     let count_single_cells = [
-        FunctionArg::array(
+        FunctionArg::range(
             1,
             1,
             vec![CellValue::Number(10.0)],
             ReferenceKind::SingleCell,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             1,
             1,
             vec![CellValue::Error(ExcelError::Div0)],
@@ -303,20 +303,20 @@ fn test_scenario_3_count_vs_counta_semantics() {
     );
 
     let counta_single_cells = [
-        FunctionArg::array(
+        FunctionArg::range(
             1,
             1,
             vec![CellValue::Number(10.0)],
             ReferenceKind::SingleCell,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             1,
             1,
             vec![CellValue::Text("hello".into())],
             ReferenceKind::SingleCell,
         ),
-        FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
-        FunctionArg::array(
+        FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+        FunctionArg::range(
             1,
             1,
             vec![CellValue::Error(ExcelError::Div0)],
@@ -355,7 +355,7 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     let ctx = MockEvalContext;
 
     // Sparse numeric slice containing [-15.0, Empty, 0.0, 42.5]
-    let sparse_range = FunctionArg::array(
+    let sparse_range = FunctionArg::range(
         4,
         1,
         vec![
@@ -380,7 +380,7 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     );
 
     // Range containing all negative numbers: [-20.0, -10.0, -5.0]
-    let negative_range = FunctionArg::array(
+    let negative_range = FunctionArg::range(
         3,
         1,
         vec![
@@ -404,7 +404,7 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     );
 
     // All-empty numeric slice defaults to 0.0
-    let empty_range = FunctionArg::array(
+    let empty_range = FunctionArg::range(
         2,
         1,
         vec![CellValue::Empty, CellValue::Empty],
@@ -424,7 +424,7 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
     );
 
     // Text in slice or Empty on SingleCell fails strictly with InvalidArgumentType
-    let text_range = FunctionArg::array(
+    let text_range = FunctionArg::range(
         1,
         1,
         vec![CellValue::Text("text".into())],
@@ -440,7 +440,7 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
             found: ValueType::Text,
         }))
     );
-    let single_empty = FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell);
+    let single_empty = FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell);
     assert_eq!(
         max_func.evaluate(&[single_empty], &ctx),
         Err(FunctionError::Type(TypeError::InvalidArgumentType {
@@ -641,7 +641,7 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
     let ctx = MockEvalContext;
 
     // Two ranges of dimensions 3x1: [1.0, 2.0, 3.0] and [4.0, 5.0, 6.0]
-    let r1 = FunctionArg::array(
+    let r1 = FunctionArg::range(
         3,
         1,
         vec![
@@ -651,7 +651,7 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         ],
         ReferenceKind::Slice,
     );
-    let r2 = FunctionArg::array(
+    let r2 = FunctionArg::range(
         3,
         1,
         vec![
@@ -667,7 +667,7 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
     assert_eq!(res, CellValue::Number(32.0));
 
     // Sparse Empty in syntactic Slice contributes 0.0: [Empty, 0.0, 20.0, Empty] * [10.0, 2.0, 4.0, 5.0] = 80.0
-    let r_sparse = FunctionArg::array(
+    let r_sparse = FunctionArg::range(
         4,
         1,
         vec![
@@ -678,7 +678,7 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         ],
         ReferenceKind::Slice,
     );
-    let r_weights = FunctionArg::array(
+    let r_weights = FunctionArg::range(
         4,
         1,
         vec![
@@ -699,13 +699,13 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         (CellValue::Text("text".into()), ValueType::Text),
         (CellValue::Boolean(true), ValueType::Boolean),
     ] {
-        let r_bad = FunctionArg::array(
+        let r_bad = FunctionArg::range(
             3,
             1,
             vec![CellValue::Number(1.0), bad_cell, CellValue::Number(3.0)],
             ReferenceKind::Slice,
         );
-        let r_other = FunctionArg::array(
+        let r_other = FunctionArg::range(
             3,
             1,
             vec![
@@ -764,13 +764,13 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
     );
 
     // Error in range bubbles immediately
-    let r_err = FunctionArg::array(
+    let r_err = FunctionArg::range(
         2,
         1,
         vec![CellValue::Number(1.0), CellValue::Error(ExcelError::Div0)],
         ReferenceKind::Slice,
     );
-    let r_valid = FunctionArg::array(
+    let r_valid = FunctionArg::range(
         2,
         1,
         vec![CellValue::Number(1.0), CellValue::Number(2.0)],
@@ -787,7 +787,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     let ctx = MockEvalContext;
 
     // 1. Odd count of numbers: [10, 50, 20] -> sorted [10, 20, 50] -> median is 20
-    let odd_range = FunctionArg::array(
+    let odd_range = FunctionArg::range(
         3,
         1,
         vec![
@@ -801,7 +801,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     assert_eq!(res, CellValue::Number(20.0));
 
     // 2. Even count of numbers: [10, 40, 20, 30] -> sorted [10, 20, 30, 40] -> median is (20 + 30) / 2 = 25
-    let even_range = FunctionArg::array(
+    let even_range = FunctionArg::range(
         4,
         1,
         vec![
@@ -816,7 +816,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     assert_eq!(res, CellValue::Number(25.0));
 
     // 3. Sparse numeric slice skips Empty cells
-    let sparse_range = FunctionArg::array(
+    let sparse_range = FunctionArg::range(
         5,
         1,
         vec![
@@ -832,7 +832,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     assert_eq!(res, CellValue::Number(200.0));
 
     // 4. All-empty numeric slice returns #NUM! in Excel
-    let empty_range = FunctionArg::array(
+    let empty_range = FunctionArg::range(
         2,
         1,
         vec![CellValue::Empty, CellValue::Empty],
@@ -860,7 +860,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
             ValueType::Text,
         ),
         (
-            vec![FunctionArg::array(
+            vec![FunctionArg::range(
                 1,
                 1,
                 vec![CellValue::Empty],
@@ -883,7 +883,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     }
 
     // 6. Error in range bubbles immediately
-    let error_range = FunctionArg::array(
+    let error_range = FunctionArg::range(
         2,
         1,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
@@ -912,7 +912,7 @@ fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
     let sumproduct = registry.lookup("SUMPRODUCT").unwrap();
 
     // Overflow in SUM / AVERAGE / MEDIAN / SUMPRODUCT routes through CellValue::number -> #NUM!
-    let extreme_slice = FunctionArg::array(
+    let extreme_slice = FunctionArg::range(
         2,
         1,
         vec![CellValue::Number(1e308), CellValue::Number(1e308)],
@@ -948,7 +948,7 @@ fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
         CellValue::Number(1e308)
     );
 
-    let r_1e200 = FunctionArg::array(1, 1, vec![CellValue::Number(1e200)], ReferenceKind::Slice);
+    let r_1e200 = FunctionArg::range(1, 1, vec![CellValue::Number(1e200)], ReferenceKind::Slice);
     assert_eq!(
         sumproduct
             .evaluate(&[r_1e200.clone(), r_1e200], &ctx)
