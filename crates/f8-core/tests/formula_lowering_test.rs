@@ -923,10 +923,7 @@ fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesizati
     );
     let lowered_mul_div =
         FormulaLowerer::lower_cell(&origin, &mul_div, &symbol_table, &layout_map).unwrap();
-    assert!(
-        lowered_mul_div.contains("*("),
-        "Expected parenthesized right-hand division, got {lowered_mul_div}"
-    );
+    assert_eq!(lowered_mul_div, "=1E300*(1E300/1E300)");
 
     let cancel_expr = Expr::parse("10000000000000000 + (-10000000000000000 + 1)").unwrap();
     assert_eq!(
@@ -935,7 +932,7 @@ fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesizati
     );
     assert_eq!(
         FormulaLowerer::lower_cell(&origin, &cancel_expr, &symbol_table, &layout_map).unwrap(),
-        "=10000000000000000+(-10000000000000000+1)"
+        "=1E16+(-1E16+1)"
     );
 
     // 4. Programmatic negative numeric literals respect binary precedence identically to Unary::Neg
@@ -1892,5 +1889,169 @@ fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
     assert_eq!(
         compiled.lowered_map.get(&CellId::new("T", "r1", "c1")),
         Some("=CUSTOM.CRIT(\">5\")")
+    );
+}
+
+#[test]
+fn test_scientific_notation_and_neg_zero_lowering_and_roundtrip() {
+    use indexmap::IndexMap;
+
+    use f8_core::compiler::eval::eval_expr;
+    use f8_core::expr::ast::BinaryOp;
+    use f8_core::functions::registry::FunctionRegistry;
+    use f8_core::value::CellValue;
+
+    let (manifest, tables) = create_comprehensive_model();
+    let theme = Theme::corporate_navy();
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+    let registry = FunctionRegistry::standard();
+    let memoized = IndexMap::new();
+    let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
+
+    // Scenario 3: Programmatic negative and -0.0 Literal::Number parenthesization & normalization
+    let programmatic_cases = [
+        (
+            Expr::Binary {
+                op: BinaryOp::Pow,
+                left: Box::new(Expr::number(-2.0)),
+                right: Box::new(Expr::number(2.0)),
+            },
+            "(-2) ^ 2",
+            "=(-2)^2",
+            4.0,
+        ),
+        (
+            Expr::Binary {
+                op: BinaryOp::Sub,
+                left: Box::new(Expr::number(1.0)),
+                right: Box::new(Expr::number(-2.0)),
+            },
+            "1 - (-2)",
+            "=1-(-2)",
+            3.0,
+        ),
+        (
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::number(-2.0)),
+                right: Box::new(Expr::number(1.0)),
+            },
+            "-2 + 1",
+            "=-2+1",
+            -1.0,
+        ),
+        (Expr::number(-0.0), "0", "=0", 0.0),
+        (
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::number(1.0)),
+                right: Box::new(Expr::number(-0.0)),
+            },
+            "1 + 0",
+            "=1+0",
+            1.0,
+        ),
+        (
+            Expr::Binary {
+                op: BinaryOp::Pow,
+                left: Box::new(Expr::number(-0.0)),
+                right: Box::new(Expr::number(2.0)),
+            },
+            "0 ^ 2",
+            "=0^2",
+            0.0,
+        ),
+        (
+            Expr::Binary {
+                op: BinaryOp::Sub,
+                left: Box::new(Expr::number(1.0)),
+                right: Box::new(Expr::number(-0.0)),
+            },
+            "1 - 0",
+            "=1-0",
+            1.0,
+        ),
+    ];
+
+    for (prog_expr, expected_display, expected_excel, expected_num) in programmatic_cases {
+        let displayed = prog_expr.to_string();
+        assert_eq!(displayed, expected_display);
+        let lowered_direct =
+            FormulaLowerer::lower_cell(&origin, &prog_expr, &symbol_table, &layout_map).unwrap();
+        assert_eq!(lowered_direct, expected_excel);
+
+        let reparsed = Expr::parse(&displayed).unwrap();
+        assert_eq!(
+            eval_expr(&reparsed, &origin, &memoized, &symbol_table, &registry).unwrap(),
+            CellValue::Number(expected_num)
+        );
+        assert_eq!(
+            FormulaLowerer::lower_cell(&origin, &reparsed, &symbol_table, &layout_map).unwrap(),
+            expected_excel
+        );
+    }
+
+    // Scenario 6: [1e-6, 1e15) plain decimal vs < 1e-6 / >= 1e15 lossless uppercase E notation
+    let lowering_cases = [
+        (0.0_f64, "=0"),
+        (-0.0_f64, "=0"),
+        (1e-6_f64, "=0.000001"),
+        (42.5_f64, "=42.5"),
+        (999_999_999_999_999.0_f64, "=999999999999999"),
+        (0.333_333_333_333_333_37_f64, "=0.33333333333333337"),
+        (1e-9_f64, "=1E-9"),
+        (9.999_999_999_999_997e-7_f64, "=9.999999999999997E-7"),
+        (1e15_f64, "=1E15"),
+        (1e16_f64, "=1E16"),
+        (1e300_f64, "=1E300"),
+        (1e-300_f64, "=1E-300"),
+        (f64::MAX, "=1.7976931348623157E308"),
+        (-f64::MAX, "=-1.7976931348623157E308"),
+        (f64::MIN_POSITIVE, "=2.2250738585072014E-308"),
+        (5e-324_f64, "=5E-324"),
+    ];
+
+    for (val, expected_excel) in lowering_cases {
+        let num_expr = Expr::number(val);
+        let lowered =
+            FormulaLowerer::lower_cell(&origin, &num_expr, &symbol_table, &layout_map).unwrap();
+        assert_eq!(lowered, expected_excel, "lowering mismatch for {val:?}");
+
+        let reparsed = Expr::parse(&num_expr.to_string()).unwrap();
+        let CellValue::Number(eval_num) =
+            eval_expr(&reparsed, &origin, &memoized, &symbol_table, &registry).unwrap()
+        else {
+            panic!("expected Number evaluation for {val:?}");
+        };
+        let expected_bits = if val == 0.0 {
+            0.0_f64.to_bits()
+        } else {
+            val.to_bits()
+        };
+        assert_eq!(eval_num.to_bits(), expected_bits);
+    }
+
+    // Parsed scientific formulas lower cleanly
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &origin,
+            &Expr::parse("1e-9 - 2e-9").unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=1E-9-2E-9"
+    );
+    assert_eq!(
+        FormulaLowerer::lower_cell(
+            &origin,
+            &Expr::parse("COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <= 1e-9)")
+                .unwrap(),
+            &symbol_table,
+            &layout_map
+        )
+        .unwrap(),
+        "=COUNTIFS(C$6:C$7,\"<=1E-9\")"
     );
 }

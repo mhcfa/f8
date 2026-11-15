@@ -1,8 +1,63 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use serde::{Deserialize, Serialize};
 
 use crate::model::id::{ColId, RowId, TableId};
+
+/// Formats `s` as a double-quoted f8 DSL string, escaping `\` as `\\` and `"` as `\"`.
+pub(crate) fn fmt_quoted_f8_str(s: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_char('"')?;
+    for ch in s.chars() {
+        match ch {
+            '\\' => f.write_str("\\\\")?,
+            '"' => f.write_str("\\\"")?,
+            other => f.write_char(other)?,
+        }
+    }
+    f.write_char('"')
+}
+
+/// Formats a numeric literal for AST/token display and Pass 6a Excel formula lowering.
+/// Normalizes `-0.0` to `"0"`, formats finite magnitudes in `[1e-6, 1e15)` as plain decimal,
+/// formats finite magnitudes `< 1e-6` or `>= 1e15` with lossless uppercase `E` notation,
+/// and falls back to `{n}` for programmatic non-finite values.
+pub(crate) fn fmt_number_literal(n: f64, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if !n.is_finite() {
+        return write!(f, "{n}");
+    }
+    if n == 0.0 {
+        return f.write_str("0");
+    }
+    let abs = n.abs();
+    if (1e-6..1e15).contains(&abs) {
+        write!(f, "{n}")
+    } else {
+        write!(f, "{n:E}")
+    }
+}
+
+/// Allocates the canonical string form of a finite numeric literal via `fmt_number_literal`.
+#[must_use]
+pub(crate) fn format_number_literal(n: f64) -> String {
+    struct NumberLiteralDisplay(f64);
+
+    impl fmt::Display for NumberLiteralDisplay {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            fmt_number_literal(self.0, f)
+        }
+    }
+
+    NumberLiteralDisplay(n).to_string()
+}
+
+/// Operand position within a binary expression (`left op right`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BinarySide {
+    /// Left-hand operand.
+    Left,
+    /// Right-hand operand.
+    Right,
+}
 
 /// Scoped relational comparator prefix inside `ParamKind::Criteria` function arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -182,8 +237,8 @@ pub enum Literal {
 impl fmt::Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Number(n) => write!(f, "{n}"),
-            Self::String(s) => write!(f, "\"{s}\""),
+            Self::Number(n) => fmt_number_literal(*n, f),
+            Self::String(s) => fmt_quoted_f8_str(s, f),
             Self::Boolean(true) => write!(f, "TRUE"),
             Self::Boolean(false) => write!(f, "FALSE"),
         }
@@ -454,7 +509,7 @@ impl fmt::Display for RowEndpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Active => write!(f, "@row"),
-            Self::Key(k) => write!(f, "\"{k}\""),
+            Self::Key(k) => fmt_quoted_f8_str(k.as_str(), f),
             Self::Offset(offset) => offset.fmt_with_axis("row", f),
         }
     }
@@ -501,7 +556,7 @@ impl fmt::Display for ColEndpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Active => write!(f, "@col"),
-            Self::Key(k) => write!(f, "\"{k}\""),
+            Self::Key(k) => fmt_quoted_f8_str(k.as_str(), f),
             Self::Offset(offset) => offset.fmt_with_axis("col", f),
         }
     }
@@ -552,7 +607,7 @@ impl fmt::Display for RowSelector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Active => write!(f, "@row"),
-            Self::Key(k) => write!(f, "\"{k}\""),
+            Self::Key(k) => fmt_quoted_f8_str(k.as_str(), f),
             Self::Range(a, b) => write!(f, "{a}..{b}"),
             Self::Offset(offset) => offset.fmt_with_axis("row", f),
         }
@@ -604,9 +659,43 @@ impl fmt::Display for ColSelector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Active => write!(f, "@col"),
-            Self::Key(k) => write!(f, "\"{k}\""),
+            Self::Key(k) => fmt_quoted_f8_str(k.as_str(), f),
             Self::Range(a, b) => write!(f, "{a}..{b}"),
             Self::Offset(offset) => offset.fmt_with_axis("col", f),
+        }
+    }
+}
+
+fn needs_binary_paren(child: &Expr, parent_op: BinaryOp, side: BinarySide) -> bool {
+    let child_op_prec = match child {
+        Expr::Binary { op, .. } => Some(op.precedence()),
+        Expr::Unary { op, .. } => Some(op.precedence()),
+        Expr::Literal(Literal::Number(n)) if n.is_sign_negative() && *n != 0.0 => {
+            return matches!(side, BinarySide::Right)
+                || UnaryOp::Neg.precedence() < parent_op.precedence();
+        }
+        Expr::Literal(Literal::Number(_) | Literal::String(_) | Literal::Boolean(_))
+        | Expr::Reference(_)
+        | Expr::FunctionCall { .. } => None,
+    };
+    let Some(child_prec) = child_op_prec else {
+        return false;
+    };
+    let parent_prec = parent_op.precedence();
+    match side {
+        BinarySide::Left => {
+            if parent_op.is_right_associative() || parent_op.is_relational() {
+                child_prec <= parent_prec
+            } else {
+                child_prec < parent_prec
+            }
+        }
+        BinarySide::Right => {
+            if parent_op.is_right_associative() {
+                child_prec < parent_prec
+            } else {
+                child_prec <= parent_prec
+            }
         }
     }
 }
@@ -625,20 +714,8 @@ impl fmt::Display for Expr {
                 }
             }
             Self::Binary { op, left, right } => {
-                let left_paren = left.precedence().is_some_and(|p| {
-                    if op.is_right_associative() || op.is_relational() {
-                        p <= op.precedence()
-                    } else {
-                        p < op.precedence()
-                    }
-                });
-                let right_paren = right.precedence().is_some_and(|p| {
-                    if op.is_right_associative() {
-                        p < op.precedence()
-                    } else {
-                        p <= op.precedence()
-                    }
-                });
+                let left_paren = needs_binary_paren(left, *op, BinarySide::Left);
+                let right_paren = needs_binary_paren(right, *op, BinarySide::Right);
 
                 if left_paren {
                     write!(f, "({left})")?;

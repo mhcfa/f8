@@ -287,6 +287,9 @@ fn eval_arithmetic_op(
             lhs / rhs
         }
         BinaryOp::Pow => {
+            if lhs == 0.0 && rhs == 0.0 {
+                return Ok(CellValue::Error(ExcelError::Num));
+            }
             if lhs == 0.0 && rhs < 0.0 {
                 return Ok(CellValue::Error(ExcelError::Div0));
             }

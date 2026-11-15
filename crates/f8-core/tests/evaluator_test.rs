@@ -3313,3 +3313,130 @@ fn test_utf8_text_criteria_and_extreme_float_threshold_parity() {
         );
     }
 }
+
+#[test]
+fn test_power_zero_zero_domain_and_precedence_parity() {
+    let manifest = ProjectManifest {
+        model_name: "PowerParityModel".into(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".into(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T")],
+        }],
+    };
+
+    let cases: &[(&str, &str, CellValue, &str)] = &[
+        (
+            "pow_0_0",
+            "0 ^ 0",
+            CellValue::Error(ExcelError::Num),
+            "=0^0",
+        ),
+        (
+            "pow_neg0_0",
+            "(-0) ^ 0",
+            CellValue::Error(ExcelError::Num),
+            "=(-0)^0",
+        ),
+        (
+            "pow_0_neg0",
+            "0 ^ (-0)",
+            CellValue::Error(ExcelError::Num),
+            "=0^(-0)",
+        ),
+        (
+            "pow_0_neg2",
+            "0 ^ -2",
+            CellValue::Error(ExcelError::Div0),
+            "=0^(-2)",
+        ),
+        (
+            "pow_unary_neg",
+            "-2 ^ 2",
+            CellValue::Number(-4.0),
+            "=-(2^2)",
+        ),
+        (
+            "pow_paren_neg",
+            "(-2) ^ 2",
+            CellValue::Number(4.0),
+            "=(-2)^2",
+        ),
+        (
+            "pow_right_assoc",
+            "2 ^ 3 ^ 2",
+            CellValue::Number(512.0),
+            "=2^(3^2)",
+        ),
+        (
+            "pow_left_grouped",
+            "(2 ^ 3) ^ 2",
+            CellValue::Number(64.0),
+            "=(2^3)^2",
+        ),
+        (
+            "pow_neg_exp_assoc",
+            "2 ^ -2 ^ 3",
+            CellValue::Number(0.003_906_25),
+            "=2^(-(2^3))",
+        ),
+        (
+            "pow_dyn_zero_zero",
+            "T[\"zero_seed\", @col] ^ (1 - 1)",
+            CellValue::Error(ExcelError::Num),
+            "=B5^(1-1)",
+        ),
+        (
+            "pow_iferror_guard",
+            "IFERROR(0 ^ 0, 99)",
+            CellValue::Number(99.0),
+            "=IFERROR(0^0,99)",
+        ),
+        (
+            "pow_nonzero_zero",
+            "(-5) ^ 0",
+            CellValue::Number(1.0),
+            "=(-5)^0",
+        ),
+        ("pow_zero_pos", "0 ^ 2", CellValue::Number(0.0), "=0^2"),
+    ];
+
+    let mut rows = vec![RowSpec::new("zero_seed").with_cell("val", 0.0)];
+    for (row_id, formula, _, _) in cases {
+        rows.push(RowSpec::new(*row_id).with_expr(*formula));
+    }
+
+    let table = TableSpec {
+        id: TableId::from("T"),
+        title: "Power Domain & Precedence".into(),
+        subtitle: None,
+        currency: None,
+        collapsible: false,
+        placement: Default::default(),
+        columns: vec![ColumnSpec::new("val").with_header("Val")],
+        rows,
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).expect("power parity table must compile");
+    let t = TableId::from("T");
+    let col = ColId::from("val");
+
+    for (row_id, formula, expected_val, expected_excel) in cases {
+        let actual_val = compiled
+            .cell_value(&t, &RowId::from(*row_id), &col)
+            .unwrap();
+        assert_eq!(
+            &actual_val, expected_val,
+            "Pass 4 evaluation mismatch for '{formula}'"
+        );
+        let cell_id = CellId::new("T", *row_id, "val");
+        assert_eq!(
+            compiled.lowered_map.get(&cell_id),
+            Some(*expected_excel),
+            "Pass 6a lowering mismatch for '{formula}'"
+        );
+    }
+}
