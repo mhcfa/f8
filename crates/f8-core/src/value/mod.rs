@@ -311,296 +311,6 @@ pub fn format_criteria_number(val: f64) -> String {
     }
 }
 
-const EXCEL_ERROR_LITERALS: &[&str] = &[
-    "#NULL!",
-    "#DIV/0!",
-    "#VALUE!",
-    "#REF!",
-    "#NAME?",
-    "#NUM!",
-    "#N/A",
-    "#GETTING_DATA",
-    "#SPILL!",
-    "#CALC!",
-    "#FIELD!",
-    "#BLOCKED!",
-    "#UNKNOWN!",
-    "#CONNECT!",
-    "#PYTHON!",
-];
-
-fn is_excel_error_literal(trimmed: &str) -> bool {
-    EXCEL_ERROR_LITERALS
-        .iter()
-        .any(|lit| trimmed.eq_ignore_ascii_case(lit))
-}
-
-fn strip_digit_group_commas(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = String::with_capacity(s.len());
-    for (idx, ch) in s.char_indices() {
-        if ch == ','
-            && idx
-                .checked_sub(1)
-                .and_then(|prev| bytes.get(prev))
-                .is_some_and(u8::is_ascii_digit)
-            && bytes.get(idx + 1).is_some_and(u8::is_ascii_digit)
-        {
-            continue;
-        }
-        out.push(ch);
-    }
-    out
-}
-
-fn is_coercible_numeric_string(trimmed: &str) -> bool {
-    if trimmed.is_empty() {
-        return false;
-    }
-    if parse_excel_number(trimmed).is_some() {
-        return true;
-    }
-
-    // Formatted numeric tokens: outer accounting (...), +/-, %, $/€/£/¥, and ',' between digits.
-    let mut cur = trimmed;
-    let mut used_parens = false;
-    let mut used_sign = false;
-    let mut used_curr = false;
-    let mut used_pct = false;
-    loop {
-        cur = cur.trim();
-        if !used_parens && let Some(rest) = cur.strip_prefix('(').and_then(|r| r.strip_suffix(')'))
-        {
-            cur = rest;
-            used_parens = true;
-            continue;
-        }
-        if !used_sign {
-            if let Some(rest) = cur.strip_prefix(['+', '-']) {
-                cur = rest;
-                used_sign = true;
-                continue;
-            }
-            if let Some(rest) = cur.strip_suffix(['+', '-']) {
-                cur = rest;
-                used_sign = true;
-                continue;
-            }
-        }
-        if !used_curr {
-            if let Some(rest) = cur.strip_prefix(['$', '€', '£', '¥']) {
-                cur = rest;
-                used_curr = true;
-                continue;
-            }
-            if let Some(rest) = cur.strip_suffix(['$', '€', '£', '¥']) {
-                cur = rest;
-                used_curr = true;
-                continue;
-            }
-        }
-        if !used_pct {
-            if let Some(rest) = cur.strip_prefix('%') {
-                cur = rest;
-                used_pct = true;
-                continue;
-            }
-            if let Some(rest) = cur.strip_suffix('%') {
-                cur = rest;
-                used_pct = true;
-                continue;
-            }
-        }
-        break;
-    }
-    let degrouped = strip_digit_group_commas(cur.trim());
-    if !degrouped.is_empty() && parse_excel_number(&degrouped).is_some() {
-        return true;
-    }
-
-    // Mixed ASCII-digit fractions: [-]INT NUM/DEN (e.g. "1 1/2")
-    let unsigned = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
-    let mut parts = unsigned.split_ascii_whitespace();
-    if let (Some(int_part), Some(frac_part), None) = (parts.next(), parts.next(), parts.next())
-        && !int_part.is_empty()
-        && int_part.bytes().all(|b| b.is_ascii_digit())
-        && let Some((num, den)) = frac_part.split_once('/')
-        && !num.is_empty()
-        && !den.is_empty()
-        && num.bytes().all(|b| b.is_ascii_digit())
-        && den.bytes().all(|b| b.is_ascii_digit())
-    {
-        return true;
-    }
-
-    false
-}
-
-fn is_english_month_token(tok: &str) -> bool {
-    const MONTHS: &[&str] = &[
-        "jan",
-        "january",
-        "feb",
-        "february",
-        "mar",
-        "march",
-        "apr",
-        "april",
-        "may",
-        "jun",
-        "june",
-        "jul",
-        "july",
-        "aug",
-        "august",
-        "sep",
-        "sept",
-        "september",
-        "oct",
-        "october",
-        "nov",
-        "november",
-        "dec",
-        "december",
-    ];
-    MONTHS.iter().any(|m| tok.eq_ignore_ascii_case(m))
-}
-
-fn is_digits_or_decimal_seconds(s: &str) -> bool {
-    if let Some((sec, frac)) = s.split_once('.') {
-        !sec.is_empty()
-            && !frac.is_empty()
-            && sec.bytes().all(|b| b.is_ascii_digit())
-            && frac.bytes().all(|b| b.is_ascii_digit())
-    } else {
-        !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
-    }
-}
-
-fn strip_ascii_am_pm(s: &str) -> Option<&str> {
-    if let [.., b1, b2] = s.as_bytes()
-        && matches!(
-            [b1.to_ascii_lowercase(), b2.to_ascii_lowercase()],
-            [b'a', b'm'] | [b'p', b'm']
-        )
-    {
-        s.get(..s.len() - 2)
-    } else {
-        None
-    }
-}
-
-fn is_clock_time_token(s: &str) -> bool {
-    let t = s.trim();
-    if t.is_empty() {
-        return false;
-    }
-    if t.contains(':') {
-        let without_meridiem = if let Some(rest) = strip_ascii_am_pm(t) {
-            rest.trim_end()
-        } else if let Some(rest) = t.strip_suffix(['a', 'A', 'p', 'P']) {
-            rest.trim_end()
-        } else {
-            t
-        };
-        let segs: Vec<&str> = without_meridiem.split(':').collect();
-        match segs.as_slice() {
-            [h, m] => {
-                !h.is_empty()
-                    && h.bytes().all(|b| b.is_ascii_digit())
-                    && is_digits_or_decimal_seconds(m)
-            }
-            [h, m, sec] => {
-                !h.is_empty()
-                    && h.bytes().all(|b| b.is_ascii_digit())
-                    && !m.is_empty()
-                    && m.bytes().all(|b| b.is_ascii_digit())
-                    && is_digits_or_decimal_seconds(sec)
-            }
-            [] | [_] | [_, _, _, ..] => false,
-        }
-    } else if let Some(rest) = strip_ascii_am_pm(t) {
-        let digits = rest.trim_end();
-        !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
-    } else {
-        false
-    }
-}
-
-fn is_uniform_digit_date_segments(date_part: &str) -> bool {
-    let has_slash = date_part.contains('/');
-    let has_hyphen = date_part.contains('-');
-    let sep = match (has_slash, has_hyphen) {
-        (true, false) => '/',
-        (false, true) => '-',
-        (true, true) | (false, false) => return false,
-    };
-    let segs: Vec<&str> = date_part.split(sep).collect();
-    matches!(segs.len(), 2 | 3)
-        && segs
-            .iter()
-            .all(|seg| !seg.is_empty() && seg.bytes().all(|b| b.is_ascii_digit()))
-}
-
-fn is_english_month_date_segments(s: &str) -> bool {
-    let mut month_count = 0usize;
-    let mut digit_count = 0usize;
-    let mut other_count = 0usize;
-    for tok in s
-        .split(|c: char| matches!(c, '/' | '-' | ',') || c.is_ascii_whitespace())
-        .filter(|tok| !tok.is_empty())
-    {
-        if is_english_month_token(tok) {
-            month_count += 1;
-        } else if tok.bytes().all(|b| b.is_ascii_digit()) {
-            digit_count += 1;
-        } else {
-            other_count += 1;
-        }
-    }
-    other_count == 0 && month_count == 1 && digit_count >= 1
-}
-
-fn is_coercible_date_or_time_string(trimmed: &str) -> bool {
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    // 1. 2 or 3 non-empty ASCII-digit segments separated uniformly by '/' or '-'
-    //    with optional ' ' / 'T' clock-time suffix.
-    if is_uniform_digit_date_segments(trimmed) {
-        return true;
-    }
-    if let Some((date_part, rest)) = trimmed.split_once([' ', 'T', 't']) {
-        let raw_time = rest.trim();
-        let time_part = raw_time.strip_suffix(['Z', 'z']).unwrap_or(raw_time);
-        if is_uniform_digit_date_segments(date_part) && is_clock_time_token(time_part) {
-            return true;
-        }
-    }
-
-    // 2. Clock time tokens: H:MM[:SS[.fff]] [AM|PM|A|P] or DIGITS[ ]AM|PM
-    if is_clock_time_token(trimmed) {
-        return true;
-    }
-
-    // 3. English month-name/abbreviation paired solely with >= 1 '/', '-', ',', or space-separated ASCII-digit tokens
-    //    (with optional trailing clock-time suffix).
-    if is_english_month_date_segments(trimmed) {
-        return true;
-    }
-    for (idx, ch) in trimmed.char_indices() {
-        if ch.is_ascii_whitespace()
-            && let (Some(date_part), Some(rest)) = (trimmed.get(..idx), trimmed.get(idx + 1..))
-            && is_english_month_date_segments(date_part.trim())
-            && is_clock_time_token(rest.trim())
-        {
-            return true;
-        }
-    }
-    false
-}
-
 /// Validates a `Text` criterion string for conditional aggregation (`*IFS`) functions.
 ///
 /// `prefix_utf16_len` is `0` for exact criteria and `2` (`"<>".len()`) for `NotEq` criteria.
@@ -617,18 +327,15 @@ pub fn validate_text_criterion(s: &str, prefix_utf16_len: usize) -> Result<(), T
     if prefix_utf16_len.saturating_add(s.encode_utf16().count()) > 255 {
         return Err(TextCriterionError::TooLong);
     }
-    let trimmed = s.trim();
+    let trimmed = s.trim_matches(' ');
     if trimmed.eq_ignore_ascii_case("true") || trimmed.eq_ignore_ascii_case("false") {
         return Err(TextCriterionError::CoercibleBooleanString);
     }
-    if is_excel_error_literal(trimmed) {
+    if trimmed.parse::<ExcelError>().is_ok() {
         return Err(TextCriterionError::CoercibleErrorString);
     }
-    if is_coercible_numeric_string(trimmed) {
+    if parse_excel_number(trimmed).is_some() {
         return Err(TextCriterionError::CoercibleNumericString);
-    }
-    if is_coercible_date_or_time_string(trimmed) {
-        return Err(TextCriterionError::CoercibleDateOrTimeString);
     }
     Ok(())
 }
@@ -1275,61 +982,32 @@ mod tests {
                 Err(TextCriterionError::CoercibleBooleanString)
             );
         }
-        for err_str in ["#DIV/0!", "#N/A", " #value! ", "#SPILL!", "#CALC!"] {
+        for err_str in ["#DIV/0!", "#N/A", " #value! ", "#REF!", "#NUM!"] {
             assert_eq!(
                 validate_text_criterion(err_str, 0),
                 Err(TextCriterionError::CoercibleErrorString)
             );
         }
-        for num_str in [
-            "42",
-            "042",
-            " 42 ",
-            "1e2",
-            "10%",
-            "1,000",
-            "$50",
-            "€100",
-            "100€",
-            "£50",
-            "¥1,000",
-            "($1,200.50)",
-            "(100)",
-            "1 1/2",
-        ] {
+        for num_str in ["42", "042", " 42 ", "-3.5", "1e2"] {
             assert_eq!(
                 validate_text_criterion(num_str, 0),
                 Err(TextCriterionError::CoercibleNumericString),
                 "expected CoercibleNumericString for {num_str:?}"
             );
         }
-        for dt_str in [
-            "2024-01-01",
-            "2024-01-01 09:30",
-            "2024-01-01T12:30:00Z",
-            "01/15/2024",
-            "2024-01",
-            "1/2",
-            "1-2",
-            "Jan 2024",
-            "Jan-24",
-            "15-Jan-2024",
-            "15-Jan-2024 09:30",
-            "January 1, 2024",
-            "Jan 1, 2024 12:00 PM",
-            "12:30",
-            "9:00 AM",
-            "5 PM",
-            "5pm",
-        ] {
-            assert_eq!(
-                validate_text_criterion(dt_str, 0),
-                Err(TextCriterionError::CoercibleDateOrTimeString),
-                "expected CoercibleDateOrTimeString for {dt_str:?}"
-            );
-        }
         for valid in [
             "Alpha",
+            "10%",
+            "1,000",
+            "$50",
+            "(100)",
+            "1 1/2",
+            "2024-01-01",
+            "01/15/2024",
+            "1/2",
+            "Jan 2024",
+            "12:30",
+            "5 PM",
             "nan",
             "Infinity",
             "#1 Priority",

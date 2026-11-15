@@ -26,13 +26,6 @@ impl EvalContext for MockContext {
     fn eval_expr(&self, _expr: &Expr) -> Result<CellValue, f8_core::functions::FunctionError> {
         Ok(CellValue::Empty)
     }
-
-    fn eval_range(
-        &self,
-        _expr: &Expr,
-    ) -> Result<(usize, usize, Vec<CellValue>), f8_core::functions::FunctionError> {
-        Ok((1, 1, vec![CellValue::Empty]))
-    }
 }
 
 /// Helper to parse and evaluate formula strings in an integration context.
@@ -948,7 +941,8 @@ fn test_end_to_end_date_formula_evaluation() {
         CellValue::Error(ExcelError::Num)
     );
 
-    // 8. Dynamic cell references enforce CalendarDate and DateSerial bounds across active & dormant branches
+    // 8. Dynamic cell references enforce CalendarDate and DateSerial bounds on executed branches,
+    //    while untaken branches permit dynamic value guards and reject constant literal violations.
     values.insert(
         CellId::new("Timeline", "fractions", "c2"),
         CellValue::Number(24.0),
@@ -963,7 +957,11 @@ fn test_end_to_end_date_formula_evaluation() {
             FunctionError::InvalidDateYear { year: 24 },
         ),
         (
-            r#"IF(FALSE, DATE(Timeline["fractions", "c2"], 1, 1), Timeline["dates", "c1"])"#,
+            r#"IF(TRUE, DATE(Timeline["fractions", "c2"], 1, 1), Timeline["dates", "c1"])"#,
+            FunctionError::InvalidDateYear { year: 24 },
+        ),
+        (
+            r#"IF(FALSE, DATE(24, 1, 1), Timeline["dates", "c1"])"#,
             FunctionError::InvalidDateYear { year: 24 },
         ),
         (
@@ -978,7 +976,16 @@ fn test_end_to_end_date_formula_evaluation() {
             },
         ),
         (
-            r#"IF(FALSE, YEAR(Timeline["fractions", "c3"]), 2024)"#,
+            r#"IF(TRUE, YEAR(Timeline["fractions", "c3"]), 2024)"#,
+            FunctionError::InvalidDateSerial {
+                function: "YEAR",
+                param: "serial_number",
+                position: 1,
+                serial: "0".into(),
+            },
+        ),
+        (
+            r#"IF(FALSE, YEAR(0), 2024)"#,
             FunctionError::InvalidDateSerial {
                 function: "YEAR",
                 param: "serial_number",
@@ -995,6 +1002,27 @@ fn test_end_to_end_date_formula_evaluation() {
         assert_eq!(*cell, origin);
         assert_eq!(*source, expected_fn_err, "mismatch on {bad_formula}");
     }
+
+    assert_eq!(
+        eval_str(
+            r#"IF(FALSE, DATE(Timeline["fractions", "c2"], 1, 1), Timeline["dates", "c1"])"#,
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(45292.0)
+    );
+    assert_eq!(
+        eval_str(
+            r#"IF(Timeline["fractions", "c3"] >= 1, YEAR(Timeline["fractions", "c3"]), 2024)"#,
+            &symbols,
+            &values,
+            &registry,
+            &origin,
+        ),
+        CellValue::Number(2024.0)
+    );
 
     // Dynamic day=29 with year=2025, month=2 fails with max_day=28, while year=2024 succeeds
     values.insert(

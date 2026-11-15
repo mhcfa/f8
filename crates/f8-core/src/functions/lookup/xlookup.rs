@@ -1,6 +1,6 @@
 //! `XLOOKUP` function implementation.
 
-use crate::functions::common::{BranchTypeUnifier, eval_taken_branch_arm, validate_dormant_arm};
+use crate::functions::common::optional_scalar_integer;
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{
     MatchMode, SearchMode, extract_1d_range_slice, find_match_index, validate_homogeneous_slice,
@@ -100,10 +100,11 @@ impl ExcelFunction for XlookupFunction {
             });
         };
 
-        let (lookup_val, lookup_vt) = lookup_arg.eval_scalar_with_type(self.name(), ctx)?;
-        let (l_rows, l_cols, lookup_slice, lookup_err_types) =
+        let lookup_val = lookup_arg.eval_scalar(self.name(), ctx)?;
+        let lookup_vt = lookup_val.value_type().filter(|vt| *vt != ValueType::Empty);
+        let (l_rows, l_cols, lookup_slice) =
             extract_1d_range_slice(lookup_arr_arg, self.name(), "lookup_array")?;
-        let (r_rows, r_cols, return_slice, return_err_types) =
+        let (r_rows, r_cols, return_slice) =
             extract_1d_range_slice(return_arr_arg, self.name(), "return_array")?;
 
         if (l_rows, l_cols) != (r_rows, r_cols) {
@@ -116,90 +117,42 @@ impl ExcelFunction for XlookupFunction {
             });
         }
 
-        let match_mode = match args.get(4) {
-            None | Some(FunctionArg::Omitted) => MatchMode::Exact,
-            Some(
-                match_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => {
-                let val = match_arg.eval_scalar(self.name(), ctx)?;
-                MatchMode::parse(&val, self.name(), "match_mode", 5)?
+        let match_mode_int = optional_scalar_integer(args, 4, 0).map_err(|_| {
+            FunctionError::NonLiteralLookupMode {
+                function: self.name(),
+                param: "match_mode",
+                position: 5,
             }
-        };
+        })?;
+        let match_mode = MatchMode::from_mode_int(match_mode_int, self.name(), "match_mode", 5)?;
 
-        let search_mode = match args.get(5) {
-            None | Some(FunctionArg::Omitted) => SearchMode::FirstToLast,
-            Some(
-                search_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => {
-                let val = search_arg.eval_scalar(self.name(), ctx)?;
-                SearchMode::parse(&val, self.name(), "search_mode", 6)?
+        let search_mode_int = optional_scalar_integer(args, 5, 1).map_err(|_| {
+            FunctionError::NonLiteralLookupMode {
+                function: self.name(),
+                param: "search_mode",
+                position: 6,
             }
-        };
+        })?;
+        let search_mode =
+            SearchMode::from_mode_int(search_mode_int, self.name(), "search_mode", 6)?;
 
-        validate_lookup_array(
-            lookup_slice,
-            lookup_err_types,
-            lookup_vt,
-            search_mode,
-            self.name(),
-        )?;
-        let ret_vt = validate_homogeneous_slice(
-            return_slice,
-            return_err_types,
-            self.name(),
-            "return_array",
-            3,
-        )?;
-        let mut unifier = BranchTypeUnifier::with_initial(self.name(), ret_vt);
+        validate_lookup_array(lookup_slice, lookup_vt, search_mode, self.name())?;
+        validate_homogeneous_slice(return_slice, self.name(), "return_array", 3)?;
 
         if let CellValue::Error(err) = lookup_val {
-            if let Some(nf_arg) = args.get(3) {
-                let nf_vt = validate_dormant_arm(nf_arg, self.name(), None, ctx)?;
-                unifier.record(4, nf_vt).map_err(FunctionError::Type)?;
-            }
             return Ok(CellValue::Error(err));
         }
 
         match find_match_index(&lookup_val, lookup_slice, match_mode, search_mode) {
-            Ok(Some(idx)) => {
-                if let Some(nf_arg) = args.get(3) {
-                    let nf_vt = validate_dormant_arm(nf_arg, self.name(), None, ctx)?;
-                    unifier.record(4, nf_vt).map_err(FunctionError::Type)?;
-                }
-                Ok(return_slice
-                    .get(idx)
-                    .cloned()
-                    .unwrap_or(CellValue::Error(ExcelError::Ref)))
-            }
+            Ok(Some(idx)) => Ok(return_slice
+                .get(idx)
+                .cloned()
+                .unwrap_or(CellValue::Error(ExcelError::Ref))),
             Ok(None) => match args.get(3) {
                 None | Some(FunctionArg::Omitted) => Ok(CellValue::Error(ExcelError::Na)),
-                Some(
-                    not_found_arg @ (FunctionArg::Scalar(_)
-                    | FunctionArg::TypedErrorScalar { .. }
-                    | FunctionArg::Array { .. }
-                    | FunctionArg::Lazy(_)
-                    | FunctionArg::Criterion(_)),
-                ) => {
-                    let (nf_val, nf_vt) = eval_taken_branch_arm(not_found_arg, self.name(), ctx)?;
-                    unifier.record(4, nf_vt).map_err(FunctionError::Type)?;
-                    Ok(nf_val)
-                }
+                Some(not_found_arg) => not_found_arg.eval_scalar(self.name(), ctx),
             },
-            Err(err) => {
-                if let Some(nf_arg) = args.get(3) {
-                    let nf_vt = validate_dormant_arm(nf_arg, self.name(), None, ctx)?;
-                    unifier.record(4, nf_vt).map_err(FunctionError::Type)?;
-                }
-                Ok(CellValue::Error(err))
-            }
+            Err(err) => Ok(CellValue::Error(err)),
         }
     }
 }

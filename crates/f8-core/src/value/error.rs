@@ -258,14 +258,9 @@ pub enum TextCriterionError {
     /// Criterion exceeds Excel's 255-UTF-16-code-unit `*IFS` limit.
     #[error("text criterion exceeds Excel's 255-character *IFS limit")]
     TooLong,
-    /// Criterion trims/parses as a number, percentage, currency, grouped/parenthesized number, or mixed fraction in Excel `*IFS`.
-    #[error("text criterion parses as a number, percentage, currency, or fraction in Excel *IFS")]
+    /// Criterion trims/parses as a number in Excel `*IFS`.
+    #[error("text criterion parses as a number in Excel *IFS")]
     CoercibleNumericString,
-    /// Criterion trims/parses as a date or time in Excel `*IFS`.
-    #[error(
-        "text criterion parses as a date or time in Excel *IFS; use numeric DATE serials instead"
-    )]
-    CoercibleDateOrTimeString,
     /// Criterion trims/parses as a boolean in Excel `*IFS`.
     #[error("text criterion parses as a boolean in Excel *IFS and would fail to match text")]
     CoercibleBooleanString,

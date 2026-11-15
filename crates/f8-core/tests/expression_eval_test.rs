@@ -480,7 +480,7 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
         ),
         // Selector-error branch: fails statically with UnknownFunction rather than returning #DIV/0!
         (
-            "IF(1 / 0, UNKNOWN_FN(), 10)",
+            "IF((1 / 0) > 0, UNKNOWN_FN(), 10)",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
         // Nested invalid expression inside dormant branch

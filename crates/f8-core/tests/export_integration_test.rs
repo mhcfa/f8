@@ -399,7 +399,7 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         "PMT(0.05, 10, -1000, 0, 2)",
         "YEAR(0)",
         "YEAR(SeedData[\"r2\", \"sparse\"])",
-        "IF(FALSE, YEAR(SeedData[\"r2\", \"sparse\"]), 2024)",
+        "IF(FALSE, YEAR(0), 2024)",
         // Cluster C migrated parity cases & typed conditional aggregation criteria checks
         "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"A*\", SeedData[\"r1\"..\"r4\", \"num_a\"], \">15\")",
         "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], \"\")",
@@ -409,9 +409,6 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"num_a\"], \"> 15 \")",
         "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], > \"Alpha\")",
         "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], > 10)",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"10%\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"1,000\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"2024-01-01\")",
         "COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], <= (1 / 0))",
         "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"date\"], <= XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"date\"]))",
         "ISERROR(\"5\" + 1)",
@@ -430,6 +427,25 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         assert!(
             matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }),
             "expected F8Error on '{formula}', got {err:?}"
+        );
+    }
+
+    for valid_formula in [
+        "IF(FALSE, YEAR(SeedData[\"r2\", \"sparse\"]), 2024)",
+        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"10%\")",
+        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"1,000\")",
+        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"2024-01-01\")",
+    ] {
+        let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
+        if let RowSpec::Data(abs_row) = &mut tables[1].rows[0] {
+            abs_row.cells.insert(
+                ColId::from("formula_val"),
+                CellInput::formula(valid_formula),
+            );
+        }
+        assert!(
+            Compiler::compile(&manifest, &tables).is_ok(),
+            "expected formula '{valid_formula}' to compile cleanly"
         );
     }
 }

@@ -1,4 +1,3 @@
-use crate::functions::common::{BranchTypeUnifier, eval_taken_branch_arm, validate_dormant_arm};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -66,7 +65,7 @@ impl ExcelFunction for IferrorFunction {
             });
         };
 
-        let (evaluated_value, vt0) = eval_taken_branch_arm(val_arg, self.name(), ctx)?;
+        let evaluated_value = val_arg.eval_scalar(self.name(), ctx)?;
         if matches!(evaluated_value, CellValue::Empty) {
             return Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: self.name(),
@@ -77,11 +76,8 @@ impl ExcelFunction for IferrorFunction {
             }));
         }
 
-        let mut unifier = BranchTypeUnifier::new(self.name());
-        unifier.record(1, vt0).map_err(FunctionError::Type)?;
-
         if matches!(evaluated_value, CellValue::Error(_)) {
-            let (fallback_value, vt1) = eval_taken_branch_arm(fallback_arg, self.name(), ctx)?;
+            let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
             if matches!(fallback_value, CellValue::Empty) {
                 return Err(FunctionError::Type(TypeError::InvalidArgumentType {
                     function: self.name(),
@@ -91,11 +87,8 @@ impl ExcelFunction for IferrorFunction {
                     found: ValueType::Empty,
                 }));
             }
-            unifier.record(2, vt1).map_err(FunctionError::Type)?;
             Ok(fallback_value)
         } else {
-            let vt1 = validate_dormant_arm(fallback_arg, self.name(), None, ctx)?;
-            unifier.record(2, vt1).map_err(FunctionError::Type)?;
             Ok(evaluated_value)
         }
     }
@@ -160,7 +153,7 @@ impl ExcelFunction for IfnaFunction {
             });
         };
 
-        let (evaluated_value, vt0) = eval_taken_branch_arm(val_arg, self.name(), ctx)?;
+        let evaluated_value = val_arg.eval_scalar(self.name(), ctx)?;
         if matches!(evaluated_value, CellValue::Empty) {
             return Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: self.name(),
@@ -171,11 +164,8 @@ impl ExcelFunction for IfnaFunction {
             }));
         }
 
-        let mut unifier = BranchTypeUnifier::new(self.name());
-        unifier.record(1, vt0).map_err(FunctionError::Type)?;
-
         if matches!(evaluated_value, CellValue::Error(ExcelError::Na)) {
-            let (fallback_value, vt1) = eval_taken_branch_arm(fallback_arg, self.name(), ctx)?;
+            let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
             if matches!(fallback_value, CellValue::Empty) {
                 return Err(FunctionError::Type(TypeError::InvalidArgumentType {
                     function: self.name(),
@@ -185,11 +175,8 @@ impl ExcelFunction for IfnaFunction {
                     found: ValueType::Empty,
                 }));
             }
-            unifier.record(2, vt1).map_err(FunctionError::Type)?;
             Ok(fallback_value)
         } else {
-            let vt1 = validate_dormant_arm(fallback_arg, self.name(), None, ctx)?;
-            unifier.record(2, vt1).map_err(FunctionError::Type)?;
             Ok(evaluated_value)
         }
     }

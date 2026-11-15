@@ -1,4 +1,4 @@
-use crate::functions::common::extract_scalar_number;
+use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -20,9 +20,6 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
                 Ok(Err(e)) => return Err(e),
                 Err(_) => return Err(ExcelError::Value),
             },
-            FunctionArg::TypedErrorScalar { error, .. } => {
-                return Err(*error);
-            }
             FunctionArg::Array {
                 values,
                 ref_kind: ReferenceKind::SingleCell | ReferenceKind::Slice,
@@ -42,47 +39,20 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
     Ok(cfs)
 }
 
-/// Validates and extracts a 1D range slice for `XNPV` and `XIRR` prior to value/domain checks.
+/// Extracts the cell slice from a validated 1D range argument for `XNPV` and `XIRR`.
 pub(crate) fn extract_1d_range_values<'a>(
     arg: &'a FunctionArg<'_>,
     function: &'static str,
-    param: &'static str,
 ) -> Result<&'a [CellValue], FunctionError> {
     match arg {
-        FunctionArg::Array {
-            rows, cols, values, ..
-        } => {
-            if *rows > 1 && *cols > 1 {
-                return Err(FunctionError::ExpectedOneDimensionalSlice {
-                    function,
-                    param,
-                    rows: *rows,
-                    cols: *cols,
-                });
-            }
-            Ok(values.as_slice())
-        }
-        FunctionArg::Scalar(_) | FunctionArg::TypedErrorScalar { .. } => {
-            Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "range",
-                found: "scalar",
-            })
-        }
-        FunctionArg::Lazy(_) => Err(FunctionError::InvalidArgumentKind {
+        FunctionArg::Array { values, .. } => Ok(values.as_slice()),
+        FunctionArg::Scalar(_)
+        | FunctionArg::Lazy(_)
+        | FunctionArg::Criterion(_)
+        | FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
             function,
             expected: "range",
-            found: "lazy",
-        }),
-        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "range",
-            found: "criterion",
-        }),
-        FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "range",
-            found: "omitted",
+            found: arg.kind_name(),
         }),
     }
 }
@@ -145,11 +115,11 @@ impl ExcelFunction for NpvFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate = match extract_scalar_number(&args[0], self.name(), "rate", 1, ctx)? {
+        let rate = match scalar_number(&args[0]) {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -246,23 +216,14 @@ impl ExcelFunction for XnpvFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let rate_res = extract_scalar_number(&args[0], self.name(), "rate", 1, ctx)?;
-        let raw_values = extract_1d_range_values(&args[1], self.name(), "values")?;
-        let raw_dates = extract_1d_range_values(&args[2], self.name(), "dates")?;
+        let raw_values = extract_1d_range_values(&args[1], self.name())?;
+        let raw_dates = extract_1d_range_values(&args[2], self.name())?;
 
-        if raw_values.len() != raw_dates.len() {
-            return Err(FunctionError::LengthMismatch {
-                function: self.name(),
-                expected: raw_values.len(),
-                found: raw_dates.len(),
-            });
-        }
-
-        let rate = match rate_res {
+        let rate = match scalar_number(&args[0]) {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
         };
