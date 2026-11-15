@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::expr::ast::Expr;
+use crate::expr::ast::{Expr, TableRef};
 use crate::functions::error::FunctionError;
 use crate::value::{CellValue, ExpectedType, ValueType};
 
@@ -53,13 +53,13 @@ pub enum ParamKind {
     Scalar,
     /// Pre-evaluated range reference (`Expr::Reference` required).
     Range,
-    /// Pre-evaluated range slice or scalar argument.
-    RangeOrArray,
+    /// Pre-evaluated scalar expression or range reference.
+    ScalarOrRange,
     /// Unevaluated lazy expression evaluated conditionally on demand.
     Lazy,
 }
 
-/// Syntactic reference classification for `FunctionArg::Array` bindings.
+/// Syntactic reference classification for `FunctionArg::Range` bindings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ReferenceKind {
     /// Single-cell coordinate reference (no `start..end` slice on either axis).
@@ -260,8 +260,8 @@ impl ParameterDef {
 pub enum FunctionArg<'a> {
     /// Eagerly resolved scalar value.
     Scalar(CellValue),
-    /// Multi-dimensional array or evaluated range slice.
-    Array {
+    /// Evaluated range reference (`SingleCell` or `Slice`).
+    Range {
         /// Number of rows.
         rows: usize,
         /// Number of columns.
@@ -283,21 +283,21 @@ impl<'a> FunctionArg<'a> {
     pub(crate) const fn kind_name(&self) -> &'static str {
         match self {
             Self::Scalar(_) => "scalar",
-            Self::Array { .. } => "array",
+            Self::Range { .. } => "range",
             Self::Lazy(_) => "lazy",
             Self::Omitted => "omitted",
         }
     }
 
-    /// Constructs an [`Self::Array`].
+    /// Constructs a [`Self::Range`].
     #[must_use]
-    pub fn array(
+    pub fn range(
         rows: usize,
         cols: usize,
         values: Vec<CellValue>,
         ref_kind: ReferenceKind,
     ) -> Self {
-        Self::Array {
+        Self::Range {
             rows,
             cols,
             values,
@@ -305,10 +305,10 @@ impl<'a> FunctionArg<'a> {
         }
     }
 
-    /// Extracts the borrowed cell-value slice from a bound range (`Self::Array`).
+    /// Extracts the borrowed cell-value slice from a bound range (`Self::Range`).
     pub fn as_range_slice(&self, function: &'static str) -> Result<&[CellValue], FunctionError> {
         match self {
-            Self::Array { values, .. } => Ok(values.as_slice()),
+            Self::Range { values, .. } => Ok(values.as_slice()),
             Self::Scalar(_) | Self::Lazy(_) | Self::Omitted => {
                 Err(FunctionError::InvalidArgumentKind {
                     function,
@@ -328,7 +328,7 @@ impl<'a> FunctionArg<'a> {
         match self {
             Self::Scalar(val) => Ok(val.clone()),
             Self::Lazy(expr) => ctx.eval_expr(expr),
-            Self::Array {
+            Self::Range {
                 rows,
                 cols,
                 ref_kind: ReferenceKind::Slice,
@@ -337,13 +337,13 @@ impl<'a> FunctionArg<'a> {
                 rows: *rows,
                 cols: *cols,
             }),
-            Self::Array {
+            Self::Range {
                 ref_kind: ReferenceKind::SingleCell,
                 ..
             } => Err(FunctionError::InvalidArgumentKind {
                 function,
                 expected: "scalar",
-                found: "array",
+                found: "range",
             }),
             Self::Omitted => Err(FunctionError::InvalidArgumentKind {
                 function,
@@ -428,11 +428,11 @@ pub trait EvalContext {
     /// Evaluates a single formula AST expression to a scalar `CellValue`.
     fn eval_expr(&self, expr: &Expr) -> Result<CellValue, FunctionError>;
 
-    /// Evaluates a range or multi-cell expression to a [`RangeGrid`].
+    /// Evaluates a resolved coordinate or range reference to a [`RangeGrid`].
     ///
     /// The default implementation delegates to `eval_expr` returning a 1x1 grid.
-    fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
-        let val = self.eval_expr(expr)?;
+    fn eval_range(&self, table_ref: &TableRef) -> Result<RangeGrid, FunctionError> {
+        let val = self.eval_expr(&Expr::Reference(table_ref.clone()))?;
         Ok(RangeGrid {
             rows: 1,
             cols: 1,

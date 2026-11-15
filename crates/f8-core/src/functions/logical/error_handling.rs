@@ -10,7 +10,7 @@ static IFERROR_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "value",
         "The value or expression to check for an error.",
-        ParamKind::Lazy,
+        ParamKind::Scalar,
         ParamType::NonEmpty,
     ),
     ParameterDef::required(
@@ -66,15 +66,6 @@ impl ExcelFunction for IferrorFunction {
         };
 
         let evaluated_value = val_arg.eval_scalar(self.name(), ctx)?;
-        if matches!(evaluated_value, CellValue::Empty) {
-            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function: self.name(),
-                param: "value",
-                position: 1,
-                expected: ExpectedType::NonEmpty,
-                found: ValueType::Empty,
-            }));
-        }
 
         if matches!(evaluated_value, CellValue::Error(_)) {
             let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
@@ -98,7 +89,7 @@ static IFNA_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "value",
         "The value or expression to check for an #N/A error.",
-        ParamKind::Lazy,
+        ParamKind::Scalar,
         ParamType::NonEmpty,
     ),
     ParameterDef::required(
@@ -154,15 +145,6 @@ impl ExcelFunction for IfnaFunction {
         };
 
         let evaluated_value = val_arg.eval_scalar(self.name(), ctx)?;
-        if matches!(evaluated_value, CellValue::Empty) {
-            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function: self.name(),
-                param: "value",
-                position: 1,
-                expected: ExpectedType::NonEmpty,
-                found: ValueType::Empty,
-            }));
-        }
 
         if matches!(evaluated_value, CellValue::Error(ExcelError::Na)) {
             let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;

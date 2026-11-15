@@ -75,7 +75,7 @@ impl ExcelFunction for IndexFunction {
                 found: args.len(),
             });
         };
-        let FunctionArg::Array {
+        let FunctionArg::Range {
             rows, cols, values, ..
         } = array_arg
         else {

@@ -11,7 +11,7 @@ use crate::value::{CellValue, ExcelError, ValueType};
 static SUM_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range to sum.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Number,
 )
 .measure_only()
@@ -60,7 +60,7 @@ impl ExcelFunction for SumFunction {
 static AVERAGE_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the average.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Number,
 )
 .measure_only()
@@ -208,7 +208,7 @@ impl ExcelFunction for CountaFunction {
 static MAX_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the maximum.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Number,
 )
 .measure_only()
@@ -257,7 +257,7 @@ impl ExcelFunction for MaxFunction {
 static MIN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the minimum.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Number,
 )
 .measure_only()
@@ -306,7 +306,7 @@ impl ExcelFunction for MinFunction {
 static MEDIAN_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "number1",
     "The first number, cell reference, or range for which you want the median.",
-    ParamKind::RangeOrArray,
+    ParamKind::ScalarOrRange,
     ParamType::Number,
 )
 .measure_only()

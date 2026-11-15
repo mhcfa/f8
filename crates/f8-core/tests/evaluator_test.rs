@@ -1688,7 +1688,7 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
         assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
     }
 
-    // Valid Q-07 cases succeed with Excel parity (1x1 SingleCell & Slice in Range/RangeOrArray, 2-arg horizontal INDEX, dynamic OOB)
+    // Valid Q-07 cases succeed with Excel parity (1x1 SingleCell & Slice in Range/ScalarOrRange, 2-arg horizontal INDEX, dynamic OOB)
     let mut valid_rows = build_rows("COUNT(T[\"r1\", @col])");
     valid_rows.push(RowSpec::new("sum_1x1").with_expr("SUM(T[\"r1\"..\"r1\", @col])"));
     valid_rows.push(RowSpec::new("idx_horiz").with_expr("INDEX(T[\"r1\", \"c1\"..\"c4\"], 3)"));

@@ -278,7 +278,7 @@ impl FunctionRegistry {
         let mut shapes: Vec<Option<(usize, usize)>> = Vec::with_capacity(args.len());
         let mut resolved_refs: Vec<Option<StaticRef>> = Vec::with_capacity(args.len());
 
-        // Pass A: Resolve range reference shapes/roles and validate `ParamKind::Range` constraints.
+        // Pass A: Resolve reference shapes/roles and validate `ParamKind::Range` and scalar-slice constraints.
         for (idx, call_arg) in args.iter().enumerate() {
             let param = resolve_parameter(func, idx)?;
             match (param.kind, call_arg) {
@@ -287,11 +287,31 @@ impl FunctionRegistry {
                     resolved_refs.push(None);
                 }
                 (
-                    ParamKind::Range | ParamKind::RangeOrArray,
+                    ParamKind::Range | ParamKind::ScalarOrRange,
                     CallArg::Expr(Expr::Reference(table_ref)),
                 ) => {
                     let resolved = resolve_ref(table_ref).map_err(StageAError::Resolve)?;
                     shapes.push(resolved.as_ref().map(|r| (r.rows, r.cols)));
+                    resolved_refs.push(resolved);
+                }
+                (ParamKind::Scalar, CallArg::Expr(Expr::Reference(table_ref))) => {
+                    let resolved = resolve_ref(table_ref).map_err(StageAError::Resolve)?;
+                    if table_ref.is_slice() {
+                        let (rows, cols) = resolved.as_ref().map_or((0, 0), |r| (r.rows, r.cols));
+                        return Err(StageAError::Function(FunctionError::SliceInScalarContext {
+                            rows,
+                            cols,
+                        }));
+                    }
+                    if let Some(res) = &resolved
+                        && res.rows * res.cols > 1
+                    {
+                        return Err(StageAError::Function(FunctionError::SliceInScalarContext {
+                            rows: res.rows,
+                            cols: res.cols,
+                        }));
+                    }
+                    shapes.push(Some((1, 1)));
                     resolved_refs.push(resolved);
                 }
                 (
@@ -310,9 +330,15 @@ impl FunctionRegistry {
                     }));
                 }
                 (
-                    ParamKind::RangeOrArray | ParamKind::Scalar | ParamKind::Lazy,
-                    CallArg::Expr(_),
-                ) => {
+                    ParamKind::ScalarOrRange | ParamKind::Scalar,
+                    CallArg::Expr(
+                        Expr::Literal(_)
+                        | Expr::Unary { .. }
+                        | Expr::Binary { .. }
+                        | Expr::FunctionCall { .. },
+                    ),
+                )
+                | (ParamKind::Lazy, CallArg::Expr(_)) => {
                     shapes.push(Some((1, 1)));
                     resolved_refs.push(None);
                 }
@@ -349,7 +375,8 @@ impl FunctionRegistry {
                 continue;
             };
             match (param.kind, arg_expr) {
-                (ParamKind::Range, _) | (ParamKind::RangeOrArray, Expr::Reference(_)) => {
+                (ParamKind::Range, _)
+                | (ParamKind::ScalarOrRange | ParamKind::Scalar, Expr::Reference(_)) => {
                     if let Some(res) = &resolved_refs[idx] {
                         validate_static_range_elem_types(
                             res,
@@ -361,13 +388,13 @@ impl FunctionRegistry {
                     }
                 }
                 (
-                    ParamKind::RangeOrArray,
+                    ParamKind::ScalarOrRange | ParamKind::Scalar,
                     Expr::Literal(_)
                     | Expr::Unary { .. }
                     | Expr::Binary { .. }
                     | Expr::FunctionCall { .. },
                 )
-                | (ParamKind::Scalar | ParamKind::Lazy, _) => {
+                | (ParamKind::Lazy, _) => {
                     self.synth_and_check_param(
                         arg_expr,
                         func.name(),

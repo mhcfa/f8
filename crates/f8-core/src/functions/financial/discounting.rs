@@ -20,7 +20,7 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
                 Ok(Err(e)) => return Err(e),
                 Err(_) => return Err(ExcelError::Value),
             },
-            FunctionArg::Array {
+            FunctionArg::Range {
                 values,
                 ref_kind: ReferenceKind::SingleCell | ReferenceKind::Slice,
                 ..
@@ -63,7 +63,7 @@ static NPV_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "value1",
         "First value, cell reference, or range of cash flows.",
-        ParamKind::RangeOrArray,
+        ParamKind::ScalarOrRange,
         ParamType::Number,
     )
     .measure_only(),
