@@ -2,7 +2,6 @@
 
 use crate::functions::common::scalar_integer;
 use crate::functions::error::FunctionError;
-use crate::functions::lookup::search::validate_homogeneous_slice;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamType,
@@ -69,31 +68,24 @@ impl ExcelFunction for IndexFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let [
-            FunctionArg::Array {
-                rows, cols, values, ..
-            },
-            row_arg,
-            ..,
-        ] = args
-        else {
+        let [array_arg, row_arg, ..] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
                 expected: 2,
                 found: args.len(),
             });
         };
-        let (rows, cols, values) = (*rows, *cols, values.as_slice());
-
-        if args.len() == 2 && rows > 1 && cols > 1 {
-            return Err(FunctionError::MissingColumnIndexFor2DSlice {
+        let FunctionArg::Array {
+            rows, cols, values, ..
+        } = array_arg
+        else {
+            return Err(FunctionError::InvalidArgumentKind {
                 function: self.name(),
-                rows,
-                cols,
+                expected: "range",
+                found: array_arg.kind_name(),
             });
-        }
-
-        validate_homogeneous_slice(values, self.name(), "array", 1)?;
+        };
+        let (rows, cols, values) = (*rows, *cols, values.as_slice());
 
         let row_res = scalar_integer(row_arg);
         let col_res = match args.get(2) {

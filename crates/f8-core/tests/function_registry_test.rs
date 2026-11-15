@@ -3,8 +3,8 @@
 use std::cell::RefCell;
 
 use f8_core::expr::ast::{
-    BlankCheck, CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal, RowEndpoint,
-    RowSelector, TableRef, UnaryOp,
+    CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal, RowEndpoint, RowSelector,
+    TableRef, UnaryOp,
 };
 use f8_core::functions::{
     BoundCriterion, BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory,
@@ -496,21 +496,25 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     let res = sum.evaluate(&[err_range_arg], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 
-    // Descriptor range fails with DescriptorReferenceNotAllowed
-    let desc_range_arg = FunctionArg::array(
-        1,
-        1,
-        vec![CellValue::Number(10.0)],
-        ReferenceKind::Slice,
-        AxisRole::Descriptor,
-    );
+    // Descriptor range fails statically with DescriptorReferenceNotAllowed
+    let sum_desc_expr = Expr::parse("SUM(T[\"r1\", \"desc\"])").unwrap();
+    let mut resolve_sum_desc = |_: &TableRef| -> Result<Option<StaticRef>, &'static str> {
+        Ok(Some(StaticRef {
+            rows: 1,
+            cols: 1,
+            axis_role: AxisRole::Descriptor,
+            elem_types: vec![Some(ValueType::Number)],
+        }))
+    };
     assert_eq!(
-        sum.evaluate(&[desc_range_arg], &ctx),
-        Err(FunctionError::DescriptorReferenceNotAllowed {
-            function: "SUM",
-            param: "number1",
-            position: 1,
-        })
+        registry.validate_expr_with_shapes(&sum_desc_expr, &mut resolve_sum_desc),
+        Err(StageAError::Function(
+            FunctionError::DescriptorReferenceNotAllowed {
+                function: "SUM",
+                param: "number1",
+                position: 1,
+            }
+        ))
     );
 
     // Text or Boolean inside Slice, and Empty/Text/Boolean on Scalar or SingleCell fail strictly
@@ -598,23 +602,17 @@ fn test_scenario_5_if_short_circuiting_lazy_branches_and_omitted_false() {
     assert_eq!(res, CellValue::Number(222.0));
     assert_eq!(ctx.recorded(), vec!["222"]);
 
-    // Case 3: IF(FALSE, 111, _) -> rejected at runtime with CannotOmitRequiredArgument before evaluating branches
-    let ctx = MockEvalContext::default();
-    let args = [
-        FunctionArg::Scalar(CellValue::Boolean(false)),
-        FunctionArg::Lazy(&true_expr),
-        FunctionArg::Omitted,
-    ];
-    let err = if_func.evaluate(&args, &ctx).unwrap_err();
+    // Case 3: IF(FALSE, 111, _) -> rejected with CannotOmitRequiredArgument in validate_expr
     assert_eq!(
-        err,
+        registry
+            .validate_expr(&Expr::parse("IF(FALSE, 111, _)").unwrap())
+            .unwrap_err(),
         FunctionError::CannotOmitRequiredArgument {
             function: "IF",
             param: "value_if_false",
             position: 3,
         }
     );
-    assert!(ctx.recorded().is_empty());
 
     // Case 4: IF(FALSE, 111) with only 2 arguments -> rejected with TooFewArguments
     let ctx = MockEvalContext::default();
@@ -656,24 +654,10 @@ fn test_bind_arguments_integration() {
         ColSelector::Active,
     ));
 
-    // Scenario 2: Binding IF with 2 arguments fails with TooFewArguments; 3-arg IF binds lazy arms 1-to-1
+    // Scenario 2: 3-arg IF binds lazy arms 1-to-1
     let ctx = MockEvalContext::default();
     let true_val_expr = Expr::number(42.0);
     let false_val_expr = Expr::number(99.0);
-    let exprs_2arg = [
-        CallArg::from(Expr::boolean(false)),
-        CallArg::from(true_val_expr.clone()),
-    ];
-    assert_eq!(
-        registry
-            .bind_arguments(if_func, &exprs_2arg, &ctx)
-            .unwrap_err(),
-        FunctionError::TooFewArguments {
-            function: "IF",
-            expected: 3,
-            found: 2,
-        }
-    );
     let exprs = [
         CallArg::from(Expr::boolean(false)),
         CallArg::from(true_val_expr.clone()),
@@ -712,24 +696,6 @@ fn test_bind_arguments_integration() {
     assert_eq!(
         index_func.evaluate(&bound_index, &ctx_row_vec).unwrap(),
         CellValue::Number(20.0)
-    );
-
-    // Scenario 3: Binding IF with omitted 3rd argument fails validation with CannotOmitRequiredArgument
-    let exprs_omitted = [
-        CallArg::from(Expr::boolean(false)),
-        CallArg::from(Expr::number(42.0)),
-        CallArg::Omitted,
-    ];
-    let err_omitted = registry
-        .bind_arguments(if_func, &exprs_omitted, &ctx)
-        .unwrap_err();
-    assert_eq!(
-        err_omitted,
-        FunctionError::CannotOmitRequiredArgument {
-            function: "IF",
-            param: "value_if_false",
-            position: 3,
-        }
     );
 
     // Scenario 1: Intermediate optional skips bind Scalar(default) or FunctionArg::Omitted 1-to-1
@@ -1060,24 +1026,12 @@ fn test_bind_arguments_uses_resolved_function_without_duplicate_lookup() {
     let empty_registry = FunctionRegistry::new();
     let ctx = MockEvalContext::default();
 
-    // Empty registry does not contain ABS, proving bind_arguments validates against `abs_func` directly
+    // Empty registry does not contain ABS, proving bind_arguments binds against `abs_func` directly
     let call_args = [CallArg::from(Expr::number(-5.0))];
     let bound = empty_registry
         .bind_arguments(abs_func, &call_args, &ctx)
         .unwrap();
     assert_eq!(bound, vec![FunctionArg::Scalar(CellValue::Number(-5.0))]);
-
-    let err = empty_registry
-        .bind_arguments(abs_func, &[], &ctx)
-        .unwrap_err();
-    assert_eq!(
-        err,
-        FunctionError::TooFewArguments {
-            function: "ABS",
-            expected: 1,
-            found: 0,
-        }
-    );
 }
 
 #[test]
@@ -1111,195 +1065,7 @@ fn test_direct_evaluate_and_omission_invariants() {
 
     let registry = FunctionRegistry::standard();
     let ctx = MockEvalContext::default();
-    let lazy_num = Expr::number(10.0);
-    let vec_arg = FunctionArg::array(
-        1,
-        3,
-        vec![
-            CellValue::Number(10.0),
-            CellValue::Number(20.0),
-            CellValue::Number(30.0),
-        ],
-        ReferenceKind::Slice,
-        AxisRole::Measure,
-    );
-
-    // Direct required FunctionArg::Omitted on 3rd argument of IF fails with CannotOmitRequiredArgument
-    let if_fn = registry.lookup("IF").unwrap();
-    assert_eq!(
-        if_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Boolean(false)),
-                FunctionArg::Lazy(&lazy_num),
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitRequiredArgument {
-            function: "IF",
-            param: "value_if_false",
-            position: 3,
-        })
-    );
-
-    let index_fn = registry.lookup("INDEX").unwrap();
-    assert_eq!(
-        index_fn.evaluate(
-            &[
-                vec_arg.clone(),
-                FunctionArg::Scalar(CellValue::Number(2.0)),
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "INDEX",
-            param: "col_num",
-            position: 3,
-        })
-    );
-
-    let yearfrac_fn = registry.lookup("YEARFRAC").unwrap();
-    assert_eq!(
-        yearfrac_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(45292.0)),
-                FunctionArg::Scalar(CellValue::Number(45474.0)),
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "YEARFRAC",
-            param: "basis",
-            position: 3,
-        })
-    );
-
-    let irr_fn = registry.lookup("IRR").unwrap();
-    assert_eq!(
-        irr_fn.evaluate(&[vec_arg.clone(), FunctionArg::Omitted], &ctx),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "IRR",
-            param: "guess",
-            position: 2,
-        })
-    );
-
-    let xirr_fn = registry.lookup("XIRR").unwrap();
-    assert_eq!(
-        xirr_fn.evaluate(
-            &[vec_arg.clone(), vec_arg.clone(), FunctionArg::Omitted],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "XIRR",
-            param: "guess",
-            position: 3,
-        })
-    );
-
     let pmt_fn = registry.lookup("PMT").unwrap();
-    assert_eq!(
-        pmt_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(0.05)),
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Number(-1000.0)),
-                FunctionArg::Omitted,
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "PMT",
-            param: "fv",
-            position: 4,
-        })
-    );
-
-    let xmatch_fn = registry.lookup("XMATCH").unwrap();
-    assert_eq!(
-        xmatch_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(20.0)),
-                vec_arg.clone(),
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "XMATCH",
-            param: "match_mode",
-            position: 3,
-        })
-    );
-
-    let xlookup_fn = registry.lookup("XLOOKUP").unwrap();
-    assert_eq!(
-        xlookup_fn.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(20.0)),
-                vec_arg.clone(),
-                vec_arg.clone(),
-                FunctionArg::Omitted,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::CannotOmitTrailingArgument {
-            function: "XLOOKUP",
-            param: "if_not_found",
-            position: 4,
-        })
-    );
-
-    // Direct required-parameter FunctionArg::Omitted calls fail across SUM, ABS, and all 48 functions
-    let sum_fn = registry.lookup("SUM").unwrap();
-    assert_eq!(
-        sum_fn.evaluate(&[FunctionArg::Omitted], &ctx),
-        Err(FunctionError::CannotOmitRequiredArgument {
-            function: "SUM",
-            param: "number1",
-            position: 1,
-        })
-    );
-
-    let abs_fn = registry.lookup("ABS").unwrap();
-    assert_eq!(
-        abs_fn.evaluate(&[FunctionArg::Omitted], &ctx),
-        Err(FunctionError::CannotOmitRequiredArgument {
-            function: "ABS",
-            param: "number",
-            position: 1,
-        })
-    );
-
-    for (name, func) in registry.iter() {
-        if func.max_args() == Some(0) {
-            assert_eq!(
-                func.evaluate(&[FunctionArg::Omitted], &ctx),
-                Err(FunctionError::TooManyArguments {
-                    function: func.name(),
-                    expected: 0,
-                    found: 1,
-                }),
-                "expected TooManyArguments for 0-arg {name}"
-            );
-            continue;
-        }
-        let min = func.min_args();
-        let mut args = vec![FunctionArg::Scalar(CellValue::Number(1.0)); min.max(1)];
-        args[0] = FunctionArg::Omitted;
-        assert_eq!(
-            func.evaluate(&args, &ctx),
-            Err(FunctionError::CannotOmitRequiredArgument {
-                function: func.name(),
-                param: func.parameters()[0].name,
-                position: 1,
-            }),
-            "expected CannotOmitRequiredArgument at position 1 for {name}"
-        );
-    }
 
     // Direct intermediate optional FunctionArg::Omitted calls succeed using parameter defaults
     let pmt_omitted_fv = pmt_fn
@@ -2404,19 +2170,13 @@ fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
         Err(FunctionError::Type(_))
     ));
 
-    // validate_bound_args rejects FunctionArg::Criterion in non-criteria slots
-    let abs_func = registry.lookup("ABS").unwrap();
+    // validate_expr rejects CallArg::BlankCheck / Comparator in non-criteria slots
     assert_eq!(
-        abs_func.evaluate(
-            &[FunctionArg::Criterion(BoundCriterion::BlankCheck(
-                BlankCheck::Blank
-            ))],
-            &ctx
-        ),
-        Err(FunctionError::InvalidArgumentKind {
+        registry.validate_expr(&Expr::parse("ABS(BLANK)").unwrap()),
+        Err(FunctionError::UnexpectedCriteriaSyntax {
             function: "ABS",
-            expected: "scalar",
-            found: "criterion",
+            param: "number",
+            position: 1,
         })
     );
 

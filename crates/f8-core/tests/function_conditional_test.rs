@@ -248,21 +248,36 @@ fn test_sumifs_sparse_empty_allowed_and_non_numeric_or_descriptor_rejected() {
         CellValue::Number(42.0)
     );
 
-    // Descriptor target_range fails with DescriptorReferenceNotAllowed
-    let desc_target = FunctionArg::array(
-        1,
-        4,
-        vec![CellValue::Number(10.0); 4],
-        ReferenceKind::Slice,
-        AxisRole::Descriptor,
-    );
+    // Descriptor target_range fails statically with DescriptorReferenceNotAllowed
+    let desc_expr = f8_core::expr::Expr::parse(
+        "SUMIFS(T[\"desc\", \"c1\"..\"c4\"], T[\"k\", \"c1\"..\"c4\"], \"Alpha\")",
+    )
+    .unwrap();
+    let mut resolve_desc =
+        |r: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            let role = if let f8_core::expr::RowSelector::Key(k) = &r.row
+                && k.as_str() == "desc"
+            {
+                AxisRole::Descriptor
+            } else {
+                AxisRole::Measure
+            };
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 1,
+                cols: 4,
+                axis_role: role,
+                elem_types: vec![Some(ValueType::Number); 4],
+            }))
+        };
     assert_eq!(
-        sumifs.evaluate(&[desc_target, cr_desc, crit_alpha.clone()], &ctx),
-        Err(FunctionError::DescriptorReferenceNotAllowed {
-            function: "SUMIFS",
-            param: "sum_range",
-            position: 1,
-        })
+        registry.validate_expr_with_shapes(&desc_expr, &mut resolve_desc),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DescriptorReferenceNotAllowed {
+                function: "SUMIFS",
+                param: "sum_range",
+                position: 1,
+            }
+        ))
     );
 
     // Overflow in SUMIFS / AVERAGEIFS routes through CellValue::number -> #NUM!
@@ -604,23 +619,6 @@ fn test_stage_b_homogeneity_ordering_error_in_criteria_and_text_validation() {
     let sumifs = registry.lookup("SUMIFS").unwrap();
     let ctx = TestEvalContext;
 
-    // Mixed criteria_range [10.0, "Alpha"] fails homogeneity check
-    let mixed_cr = make_array(
-        1,
-        2,
-        vec![CellValue::Number(10.0), CellValue::Text("Alpha".into())],
-    );
-    assert_eq!(
-        countifs.evaluate(&[mixed_cr, blank_crit(BlankCheck::NotBlank)], &ctx),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "COUNTIFS",
-            param: "criteria_range1",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
     // Ordering comparator on Text criteria_range fails on criteria_range1
     let text_cr = make_array(
         1,
@@ -786,22 +784,50 @@ fn test_stage_b_homogeneity_ordering_error_in_criteria_and_text_validation() {
 fn test_scenario_7_dimension_conformity_validation() {
     let registry = FunctionRegistry::standard();
     let sumifs = registry.lookup("SUMIFS").unwrap();
-    let countifs = registry.lookup("COUNTIFS").unwrap();
     let ctx = TestEvalContext;
 
     let target = make_array(1, 4, vec![CellValue::Number(10.0); 4]);
     let mismatched = make_array(1, 3, vec![CellValue::Text("A".into()); 3]);
     let crit = exact_crit(CellValue::Text("A".into()));
 
+    let sumifs_dim_expr = f8_core::expr::Expr::parse(
+        "SUMIFS(T[\"t\", \"c1\"..\"c4\"], T[\"m\", \"c1\"..\"c3\"], \"A\")",
+    )
+    .unwrap();
+    let mut resolve_sumifs_dim = |r: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        let cols = if let f8_core::expr::RowSelector::Key(k) = &r.row
+            && k.as_str() == "t"
+        {
+            4
+        } else {
+            3
+        };
+        let vt = if cols == 4 {
+            ValueType::Number
+        } else {
+            ValueType::Text
+        };
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 1,
+            cols,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(vt); cols],
+        }))
+    };
     assert_eq!(
-        sumifs.evaluate(&[target.clone(), mismatched.clone(), crit.clone()], &ctx),
-        Err(FunctionError::DimensionMismatch {
-            function: "SUMIFS",
-            expected_rows: 1,
-            expected_cols: 4,
-            found_rows: 1,
-            found_cols: 3,
-        })
+        registry.validate_expr_with_shapes(&sumifs_dim_expr, &mut resolve_sumifs_dim),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DimensionMismatch {
+                function: "SUMIFS",
+                expected_rows: 1,
+                expected_cols: 4,
+                found_rows: 1,
+                found_cols: 3,
+            }
+        ))
     );
 
     // Scalar in ParamKind::Range slot -> InvalidArgumentKind
@@ -840,20 +866,37 @@ fn test_scenario_7_dimension_conformity_validation() {
     );
 
     // COUNTIFS dimension mismatch: cr1 (2, 2) vs cr2 (1, 4) -> DimensionMismatch
-    let cr1 = make_array(2, 2, vec![CellValue::Number(1.0); 4]);
-    let cr2 = make_array(1, 4, vec![CellValue::Number(1.0); 4]);
-    let crit1 = exact_crit(CellValue::Number(1.0));
-    let crit2 = exact_crit(CellValue::Number(1.0));
-
+    let countifs_dim_expr = f8_core::expr::Expr::parse(
+        "COUNTIFS(T[\"a1\"..\"a2\", \"c1\"..\"c2\"], 1, T[\"b\", \"c1\"..\"c4\"], 1)",
+    )
+    .unwrap();
+    let mut resolve_countifs_dim = |r: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        let (rows, cols) = if matches!(r.row, f8_core::expr::RowSelector::Range(_, _)) {
+            (2, 2)
+        } else {
+            (1, 4)
+        };
+        Ok(Some(f8_core::functions::StaticRef {
+            rows,
+            cols,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number); rows * cols],
+        }))
+    };
     assert_eq!(
-        countifs.evaluate(&[cr1, crit1, cr2, crit2], &ctx),
-        Err(FunctionError::DimensionMismatch {
-            function: "COUNTIFS",
-            expected_rows: 2,
-            expected_cols: 2,
-            found_rows: 1,
-            found_cols: 4,
-        })
+        registry.validate_expr_with_shapes(&countifs_dim_expr, &mut resolve_countifs_dim),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DimensionMismatch {
+                function: "COUNTIFS",
+                expected_rows: 2,
+                expected_cols: 2,
+                found_rows: 1,
+                found_cols: 4,
+            }
+        ))
     );
 }
 

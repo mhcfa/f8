@@ -56,27 +56,9 @@ impl ExcelFunction for SumproductFunction {
         let mut num_elements = 0;
 
         for arg in args {
-            let FunctionArg::Array {
-                rows, cols, values, ..
-            } = arg
-            else {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: self.name(),
-                    expected: "range",
-                    found: "scalar",
-                });
-            };
-            if values.len() != *rows * *cols {
-                return Err(FunctionError::EvaluationFailure {
-                    function: self.name(),
-                    message: format!(
-                        "array element count ({}) does not match dimensions ({rows}x{cols})",
-                        values.len()
-                    ),
-                });
-            }
+            let values = arg.as_range_slice(self.name())?;
             num_elements = values.len();
-            arrays.push(values.as_slice());
+            arrays.push(values);
         }
 
         for slice in &arrays {

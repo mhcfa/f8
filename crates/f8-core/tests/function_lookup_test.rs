@@ -913,66 +913,66 @@ fn test_scenario_7_binary_search() {
 fn test_scenario_8_dimension_validation() {
     let registry = FunctionRegistry::standard();
     let xmatch = registry.lookup("XMATCH").unwrap();
-    let xlookup = registry.lookup("XLOOKUP").unwrap();
     let ctx = MockContext::new();
 
-    // 2D lookup array (2x2) is rejected strictly with ExpectedOneDimensionalSlice
-    let matrix_2d = make_array(
-        2,
-        2,
-        vec![
-            CellValue::Number(1.0),
-            CellValue::Number(2.0),
-            CellValue::Number(3.0),
-            CellValue::Number(4.0),
-        ],
-    );
-
+    // 2D lookup array (2x2) is rejected statically with ExpectedOneDimensionalSlice
+    let xmatch_2d_expr =
+        f8_core::expr::Expr::parse("XMATCH(1, T[\"r1\"..\"r2\", \"c1\"..\"c2\"])").unwrap();
+    let mut resolve_2d =
+        |_: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 2,
+                cols: 2,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![Some(ValueType::Number); 4],
+            }))
+        };
     assert_eq!(
-        xmatch.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                matrix_2d.clone(),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::ExpectedOneDimensionalSlice {
-            function: "XMATCH",
-            param: "lookup_array",
-            rows: 2,
-            cols: 2,
-        })
+        registry.validate_expr_with_shapes(&xmatch_2d_expr, &mut resolve_2d),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::ExpectedOneDimensionalSlice {
+                function: "XMATCH",
+                param: "lookup_array",
+                rows: 2,
+                cols: 2,
+            }
+        ))
     );
 
-    // Mismatched dimensions between lookup_array (2x1) and return_array (3x1) in XLOOKUP fail strictly
-    // (even when lookup_value is an ExcelError)
-    let lookup_arr = make_array(2, 1, vec![CellValue::Number(1.0), CellValue::Number(2.0)]);
-    let return_arr = make_array(
-        3,
-        1,
-        vec![
-            CellValue::Number(10.0),
-            CellValue::Number(20.0),
-            CellValue::Number(30.0),
-        ],
-    );
-
+    // Mismatched dimensions between lookup_array (2x1) and return_array (3x1) in XLOOKUP fail statically
+    let xlookup_dim_expr =
+        f8_core::expr::Expr::parse("XLOOKUP(1, T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v3\", @col])")
+            .unwrap();
+    let mut resolve_xlookup_dim = |r: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        let rows = if let f8_core::expr::RowSelector::Range(f8_core::expr::RowEndpoint::Key(s), _) =
+            &r.row
+            && s.as_str() == "k1"
+        {
+            2
+        } else {
+            3
+        };
+        Ok(Some(f8_core::functions::StaticRef {
+            rows,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number); rows],
+        }))
+    };
     assert_eq!(
-        xlookup.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-                lookup_arr,
-                return_arr,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::DimensionMismatch {
-            function: "XLOOKUP",
-            expected_rows: 2,
-            expected_cols: 1,
-            found_rows: 3,
-            found_cols: 1,
-        })
+        registry.validate_expr_with_shapes(&xlookup_dim_expr, &mut resolve_xlookup_dim),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DimensionMismatch {
+                function: "XLOOKUP",
+                expected_rows: 2,
+                expected_cols: 1,
+                found_rows: 3,
+                found_cols: 1,
+            }
+        ))
     );
 
     // Error in lookup_value bubbles immediately
@@ -1063,17 +1063,27 @@ fn test_scenario_9_index_dimensions_and_bounds() {
         .unwrap();
     assert_eq!(m_val, CellValue::Number(6.0));
 
-    // 2D matrix omitting column fails strictly with MissingColumnIndexFor2DSlice
+    // 2D matrix omitting column fails statically with MissingColumnIndexFor2DSlice
+    let index_2d_expr =
+        f8_core::expr::Expr::parse("INDEX(T[\"r1\"..\"r2\", \"c1\"..\"c3\"], 2)").unwrap();
+    let mut resolve_index_2d =
+        |_: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 2,
+                cols: 3,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![Some(ValueType::Number); 6],
+            }))
+        };
     assert_eq!(
-        index.evaluate(
-            &[matrix.clone(), FunctionArg::Scalar(CellValue::Number(2.0))],
-            &ctx,
-        ),
-        Err(FunctionError::MissingColumnIndexFor2DSlice {
-            function: "INDEX",
-            rows: 2,
-            cols: 3,
-        })
+        registry.validate_expr_with_shapes(&index_2d_expr, &mut resolve_index_2d),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::MissingColumnIndexFor2DSlice {
+                function: "INDEX",
+                rows: 2,
+                cols: 3,
+            }
+        ))
     );
 
     // Out-of-bounds row (3 > 2) -> #REF!
@@ -1327,23 +1337,33 @@ fn test_excel_parity_edge_cases() {
         }))
     );
 
-    // Cross-type lookup_value ("") against numeric lookup_array fails with InvalidArgumentType
-    assert_eq!(
-        xlookup.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Text(String::new())),
-                empty_and_zero_keys,
-                values,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "XLOOKUP",
-            param: "lookup_array",
-            position: 2,
-            expected: ExpectedType::Text,
-            found: ValueType::Number,
+    // Cross-type lookup_value ("") against numeric lookup_array fails statically with InvalidArgumentType
+    let cross_type_expr = f8_core::expr::Expr::parse(
+        "XLOOKUP(\"\", T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col])",
+    )
+    .unwrap();
+    let mut resolve_cross_type = |_: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number); 2],
         }))
+    };
+    assert_eq!(
+        registry.validate_expr_with_shapes(&cross_type_expr, &mut resolve_cross_type),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "XLOOKUP",
+                param: "lookup_array",
+                position: 2,
+                expected: ExpectedType::Text,
+                found: ValueType::Number,
+            })
+        ))
     );
 
     // 2. Linear approximate matching skips Empty and Error cells when keys are homogeneous
@@ -1387,7 +1407,7 @@ fn test_excel_parity_edge_cases() {
             &[
                 FunctionArg::Scalar(CellValue::Number(25.0)),
                 sparse_error_keys,
-                sparse_vals.clone(),
+                sparse_vals,
                 FunctionArg::Omitted,
                 FunctionArg::Scalar(CellValue::Number(1.0)),
             ],
@@ -1396,80 +1416,7 @@ fn test_excel_parity_edge_cases() {
         .unwrap();
     assert_eq!(approx_larger, CellValue::Number(5.0)); // matches 30.0, skipping Div0 and Empty
 
-    // 3. Heterogeneous lookup_array, return_array, and INDEX array are rejected prior to Error bubbling
-    let mixed_keys = make_array(
-        4,
-        1,
-        vec![
-            CellValue::Text("Zebra".into()),
-            CellValue::Error(ExcelError::Div0),
-            CellValue::Number(10.0),
-            CellValue::Empty,
-        ],
-    );
-    assert_eq!(
-        xlookup.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-                mixed_keys,
-                sparse_vals,
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "XLOOKUP",
-            param: "lookup_array",
-            position: 2,
-            expected: ExpectedType::Text,
-            found: ValueType::Number,
-        }))
-    );
-
-    let mixed_return = make_array(
-        2,
-        1,
-        vec![CellValue::Number(10.0), CellValue::Text("two".into())],
-    );
-    assert_eq!(
-        xlookup.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-                make_array(
-                    2,
-                    1,
-                    vec![CellValue::Text("a".into()), CellValue::Text("b".into())]
-                ),
-                mixed_return.clone(),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "XLOOKUP",
-            param: "return_array",
-            position: 3,
-            expected: ExpectedType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
-    assert_eq!(
-        index.evaluate(
-            &[
-                mixed_return,
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "INDEX",
-            param: "array",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Text,
-        }))
-    );
-
-    // 4. Scalar arguments in ParamKind::Range slots fail with InvalidArgumentKind,
+    // 3. Scalar arguments in ParamKind::Range slots fail with InvalidArgumentKind,
     // while 1x1 SingleCell range references propagate cell errors cleanly
     assert_eq!(
         xlookup.evaluate(
