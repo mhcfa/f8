@@ -59,88 +59,6 @@ pub(crate) enum BinarySide {
     Right,
 }
 
-/// Scoped relational comparator prefix inside `ParamKind::Criteria` function arguments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum CriteriaComparator {
-    /// Inequality (`<>`).
-    NotEq,
-    /// Less than (`<`).
-    Lt,
-    /// Less than or equal (`<=`).
-    Lte,
-    /// Greater than (`>`).
-    Gt,
-    /// Greater than or equal (`>=`).
-    Gte,
-}
-
-impl CriteriaComparator {
-    /// Returns the canonical textual representation of the comparator.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::NotEq => "<>",
-            Self::Lt => "<",
-            Self::Lte => "<=",
-            Self::Gt => ">",
-            Self::Gte => ">=",
-        }
-    }
-
-    /// Returns `true` for numeric ordering comparators (`<`, `<=`, `>`, `>=`), `false` for `<>`.
-    #[must_use]
-    pub const fn is_ordering(self) -> bool {
-        match self {
-            Self::Lt | Self::Lte | Self::Gt | Self::Gte => true,
-            Self::NotEq => false,
-        }
-    }
-
-    /// Evaluates whether `ordering` satisfies this comparator.
-    #[must_use]
-    pub fn matches_ordering(self, ordering: std::cmp::Ordering) -> bool {
-        match self {
-            Self::NotEq => ordering.is_ne(),
-            Self::Lt => ordering.is_lt(),
-            Self::Lte => ordering.is_le(),
-            Self::Gt => ordering.is_gt(),
-            Self::Gte => ordering.is_ge(),
-        }
-    }
-}
-
-impl fmt::Display for CriteriaComparator {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// Scoped empty-cell predicate keyword inside `ParamKind::Criteria` function arguments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum BlankCheck {
-    /// Matches strictly empty (`CellValue::Empty`) cells (`BLANK`).
-    Blank,
-    /// Matches any non-empty cell (`NOT_BLANK`).
-    NotBlank,
-}
-
-impl BlankCheck {
-    /// Returns the canonical textual representation of the blank check keyword.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Blank => "BLANK",
-            Self::NotBlank => "NOT_BLANK",
-        }
-    }
-}
-
-impl fmt::Display for BlankCheck {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
 /// Argument slot within a function call expression.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CallArg {
@@ -148,15 +66,6 @@ pub enum CallArg {
     Expr(Expr),
     /// Explicitly omitted positional argument (`_`).
     Omitted,
-    /// Scoped comparator criterion (`<> expr`, `< expr`, `<= expr`, `> expr`, `>= expr`).
-    Comparator {
-        /// Leading relational comparator.
-        op: CriteriaComparator,
-        /// Operand expression.
-        expr: Expr,
-    },
-    /// Scoped blank-cell check (`BLANK` or `NOT_BLANK`).
-    BlankCheck(BlankCheck),
 }
 
 impl From<Expr> for CallArg {
@@ -170,14 +79,6 @@ impl fmt::Display for CallArg {
         match self {
             Self::Expr(expr) => write!(f, "{expr}"),
             Self::Omitted => write!(f, "_"),
-            Self::Comparator { op, expr } => {
-                if matches!(expr, Expr::Binary { op: bin_op, .. } if bin_op.is_relational()) {
-                    write!(f, "{} ({expr})", op.as_str())
-                } else {
-                    write!(f, "{} {expr}", op.as_str())
-                }
-            }
-            Self::BlankCheck(check) => write!(f, "{check}"),
         }
     }
 }

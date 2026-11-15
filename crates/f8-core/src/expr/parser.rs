@@ -1,9 +1,9 @@
 use std::fmt;
 
 use crate::expr::ast::{
-    BinaryOp, BlankCheck, CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal,
-    RelativeOffset, RowEndpoint, RowSelector, TableRef, TableSelector, UnaryOp, fmt_number_literal,
-    fmt_quoted_f8_str, format_number_literal,
+    BinaryOp, CallArg, ColEndpoint, ColSelector, Expr, Literal, RelativeOffset, RowEndpoint,
+    RowSelector, TableRef, TableSelector, UnaryOp, fmt_number_literal, fmt_quoted_f8_str,
+    format_number_literal,
 };
 use crate::expr::error::ParseError;
 use crate::model::id::{ColId, RowId};
@@ -99,39 +99,6 @@ impl<'a> Token<'a> {
             | Self::AtCol
             | Self::AtRow
             | Self::AtTable => None,
-        }
-    }
-
-    /// Maps the token to a scoped criteria comparator if applicable.
-    #[must_use]
-    pub const fn as_criteria_comparator(&self) -> Option<CriteriaComparator> {
-        match self {
-            Self::NotEq => Some(CriteriaComparator::NotEq),
-            Self::Lt => Some(CriteriaComparator::Lt),
-            Self::Lte => Some(CriteriaComparator::Lte),
-            Self::Gt => Some(CriteriaComparator::Gt),
-            Self::Gte => Some(CriteriaComparator::Gte),
-            Self::Number(_)
-            | Self::String(_)
-            | Self::Boolean(_)
-            | Self::Ident(_)
-            | Self::Underscore
-            | Self::LParen
-            | Self::RParen
-            | Self::LBracket
-            | Self::RBracket
-            | Self::Comma
-            | Self::Dot
-            | Self::DotDot
-            | Self::AtCol
-            | Self::AtRow
-            | Self::AtTable
-            | Self::Plus
-            | Self::Minus
-            | Self::Star
-            | Self::Slash
-            | Self::Caret
-            | Self::Eq => None,
         }
     }
 }
@@ -944,41 +911,6 @@ fn parse_argument_list(stream: &mut TokenStream<'_>) -> Result<Vec<CallArg>, Par
         {
             stream.advance();
             CallArg::Omitted
-        } else if let Some(st) = stream.peek()
-            && st.token == Token::Eq
-        {
-            return Err(ParseError::RedundantCriteriaEquals { offset: st.offset });
-        } else if let Some(op) = stream
-            .peek()
-            .and_then(|st| st.token.as_criteria_comparator())
-        {
-            stream.advance();
-            let expr = parse_expression(stream, 2)?;
-            if let Some(rel_tok) = stream.peek()
-                && let Some(bin_op) = rel_tok.token.as_binary_op()
-                && bin_op.is_relational()
-            {
-                return Err(ParseError::ChainedComparison {
-                    operator: bin_op.as_str(),
-                    offset: rel_tok.offset,
-                });
-            }
-            CallArg::Comparator { op, expr }
-        } else if let Some(st) = stream.peek()
-            && matches!(st.token, Token::Ident("BLANK" | "NOT_BLANK"))
-            && !stream.peek_nth(1).is_some_and(|next_st| {
-                next_st.token == Token::LParen
-                    || next_st.token == Token::LBracket
-                    || (next_st.token == Token::Dot && next_st.offset == st.offset + st.len)
-            })
-        {
-            let check = if st.token == Token::Ident("BLANK") {
-                BlankCheck::Blank
-            } else {
-                BlankCheck::NotBlank
-            };
-            stream.advance();
-            CallArg::BlankCheck(check)
         } else {
             CallArg::Expr(parse_expression(stream, 0)?)
         };

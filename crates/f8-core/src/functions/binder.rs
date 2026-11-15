@@ -4,8 +4,8 @@ use crate::expr::ast::{CallArg, Expr};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
-    BoundCriterion, EmptyPolicy, EvalContext, ExcelFunction, FunctionArg, ParamKind, ParamType,
-    ParameterDef, RangeGrid, ReferenceKind, ValidationPolicy, VariadicRule,
+    EmptyPolicy, EvalContext, ExcelFunction, FunctionArg, ParamKind, ParamType, ParameterDef,
+    RangeGrid, ReferenceKind, ValidationPolicy, VariadicRule,
 };
 use crate::value::{
     CellValue, DateSerial, ExpectedType, StrictIntError, TypeError, ValueType,
@@ -25,105 +25,49 @@ impl FunctionRegistry {
 
         for (i, call_arg) in expr_args.iter().enumerate() {
             let param = resolve_parameter(func, i)?;
-            let position = i + 1;
-
-            match param.kind {
-                ParamKind::Criteria => {
-                    bound.push(bind_criteria_arg(param, call_arg, ctx)?);
+            let arg_expr = match call_arg {
+                CallArg::Expr(expr) => expr,
+                CallArg::Omitted => {
+                    bound.push(bind_omitted_arg(param));
+                    continue;
                 }
-                ParamKind::Lazy => {
-                    let Some(arg_expr) =
-                        extract_non_criteria_expr(func, param, position, call_arg)?
-                    else {
-                        bound.push(bind_omitted_non_criteria(param));
-                        continue;
-                    };
+            };
+
+            match (param.kind, arg_expr) {
+                (ParamKind::Lazy, _) => {
                     bound.push(FunctionArg::Lazy(arg_expr));
                 }
-                ParamKind::Scalar => {
-                    let Some(arg_expr) =
-                        extract_non_criteria_expr(func, param, position, call_arg)?
-                    else {
-                        bound.push(bind_omitted_non_criteria(param));
-                        continue;
+                (ParamKind::Range | ParamKind::RangeOrArray, Expr::Reference(table_ref)) => {
+                    let RangeGrid { rows, cols, values } = ctx.eval_range(arg_expr)?;
+                    let ref_kind = if table_ref.is_slice() {
+                        ReferenceKind::Slice
+                    } else {
+                        ReferenceKind::SingleCell
                     };
+                    bound.push(FunctionArg::array(rows, cols, values, ref_kind));
+                }
+                (
+                    ParamKind::Range,
+                    Expr::Literal(_)
+                    | Expr::Unary { .. }
+                    | Expr::Binary { .. }
+                    | Expr::FunctionCall { .. },
+                ) => {
+                    return Err(FunctionError::InvalidArgumentKind {
+                        function: func.name(),
+                        expected: "range",
+                        found: "scalar",
+                    });
+                }
+                (
+                    ParamKind::RangeOrArray,
+                    Expr::Literal(_)
+                    | Expr::Unary { .. }
+                    | Expr::Binary { .. }
+                    | Expr::FunctionCall { .. },
+                )
+                | (ParamKind::Scalar, _) => {
                     bound.push(FunctionArg::Scalar(ctx.eval_expr(arg_expr)?));
-                }
-                ParamKind::Range => {
-                    let Some(arg_expr) =
-                        extract_non_criteria_expr(func, param, position, call_arg)?
-                    else {
-                        bound.push(bind_omitted_non_criteria(param));
-                        continue;
-                    };
-                    match arg_expr {
-                        Expr::Reference(table_ref) => {
-                            let RangeGrid {
-                                rows,
-                                cols,
-                                values,
-                                axis_role,
-                            } = ctx.eval_range(arg_expr)?;
-                            let ref_kind = if table_ref.is_slice() {
-                                ReferenceKind::Slice
-                            } else {
-                                ReferenceKind::SingleCell
-                            };
-                            bound.push(FunctionArg::Array {
-                                rows,
-                                cols,
-                                values,
-                                ref_kind,
-                                axis_role,
-                            });
-                        }
-                        Expr::Literal(_)
-                        | Expr::Unary { .. }
-                        | Expr::Binary { .. }
-                        | Expr::FunctionCall { .. } => {
-                            return Err(FunctionError::InvalidArgumentKind {
-                                function: func.name(),
-                                expected: "range",
-                                found: "scalar",
-                            });
-                        }
-                    }
-                }
-                ParamKind::RangeOrArray => {
-                    let Some(arg_expr) =
-                        extract_non_criteria_expr(func, param, position, call_arg)?
-                    else {
-                        bound.push(bind_omitted_non_criteria(param));
-                        continue;
-                    };
-                    match arg_expr {
-                        Expr::Reference(table_ref) => {
-                            let RangeGrid {
-                                rows,
-                                cols,
-                                values,
-                                axis_role,
-                            } = ctx.eval_range(arg_expr)?;
-                            let ref_kind = if table_ref.is_slice() {
-                                ReferenceKind::Slice
-                            } else {
-                                ReferenceKind::SingleCell
-                            };
-                            bound.push(FunctionArg::Array {
-                                rows,
-                                cols,
-                                values,
-                                ref_kind,
-                                axis_role,
-                            });
-                        }
-                        Expr::Literal(_)
-                        | Expr::Unary { .. }
-                        | Expr::Binary { .. }
-                        | Expr::FunctionCall { .. } => {
-                            bound.push(FunctionArg::Scalar(ctx.eval_expr(arg_expr)?));
-                        }
-                    }
                 }
             }
         }
@@ -132,60 +76,11 @@ impl FunctionRegistry {
     }
 }
 
-pub(crate) fn extract_non_criteria_expr<'a>(
-    func: &dyn ExcelFunction,
-    param: &ParameterDef,
-    position: usize,
-    call_arg: &'a CallArg,
-) -> Result<Option<&'a Expr>, FunctionError> {
-    match call_arg {
-        CallArg::Expr(expr) => Ok(Some(expr)),
-        CallArg::Omitted => Ok(None),
-        CallArg::Comparator { .. } | CallArg::BlankCheck(_) => {
-            Err(FunctionError::UnexpectedCriteriaSyntax {
-                function: func.name(),
-                param: param.name,
-                position,
-            })
-        }
-    }
-}
-
-fn bind_omitted_non_criteria<'a>(param: &ParameterDef) -> FunctionArg<'a> {
+fn bind_omitted_arg<'a>(param: &ParameterDef) -> FunctionArg<'a> {
     if let Some(default_val) = param.requirement.default_value() {
         FunctionArg::Scalar(default_val.clone())
     } else {
         FunctionArg::Omitted
-    }
-}
-
-fn bind_criteria_arg<'a>(
-    param: &ParameterDef,
-    call_arg: &CallArg,
-    ctx: &dyn EvalContext,
-) -> Result<FunctionArg<'a>, FunctionError> {
-    match call_arg {
-        CallArg::Omitted => {
-            if let Some(default_val) = param.requirement.default_value() {
-                Ok(FunctionArg::Criterion(BoundCriterion::Exact(
-                    default_val.clone(),
-                )))
-            } else {
-                Ok(FunctionArg::Omitted)
-            }
-        }
-        CallArg::BlankCheck(check) => {
-            Ok(FunctionArg::Criterion(BoundCriterion::BlankCheck(*check)))
-        }
-        CallArg::Expr(arg_expr) => Ok(FunctionArg::Criterion(BoundCriterion::Exact(
-            ctx.eval_expr(arg_expr)?,
-        ))),
-        CallArg::Comparator { op, expr: arg_expr } => {
-            Ok(FunctionArg::Criterion(BoundCriterion::Comparator {
-                op: *op,
-                value: ctx.eval_expr(arg_expr)?,
-            }))
-        }
     }
 }
 
@@ -195,13 +90,9 @@ fn extract_bound_calendar_int(arg: Option<&FunctionArg<'_>>) -> Option<i64> {
             Ok(Ok(iv)) => Some(iv),
             Ok(Err(_)) | Err(_) => None,
         },
-        Some(
-            FunctionArg::Array { .. }
-            | FunctionArg::Lazy(_)
-            | FunctionArg::Criterion(_)
-            | FunctionArg::Omitted,
-        )
-        | None => None,
+        Some(FunctionArg::Array { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted) | None => {
+            None
+        }
     }
 }
 
@@ -256,6 +147,7 @@ pub(crate) fn validate_bound_args(
         });
     }
     if func.variadic_rule() == VariadicRule::Pairs
+        && args.len() > func.parameters().len()
         && !(args.len() - func.parameters().len()).is_multiple_of(2)
     {
         return Err(FunctionError::InvalidVariadicPairs {
@@ -303,7 +195,7 @@ pub(crate) fn validate_bound_args(
                     )?;
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
     }
 

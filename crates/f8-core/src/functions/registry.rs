@@ -23,7 +23,7 @@ impl FunctionRegistry {
         }
     }
 
-    /// Constructs a standard function registry populated with the 48 built-in Excel functions.
+    /// Constructs a standard function registry populated with the 43 built-in Excel functions.
     #[must_use]
     pub fn standard() -> Self {
         let mut registry = Self::new();

@@ -51,7 +51,7 @@ impl EvalContext for MockContext {
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
-    FunctionArg::array(rows, cols, values, ReferenceKind::Slice, AxisRole::Measure)
+    FunctionArg::array(rows, cols, values, ReferenceKind::Slice)
 }
 
 fn eval_str(
@@ -1439,7 +1439,6 @@ fn test_excel_parity_edge_cases() {
         1,
         vec![CellValue::Error(ExcelError::Div0)],
         ReferenceKind::SingleCell,
-        AxisRole::Measure,
     );
     assert_eq!(
         xlookup

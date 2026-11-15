@@ -2,9 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::expr::ast::{BlankCheck, CriteriaComparator, Expr};
+use crate::expr::ast::Expr;
 use crate::functions::error::FunctionError;
-use crate::model::table::AxisRole;
 use crate::value::{CellValue, ExpectedType, ValueType};
 
 /// Functional taxonomy categories for Excel built-in functions.
@@ -58,8 +57,6 @@ pub enum ParamKind {
     RangeOrArray,
     /// Unevaluated lazy expression evaluated conditionally on demand.
     Lazy,
-    /// Typed conditional-aggregation criterion (`CallArg::{Expr, Comparator, BlankCheck}`).
-    Criteria,
 }
 
 /// Syntactic reference classification for `FunctionArg::Array` bindings.
@@ -133,7 +130,7 @@ pub enum VariadicRule {
     None,
     /// Arbitrary number of trailing arguments matching the final parameter definition (e.g. `SUM`).
     Single,
-    /// Trailing arguments must occur in balanced pairs (e.g. `criteria_range1, criteria1` in `SUMIFS`).
+    /// Trailing arguments must occur in balanced pairs (e.g. `logical_test, value_if_true` in `IFS`).
     Pairs,
 }
 
@@ -258,22 +255,6 @@ impl ParameterDef {
     }
 }
 
-/// Bound runtime criterion argument supplied to `ParamKind::Criteria` slots.
-#[derive(Debug, Clone, PartialEq)]
-pub enum BoundCriterion {
-    /// Exact-equality criterion (`CallArg::Expr`).
-    Exact(CellValue),
-    /// Scoped comparator criterion (`CallArg::Comparator`).
-    Comparator {
-        /// Scoped comparison operator (`<>`, `<`, `<=`, `>`, `>=`).
-        op: CriteriaComparator,
-        /// Evaluated threshold or comparison value.
-        value: CellValue,
-    },
-    /// Scoped blank-status keyword (`BLANK` or `NOT_BLANK`).
-    BlankCheck(BlankCheck),
-}
-
 /// Bound runtime argument supplied to an `ExcelFunction::evaluate` call.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FunctionArg<'a> {
@@ -289,13 +270,9 @@ pub enum FunctionArg<'a> {
         values: Vec<CellValue>,
         /// Syntactic reference classification (`SingleCell` vs `Slice`).
         ref_kind: ReferenceKind,
-        /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
-        axis_role: AxisRole,
     },
     /// Unevaluated AST expression for lazy conditional branches.
     Lazy(&'a Expr),
-    /// Bound conditional-aggregation criterion.
-    Criterion(BoundCriterion),
     /// Intermediate omitted optional-parameter placeholder (`_`) without a static default.
     Omitted,
 }
@@ -308,7 +285,6 @@ impl<'a> FunctionArg<'a> {
             Self::Scalar(_) => "scalar",
             Self::Array { .. } => "array",
             Self::Lazy(_) => "lazy",
-            Self::Criterion(_) => "criterion",
             Self::Omitted => "omitted",
         }
     }
@@ -320,14 +296,12 @@ impl<'a> FunctionArg<'a> {
         cols: usize,
         values: Vec<CellValue>,
         ref_kind: ReferenceKind,
-        axis_role: AxisRole,
     ) -> Self {
         Self::Array {
             rows,
             cols,
             values,
             ref_kind,
-            axis_role,
         }
     }
 
@@ -335,7 +309,7 @@ impl<'a> FunctionArg<'a> {
     pub fn as_range_slice(&self, function: &'static str) -> Result<&[CellValue], FunctionError> {
         match self {
             Self::Array { values, .. } => Ok(values.as_slice()),
-            Self::Scalar(_) | Self::Lazy(_) | Self::Criterion(_) | Self::Omitted => {
+            Self::Scalar(_) | Self::Lazy(_) | Self::Omitted => {
                 Err(FunctionError::InvalidArgumentKind {
                     function,
                     expected: "range",
@@ -370,11 +344,6 @@ impl<'a> FunctionArg<'a> {
                 function,
                 expected: "scalar",
                 found: "array",
-            }),
-            Self::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "scalar",
-                found: "criterion",
             }),
             Self::Omitted => Err(FunctionError::InvalidArgumentKind {
                 function,
@@ -414,10 +383,6 @@ pub enum LookupPolicy {
 pub enum ShapePolicy {
     /// All range arguments must have identical `(rows, cols)` dimensions (`SUMPRODUCT`).
     EqualAllRanges,
-    /// Odd-indexed criteria ranges (`1, 3, ...`) must match target range `0` (`SUMIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`).
-    EqualTargetAndOddPairRanges,
-    /// Even-indexed criteria ranges (`2, 4, ...`) must match first criteria range `0` (`COUNTIFS`).
-    EqualEvenPairRanges,
     /// Two designated range arguments must each be 1D slices of equal element count (`XNPV`, `XIRR`).
     OneDimEqualLength {
         /// Zero-based argument index of the first 1D slice.
@@ -447,7 +412,7 @@ pub enum ValidationPolicy {
     CalendarDate,
 }
 
-/// Evaluated 2D range grid carrying dimensions, cell values, and uniform column [`AxisRole`].
+/// Evaluated 2D range grid carrying dimensions and cell values.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RangeGrid {
     /// Number of rows.
@@ -456,8 +421,6 @@ pub struct RangeGrid {
     pub cols: usize,
     /// Flattened row-major cell values.
     pub values: Vec<CellValue>,
-    /// Uniform column axis role (`Measure` or `Descriptor`) of the resolved reference.
-    pub axis_role: AxisRole,
 }
 
 /// Contextual evaluation interface passed to function evaluation routines.
@@ -467,14 +430,13 @@ pub trait EvalContext {
 
     /// Evaluates a range or multi-cell expression to a [`RangeGrid`].
     ///
-    /// The default implementation delegates to `eval_expr` returning a 1x1 `Measure` grid.
+    /// The default implementation delegates to `eval_expr` returning a 1x1 grid.
     fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
         let val = self.eval_expr(expr)?;
         Ok(RangeGrid {
             rows: 1,
             cols: 1,
             values: vec![val],
-            axis_role: AxisRole::Measure,
         })
     }
 }

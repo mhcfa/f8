@@ -1005,6 +1005,23 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ["SWITCH(1, 1, 10, 20)", "unknown function 'SWITCH'"],
         ["IF(FALSE, SWITCH(1, 1, 10, 20), 0)", "unknown function 'SWITCH'"],
         [
+          'SUMIFS(@table["v1".."v2", @col], @table["k1".."k2", @col], 1)',
+          "unknown function 'SUMIFS'",
+        ],
+        ['COUNTIFS(@table["k1".."k2", @col], 1)', "unknown function 'COUNTIFS'"],
+        [
+          'AVERAGEIFS(@table["v1".."v2", @col], @table["k1".."k2", @col], 1)',
+          "unknown function 'AVERAGEIFS'",
+        ],
+        [
+          'MINIFS(@table["v1".."v2", @col], @table["k1".."k2", @col], 1)',
+          "unknown function 'MINIFS'",
+        ],
+        [
+          'MAXIFS(@table["v1".."v2", @col], @table["k1".."k2", @col], 1)',
+          "unknown function 'MAXIFS'",
+        ],
+        [
           'XLOOKUP(1, @table["k1".."k2", @col], @table["v1".."v2", @col], UNKNOWN_FN())',
           "unknown function 'UNKNOWN_FN'",
         ],
@@ -1189,7 +1206,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         "COUNT(10)",
         'COUNT(@table["a", @col])',
         'SUMPRODUCT("abc")',
-        'SUMIFS(@table["r1".."r2", @col], @table["r1".."r1", @col], 10)',
         "CHOOSE(5, 10, 20)",
         'INDEX(@table["r1".."r2", @col], 5)',
         "SWITCH(1, 1, 10, 20)",
@@ -1288,51 +1304,15 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "counta_b", "c1")).toBe(1);
     });
 
-    it("(k) treats NaN/inf/Infinity strings as text in *IFS criteria and evaluates typed numeric comparators", () => {
-      const model = new Model({ name: "CriteriaNanModel" });
-      const tbl = model.addSheet("Main").addTable("T", "Criteria NaN");
-      tbl.addColumn("txt", { role: "measure", header: "Text" });
+    it("(k) normalizes negative zero to +0", () => {
+      const model = new Model({ name: "NegZeroModel" });
+      const tbl = model.addSheet("Main").addTable("T", "Neg Zero");
       tbl.addColumn("num", { role: "measure", header: "Number" });
-      tbl.addColumn("w", { role: "measure", header: "Weight" });
 
-      tbl.addRow("r1", { cells: { txt: "NAN", num: 42, w: 10 } });
-      tbl.addRow("r2", { cells: { txt: "Infinity", num: -0, w: 20 } });
-      tbl.addRow("r3", { cells: { txt: "inf", num: 15, w: 30 } });
-
-      tbl.addRow("cnt_nan", {
-        cells: {
-          txt: "check",
-          num: new Cell({ expr: 'COUNTIFS(@table["r1".."r3", "txt"], "nan")' }),
-          w: 0,
-        },
-      });
-      tbl.addRow("cnt_inf", {
-        cells: {
-          txt: "check",
-          num: new Cell({ expr: 'COUNTIFS(@table["r1".."r3", "txt"], "Infinity")' }),
-          w: 0,
-        },
-      });
-      tbl.addRow("sum_42", {
-        cells: {
-          txt: "check",
-          num: new Cell({ expr: 'SUMIFS(@table["r1".."r3", "w"], @table["r1".."r3", "num"], 42)' }),
-          w: 0,
-        },
-      });
-      tbl.addRow("cnt_gt0", {
-        cells: {
-          txt: "check",
-          num: new Cell({ expr: 'COUNTIFS(@table["r1".."r3", "num"], > 0)' }),
-          w: 0,
-        },
-      });
+      tbl.addRow("r1", { cells: { num: 42 } });
+      tbl.addRow("r2", { cells: { num: -0 } });
 
       const compiled = model.compile();
-      expect(compiled.num("T", "cnt_nan", "num")).toBe(1);
-      expect(compiled.num("T", "cnt_inf", "num")).toBe(1);
-      expect(compiled.num("T", "sum_42", "num")).toBe(10);
-      expect(compiled.num("T", "cnt_gt0", "num")).toBe(2);
       expect(Object.is(compiled.value("T", "r2", "num"), 0)).toBe(true);
     });
 
@@ -1542,10 +1522,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
           'SUMPRODUCT(@table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])',
           "cannot reference descriptor column",
         ],
-        [
-          'SUMIFS(@table["r1".."r3", "line_item"], @table["r1".."r3", "c1"], 10)',
-          "cannot reference descriptor column",
-        ],
         ['NPV(0.1, @table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
         ['IRR(@table["r1".."r3", "line_item"])', "cannot reference descriptor column"],
         [
@@ -1578,10 +1554,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         [
           'SUMPRODUCT(@table["bool1".."bool2", "c1"], @table["r1".."r2", "c1"])',
           "expected number, found boolean",
-        ],
-        [
-          'SUMIFS(@table["r1".."txt1", "c1"], @table["r1".."txt1", "line_item"], "Rev")',
-          "expected number, found text",
         ],
         ['IFERROR(SUM(@table["null1", "c1"]), 0)', "expected number, found empty"],
         ['NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"],
@@ -1740,10 +1712,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         'XLOOKUP("Rev", @table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])',
       );
       addCheck("desc_index", 'INDEX(@table["r1".."r3", "line_item"], 2)');
-      addCheck(
-        "desc_sumifs",
-        'SUMIFS(@table["r1".."r3", "c1"], @table["r1".."r3", "line_item"], "Rev")',
-      );
       addCheck("guard_sum", 'IF(ISBLANK(@table["sp1", "c1"]), 0, SUM(@table["sp1", "c1"]))');
 
       addCheck("sum_sparse", 'SUM(@table["sp1".."sp4", "c1"])');
@@ -1763,10 +1731,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
 
       addCheck("sum_ovf", 'SUM(@table["big1".."big2", "c1"])');
       addCheck("sp_ovf", 'SUMPRODUCT(@table["big1".."big1", "w"], @table["big2".."big2", "w"])');
-      addCheck(
-        "sumifs_ovf",
-        'SUMIFS(@table["big1".."big2", "c1"], @table["big1".."big2", "line_item"], NOT_BLANK)',
-      );
       addCheck("max_big", 'MAX(@table["big1".."big2", "c1"])');
 
       addCheck("date_1900_leap", "DATE(1900, 2, 29)");
@@ -1790,7 +1754,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "desc_counta", "c1")).toBe(3);
       expect(compiled.num("T", "desc_xlookup", "c1")).toBe(10);
       expect(compiled.value("T", "desc_index", "c1")).toBe("Cost");
-      expect(compiled.num("T", "desc_sumifs", "c1")).toBe(10);
       expect(compiled.num("T", "guard_sum", "c1")).toBe(0);
 
       expect(compiled.num("T", "sum_sparse", "c1")).toBe(20);
@@ -1810,7 +1773,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
 
       expect(compiled.value("T", "sum_ovf", "c1")).toBe("#NUM!");
       expect(compiled.value("T", "sp_ovf", "c1")).toBe("#NUM!");
-      expect(compiled.value("T", "sumifs_ovf", "c1")).toBe("#NUM!");
       expect(compiled.num("T", "max_big", "c1")).toBe(1e308);
 
       expect(compiled.num("T", "date_1900_leap", "c1")).toBe(60);
@@ -1826,201 +1788,55 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.value("T", "yr_edate_bubble", "c1")).toBe("#NUM!");
     });
 
-    it("(n) enforces Cluster C typed criteria DSL, text/error criteria guards, and error introspection", () => {
-      const redundantFormula = 'COUNTIFS(@table["r1".."r2", "num_a"], = 10)';
-      const pm = new Model({ name: "RedundantEqModel" });
-      const pt = pm.addSheet("Main").addTable("T", "Parse");
-      pt.addColumn("num_a", { role: "measure", header: "Num" });
-      pt.addRow("r1", { cells: { num_a: 10 } });
-      pt.addRow("r2", { cells: { num_a: 20 } });
-      pt.addRow("bad", { expr: redundantFormula });
-
-      let caughtRedundant: unknown;
-      try {
-        pm.compile();
-      } catch (err: unknown) {
-        caughtRedundant = err;
-      }
-      expect(caughtRedundant).toBeInstanceOf(FormulaParseError);
-      expect((caughtRedundant as FormulaParseError).tokenOffset).toBe(
-        redundantFormula.indexOf("="),
-      );
-
-      for (const badParse of [
-        'COUNTIFS(@table["r1".."r2", "num_a"], <> 1 = 1)',
-        'COUNTIFS(@table["r1".."r2", "num_a"], blank)',
-        "ERROR . TYPE(1 / 0)",
-        "error.type(1 / 0)",
-      ]) {
+    it("(n) enforces dotted function name grammar and evaluates error introspection functions", () => {
+      for (const badParse of ["ERROR . TYPE(1 / 0)", "error.type(1 / 0)"]) {
         const m = new Model({ name: "ParseCheck" });
         const t = m.addSheet("Main").addTable("T", "Parse");
-        t.addColumn("num_a", { role: "measure", header: "Num" });
-        t.addRow("r1", { cells: { num_a: 10 } });
-        t.addRow("r2", { cells: { num_a: 20 } });
+        t.addColumn("c1", { role: "measure", header: "Val" });
         t.addRow("bad", { expr: badParse });
         expect(() => m.compile()).toThrow(FormulaParseError);
       }
 
-      const buildBase = (targetExpr: string): Model => {
-        const m = new Model({ name: "ClusterCCheck" });
-        const t = m.addSheet("Main").addTable("T", "Cluster C");
-        t.addColumn("num_a", { role: "measure", header: "Num A" });
-        t.addColumn("cat", { role: "measure", header: "Category" });
-        t.addColumn("date", { role: "measure", header: "Date" });
-        t.addRow("r1", { cells: { num_a: 10, cat: "Alpha", date: 45292 } });
-        t.addRow("r2", { cells: { num_a: 20, cat: "Beta", date: 45474 } });
-        t.addRow("helpers", {
-          cells: {
-            num_a: null,
-            cat: null,
-            date: new Cell({
-              expr: 'XLOOKUP("Missing", @table["r1".."r2", "cat"], @table["r1".."r2", "date"])',
-            }),
-          },
-        });
-        t.addRow("target", {
-          cells: { num_a: new Cell({ expr: targetExpr }), cat: null, date: null },
-        });
-        return m;
-      };
+      const mErr = new Model({ name: "IserrorTypeCheck" });
+      const tErr = mErr.addSheet("Main").addTable("T", "Type Check");
+      tErr.addColumn("c1", { role: "measure", header: "Val" });
+      tErr.addRow("target", { expr: 'ISERROR("5" + 1)' });
+      expect(() => mErr.compile()).toThrow(F8Error);
 
-      for (const badF8 of [
-        "ABS(> 5)",
-        "SUM(BLANK)",
-        'COUNTIFS(@table["r1".."r2", "cat"], > "Alpha")',
-        'COUNTIFS(@table["r1".."r2", "cat"], > 10)',
-        'COUNTIFS(@table["r1".."r2", "cat"], "")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "A*")',
-        'COUNTIFS(@table["r1".."r2", "cat"], ">15")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "42")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "TRUE")',
-        'COUNTIFS(@table["r1".."r2", "cat"], "#N/A")',
-        'COUNTIFS(@table["r1".."r2", "num_a"], <= (1 / 0))',
-        'SUMIFS(@table["r1".."r2", "num_a"], @table["r1".."r2", "date"], <= @table["helpers", "date"])',
-        'ISERROR("5" + 1)',
-      ]) {
-        let caught: unknown;
-        try {
-          buildBase(badF8).compile();
-        } catch (err: unknown) {
-          caught = err;
-        }
-        expect(caught).toBeInstanceOf(F8Error);
-      }
-
-      const okModel = new Model({ name: "ClusterCOk" });
-      const okTbl = okModel.addSheet("Main").addTable("T", "Cluster C Parity");
-      for (const colId of ["num_a", "cat", "date", "sparse", "empty_str", "one_third", "res"]) {
+      const okModel = new Model({ name: "ErrorIntrospectionOk" });
+      const okTbl = okModel.addSheet("Main").addTable("T", "Error Introspection");
+      for (const colId of ["cat", "res"]) {
         okTbl.addColumn(colId, { role: "measure", header: colId });
       }
 
-      okTbl.addRow("r1", {
-        cells: {
-          num_a: 10,
-          cat: "Alpha",
-          date: 45292,
-          sparse: null,
-          empty_str: "",
-          one_third: new Cell({ expr: "1 / 3" }),
-          res: 0,
-        },
-      });
-      okTbl.addRow("r2", {
-        cells: {
-          num_a: 20,
-          cat: "Beta",
-          date: 45474,
-          sparse: 0,
-          empty_str: "Alpha",
-          one_third: 0.5,
-          res: 0,
-        },
-      });
-      okTbl.addRow("r3", {
-        cells: {
-          num_a: 30,
-          cat: "Alpha",
-          date: 45658,
-          sparse: 20,
-          empty_str: null,
-          one_third: 0.5,
-          res: 0,
-        },
-      });
-      okTbl.addRow("r4", {
-        cells: {
-          num_a: 40,
-          cat: "May",
-          date: 46023,
-          sparse: null,
-          empty_str: null,
-          one_third: 0.5,
-          res: 0,
-        },
-      });
+      okTbl.addRow("r1", { cells: { cat: "Alpha", res: 0 } });
+      okTbl.addRow("r2", { cells: { cat: "Beta", res: 0 } });
+      okTbl.addRow("r3", { cells: { cat: "Alpha", res: 0 } });
+      okTbl.addRow("r4", { cells: { cat: "May", res: 0 } });
 
       const addRes = (rowId: string, formula: string): void => {
         okTbl.addRow(rowId, {
           cells: {
-            num_a: null,
             cat: null,
-            date: null,
-            sparse: null,
-            empty_str: null,
-            one_third: null,
             res: new Cell({ expr: formula }),
           },
         });
       };
 
-      addRes(
-        "sumifs_gt",
-        'SUMIFS(@table["r1".."r4", "num_a"], @table["r1".."r4", "cat"], "Alpha", @table["r1".."r4", "num_a"], > 15)',
-      );
-      addRes("cnt_dyn_date", 'COUNTIFS(@table["r1".."r4", "date"], <= @table["r3", "date"])');
-      addRes("cnt_exact_third", 'COUNTIFS(@table["r1".."r4", "one_third"], 1 / 3)');
-      addRes("cnt_cmp_third", 'COUNTIFS(@table["r1".."r4", "one_third"], <= (1 / 3))');
-      addRes("cnt_blank", 'COUNTIFS(@table["r1".."r4", "empty_str"], BLANK)');
-      addRes("cnt_not_blank", 'COUNTIFS(@table["r1".."r4", "empty_str"], NOT_BLANK)');
-      addRes("cnt_sparse_neq", 'COUNTIFS(@table["r1".."r4", "sparse"], <> 20)');
-      addRes(
-        "sum_iferror_guard",
-        'SUMIFS(@table["r1".."r4", "num_a"], @table["r1".."r4", "num_a"], >= IFERROR(1 / 0, 15))',
-      );
-      addRes(
-        "cnt_isna_guard",
-        'IF(ISNA(XLOOKUP("Missing", @table["r1".."r4", "cat"], @table["r1".."r4", "date"])), 0, COUNTIFS(@table["r1".."r4", "date"], <= XLOOKUP("Missing", @table["r1".."r4", "cat"], @table["r1".."r4", "date"])))',
-      );
       addRes("iserror_div0", "ISERROR(1 / 0)");
       addRes("isna_div0", "ISNA(1 / 0)");
       addRes("isna_na", 'ISNA(XMATCH("Missing", @table["r1".."r4", "cat"]))');
       addRes("errtype_div0", "ERROR.TYPE(1 / 0)");
       addRes("errtype_na", 'ERROR.TYPE(XMATCH("Missing", @table["r1".."r4", "cat"]))');
       addRes("errtype_non_err", "ERROR.TYPE(42)");
-      addRes("cnt_utf8_euro", 'COUNTIFS(@table["r1".."r4", "cat"], "€")');
-      addRes("cnt_utf8_colon", 'COUNTIFS(@table["r1".."r4", "cat"], <> "Note: café")');
-      addRes("cnt_pct_label", 'COUNTIFS(@table["r1".."r4", "cat"], "10%")');
-      addRes("cnt_date_label", 'COUNTIFS(@table["r1".."r4", "cat"], "2024-01-01")');
 
       const compiled = okModel.compile();
-      expect(compiled.num("T", "sumifs_gt", "res")).toBe(30);
-      expect(compiled.num("T", "cnt_dyn_date", "res")).toBe(3);
-      expect(compiled.num("T", "cnt_exact_third", "res")).toBe(1);
-      expect(compiled.num("T", "cnt_cmp_third", "res")).toBe(0);
-      expect(compiled.num("T", "cnt_blank", "res")).toBe(2);
-      expect(compiled.num("T", "cnt_not_blank", "res")).toBe(2);
-      expect(compiled.num("T", "cnt_sparse_neq", "res")).toBe(3);
-      expect(compiled.num("T", "sum_iferror_guard", "res")).toBe(90);
-      expect(compiled.num("T", "cnt_isna_guard", "res")).toBe(0);
       expect(compiled.value("T", "iserror_div0", "res")).toBe(true);
       expect(compiled.value("T", "isna_div0", "res")).toBe(false);
       expect(compiled.value("T", "isna_na", "res")).toBe(true);
       expect(compiled.num("T", "errtype_div0", "res")).toBe(2);
       expect(compiled.num("T", "errtype_na", "res")).toBe(7);
       expect(compiled.value("T", "errtype_non_err", "res")).toBe("#N/A");
-      expect(compiled.num("T", "cnt_utf8_euro", "res")).toBe(0);
-      expect(compiled.num("T", "cnt_utf8_colon", "res")).toBe(4);
-      expect(compiled.inspectCell("T", "sumifs_gt", "res").excelFormula).toContain('">15"');
       expect(compiled.inspectCell("T", "errtype_div0", "res").excelFormula).toContain(
         "ERROR.TYPE(",
       );
