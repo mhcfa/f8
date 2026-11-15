@@ -16,8 +16,8 @@ description: >-
   3. Draft specs (`docs/specs/drafts/`): Intended delta for active work, not current behavior. A spec that conflicts with code is expected; a spec that conflicts with reference architecture invariants must be escalated to the user.
 - Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
 - Spec custody: Only the Lead Orchestrator authors, amends, and deletes draft specs. Subagents never edit, move, or delete spec files.
-- Spec lifecycle: Must delete finished draft specs from `docs/specs/drafts/` before commit; no completed or stale specs remain in the repository.
-- Commit custody: Leave changes uncommitted. Subagents and Lead Orchestrator do not commit; all changes remain uncommitted for user review.
+- Spec lifecycle: Keep the draft spec in `docs/specs/drafts/` through post-implementation review; delete finished specs when preparing a commit (`AGENTS.md`), so no specs enter git history.
+- Commit custody: Subagents never commit; Lead Orchestrator leaves changes uncommitted for user review until the user requests a commit.
 
 ## Tri-Agent Workflow
 
@@ -29,7 +29,7 @@ description: >-
 ### 2. Specify (Lead Orchestrator)
 
 - Create `docs/specs/drafts/YYYY-MM-DD-<feature-name>.md` using the template below.
-- Define data structures, signatures, invariants, and `Given / When / Then` acceptance criteria (1:1 testable) without repeating file lists across sections.
+- Define data structures, signatures, invariants, and 1:1 testable `Given / When / Then` acceptance criteria without repeating file lists across sections; structure tasks as vertical slices rather than deferring tests to a trailing task.
 - Cite workspace files and source paths via backtick code spans.
 - Get user approval of the spec before step 3.
 
@@ -37,9 +37,10 @@ description: >-
 
 - Dispatch a fresh-context subagent in the same workspace instructing it to:
   - Implement the target draft spec under `AGENTS.md`. No scope beyond the spec; never edit or delete the spec.
+  - Translate executable `Acceptance Criteria` scenarios into targeted failing tests before implementing production logic (`AGENTS.md` test-driven execution), defining `Data Contracts` types or signatures first when needed to compile or typecheck.
   - On spec gaps, contradictions, or infeasibility: stop and report to the Lead Orchestrator instead of improvising. Lead amends the spec (re-aligning with the user if scope or design changes) and re-dispatches.
   - Pass the `AGENTS.md` verification suite.
-  - Leave changes uncommitted, remove scratch files, and return a concise summary of changed files and verification results.
+  - Leave changes uncommitted, remove scratch files, and return a concise summary of changed files, test-first failure-to-pass confirmation, and verification results.
 
 ### 4. Review (Reviewer Subagent)
 
@@ -53,8 +54,7 @@ description: >-
 ### 5. Fold durable docs (Lead Orchestrator)
 
 - Reconcile lasting architectural, schema, DSL, or API changes into `docs/architecture.md` and packaged skills/templates (start from the Reviewer's docs-impact flags).
-- Delete the finished draft spec from `docs/specs/drafts/` before commit; no completed or stale specs remain in the repository.
-- Leave changes uncommitted for user review.
+- Leave changes and the draft spec in `docs/specs/drafts/` uncommitted for user review; delete the draft spec only when preparing a commit.
 
 ## Draft Spec Template
 
@@ -88,6 +88,6 @@ Compact type signatures or schema definitions for new/modified AST/IR nodes, sch
 
 ## Tasks
 
-1. <Task title>: <Implementation details and affected file paths>.
+1. <Vertical slice title>: <Covering tests, implementation details, and affected file paths>.
 2. Verification gate: Run verification suite from `AGENTS.md`.
 ```

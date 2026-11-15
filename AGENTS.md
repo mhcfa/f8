@@ -3,7 +3,7 @@
 ## Architecture & workspace
 
 - `docs/architecture.md` & `README.md`: Repository architecture, module boundaries, domain invariants, packaged skills, and CLI/API entrypoints. Read `docs/architecture.md` before planning or modifying code.
-- `docs/specs/drafts/`: Ephemeral task specs for active work (deleted before commit).
+- `docs/specs/drafts/`: Ephemeral task specs for active work (deleted on commit).
 - `.agents/skills/`: Bundled agent skills and optional `.agents/skills/review-implementation/references/repo-checks.md` for repository-specific review checks.
 
 ## Rule vocabulary
@@ -13,9 +13,10 @@
 
 ## Workflow
 
-- Spec-driven: Invoke `spec-driven-development` skill when a change alters a contract (schemas, IR/DSL semantics, pass or module boundaries, public CLI/SDK/API surface) or needs more than one independently verifiable increment.
-- Direct execution: Everything else (localized bug fixes, ergonomic tweaks, doc/skill updates, test additions). No draft spec or subagent dispatch. Escalate to spec-driven if a direct fix turns out to change a contract.
+- Spec-driven: Invoke `spec-driven-development` skill when a change alters or introduces a contract (schemas, AST/IR/DSL semantics, pass or module boundaries, public CLI/SDK/API surface), carries open architectural trade-offs, or needs more than one independently verifiable increment.
+- Direct execution: Single-increment work within existing contracts and boundaries (bug fixes, edge cases, validation, self-contained features, solver/pass refinements, optimizations, refactors, doc/skill updates). No draft spec or subagent dispatch. Escalate to spec-driven if work reveals a contract or boundary change.
 - Design alignment: Surface architectural ambiguities, cross-boundary impacts, and trade-offs before coding.
+- Test-driven execution: Default to test-first for executable behavior changes and bug fixes. Write or update targeted tests first and run them to confirm failure for the expected reason before changing production logic (define minimal new types or signatures first when needed to compile or typecheck); implement at the origin until targeted tests pass, refactor, then run the full verification suite. Exempt doc/skill updates, pure refactors under existing coverage, and non-behavioral config or styling edits. Why: witnessing failure first proves falsifiability and confirms bug hypotheses before code biases assertions.
 
 ## Hard rules
 
@@ -28,7 +29,7 @@
 - Never use wildcard arms (`_ =>`) when matching AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges. Why: adding a variant must fail compilation at every match site.
 - Never use mutable default arguments or hidden global mutable state.
 - Never manually edit generated files (e.g., `routeTree.gen.ts`); regenerate via workspace scripts.
-- Must delete finished draft specs from `docs/specs/drafts/` before commit.
+- Must keep active draft specs in `docs/specs/drafts/` during post-implementation review and delete finished specs when preparing a commit.
 - Must pass the applicable verification suite (below) before reporting work complete.
 
 ## Core principles
