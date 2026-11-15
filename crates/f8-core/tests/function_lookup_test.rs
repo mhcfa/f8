@@ -51,7 +51,7 @@ impl EvalContext for MockContext {
 }
 
 fn make_array(rows: usize, cols: usize, values: Vec<CellValue>) -> FunctionArg<'static> {
-    FunctionArg::array(rows, cols, values, ReferenceKind::Slice)
+    FunctionArg::range(rows, cols, values, ReferenceKind::Slice)
 }
 
 fn eval_str(
@@ -1434,7 +1434,7 @@ fn test_excel_parity_edge_cases() {
         })
     );
 
-    let single_cell_div0 = FunctionArg::array(
+    let single_cell_div0 = FunctionArg::range(
         1,
         1,
         vec![CellValue::Error(ExcelError::Div0)],

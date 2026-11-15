@@ -134,7 +134,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
 
     // SingleCell reference rejects Empty strictly
     let single_cell_empty = vec![
-        FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+        FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
         FunctionArg::Scalar(CellValue::Boolean(true)),
     ];
     assert_eq!(
@@ -149,7 +149,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
     );
 
     // Syntactic Slice ignores Empty cells when Boolean cells are present
-    let args_sparse_slice = vec![FunctionArg::array(
+    let args_sparse_slice = vec![FunctionArg::range(
         2,
         1,
         vec![CellValue::Empty, CellValue::Boolean(true)],
@@ -165,7 +165,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
     );
 
     // Syntactic Slice with all Empty cells returns #VALUE!
-    let args_all_empty_slice = vec![FunctionArg::array(
+    let args_all_empty_slice = vec![FunctionArg::range(
         2,
         1,
         vec![CellValue::Empty, CellValue::Empty],
@@ -185,7 +185,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
         (CellValue::Text("some_text".into()), ValueType::Text),
         (CellValue::Number(2.5), ValueType::Number),
     ] {
-        let bad_slice = vec![FunctionArg::array(
+        let bad_slice = vec![FunctionArg::range(
             2,
             1,
             vec![CellValue::Boolean(true), bad_elem],
@@ -204,7 +204,7 @@ fn test_scenario_2_and_or_range_and_scalar_semantics() {
     }
 
     // Error in valid boolean slice bubbles immediately
-    let args_err_range = vec![FunctionArg::array(
+    let args_err_range = vec![FunctionArg::range(
         2,
         1,
         vec![CellValue::Boolean(true), CellValue::Error(ExcelError::Div0)],
@@ -746,7 +746,7 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
     let primary_expr = Expr::number(1.0);
 
     let mock_ctx = MockContext::new();
-    let array_arg = FunctionArg::array(1, 1, vec![CellValue::Number(1.0)], ReferenceKind::Slice);
+    let array_arg = FunctionArg::range(1, 1, vec![CellValue::Number(1.0)], ReferenceKind::Slice);
 
     let err_kind_iferror = iferror_func
         .evaluate(

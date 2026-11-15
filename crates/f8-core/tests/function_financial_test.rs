@@ -103,7 +103,7 @@ fn test_scenario_2_npv_periodic_discounting() {
     // Clean numeric Measure slice succeeds
     let range_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.10)),
-        FunctionArg::array(
+        FunctionArg::range(
             4,
             1,
             vec![
@@ -125,7 +125,7 @@ fn test_scenario_2_npv_periodic_discounting() {
     // Empty cash-flow hole, Text, or Boolean in range or scalar fails strictly with InvalidArgumentType
     for (bad_arg, found_type) in [
         (
-            FunctionArg::array(
+            FunctionArg::range(
                 4,
                 1,
                 vec![
@@ -139,7 +139,7 @@ fn test_scenario_2_npv_periodic_discounting() {
             ValueType::Empty,
         ),
         (
-            FunctionArg::array(
+            FunctionArg::range(
                 2,
                 1,
                 vec![CellValue::Number(-1000.0), CellValue::Text("bad".into())],
@@ -148,7 +148,7 @@ fn test_scenario_2_npv_periodic_discounting() {
             ValueType::Text,
         ),
         (
-            FunctionArg::array(
+            FunctionArg::range(
                 2,
                 1,
                 vec![CellValue::Number(-1000.0), CellValue::Boolean(true)],
@@ -239,7 +239,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
 
     let args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
-        FunctionArg::array(
+        FunctionArg::range(
             4,
             1,
             vec![
@@ -250,7 +250,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
             ],
             ReferenceKind::Slice,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             4,
             1,
             vec![
@@ -340,13 +340,13 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         xnpv_func.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(0.09)),
-                FunctionArg::array(
+                FunctionArg::range(
                     2,
                     1,
                     vec![CellValue::Number(-1000.0), CellValue::Empty],
                     ReferenceKind::Slice,
                 ),
-                FunctionArg::array(
+                FunctionArg::range(
                     2,
                     1,
                     vec![CellValue::Number(d0), CellValue::Number(d1)],
@@ -367,13 +367,13 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         xnpv_func.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Number(0.09)),
-                FunctionArg::array(
+                FunctionArg::range(
                     2,
                     1,
                     vec![CellValue::Number(d0), CellValue::Number(d1)],
                     ReferenceKind::Slice,
                 ),
-                FunctionArg::array(
+                FunctionArg::range(
                     2,
                     1,
                     vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
@@ -393,13 +393,13 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
     // Out-of-order date (di < d0) returns #NUM!
     let out_of_order_args = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(-1000.0), CellValue::Number(1000.0)],
             ReferenceKind::Slice,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(d1), CellValue::Number(d0)],
@@ -415,7 +415,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
     let trunc_dates = vec![
         FunctionArg::Scalar(CellValue::Number(0.09)),
         args[1].clone(),
-        FunctionArg::array(
+        FunctionArg::range(
             4,
             1,
             vec![
@@ -443,7 +443,7 @@ fn test_scenario_4_irr_periodic_solver() {
 
     // Standard cash flows: [-10000, 3000, 4200, 6800]
     // Target rate is approximately 16.34% (0.1634)
-    let args = vec![FunctionArg::array(
+    let args = vec![FunctionArg::range(
         4,
         1,
         vec![
@@ -470,7 +470,7 @@ fn test_scenario_4_irr_periodic_solver() {
     // Empty cash-flow hole in IRR fails strictly with InvalidArgumentType instead of shifting timing
     assert_eq!(
         irr_func.evaluate(
-            &[FunctionArg::array(
+            &[FunctionArg::range(
                 4,
                 1,
                 vec![
@@ -493,7 +493,7 @@ fn test_scenario_4_irr_periodic_solver() {
     );
 
     // All positive cash flows -> #NUM!
-    let all_pos = vec![FunctionArg::array(
+    let all_pos = vec![FunctionArg::range(
         3,
         1,
         vec![
@@ -509,7 +509,7 @@ fn test_scenario_4_irr_periodic_solver() {
     );
 
     // All negative cash flows -> #NUM!
-    let all_neg = vec![FunctionArg::array(
+    let all_neg = vec![FunctionArg::range(
         3,
         1,
         vec![
@@ -525,7 +525,7 @@ fn test_scenario_4_irr_periodic_solver() {
     );
 
     // Fewer than 2 cash flows -> #NUM!
-    let too_few = vec![FunctionArg::array(
+    let too_few = vec![FunctionArg::range(
         1,
         1,
         vec![CellValue::Number(-1000.0)],
@@ -562,7 +562,7 @@ fn test_scenario_4_irr_periodic_solver() {
     // 30-year monthly mortgage ([-100_000] + [600; 360]) converges from default guess = 0.10
     let mut mortgage_cfs = vec![CellValue::Number(-100_000.0)];
     mortgage_cfs.extend(std::iter::repeat_n(CellValue::Number(600.0), 360));
-    let mortgage_args = vec![FunctionArg::array(
+    let mortgage_args = vec![FunctionArg::range(
         361,
         1,
         mortgage_cfs,
@@ -580,7 +580,7 @@ fn test_scenario_4_irr_periodic_solver() {
 
     // Leading-zero cash flows with extreme guess = 1e160 find true root 0.10 rather than overflow 0.0
     let lead_zero_args = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             4,
             1,
             vec![
@@ -600,7 +600,7 @@ fn test_scenario_4_irr_periodic_solver() {
     }
 
     // Multi-root cash flows [-1600, 10000, -10000] select root nearest guess (0.25 vs 4.0)
-    let multi_root_slice = FunctionArg::array(
+    let multi_root_slice = FunctionArg::range(
         3,
         1,
         vec![
@@ -646,7 +646,7 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(-100.0),
         ],
     ] {
-        let rootless_args = vec![FunctionArg::array(3, 1, rootless, ReferenceKind::Slice)];
+        let rootless_args = vec![FunctionArg::range(3, 1, rootless, ReferenceKind::Slice)];
         assert_eq!(
             irr_func.evaluate(&rootless_args, &ctx).unwrap(),
             CellValue::Error(ExcelError::Num)
@@ -654,7 +654,7 @@ fn test_scenario_4_irr_periodic_solver() {
     }
 
     // Severe-loss salvage schedule [-1_000_000, 1] converges to -0.999999
-    let salvage_slice = FunctionArg::array(
+    let salvage_slice = FunctionArg::range(
         2,
         1,
         vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],
@@ -681,13 +681,13 @@ fn test_scenario_5_xirr_non_periodic_solver() {
 
     // Exactly 1 year apart: [-1000, 1100] gives exactly 10%
     let args = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
             ReferenceKind::Slice,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(45292.0), CellValue::Number(45657.0)],
@@ -706,7 +706,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         xirr_func.evaluate(
             &[
                 args[0].clone(),
-                FunctionArg::array(
+                FunctionArg::range(
                     2,
                     1,
                     vec![CellValue::Number(45292.0), CellValue::Empty],
@@ -727,7 +727,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         xirr_func.evaluate(
             &[
                 args[0].clone(),
-                FunctionArg::array(
+                FunctionArg::range(
                     2,
                     1,
                     vec![CellValue::Number(0.0), CellValue::Number(45657.0)],
@@ -758,8 +758,8 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         CellValue::Number(9000.0),
     ];
     let multi_args = vec![
-        FunctionArg::array(4, 1, values, ReferenceKind::Slice),
-        FunctionArg::array(4, 1, dates, ReferenceKind::Slice),
+        FunctionArg::range(4, 1, values, ReferenceKind::Slice),
+        FunctionArg::range(4, 1, dates, ReferenceKind::Slice),
     ];
     let multi_res = xirr_func.evaluate(&multi_args, &ctx).unwrap();
     if let CellValue::Number(rate) = multi_res {
@@ -776,7 +776,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         CellValue::Number(46022.4),
     ];
     let trunc_args = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             4,
             1,
             vec![
@@ -787,7 +787,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             ],
             ReferenceKind::Slice,
         ),
-        FunctionArg::array(4, 1, trunc_dates, ReferenceKind::Slice),
+        FunctionArg::range(4, 1, trunc_dates, ReferenceKind::Slice),
     ];
     let trunc_res = xirr_func.evaluate(&trunc_args, &ctx).unwrap();
     if let CellValue::Number(rate) = trunc_res {
@@ -818,7 +818,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
 
     // Runtime ExcelError in `guess` bubbles before sign-alternation `#NUM!`
     let xirr_guess_err_args = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(100.0), CellValue::Number(200.0)],
@@ -834,7 +834,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
 
     // Leading-zero XIRR cash flows with extreme guess = 1e160 converge to true root 0.10
     let xirr_lead_zero = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             3,
             1,
             vec![
@@ -844,7 +844,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             ],
             ReferenceKind::Slice,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             3,
             1,
             vec![
@@ -864,13 +864,13 @@ fn test_scenario_5_xirr_non_periodic_solver() {
 
     // Rootless and same-day cancelling XIRR schedules return #NUM!
     let xirr_same_day_cancel = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(-100.0), CellValue::Number(100.0)],
             ReferenceKind::Slice,
         ),
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(45292.0), CellValue::Number(45292.0)],
@@ -884,7 +884,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
 
     // Severe-loss salvage XIRR and same-day huge-notional cancellation preserve precision
     let xirr_salvage = vec![
-        FunctionArg::array(
+        FunctionArg::range(
             2,
             1,
             vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],

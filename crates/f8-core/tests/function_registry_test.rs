@@ -57,12 +57,14 @@ impl EvalContext for MockEvalContext {
         }
     }
 
-    fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
-        self.evaluated_exprs.borrow_mut().push(expr.to_string());
+    fn eval_range(&self, table_ref: &TableRef) -> Result<RangeGrid, FunctionError> {
+        self.evaluated_exprs
+            .borrow_mut()
+            .push(table_ref.to_string());
         if let Some((rows, cols, values)) = self.range_data.borrow().clone() {
             Ok(RangeGrid { rows, cols, values })
         } else {
-            let val = self.eval_expr(expr)?;
+            let val = self.eval_expr(&Expr::Reference(table_ref.clone()))?;
             Ok(RangeGrid {
                 rows: 1,
                 cols: 1,
@@ -457,7 +459,7 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     assert_eq!(sum.parameters()[0].empty_policy, EmptyPolicy::AllowInSlice);
 
     // Sparse numeric range slice containing numbers and Empty cells succeeds
-    let range_arg = FunctionArg::array(
+    let range_arg = FunctionArg::range(
         2,
         2,
         vec![
@@ -475,7 +477,7 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     assert_eq!(res, CellValue::Number(100.0));
 
     // Range reference with an error bubbles up immediately
-    let err_range_arg = FunctionArg::array(
+    let err_range_arg = FunctionArg::range(
         1,
         2,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
@@ -508,7 +510,7 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
     // Text or Boolean inside Slice, and Empty/Text/Boolean on Scalar or SingleCell fail strictly
     for (bad_arg, found_type) in [
         (
-            FunctionArg::array(
+            FunctionArg::range(
                 1,
                 2,
                 vec![CellValue::Number(10.0), CellValue::Text("N/A text".into())],
@@ -517,7 +519,7 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
             ValueType::Text,
         ),
         (
-            FunctionArg::array(
+            FunctionArg::range(
                 1,
                 2,
                 vec![CellValue::Number(10.0), CellValue::Boolean(true)],
@@ -526,7 +528,7 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
             ValueType::Boolean,
         ),
         (
-            FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+            FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
             ValueType::Empty,
         ),
         (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
@@ -732,7 +734,7 @@ fn test_bind_arguments_integration() {
     assert_eq!(bound_sum.len(), 2);
     assert_eq!(
         bound_sum[0],
-        FunctionArg::array(
+        FunctionArg::range(
             3,
             1,
             vec![
@@ -1346,7 +1348,7 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         );
     }
 
-    // Valid 1x1 single-cell and 1x1 slice in Range/RangeOrArray and 2-arg horizontal INDEX succeed
+    // Valid 1x1 single-cell and 1x1 slice in Range/ScalarOrRange and 2-arg horizontal INDEX succeed
     for valid_shape_case in [
         "COUNT(T[\"r1\", @col])",
         "SUM(T[\"r1\"..\"r1\", @col])",
@@ -2097,4 +2099,127 @@ fn test_error_introspection_metadata_and_validation() {
 
     let valid_err_type = Expr::parse("ERROR.TYPE(1 / 0)").unwrap();
     assert!(registry.validate_expr(&valid_err_type).is_ok());
+}
+
+#[test]
+fn test_scalar_measure_only_role_policy_and_iferror_param_kind() {
+    use f8_core::functions::ExcelFunction;
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct ScalarMeasureFn;
+
+    static SCALAR_MEASURE_PARAMS: &[ParameterDef] = &[ParameterDef::required(
+        "metric",
+        "A measure-only scalar parameter.",
+        ParamKind::Scalar,
+        ParamType::Number,
+    )
+    .measure_only()];
+
+    impl ExcelFunction for ScalarMeasureFn {
+        fn name(&self) -> &'static str {
+            "SCALAR_MEASURE"
+        }
+        fn category(&self) -> FunctionCategory {
+            FunctionCategory::Math
+        }
+        fn parameters(&self) -> &'static [ParameterDef] {
+            SCALAR_MEASURE_PARAMS
+        }
+        fn return_type(&self) -> Option<ValueType> {
+            Some(ValueType::Number)
+        }
+        fn evaluate(
+            &self,
+            args: &[FunctionArg<'_>],
+            _ctx: &dyn EvalContext,
+        ) -> Result<CellValue, FunctionError> {
+            match &args[0] {
+                FunctionArg::Scalar(val) => Ok(val.clone()),
+                FunctionArg::Range { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+                    unreachable!()
+                }
+            }
+        }
+    }
+
+    let mut registry = FunctionRegistry::standard();
+    registry.register(Arc::new(ScalarMeasureFn));
+
+    // 1. Single-cell Descriptor reference on ParamKind::Scalar with .measure_only() fails with DescriptorReferenceNotAllowed
+    let single_ref_expr = Expr::parse("SCALAR_MEASURE(T[\"r1\", \"desc\"])").unwrap();
+    let res_desc = registry.validate_expr_with_shapes(&single_ref_expr, |_| {
+        Ok::<_, std::convert::Infallible>(Some(StaticRef {
+            rows: 1,
+            cols: 1,
+            axis_role: AxisRole::Descriptor,
+            elem_types: vec![Some(ValueType::Number)],
+        }))
+    });
+    assert_eq!(
+        res_desc,
+        Err(StageAError::Function(
+            FunctionError::DescriptorReferenceNotAllowed {
+                function: "SCALAR_MEASURE",
+                param: "metric",
+                position: 1,
+            }
+        ))
+    );
+
+    // 2. Slice reference on ParamKind::Scalar with .measure_only() still fails with SliceInScalarContext first
+    let slice_ref_expr = Expr::parse("SCALAR_MEASURE(T[\"r1\"..\"r2\", \"desc\"])").unwrap();
+    let res_slice = registry.validate_expr_with_shapes(&slice_ref_expr, |_| {
+        Ok::<_, std::convert::Infallible>(Some(StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Descriptor,
+            elem_types: vec![Some(ValueType::Number), Some(ValueType::Number)],
+        }))
+    });
+    assert_eq!(
+        res_slice,
+        Err(StageAError::Function(FunctionError::SliceInScalarContext {
+            rows: 2,
+            cols: 1,
+        }))
+    );
+
+    // 3. Measure single-cell reference passes and resolves only once
+    let mut resolve_calls = 0usize;
+    let res_measure = registry.validate_expr_with_shapes(&single_ref_expr, |_| {
+        resolve_calls += 1;
+        Ok::<_, std::convert::Infallible>(Some(StaticRef {
+            rows: 1,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number)],
+        }))
+    });
+    assert_eq!(res_measure, Ok(()));
+    assert_eq!(resolve_calls, 1);
+
+    // 4. IFERROR and IFNA declare arg 0 (`value`) as ParamKind::Scalar and arg 1 (`value_if_error`/`value_if_na`) as ParamKind::Lazy
+    for name in ["IFERROR", "IFNA"] {
+        let func = registry.lookup(name).unwrap();
+        assert_eq!(func.parameters()[0].kind, ParamKind::Scalar);
+        assert_eq!(func.parameters()[1].kind, ParamKind::Lazy);
+
+        let ctx = MockEvalContext::default();
+        let fallback_expr = Expr::number(99.0);
+        let call_args = [
+            CallArg::from(Expr::number(10.0)),
+            CallArg::from(fallback_expr.clone()),
+        ];
+        let bound = registry.bind_arguments(func, &call_args, &ctx).unwrap();
+        assert_eq!(
+            bound,
+            vec![
+                FunctionArg::Scalar(CellValue::Number(10.0)),
+                FunctionArg::Lazy(&fallback_expr),
+            ]
+        );
+        assert_eq!(ctx.recorded(), vec!["10"]);
+    }
 }
