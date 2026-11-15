@@ -2,7 +2,8 @@ use std::fmt;
 
 use crate::expr::ast::{
     BinaryOp, BlankCheck, CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal,
-    RelativeOffset, RowEndpoint, RowSelector, TableRef, TableSelector, UnaryOp,
+    RelativeOffset, RowEndpoint, RowSelector, TableRef, TableSelector, UnaryOp, fmt_number_literal,
+    fmt_quoted_f8_str, format_number_literal,
 };
 use crate::expr::error::ParseError;
 use crate::model::id::{ColId, RowId};
@@ -138,8 +139,8 @@ impl<'a> Token<'a> {
 impl<'a> fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Number(n) => write!(f, "{n}"),
-            Self::String(s) => write!(f, "\"{s}\""),
+            Self::Number(n) => fmt_number_literal(*n, f),
+            Self::String(s) => fmt_quoted_f8_str(s, f),
             Self::Boolean(true) => write!(f, "TRUE"),
             Self::Boolean(false) => write!(f, "FALSE"),
             Self::Ident(id) => write!(f, "{id}"),
@@ -536,55 +537,130 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
             _ => {}
         }
 
-        // Digits (numeric literals or alphanumeric coordinate tokens like 2024E)
+        // Digits (finite numeric literals, scientific notation, or alphanumeric coordinate tokens like 2024E)
         if first_char.is_ascii_digit() {
+            let int_digits = cursor.bytes().take_while(u8::is_ascii_digit).count();
+            let after_int = &cursor[int_digits..];
+            let has_dot = after_int.starts_with('.') && !after_int.starts_with("..");
+
+            if has_dot {
+                let frac_digits = after_int[1..]
+                    .bytes()
+                    .take_while(u8::is_ascii_digit)
+                    .count();
+                if frac_digits == 0 {
+                    let trail = after_int[1..]
+                        .bytes()
+                        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                        .count();
+                    let bad_len = int_digits + 1 + trail;
+                    return Err(ParseError::InvalidNumber {
+                        raw: cursor[..bad_len].to_string(),
+                        offset,
+                    });
+                }
+
+                let mut pos = int_digits + 1 + frac_digits;
+                if matches!(cursor.as_bytes().get(pos), Some(b'e' | b'E')) {
+                    pos += 1;
+                    if matches!(cursor.as_bytes().get(pos), Some(b'+' | b'-')) {
+                        pos += 1;
+                    }
+                    let exp_digits = cursor[pos..].bytes().take_while(u8::is_ascii_digit).count();
+                    pos += exp_digits;
+                    let trail = cursor[pos..]
+                        .bytes()
+                        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                        .count();
+                    if exp_digits == 0 || trail > 0 {
+                        return Err(ParseError::InvalidNumber {
+                            raw: cursor[..pos + trail].to_string(),
+                            offset,
+                        });
+                    }
+                } else {
+                    let trail = cursor[pos..]
+                        .bytes()
+                        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                        .count();
+                    if trail > 0 {
+                        return Err(ParseError::InvalidNumber {
+                            raw: cursor[..pos + trail].to_string(),
+                            offset,
+                        });
+                    }
+                }
+
+                let num_str = &cursor[..pos];
+                let val = parse_finite_number_literal(num_str, offset)?;
+                cursor = &cursor[pos..];
+                tokens.push(SpannedToken {
+                    token: Token::Number(val),
+                    offset,
+                    len: pos,
+                });
+                continue;
+            }
+
+            // Signed scientific prefix `[0-9]+[eE][+-]...`
+            if matches!(after_int.as_bytes().first(), Some(b'e' | b'E'))
+                && matches!(after_int.as_bytes().get(1), Some(b'+' | b'-'))
+            {
+                let exp_start = int_digits + 2;
+                let exp_digits = cursor[exp_start..]
+                    .bytes()
+                    .take_while(u8::is_ascii_digit)
+                    .count();
+                let end = exp_start + exp_digits;
+                let trail = cursor[end..]
+                    .bytes()
+                    .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                    .count();
+                if exp_digits == 0 || trail > 0 {
+                    return Err(ParseError::InvalidNumber {
+                        raw: cursor[..end + trail].to_string(),
+                        offset,
+                    });
+                }
+                let num_str = &cursor[..end];
+                let val = parse_finite_number_literal(num_str, offset)?;
+                cursor = &cursor[end..];
+                tokens.push(SpannedToken {
+                    token: Token::Number(val),
+                    offset,
+                    len: end,
+                });
+                continue;
+            }
+
+            // Unsigned digit-leading word: pure integer, `[0-9]+[eE][0-9]+`, or `Token::Ident`
             let word_len = cursor
                 .bytes()
                 .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
                 .count();
             let word = &cursor[..word_len];
+            let is_unsigned_sci = word_len > int_digits + 1
+                && matches!(word.as_bytes().get(int_digits), Some(b'e' | b'E'))
+                && word[int_digits + 1..].bytes().all(|b| b.is_ascii_digit());
 
-            // Check if token contains letters or underscores (e.g. 2024E)
-            let has_letters = word.bytes().any(|b| b.is_ascii_alphabetic() || b == b'_');
-            if has_letters {
+            if word_len == int_digits || is_unsigned_sci {
+                let val = parse_finite_number_literal(word, offset)?;
                 cursor = &cursor[word_len..];
                 tokens.push(SpannedToken {
-                    token: Token::Ident(word),
+                    token: Token::Number(val),
                     offset,
                     len: word_len,
                 });
                 continue;
             }
 
-            // Word is purely digits. Check for decimal point:
-            let mut num_len = word_len;
-            let after_digits = &cursor[word_len..];
-            if after_digits.starts_with('.') && !after_digits.starts_with("..") {
-                let frac = &after_digits[1..];
-                let frac_digits = frac.bytes().take_while(|b| b.is_ascii_digit()).count();
-                if frac_digits > 0 {
-                    num_len += 1 + frac_digits;
-                }
-            }
-
-            let num_str = &cursor[..num_len];
-            match num_str.parse::<f64>() {
-                Ok(val) => {
-                    cursor = &cursor[num_len..];
-                    tokens.push(SpannedToken {
-                        token: Token::Number(val),
-                        offset,
-                        len: num_len,
-                    });
-                    continue;
-                }
-                Err(_) => {
-                    return Err(ParseError::InvalidNumber {
-                        raw: num_str.to_string(),
-                        offset,
-                    });
-                }
-            }
+            cursor = &cursor[word_len..];
+            tokens.push(SpannedToken {
+                token: Token::Ident(word),
+                offset,
+                len: word_len,
+            });
+            continue;
         }
 
         // Identifier, boolean literal, or underscore
@@ -630,6 +706,16 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
     }
 
     Ok(tokens)
+}
+
+fn parse_finite_number_literal(raw: &str, offset: usize) -> Result<f64, ParseError> {
+    match raw.parse::<f64>() {
+        Ok(val) if val.is_finite() => Ok(if val == 0.0 { 0.0 } else { val }),
+        Ok(_) | Err(_) => Err(ParseError::InvalidNumber {
+            raw: raw.to_string(),
+            offset,
+        }),
+    }
 }
 
 /// Parses a raw formula expression string into an [`Expr`] AST.
@@ -1087,7 +1173,7 @@ fn parse_row_endpoint(stream: &mut TokenStream<'_>) -> Result<RowEndpoint, Parse
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
         Token::Number(num) => {
-            let found = num.to_string();
+            let found = format_number_literal(*num);
             stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
@@ -1162,7 +1248,7 @@ fn parse_col_endpoint(stream: &mut TokenStream<'_>) -> Result<ColEndpoint, Parse
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
         Token::Number(num) => {
-            let found = num.to_string();
+            let found = format_number_literal(*num);
             stream.advance();
             Err(ParseError::UnquotedCoordinateKey { found, offset })
         }
@@ -1796,5 +1882,336 @@ mod tests {
         assert_eq!(tokens[5].token, Token::RBracket);
         assert_eq!(tokens[6].token, Token::Plus);
         assert_eq!(tokens[7].token, Token::Number(42.0));
+    }
+
+    #[test]
+    fn test_quoted_string_and_coordinate_key_display_escaping_roundtrip() {
+        let samples = [
+            "Domestic \"Main\"",
+            "a\\b",
+            "C:\\path\\",
+            "\\\"",
+            "\\\"mix\\\"\\",
+            "line1\nline2",
+            "España 東京 € 😀 \"quoted\" \\slash\\",
+        ];
+
+        // Empty string round-trip for Literal::String and Token::String
+        let empty_lit = Expr::Literal(Literal::String(String::new()));
+        assert_eq!(empty_lit.to_string(), "\"\"");
+        assert_eq!(parse_expr_str(&empty_lit.to_string()).unwrap(), empty_lit);
+        let empty_tok = Token::String(String::new()).to_string();
+        assert_eq!(empty_tok, "\"\"");
+        assert_eq!(
+            tokenize(&empty_tok).unwrap()[0].token,
+            Token::String(String::new())
+        );
+
+        // Direct escaping check on C:\path\ and \"
+        assert_eq!(
+            Literal::String("C:\\path\\".into()).to_string(),
+            "\"C:\\\\path\\\\\""
+        );
+        assert_eq!(Literal::String("\\\"".into()).to_string(), "\"\\\\\\\"\"");
+
+        for sample in samples {
+            // 1. Token::String
+            let tok_rendered = Token::String(sample.to_string()).to_string();
+            let lexed = tokenize(&tok_rendered).unwrap_or_else(|e| {
+                panic!("Token::String Display failed to re-tokenize for {sample:?}: {tok_rendered} ({e})")
+            });
+            assert_eq!(lexed.len(), 1);
+            assert_eq!(lexed[0].token, Token::String(sample.to_string()));
+
+            // 2. Literal::String
+            let lit_expr = Expr::Literal(Literal::String(sample.to_string()));
+            let lit_rendered = lit_expr.to_string();
+            assert_eq!(lit_rendered, tok_rendered);
+            assert_eq!(parse_expr_str(&lit_rendered).unwrap(), lit_expr);
+
+            // 3. RowSelector::Key & 4. ColSelector::Key
+            let key_ref = Expr::Reference(TableRef::new(
+                "T",
+                RowSelector::Key(RowId::new(sample)),
+                ColSelector::Key(ColId::new(sample)),
+            ));
+            assert_eq!(
+                RowSelector::Key(RowId::new(sample)).to_string(),
+                tok_rendered
+            );
+            assert_eq!(
+                ColSelector::Key(ColId::new(sample)).to_string(),
+                tok_rendered
+            );
+            assert_eq!(parse_expr_str(&key_ref.to_string()).unwrap(), key_ref);
+
+            // 5. RowEndpoint::Key & 6. ColEndpoint::Key
+            let range_ref = Expr::FunctionCall {
+                name: "SUM".into(),
+                args: vec![CallArg::Expr(Expr::Reference(TableRef::new(
+                    "T",
+                    RowSelector::Range(RowEndpoint::Key(RowId::new(sample)), RowEndpoint::Active),
+                    ColSelector::Range(ColEndpoint::Active, ColEndpoint::Key(ColId::new(sample))),
+                )))],
+            };
+            assert_eq!(
+                RowEndpoint::Key(RowId::new(sample)).to_string(),
+                tok_rendered
+            );
+            assert_eq!(
+                ColEndpoint::Key(ColId::new(sample)).to_string(),
+                tok_rendered
+            );
+            assert_eq!(parse_expr_str(&range_ref.to_string()).unwrap(), range_ref);
+        }
+    }
+
+    #[test]
+    fn test_programmatic_negative_literal_binary_operand_parenthesization() {
+        let neg_pow = Expr::Binary {
+            op: BinaryOp::Pow,
+            left: Box::new(Expr::number(-2.0)),
+            right: Box::new(Expr::number(2.0)),
+        };
+        assert_eq!(neg_pow.to_string(), "(-2) ^ 2");
+        assert_eq!(
+            parse_expr_str(&neg_pow.to_string()).unwrap(),
+            parse_expr_str("(-2) ^ 2").unwrap()
+        );
+
+        let sub_neg = Expr::Binary {
+            op: BinaryOp::Sub,
+            left: Box::new(Expr::number(1.0)),
+            right: Box::new(Expr::number(-2.0)),
+        };
+        assert_eq!(sub_neg.to_string(), "1 - (-2)");
+        assert_eq!(
+            parse_expr_str(&sub_neg.to_string()).unwrap(),
+            parse_expr_str("1 - (-2)").unwrap()
+        );
+
+        let add_neg_left = Expr::Binary {
+            op: BinaryOp::Add,
+            left: Box::new(Expr::number(-2.0)),
+            right: Box::new(Expr::number(1.0)),
+        };
+        assert_eq!(add_neg_left.to_string(), "-2 + 1");
+        assert_eq!(
+            parse_expr_str(&add_neg_left.to_string()).unwrap(),
+            parse_expr_str("-2 + 1").unwrap()
+        );
+
+        let pow_neg_right = Expr::Binary {
+            op: BinaryOp::Pow,
+            left: Box::new(Expr::number(2.0)),
+            right: Box::new(Expr::number(-2.0)),
+        };
+        assert_eq!(pow_neg_right.to_string(), "2 ^ (-2)");
+
+        // Programmatic -0.0 normalizes to "0" without wrapping in parentheses
+        assert_eq!(Expr::number(-0.0).to_string(), "0");
+        assert_eq!(Token::Number(-0.0).to_string(), "0");
+        assert_eq!(
+            Expr::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(Expr::number(1.0)),
+                right: Box::new(Expr::number(-0.0)),
+            }
+            .to_string(),
+            "1 + 0"
+        );
+        assert_eq!(
+            Expr::Binary {
+                op: BinaryOp::Pow,
+                left: Box::new(Expr::number(-0.0)),
+                right: Box::new(Expr::number(2.0)),
+            }
+            .to_string(),
+            "0 ^ 2"
+        );
+        assert_eq!(
+            Expr::Binary {
+                op: BinaryOp::Sub,
+                left: Box::new(Expr::number(1.0)),
+                right: Box::new(Expr::number(-0.0)),
+            }
+            .to_string(),
+            "1 - 0"
+        );
+    }
+
+    #[test]
+    fn test_scientific_notation_lexing_and_coordinate_key_boundaries() {
+        let pos_cases = [
+            ("1e9", 1e9_f64),
+            ("1E9", 1e9_f64),
+            ("1e-9", 1e-9_f64),
+            ("1E+9", 1e9_f64),
+            ("1.5e-9", 1.5e-9_f64),
+            ("0.25E+4", 2500.0_f64),
+            ("0e-5", 0.0_f64),
+        ];
+
+        for (raw, expected) in pos_cases {
+            let parsed = parse_expr_str(raw).unwrap_or_else(|e| panic!("failed on '{raw}': {e}"));
+            let Expr::Literal(Literal::Number(actual)) = parsed else {
+                panic!("expected Literal::Number for '{raw}', got {parsed:?}");
+            };
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "bit mismatch on '{raw}': expected {expected:?}, got {actual:?}"
+            );
+        }
+
+        let neg_sci = parse_expr_str("-1.25e-6").unwrap();
+        assert_eq!(
+            neg_sci,
+            Expr::Unary {
+                op: UnaryOp::Neg,
+                expr: Box::new(Expr::number(1.25e-6)),
+            }
+        );
+
+        let sub_sci = parse_expr_str("1e-9-2e-9").unwrap();
+        assert_eq!(
+            sub_sci,
+            Expr::Binary {
+                op: BinaryOp::Sub,
+                left: Box::new(Expr::number(1e-9)),
+                right: Box::new(Expr::number(2e-9)),
+            }
+        );
+
+        // Unquoted alphanumeric coordinate keys remain Token::Ident and yield UnquotedCoordinateKey
+        for key in ["2024E", "2024E1Q", "2023A"] {
+            let toks = tokenize(key).unwrap();
+            assert_eq!(toks.len(), 1);
+            assert_eq!(toks[0].token, Token::Ident(key));
+
+            let col_formula = format!("IncomeStatement[\"revenue\", {key}]");
+            let expected_col_offset = col_formula.find(key).unwrap();
+            assert_eq!(
+                parse_expr_str(&col_formula).unwrap_err(),
+                ParseError::UnquotedCoordinateKey {
+                    found: key.to_string(),
+                    offset: expected_col_offset,
+                }
+            );
+
+            let row_formula = format!("IncomeStatement[{key}, @col]");
+            let expected_row_offset = row_formula.find(key).unwrap();
+            assert_eq!(
+                parse_expr_str(&row_formula).unwrap_err(),
+                ParseError::UnquotedCoordinateKey {
+                    found: key.to_string(),
+                    offset: expected_row_offset,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn test_overflow_and_malformed_numeric_literals_rejected() {
+        let huge_int = "9".repeat(310);
+        let bad_literals = [
+            "1e500",
+            "1.8e308",
+            huge_int.as_str(),
+            "1.5e",
+            "1.5e-",
+            "1.5e+",
+            "1.5e9a",
+            "1.5abc",
+            "1e+",
+            "1e-",
+            "1e+9a",
+            "1e-abc",
+            "1.",
+            "1.e5",
+        ];
+
+        for bad in bad_literals {
+            assert_eq!(
+                parse_expr_str(bad).unwrap_err(),
+                ParseError::InvalidNumber {
+                    raw: bad.to_string(),
+                    offset: 0,
+                },
+                "expected InvalidNumber at offset 0 for '{bad}'"
+            );
+
+            let prefixed = format!("10 + {bad}");
+            assert_eq!(
+                parse_expr_str(&prefixed).unwrap_err(),
+                ParseError::InvalidNumber {
+                    raw: bad.to_string(),
+                    offset: 5,
+                },
+                "expected InvalidNumber at offset 5 for '{prefixed}'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_number_literal_display_decimal_window_and_lossless_roundtrip() {
+        let decimal_cases = [
+            (0.0_f64, "0"),
+            (-0.0_f64, "0"),
+            (1e-6_f64, "0.000001"),
+            (-1e-6_f64, "-0.000001"),
+            (42.5_f64, "42.5"),
+            (999_999_999_999_999.0_f64, "999999999999999"),
+            (0.333_333_333_333_333_37_f64, "0.33333333333333337"),
+        ];
+
+        let sci_cases = [
+            (1e-9_f64, "1E-9"),
+            (9.999_999_999_999_997e-7_f64, "9.999999999999997E-7"),
+            (1e15_f64, "1E15"),
+            (1e16_f64, "1E16"),
+            (1e300_f64, "1E300"),
+            (1e-300_f64, "1E-300"),
+            (f64::MAX, "1.7976931348623157E308"),
+            (-f64::MAX, "-1.7976931348623157E308"),
+            (f64::MIN_POSITIVE, "2.2250738585072014E-308"),
+            (5e-324_f64, "5E-324"),
+        ];
+
+        for (val, expected_str) in decimal_cases.into_iter().chain(sci_cases) {
+            let expr_str = Expr::number(val).to_string();
+            let tok_str = Token::Number(val).to_string();
+            assert_eq!(expr_str, expected_str, "Expr::Display mismatch for {val:?}");
+            assert_eq!(tok_str, expected_str, "Token::Display mismatch for {val:?}");
+
+            let reparsed = parse_expr_str(&expr_str)
+                .unwrap_or_else(|e| panic!("failed to re-parse '{expr_str}' for {val:?}: {e}"));
+            let expected_bits = if val == 0.0 {
+                0.0_f64.to_bits()
+            } else {
+                val.to_bits()
+            };
+            let actual_bits = if let Expr::Literal(Literal::Number(n)) = &reparsed {
+                n.to_bits()
+            } else if let Expr::Unary {
+                op: UnaryOp::Neg,
+                expr,
+            } = &reparsed
+                && let Expr::Literal(Literal::Number(n)) = expr.as_ref()
+            {
+                (-n).to_bits()
+            } else {
+                panic!("unexpected reparsed expr {reparsed:?}");
+            };
+            assert_eq!(
+                actual_bits, expected_bits,
+                "bit-level roundtrip mismatch for {val:?} via '{expr_str}'"
+            );
+        }
+
+        // Programmatic non-finite fallback in Display
+        assert_eq!(Expr::number(f64::NAN).to_string(), "NaN");
+        assert_eq!(Expr::number(f64::INFINITY).to_string(), "inf");
+        assert_eq!(Expr::number(f64::NEG_INFINITY).to_string(), "-inf");
     }
 }
