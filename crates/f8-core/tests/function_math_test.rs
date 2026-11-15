@@ -25,8 +25,20 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 48);
-    assert!(registry.lookup("SWITCH").is_none());
+    assert_eq!(registry.len(), 43);
+    for retired in [
+        "SWITCH",
+        "SUMIFS",
+        "COUNTIFS",
+        "AVERAGEIFS",
+        "MINIFS",
+        "MAXIFS",
+    ] {
+        assert!(
+            registry.lookup(retired).is_none(),
+            "{retired} must be absent"
+        );
+    }
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),
@@ -41,11 +53,6 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("ROUNDUP", FunctionCategory::Math),
         ("ROUNDDOWN", FunctionCategory::Math),
         ("SUMPRODUCT", FunctionCategory::Math),
-        ("SUMIFS", FunctionCategory::Math),
-        ("COUNTIFS", FunctionCategory::Math),
-        ("AVERAGEIFS", FunctionCategory::Math),
-        ("MINIFS", FunctionCategory::Math),
-        ("MAXIFS", FunctionCategory::Math),
         ("IF", FunctionCategory::Logical),
         ("IFS", FunctionCategory::Logical),
         ("IFERROR", FunctionCategory::Logical),
@@ -98,7 +105,6 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
             CellValue::Number(30.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
 
     let res = avg.evaluate(&[range_arg], &ctx).unwrap();
@@ -110,7 +116,6 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
         1,
         vec![CellValue::Empty, CellValue::Empty],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = avg.evaluate(&[empty_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Div0));
@@ -121,7 +126,6 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
         1,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = avg.evaluate(&[err_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
@@ -138,13 +142,7 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
         ),
         (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
         (
-            FunctionArg::array(
-                1,
-                1,
-                vec![CellValue::Empty],
-                ReferenceKind::SingleCell,
-                AxisRole::Measure,
-            ),
+            FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
             ValueType::Empty,
         ),
         (
@@ -153,7 +151,6 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
                 1,
                 vec![CellValue::Number(10.0), CellValue::Text("bad".into())],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             ),
             ValueType::Text,
         ),
@@ -190,7 +187,6 @@ fn test_scenario_3_count_vs_counta_semantics() {
             CellValue::Number(20.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         count_func
@@ -214,7 +210,6 @@ fn test_scenario_3_count_vs_counta_semantics() {
                 1,
                 vec![CellValue::Number(10.0), CellValue::Text("text".into())],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             )],
             &ctx,
         ),
@@ -233,7 +228,6 @@ fn test_scenario_3_count_vs_counta_semantics() {
                 1,
                 vec![CellValue::Empty],
                 ReferenceKind::SingleCell,
-                AxisRole::Measure,
             )],
             &ctx,
         ),
@@ -280,7 +274,6 @@ fn test_scenario_3_count_vs_counta_semantics() {
             CellValue::Error(ExcelError::Div0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Descriptor,
     );
     assert_eq!(
         counta_func
@@ -296,14 +289,12 @@ fn test_scenario_3_count_vs_counta_semantics() {
             1,
             vec![CellValue::Number(10.0)],
             ReferenceKind::SingleCell,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             1,
             1,
             vec![CellValue::Error(ExcelError::Div0)],
             ReferenceKind::SingleCell,
-            AxisRole::Measure,
         ),
     ];
     assert_eq!(
@@ -317,28 +308,19 @@ fn test_scenario_3_count_vs_counta_semantics() {
             1,
             vec![CellValue::Number(10.0)],
             ReferenceKind::SingleCell,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             1,
             1,
             vec![CellValue::Text("hello".into())],
             ReferenceKind::SingleCell,
-            AxisRole::Descriptor,
         ),
-        FunctionArg::array(
-            1,
-            1,
-            vec![CellValue::Empty],
-            ReferenceKind::SingleCell,
-            AxisRole::Measure,
-        ),
+        FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
         FunctionArg::array(
             1,
             1,
             vec![CellValue::Error(ExcelError::Div0)],
             ReferenceKind::SingleCell,
-            AxisRole::Measure,
         ),
     ];
     assert_eq!(
@@ -383,7 +365,6 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
             CellValue::Number(42.5),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         max_func
@@ -408,7 +389,6 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
             CellValue::Number(-5.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         max_func
@@ -429,7 +409,6 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
         1,
         vec![CellValue::Empty, CellValue::Empty],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         max_func
@@ -450,7 +429,6 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
         1,
         vec![CellValue::Text("text".into())],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         min_func.evaluate(std::slice::from_ref(&text_range), &ctx),
@@ -462,13 +440,7 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
             found: ValueType::Text,
         }))
     );
-    let single_empty = FunctionArg::array(
-        1,
-        1,
-        vec![CellValue::Empty],
-        ReferenceKind::SingleCell,
-        AxisRole::Measure,
-    );
+    let single_empty = FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell);
     assert_eq!(
         max_func.evaluate(&[single_empty], &ctx),
         Err(FunctionError::Type(TypeError::InvalidArgumentType {
@@ -678,7 +650,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
             CellValue::Number(3.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let r2 = FunctionArg::array(
         3,
@@ -689,7 +660,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
             CellValue::Number(6.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
 
     // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32.0
@@ -707,7 +677,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
             CellValue::Empty,
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let r_weights = FunctionArg::array(
         4,
@@ -719,7 +688,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
             CellValue::Number(5.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         sumproduct.evaluate(&[r_sparse, r_weights], &ctx).unwrap(),
@@ -736,7 +704,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
             1,
             vec![CellValue::Number(1.0), bad_cell, CellValue::Number(3.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         );
         let r_other = FunctionArg::array(
             3,
@@ -747,7 +714,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
                 CellValue::Number(6.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         );
         assert_eq!(
             sumproduct.evaluate(&[r_bad, r_other], &ctx),
@@ -803,14 +769,12 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         1,
         vec![CellValue::Number(1.0), CellValue::Error(ExcelError::Div0)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let r_valid = FunctionArg::array(
         2,
         1,
         vec![CellValue::Number(1.0), CellValue::Number(2.0)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res_err = sumproduct.evaluate(&[r_err, r_valid], &ctx).unwrap();
     assert_eq!(res_err, CellValue::Error(ExcelError::Div0));
@@ -832,7 +796,6 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
             CellValue::Number(20.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = median.evaluate(&[odd_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(20.0));
@@ -848,7 +811,6 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
             CellValue::Number(30.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = median.evaluate(&[even_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(25.0));
@@ -865,7 +827,6 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
             CellValue::Number(200.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = median.evaluate(&[sparse_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Number(200.0));
@@ -876,7 +837,6 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
         1,
         vec![CellValue::Empty, CellValue::Empty],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = median.evaluate(&[empty_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Num));
@@ -905,7 +865,6 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
                 1,
                 vec![CellValue::Empty],
                 ReferenceKind::SingleCell,
-                AxisRole::Measure,
             )],
             1,
             ValueType::Empty,
@@ -929,7 +888,6 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
         1,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = median.evaluate(&[error_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
@@ -959,7 +917,6 @@ fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
         1,
         vec![CellValue::Number(1e308), CellValue::Number(1e308)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     assert_eq!(
         sum.evaluate(std::slice::from_ref(&extreme_slice), &ctx)
@@ -991,13 +948,7 @@ fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
         CellValue::Number(1e308)
     );
 
-    let r_1e200 = FunctionArg::array(
-        1,
-        1,
-        vec![CellValue::Number(1e200)],
-        ReferenceKind::Slice,
-        AxisRole::Measure,
-    );
+    let r_1e200 = FunctionArg::array(1, 1, vec![CellValue::Number(1e200)], ReferenceKind::Slice);
     assert_eq!(
         sumproduct
             .evaluate(&[r_1e200.clone(), r_1e200], &ctx)

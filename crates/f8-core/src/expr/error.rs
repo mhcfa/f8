@@ -80,13 +80,4 @@ pub enum ParseError {
         /// Byte offset in the formula string.
         offset: usize,
     },
-
-    /// Redundant leading '=' in a function argument.
-    #[error(
-        "Redundant leading '=' at offset {offset}: omit '=' and pass a bare expression for exact equality"
-    )]
-    RedundantCriteriaEquals {
-        /// Byte offset in the formula string.
-        offset: usize,
-    },
 }

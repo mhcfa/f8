@@ -74,7 +74,7 @@ impl NumericCollector {
                         }
                     }
                 }
-                FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
+                FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
             }
         }
         Ok(())
@@ -258,7 +258,7 @@ impl LogicalCollector {
                         }
                     }
                 }
-                FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
+                FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
             }
         }
 
@@ -296,7 +296,7 @@ pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
                     count += 1;
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
     }
 
@@ -322,7 +322,7 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
                     count += 1;
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
     }
 
@@ -336,10 +336,9 @@ pub fn scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
             Ok(res) => res,
             Err(_) => Err(ExcelError::Value),
         },
-        FunctionArg::Array { .. }
-        | FunctionArg::Lazy(_)
-        | FunctionArg::Criterion(_)
-        | FunctionArg::Omitted => Err(ExcelError::Value),
+        FunctionArg::Array { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+            Err(ExcelError::Value)
+        }
     }
 }
 
@@ -362,10 +361,9 @@ pub fn scalar_integer(arg: &FunctionArg<'_>) -> Result<i64, ExcelError> {
             Ok(res) => res,
             Err(_) => Err(ExcelError::Value),
         },
-        FunctionArg::Array { .. }
-        | FunctionArg::Lazy(_)
-        | FunctionArg::Criterion(_)
-        | FunctionArg::Omitted => Err(ExcelError::Value),
+        FunctionArg::Array { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+            Err(ExcelError::Value)
+        }
     }
 }
 
@@ -388,9 +386,8 @@ pub fn scalar_bool(arg: &FunctionArg<'_>) -> Result<bool, ExcelError> {
             Ok(res) => res,
             Err(_) => Err(ExcelError::Value),
         },
-        FunctionArg::Array { .. }
-        | FunctionArg::Lazy(_)
-        | FunctionArg::Criterion(_)
-        | FunctionArg::Omitted => Err(ExcelError::Value),
+        FunctionArg::Array { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
+            Err(ExcelError::Value)
+        }
     }
 }

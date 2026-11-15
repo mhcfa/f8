@@ -216,7 +216,7 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 48 Standard Functions + Edge & Error Cases)
+    // 5. Excel Parity Verification Suite (All 43 Standard Functions + Edge & Error Cases)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
@@ -353,7 +353,6 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
 
     let migrated_compile_errors = [
         "ABS(\"invalid\")",
-        "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r2\", \"category\"], \"Alpha\")",
         "DAYS(\"invalid\", DATE(2024, 1, 1))",
         "CHOOSE(5, 100, 200, 300)",
         "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], 5)",
@@ -400,17 +399,6 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         "YEAR(0)",
         "YEAR(SeedData[\"r2\", \"sparse\"])",
         "IF(FALSE, YEAR(0), 2024)",
-        // Cluster C migrated parity cases & typed conditional aggregation criteria checks
-        "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"A*\", SeedData[\"r1\"..\"r4\", \"num_a\"], \">15\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], \"\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], \"NAN\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"special_text\"], 42)",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"special_text\"], \">0\")",
-        "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"num_a\"], \"> 15 \")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], > \"Alpha\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], > 10)",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], <= (1 / 0))",
-        "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"date\"], <= XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"date\"]))",
         "ISERROR(\"5\" + 1)",
     ];
 
@@ -430,24 +418,18 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         );
     }
 
-    for valid_formula in [
-        "IF(FALSE, YEAR(SeedData[\"r2\", \"sparse\"]), 2024)",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"10%\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"1,000\")",
-        "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"2024-01-01\")",
-    ] {
-        let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
-        if let RowSpec::Data(abs_row) = &mut tables[1].rows[0] {
-            abs_row.cells.insert(
-                ColId::from("formula_val"),
-                CellInput::formula(valid_formula),
-            );
-        }
-        assert!(
-            Compiler::compile(&manifest, &tables).is_ok(),
-            "expected formula '{valid_formula}' to compile cleanly"
+    let valid_formula = "IF(FALSE, YEAR(SeedData[\"r2\", \"sparse\"]), 2024)";
+    let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
+    if let RowSpec::Data(abs_row) = &mut tables[1].rows[0] {
+        abs_row.cells.insert(
+            ColId::from("formula_val"),
+            CellInput::formula(valid_formula),
         );
     }
+    assert!(
+        Compiler::compile(&manifest, &tables).is_ok(),
+        "expected formula '{valid_formula}' to compile cleanly"
+    );
 }
 
 #[test]
@@ -626,7 +608,7 @@ fn test_export_xlsx_to_disk() {
 
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 48 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 43 Functions)".to_string()),
         author: Some("f8 Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,

@@ -19,10 +19,8 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::LayoutMap;
 use crate::expr::ast::{
-    BinaryOp, BinarySide, BlankCheck, CallArg, CriteriaComparator, Expr, Literal, TableRef,
-    UnaryOp, format_number_literal,
+    BinaryOp, BinarySide, CallArg, Expr, Literal, TableRef, UnaryOp, format_number_literal,
 };
-use crate::value::{format_criteria_number, normalize_zero};
 
 /// Deterministic map of lowered Excel formula strings indexed by [`CellId`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -269,11 +267,6 @@ fn lower_expr_inner(
             for arg in args {
                 let lowered = match arg {
                     CallArg::Omitted => String::new(),
-                    CallArg::BlankCheck(BlankCheck::Blank) => "\"=\"".to_string(),
-                    CallArg::BlankCheck(BlankCheck::NotBlank) => "\"<>\"".to_string(),
-                    CallArg::Comparator { op, expr: arg_expr } => {
-                        lower_comparator_arg(*op, arg_expr, origin, symbol_table, layout_map)?
-                    }
                     CallArg::Expr(arg_expr) => {
                         lower_expr_inner(arg_expr, origin, symbol_table, layout_map)?
                     }
@@ -285,64 +278,6 @@ fn lower_expr_inner(
                 name.to_uppercase(),
                 arg_strings.join(",")
             ))
-        }
-    }
-}
-
-fn lower_comparator_arg(
-    op: CriteriaComparator,
-    expr: &Expr,
-    origin: &CellId,
-    symbol_table: &SymbolTable,
-    layout_map: &LayoutMap,
-) -> Result<String, LoweringError> {
-    match expr {
-        Expr::Literal(Literal::Number(n)) => {
-            if !n.is_finite() {
-                return Err(LoweringError::SyntaxError {
-                    message: format!("invalid numeric literal '{n}' in formula"),
-                });
-            }
-            let formatted = format_criteria_number(*n);
-            Ok(format!("\"{}{formatted}\"", op.as_str()))
-        }
-        Expr::Literal(Literal::Boolean(b)) => {
-            let b_str = if *b { "TRUE" } else { "FALSE" };
-            Ok(format!("\"{}{b_str}\"", op.as_str()))
-        }
-        Expr::Literal(Literal::String(s)) => {
-            let escaped = s.replace('"', "\"\"");
-            Ok(format!("\"{}{escaped}\"", op.as_str()))
-        }
-        Expr::Unary {
-            op: UnaryOp::Neg,
-            expr: inner,
-        } => match inner.as_ref() {
-            Expr::Literal(Literal::Number(n)) => {
-                if !n.is_finite() {
-                    return Err(LoweringError::SyntaxError {
-                        message: format!("invalid numeric literal '{n}' in formula"),
-                    });
-                }
-                let formatted = format_criteria_number(normalize_zero(-*n));
-                Ok(format!("\"{}{formatted}\"", op.as_str()))
-            }
-            Expr::Literal(Literal::Boolean(_) | Literal::String(_))
-            | Expr::Reference(_)
-            | Expr::Unary { .. }
-            | Expr::Binary { .. }
-            | Expr::FunctionCall { .. } => {
-                let rhs = lower_expr_inner(expr, origin, symbol_table, layout_map)?;
-                Ok(format!("\"{}\"&({rhs})", op.as_str()))
-            }
-        },
-        Expr::Binary { .. } => {
-            let rhs = lower_expr_inner(expr, origin, symbol_table, layout_map)?;
-            Ok(format!("\"{}\"&({rhs})", op.as_str()))
-        }
-        Expr::Reference(_) | Expr::FunctionCall { .. } => {
-            let rhs = lower_expr_inner(expr, origin, symbol_table, layout_map)?;
-            Ok(format!("\"{}\"&{rhs}", op.as_str()))
         }
     }
 }

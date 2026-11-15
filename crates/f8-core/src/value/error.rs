@@ -53,33 +53,6 @@ impl ExcelError {
     }
 }
 
-/// Error returned when parsing an unrecognized Excel error literal.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("unrecognized Excel error literal: {0}")]
-pub struct ParseExcelError(pub String);
-
-impl std::str::FromStr for ExcelError {
-    type Err = ParseExcelError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.eq_ignore_ascii_case("#div/0!") {
-            Ok(Self::Div0)
-        } else if s.eq_ignore_ascii_case("#value!") {
-            Ok(Self::Value)
-        } else if s.eq_ignore_ascii_case("#ref!") {
-            Ok(Self::Ref)
-        } else if s.eq_ignore_ascii_case("#num!") {
-            Ok(Self::Num)
-        } else if s.eq_ignore_ascii_case("#n/a") {
-            Ok(Self::Na)
-        } else if s.eq_ignore_ascii_case("#name?") {
-            Ok(Self::Name)
-        } else {
-            Err(ParseExcelError(s.to_string()))
-        }
-    }
-}
-
 /// Non-error runtime value categories for static and dynamic type diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ValueType {
@@ -241,36 +214,6 @@ pub enum TypeError {
     },
 }
 
-/// Validation failure reasons for `Text` criteria in conditional aggregation (`*IFS`) functions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum TextCriterionError {
-    /// Empty string `""` passed instead of `BLANK` or `NOT_BLANK`.
-    #[error("empty string criterion \"\" is ambiguous in Excel *IFS; use BLANK or NOT_BLANK")]
-    EmptyString,
-    /// Contains Excel wildcard or escape characters (`*`, `?`, `~`).
-    #[error("text criterion cannot contain Excel wildcard or escape characters ('*', '?', '~')")]
-    ContainsWildcardOrEscape,
-    /// Starts with a comparison operator character (`=`, `<`, `>`).
-    #[error(
-        "text criterion cannot start with comparison operator ('=', '<', '>'); use a typed comparator expression"
-    )]
-    LeadingOperatorPrefix,
-    /// Criterion exceeds Excel's 255-UTF-16-code-unit `*IFS` limit.
-    #[error("text criterion exceeds Excel's 255-character *IFS limit")]
-    TooLong,
-    /// Criterion trims/parses as a number in Excel `*IFS`.
-    #[error("text criterion parses as a number in Excel *IFS")]
-    CoercibleNumericString,
-    /// Criterion trims/parses as a boolean in Excel `*IFS`.
-    #[error("text criterion parses as a boolean in Excel *IFS and would fail to match text")]
-    CoercibleBooleanString,
-    /// Criterion trims/parses as an Excel error literal in `*IFS`.
-    #[error(
-        "text criterion parses as an Excel error literal in *IFS; use ISERROR, ISNA, or ERROR.TYPE for error checks"
-    )]
-    CoercibleErrorString,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,17 +226,6 @@ mod tests {
         assert_eq!(ExcelError::Num.to_string(), "#NUM!");
         assert_eq!(ExcelError::Na.to_string(), "#N/A");
         assert_eq!(ExcelError::Name.to_string(), "#NAME?");
-    }
-
-    #[test]
-    fn test_excel_error_from_str() {
-        assert_eq!("#div/0!".parse::<ExcelError>(), Ok(ExcelError::Div0));
-        assert_eq!("#VALUE!".parse::<ExcelError>(), Ok(ExcelError::Value));
-        assert_eq!("#ref!".parse::<ExcelError>(), Ok(ExcelError::Ref));
-        assert_eq!("#NUM!".parse::<ExcelError>(), Ok(ExcelError::Num));
-        assert_eq!("#N/A".parse::<ExcelError>(), Ok(ExcelError::Na));
-        assert_eq!("#NAME?".parse::<ExcelError>(), Ok(ExcelError::Name));
-        assert!("#UNKNOWN!".parse::<ExcelError>().is_err());
     }
 
     #[test]

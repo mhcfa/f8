@@ -1588,16 +1588,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
 }
 
 #[test]
-fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
-    use std::sync::Arc;
-
-    use f8_core::expr::ast::{BlankCheck, CriteriaComparator, RowEndpoint};
-    use f8_core::functions::{
-        EvalContext, ExcelFunction, FunctionArg, FunctionCategory, FunctionError, FunctionRegistry,
-        ParamKind, ParamType, ParameterDef,
-    };
-    use f8_core::value::{CellValue, ValueType};
-
+fn test_error_introspection_lowering() {
     let (manifest, tables) = create_comprehensive_model();
     let theme = Theme::corporate_navy();
     let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
@@ -1605,74 +1596,6 @@ fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
     let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
 
     let cases = [
-        (
-            "SUMIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], IncomeStatement[\"revenue\"..\"cogs\", @col], > 15)",
-            "=SUMIFS(C$6:C$7,C$6:C$7,\">15\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], > -10)",
-            "=COUNTIFS(C$6:C$7,\">-10\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <= 0.33333333333333337)",
-            "=COUNTIFS(C$6:C$7,\"<=0.333333333333333\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <= IncomeStatement[\"r_and_d\", @col])",
-            "=COUNTIFS(C$6:C$7,\"<=\"&C9)",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], > IncomeStatement[\"r_and_d\", @col] + 5)",
-            "=COUNTIFS(C$6:C$7,\">\"&(C9+5))",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <= (1 / 3))",
-            "=COUNTIFS(C$6:C$7,\"<=\"&(1/3))",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], > -IncomeStatement[\"r_and_d\", @col])",
-            "=COUNTIFS(C$6:C$7,\">\"&(-C9))",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], 10 > 5)",
-            "=COUNTIFS(C$6:C$7,10>5)",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <> TRUE)",
-            "=COUNTIFS(C$6:C$7,\"<>TRUE\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <> \"Alpha\")",
-            "=COUNTIFS(C$6:C$7,\"<>Alpha\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"€\")",
-            "=COUNTIFS(C$6:C$7,\"€\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"España\")",
-            "=COUNTIFS(C$6:C$7,\"España\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"東京\")",
-            "=COUNTIFS(C$6:C$7,\"東京\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"café!\")",
-            "=COUNTIFS(C$6:C$7,\"café!\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <> \"Note: café\")",
-            "=COUNTIFS(C$6:C$7,\"<>Note: café\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], BLANK)",
-            "=COUNTIFS(C$6:C$7,\"=\")",
-        ),
-        (
-            "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], NOT_BLANK)",
-            "=COUNTIFS(C$6:C$7,\"<>\")",
-        ),
         (
             "ISERROR(IncomeStatement[\"revenue\", @col] / 0)",
             "=ISERROR(C6/0)",
@@ -1690,140 +1613,6 @@ fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
             .unwrap_or_else(|e| panic!("lowering failed on '{formula}': {e}"));
         assert_eq!(lowered, expected_excel, "mismatch on '{formula}'");
     }
-
-    // Programmatic Literal::Number(1e-300) comparator formats with E notation ("<=1E-300")
-    let tiny_expr = Expr::FunctionCall {
-        name: "COUNTIFS".into(),
-        args: vec![
-            CallArg::Expr(Expr::Reference(TableRef::new(
-                TableSelector::from("IncomeStatement"),
-                RowSelector::Range(RowEndpoint::from("revenue"), RowEndpoint::from("cogs")),
-                ColSelector::Active,
-            ))),
-            CallArg::Comparator {
-                op: CriteriaComparator::Lte,
-                expr: Expr::Literal(Literal::Number(1e-300)),
-            },
-        ],
-    };
-    assert_eq!(
-        FormulaLowerer::lower_cell(&origin, &tiny_expr, &symbol_table, &layout_map).unwrap(),
-        "=COUNTIFS(C$6:C$7,\"<=1E-300\")"
-    );
-
-    // Programmatic +/-f64::MAX comparator caps at finite 15-sig-digit IEEE-754 decimal ("1.79769313486231E308")
-    for (op, val, expected_lit) in [
-        (
-            CriteriaComparator::Lte,
-            f64::MAX,
-            "=COUNTIFS(C$6:C$7,\"<=1.79769313486231E308\")",
-        ),
-        (
-            CriteriaComparator::Gte,
-            -f64::MAX,
-            "=COUNTIFS(C$6:C$7,\">=-1.79769313486231E308\")",
-        ),
-    ] {
-        let extreme_expr = Expr::FunctionCall {
-            name: "COUNTIFS".into(),
-            args: vec![
-                CallArg::Expr(Expr::Reference(TableRef::new(
-                    TableSelector::from("IncomeStatement"),
-                    RowSelector::Range(RowEndpoint::from("revenue"), RowEndpoint::from("cogs")),
-                    ColSelector::Active,
-                ))),
-                CallArg::Comparator {
-                    op,
-                    expr: Expr::Literal(Literal::Number(val)),
-                },
-            ],
-        };
-        assert_eq!(
-            FormulaLowerer::lower_cell(&origin, &extreme_expr, &symbol_table, &layout_map).unwrap(),
-            expected_lit
-        );
-    }
-
-    // Custom FunctionRegistry with ParamKind::Criteria works in catalog-agnostic FormulaLowerer and compile_with_registry
-    static CUSTOM_CRIT_PARAMS: [ParameterDef; 1] = [ParameterDef::required(
-        "crit",
-        "Custom criteria slot.",
-        ParamKind::Criteria,
-        ParamType::Any,
-    )];
-    #[derive(Debug)]
-    struct CustomCritFn;
-    impl ExcelFunction for CustomCritFn {
-        fn name(&self) -> &'static str {
-            "CUSTOM.CRIT"
-        }
-        fn category(&self) -> FunctionCategory {
-            FunctionCategory::Math
-        }
-        fn parameters(&self) -> &'static [ParameterDef] {
-            &CUSTOM_CRIT_PARAMS
-        }
-        fn return_type(&self) -> Option<ValueType> {
-            Some(ValueType::Number)
-        }
-        fn evaluate(
-            &self,
-            args: &[FunctionArg<'_>],
-            _ctx: &dyn EvalContext,
-        ) -> Result<CellValue, FunctionError> {
-            if matches!(args.first(), Some(FunctionArg::Criterion(_))) {
-                Ok(CellValue::Number(1.0))
-            } else {
-                Ok(CellValue::Number(0.0))
-            }
-        }
-    }
-
-    let mut custom_reg = FunctionRegistry::standard();
-    custom_reg.register(Arc::new(CustomCritFn));
-
-    let custom_expr = Expr::FunctionCall {
-        name: "CUSTOM.CRIT".into(),
-        args: vec![CallArg::BlankCheck(BlankCheck::NotBlank)],
-    };
-    assert_eq!(
-        FormulaLowerer::lower_cell(&origin, &custom_expr, &symbol_table, &layout_map).unwrap(),
-        "=CUSTOM.CRIT(\"<>\" )".replace(" ", "")
-    );
-
-    let custom_manifest = ProjectManifest {
-        model_name: "CustomCritModel".into(),
-        theme: Default::default(),
-        sheets: vec![SheetSpec {
-            name: "Sheet1".into(),
-            tab_color: None,
-            freeze_panes: None,
-            show_gridlines: true,
-            tables: vec![TableId::from("T")],
-        }],
-    };
-    let custom_table = TableSpec {
-        id: TableId::from("T"),
-        title: "Custom".into(),
-        subtitle: None,
-        currency: None,
-        collapsible: false,
-        placement: Default::default(),
-        columns: vec![ColumnSpec::new("c1").with_header("C1")],
-        rows: vec![RowSpec::new("r1").with_expr("CUSTOM.CRIT(> 5)")],
-    };
-    let compiled =
-        Compiler::compile_with_registry(&custom_manifest, &[custom_table], &custom_reg).unwrap();
-    assert_eq!(
-        compiled
-            .cell_value(&TableId::from("T"), &RowId::from("r1"), &ColId::from("c1"))
-            .unwrap(),
-        CellValue::Number(1.0)
-    );
-    assert_eq!(
-        compiled.lowered_map.get(&CellId::new("T", "r1", "c1")),
-        Some("=CUSTOM.CRIT(\">5\")")
-    );
 }
 
 #[test]
@@ -1976,16 +1765,5 @@ fn test_scientific_notation_and_neg_zero_lowering_and_roundtrip() {
         )
         .unwrap(),
         "=1E-9-2E-9"
-    );
-    assert_eq!(
-        FormulaLowerer::lower_cell(
-            &origin,
-            &Expr::parse("COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <= 1e-9)")
-                .unwrap(),
-            &symbol_table,
-            &layout_map
-        )
-        .unwrap(),
-        "=COUNTIFS(C$6:C$7,\"<=1E-9\")"
     );
 }
