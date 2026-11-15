@@ -37,7 +37,7 @@ impl EvalContext for MockContext {
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 48);
+    assert_eq!(registry.len(), 43);
 
     let financial_names = ["NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"];
     for name in financial_names {
@@ -113,7 +113,6 @@ fn test_scenario_2_npv_periodic_discounting() {
                 CellValue::Number(6800.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
     ];
     let range_res = npv_func.evaluate(&range_args, &ctx).unwrap();
@@ -136,7 +135,6 @@ fn test_scenario_2_npv_periodic_discounting() {
                     CellValue::Number(600.0),
                 ],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             ),
             ValueType::Empty,
         ),
@@ -146,7 +144,6 @@ fn test_scenario_2_npv_periodic_discounting() {
                 1,
                 vec![CellValue::Number(-1000.0), CellValue::Text("bad".into())],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             ),
             ValueType::Text,
         ),
@@ -156,7 +153,6 @@ fn test_scenario_2_npv_periodic_discounting() {
                 1,
                 vec![CellValue::Number(-1000.0), CellValue::Boolean(true)],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             ),
             ValueType::Boolean,
         ),
@@ -253,7 +249,6 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(5000.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             4,
@@ -265,7 +260,6 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(d3),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
     ];
     let res = xnpv_func.evaluate(&args, &ctx).unwrap();
@@ -351,14 +345,12 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                     1,
                     vec![CellValue::Number(-1000.0), CellValue::Empty],
                     ReferenceKind::Slice,
-                    AxisRole::Measure,
                 ),
                 FunctionArg::array(
                     2,
                     1,
                     vec![CellValue::Number(d0), CellValue::Number(d1)],
                     ReferenceKind::Slice,
-                    AxisRole::Measure,
                 ),
             ],
             &ctx,
@@ -380,14 +372,12 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                     1,
                     vec![CellValue::Number(d0), CellValue::Number(d1)],
                     ReferenceKind::Slice,
-                    AxisRole::Measure,
                 ),
                 FunctionArg::array(
                     2,
                     1,
                     vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
                     ReferenceKind::Slice,
-                    AxisRole::Measure,
                 ),
             ],
             &ctx,
@@ -408,14 +398,12 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
             1,
             vec![CellValue::Number(-1000.0), CellValue::Number(1000.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             2,
             1,
             vec![CellValue::Number(d1), CellValue::Number(d0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
     ];
     assert_eq!(
@@ -437,7 +425,6 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
                 CellValue::Number(d3 + 0.9),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
     ];
     let trunc_res = xnpv_func.evaluate(&trunc_dates, &ctx).unwrap();
@@ -466,7 +453,6 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(6800.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     )];
     let res = irr_func.evaluate(&args, &ctx).unwrap();
     if let CellValue::Number(rate) = res {
@@ -494,7 +480,6 @@ fn test_scenario_4_irr_periodic_solver() {
                     CellValue::Number(600.0),
                 ],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             )],
             &ctx,
         ),
@@ -517,7 +502,6 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(300.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     )];
     assert_eq!(
         irr_func.evaluate(&all_pos, &ctx).unwrap(),
@@ -534,7 +518,6 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(-300.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     )];
     assert_eq!(
         irr_func.evaluate(&all_neg, &ctx).unwrap(),
@@ -547,7 +530,6 @@ fn test_scenario_4_irr_periodic_solver() {
         1,
         vec![CellValue::Number(-1000.0)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     )];
     assert_eq!(
         irr_func.evaluate(&too_few, &ctx).unwrap(),
@@ -585,7 +567,6 @@ fn test_scenario_4_irr_periodic_solver() {
         1,
         mortgage_cfs,
         ReferenceKind::Slice,
-        AxisRole::Measure,
     )];
     let mortgage_res = irr_func.evaluate(&mortgage_args, &ctx).unwrap();
     if let CellValue::Number(rate) = mortgage_res {
@@ -609,7 +590,6 @@ fn test_scenario_4_irr_periodic_solver() {
                 CellValue::Number(110.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::Scalar(CellValue::Number(1e160)),
     ];
@@ -629,7 +609,6 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(-10_000.0),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     if let CellValue::Number(low_root) = irr_func
         .evaluate(std::slice::from_ref(&multi_root_slice), &ctx)
@@ -667,13 +646,7 @@ fn test_scenario_4_irr_periodic_solver() {
             CellValue::Number(-100.0),
         ],
     ] {
-        let rootless_args = vec![FunctionArg::array(
-            3,
-            1,
-            rootless,
-            ReferenceKind::Slice,
-            AxisRole::Measure,
-        )];
+        let rootless_args = vec![FunctionArg::array(3, 1, rootless, ReferenceKind::Slice)];
         assert_eq!(
             irr_func.evaluate(&rootless_args, &ctx).unwrap(),
             CellValue::Error(ExcelError::Num)
@@ -686,7 +659,6 @@ fn test_scenario_4_irr_periodic_solver() {
         1,
         vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     if let CellValue::Number(rate) = irr_func
         .evaluate(std::slice::from_ref(&salvage_slice), &ctx)
@@ -714,14 +686,12 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             1,
             vec![CellValue::Number(-1000.0), CellValue::Number(1100.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             2,
             1,
             vec![CellValue::Number(45292.0), CellValue::Number(45657.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
     ];
     let res = xirr_func.evaluate(&args, &ctx).unwrap();
@@ -741,7 +711,6 @@ fn test_scenario_5_xirr_non_periodic_solver() {
                     1,
                     vec![CellValue::Number(45292.0), CellValue::Empty],
                     ReferenceKind::Slice,
-                    AxisRole::Measure,
                 ),
             ],
             &ctx,
@@ -763,7 +732,6 @@ fn test_scenario_5_xirr_non_periodic_solver() {
                     1,
                     vec![CellValue::Number(0.0), CellValue::Number(45657.0)],
                     ReferenceKind::Slice,
-                    AxisRole::Measure,
                 ),
             ],
             &ctx,
@@ -790,8 +758,8 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         CellValue::Number(9000.0),
     ];
     let multi_args = vec![
-        FunctionArg::array(4, 1, values, ReferenceKind::Slice, AxisRole::Measure),
-        FunctionArg::array(4, 1, dates, ReferenceKind::Slice, AxisRole::Measure),
+        FunctionArg::array(4, 1, values, ReferenceKind::Slice),
+        FunctionArg::array(4, 1, dates, ReferenceKind::Slice),
     ];
     let multi_res = xirr_func.evaluate(&multi_args, &ctx).unwrap();
     if let CellValue::Number(rate) = multi_res {
@@ -818,9 +786,8 @@ fn test_scenario_5_xirr_non_periodic_solver() {
                 CellValue::Number(9000.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
-        FunctionArg::array(4, 1, trunc_dates, ReferenceKind::Slice, AxisRole::Measure),
+        FunctionArg::array(4, 1, trunc_dates, ReferenceKind::Slice),
     ];
     let trunc_res = xirr_func.evaluate(&trunc_args, &ctx).unwrap();
     if let CellValue::Number(rate) = trunc_res {
@@ -856,7 +823,6 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             1,
             vec![CellValue::Number(100.0), CellValue::Number(200.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         args[1].clone(),
         FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
@@ -877,7 +843,6 @@ fn test_scenario_5_xirr_non_periodic_solver() {
                 CellValue::Number(1100.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             3,
@@ -888,7 +853,6 @@ fn test_scenario_5_xirr_non_periodic_solver() {
                 CellValue::Number(46022.0),
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::Scalar(CellValue::Number(1e160)),
     ];
@@ -905,14 +869,12 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             1,
             vec![CellValue::Number(-100.0), CellValue::Number(100.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         FunctionArg::array(
             2,
             1,
             vec![CellValue::Number(45292.0), CellValue::Number(45292.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
     ];
     assert_eq!(
@@ -927,7 +889,6 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             1,
             vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         ),
         args[1].clone(),
     ];

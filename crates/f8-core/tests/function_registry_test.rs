@@ -3,19 +3,15 @@
 use std::cell::RefCell;
 
 use f8_core::expr::ast::{
-    CallArg, ColEndpoint, ColSelector, CriteriaComparator, Expr, Literal, RowEndpoint, RowSelector,
-    TableRef, UnaryOp,
+    CallArg, ColEndpoint, ColSelector, Expr, Literal, RowEndpoint, RowSelector, TableRef, UnaryOp,
 };
 use f8_core::functions::{
-    BoundCriterion, BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory,
-    FunctionError, FunctionRegistry, LookupPolicy, ParamKind, ParamRequirement, ParamType,
-    ParameterDef, RangeGrid, ReferenceKind, RolePolicy, ShapePolicy, StageAError, StaticRef,
-    ValidationPolicy,
+    BranchPolicy, EmptyPolicy, EvalContext, FunctionArg, FunctionCategory, FunctionError,
+    FunctionRegistry, LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef,
+    RangeGrid, ReferenceKind, RolePolicy, ShapePolicy, StageAError, StaticRef, ValidationPolicy,
 };
 use f8_core::model::table::{AxisRole, ValueLiteral};
-use f8_core::value::{
-    CellValue, ExcelError, ExpectedType, TextCriterionError, TypeError, ValueType,
-};
+use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Mock evaluation context tracking evaluated expressions.
 #[derive(Default)]
@@ -64,19 +60,13 @@ impl EvalContext for MockEvalContext {
     fn eval_range(&self, expr: &Expr) -> Result<RangeGrid, FunctionError> {
         self.evaluated_exprs.borrow_mut().push(expr.to_string());
         if let Some((rows, cols, values)) = self.range_data.borrow().clone() {
-            Ok(RangeGrid {
-                rows,
-                cols,
-                values,
-                axis_role: AxisRole::Measure,
-            })
+            Ok(RangeGrid { rows, cols, values })
         } else {
             let val = self.eval_expr(expr)?;
             Ok(RangeGrid {
                 rows: 1,
                 cols: 1,
                 values: vec![val],
-                axis_role: AxisRole::Measure,
             })
         }
     }
@@ -477,7 +467,6 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
             CellValue::Number(14.5),
         ],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
 
     let scalar_arg = FunctionArg::Scalar(CellValue::Number(50.0));
@@ -491,7 +480,6 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
         2,
         vec![CellValue::Number(10.0), CellValue::Error(ExcelError::Ref)],
         ReferenceKind::Slice,
-        AxisRole::Measure,
     );
     let res = sum.evaluate(&[err_range_arg], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
@@ -525,7 +513,6 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
                 2,
                 vec![CellValue::Number(10.0), CellValue::Text("N/A text".into())],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             ),
             ValueType::Text,
         ),
@@ -535,18 +522,11 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
                 2,
                 vec![CellValue::Number(10.0), CellValue::Boolean(true)],
                 ReferenceKind::Slice,
-                AxisRole::Measure,
             ),
             ValueType::Boolean,
         ),
         (
-            FunctionArg::array(
-                1,
-                1,
-                vec![CellValue::Empty],
-                ReferenceKind::SingleCell,
-                AxisRole::Measure,
-            ),
+            FunctionArg::array(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
             ValueType::Empty,
         ),
         (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
@@ -761,7 +741,6 @@ fn test_bind_arguments_integration() {
                 CellValue::Number(30.0)
             ],
             ReferenceKind::Slice,
-            AxisRole::Measure,
         )
     );
     assert_eq!(bound_sum[1], FunctionArg::Scalar(CellValue::Number(40.0)));
@@ -773,7 +752,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 48);
+    assert_eq!(registry.len(), 43);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -792,11 +771,6 @@ fn test_registry_metadata_and_iteration() {
             "ROUNDUP",
             "ROUNDDOWN",
             "SUMPRODUCT",
-            "SUMIFS",
-            "COUNTIFS",
-            "AVERAGEIFS",
-            "MINIFS",
-            "MAXIFS",
             "IF",
             "IFS",
             "IFERROR",
@@ -839,17 +813,30 @@ fn test_registry_metadata_and_iteration() {
 
     assert!(registry.lookup("IF").is_some());
     assert!(registry.lookup("If").is_some());
-    assert!(registry.lookup("SWITCH").is_none());
-    assert!(registry.lookup("switch").is_none());
-    assert!(registry.lookup("UNKNOWN_FN").is_none());
-    assert!(registry.lookup("unknown_fn").is_none());
+    for retired in [
+        "SWITCH",
+        "switch",
+        "SUMIFS",
+        "COUNTIFS",
+        "AVERAGEIFS",
+        "MINIFS",
+        "MAXIFS",
+        "UNKNOWN_FN",
+        "unknown_fn",
+    ] {
+        assert!(
+            registry.lookup(retired).is_none(),
+            "{retired} lookup must be None"
+        );
+        assert!(
+            registry.get(retired).is_none(),
+            "{retired} get must be None"
+        );
+    }
     assert!(registry.get("SUM").is_some());
     assert!(registry.get("sum").is_some());
-    assert!(registry.get("SWITCH").is_none());
-    assert!(registry.get("UNKNOWN_FN").is_none());
-    assert!(registry.get("unknown_fn").is_none());
 
-    // Exhaustive ValidationPolicy matrix across all 48 standard functions
+    // Exhaustive ValidationPolicy matrix across all 43 standard functions
     let mut non_standard_count = 0usize;
     for (name, func) in registry.iter() {
         let expected_policy = match name {
@@ -861,10 +848,6 @@ fn test_registry_metadata_and_iteration() {
             "XLOOKUP" => ValidationPolicy::Lookup(LookupPolicy::Xlookup),
             "XMATCH" => ValidationPolicy::Lookup(LookupPolicy::Xmatch),
             "SUMPRODUCT" => ValidationPolicy::ShapeCoupled(ShapePolicy::EqualAllRanges),
-            "SUMIFS" | "AVERAGEIFS" | "MINIFS" | "MAXIFS" => {
-                ValidationPolicy::ShapeCoupled(ShapePolicy::EqualTargetAndOddPairRanges)
-            }
-            "COUNTIFS" => ValidationPolicy::ShapeCoupled(ShapePolicy::EqualEvenPairRanges),
             "XNPV" => ValidationPolicy::ShapeCoupled(ShapePolicy::OneDimEqualLength {
                 first_idx: 1,
                 first_param: "values",
@@ -889,7 +872,7 @@ fn test_registry_metadata_and_iteration() {
             "unexpected ValidationPolicy for {name}"
         );
     }
-    assert_eq!(non_standard_count, 17);
+    assert_eq!(non_standard_count, 12);
 }
 
 #[test]
@@ -975,6 +958,26 @@ fn test_validate_expr_preorder_and_nested_ast() {
         (
             "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
             FunctionError::UnknownFunction("SWITCH".into()),
+        ),
+        (
+            "SUMIFS(T[\"v1\"..\"v2\", @col], T[\"k1\"..\"k2\", @col], 1)",
+            FunctionError::UnknownFunction("SUMIFS".into()),
+        ),
+        (
+            "COUNTIFS(T[\"k1\"..\"k2\", @col], 1)",
+            FunctionError::UnknownFunction("COUNTIFS".into()),
+        ),
+        (
+            "AVERAGEIFS(T[\"v1\"..\"v2\", @col], T[\"k1\"..\"k2\", @col], 1)",
+            FunctionError::UnknownFunction("AVERAGEIFS".into()),
+        ),
+        (
+            "MINIFS(T[\"v1\"..\"v2\", @col], T[\"k1\"..\"k2\", @col], 1)",
+            FunctionError::UnknownFunction("MINIFS".into()),
+        ),
+        (
+            "MAXIFS(T[\"v1\"..\"v2\", @col], T[\"k1\"..\"k2\", @col], 1)",
+            FunctionError::UnknownFunction("MAXIFS".into()),
         ),
         (
             "XLOOKUP(1, R1[\"k\", @col], R2[\"v\", @col], UNKNOWN_FN())",
@@ -1282,7 +1285,6 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
     }
 
     for non_ref_range in [
-        "SUMIFS(10, T[\"r1\"..\"r4\", @col], \"Alpha\")",
         "SUMPRODUCT(\"abc\")",
         "COUNT(10)",
         "COUNTA(\"a\")",
@@ -1307,8 +1309,6 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
 
     for shape_or_bounds in [
         "SUMPRODUCT(T[\"r1\"..\"r4\", @col], T[\"r1\"..\"r2\", @col])",
-        "SUMIFS(T[\"r1\"..\"r4\", @col], T[\"r1\"..\"r2\", @col], \"Alpha\")",
-        "COUNTIFS(T[\"r1\"..\"r2\", \"c1\"..\"c2\"], 1, T[\"r1\", \"c1\"..\"c4\"], 1)",
         "XLOOKUP(1, T[\"r1\"..\"r4\", @col], T[\"r2\"..\"r4\", @col])",
         "XLOOKUP(1, T[\"r1\"..\"r4\", @col], T[\"r1\", \"c1\"..\"c4\"])",
         "XNPV(0.1, T[\"r1\"..\"r4\", @col], T[\"r1\"..\"r2\", @col])",
@@ -1684,30 +1684,6 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
             2,
         ),
         (
-            "SUMIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
-            "SUMIFS",
-            "sum_range",
-            1,
-        ),
-        (
-            "AVERAGEIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
-            "AVERAGEIFS",
-            "average_range",
-            1,
-        ),
-        (
-            "MINIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
-            "MINIFS",
-            "min_range",
-            1,
-        ),
-        (
-            "MAXIFS(T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"], 10)",
-            "MAXIFS",
-            "max_range",
-            1,
-        ),
-        (
             "NPV(0.1, T[\"r1\"..\"r4\", \"line_item\"])",
             "NPV",
             "value1",
@@ -1758,13 +1734,12 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
         StageAError::Function(FunctionError::LengthMismatch { .. })
     ));
 
-    // Descriptor references remain permitted on COUNTA, XLOOKUP, XMATCH, INDEX, and *IFS criteria_range
+    // Descriptor references remain permitted on COUNTA, XLOOKUP, XMATCH, and INDEX
     for allowed_descriptor in [
         "COUNTA(T[\"r1\"..\"r4\", \"line_item\"])",
         "XLOOKUP(\"Rev\", T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"])",
         "XMATCH(\"Rev\", T[\"r1\"..\"r4\", \"line_item\"])",
         "INDEX(T[\"r1\"..\"r4\", \"line_item\"], 1)",
-        "SUMIFS(T[\"r1\"..\"r4\", \"amount\"], T[\"r1\"..\"r4\", \"line_item\"], \"Rev\")",
     ] {
         let expr = Expr::parse(allowed_descriptor).unwrap();
         assert!(
@@ -2029,30 +2004,9 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
 }
 
 #[test]
-fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
+fn test_error_introspection_metadata_and_validation() {
     let registry = FunctionRegistry::standard();
     let ctx = MockEvalContext::default();
-
-    // Exclusive ParamKind::Criteria metadata on *IFS functions
-    for (name, func) in registry.iter() {
-        let criteria_params: Vec<&str> = func
-            .parameters()
-            .iter()
-            .filter(|p| p.kind == ParamKind::Criteria)
-            .map(|p| p.name)
-            .collect();
-        if matches!(
-            name,
-            "SUMIFS" | "COUNTIFS" | "AVERAGEIFS" | "MINIFS" | "MAXIFS"
-        ) {
-            assert_eq!(criteria_params, vec!["criteria1"], "mismatch on {name}");
-        } else {
-            assert!(
-                criteria_params.is_empty(),
-                "unexpected ParamKind::Criteria on {name}"
-            );
-        }
-    }
 
     // Error introspection metadata and evaluation
     for (name, expected_ret) in [
@@ -2118,40 +2072,11 @@ fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
         );
     }
 
-    // UnexpectedCriteriaSyntax outside ParamKind::Criteria slots (active and dormant)
-    for (formula, fn_name, param_name, pos) in [
-        ("ABS(> 5)", "ABS", "number", 1),
-        ("IF(> 5, 1, 2)", "IF", "logical_test", 1),
-        ("SUM(BLANK)", "SUM", "number1", 1),
-        (
-            "SUMIFS(> 5, T[\"r1\"..\"r2\", @col], 1)",
-            "SUMIFS",
-            "sum_range",
-            1,
-        ),
-        ("COUNTIFS(NOT_BLANK, 1)", "COUNTIFS", "criteria_range1", 1),
-        ("IF(TRUE, 1, ABS(NOT_BLANK))", "ABS", "number", 1),
-        ("ISERROR(BLANK)", "ISERROR", "value", 1),
-    ] {
-        let expr = Expr::parse(formula).unwrap();
-        assert_eq!(
-            registry.validate_expr(&expr),
-            Err(FunctionError::UnexpectedCriteriaSyntax {
-                function: fn_name,
-                param: param_name,
-                position: pos,
-            }),
-            "expected UnexpectedCriteriaSyntax on {formula}"
-        );
-    }
-
-    // SliceInScalarContext on ISERROR, ISNA, ERROR.TYPE, and *IFS criteria operands
+    // SliceInScalarContext on ISERROR, ISNA, and ERROR.TYPE
     for formula in [
         "ISERROR(T[\"r1\"..\"r2\", @col])",
         "ISNA(T[\"r1\"..\"r2\", @col])",
         "ERROR.TYPE(T[\"r1\"..\"r2\", @col])",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], <= T[\"r1\"..\"r2\", @col])",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], T[\"r1\"..\"r2\", @col])",
     ] {
         let expr = Expr::parse(formula).unwrap();
         assert!(
@@ -2170,142 +2095,6 @@ fn test_cluster_c_criteria_slots_text_validation_and_error_introspection() {
         Err(FunctionError::Type(_))
     ));
 
-    // validate_expr rejects CallArg::BlankCheck / Comparator in non-criteria slots
-    assert_eq!(
-        registry.validate_expr(&Expr::parse("ABS(BLANK)").unwrap()),
-        Err(FunctionError::UnexpectedCriteriaSyntax {
-            function: "ABS",
-            param: "number",
-            position: 1,
-        })
-    );
-
-    // Stage A constant ordering type checks and text criterion validation
-    for (formula, expected_err) in [
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], > \"Alpha\")",
-            FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                expected: ExpectedType::Number,
-                found: ValueType::Text,
-            }),
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], >= TRUE)",
-            FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                expected: ExpectedType::Number,
-                found: ValueType::Boolean,
-            }),
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::EmptyString,
-            },
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"A*\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::ContainsWildcardOrEscape,
-            },
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], \">15\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::LeadingOperatorPrefix,
-            },
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"42\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::CoercibleNumericString,
-            },
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"TRUE\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::CoercibleBooleanString,
-            },
-        ),
-        (
-            "COUNTIFS(T[\"r1\"..\"r2\", @col], \"#DIV/0!\")",
-            FunctionError::InvalidTextCriterion {
-                function: "COUNTIFS",
-                param: "criteria1",
-                position: 2,
-                reason: TextCriterionError::CoercibleErrorString,
-            },
-        ),
-    ] {
-        let expr = Expr::parse(formula).unwrap();
-        assert_eq!(
-            registry.validate_expr(&expr),
-            Err(expected_err),
-            "mismatch on {formula}"
-        );
-    }
-
-    // Valid typed criteria expressions pass Stage A
-    for valid in [
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], > 15)",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], >= -10)",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], <= T[\"cutoff\", @col])",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"Alpha\")",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> \"10%\")",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], \"2024-01-01\")",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], <> (10 > 5))",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], 10 > 5)",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], BLANK)",
-        "COUNTIFS(T[\"r1\"..\"r2\", @col], NOT_BLANK)",
-        "ERROR.TYPE(1 / 0)",
-    ] {
-        let expr = Expr::parse(valid).unwrap();
-        assert!(
-            registry.validate_expr(&expr).is_ok(),
-            "expected Stage A ok on {valid}"
-        );
-    }
-
-    // Confirm BoundCriterion::Comparator variant constructible and bound cleanly
-    let countifs = registry.lookup("COUNTIFS").unwrap();
-    let crit_expr = Expr::parse("COUNTIFS(T[\"r1\"..\"r2\", @col], >= 10)").unwrap();
-    if let Expr::FunctionCall { args, .. } = &crit_expr {
-        let ctx_range = MockEvalContext::with_range(
-            1,
-            2,
-            vec![CellValue::Number(5.0), CellValue::Number(15.0)],
-        );
-        let bound = registry.bind_arguments(countifs, args, &ctx_range).unwrap();
-        assert_eq!(
-            bound[1],
-            FunctionArg::Criterion(BoundCriterion::Comparator {
-                op: CriteriaComparator::Gte,
-                value: CellValue::Number(10.0),
-            })
-        );
-        assert_eq!(
-            countifs.evaluate(&bound, &ctx_range),
-            Ok(CellValue::Number(1.0))
-        );
-    }
+    let valid_err_type = Expr::parse("ERROR.TYPE(1 / 0)").unwrap();
+    assert!(registry.validate_expr(&valid_err_type).is_ok());
 }

@@ -1,4 +1,4 @@
-use crate::value::{ExcelError, TextCriterionError, TypeError};
+use crate::value::TypeError;
 
 /// Structured errors produced by function validation, binding, and execution.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -278,50 +278,6 @@ pub enum FunctionError {
         /// Invalid integer basis value supplied.
         found: i64,
     },
-
-    /// Scoped comparator or blank-check syntax appeared outside a `ParamKind::Criteria` slot.
-    #[error(
-        "criteria syntax at position {position} (parameter '{param}') is not allowed in '{function}'"
-    )]
-    UnexpectedCriteriaSyntax {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier.
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-    },
-
-    /// Constant or dynamic text criterion violated Excel `*IFS` safety rules.
-    #[error(
-        "invalid text criterion for parameter '{param}' at position {position} of '{function}': {reason}"
-    )]
-    InvalidTextCriterion {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier.
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-        /// Underlying text criterion rejection reason.
-        #[source]
-        reason: TextCriterionError,
-    },
-
-    /// Dynamic criterion operand evaluated to an Excel runtime error.
-    #[error(
-        "criterion for parameter '{param}' at position {position} of '{function}' evaluated to Excel error {error}; guard operand with IFERROR/IFNA or skip branch via IF(ISERROR(...), ...)"
-    )]
-    ErrorInCriteria {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier.
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-        /// Runtime Excel error value produced by the criterion operand.
-        error: ExcelError,
-    },
 }
 
 #[cfg(test)]
@@ -374,12 +330,12 @@ mod tests {
         );
 
         let err = FunctionError::InvalidVariadicPairs {
-            function: "SUMIFS",
-            count: 2,
+            function: "IFS",
+            count: 3,
         };
         assert_eq!(
             err.to_string(),
-            "invalid argument count for variadic pairs in 'SUMIFS'"
+            "invalid argument count for variadic pairs in 'IFS'"
         );
 
         let err = FunctionError::InvalidArgumentKind {

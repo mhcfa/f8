@@ -18,10 +18,7 @@ pub use date::{
     DateSerial, DateTuple, EXCEL_1900_LEAP_DAY_SERIAL, MAX_EXCEL_SERIAL, MIN_INPUT_DATE_SERIAL,
     UNIX_EPOCH_SERIAL, is_valid_input_date_serial, validate_date_serial,
 };
-pub use error::{
-    ExcelError, ExpectedType, ParseExcelError, StrictIntError, TextCriterionError, TypeError,
-    ValueType,
-};
+pub use error::{ExcelError, ExpectedType, StrictIntError, TypeError, ValueType};
 pub use format::{format_accounting_number, format_cell_value};
 
 /// Maximum exact integer magnitude representable without precision loss in IEEE-754 `f64` (`2^53 - 1`).
@@ -32,20 +29,6 @@ pub(crate) const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 #[must_use]
 pub fn normalize_zero(val: f64) -> f64 {
     if val == 0.0 { 0.0 } else { val }
-}
-
-/// Parses a locale-independent finite Excel numeric string.
-///
-/// Trims leading and trailing ASCII spaces (`' '`), rejects non-finite float tokens
-/// (`"NaN"`, `"inf"`, `"Infinity"`, and exponent overflows), and normalizes `-0.0` to `0.0`.
-#[must_use]
-pub(crate) fn parse_excel_number(s: &str) -> Option<f64> {
-    let trimmed = s.trim_matches(' ');
-    let num = trimmed.parse::<f64>().ok()?;
-    if !num.is_finite() {
-        return None;
-    }
-    Some(normalize_zero(num))
 }
 
 /// Base-10 15-significant-digit representation of a finite non-zero `f64`.
@@ -254,90 +237,6 @@ pub(crate) fn round_decimal_f64(val: f64, digits: i64, mode: DecimalRoundingMode
         return 0.0;
     };
     dec.parse_sci_f64(rounded.coeff, exp10)
-}
-
-/// Normalizes a finite `f64` comparator threshold to Excel's 15-significant-digit decimal value
-/// (half-away-from-zero, `-0.0` normalized to `0.0`).
-#[must_use]
-pub fn normalize_criteria_number(val: f64) -> f64 {
-    let norm = normalize_zero(val);
-    if !norm.is_finite() || norm == 0.0 {
-        return norm;
-    }
-    let formatted = format_criteria_number(norm);
-    match formatted.parse::<f64>() {
-        Ok(parsed) => normalize_zero(parsed),
-        Err(_) => f64::NAN,
-    }
-}
-
-/// Formats a finite `f64` comparator literal using Excel's 15-significant-digit decimal representation,
-/// emitting uppercase `E` scientific notation on extreme exponents to stay compact (`<= 23` chars).
-#[must_use]
-pub fn format_criteria_number(val: f64) -> String {
-    let norm = normalize_zero(val);
-    if !norm.is_finite() {
-        return norm.to_string();
-    }
-    if norm == 0.0 {
-        return "0".to_string();
-    }
-    let Some(dec) = Decimal15::from_f64(norm) else {
-        return "0".to_string();
-    };
-    let raw_digits = dec.sig15.to_string();
-    let digits = raw_digits.trim_end_matches('0');
-    let exp10 = dec.exp10;
-    let sign = if dec.is_neg { "-" } else { "" };
-    if (0..15).contains(&exp10) {
-        let int_len = (exp10 + 1) as usize;
-        if let (Some(int_part), Some(frac_part)) = (digits.get(..int_len), digits.get(int_len..))
-            && !frac_part.is_empty()
-        {
-            format!("{sign}{int_part}.{frac_part}")
-        } else {
-            let zeros = "0".repeat(int_len.saturating_sub(digits.len()));
-            format!("{sign}{digits}{zeros}")
-        }
-    } else if (-6..0).contains(&exp10) {
-        let leading_zeros = "0".repeat((-exp10 - 1) as usize);
-        format!("{sign}0.{leading_zeros}{digits}")
-    } else if let (Some(first), Some(rest)) = (digits.get(..1), digits.get(1..))
-        && !rest.is_empty()
-    {
-        format!("{sign}{first}.{rest}E{exp10}")
-    } else {
-        format!("{sign}{digits}E{exp10}")
-    }
-}
-
-/// Validates a `Text` criterion string for conditional aggregation (`*IFS`) functions.
-///
-/// `prefix_utf16_len` is `0` for exact criteria and `2` (`"<>".len()`) for `NotEq` criteria.
-pub fn validate_text_criterion(s: &str, prefix_utf16_len: usize) -> Result<(), TextCriterionError> {
-    if s.is_empty() {
-        return Err(TextCriterionError::EmptyString);
-    }
-    if s.contains(['*', '?', '~']) {
-        return Err(TextCriterionError::ContainsWildcardOrEscape);
-    }
-    if s.starts_with(['=', '<', '>']) {
-        return Err(TextCriterionError::LeadingOperatorPrefix);
-    }
-    if prefix_utf16_len.saturating_add(s.encode_utf16().count()) > 255 {
-        return Err(TextCriterionError::TooLong);
-    }
-    let trimmed = s.trim_matches(' ');
-    if trimmed.eq_ignore_ascii_case("true") || trimmed.eq_ignore_ascii_case("false") {
-        return Err(TextCriterionError::CoercibleBooleanString);
-    }
-    if trimmed.parse::<ExcelError>().is_ok() {
-        return Err(TextCriterionError::CoercibleErrorString);
-    }
-    if parse_excel_number(trimmed).is_some() {
-        return Err(TextCriterionError::CoercibleNumericString);
-    }
-    Ok(())
 }
 
 /// Runtime representation of a spreadsheet cell calculation result or literal value.
@@ -769,57 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_excel_number_and_finite_constructors() {
-        assert_eq!(parse_excel_number("42.5"), Some(42.5));
-        assert_eq!(parse_excel_number("  -12.25  "), Some(-12.25));
-        assert_eq!(parse_excel_number("+3.5"), Some(3.5));
-        assert_eq!(parse_excel_number(".5"), Some(0.5));
-        assert_eq!(parse_excel_number("5."), Some(5.0));
-        assert_eq!(parse_excel_number("1.5e-3"), Some(0.0015));
-        assert_eq!(parse_excel_number("2E+4"), Some(20_000.0));
-
-        // Negative zero and subnormal underflow normalize to +0.0
-        for neg_zero_str in ["-0", "-0.0", " -0.00 ", "-1e-400"] {
-            assert_eq!(
-                parse_excel_number(neg_zero_str).map(f64::to_bits),
-                Some(0.0_f64.to_bits()),
-                "expected +0.0 for {neg_zero_str:?}"
-            );
-        }
-
-        // Non-finite tokens, overflows, control whitespace, and locale formats are rejected
-        for rejected in [
-            "",
-            "   ",
-            "NaN",
-            "nan",
-            "NAN",
-            "+NaN",
-            "-NaN",
-            "inf",
-            "INF",
-            "-inf",
-            "+inf",
-            "Infinity",
-            "infinity",
-            "-INFINITY",
-            "1e500",
-            "-1e500",
-            "\t10",
-            "10\n",
-            "$10",
-            "10%",
-            "1,000",
-            "1_000",
-            "0x10",
-        ] {
-            assert_eq!(
-                parse_excel_number(rejected),
-                None,
-                "expected None for {rejected:?}"
-            );
-        }
-
+    fn test_finite_constructors() {
         // CellValue::number and From conversions guard against NaN/Inf and normalize -0.0
         if let CellValue::Number(n) = CellValue::from(-0.0) {
             assert_eq!(n.to_bits(), 0.0_f64.to_bits());
@@ -861,182 +710,6 @@ mod tests {
             assert_eq!(
                 CellValue::from(&Literal::Number(non_finite)),
                 CellValue::Error(ExcelError::Num)
-            );
-        }
-    }
-
-    #[test]
-    fn test_criteria_number_normalization_and_formatting() {
-        assert_eq!(format_criteria_number(0.0), "0");
-        assert_eq!(format_criteria_number(-0.0), "0");
-        assert_eq!(format_criteria_number(15.0), "15");
-        assert_eq!(format_criteria_number(-10.0), "-10");
-        assert_eq!(format_criteria_number(100.0), "100");
-        assert_eq!(format_criteria_number(1.0 / 3.0), "0.333333333333333");
-        assert_eq!(format_criteria_number(2.0 / 3.0), "0.666666666666667");
-        assert_eq!(
-            format_criteria_number(0.33333333333333337),
-            "0.333333333333333"
-        );
-        assert_eq!(format_criteria_number(1e-300), "1E-300");
-        assert_eq!(
-            format_criteria_number(100_000_000_000_000.5),
-            "100000000000001"
-        );
-
-        assert_eq!(normalize_criteria_number(1.0 / 3.0), 0.333333333333333);
-        assert_eq!(normalize_criteria_number(2.0 / 3.0), 0.666666666666667);
-        assert_eq!(
-            normalize_criteria_number(100_000_000_000_000.5),
-            100_000_000_000_001.0
-        );
-        assert_eq!(format_criteria_number(f64::MAX), "1.79769313486231E308");
-        assert_eq!(format_criteria_number(-f64::MAX), "-1.79769313486231E308");
-        assert_eq!(
-            normalize_criteria_number(f64::MAX),
-            1.797_693_134_862_31e308
-        );
-        assert_eq!(
-            normalize_criteria_number(-f64::MAX),
-            -1.797_693_134_862_31e308
-        );
-
-        for x in [
-            f64::MAX,
-            -f64::MAX,
-            1.797_693_134_862_315e308,
-            -1.797_693_134_862_315e308,
-            f64::MIN_POSITIVE,
-            -f64::MIN_POSITIVE,
-            f64::from_bits(1),
-            -f64::from_bits(1),
-            1.0 / 3.0,
-            2.0 / 3.0,
-            0.0,
-            -0.0,
-        ] {
-            let formatted = format_criteria_number(x);
-            let normalized = normalize_criteria_number(x);
-            assert!(
-                normalized.is_finite(),
-                "expected finite normalized threshold for {x}"
-            );
-            assert_eq!(
-                parse_excel_number(&formatted),
-                Some(normalized),
-                "Pass 4 vs Pass 6a 15-sig-digit parity mismatch for {x} ({formatted:?})"
-            );
-        }
-    }
-
-    #[test]
-    fn test_validate_text_criterion() {
-        assert_eq!(
-            validate_text_criterion("", 0),
-            Err(TextCriterionError::EmptyString)
-        );
-        for wc in ["A*", "a?b", "~*", "foo~bar"] {
-            assert_eq!(
-                validate_text_criterion(wc, 0),
-                Err(TextCriterionError::ContainsWildcardOrEscape)
-            );
-        }
-        for op_str in [">15", "=Alpha", "<>0", "<10"] {
-            assert_eq!(
-                validate_text_criterion(op_str, 0),
-                Err(TextCriterionError::LeadingOperatorPrefix)
-            );
-        }
-        assert_eq!(validate_text_criterion(&"a".repeat(255), 0), Ok(()));
-        assert_eq!(
-            validate_text_criterion(&"a".repeat(256), 0),
-            Err(TextCriterionError::TooLong)
-        );
-        assert_eq!(validate_text_criterion(&"a".repeat(253), 2), Ok(()));
-        assert_eq!(
-            validate_text_criterion(&"a".repeat(254), 2),
-            Err(TextCriterionError::TooLong)
-        );
-
-        // Surrogate-pair (4-byte UTF-8 / 2 UTF-16 code units) 255-UTF-16 boundary checks
-        assert_eq!(
-            validate_text_criterion(&format!("{}a", "😀".repeat(127)), 0),
-            Ok(())
-        );
-        assert_eq!(
-            validate_text_criterion(&"😀".repeat(128), 0),
-            Err(TextCriterionError::TooLong)
-        );
-        assert_eq!(
-            validate_text_criterion(&format!("{}a", "😀".repeat(126)), 2),
-            Ok(())
-        );
-        assert_eq!(
-            validate_text_criterion(&"😀".repeat(127), 2),
-            Err(TextCriterionError::TooLong)
-        );
-
-        for b_str in ["TRUE", "false", " true "] {
-            assert_eq!(
-                validate_text_criterion(b_str, 0),
-                Err(TextCriterionError::CoercibleBooleanString)
-            );
-        }
-        for err_str in ["#DIV/0!", "#N/A", " #value! ", "#REF!", "#NUM!"] {
-            assert_eq!(
-                validate_text_criterion(err_str, 0),
-                Err(TextCriterionError::CoercibleErrorString)
-            );
-        }
-        for num_str in ["42", "042", " 42 ", "-3.5", "1e2"] {
-            assert_eq!(
-                validate_text_criterion(num_str, 0),
-                Err(TextCriterionError::CoercibleNumericString),
-                "expected CoercibleNumericString for {num_str:?}"
-            );
-        }
-        for valid in [
-            "Alpha",
-            "10%",
-            "1,000",
-            "$50",
-            "(100)",
-            "1 1/2",
-            "2024-01-01",
-            "01/15/2024",
-            "1/2",
-            "Jan 2024",
-            "12:30",
-            "5 PM",
-            "nan",
-            "Infinity",
-            "#1 Priority",
-            "Q1-2024",
-            "2024E",
-            "FY24",
-            "Tier-1",
-            "May",
-            "1A",
-            "2P",
-            "€",
-            "España",
-            "東京",
-            "café!",
-            "Note: café",
-            "Note: caféa",
-            "Note: caféam",
-            "T:東京",
-            "😀",
-        ] {
-            assert_eq!(
-                validate_text_criterion(valid, 0),
-                Ok(()),
-                "expected Ok(0) for {valid:?}"
-            );
-            assert_eq!(
-                validate_text_criterion(valid, 2),
-                Ok(()),
-                "expected Ok(2) for {valid:?}"
             );
         }
     }

@@ -19,8 +19,8 @@ pub mod typecheck;
 pub use error::FunctionError;
 pub use registry::FunctionRegistry;
 pub use traits::{
-    BoundCriterion, BranchPolicy, EmptyPolicy, EvalContext, ExcelFunction, FunctionArg,
-    FunctionCategory, LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef,
-    RangeGrid, ReferenceKind, RolePolicy, ShapePolicy, ValidationPolicy, VariadicRule,
+    BranchPolicy, EmptyPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory,
+    LookupPolicy, ParamKind, ParamRequirement, ParamType, ParameterDef, RangeGrid, ReferenceKind,
+    RolePolicy, ShapePolicy, ValidationPolicy, VariadicRule,
 };
 pub use typecheck::{StageAError, StaticRef};

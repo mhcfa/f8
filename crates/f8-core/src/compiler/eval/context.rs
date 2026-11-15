@@ -8,7 +8,6 @@ use crate::expr::ast::{Expr, TableRef};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{EvalContext, RangeGrid};
-use crate::model::table::AxisRole;
 use crate::value::CellValue;
 
 /// Concrete evaluation context bridging cell coordinates and memoized values to function implementations
@@ -72,7 +71,6 @@ impl<'a> CellEvalContext<'a> {
             rows: slice.rows,
             cols: slice.cols,
             values,
-            axis_role: slice.axis_role,
         })
     }
 }
@@ -115,7 +113,6 @@ impl EvalContext for CellEvalContext<'_> {
                     rows: 1,
                     cols: 1,
                     values: vec![val],
-                    axis_role: AxisRole::Measure,
                 })
             }
         }

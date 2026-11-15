@@ -1,9 +1,9 @@
-//! Canonical Excel calculation parity test fixture covering all 48 registered standard functions,
+//! Canonical Excel calculation parity test fixture covering all 43 registered standard functions,
 //! domain error semantics (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`, `#REF!`), and calculation edge cases.
 //!
 //! Organizes tests into 7 vertical tables on a single worksheet:
 //! 1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows, sparse cells) for ranges and lookups.
-//! 2. `MathParity`: 17 standard math and aggregation functions + edge and error cases.
+//! 2. `MathParity`: 12 standard math and aggregation functions + edge and error cases.
 //! 3. `LogicalParity`: 8 logical, branching, and error-handling functions + edge and error cases.
 //! 4. `FinancialParity`: 7 discounting, return, and loan amortization functions + edge and error cases.
 //! 5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
@@ -82,7 +82,7 @@ struct ParityGroup {
 }
 
 const MATH_CASES: &[ParityCase] = &[
-    // Core 17 functions
+    // Core 12 functions
     ParityCase {
         id: "abs",
         label: "ABS(-42.5)",
@@ -154,36 +154,6 @@ const MATH_CASES: &[ParityCase] = &[
         label: "SUMPRODUCT(num_a, num_b)",
         formula: "SUMPRODUCT(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"num_b\"])",
         expected: ParityExpected::ExactNum(400.0),
-    },
-    ParityCase {
-        id: "sumifs",
-        label: "SUMIFS(num_a, cat, \"Alpha\")",
-        formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\")",
-        expected: ParityExpected::ExactNum(40.0),
-    },
-    ParityCase {
-        id: "countifs",
-        label: "COUNTIFS(cat, \"Alpha\")",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\")",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "averageifs",
-        label: "AVERAGEIFS(num_a, cat, \"Alpha\")",
-        formula: "AVERAGEIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\")",
-        expected: ParityExpected::ApproxNum(20.0),
-    },
-    ParityCase {
-        id: "minifs",
-        label: "MINIFS(num_a, cat, \"Alpha\")",
-        formula: "MINIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\")",
-        expected: ParityExpected::ExactNum(10.0),
-    },
-    ParityCase {
-        id: "maxifs",
-        label: "MAXIFS(num_a, cat, \"Alpha\")",
-        formula: "MAXIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\")",
-        expected: ParityExpected::ExactNum(30.0),
     },
     // Edge cases
     ParityCase {
@@ -289,72 +259,6 @@ const MATH_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(1.23e-20),
     },
     ParityCase {
-        id: "sumifs_typed_gt",
-        label: "SUMIFS(num_a, cat, \"Alpha\", num_a, > 15) [typed comparator]",
-        formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Alpha\", SeedData[\"r1\"..\"r4\", \"num_a\"], > 15)",
-        expected: ParityExpected::ExactNum(30.0),
-    },
-    ParityCase {
-        id: "countifs_gt_neg",
-        label: "COUNTIFS(num_a, > -10) [negative threshold]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], > -10)",
-        expected: ParityExpected::ExactNum(4.0),
-    },
-    ParityCase {
-        id: "countifs_dyn_date_cutoff",
-        label: "COUNTIFS(date, <= date[r3]) [dynamic <= serial cutoff -> 3]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"date\"], <= SeedData[\"r3\", \"date\"])",
-        expected: ParityExpected::ExactNum(3.0),
-    },
-    ParityCase {
-        id: "countifs_dyn_arith_rhs",
-        label: "COUNTIFS(num_a, > num_a[r1] + 5) [parenthesized & arithmetic]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], > SeedData[\"r1\", \"num_a\"] + 5)",
-        expected: ParityExpected::ExactNum(3.0),
-    },
-    ParityCase {
-        id: "countifs_bool_exact_expr",
-        label: "COUNTIFS(flags, 10 > 5) [bare relational exact boolean]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"flags\"], 10 > 5)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "countifs_bool_not_eq",
-        label: "COUNTIFS(flags, <> TRUE) [boolean <> comparator]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"flags\"], <> TRUE)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "countifs_one_third_exact",
-        label: "COUNTIFS(one_third, 1 / 3) [exact f64 equality -> 1]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"one_third\"], 1 / 3)",
-        expected: ParityExpected::ExactNum(1.0),
-    },
-    ParityCase {
-        id: "countifs_one_third_15sig_dyn",
-        label: "COUNTIFS(one_third, <= (1 / 3)) [15-sig-digit & parity -> 0]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"one_third\"], <= (1 / 3))",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "countifs_one_third_15sig_lit",
-        label: "COUNTIFS(one_third, <= 0.33333333333333337) [15-sig-digit literal -> 0]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"one_third\"], <= 0.33333333333333337)",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "minifs_empty_match",
-        label: "MINIFS(num_a, cat, \"Missing\") [empty match -> 0]",
-        formula: "MINIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Missing\")",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "maxifs_empty_match",
-        label: "MAXIFS(num_a, cat, \"Missing\") [empty match -> 0]",
-        formula: "MAXIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Missing\")",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
         id: "count_sparse",
         label: "COUNT(sparse) [null ignored, formula-blank 0 counted]",
         formula: "COUNT(SeedData[\"r1\"..\"r4\", \"sparse\"])",
@@ -371,60 +275,6 @@ const MATH_CASES: &[ParityCase] = &[
         label: "AVERAGE(sparse) [(0 + 20) / 2 = 10]",
         formula: "AVERAGE(SeedData[\"r1\"..\"r4\", \"sparse\"])",
         expected: ParityExpected::ExactNum(10.0),
-    },
-    ParityCase {
-        id: "countifs_sparse_blank",
-        label: "COUNTIFS(sparse, BLANK) [strictly empty cells -> 2]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], BLANK)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "countifs_sparse_not_blank",
-        label: "COUNTIFS(sparse, NOT_BLANK) [non-empty cells -> 2]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], NOT_BLANK)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "countifs_empty_text_blank",
-        label: "COUNTIFS(empty_text, BLANK) [ignores \"\" text, matches nulls -> 2]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"empty_text\"], BLANK)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "countifs_empty_text_not_blank",
-        label: "COUNTIFS(empty_text, NOT_BLANK) [counts \"\" text + \"Alpha\" -> 2]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"empty_text\"], NOT_BLANK)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "countifs_sparse_not_eq",
-        label: "COUNTIFS(sparse, <> 20) [matches 0 and both nulls -> 3]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], <> 20)",
-        expected: ParityExpected::ExactNum(3.0),
-    },
-    ParityCase {
-        id: "countifs_sparse_nonblank_not_eq",
-        label: "COUNTIFS(sparse, NOT_BLANK, sparse, <> 20) [non-blank <> -> 1]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"sparse\"], NOT_BLANK, SeedData[\"r1\"..\"r4\", \"sparse\"], <> 20)",
-        expected: ParityExpected::ExactNum(1.0),
-    },
-    ParityCase {
-        id: "countifs_nan_on_text",
-        label: "COUNTIFS(special_text, \"nan\") [case-insensitive text match]",
-        formula: "COUNTIFS(SeedData[\"r1\"..\"r4\", \"special_text\"], \"nan\")",
-        expected: ParityExpected::ExactNum(1.0),
-    },
-    ParityCase {
-        id: "sumifs_iferror_operand_guard",
-        label: "SUMIFS(num_a, num_a, >= IFERROR(1 / 0, 15)) [operand guard -> 90]",
-        formula: "SUMIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"num_a\"], >= IFERROR(1 / 0, 15))",
-        expected: ParityExpected::ExactNum(90.0),
-    },
-    ParityCase {
-        id: "countifs_isna_lazy_guard",
-        label: "IF(ISNA(XLOOKUP(...)), 0, COUNTIFS(...)) [lazy ISNA guard -> 0]",
-        formula: "IF(ISNA(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"])), 0, COUNTIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], <= XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"])))",
-        expected: ParityExpected::ExactNum(0.0),
     },
     ParityCase {
         id: "neg_zero_norm",
@@ -509,12 +359,6 @@ const MATH_CASES: &[ParityCase] = &[
         id: "average_empty_err",
         label: "AVERAGE(all_null) [no numeric cells -> #DIV/0!]",
         formula: "AVERAGE(SeedData[\"r1\"..\"r4\", \"all_null\"])",
-        expected: ParityExpected::Error(ExcelError::Div0),
-    },
-    ParityCase {
-        id: "averageifs_empty_err",
-        label: "AVERAGEIFS(num_a, cat, \"Missing\") [no matches -> #DIV/0!]",
-        formula: "AVERAGEIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Missing\")",
         expected: ParityExpected::Error(ExcelError::Div0),
     },
     ParityCase {
@@ -1487,8 +1331,8 @@ const INFORMATION_CASES: &[ParityCase] = &[
 const PARITY_GROUPS: &[ParityGroup] = &[
     ParityGroup {
         table_id: "MathParity",
-        title: "Math & Aggregation Functions (17 Functions + Edge & Error Cases)",
-        subtitle: "ABS, SUM, AVERAGE, COUNT, COUNTA, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT, *IFS",
+        title: "Math & Aggregation Functions (12 Functions + Edge & Error Cases)",
+        subtitle: "ABS, SUM, AVERAGE, COUNT, COUNTA, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT",
         cases: MATH_CASES,
     },
     ParityGroup {
@@ -1556,7 +1400,7 @@ fn build_category_table(group: &ParityGroup) -> TableSpec {
     }
 }
 
-/// Constructs the complete 48-function Excel parity verification model with pinned ground-truth constants.
+/// Constructs the complete 43-function Excel parity verification model with pinned ground-truth constants.
 #[must_use]
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let mut sheet_tables = Vec::with_capacity(1 + PARITY_GROUPS.len());
@@ -1589,10 +1433,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_measure_col_label("all_null", "All Null"),
         build_measure_col_label("sparse_is_null", "Sparse Is Null"),
         build_measure_col_label("sparse_bool", "Sparse Bool"),
-        build_measure_col_label("special_text", "Special Text"),
-        build_measure_col_label("flags", "Flags"),
-        build_measure_col_label("empty_text", "Empty Text"),
-        build_measure_col_label("one_third", "One Third"),
         build_measure_col_label("num_dup_asc", "Vector Dup Asc"),
         build_measure_col_label("num_dup_desc", "Vector Dup Desc"),
         build_measure_col_label("cf_lead_zero", "CF Lead Zero"),
@@ -1613,10 +1453,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
-            .cell_str("special_text", "NAN")
-            .cell("flags", CellInput::boolean(true))
-            .cell_str("empty_text", "")
-            .cell_formula("one_third", "1 / 3")
             .cell_num("num_dup_asc", 20.0)
             .cell_num("num_dup_desc", 40.0)
             .cell_num("cf_lead_zero", 0.0)
@@ -1638,10 +1474,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::boolean(true))
-            .cell_str("special_text", "Infinity")
-            .cell("flags", CellInput::boolean(false))
-            .cell_str("empty_text", "Alpha")
-            .cell_num("one_third", 0.5)
             .cell_num("num_dup_asc", 20.0)
             .cell_num("num_dup_desc", 40.0)
             .cell_num("cf_lead_zero", 0.0)
@@ -1660,10 +1492,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
-            .cell_str("special_text", "42")
-            .cell("flags", CellInput::boolean(true))
-            .cell("empty_text", CellInput::null())
-            .cell_num("one_third", 0.5)
             .cell_num("num_dup_asc", 40.0)
             .cell_num("num_dup_desc", 20.0)
             .cell_num("cf_lead_zero", -100.0)
@@ -1682,10 +1510,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell("all_null", CellInput::null())
             .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
-            .cell_str("special_text", "inf")
-            .cell("flags", CellInput::boolean(false))
-            .cell("empty_text", CellInput::null())
-            .cell_num("one_third", 0.5)
             .cell_num("num_dup_asc", 40.0)
             .cell_num("num_dup_desc", 20.0)
             .cell_num("cf_lead_zero", 110.0)

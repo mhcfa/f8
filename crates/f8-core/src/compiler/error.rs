@@ -253,8 +253,7 @@ impl CompilerError {
                     | ParseError::UnquotedCoordinateKey { offset, .. }
                     | ParseError::TrailingInput { offset, .. }
                     | ParseError::RetiredBareAt { offset, .. }
-                    | ParseError::ChainedComparison { offset, .. }
-                    | ParseError::RedundantCriteriaEquals { offset } => Some(*offset),
+                    | ParseError::ChainedComparison { offset, .. } => Some(*offset),
                 };
                 ErrorDiagnostic::FormulaParseError {
                     message,

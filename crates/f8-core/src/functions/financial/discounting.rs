@@ -33,7 +33,7 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
                     }
                 }
             }
-            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
         }
     }
     Ok(cfs)
