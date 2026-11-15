@@ -1,4 +1,4 @@
-use crate::functions::common::extract_scalar_number;
+use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -43,11 +43,11 @@ impl ExcelFunction for AbsFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        match extract_scalar_number(&args[0], self.name(), "number", 1, ctx)? {
+        match scalar_number(&args[0]) {
             Ok(n) => Ok(CellValue::number(n.abs())),
             Err(err) => Ok(CellValue::Error(err)),
         }

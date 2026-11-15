@@ -1,5 +1,6 @@
 //! `XMATCH` function implementation.
 
+use crate::functions::common::optional_scalar_integer;
 use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{
     MatchMode, SearchMode, extract_1d_range_slice, find_match_index, validate_lookup_array,
@@ -86,39 +87,31 @@ impl ExcelFunction for XmatchFunction {
             });
         };
 
-        let (lookup_val, lookup_vt) = lookup_arg.eval_scalar_with_type(self.name(), ctx)?;
-        let (_rows, _cols, slice, slice_err_types) =
+        let lookup_val = lookup_arg.eval_scalar(self.name(), ctx)?;
+        let lookup_vt = lookup_val.value_type().filter(|vt| *vt != ValueType::Empty);
+        let (_rows, _cols, slice) =
             extract_1d_range_slice(lookup_arr_arg, self.name(), "lookup_array")?;
 
-        let match_mode = match args.get(2) {
-            None | Some(FunctionArg::Omitted) => MatchMode::Exact,
-            Some(
-                match_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => {
-                let val = match_arg.eval_scalar(self.name(), ctx)?;
-                MatchMode::parse(&val, self.name(), "match_mode", 3)?
+        let match_mode_int = optional_scalar_integer(args, 2, 0).map_err(|_| {
+            FunctionError::NonLiteralLookupMode {
+                function: self.name(),
+                param: "match_mode",
+                position: 3,
             }
-        };
+        })?;
+        let match_mode = MatchMode::from_mode_int(match_mode_int, self.name(), "match_mode", 3)?;
 
-        let search_mode = match args.get(3) {
-            None | Some(FunctionArg::Omitted) => SearchMode::FirstToLast,
-            Some(
-                search_arg @ (FunctionArg::Scalar(_)
-                | FunctionArg::TypedErrorScalar { .. }
-                | FunctionArg::Array { .. }
-                | FunctionArg::Lazy(_)
-                | FunctionArg::Criterion(_)),
-            ) => {
-                let val = search_arg.eval_scalar(self.name(), ctx)?;
-                SearchMode::parse(&val, self.name(), "search_mode", 4)?
+        let search_mode_int = optional_scalar_integer(args, 3, 1).map_err(|_| {
+            FunctionError::NonLiteralLookupMode {
+                function: self.name(),
+                param: "search_mode",
+                position: 4,
             }
-        };
+        })?;
+        let search_mode =
+            SearchMode::from_mode_int(search_mode_int, self.name(), "search_mode", 4)?;
 
-        validate_lookup_array(slice, slice_err_types, lookup_vt, search_mode, self.name())?;
+        validate_lookup_array(slice, lookup_vt, search_mode, self.name())?;
 
         if let CellValue::Error(err) = lookup_val {
             return Ok(CellValue::Error(err));

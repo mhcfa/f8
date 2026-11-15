@@ -1,12 +1,12 @@
 //! Calendar component extraction and day difference functions (`YEAR`, `MONTH`, `DAY`, `DAYS`).
 
-use crate::functions::common::extract_scalar_number;
+use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, DateSerial, ValueType, validate_date_serial};
+use crate::value::{CellValue, DateSerial, ValueType};
 
 static SERIAL_NUMBER_PARAM: &[ParameterDef] = &[ParameterDef::required(
     "serial_number",
@@ -39,15 +39,14 @@ impl ExcelFunction for YearFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let serial_val =
-            match extract_scalar_number(&args[0], self.name(), "serial_number", 1, ctx)? {
-                Ok(v) => v,
-                Err(e) => return Ok(CellValue::Error(e)),
-            };
+        let serial_val = match scalar_number(&args[0]) {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
 
         match DateSerial::to_ymd(serial_val) {
             Ok(d) => Ok(CellValue::number(f64::from(d.year))),
@@ -80,15 +79,14 @@ impl ExcelFunction for MonthFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let serial_val =
-            match extract_scalar_number(&args[0], self.name(), "serial_number", 1, ctx)? {
-                Ok(v) => v,
-                Err(e) => return Ok(CellValue::Error(e)),
-            };
+        let serial_val = match scalar_number(&args[0]) {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
 
         match DateSerial::to_ymd(serial_val) {
             Ok(d) => Ok(CellValue::number(f64::from(d.month))),
@@ -121,15 +119,14 @@ impl ExcelFunction for DayFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let serial_val =
-            match extract_scalar_number(&args[0], self.name(), "serial_number", 1, ctx)? {
-                Ok(v) => v,
-                Err(e) => return Ok(CellValue::Error(e)),
-            };
+        let serial_val = match scalar_number(&args[0]) {
+            Ok(v) => v,
+            Err(e) => return Ok(CellValue::Error(e)),
+        };
 
         match DateSerial::to_ymd(serial_val) {
             Ok(d) => Ok(CellValue::number(f64::from(d.day))),
@@ -177,31 +174,19 @@ impl ExcelFunction for DaysFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let end_res = extract_scalar_number(&args[0], self.name(), "end_date", 1, ctx)?;
-        let start_res = extract_scalar_number(&args[1], self.name(), "start_date", 2, ctx)?;
-
-        let end_val = match end_res {
+        let end_val = match scalar_number(&args[0]) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let start_val = match start_res {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        let s_end = match validate_date_serial(end_val) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let s_start = match validate_date_serial(start_val) {
+        let start_val = match scalar_number(&args[1]) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        Ok(CellValue::number(s_end - s_start))
+        Ok(CellValue::number(end_val.floor() - start_val.floor()))
     }
 }

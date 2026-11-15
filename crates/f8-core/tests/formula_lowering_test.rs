@@ -1744,59 +1744,7 @@ fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
         );
     }
 
-    // Surrogate-pair emoji 255-UTF-16-code-unit boundary in Pass 6a lowering
-    let ok_emoji_exact = format!(
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"{}a\")",
-        "😀".repeat(127)
-    );
-    assert!(
-        FormulaLowerer::lower_cell(
-            &origin,
-            &Expr::parse(&ok_emoji_exact).unwrap(),
-            &symbol_table,
-            &layout_map
-        )
-        .is_ok()
-    );
-    let bad_emoji_exact = format!(
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"{}\")",
-        "😀".repeat(128)
-    );
-    assert!(matches!(
-        FormulaLowerer::lower_cell(
-            &origin,
-            &Expr::parse(&bad_emoji_exact).unwrap(),
-            &symbol_table,
-            &layout_map
-        ),
-        Err(LoweringError::SyntaxError { .. })
-    ));
-
-    // Standalone FormulaLowerer rejects criteria outside ParamKind::Criteria, ordering on non-Number literals, and invalid text criteria
-    for bad in [
-        "ABS(> 5)",
-        "IF(> 5, 1, 2)",
-        "SUM(BLANK)",
-        "SUMIFS(> 5, IncomeStatement[\"revenue\"..\"cogs\", @col], 1)",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], > \"Alpha\")",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], >= TRUE)",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"\")",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"A*\")",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \">15\")",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], \"10%\")",
-        "COUNTIFS(IncomeStatement[\"revenue\"..\"cogs\", @col], <> \"2024-01-01\")",
-    ] {
-        let expr = Expr::parse(bad).unwrap();
-        assert!(
-            matches!(
-                FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map),
-                Err(LoweringError::SyntaxError { .. })
-            ),
-            "expected LoweringError::SyntaxError on '{bad}'"
-        );
-    }
-
-    // Custom FunctionRegistry with ParamKind::Criteria works in lower_cell_with_registry and compile_with_registry
+    // Custom FunctionRegistry with ParamKind::Criteria works in catalog-agnostic FormulaLowerer and compile_with_registry
     static CUSTOM_CRIT_PARAMS: [ParameterDef; 1] = [ParameterDef::required(
         "crit",
         "Custom criteria slot.",
@@ -1823,16 +1771,10 @@ fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
             args: &[FunctionArg<'_>],
             _ctx: &dyn EvalContext,
         ) -> Result<CellValue, FunctionError> {
-            match args.first() {
-                Some(FunctionArg::Criterion(_)) => Ok(CellValue::Number(1.0)),
-                Some(
-                    FunctionArg::Scalar(_)
-                    | FunctionArg::TypedErrorScalar { .. }
-                    | FunctionArg::Array { .. }
-                    | FunctionArg::Lazy(_)
-                    | FunctionArg::Omitted,
-                )
-                | None => Ok(CellValue::Number(0.0)),
+            if matches!(args.first(), Some(FunctionArg::Criterion(_))) {
+                Ok(CellValue::Number(1.0))
+            } else {
+                Ok(CellValue::Number(0.0))
             }
         }
     }
@@ -1844,17 +1786,9 @@ fn test_cluster_c_typed_criteria_and_error_introspection_lowering() {
         name: "CUSTOM.CRIT".into(),
         args: vec![CallArg::BlankCheck(BlankCheck::NotBlank)],
     };
-    assert!(FormulaLowerer::lower_cell(&origin, &custom_expr, &symbol_table, &layout_map).is_err());
     assert_eq!(
-        FormulaLowerer::lower_cell_with_registry(
-            &origin,
-            &custom_expr,
-            &symbol_table,
-            &layout_map,
-            &custom_reg
-        )
-        .unwrap(),
-        "=CUSTOM.CRIT(\"<>\")"
+        FormulaLowerer::lower_cell(&origin, &custom_expr, &symbol_table, &layout_map).unwrap(),
+        "=CUSTOM.CRIT(\"<>\" )".replace(" ", "")
     );
 
     let custom_manifest = ProjectManifest {

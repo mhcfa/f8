@@ -9,8 +9,7 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::expr::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::{FunctionRegistry, StageAError};
-use crate::functions::traits::{ComparisonSide, EvalContext, ExpectationOrigin, TypeExpectation};
+use crate::functions::registry::{FunctionRegistry, StageAError, StaticRef};
 use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
@@ -31,23 +30,30 @@ pub fn eval_expr(
     registry: &FunctionRegistry,
 ) -> Result<CellValue, EvalError> {
     registry
-        .validate_expr_with_shapes(expr, |table_ref| {
-            resolve_table_ref(origin, table_ref, symbol_table)
-                .map(|slice| Some((slice.rows, slice.cols, slice.axis_role)))
+        .validate_and_synth_expr(expr, |table_ref| {
+            let slice = resolve_table_ref(origin, table_ref, symbol_table)?;
+            let elem_types = slice
+                .cells
+                .iter()
+                .map(|cid| {
+                    memoized_values
+                        .get(cid)
+                        .and_then(CellValue::value_type)
+                        .filter(|vt| *vt != ValueType::Empty)
+                })
+                .collect();
+            Ok(Some(StaticRef {
+                rows: slice.rows,
+                cols: slice.cols,
+                axis_role: slice.axis_role,
+                elem_types,
+            }))
         })
         .map_err(|err| match err {
             StageAError::Function(source) => EvalError::function(origin.clone(), source),
             StageAError::Resolve(source) => EvalError::Resolve(source),
         })?;
-    let empty_error_types = IndexMap::new();
-    eval_expr_validated(
-        expr,
-        origin,
-        memoized_values,
-        &empty_error_types,
-        symbol_table,
-        registry,
-    )
+    eval_expr_validated(expr, origin, memoized_values, symbol_table, registry)
 }
 
 /// Evaluates an already-validated formula AST expression at `origin`, preserving mid-expression `CellValue::Empty`.
@@ -55,7 +61,6 @@ pub(crate) fn eval_expr_validated(
     expr: &Expr,
     origin: &CellId,
     memoized_values: &IndexMap<CellId, CellValue>,
-    memoized_error_types: &IndexMap<CellId, ValueType>,
     symbol_table: &SymbolTable,
     registry: &FunctionRegistry,
 ) -> Result<CellValue, EvalError> {
@@ -92,32 +97,11 @@ pub(crate) fn eval_expr_validated(
             op,
             expr: inner_expr,
         } => {
-            let inner = eval_expr_validated(
-                inner_expr,
-                origin,
-                memoized_values,
-                memoized_error_types,
-                symbol_table,
-                registry,
-            )?;
+            let inner =
+                eval_expr_validated(inner_expr, origin, memoized_values, symbol_table, registry)?;
             let num = match inner.strict_number() {
                 Ok(Ok(n)) => n,
-                Ok(Err(excel_err)) => {
-                    let ctx = CellEvalContext::new(
-                        origin,
-                        memoized_values,
-                        memoized_error_types,
-                        symbol_table,
-                        registry,
-                    );
-                    let exp = TypeExpectation {
-                        expected: ExpectedType::Number,
-                        origin: ExpectationOrigin::UnaryOp(op.as_str()),
-                    };
-                    ctx.validate_dormant_expr(inner_expr, Some(exp))
-                        .map_err(|source| EvalError::function(origin.clone(), source))?;
-                    return Ok(CellValue::Error(excel_err));
-                }
+                Ok(Err(excel_err)) => return Ok(CellValue::Error(excel_err)),
                 Err(found) => {
                     return Err(EvalError::Type {
                         cell: Box::new(origin.clone()),
@@ -138,31 +122,12 @@ pub(crate) fn eval_expr_validated(
         }
 
         Expr::Binary { op, left, right } => {
-            let left_val = eval_expr_validated(
-                left,
-                origin,
-                memoized_values,
-                memoized_error_types,
-                symbol_table,
-                registry,
-            )?;
-            let right_val = eval_expr_validated(
-                right,
-                origin,
-                memoized_values,
-                memoized_error_types,
-                symbol_table,
-                registry,
-            )?;
-            let ctx = CellEvalContext::new(
-                origin,
-                memoized_values,
-                memoized_error_types,
-                symbol_table,
-                registry,
-            );
+            let left_val =
+                eval_expr_validated(left, origin, memoized_values, symbol_table, registry)?;
+            let right_val =
+                eval_expr_validated(right, origin, memoized_values, symbol_table, registry)?;
 
-            eval_binary_op(*op, &ctx, left, &left_val, right, &right_val)
+            eval_binary_op(*op, origin, &left_val, &right_val)
         }
 
         Expr::FunctionCall { name, args } => {
@@ -170,13 +135,7 @@ pub(crate) fn eval_expr_validated(
                 EvalError::function(origin.clone(), FunctionError::UnknownFunction(name.clone()))
             })?;
 
-            let ctx = CellEvalContext::new(
-                origin,
-                memoized_values,
-                memoized_error_types,
-                symbol_table,
-                registry,
-            );
+            let ctx = CellEvalContext::new(origin, memoized_values, symbol_table, registry);
             let bound_args = registry
                 .bind_arguments(func, args, &ctx)
                 .map_err(|source| EvalError::function(origin.clone(), source))?;
@@ -209,36 +168,32 @@ fn eval_literal(lit: &Literal) -> CellValue {
 /// Evaluates binary arithmetic and relational comparison operators.
 fn eval_binary_op(
     op: BinaryOp,
-    ctx: &CellEvalContext<'_>,
-    left_expr: &Expr,
+    origin: &CellId,
     left: &CellValue,
-    right_expr: &Expr,
     right: &CellValue,
 ) -> Result<CellValue, EvalError> {
     match op {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Pow => {
-            eval_arithmetic_op(op, ctx, left_expr, left, right_expr, right)
+            eval_arithmetic_op(op, origin, left, right)
         }
         BinaryOp::Eq
         | BinaryOp::NotEq
         | BinaryOp::Lt
         | BinaryOp::Lte
         | BinaryOp::Gt
-        | BinaryOp::Gte => eval_comparison_op(op, ctx, left_expr, left, right_expr, right),
+        | BinaryOp::Gte => eval_comparison_op(op, origin, left, right),
     }
 }
 
 /// Evaluates binary arithmetic operations (`+`, `-`, `*`, `/`, `^`) with strict numeric typing.
 fn eval_arithmetic_op(
     op: BinaryOp,
-    ctx: &CellEvalContext<'_>,
-    left_expr: &Expr,
+    origin: &CellId,
     left: &CellValue,
-    right_expr: &Expr,
     right: &CellValue,
 ) -> Result<CellValue, EvalError> {
     let lhs_res = left.strict_number().map_err(|found| EvalError::Type {
-        cell: Box::new(ctx.origin.clone()),
+        cell: Box::new(origin.clone()),
         source: TypeError::InvalidOperandType {
             operator: op.as_str(),
             expected: ExpectedType::Number,
@@ -246,26 +201,13 @@ fn eval_arithmetic_op(
         },
     })?;
     let rhs_res = right.strict_number().map_err(|found| EvalError::Type {
-        cell: Box::new(ctx.origin.clone()),
+        cell: Box::new(origin.clone()),
         source: TypeError::InvalidOperandType {
             operator: op.as_str(),
             expected: ExpectedType::Number,
             found,
         },
     })?;
-
-    let exp = TypeExpectation {
-        expected: ExpectedType::Number,
-        origin: ExpectationOrigin::BinaryOp(op.as_str()),
-    };
-    if lhs_res.is_err() {
-        ctx.validate_dormant_expr(left_expr, Some(exp))
-            .map_err(|source| EvalError::function(ctx.origin.clone(), source))?;
-    }
-    if rhs_res.is_err() {
-        ctx.validate_dormant_expr(right_expr, Some(exp))
-            .map_err(|source| EvalError::function(ctx.origin.clone(), source))?;
-    }
 
     let lhs = match lhs_res {
         Ok(n) => n,
@@ -312,75 +254,13 @@ fn eval_arithmetic_op(
 /// Evaluates binary comparison operations (`=`, `<>`, `<`, `<=`, `>`, `>=`) with strict homogeneous non-`Empty` typing.
 fn eval_comparison_op(
     op: BinaryOp,
-    ctx: &CellEvalContext<'_>,
-    left_expr: &Expr,
+    origin: &CellId,
     left: &CellValue,
-    right_expr: &Expr,
     right: &CellValue,
 ) -> Result<CellValue, EvalError> {
     let ord = match left.compare_relational(right) {
         Ok(Ok(ord)) => ord,
-        Ok(Err(excel_err)) => {
-            let non_empty_exp = TypeExpectation {
-                expected: ExpectedType::NonEmpty,
-                origin: ExpectationOrigin::BinaryOp(op.as_str()),
-            };
-            let left_vt = if left.is_error() {
-                ctx.validate_dormant_expr(left_expr, Some(non_empty_exp))
-                    .map_err(|source| EvalError::function(ctx.origin.clone(), source))?
-            } else {
-                left.value_type()
-            };
-            let right_vt = if right.is_error() {
-                let right_exp = if let Some(l_vt) = left_vt
-                    && let Some(exp_ty) = ExpectedType::from_value_type(l_vt)
-                {
-                    TypeExpectation {
-                        expected: exp_ty,
-                        origin: ExpectationOrigin::ComparisonOp {
-                            operator: op.as_str(),
-                            other_side: l_vt,
-                            side: ComparisonSide::Right,
-                        },
-                    }
-                } else {
-                    non_empty_exp
-                };
-                ctx.validate_dormant_expr(right_expr, Some(right_exp))
-                    .map_err(|source| EvalError::function(ctx.origin.clone(), source))?
-            } else {
-                right.value_type()
-            };
-            if left.is_error()
-                && left_vt.is_none()
-                && let Some(r_vt) = right_vt
-                && let Some(exp_ty) = ExpectedType::from_value_type(r_vt)
-            {
-                let left_exp = TypeExpectation {
-                    expected: exp_ty,
-                    origin: ExpectationOrigin::ComparisonOp {
-                        operator: op.as_str(),
-                        other_side: r_vt,
-                        side: ComparisonSide::Left,
-                    },
-                };
-                ctx.validate_dormant_expr(left_expr, Some(left_exp))
-                    .map_err(|source| EvalError::function(ctx.origin.clone(), source))?;
-            }
-            if let (Some(lt), Some(rt)) = (left_vt, right_vt)
-                && lt != rt
-            {
-                return Err(EvalError::Type {
-                    cell: Box::new(ctx.origin.clone()),
-                    source: TypeError::IncompatibleComparison {
-                        operator: op.as_str(),
-                        left: lt,
-                        right: rt,
-                    },
-                });
-            }
-            return Ok(CellValue::Error(excel_err));
-        }
+        Ok(Err(excel_err)) => return Ok(CellValue::Error(excel_err)),
         Err((lt, rt)) => {
             let source = if lt == ValueType::Empty || rt == ValueType::Empty {
                 TypeError::InvalidOperandType {
@@ -396,7 +276,7 @@ fn eval_comparison_op(
                 }
             };
             return Err(EvalError::Type {
-                cell: Box::new(ctx.origin.clone()),
+                cell: Box::new(origin.clone()),
                 source,
             });
         }

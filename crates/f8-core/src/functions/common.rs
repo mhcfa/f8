@@ -1,8 +1,5 @@
-use crate::functions::error::FunctionError;
-use crate::functions::traits::{EvalContext, FunctionArg, ReferenceKind, TypeExpectation};
-use crate::value::{
-    CellValue, ExcelError, ExpectedType, StrictIntError, TypeError, ValueType, normalize_zero,
-};
+use crate::functions::traits::{FunctionArg, ReferenceKind};
+use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType, normalize_zero};
 
 /// Aggregated numeric statistics gathered across arguments for arithmetic functions.
 #[derive(Debug, Clone, PartialEq)]
@@ -55,9 +52,6 @@ impl NumericCollector {
                     Ok(Err(e)) => return Err(e),
                     Err(_) => return Err(ExcelError::Value),
                 },
-                FunctionArg::TypedErrorScalar { error, .. } => {
-                    return Err(*error);
-                }
                 FunctionArg::Array {
                     values, ref_kind, ..
                 } => {
@@ -117,46 +111,6 @@ impl NumericCollector {
 impl Default for NumericCollector {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Evaluates an individual branch argument, returning its scalar value or evaluating its lazy expression.
-pub fn eval_branch_arg(
-    arg: &FunctionArg<'_>,
-    function: &'static str,
-    ctx: &dyn EvalContext,
-) -> Result<CellValue, FunctionError> {
-    match arg {
-        FunctionArg::Scalar(val) => Ok(val.clone()),
-        FunctionArg::TypedErrorScalar { error, .. } => Ok(CellValue::Error(*error)),
-        FunctionArg::Lazy(expr) => ctx.eval_expr(expr),
-        FunctionArg::Array {
-            rows,
-            cols,
-            ref_kind: ReferenceKind::Slice,
-            ..
-        } => Err(FunctionError::SliceInScalarContext {
-            rows: *rows,
-            cols: *cols,
-        }),
-        FunctionArg::Array {
-            ref_kind: ReferenceKind::SingleCell,
-            ..
-        } => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "scalar or expression",
-            found: "array",
-        }),
-        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "scalar or expression",
-            found: "criterion",
-        }),
-        FunctionArg::Omitted => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "scalar or expression",
-            found: "omitted",
-        }),
     }
 }
 
@@ -229,115 +183,6 @@ impl BranchTypeUnifier {
     }
 }
 
-/// Evaluates a taken branch result arm and returns `(value, inferred_value_type)`.
-///
-/// When a lazy arm evaluates to `CellValue::Error(_)`, recursively validates its subtree via
-/// `EvalContext::validate_dormant_expr` to validate any short-circuited inner branches and infer
-/// its static/slice return `ValueType` (for example on `#REF!`/`#N/A`-producing `INDEX`/`XLOOKUP` calls).
-pub fn eval_taken_branch_arm(
-    arg: &FunctionArg<'_>,
-    function: &'static str,
-    ctx: &dyn EvalContext,
-) -> Result<(CellValue, Option<ValueType>), FunctionError> {
-    let val = eval_branch_arg(arg, function, ctx)?;
-    let vt = match &val {
-        CellValue::Number(_) => Some(ValueType::Number),
-        CellValue::Text(_) => Some(ValueType::Text),
-        CellValue::Boolean(_) => Some(ValueType::Boolean),
-        CellValue::Empty => None,
-        CellValue::Error(_) => match arg {
-            FunctionArg::Lazy(expr) => ctx.validate_dormant_expr(expr, None)?,
-            FunctionArg::TypedErrorScalar { inferred_type, .. } => Some(*inferred_type),
-            FunctionArg::Scalar(_)
-            | FunctionArg::Array { .. }
-            | FunctionArg::Criterion(_)
-            | FunctionArg::Omitted => None,
-        },
-    };
-    Ok((val, vt))
-}
-
-/// Validates an untaken (dormant) branch argument and returns its inferred `ValueType`, if any.
-pub fn validate_dormant_arm(
-    arg: &FunctionArg<'_>,
-    function: &'static str,
-    expected: Option<TypeExpectation>,
-    ctx: &dyn EvalContext,
-) -> Result<Option<ValueType>, FunctionError> {
-    match arg {
-        FunctionArg::Lazy(expr) => ctx.validate_dormant_expr(expr, expected),
-        FunctionArg::Scalar(val) => match val {
-            CellValue::Number(_) | CellValue::Text(_) | CellValue::Boolean(_) => {
-                let vt = match val {
-                    CellValue::Number(_) => ValueType::Number,
-                    CellValue::Text(_) => ValueType::Text,
-                    CellValue::Boolean(_) => ValueType::Boolean,
-                    CellValue::Empty | CellValue::Error(_) => return Ok(None),
-                };
-                if let Some(TypeExpectation {
-                    expected: exp_ty,
-                    origin,
-                }) = expected
-                {
-                    if exp_ty == ExpectedType::Integer {
-                        match val.strict_integer() {
-                            Ok(_) => {}
-                            Err(StrictIntError::WrongType(found)) => {
-                                return Err(FunctionError::Type(
-                                    origin.into_invalid_type(exp_ty, found),
-                                ));
-                            }
-                            Err(StrictIntError::NonInteger(value)) => {
-                                return Err(FunctionError::Type(origin.into_non_integer(value)));
-                            }
-                        }
-                    } else if !value_type_satisfies(vt, exp_ty) {
-                        return Err(FunctionError::Type(origin.into_invalid_type(exp_ty, vt)));
-                    }
-                }
-                Ok(Some(vt))
-            }
-            CellValue::Empty | CellValue::Error(_) => Ok(None),
-        },
-        FunctionArg::TypedErrorScalar { inferred_type, .. } => {
-            if let Some(TypeExpectation {
-                expected: exp_ty,
-                origin,
-            }) = expected
-                && !value_type_satisfies(*inferred_type, exp_ty)
-            {
-                return Err(FunctionError::Type(
-                    origin.into_invalid_type(exp_ty, *inferred_type),
-                ));
-            }
-            Ok(Some(*inferred_type))
-        }
-        FunctionArg::Array {
-            rows,
-            cols,
-            ref_kind: ReferenceKind::Slice,
-            ..
-        } => Err(FunctionError::SliceInScalarContext {
-            rows: *rows,
-            cols: *cols,
-        }),
-        FunctionArg::Array {
-            ref_kind: ReferenceKind::SingleCell,
-            ..
-        } => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "scalar or expression",
-            found: "array",
-        }),
-        FunctionArg::Criterion(_) => Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "scalar or expression",
-            found: "criterion",
-        }),
-        FunctionArg::Omitted => Ok(None),
-    }
-}
-
 pub(crate) const fn value_type_satisfies(found: ValueType, expected: ExpectedType) -> bool {
     match (expected, found) {
         (ExpectedType::NonEmpty, ValueType::Number | ValueType::Text | ValueType::Boolean)
@@ -383,154 +228,45 @@ impl LogicalCollector {
         self.any_true = self.any_true || b;
     }
 
-    /// Collects strict boolean values across arguments for `AND` and `OR`.
-    ///
-    /// - Rejects `Number` and `Text` everywhere with `TypeError::InvalidArgumentType`.
-    /// - Rejects `Empty` on `Scalar`, `Lazy`, and `ReferenceKind::SingleCell` arguments.
-    /// - Skips sparse `Empty` cells strictly in `ReferenceKind::Slice` arguments.
-    /// - Validates types across all arguments before bubbling the first `ExcelError` or returning
-    ///   `ExcelError::Value` when `count == 0` (all-empty slice).
-    pub fn collect(
-        function: &'static str,
-        param: &'static str,
-        args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
-    ) -> Result<Result<Self, ExcelError>, FunctionError> {
+    /// Collects boolean observations across arguments for `AND` and `OR` after `validate_bound_args`,
+    /// skipping sparse `Empty` cells in `ReferenceKind::Slice` arguments and returning `ExcelError::Value`
+    /// when `count == 0` (all-empty slice).
+    pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
         let mut collector = Self::new();
-        let mut first_error: Option<ExcelError> = None;
 
-        for (idx, arg) in args.iter().enumerate() {
-            let position = idx + 1;
+        for arg in args {
             match arg {
                 FunctionArg::Scalar(val) => match val.strict_bool() {
                     Ok(Ok(b)) => collector.record(b),
-                    Ok(Err(err)) => {
-                        if first_error.is_none() {
-                            first_error = Some(err);
-                        }
-                    }
-                    Err(found) => {
-                        return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                            function,
-                            param,
-                            position,
-                            expected: ExpectedType::Boolean,
-                            found,
-                        }));
-                    }
+                    Ok(Err(err)) => return Err(err),
+                    Err(_) => return Err(ExcelError::Value),
                 },
-                FunctionArg::TypedErrorScalar {
-                    error,
-                    inferred_type,
-                } => {
-                    if *inferred_type != ValueType::Boolean {
-                        return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                            function,
-                            param,
-                            position,
-                            expected: ExpectedType::Boolean,
-                            found: *inferred_type,
-                        }));
-                    }
-                    if first_error.is_none() {
-                        first_error = Some(*error);
-                    }
-                }
-                FunctionArg::Lazy(_) => {
-                    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
-                    match val.strict_bool() {
-                        Ok(Ok(b)) => collector.record(b),
-                        Ok(Err(err)) => {
-                            if let Some(vt @ (ValueType::Number | ValueType::Text)) = inferred_vt {
-                                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                                    function,
-                                    param,
-                                    position,
-                                    expected: ExpectedType::Boolean,
-                                    found: vt,
-                                }));
-                            }
-                            if first_error.is_none() {
-                                first_error = Some(err);
-                            }
-                        }
-                        Err(found) => {
-                            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                                function,
-                                param,
-                                position,
-                                expected: ExpectedType::Boolean,
-                                found,
-                            }));
-                        }
-                    }
-                }
                 FunctionArg::Array {
-                    values,
-                    error_types,
-                    ref_kind,
-                    ..
+                    values, ref_kind, ..
                 } => {
-                    let skip_empty = match ref_kind {
-                        ReferenceKind::Slice => true,
-                        ReferenceKind::SingleCell => false,
-                    };
-                    for (elem_idx, v) in values.iter().enumerate() {
-                        if skip_empty && matches!(v, CellValue::Empty) {
-                            continue;
-                        }
-                        match v.strict_bool() {
-                            Ok(Ok(b)) => collector.record(b),
-                            Ok(Err(err)) => {
-                                if let Some(vt @ (ValueType::Number | ValueType::Text)) =
-                                    error_types.get(elem_idx).copied().flatten()
-                                {
-                                    return Err(FunctionError::Type(
-                                        TypeError::InvalidArgumentType {
-                                            function,
-                                            param,
-                                            position,
-                                            expected: ExpectedType::Boolean,
-                                            found: vt,
-                                        },
-                                    ));
-                                }
-                                if first_error.is_none() {
-                                    first_error = Some(err);
-                                }
-                            }
-                            Err(found) => {
-                                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                                    function,
-                                    param,
-                                    position,
-                                    expected: ExpectedType::Boolean,
-                                    found,
-                                }));
+                    for v in values {
+                        match v {
+                            CellValue::Boolean(b) => collector.record(*b),
+                            CellValue::Error(e) => return Err(*e),
+                            CellValue::Empty => match ref_kind {
+                                ReferenceKind::Slice => {}
+                                ReferenceKind::SingleCell => return Err(ExcelError::Value),
+                            },
+                            CellValue::Number(_) | CellValue::Text(_) => {
+                                return Err(ExcelError::Value);
                             }
                         }
                     }
                 }
-                FunctionArg::Criterion(_) => {
-                    return Err(FunctionError::InvalidArgumentKind {
-                        function,
-                        expected: "scalar or array",
-                        found: "criterion",
-                    });
-                }
-                FunctionArg::Omitted => {}
+                FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
             }
         }
 
-        if let Some(err) = first_error {
-            return Ok(Err(err));
-        }
-
         if collector.count == 0 {
-            return Ok(Err(ExcelError::Value));
+            return Err(ExcelError::Value);
         }
 
-        Ok(Ok(collector))
+        Ok(collector)
     }
 }
 
@@ -560,10 +296,7 @@ pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
                     count += 1;
                 }
             }
-            FunctionArg::TypedErrorScalar { .. }
-            | FunctionArg::Lazy(_)
-            | FunctionArg::Criterion(_)
-            | FunctionArg::Omitted => {}
+            FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
         }
     }
 
@@ -589,9 +322,6 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
                     count += 1;
                 }
             }
-            FunctionArg::TypedErrorScalar { .. } => {
-                count += 1;
-            }
             FunctionArg::Lazy(_) | FunctionArg::Criterion(_) | FunctionArg::Omitted => {}
         }
     }
@@ -599,115 +329,68 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
     count
 }
 
-/// Extracts a strict numeric scalar from `arg`, rejecting `Text`, `Boolean`, and `Empty` with `TypeError::InvalidArgumentType`
-/// while bubbling `CellValue::Error(e)` as `Ok(Err(e))` when its inferred type is compatible.
-pub fn extract_scalar_number(
-    arg: &FunctionArg<'_>,
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-    ctx: &dyn EvalContext,
-) -> Result<Result<f64, ExcelError>, FunctionError> {
-    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
-    match val.strict_number() {
-        Ok(Ok(n)) => Ok(Ok(n)),
-        Ok(Err(err)) => {
-            if let Some(vt @ (ValueType::Text | ValueType::Boolean)) = inferred_vt {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function,
-                    param,
-                    position,
-                    expected: ExpectedType::Number,
-                    found: vt,
-                }));
-            }
-            Ok(Err(err))
-        }
-        Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function,
-            param,
-            position,
-            expected: ExpectedType::Number,
-            found,
-        })),
+/// Extracts a finite numeric scalar after `validate_bound_args`, bubbling `CellValue::Error(e)` as `Err(e)`.
+pub fn scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
+    match arg {
+        FunctionArg::Scalar(val) => match val.strict_number() {
+            Ok(res) => res,
+            Err(_) => Err(ExcelError::Value),
+        },
+        FunctionArg::Array { .. }
+        | FunctionArg::Lazy(_)
+        | FunctionArg::Criterion(_)
+        | FunctionArg::Omitted => Err(ExcelError::Value),
     }
 }
 
-/// Extracts a strict safe integer from `arg`, rejecting wrong value types with `TypeError::InvalidArgumentType`
-/// and fractional/out-of-safe-range numbers with `TypeError::NonIntegerArgument`, while bubbling `CellValue::Error(e)`
-/// when its inferred type is compatible.
-pub fn extract_scalar_integer(
-    arg: &FunctionArg<'_>,
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-    ctx: &dyn EvalContext,
-) -> Result<Result<i64, ExcelError>, FunctionError> {
-    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
-    match val.strict_integer() {
-        Ok(Ok(i)) => Ok(Ok(i)),
-        Ok(Err(err)) => {
-            if let Some(vt @ (ValueType::Text | ValueType::Boolean)) = inferred_vt {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function,
-                    param,
-                    position,
-                    expected: ExpectedType::Integer,
-                    found: vt,
-                }));
-            }
-            Ok(Err(err))
-        }
-        Err(StrictIntError::WrongType(found)) => {
-            Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function,
-                param,
-                position,
-                expected: ExpectedType::Integer,
-                found,
-            }))
-        }
-        Err(StrictIntError::NonInteger(value)) => {
-            Err(FunctionError::Type(TypeError::NonIntegerArgument {
-                function,
-                param,
-                position,
-                value,
-            }))
-        }
+/// Extracts an optional finite numeric scalar at `idx`, returning `Ok(default)` when omitted or out of bounds.
+pub fn optional_scalar_number(
+    args: &[FunctionArg<'_>],
+    idx: usize,
+    default: f64,
+) -> Result<f64, ExcelError> {
+    match args.get(idx) {
+        None | Some(FunctionArg::Omitted) => Ok(default),
+        Some(arg) => scalar_number(arg),
     }
 }
 
-/// Extracts a strict boolean scalar from `arg`, rejecting `Number`, `Text`, and `Empty` with `TypeError::InvalidArgumentType`
-/// while bubbling `CellValue::Error(e)` as `Ok(Err(e))` when its inferred type is compatible.
-pub fn extract_scalar_bool(
-    arg: &FunctionArg<'_>,
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-    ctx: &dyn EvalContext,
-) -> Result<Result<bool, ExcelError>, FunctionError> {
-    let (val, inferred_vt) = arg.eval_scalar_with_type(function, ctx)?;
-    match val.strict_bool() {
-        Ok(Ok(b)) => Ok(Ok(b)),
-        Ok(Err(err)) => {
-            if let Some(vt @ (ValueType::Number | ValueType::Text)) = inferred_vt {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function,
-                    param,
-                    position,
-                    expected: ExpectedType::Boolean,
-                    found: vt,
-                }));
-            }
-            Ok(Err(err))
-        }
-        Err(found) => Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function,
-            param,
-            position,
-            expected: ExpectedType::Boolean,
-            found,
-        })),
+/// Extracts a safe integer scalar after `validate_bound_args`, bubbling `CellValue::Error(e)` as `Err(e)`.
+pub fn scalar_integer(arg: &FunctionArg<'_>) -> Result<i64, ExcelError> {
+    match arg {
+        FunctionArg::Scalar(val) => match val.strict_integer() {
+            Ok(res) => res,
+            Err(_) => Err(ExcelError::Value),
+        },
+        FunctionArg::Array { .. }
+        | FunctionArg::Lazy(_)
+        | FunctionArg::Criterion(_)
+        | FunctionArg::Omitted => Err(ExcelError::Value),
+    }
+}
+
+/// Extracts an optional safe integer scalar at `idx`, returning `Ok(default)` when omitted or out of bounds.
+pub fn optional_scalar_integer(
+    args: &[FunctionArg<'_>],
+    idx: usize,
+    default: i64,
+) -> Result<i64, ExcelError> {
+    match args.get(idx) {
+        None | Some(FunctionArg::Omitted) => Ok(default),
+        Some(arg) => scalar_integer(arg),
+    }
+}
+
+/// Extracts a boolean scalar after `validate_bound_args`, bubbling `CellValue::Error(e)` as `Err(e)`.
+pub fn scalar_bool(arg: &FunctionArg<'_>) -> Result<bool, ExcelError> {
+    match arg {
+        FunctionArg::Scalar(val) => match val.strict_bool() {
+            Ok(res) => res,
+            Err(_) => Err(ExcelError::Value),
+        },
+        FunctionArg::Array { .. }
+        | FunctionArg::Lazy(_)
+        | FunctionArg::Criterion(_)
+        | FunctionArg::Omitted => Err(ExcelError::Value),
     }
 }

@@ -1,4 +1,4 @@
-use crate::functions::common::{LogicalCollector, extract_scalar_bool};
+use crate::functions::common::{LogicalCollector, scalar_bool};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -43,16 +43,14 @@ impl ExcelFunction for AndFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let collector = match LogicalCollector::collect(self.name(), "logical1", args, ctx)? {
-            Ok(c) => c,
-            Err(err) => return Ok(CellValue::Error(err)),
-        };
-
-        Ok(CellValue::Boolean(collector.all_true))
+        match LogicalCollector::collect(args) {
+            Ok(c) => Ok(CellValue::Boolean(c.all_true)),
+            Err(err) => Ok(CellValue::Error(err)),
+        }
     }
 }
 
@@ -92,16 +90,14 @@ impl ExcelFunction for OrFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let collector = match LogicalCollector::collect(self.name(), "logical1", args, ctx)? {
-            Ok(c) => c,
-            Err(err) => return Ok(CellValue::Error(err)),
-        };
-
-        Ok(CellValue::Boolean(collector.any_true))
+        match LogicalCollector::collect(args) {
+            Ok(c) => Ok(CellValue::Boolean(c.any_true)),
+            Err(err) => Ok(CellValue::Error(err)),
+        }
     }
 }
 
@@ -140,11 +136,11 @@ impl ExcelFunction for NotFunction {
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
+        _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        match extract_scalar_bool(&args[0], self.name(), "logical", 1, ctx)? {
+        match scalar_bool(&args[0]) {
             Ok(b) => Ok(CellValue::Boolean(!b)),
             Err(err) => Ok(CellValue::Error(err)),
         }

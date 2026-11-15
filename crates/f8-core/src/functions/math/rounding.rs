@@ -1,4 +1,4 @@
-use crate::functions::common::{extract_scalar_integer, extract_scalar_number};
+use crate::functions::common::{scalar_integer, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
@@ -54,19 +54,15 @@ macro_rules! impl_rounding_function {
             fn evaluate(
                 &self,
                 args: &[FunctionArg<'_>],
-                ctx: &dyn EvalContext,
+                _ctx: &dyn EvalContext,
             ) -> Result<CellValue, FunctionError> {
                 validate_bound_args(self, args)?;
 
-                let num_res = extract_scalar_number(&args[0], self.name(), "number", 1, ctx)?;
-                let digits_res =
-                    extract_scalar_integer(&args[1], self.name(), "num_digits", 2, ctx)?;
-
-                let num = match num_res {
+                let num = match scalar_number(&args[0]) {
                     Ok(n) => n,
                     Err(err) => return Ok(CellValue::Error(err)),
                 };
-                let digits_i64 = match digits_res {
+                let digits_i64 = match scalar_integer(&args[1]) {
                     Ok(d) => d,
                     Err(err) => return Ok(CellValue::Error(err)),
                 };

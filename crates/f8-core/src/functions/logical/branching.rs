@@ -1,12 +1,9 @@
-use crate::functions::common::{
-    BranchTypeUnifier, eval_branch_arg, eval_taken_branch_arm, extract_scalar_bool,
-    extract_scalar_integer, validate_dormant_arm,
-};
+use crate::functions::common::{scalar_bool, scalar_integer};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
-    BranchPolicy, EvalContext, ExcelFunction, ExpectationOrigin, FunctionArg, FunctionCategory,
-    ParamKind, ParamType, ParameterDef, TypeExpectation, ValidationPolicy, VariadicRule,
+    BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
+    ParameterDef, ValidationPolicy, VariadicRule,
 };
 use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
@@ -76,30 +73,10 @@ impl ExcelFunction for IfFunction {
             });
         };
 
-        let mut unifier = BranchTypeUnifier::new(self.name());
-
-        match extract_scalar_bool(cond_arg, self.name(), "logical_test", 1, ctx)? {
-            Ok(true) => {
-                let (val, vt1) = eval_taken_branch_arm(true_arg, self.name(), ctx)?;
-                let vt2 = validate_dormant_arm(false_arg, self.name(), None, ctx)?;
-                unifier.record(2, vt1).map_err(FunctionError::Type)?;
-                unifier.record(3, vt2).map_err(FunctionError::Type)?;
-                Ok(val)
-            }
-            Ok(false) => {
-                let vt1 = validate_dormant_arm(true_arg, self.name(), None, ctx)?;
-                let (val, vt2) = eval_taken_branch_arm(false_arg, self.name(), ctx)?;
-                unifier.record(2, vt1).map_err(FunctionError::Type)?;
-                unifier.record(3, vt2).map_err(FunctionError::Type)?;
-                Ok(val)
-            }
-            Err(err) => {
-                let vt1 = validate_dormant_arm(true_arg, self.name(), None, ctx)?;
-                let vt2 = validate_dormant_arm(false_arg, self.name(), None, ctx)?;
-                unifier.record(2, vt1).map_err(FunctionError::Type)?;
-                unifier.record(3, vt2).map_err(FunctionError::Type)?;
-                Ok(CellValue::Error(err))
-            }
+        match scalar_bool(cond_arg) {
+            Ok(true) => true_arg.eval_scalar(self.name(), ctx),
+            Ok(false) => false_arg.eval_scalar(self.name(), ctx),
+            Err(err) => Ok(CellValue::Error(err)),
         }
     }
 }
@@ -156,53 +133,13 @@ impl ExcelFunction for IfsFunction {
     ) -> Result<CellValue, FunctionError> {
         validate_bound_args(self, args)?;
 
-        let mut unifier = BranchTypeUnifier::new(self.name());
-        let mut selected: Option<CellValue> = None;
-
         for (pair_idx, [test_arg, val_arg]) in args.as_chunks::<2>().0.iter().enumerate() {
             let cond_pos = 2 * pair_idx + 1;
-            let val_pos = 2 * pair_idx + 2;
-            let cond_exp = TypeExpectation {
-                expected: ExpectedType::Boolean,
-                origin: ExpectationOrigin::FunctionParam {
-                    function: self.name(),
-                    param: "logical_test1",
-                    position: cond_pos,
-                },
-            };
-
-            if selected.is_some() {
-                validate_dormant_arm(test_arg, self.name(), Some(cond_exp), ctx)?;
-                let val_vt = validate_dormant_arm(val_arg, self.name(), None, ctx)?;
-                unifier
-                    .record(val_pos, val_vt)
-                    .map_err(FunctionError::Type)?;
-                continue;
-            }
-
-            let cond_val = eval_branch_arg(test_arg, self.name(), ctx)?;
+            let cond_val = test_arg.eval_scalar(self.name(), ctx)?;
             match cond_val.strict_bool() {
-                Ok(Ok(true)) => {
-                    let (val, val_vt) = eval_taken_branch_arm(val_arg, self.name(), ctx)?;
-                    unifier
-                        .record(val_pos, val_vt)
-                        .map_err(FunctionError::Type)?;
-                    selected = Some(val);
-                }
-                Ok(Ok(false)) => {
-                    let val_vt = validate_dormant_arm(val_arg, self.name(), None, ctx)?;
-                    unifier
-                        .record(val_pos, val_vt)
-                        .map_err(FunctionError::Type)?;
-                }
-                Ok(Err(err)) => {
-                    validate_dormant_arm(test_arg, self.name(), Some(cond_exp), ctx)?;
-                    let val_vt = validate_dormant_arm(val_arg, self.name(), None, ctx)?;
-                    unifier
-                        .record(val_pos, val_vt)
-                        .map_err(FunctionError::Type)?;
-                    selected = Some(CellValue::Error(err));
-                }
+                Ok(Ok(true)) => return val_arg.eval_scalar(self.name(), ctx),
+                Ok(Ok(false)) => {}
+                Ok(Err(err)) => return Ok(CellValue::Error(err)),
                 Err(found) => {
                     return Err(FunctionError::Type(TypeError::InvalidArgumentType {
                         function: self.name(),
@@ -216,7 +153,7 @@ impl ExcelFunction for IfsFunction {
         }
 
         // If no conditions evaluate to TRUE, Excel returns #N/A
-        Ok(selected.unwrap_or(CellValue::Error(ExcelError::Na)))
+        Ok(CellValue::Error(ExcelError::Na))
     }
 }
 
@@ -280,41 +217,23 @@ impl ExcelFunction for ChooseFunction {
             });
         };
 
-        let idx_res = extract_scalar_integer(idx_arg, self.name(), "index_num", 1, ctx)?;
-        let selected_idx: Result<usize, ExcelError> = match idx_res {
-            Err(err) => Err(err),
-            Ok(idx) => {
-                if idx < 1 {
-                    Err(ExcelError::Value)
-                } else if let Ok(zero_based) = usize::try_from(idx - 1)
-                    && zero_based < choices.len()
-                {
-                    Ok(zero_based)
-                } else {
-                    Err(ExcelError::Value)
-                }
-            }
+        let idx = match scalar_integer(idx_arg) {
+            Ok(i) => i,
+            Err(err) => return Ok(CellValue::Error(err)),
         };
 
-        let mut unifier = BranchTypeUnifier::new(self.name());
-        let mut selected_val: Option<CellValue> = None;
-
-        for (k, choice) in choices.iter().enumerate() {
-            let pos = k + 2;
-            if selected_idx == Ok(k) {
-                let (val, vt) = eval_taken_branch_arm(choice, self.name(), ctx)?;
-                unifier.record(pos, vt).map_err(FunctionError::Type)?;
-                selected_val = Some(val);
-            } else {
-                let vt = validate_dormant_arm(choice, self.name(), None, ctx)?;
-                unifier.record(pos, vt).map_err(FunctionError::Type)?;
-            }
+        if idx < 1 {
+            return Ok(CellValue::Error(ExcelError::Value));
         }
 
-        match (selected_idx, selected_val) {
-            (Ok(_), Some(val)) => Ok(val),
-            (Err(err), _) => Ok(CellValue::Error(err)),
-            (Ok(_), None) => Ok(CellValue::Error(ExcelError::Value)),
-        }
+        let Ok(zero_based) = usize::try_from(idx - 1) else {
+            return Ok(CellValue::Error(ExcelError::Value));
+        };
+
+        let Some(choice) = choices.get(zero_based) else {
+            return Ok(CellValue::Error(ExcelError::Value));
+        };
+
+        choice.eval_scalar(self.name(), ctx)
     }
 }
