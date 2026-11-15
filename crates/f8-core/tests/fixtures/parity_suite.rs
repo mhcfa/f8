@@ -432,11 +432,77 @@ const MATH_CASES: &[ParityCase] = &[
         formula: "0 * -1",
         expected: ParityExpected::ExactNum(0.0),
     },
+    ParityCase {
+        id: "pow_unary_neg_prec",
+        label: "-2 ^ 2 [unary negation outside power -> -4]",
+        formula: "-2 ^ 2",
+        expected: ParityExpected::ExactNum(-4.0),
+    },
+    ParityCase {
+        id: "pow_paren_neg_base",
+        label: "(-2) ^ 2 [parenthesized negative base -> 4]",
+        formula: "(-2) ^ 2",
+        expected: ParityExpected::ExactNum(4.0),
+    },
+    ParityCase {
+        id: "pow_right_assoc",
+        label: "2 ^ 3 ^ 2 [right-associative power -> 512]",
+        formula: "2 ^ 3 ^ 2",
+        expected: ParityExpected::ExactNum(512.0),
+    },
+    ParityCase {
+        id: "pow_left_grouped",
+        label: "(2 ^ 3) ^ 2 [left-grouped power -> 64]",
+        formula: "(2 ^ 3) ^ 2",
+        expected: ParityExpected::ExactNum(64.0),
+    },
+    ParityCase {
+        id: "pow_unary_neg_exp_assoc",
+        label: "2 ^ -2 ^ 3 [2 ^ -(2 ^ 3) -> 0.00390625]",
+        formula: "2 ^ -2 ^ 3",
+        expected: ParityExpected::ExactNum(0.003_906_25),
+    },
+    ParityCase {
+        id: "sci_pos_exp",
+        label: "1.5E+6 + 0.25E+4 [scientific positive exponents -> 1502500]",
+        formula: "1.5E+6 + 0.25E+4",
+        expected: ParityExpected::ExactNum(1_502_500.0),
+    },
+    ParityCase {
+        id: "sci_neg_exp_sub",
+        label: "3e-9 - 1e-9 [scientific negative exponents -> 2e-9]",
+        formula: "3e-9 - 1e-9",
+        expected: ParityExpected::ApproxNum(2e-9),
+    },
+    ParityCase {
+        id: "sci_scale_cancel",
+        label: "1.5e-9 * 1e9 [scientific inverse scaling -> 1.5]",
+        formula: "1.5e-9 * 1e9",
+        expected: ParityExpected::ApproxNum(1.5),
+    },
+    ParityCase {
+        id: "sci_large_threshold",
+        label: "1e15 / 1E9 [scientific 1e15 boundary -> 1000000]",
+        formula: "1e15 / 1E9",
+        expected: ParityExpected::ExactNum(1_000_000.0),
+    },
+    ParityCase {
+        id: "sci_zero_exp_norm",
+        label: "0e-5 [scientific zero normalized to +0.0]",
+        formula: "0e-5",
+        expected: ParityExpected::ExactNum(0.0),
+    },
     // Error cases
     ParityCase {
         id: "div0_arith_err",
         label: "10 / 0 [#DIV/0!]",
         formula: "10 / 0",
+        expected: ParityExpected::Error(ExcelError::Div0),
+    },
+    ParityCase {
+        id: "pow_zero_neg_exp_err",
+        label: "0 ^ -2 [zero base negative exponent -> #DIV/0!]",
+        formula: "0 ^ -2",
         expected: ParityExpected::Error(ExcelError::Div0),
     },
     ParityCase {
@@ -450,6 +516,24 @@ const MATH_CASES: &[ParityCase] = &[
         label: "AVERAGEIFS(num_a, cat, \"Missing\") [no matches -> #DIV/0!]",
         formula: "AVERAGEIFS(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r1\"..\"r4\", \"category\"], \"Missing\")",
         expected: ParityExpected::Error(ExcelError::Div0),
+    },
+    ParityCase {
+        id: "pow_zero_zero_err",
+        label: "0 ^ 0 [zero to zero power -> #NUM!]",
+        formula: "0 ^ 0",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "pow_neg_zero_zero_err",
+        label: "(-0) ^ 0 [negative zero to zero power -> #NUM!]",
+        formula: "(-0) ^ 0",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "pow_zero_neg_zero_err",
+        label: "0 ^ (-0) [zero to negative zero power -> #NUM!]",
+        formula: "0 ^ (-0)",
+        expected: ParityExpected::Error(ExcelError::Num),
     },
     ParityCase {
         id: "pow_domain_err",

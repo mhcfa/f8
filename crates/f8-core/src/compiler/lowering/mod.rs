@@ -19,7 +19,8 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::LayoutMap;
 use crate::expr::ast::{
-    BinaryOp, BlankCheck, CallArg, CriteriaComparator, Expr, Literal, TableRef, UnaryOp,
+    BinaryOp, BinarySide, BlankCheck, CallArg, CriteriaComparator, Expr, Literal, TableRef,
+    UnaryOp, format_number_literal,
 };
 use crate::functions::registry::{FunctionRegistry, resolve_parameter};
 use crate::functions::traits::ParamKind;
@@ -276,12 +277,12 @@ fn lower_expr_inner(
     match expr {
         Expr::Literal(lit) => match lit {
             Literal::Number(n) => {
-                if n.is_nan() || n.is_infinite() {
+                if !n.is_finite() {
                     return Err(LoweringError::SyntaxError {
                         message: format!("invalid numeric literal '{n}' in formula"),
                     });
                 }
-                Ok(n.to_string())
+                Ok(format_number_literal(*n))
             }
             Literal::Boolean(true) => Ok("TRUE".to_string()),
             Literal::Boolean(false) => Ok("FALSE".to_string()),
@@ -300,8 +301,8 @@ fn lower_expr_inner(
             let left_str = lower_expr_inner(left, origin, symbol_table, layout_map, registry)?;
             let right_str = lower_expr_inner(right, origin, symbol_table, layout_map, registry)?;
 
-            let formatted_left = format_binary_operand(left, left_str, *op, false);
-            let formatted_right = format_binary_operand(right, right_str, *op, true);
+            let formatted_left = format_binary_operand(left, left_str, *op, BinarySide::Left);
+            let formatted_right = format_binary_operand(right, right_str, *op, BinarySide::Right);
 
             Ok(format!("{formatted_left}{}{formatted_right}", op.as_str()))
         }
@@ -487,8 +488,9 @@ fn format_binary_operand(
     child_expr: &Expr,
     child_str: String,
     parent_op: BinaryOp,
-    is_right: bool,
+    side: BinarySide,
 ) -> String {
+    let is_right = matches!(side, BinarySide::Right);
     let wrap = match child_expr {
         Expr::Binary { op: child_op, .. } => {
             let child_prec = child_op.precedence();
@@ -504,7 +506,7 @@ fn format_binary_operand(
         Expr::Unary { op: child_op, .. } => {
             is_right || child_op.precedence() < parent_op.precedence()
         }
-        Expr::Literal(Literal::Number(n)) if n.is_sign_negative() => {
+        Expr::Literal(Literal::Number(n)) if n.is_sign_negative() && *n != 0.0 => {
             is_right || UnaryOp::Neg.precedence() < parent_op.precedence()
         }
         Expr::Literal(Literal::Number(_) | Literal::String(_) | Literal::Boolean(_))

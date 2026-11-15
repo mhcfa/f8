@@ -283,8 +283,8 @@ fn test_models_emit_in_memory() {
         "Formulas must be emitted in uncached mode"
     );
     assert!(
-        uncached_sheet_xml.contains("0.000000001*ABS("),
-        "Parity check formulas must use 1e-9 (0.000000001) relative tolerance"
+        uncached_sheet_xml.contains("1E-9*ABS("),
+        "Parity check formulas must lower 1e-9 relative tolerance in compact uppercase E notation"
     );
     assert!(
         uncached_sheet_xml.contains("ERROR.TYPE("),
@@ -448,6 +448,64 @@ fn test_parity_oracle_detects_evaluation_divergence() {
     let evaluated =
         Compiler::evaluate(&manifest, &tables).expect("Perturbed parity model must evaluate");
     fixtures::parity_suite::assert_evaluated_parity(&evaluated);
+}
+
+#[test]
+fn test_pass2_rejects_overflow_and_malformed_numeric_literals() {
+    use f8_core::compiler::ir::IrError;
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic};
+    use f8_core::expr::ParseError;
+    use f8_core::model::id::ColId;
+    use f8_core::model::table::{CellInput, RowSpec};
+
+    let huge_int = "9".repeat(310);
+    let bad_tokens = [
+        "1e500",
+        "1.8e308",
+        huge_int.as_str(),
+        "1.5e",
+        "1.5e-",
+        "1.5e+",
+        "1.5e9a",
+        "1.5abc",
+        "1e+",
+        "1e-",
+        "1e+9a",
+        "1e-abc",
+    ];
+
+    for bad in bad_tokens {
+        let formula = format!("10 + {bad}");
+        let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
+        if let RowSpec::Data(abs_row) = &mut tables[1].rows[0] {
+            abs_row
+                .cells
+                .insert(ColId::from("formula_val"), CellInput::formula(&formula));
+        }
+
+        for err in [
+            Compiler::evaluate(&manifest, &tables).unwrap_err(),
+            Compiler::compile(&manifest, &tables).unwrap_err(),
+        ] {
+            assert!(
+                matches!(
+                    &err,
+                    CompilerError::Ir(IrError::FormulaParse {
+                        source: ParseError::InvalidNumber { raw, offset: 5 },
+                        ..
+                    }) if raw == bad
+                ),
+                "expected Pass 2 ParseError::InvalidNumber for '{formula}', got {err:?}"
+            );
+            assert!(matches!(
+                err.diagnostic(),
+                ErrorDiagnostic::FormulaParseError {
+                    token_offset: Some(5),
+                    ..
+                }
+            ));
+        }
+    }
 }
 
 // ----------------------------------------------------------------------------
