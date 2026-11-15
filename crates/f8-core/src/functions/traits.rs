@@ -331,6 +331,20 @@ impl<'a> FunctionArg<'a> {
         }
     }
 
+    /// Extracts the borrowed cell-value slice from a bound range (`Self::Array`).
+    pub fn as_range_slice(&self, function: &'static str) -> Result<&[CellValue], FunctionError> {
+        match self {
+            Self::Array { values, .. } => Ok(values.as_slice()),
+            Self::Scalar(_) | Self::Lazy(_) | Self::Criterion(_) | Self::Omitted => {
+                Err(FunctionError::InvalidArgumentKind {
+                    function,
+                    expected: "range",
+                    found: self.kind_name(),
+                })
+            }
+        }
+    }
+
     /// Resolves this argument to a single scalar `CellValue`, evaluating lazy expressions if necessary.
     pub fn eval_scalar(
         &self,

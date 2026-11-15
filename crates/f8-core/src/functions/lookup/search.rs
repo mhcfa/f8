@@ -1,12 +1,11 @@
 //! Shared 1D vector search and matching engine for lookup functions (`XLOOKUP`, `XMATCH`).
 //!
-//! Implements strict mode parsing, slice homogeneity and binary-search monotonicity checks,
+//! Implements strict mode parsing, binary-search monotonicity checks,
 //! linear forward/reverse scans, and binary ascending/descending bisection.
 
 use std::cmp::Ordering;
 
 use crate::functions::error::FunctionError;
-use crate::functions::traits::FunctionArg;
 use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
 
 /// Match mode configuration for `XLOOKUP` and `XMATCH`.
@@ -91,99 +90,34 @@ impl SearchMode {
     }
 }
 
-/// Validates that all non-`Empty`, non-`Error` elements in `slice` share a single [`ValueType`],
-/// returning that [`ValueType`] (or `None` if all elements are `Empty` or `Error`).
-pub fn validate_homogeneous_slice(
-    slice: &[CellValue],
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-) -> Result<Option<ValueType>, FunctionError> {
-    let mut first_vt: Option<ValueType> = None;
-    for cell in slice {
-        let cell_vt = match cell {
-            CellValue::Number(_) => ValueType::Number,
-            CellValue::Text(_) => ValueType::Text,
-            CellValue::Boolean(_) => ValueType::Boolean,
-            CellValue::Empty | CellValue::Error(_) => continue,
-        };
-        match first_vt {
-            None => first_vt = Some(cell_vt),
-            Some(expected_vt) => {
-                if cell_vt != expected_vt {
-                    return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                        function,
-                        param,
-                        position,
-                        expected: ExpectedType::from_value_type(expected_vt)
-                            .unwrap_or(ExpectedType::NonEmpty),
-                        found: cell_vt,
-                    }));
-                }
-            }
-        }
-    }
-    Ok(first_vt)
-}
-
-/// Validates `lookup_array` (position `2`) for `XLOOKUP` and `XMATCH` under linear or binary `search_mode`.
+/// Validates `lookup_array` (position `2`) for `XLOOKUP` and `XMATCH` under binary `search_mode` (`2` / `-2`).
 ///
-/// - Linear search (`1` / `-1`): All non-`Empty`, non-`Error` elements must be mutually homogeneous
-///   and match `lookup_value_type` when `Some`.
-/// - Binary search (`2` / `-2`): Every element must be non-`Empty` (`ExpectedType::NonEmpty`),
-///   mutually homogeneous and compatible with `lookup_value_type` (checked prior to `ErrorInBinaryLookupArray`),
-///   non-`Error` (`ErrorInBinaryLookupArray`), and monotonically sorted (`UnsortedBinaryLookupArray`)
-///   under `CellValue::compare_relational`.
+/// Binary search requires every element to be non-`Empty` (`ExpectedType::NonEmpty`),
+/// finite non-`Error` (`ErrorInBinaryLookupArray`), and monotonically sorted (`UnsortedBinaryLookupArray`)
+/// under `CellValue::compare_relational`. Slice homogeneity and `lookup_value` compatibility are enforced
+/// statically in Pass 4a.
 pub fn validate_lookup_array(
     slice: &[CellValue],
-    lookup_value_type: Option<ValueType>,
     search_mode: SearchMode,
     function: &'static str,
 ) -> Result<(), FunctionError> {
-    let is_binary = matches!(
+    if !matches!(
         search_mode,
         SearchMode::BinaryAscending | SearchMode::BinaryDescending
-    );
-    let mut expected_vt = lookup_value_type.filter(|vt| *vt != ValueType::Empty);
-
-    for cell in slice {
-        let cell_vt = match cell {
-            CellValue::Number(_) => ValueType::Number,
-            CellValue::Text(_) => ValueType::Text,
-            CellValue::Boolean(_) => ValueType::Boolean,
-            CellValue::Empty => {
-                if is_binary {
-                    return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                        function,
-                        param: "lookup_array",
-                        position: 2,
-                        expected: ExpectedType::NonEmpty,
-                        found: ValueType::Empty,
-                    }));
-                }
-                continue;
-            }
-            CellValue::Error(_) => continue,
-        };
-        match expected_vt {
-            None => expected_vt = Some(cell_vt),
-            Some(exp_vt) => {
-                if cell_vt != exp_vt {
-                    return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                        function,
-                        param: "lookup_array",
-                        position: 2,
-                        expected: ExpectedType::from_value_type(exp_vt)
-                            .unwrap_or(ExpectedType::NonEmpty),
-                        found: cell_vt,
-                    }));
-                }
-            }
-        }
+    ) {
+        return Ok(());
     }
 
-    if !is_binary {
-        return Ok(());
+    for cell in slice {
+        if matches!(cell, CellValue::Empty) {
+            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+                function,
+                param: "lookup_array",
+                position: 2,
+                expected: ExpectedType::NonEmpty,
+                found: ValueType::Empty,
+            }));
+        }
     }
 
     let mode_int = search_mode.as_mode_int();
@@ -246,37 +180,6 @@ pub fn validate_lookup_array(
     }
 
     Ok(())
-}
-
-/// Borrowed 1D range slice `(rows, cols, values)`.
-pub type RangeSlice<'a> = (usize, usize, &'a [CellValue]);
-
-/// Extracts a 1D range slice `(rows, cols, values)` from `arg`, rejecting non-range arguments with
-/// `InvalidArgumentKind` and 2D matrices (`rows > 1 && cols > 1`) with `ExpectedOneDimensionalSlice`.
-pub fn extract_1d_range_slice<'a>(
-    arg: &'a FunctionArg<'_>,
-    function: &'static str,
-    param: &'static str,
-) -> Result<RangeSlice<'a>, FunctionError> {
-    let FunctionArg::Array {
-        rows, cols, values, ..
-    } = arg
-    else {
-        return Err(FunctionError::InvalidArgumentKind {
-            function,
-            expected: "range",
-            found: "scalar",
-        });
-    };
-    if *rows > 1 && *cols > 1 {
-        return Err(FunctionError::ExpectedOneDimensionalSlice {
-            function,
-            param,
-            rows: *rows,
-            cols: *cols,
-        });
-    }
-    Ok((*rows, *cols, values.as_slice()))
 }
 
 /// Searches `slice` for `lookup_val` using the specified `match_mode` and `search_mode`.
@@ -451,7 +354,6 @@ fn find_binary_descending(
 #[allow(clippy::unwrap_used, reason = "test code")]
 mod tests {
     use super::*;
-    use crate::functions::traits::ReferenceKind;
 
     #[test]
     fn test_exact_match_linear() {
@@ -540,13 +442,7 @@ mod tests {
             CellValue::Number(30.0),
             CellValue::Number(40.0),
         ];
-        validate_lookup_array(
-            &asc,
-            Some(ValueType::Number),
-            SearchMode::BinaryAscending,
-            "XMATCH",
-        )
-        .unwrap();
+        validate_lookup_array(&asc, SearchMode::BinaryAscending, "XMATCH").unwrap();
         let res_asc = find_match_index(
             &CellValue::Number(30.0),
             &asc,
@@ -562,13 +458,7 @@ mod tests {
             CellValue::Number(20.0),
             CellValue::Number(10.0),
         ];
-        validate_lookup_array(
-            &desc,
-            Some(ValueType::Number),
-            SearchMode::BinaryDescending,
-            "XMATCH",
-        )
-        .unwrap();
+        validate_lookup_array(&desc, SearchMode::BinaryDescending, "XMATCH").unwrap();
         let res_desc = find_match_index(
             &CellValue::Number(30.0),
             &desc,
@@ -731,20 +621,8 @@ mod tests {
             CellValue::Text("gamma".into()),
         ];
         let text_desc: Vec<CellValue> = text_asc.iter().cloned().rev().collect();
-        validate_lookup_array(
-            &text_asc,
-            Some(ValueType::Text),
-            SearchMode::BinaryAscending,
-            "XLOOKUP",
-        )
-        .unwrap();
-        validate_lookup_array(
-            &text_desc,
-            Some(ValueType::Text),
-            SearchMode::BinaryDescending,
-            "XLOOKUP",
-        )
-        .unwrap();
+        validate_lookup_array(&text_asc, SearchMode::BinaryAscending, "XLOOKUP").unwrap();
+        validate_lookup_array(&text_desc, SearchMode::BinaryDescending, "XLOOKUP").unwrap();
         assert_eq!(
             find_match_index(
                 &CellValue::Text("bEtA".into()),
@@ -804,13 +682,7 @@ mod tests {
             CellValue::Empty,
             CellValue::Number(30.0),
         ];
-        validate_lookup_array(
-            &items,
-            Some(ValueType::Number),
-            SearchMode::FirstToLast,
-            "XLOOKUP",
-        )
-        .unwrap();
+        validate_lookup_array(&items, SearchMode::FirstToLast, "XLOOKUP").unwrap();
 
         let res_smaller = find_match_index(
             &CellValue::Number(25.0),
@@ -832,40 +704,14 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_lookup_array_and_homogeneous_slice_strictness() {
-        let mixed = vec![CellValue::Number(10.0), CellValue::Text("20".into())];
-        assert_eq!(
-            validate_lookup_array(&mixed, None, SearchMode::FirstToLast, "XLOOKUP"),
-            Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "XLOOKUP",
-                param: "lookup_array",
-                position: 2,
-                expected: ExpectedType::Number,
-                found: ValueType::Text,
-            }))
-        );
-
-        let all_div0 = vec![
-            CellValue::Error(ExcelError::Div0),
-            CellValue::Error(ExcelError::Div0),
-        ];
-        assert_eq!(
-            validate_homogeneous_slice(&all_div0, "INDEX", "array", 1),
-            Ok(None)
-        );
-
+    fn test_validate_lookup_array_binary_strictness() {
         let with_empty = vec![
             CellValue::Number(10.0),
             CellValue::Empty,
             CellValue::Number(30.0),
         ];
         assert_eq!(
-            validate_lookup_array(
-                &with_empty,
-                Some(ValueType::Number),
-                SearchMode::BinaryAscending,
-                "XLOOKUP"
-            ),
+            validate_lookup_array(&with_empty, SearchMode::BinaryAscending, "XLOOKUP"),
             Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "XLOOKUP",
                 param: "lookup_array",
@@ -881,12 +727,7 @@ mod tests {
             CellValue::Number(30.0),
         ];
         assert_eq!(
-            validate_lookup_array(
-                &with_err,
-                Some(ValueType::Number),
-                SearchMode::BinaryAscending,
-                "XLOOKUP"
-            ),
+            validate_lookup_array(&with_err, SearchMode::BinaryAscending, "XLOOKUP"),
             Err(FunctionError::ErrorInBinaryLookupArray {
                 function: "XLOOKUP",
                 search_mode: 2,
@@ -899,12 +740,7 @@ mod tests {
             CellValue::Number(20.0),
         ];
         assert_eq!(
-            validate_lookup_array(
-                &unsorted_asc,
-                Some(ValueType::Number),
-                SearchMode::BinaryAscending,
-                "XLOOKUP"
-            ),
+            validate_lookup_array(&unsorted_asc, SearchMode::BinaryAscending, "XLOOKUP"),
             Err(FunctionError::UnsortedBinaryLookupArray {
                 function: "XLOOKUP",
                 search_mode: 2,
@@ -917,59 +753,16 @@ mod tests {
             CellValue::Number(30.0),
         ];
         assert_eq!(
-            validate_lookup_array(
-                &unsorted_desc,
-                Some(ValueType::Number),
-                SearchMode::BinaryDescending,
-                "XMATCH"
-            ),
+            validate_lookup_array(&unsorted_desc, SearchMode::BinaryDescending, "XMATCH"),
             Err(FunctionError::UnsortedBinaryLookupArray {
                 function: "XMATCH",
                 search_mode: -2,
             })
         );
-
-        assert_eq!(
-            validate_homogeneous_slice(&mixed, "INDEX", "array", 1),
-            Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "INDEX",
-                param: "array",
-                position: 1,
-                expected: ExpectedType::Number,
-                found: ValueType::Text,
-            }))
-        );
     }
 
     #[test]
-    fn test_extract_1d_range_slice_and_strict_modes() {
-        let scalar = FunctionArg::Scalar(CellValue::Number(10.0));
-        assert_eq!(
-            extract_1d_range_slice(&scalar, "XMATCH", "lookup_array"),
-            Err(FunctionError::InvalidArgumentKind {
-                function: "XMATCH",
-                expected: "range",
-                found: "scalar",
-            })
-        );
-
-        let mat = FunctionArg::array(
-            2,
-            2,
-            vec![CellValue::Number(1.0); 4],
-            ReferenceKind::Slice,
-            crate::model::table::AxisRole::Measure,
-        );
-        assert_eq!(
-            extract_1d_range_slice(&mat, "XMATCH", "lookup_array"),
-            Err(FunctionError::ExpectedOneDimensionalSlice {
-                function: "XMATCH",
-                param: "lookup_array",
-                rows: 2,
-                cols: 2,
-            })
-        );
-
+    fn test_strict_modes() {
         assert_eq!(
             MatchMode::from_mode_int(2, "XLOOKUP", "match_mode", 5),
             Err(FunctionError::InvalidLookupMode {

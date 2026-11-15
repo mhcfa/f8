@@ -245,22 +245,27 @@ fn test_scenario_3_count_vs_counta_semantics() {
             found: ValueType::Empty,
         }))
     );
+    let count_desc_expr = f8_core::expr::Expr::parse("COUNT(T[\"r1\"..\"r2\", \"desc\"])").unwrap();
+    let mut resolve_count_desc = |_: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Descriptor,
+            elem_types: vec![Some(ValueType::Number); 2],
+        }))
+    };
     assert_eq!(
-        count_func.evaluate(
-            &[FunctionArg::array(
-                2,
-                1,
-                vec![CellValue::Number(10.0), CellValue::Number(20.0)],
-                ReferenceKind::Slice,
-                AxisRole::Descriptor,
-            )],
-            &ctx,
-        ),
-        Err(FunctionError::DescriptorReferenceNotAllowed {
-            function: "COUNT",
-            param: "value1",
-            position: 1,
-        })
+        registry.validate_expr_with_shapes(&count_desc_expr, &mut resolve_count_desc),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DescriptorReferenceNotAllowed {
+                function: "COUNT",
+                param: "value1",
+                position: 1,
+            }
+        ))
     );
 
     // COUNTA accepts mixed types, Empty, and Descriptor role: non-empty cells counted -> 4.0
@@ -341,9 +346,9 @@ fn test_scenario_3_count_vs_counta_semantics() {
         CellValue::Number(3.0)
     );
 
-    // Non-reference scalars are rejected by ParamKind::Range
+    // Non-reference scalars are rejected statically by ParamKind::Range
     assert_eq!(
-        count_func.evaluate(&[FunctionArg::Scalar(CellValue::Number(10.0))], &ctx),
+        registry.validate_expr(&f8_core::expr::Expr::parse("COUNT(10)").unwrap()),
         Err(FunctionError::InvalidArgumentKind {
             function: "COUNT",
             expected: "range",
@@ -351,10 +356,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
         })
     );
     assert_eq!(
-        counta_func.evaluate(
-            &[FunctionArg::Scalar(CellValue::Text("hello".into()))],
-            &ctx
-        ),
+        registry.validate_expr(&f8_core::expr::Expr::parse("COUNTA(\"hello\")").unwrap()),
         Err(FunctionError::InvalidArgumentKind {
             function: "COUNTA",
             expected: "range",
@@ -759,34 +761,40 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         );
     }
 
-    // Mismatched dimensions (3x1 and 2x1) -> FunctionError::DimensionMismatch (precedes role & element checks)
-    let r_mismatch = FunctionArg::array(
-        2,
-        1,
-        vec![CellValue::Number(4.0), CellValue::Number(5.0)],
-        ReferenceKind::Slice,
-        AxisRole::Descriptor,
-    );
-    let r_base = FunctionArg::array(
-        3,
-        1,
-        vec![
-            CellValue::Error(ExcelError::Div0),
-            CellValue::Number(2.0),
-            CellValue::Number(3.0),
-        ],
-        ReferenceKind::Slice,
-        AxisRole::Measure,
-    );
+    // Mismatched dimensions (3x1 and 2x1) -> FunctionError::DimensionMismatch statically
+    let sp_dim_expr =
+        f8_core::expr::Expr::parse("SUMPRODUCT(T[\"a1\"..\"a3\", @col], T[\"b1\"..\"b2\", @col])")
+            .unwrap();
+    let mut resolve_sp_dim =
+        |r: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            let rows = if let f8_core::expr::RowSelector::Range(
+                f8_core::expr::RowEndpoint::Key(s),
+                _,
+            ) = &r.row
+                && s.as_str() == "a1"
+            {
+                3
+            } else {
+                2
+            };
+            Ok(Some(f8_core::functions::StaticRef {
+                rows,
+                cols: 1,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![Some(ValueType::Number); rows],
+            }))
+        };
     assert_eq!(
-        sumproduct.evaluate(&[r_base, r_mismatch], &ctx),
-        Err(FunctionError::DimensionMismatch {
-            function: "SUMPRODUCT",
-            expected_rows: 3,
-            expected_cols: 1,
-            found_rows: 2,
-            found_cols: 1,
-        })
+        registry.validate_expr_with_shapes(&sp_dim_expr, &mut resolve_sp_dim),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::DimensionMismatch {
+                function: "SUMPRODUCT",
+                expected_rows: 3,
+                expected_cols: 1,
+                found_rows: 2,
+                found_cols: 1,
+            }
+        ))
     );
 
     // Error in range bubbles immediately
@@ -806,20 +814,6 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
     );
     let res_err = sumproduct.evaluate(&[r_err, r_valid], &ctx).unwrap();
     assert_eq!(res_err, CellValue::Error(ExcelError::Div0));
-
-    // Malformed array element count mismatch returns evaluation failure error
-    let r_malformed = FunctionArg::array(
-        2,
-        2,
-        vec![CellValue::Number(1.0)],
-        ReferenceKind::Slice,
-        AxisRole::Measure,
-    );
-    let res_malformed = sumproduct.evaluate(&[r_malformed], &ctx);
-    assert!(matches!(
-        res_malformed,
-        Err(FunctionError::EvaluationFailure { .. })
-    ));
 }
 
 #[test]

@@ -1,14 +1,12 @@
-//! Runtime argument binding (`bind_arguments`) and bound argument validation (`validate_bound_args`).
+//! Runtime argument binding (`bind_arguments`) and active value-domain validation (`validate_bound_args`).
 
 use crate::expr::ast::{CallArg, Expr};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     BoundCriterion, EmptyPolicy, EvalContext, ExcelFunction, FunctionArg, ParamKind, ParamType,
-    ParameterDef, RangeGrid, ReferenceKind, RolePolicy, ShapePolicy, ValidationPolicy,
-    VariadicRule,
+    ParameterDef, RangeGrid, ReferenceKind, ValidationPolicy, VariadicRule,
 };
-use crate::model::table::AxisRole;
 use crate::value::{
     CellValue, DateSerial, ExpectedType, StrictIntError, TypeError, ValueType,
     is_valid_input_date_serial,
@@ -23,8 +21,6 @@ impl FunctionRegistry {
         expr_args: &'a [CallArg],
         ctx: &dyn EvalContext,
     ) -> Result<Vec<FunctionArg<'a>>, FunctionError> {
-        crate::functions::typecheck::validate_signature(func, expr_args)?;
-
         let mut bound = Vec::with_capacity(expr_args.len());
 
         for (i, call_arg) in expr_args.iter().enumerate() {
@@ -237,307 +233,37 @@ pub(crate) fn validate_calendar_date_components(
     Ok(())
 }
 
-pub(crate) fn require_1d_slice(
-    function: &'static str,
-    param: &'static str,
-    shape: Option<(usize, usize)>,
-) -> Result<(), FunctionError> {
-    if let Some((rows, cols)) = shape
-        && rows > 1
-        && cols > 1
-    {
-        return Err(FunctionError::ExpectedOneDimensionalSlice {
-            function,
-            param,
-            rows,
-            cols,
-        });
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_shape_policy(
-    function: &'static str,
-    policy: ShapePolicy,
-    shapes: &[Option<(usize, usize)>],
-) -> Result<(), FunctionError> {
-    match policy {
-        ShapePolicy::EqualAllRanges => {
-            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
-                for shape in shapes.iter().skip(1) {
-                    if let Some((r, c)) = *shape
-                        && (r, c) != (exp_r, exp_c)
-                    {
-                        return Err(FunctionError::DimensionMismatch {
-                            function,
-                            expected_rows: exp_r,
-                            expected_cols: exp_c,
-                            found_rows: r,
-                            found_cols: c,
-                        });
-                    }
-                }
-            }
-        }
-        ShapePolicy::EqualTargetAndOddPairRanges => {
-            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
-                for idx in (1..shapes.len()).step_by(2) {
-                    if let Some((r, c)) = shapes[idx]
-                        && (r, c) != (exp_r, exp_c)
-                    {
-                        return Err(FunctionError::DimensionMismatch {
-                            function,
-                            expected_rows: exp_r,
-                            expected_cols: exp_c,
-                            found_rows: r,
-                            found_cols: c,
-                        });
-                    }
-                }
-            }
-        }
-        ShapePolicy::EqualEvenPairRanges => {
-            if let Some((exp_r, exp_c)) = shapes.first().copied().flatten() {
-                for idx in (2..shapes.len()).step_by(2) {
-                    if let Some((r, c)) = shapes[idx]
-                        && (r, c) != (exp_r, exp_c)
-                    {
-                        return Err(FunctionError::DimensionMismatch {
-                            function,
-                            expected_rows: exp_r,
-                            expected_cols: exp_c,
-                            found_rows: r,
-                            found_cols: c,
-                        });
-                    }
-                }
-            }
-        }
-        ShapePolicy::OneDimEqualLength {
-            first_idx,
-            first_param,
-            second_idx,
-            second_param,
-        } => {
-            let first_shape = shapes.get(first_idx).copied().flatten();
-            let second_shape = shapes.get(second_idx).copied().flatten();
-            require_1d_slice(function, first_param, first_shape)?;
-            require_1d_slice(function, second_param, second_shape)?;
-            if let (Some((r1, c1)), Some((r2, c2))) = (first_shape, second_shape) {
-                let len1 = r1 * c1;
-                let len2 = r2 * c2;
-                if len1 != len2 {
-                    return Err(FunctionError::LengthMismatch {
-                        function,
-                        expected: len1,
-                        found: len2,
-                    });
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ArgPresence {
-    Present,
-    Omitted,
-}
-
-pub(crate) trait ArgSlot {
-    fn presence(&self) -> ArgPresence;
-}
-
-impl ArgSlot for CallArg {
-    fn presence(&self) -> ArgPresence {
-        match self {
-            Self::Expr(_) | Self::Comparator { .. } | Self::BlankCheck(_) => ArgPresence::Present,
-            Self::Omitted => ArgPresence::Omitted,
-        }
-    }
-}
-
-impl ArgSlot for FunctionArg<'_> {
-    fn presence(&self) -> ArgPresence {
-        match self {
-            Self::Scalar(_) | Self::Array { .. } | Self::Lazy(_) | Self::Criterion(_) => {
-                ArgPresence::Present
-            }
-            Self::Omitted => ArgPresence::Omitted,
-        }
-    }
-}
-
-/// Validates runtime bound argument count, variadic pair parity, omitted parameter eligibility,
-/// argument kinds (`Range` vs scalar/slice), coupled slice shapes, column `RolePolicy`, `EmptyPolicy`,
-/// and declarative `ParamType` / `CalendarDate` constraints across all arguments.
+/// Validates active runtime `ParamType`, `EmptyPolicy`, and `CalendarDate` constraints across bound arguments.
 pub(crate) fn validate_bound_args(
     func: &dyn ExcelFunction,
     args: &[FunctionArg<'_>],
 ) -> Result<(), FunctionError> {
-    validate_arg_slots(func, args)?;
-
-    let mut shapes: Vec<Option<(usize, usize)>> = Vec::with_capacity(args.len());
-
-    // Pass 1: Validate `ParamKind` vs bound `FunctionArg` variant and collect array shapes.
-    for (i, arg) in args.iter().enumerate() {
-        let param = resolve_parameter(func, i)?;
-
-        match (param.kind, arg) {
-            (_, FunctionArg::Omitted) => shapes.push(None),
-            (ParamKind::Range, FunctionArg::Array { rows, cols, .. }) => {
-                shapes.push(Some((*rows, *cols)));
-            }
-            (ParamKind::Range, FunctionArg::Scalar(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "range",
-                    found: "scalar",
-                });
-            }
-            (ParamKind::Range, FunctionArg::Lazy(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "range",
-                    found: "lazy",
-                });
-            }
-            (ParamKind::Range, FunctionArg::Criterion(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "range",
-                    found: "criterion",
-                });
-            }
-            (
-                ParamKind::Scalar | ParamKind::Lazy,
-                FunctionArg::Array {
-                    rows,
-                    cols,
-                    ref_kind: ReferenceKind::Slice,
-                    ..
-                },
-            ) => {
-                return Err(FunctionError::SliceInScalarContext {
-                    rows: *rows,
-                    cols: *cols,
-                });
-            }
-            (
-                ParamKind::Scalar | ParamKind::Lazy,
-                FunctionArg::Array {
-                    ref_kind: ReferenceKind::SingleCell,
-                    ..
-                },
-            ) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "scalar",
-                    found: "array",
-                });
-            }
-            (ParamKind::Scalar | ParamKind::Lazy, FunctionArg::Criterion(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "scalar",
-                    found: "criterion",
-                });
-            }
-            (ParamKind::Scalar, FunctionArg::Lazy(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "scalar",
-                    found: "lazy",
-                });
-            }
-            (ParamKind::Scalar, FunctionArg::Scalar(_))
-            | (ParamKind::Lazy, FunctionArg::Scalar(_) | FunctionArg::Lazy(_)) => {
-                shapes.push(Some((1, 1)));
-            }
-            (ParamKind::RangeOrArray, FunctionArg::Array { rows, cols, .. }) => {
-                shapes.push(Some((*rows, *cols)));
-            }
-            (ParamKind::RangeOrArray, FunctionArg::Scalar(_) | FunctionArg::Lazy(_)) => {
-                shapes.push(Some((1, 1)));
-            }
-            (ParamKind::RangeOrArray, FunctionArg::Criterion(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "range or scalar",
-                    found: "criterion",
-                });
-            }
-            (ParamKind::Criteria, FunctionArg::Criterion(_)) => {
-                shapes.push(Some((1, 1)));
-            }
-            (
-                ParamKind::Criteria,
-                FunctionArg::Array {
-                    rows,
-                    cols,
-                    ref_kind: ReferenceKind::Slice,
-                    ..
-                },
-            ) => {
-                return Err(FunctionError::SliceInScalarContext {
-                    rows: *rows,
-                    cols: *cols,
-                });
-            }
-            (
-                ParamKind::Criteria,
-                FunctionArg::Array {
-                    ref_kind: ReferenceKind::SingleCell,
-                    ..
-                },
-            ) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "criterion",
-                    found: "array",
-                });
-            }
-            (ParamKind::Criteria, FunctionArg::Scalar(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "criterion",
-                    found: "scalar",
-                });
-            }
-            (ParamKind::Criteria, FunctionArg::Lazy(_)) => {
-                return Err(FunctionError::InvalidArgumentKind {
-                    function: func.name(),
-                    expected: "criterion",
-                    found: "lazy",
-                });
-            }
-        }
+    let min_args = func.min_args();
+    if args.len() < min_args {
+        return Err(FunctionError::TooFewArguments {
+            function: func.name(),
+            expected: min_args,
+            found: args.len(),
+        });
+    }
+    if let Some(max_args) = func.max_args()
+        && args.len() > max_args
+    {
+        return Err(FunctionError::TooManyArguments {
+            function: func.name(),
+            expected: max_args,
+            found: args.len(),
+        });
+    }
+    if func.variadic_rule() == VariadicRule::Pairs
+        && !(args.len() - func.parameters().len()).is_multiple_of(2)
+    {
+        return Err(FunctionError::InvalidVariadicPairs {
+            function: func.name(),
+            count: args.len(),
+        });
     }
 
-    // Pass 2: Coupled slice-shape invariants run before role and element `ParamType` checks.
-    if let ValidationPolicy::ShapeCoupled(shape_policy) = func.validation_policy() {
-        validate_shape_policy(func.name(), shape_policy, &shapes)?;
-    }
-
-    // Pass 3: Declarative `RolePolicy::MeasureOnly` runs before element `ParamType` checks.
-    for (i, arg) in args.iter().enumerate() {
-        let param = resolve_parameter(func, i)?;
-        if param.role_policy == RolePolicy::MeasureOnly
-            && let FunctionArg::Array {
-                axis_role: AxisRole::Descriptor,
-                ..
-            } = arg
-        {
-            return Err(FunctionError::DescriptorReferenceNotAllowed {
-                function: func.name(),
-                param: param.name,
-                position: i + 1,
-            });
-        }
-    }
-
-    // Pass 4: Per-argument `ParamType` and `EmptyPolicy` validation.
     for (i, arg) in args.iter().enumerate() {
         let param = resolve_parameter(func, i)?;
         let position = i + 1;
@@ -581,7 +307,6 @@ pub(crate) fn validate_bound_args(
         }
     }
 
-    // Pass 5: Calendar `(year, month, day)` domain validation after `ParamType::Integer` checks.
     if func.validation_policy() == ValidationPolicy::CalendarDate {
         let year = extract_bound_calendar_int(args.first());
         let month = extract_bound_calendar_int(args.get(1));
@@ -754,69 +479,6 @@ fn validate_value_against_param_type(
             })),
         },
     }
-}
-
-pub(crate) fn validate_arg_slots<T: ArgSlot>(
-    func: &dyn ExcelFunction,
-    args: &[T],
-) -> Result<(), FunctionError> {
-    let min = func.min_args();
-    if args.len() < min {
-        return Err(FunctionError::TooFewArguments {
-            function: func.name(),
-            expected: min,
-            found: args.len(),
-        });
-    }
-
-    if let Some(max) = func.max_args()
-        && args.len() > max
-    {
-        return Err(FunctionError::TooManyArguments {
-            function: func.name(),
-            expected: max,
-            found: args.len(),
-        });
-    }
-
-    if func.variadic_rule() == VariadicRule::Pairs {
-        let fixed_count = func.parameters().len();
-        if args.len() > fixed_count && !(args.len() - fixed_count).is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: func.name(),
-                count: args.len(),
-            });
-        }
-    }
-
-    let last_present = args
-        .iter()
-        .rposition(|arg| arg.presence() == ArgPresence::Present);
-
-    for (i, arg) in args.iter().enumerate() {
-        match arg.presence() {
-            ArgPresence::Present => {}
-            ArgPresence::Omitted => {
-                let param = resolve_parameter(func, i)?;
-                if !param.requirement.is_optional() {
-                    return Err(FunctionError::CannotOmitRequiredArgument {
-                        function: func.name(),
-                        param: param.name,
-                        position: i + 1,
-                    });
-                }
-                if last_present.is_none_or(|last| i >= last) {
-                    return Err(FunctionError::CannotOmitTrailingArgument {
-                        function: func.name(),
-                        param: param.name,
-                        position: i + 1,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Resolves the expected parameter definition for a given 0-indexed argument position,
