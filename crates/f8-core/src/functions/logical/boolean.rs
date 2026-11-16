@@ -44,6 +44,13 @@ impl ExcelFunction for AndFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match LogicalCollector::collect(args) {
             Ok(c) => Ok(CellValue::Boolean(c.all_true)),
             Err(err) => Ok(CellValue::Error(err)),
@@ -89,6 +96,13 @@ impl ExcelFunction for OrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match LogicalCollector::collect(args) {
             Ok(c) => Ok(CellValue::Boolean(c.any_true)),
             Err(err) => Ok(CellValue::Error(err)),
@@ -133,7 +147,14 @@ impl ExcelFunction for NotFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        match scalar_bool(&args[0]) {
+        let [arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        match scalar_bool(arg) {
             Ok(b) => Ok(CellValue::Boolean(!b)),
             Err(err) => Ok(CellValue::Error(err)),
         }

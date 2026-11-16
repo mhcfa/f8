@@ -1,5 +1,5 @@
 use crate::functions::traits::{FunctionArg, ReferenceKind};
-use crate::value::{CellValue, ExcelError, TypeError, ValueType, normalize_zero};
+use crate::value::{CellValue, ExcelError, normalize_zero};
 
 /// Aggregated numeric statistics gathered across arguments for arithmetic functions.
 #[derive(Debug, Clone, PartialEq)]
@@ -110,68 +110,6 @@ impl Default for NumericCollector {
     }
 }
 
-/// Unifies concrete non-`Empty`, non-`Error` `ValueType`s left-to-right across branch result arms.
-#[derive(Debug, Clone, Copy)]
-pub struct BranchTypeUnifier {
-    function: &'static str,
-    unified: Option<ValueType>,
-}
-
-impl BranchTypeUnifier {
-    /// Creates a new unifier for `function`.
-    #[must_use]
-    pub const fn new(function: &'static str) -> Self {
-        Self {
-            function,
-            unified: None,
-        }
-    }
-
-    /// Creates a new unifier pre-seeded with `initial`.
-    #[must_use]
-    pub const fn with_initial(function: &'static str, initial: Option<ValueType>) -> Self {
-        Self {
-            function,
-            unified: initial,
-        }
-    }
-
-    /// Returns the unified concrete `ValueType`, if any.
-    #[must_use]
-    pub const fn unified(&self) -> Option<ValueType> {
-        self.unified
-    }
-
-    /// Records `candidate` at 1-indexed `position`, returning `TypeError::IncompatibleBranchTypes` on mismatch.
-    pub fn record(
-        &mut self,
-        position: usize,
-        candidate: Option<ValueType>,
-    ) -> Result<Option<ValueType>, TypeError> {
-        let Some(concrete) = candidate else {
-            return Ok(self.unified);
-        };
-        match self.unified {
-            None => {
-                self.unified = Some(concrete);
-                Ok(self.unified)
-            }
-            Some(expected) => {
-                if concrete == expected {
-                    Ok(self.unified)
-                } else {
-                    Err(TypeError::IncompatibleBranchTypes {
-                        function: self.function,
-                        position,
-                        expected,
-                        found: concrete,
-                    })
-                }
-            }
-        }
-    }
-}
-
 /// Aggregated logical truth statistics gathered across arguments for boolean functions (`AND`, `OR`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalCollector {
@@ -243,33 +181,6 @@ impl Default for LogicalCollector {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Counts finite numeric cells across range arguments according to Excel `COUNT` semantics
-/// (skipping sparse `Empty` and `Error` cells).
-#[must_use]
-pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
-    let mut count = 0;
-
-    for arg in args {
-        match arg {
-            FunctionArg::Range { values, .. } => {
-                for v in values {
-                    if matches!(v, CellValue::Number(n) if n.is_finite()) {
-                        count += 1;
-                    }
-                }
-            }
-            FunctionArg::Scalar(val) => {
-                if matches!(val, CellValue::Number(n) if n.is_finite()) {
-                    count += 1;
-                }
-            }
-            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
-        }
-    }
-
-    count
 }
 
 /// Extracts a finite numeric scalar, bubbling `CellValue::Error(e)` as `Err(e)`.

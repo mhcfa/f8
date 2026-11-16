@@ -40,7 +40,14 @@ impl ExcelFunction for YearFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let serial_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
+        let [serial_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        let serial_val = match scalar_number(serial_arg).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -78,7 +85,14 @@ impl ExcelFunction for MonthFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let serial_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
+        let [serial_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        let serial_val = match scalar_number(serial_arg).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -116,7 +130,14 @@ impl ExcelFunction for DayFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let serial_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
+        let [serial_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        let serial_val = match scalar_number(serial_arg).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };

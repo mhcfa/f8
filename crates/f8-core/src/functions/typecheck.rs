@@ -4,7 +4,6 @@ use std::convert::Infallible;
 
 use crate::expr::ast::{BinaryOp, CallArg, Expr, Literal, TableRef, UnaryOp};
 use crate::functions::binder::resolve_parameter;
-use crate::functions::common::BranchTypeUnifier;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
@@ -13,6 +12,61 @@ use crate::functions::traits::{
 };
 use crate::model::table::AxisRole;
 use crate::value::{TypeError, ValueType};
+
+/// Unifies concrete non-`Empty`, non-`Error` [`ValueType`]s left-to-right across branch result arms.
+#[derive(Debug, Clone, Copy)]
+struct BranchTypeUnifier {
+    function: &'static str,
+    unified: Option<ValueType>,
+}
+
+impl BranchTypeUnifier {
+    const fn new(function: &'static str) -> Self {
+        Self {
+            function,
+            unified: None,
+        }
+    }
+
+    const fn with_initial(function: &'static str, initial: Option<ValueType>) -> Self {
+        Self {
+            function,
+            unified: initial,
+        }
+    }
+
+    const fn unified(&self) -> Option<ValueType> {
+        self.unified
+    }
+
+    fn record(
+        &mut self,
+        position: usize,
+        candidate: Option<ValueType>,
+    ) -> Result<Option<ValueType>, TypeError> {
+        let Some(concrete) = candidate else {
+            return Ok(self.unified);
+        };
+        match self.unified {
+            None => {
+                self.unified = Some(concrete);
+                Ok(self.unified)
+            }
+            Some(expected) => {
+                if concrete == expected {
+                    Ok(self.unified)
+                } else {
+                    Err(TypeError::IncompatibleBranchTypes {
+                        function: self.function,
+                        position,
+                        expected,
+                        found: concrete,
+                    })
+                }
+            }
+        }
+    }
+}
 
 /// Static metadata for a resolved [`TableRef`] during Pass 4a type checking.
 #[derive(Debug, Clone, PartialEq, Eq)]

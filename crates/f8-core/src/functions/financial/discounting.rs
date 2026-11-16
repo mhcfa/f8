@@ -7,7 +7,7 @@ use crate::functions::traits::{
 use crate::value::{CellValue, ExcelError, ValueType, validate_date_serial};
 
 /// Collects an ordered sequence of strict numeric cash flows across one or more validated arguments.
-pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, ExcelError> {
+fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, ExcelError> {
     let mut cfs = Vec::new();
     for arg in args {
         match arg {
@@ -92,12 +92,26 @@ impl ExcelFunction for NpvFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let rate = match scalar_number(&args[0]) {
+        let [rate_arg, cf_args @ ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        };
+        if cf_args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        }
+        let rate = match scalar_number(rate_arg) {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let cfs = match collect_cash_flows(&args[1..]) {
+        let cfs = match collect_cash_flows(cf_args) {
             Ok(c) => c,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -191,10 +205,17 @@ impl ExcelFunction for XnpvFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let raw_values = args[1].as_range_slice(self.name())?;
-        let raw_dates = args[2].as_range_slice(self.name())?;
+        let [rate_arg, values_arg, dates_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 3,
+                found: args.len(),
+            });
+        };
+        let raw_values = values_arg.as_range_slice(self.name())?;
+        let raw_dates = dates_arg.as_range_slice(self.name())?;
 
-        let rate = match scalar_number(&args[0]) {
+        let rate = match scalar_number(rate_arg) {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -214,11 +235,13 @@ impl ExcelFunction for XnpvFunction {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        if values.is_empty() {
+        if values.is_empty() || values.len() != dates.len() {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let start_date = dates[0];
+        let Some(&start_date) = dates.first() else {
+            return Ok(CellValue::Error(ExcelError::Num));
+        };
         let mut xnpv = 0.0;
 
         for (v, d_trunc) in values.iter().zip(dates.iter().copied()) {

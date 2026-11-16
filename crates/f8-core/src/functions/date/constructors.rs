@@ -54,10 +54,17 @@ impl ExcelFunction for DateFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        let [year_arg, month_arg, day_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 3,
+                found: args.len(),
+            });
+        };
         let eval = || -> Result<f64, ExcelError> {
-            let year_i64 = scalar_integer(&args[0])?;
-            let month_i64 = scalar_integer(&args[1])?;
-            let day_i64 = scalar_integer(&args[2])?;
+            let year_i64 = scalar_integer(year_arg)?;
+            let month_i64 = scalar_integer(month_arg)?;
+            let day_i64 = scalar_integer(day_arg)?;
 
             let y = i32::try_from(year_i64).map_err(|_| ExcelError::Num)?;
             let m = u32::try_from(month_i64).map_err(|_| ExcelError::Num)?;
@@ -79,9 +86,13 @@ enum MonthStepDay {
     EndOfMonth,
 }
 
-fn step_months(args: &[FunctionArg<'_>], day_mode: MonthStepDay) -> Result<f64, ExcelError> {
-    let start_val = validate_date_serial(scalar_number(&args[0])?)?;
-    let m_offset = scalar_integer(&args[1])?;
+fn step_months(
+    start_arg: &FunctionArg<'_>,
+    months_arg: &FunctionArg<'_>,
+    day_mode: MonthStepDay,
+) -> Result<f64, ExcelError> {
+    let start_val = validate_date_serial(scalar_number(start_arg)?)?;
+    let m_offset = scalar_integer(months_arg)?;
     if m_offset.abs() > 120_000 {
         return Err(ExcelError::Num);
     }
@@ -144,7 +155,14 @@ impl ExcelFunction for EdateFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        match step_months(args, MonthStepDay::ClampOriginal) {
+        let [start_arg, months_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        };
+        match step_months(start_arg, months_arg, MonthStepDay::ClampOriginal) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
         }
@@ -192,7 +210,14 @@ impl ExcelFunction for EomonthFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        match step_months(args, MonthStepDay::EndOfMonth) {
+        let [start_arg, months_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        };
+        match step_months(start_arg, months_arg, MonthStepDay::EndOfMonth) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
         }

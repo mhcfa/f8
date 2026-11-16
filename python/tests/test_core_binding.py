@@ -616,13 +616,7 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
             "data_size": 10.0,
         },
         "metrics": {
-            "title_row_height": 24.0,
-            "header_row_height": 18.0,
-            "section_row_height": 18.0,
-            "data_row_height": 15.0,
-            "gutter_row_height": 9.0,
             "gutter_col_width": 3.0,
-            "title_gutter_row_height": 8.0,
             "char_width_multiplier": 1.0,
             "col_padding": 1.0,
             "min_col_width": 12.0,
@@ -1271,7 +1265,7 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
             syntax_model.compile()
 
 
-def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
+def test_scenario_18_cluster_a1_strict_types_slices_iserror_and_na() -> None:
     # 1. Grammar strictness: unary `+`, chained comparisons, invalid offsets -> FormulaParseError
     for bad_parse in (
         "+10",

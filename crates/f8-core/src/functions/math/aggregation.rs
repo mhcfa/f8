@@ -1,8 +1,8 @@
-use crate::functions::common::{NumericCollector, count_numbers};
+use crate::functions::common::NumericCollector;
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
-    VariadicRule,
+    ReferenceKind, VariadicRule,
 };
 use crate::value::{CellValue, ExcelError, ValueType};
 
@@ -46,6 +46,13 @@ impl ExcelFunction for SumFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match NumericCollector::collect(args) {
             Ok(collector) => Ok(CellValue::number(collector.sum)),
             Err(err) => Ok(CellValue::Error(err)),
@@ -93,6 +100,13 @@ impl ExcelFunction for AverageFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match NumericCollector::collect(args) {
             Ok(collector) => {
                 if collector.count == 0 {
@@ -147,7 +161,48 @@ impl ExcelFunction for CountFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let count = count_numbers(args);
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
+
+        let mut count = 0usize;
+        for arg in args {
+            let FunctionArg::Range {
+                values, ref_kind, ..
+            } = arg
+            else {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function: self.name(),
+                    expected: "range",
+                    found: arg.kind_name(),
+                });
+            };
+            for v in values {
+                match v {
+                    CellValue::Number(n) => {
+                        if !n.is_finite() {
+                            return Ok(CellValue::Error(ExcelError::Num));
+                        }
+                        count += 1;
+                    }
+                    CellValue::Error(_) => {}
+                    CellValue::Empty => match ref_kind {
+                        ReferenceKind::Slice => {}
+                        ReferenceKind::SingleCell => {
+                            return Ok(CellValue::Error(ExcelError::Value));
+                        }
+                    },
+                    CellValue::Text(_) | CellValue::Boolean(_) => {
+                        return Ok(CellValue::Error(ExcelError::Value));
+                    }
+                }
+            }
+        }
+
         Ok(CellValue::number(count as f64))
     }
 }
@@ -192,6 +247,13 @@ impl ExcelFunction for MaxFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match NumericCollector::collect(args) {
             Ok(collector) => Ok(CellValue::number(collector.max_or_zero())),
             Err(err) => Ok(CellValue::Error(err)),
@@ -239,6 +301,13 @@ impl ExcelFunction for MinFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match NumericCollector::collect(args) {
             Ok(collector) => Ok(CellValue::number(collector.min_or_zero())),
             Err(err) => Ok(CellValue::Error(err)),
@@ -286,6 +355,13 @@ impl ExcelFunction for MedianFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        if args.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: 0,
+            });
+        }
         match NumericCollector::collect_values(args) {
             Ok(mut values) => {
                 if values.is_empty() {

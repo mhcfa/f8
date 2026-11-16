@@ -190,9 +190,16 @@ impl ExcelFunction for YearfracFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        let [start_arg, end_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        };
         let eval = || -> Result<f64, ExcelError> {
-            let start_val = scalar_number(&args[0])?;
-            let end_val = scalar_number(&args[1])?;
+            let start_val = scalar_number(start_arg)?;
+            let end_val = scalar_number(end_arg)?;
             let basis_i64 = optional_scalar_integer(args, 2, 0)?;
             let basis = DayCountBasis::from_i64(basis_i64)?;
             calculate_yearfrac(start_val, end_val, basis)

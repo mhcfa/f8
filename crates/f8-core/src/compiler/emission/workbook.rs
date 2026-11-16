@@ -314,10 +314,7 @@ impl WorkbookEmitter {
                 }
 
                 // Opt-In Table-Level Collapsing
-                if table.collapsible
-                    && let Some(placement) = layout_map.get_table(&table.id)
-                    && placement.end_row > placement.start_row
-                {
+                if table.collapsible && placement.end_row > placement.start_row {
                     worksheet.group_symbols_above(true);
                     worksheet.group_rows(placement.start_row + 1, placement.end_row)?;
                 }
@@ -328,7 +325,7 @@ impl WorkbookEmitter {
 
                     match row_spec {
                         RowSpec::Gutter => {
-                            // Gutter row: row height set in layout, cells remain blank without borders
+                            // Gutter row: cells remain blank without borders
                         }
                         RowSpec::SectionHeader(sh) => {
                             worksheet.write_string_with_format(
