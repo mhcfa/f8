@@ -100,28 +100,36 @@ impl DependencyGraph {
         &self.topological_order
     }
 
-    /// Returns the incoming dependencies of the given cell (cells that must be computed before it).
+    /// Returns the incoming dependencies of the given cell (cells that must be computed before it)
+    /// in formula reference order.
     pub fn dependencies_of(&self, cell: &CellId) -> Vec<&CellId> {
         let Some(&idx) = self.node_indices.get(cell) else {
             return Vec::new();
         };
 
-        self.graph
+        let mut deps: Vec<&CellId> = self
+            .graph
             .neighbors_directed(idx, petgraph::Direction::Incoming)
             .map(|n| &self.graph[n])
-            .collect()
+            .collect();
+        deps.reverse();
+        deps
     }
 
-    /// Returns the outgoing dependents of the given cell (cells that depend on its value).
+    /// Returns the outgoing dependents of the given cell (cells that depend on its value)
+    /// in grid declaration order.
     pub fn dependents_of(&self, cell: &CellId) -> Vec<&CellId> {
         let Some(&idx) = self.node_indices.get(cell) else {
             return Vec::new();
         };
 
-        self.graph
+        let mut deps: Vec<&CellId> = self
+            .graph
             .neighbors_directed(idx, petgraph::Direction::Outgoing)
             .map(|n| &self.graph[n])
-            .collect()
+            .collect();
+        deps.reverse();
+        deps
     }
 
     /// Returns the total number of cell nodes registered in the graph.

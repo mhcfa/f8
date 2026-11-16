@@ -888,62 +888,7 @@ impl CompiledModel {
         cell: &CellId,
         recursive: bool,
     ) -> Result<DependencyTree, InspectionError> {
-        if !self.grid.contains(cell) {
-            return Err(InspectionError::CellNotFound(cell.clone()));
-        }
-
-        let direct = self.graph.dependencies_of(cell);
-        let direct_count = direct.len();
-
-        if !recursive {
-            let nodes = direct
-                .into_iter()
-                .map(|dep| {
-                    let (sheet_address, value, formatted_value, excel_formula) =
-                        self.get_node_display_metadata(dep);
-                    DependencyNode {
-                        cell_id: dep.clone(),
-                        sheet_address,
-                        value,
-                        formatted_value,
-                        excel_formula,
-                        is_pruned: false,
-                        children: Vec::new(),
-                    }
-                })
-                .collect();
-
-            return Ok(DependencyTree {
-                root: cell.clone(),
-                direct_count,
-                transitive_count: direct_count,
-                nodes,
-            });
-        }
-
-        let mut all_visited = HashSet::new();
-        let mut visited_ancestors = HashSet::new();
-        let mut expanded = HashSet::new();
-        visited_ancestors.insert(cell.clone());
-
-        let mut nodes = Vec::with_capacity(direct_count);
-        for dep in direct {
-            nodes.push(self.build_precedent_tree_node(
-                dep,
-                &mut visited_ancestors,
-                &mut expanded,
-                &mut all_visited,
-            ));
-        }
-
-        let transitive_count = all_visited.len();
-
-        Ok(DependencyTree {
-            root: cell.clone(),
-            direct_count,
-            transitive_count,
-            nodes,
-        })
+        self.build_dependency_tree(cell, recursive, DependencyGraph::dependencies_of)
     }
 
     /// Queries downstream blast-radius dependents for a cell, returning a direct or recursive impact tree.
@@ -955,11 +900,28 @@ impl CompiledModel {
         cell: &CellId,
         recursive: bool,
     ) -> Result<DependencyTree, InspectionError> {
+        self.build_dependency_tree(cell, recursive, DependencyGraph::dependents_of)
+    }
+
+    fn build_dependency_tree<'a, F>(
+        &'a self,
+        cell: &CellId,
+        recursive: bool,
+        neighbors_fn: F,
+    ) -> Result<DependencyTree, InspectionError>
+    where
+        F: Fn(&'a DependencyGraph, &CellId) -> Vec<&'a CellId>,
+    {
+        struct TraversalFrame<'a> {
+            node: DependencyNode,
+            remaining_neighbors: std::vec::IntoIter<&'a CellId>,
+        }
+
         if !self.grid.contains(cell) {
             return Err(InspectionError::CellNotFound(cell.clone()));
         }
 
-        let direct = self.graph.dependents_of(cell);
+        let direct = neighbors_fn(&self.graph, cell);
         let direct_count = direct.len();
 
         if !recursive {
@@ -989,18 +951,91 @@ impl CompiledModel {
         }
 
         let mut all_visited = HashSet::new();
-        let mut visited_ancestors = HashSet::new();
         let mut expanded = HashSet::new();
-        visited_ancestors.insert(cell.clone());
+        expanded.insert(cell.clone());
+
+        let mut step_node =
+            |target: &'a CellId| -> (DependencyNode, Option<std::vec::IntoIter<&'a CellId>>) {
+                all_visited.insert(target.clone());
+                let (sheet_address, value, formatted_value, excel_formula) =
+                    self.get_node_display_metadata(target);
+                let deps = neighbors_fn(&self.graph, target);
+
+                if deps.is_empty() {
+                    (
+                        DependencyNode {
+                            cell_id: target.clone(),
+                            sheet_address,
+                            value,
+                            formatted_value,
+                            excel_formula,
+                            is_pruned: false,
+                            children: Vec::new(),
+                        },
+                        None,
+                    )
+                } else if !expanded.insert(target.clone()) {
+                    (
+                        DependencyNode {
+                            cell_id: target.clone(),
+                            sheet_address,
+                            value,
+                            formatted_value,
+                            excel_formula,
+                            is_pruned: true,
+                            children: Vec::new(),
+                        },
+                        None,
+                    )
+                } else {
+                    (
+                        DependencyNode {
+                            cell_id: target.clone(),
+                            sheet_address,
+                            value,
+                            formatted_value,
+                            excel_formula,
+                            is_pruned: false,
+                            children: Vec::with_capacity(deps.len()),
+                        },
+                        Some(deps.into_iter()),
+                    )
+                }
+            };
 
         let mut nodes = Vec::with_capacity(direct_count);
-        for dep in direct {
-            nodes.push(self.build_dependent_tree_node(
-                dep,
-                &mut visited_ancestors,
-                &mut expanded,
-                &mut all_visited,
-            ));
+        let mut stack: Vec<TraversalFrame<'a>> = Vec::new();
+
+        for top_dep in direct {
+            let (top_node, maybe_iter) = step_node(top_dep);
+            let Some(remaining_neighbors) = maybe_iter else {
+                nodes.push(top_node);
+                continue;
+            };
+
+            stack.push(TraversalFrame {
+                node: top_node,
+                remaining_neighbors,
+            });
+
+            while let Some(mut frame) = stack.pop() {
+                if let Some(next_dep) = frame.remaining_neighbors.next() {
+                    stack.push(frame);
+                    let (child_node, child_iter) = step_node(next_dep);
+                    if let Some(remaining_neighbors) = child_iter {
+                        stack.push(TraversalFrame {
+                            node: child_node,
+                            remaining_neighbors,
+                        });
+                    } else if let Some(parent) = stack.last_mut() {
+                        parent.node.children.push(child_node);
+                    }
+                } else if let Some(parent) = stack.last_mut() {
+                    parent.node.children.push(frame.node);
+                } else {
+                    nodes.push(frame.node);
+                }
+            }
         }
 
         let transitive_count = all_visited.len();
@@ -1011,128 +1046,6 @@ impl CompiledModel {
             transitive_count,
             nodes,
         })
-    }
-
-    fn build_precedent_tree_node(
-        &self,
-        cell_id: &CellId,
-        visited_ancestors: &mut HashSet<CellId>,
-        expanded: &mut HashSet<CellId>,
-        all_visited: &mut HashSet<CellId>,
-    ) -> DependencyNode {
-        all_visited.insert(cell_id.clone());
-        let (sheet_address, value, formatted_value, excel_formula) =
-            self.get_node_display_metadata(cell_id);
-
-        let deps = self.graph.dependencies_of(cell_id);
-        if deps.is_empty() {
-            return DependencyNode {
-                cell_id: cell_id.clone(),
-                sheet_address,
-                value,
-                formatted_value,
-                excel_formula,
-                is_pruned: false,
-                children: Vec::new(),
-            };
-        }
-
-        if visited_ancestors.contains(cell_id) || expanded.contains(cell_id) {
-            return DependencyNode {
-                cell_id: cell_id.clone(),
-                sheet_address,
-                value,
-                formatted_value,
-                excel_formula,
-                is_pruned: true,
-                children: Vec::new(),
-            };
-        }
-
-        visited_ancestors.insert(cell_id.clone());
-        expanded.insert(cell_id.clone());
-
-        let mut children = Vec::with_capacity(deps.len());
-        for dep in deps {
-            children.push(self.build_precedent_tree_node(
-                dep,
-                visited_ancestors,
-                expanded,
-                all_visited,
-            ));
-        }
-        visited_ancestors.remove(cell_id);
-
-        DependencyNode {
-            cell_id: cell_id.clone(),
-            sheet_address,
-            value,
-            formatted_value,
-            excel_formula,
-            is_pruned: false,
-            children,
-        }
-    }
-
-    fn build_dependent_tree_node(
-        &self,
-        cell_id: &CellId,
-        visited_ancestors: &mut HashSet<CellId>,
-        expanded: &mut HashSet<CellId>,
-        all_visited: &mut HashSet<CellId>,
-    ) -> DependencyNode {
-        all_visited.insert(cell_id.clone());
-        let (sheet_address, value, formatted_value, excel_formula) =
-            self.get_node_display_metadata(cell_id);
-
-        let deps = self.graph.dependents_of(cell_id);
-        if deps.is_empty() {
-            return DependencyNode {
-                cell_id: cell_id.clone(),
-                sheet_address,
-                value,
-                formatted_value,
-                excel_formula,
-                is_pruned: false,
-                children: Vec::new(),
-            };
-        }
-
-        if visited_ancestors.contains(cell_id) || expanded.contains(cell_id) {
-            return DependencyNode {
-                cell_id: cell_id.clone(),
-                sheet_address,
-                value,
-                formatted_value,
-                excel_formula,
-                is_pruned: true,
-                children: Vec::new(),
-            };
-        }
-
-        visited_ancestors.insert(cell_id.clone());
-        expanded.insert(cell_id.clone());
-
-        let mut children = Vec::with_capacity(deps.len());
-        for dep in deps {
-            children.push(self.build_dependent_tree_node(
-                dep,
-                visited_ancestors,
-                expanded,
-                all_visited,
-            ));
-        }
-        visited_ancestors.remove(cell_id);
-
-        DependencyNode {
-            cell_id: cell_id.clone(),
-            sheet_address,
-            value,
-            formatted_value,
-            excel_formula,
-            is_pruned: false,
-            children,
-        }
     }
 
     fn format_value(

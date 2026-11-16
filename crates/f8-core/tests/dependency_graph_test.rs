@@ -198,11 +198,9 @@ fn test_scenario_5_query_dependencies_and_dependents() {
     let cell_b = CellId::new("Model", "b", "2024E");
     let cell_c = CellId::new("Model", "c", "2024E");
 
-    // b depends on a1 and a2
+    // b depends on a1 and a2 in reference order
     let b_deps = dep_graph.dependencies_of(&cell_b);
-    assert_eq!(b_deps.len(), 2);
-    assert!(b_deps.contains(&&cell_a1));
-    assert!(b_deps.contains(&&cell_a2));
+    assert_eq!(b_deps, vec![&cell_a1, &cell_a2]);
 
     // b has dependent c
     let b_dependents = dep_graph.dependents_of(&cell_b);
@@ -361,11 +359,9 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
     let rev_2024_deps = dep_graph.dependencies_of(&rev_2024);
     assert_eq!(rev_2024_deps, vec![&rev_2023]);
 
-    // Check dependents of Assumptions tax_rate
+    // Check dependents of Assumptions tax_rate in declaration order
     let tax_rate_dependents = dep_graph.dependents_of(&tax_rate);
-    assert_eq!(tax_rate_dependents.len(), 2);
-    assert!(tax_rate_dependents.contains(&&tax_2023));
-    assert!(tax_rate_dependents.contains(&&tax_2024));
+    assert_eq!(tax_rate_dependents, vec![&tax_2023, &tax_2024]);
 }
 
 #[test]

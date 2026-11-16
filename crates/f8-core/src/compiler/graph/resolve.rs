@@ -288,17 +288,13 @@ fn resolve_col_offset<'a>(
         AxisRole::Measure => {}
     }
 
-    let anchor_measure_idx = target_table
-        .measure_columns
-        .iter()
-        .position(|c| c == &origin.col)
-        .ok_or_else(|| {
-            ResolveError::temporal_offset_out_of_bounds(
-                origin,
-                target_table.table_id.clone(),
-                signed_offset,
-            )
-        })?;
+    let anchor_measure_idx = target_table.measure_col_index(&origin.col).ok_or_else(|| {
+        ResolveError::temporal_offset_out_of_bounds(
+            origin,
+            target_table.table_id.clone(),
+            signed_offset,
+        )
+    })?;
 
     let target_measure_idx = match offset {
         RelativeOffset::Prev(_) => anchor_measure_idx.checked_sub(step).ok_or_else(|| {
