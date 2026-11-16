@@ -42,9 +42,23 @@ pub enum EmissionError {
         table: TableId,
     },
 
-    /// Cell coordinate was not found in layout.
-    #[error("Cell coordinate '{cell}' was not found in layout")]
+    /// Cell coordinate or node was not found in layout or grid.
+    #[error("Cell '{cell}' was not found in layout or grid")]
     MissingCell {
+        /// Cell identifier.
+        cell: CellId,
+    },
+
+    /// Lowered formula string for a formula cell was not found.
+    #[error("Lowered formula for cell '{cell}' was not found")]
+    MissingFormula {
+        /// Cell identifier.
+        cell: CellId,
+    },
+
+    /// Evaluated value for a formula cell was not found.
+    #[error("Evaluated value for cell '{cell}' was not found")]
+    MissingEvaluatedCell {
         /// Cell identifier.
         cell: CellId,
     },

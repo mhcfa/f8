@@ -19,7 +19,7 @@ use crate::model::id::SheetId;
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
-use crate::value::CellValue;
+use crate::value::{CellValue, normalize_zero};
 
 /// Configuration options for OpenXML workbook emission.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -401,15 +401,19 @@ impl WorkbookEmitter {
                                     }
                                 })?;
 
-                                let node = grid.get(&cell_id);
-                                let is_input = node.is_some_and(|n| n.payload.is_literal());
+                                let node = grid.get(&cell_id).ok_or_else(|| {
+                                    EmissionError::MissingCell {
+                                        cell: cell_id.clone(),
+                                    }
+                                })?;
+                                let is_input = node.payload.is_literal();
                                 let is_descriptor = col_data.role.is_descriptor();
 
                                 let format_key = CellFormatKey::new(
                                     coord.style_role,
-                                    node.and_then(|n| n.format),
-                                    node.and_then(|n| n.decimals),
-                                    node.and_then(|n| n.currency),
+                                    node.format,
+                                    node.decimals,
+                                    node.currency,
                                     is_input,
                                     is_descriptor,
                                     coord.indent,
@@ -419,18 +423,19 @@ impl WorkbookEmitter {
 
                                 if options.values_only {
                                     // Values-only freezing: write evaluated result as literal
-                                    if let Some(val) = evaluated.and_then(|e| e.get_cell(&cell_id))
-                                    {
-                                        emit_cell_value(
-                                            worksheet,
-                                            coord.row,
-                                            coord.col as u16,
-                                            val,
-                                            &cell_format,
-                                        )?;
-                                    } else if let Some(node) = node {
-                                        match &node.payload {
-                                            CellPayload::Literal(lit) => {
+                                    match &node.payload {
+                                        CellPayload::Literal(lit) => {
+                                            if let Some(val) =
+                                                evaluated.and_then(|e| e.get_cell(&cell_id))
+                                            {
+                                                emit_cell_value(
+                                                    worksheet,
+                                                    coord.row,
+                                                    coord.col as u16,
+                                                    val,
+                                                    &cell_format,
+                                                )?;
+                                            } else {
                                                 emit_value_literal(
                                                     worksheet,
                                                     coord.row,
@@ -439,67 +444,66 @@ impl WorkbookEmitter {
                                                     &cell_format,
                                                 )?;
                                             }
-                                            CellPayload::Formula(_) => {
-                                                worksheet.write_blank(
-                                                    coord.row,
-                                                    coord.col as u16,
-                                                    &cell_format,
-                                                )?;
-                                            }
                                         }
-                                    } else {
-                                        worksheet.write_blank(
-                                            coord.row,
-                                            coord.col as u16,
-                                            &cell_format,
-                                        )?;
+                                        CellPayload::Formula(_) => {
+                                            let val = evaluated
+                                                .and_then(|e| e.get_cell(&cell_id))
+                                                .ok_or_else(|| {
+                                                    EmissionError::MissingEvaluatedCell {
+                                                        cell: cell_id.clone(),
+                                                    }
+                                                })?;
+                                            emit_cell_value(
+                                                worksheet,
+                                                coord.row,
+                                                coord.col as u16,
+                                                val,
+                                                &cell_format,
+                                            )?;
+                                        }
                                     }
                                 } else {
                                     // Live formulas mode
-                                    if let Some(formula_str) = lowered_formulas.get(&cell_id) {
-                                        let mut formula = Formula::new(formula_str);
-                                        if !options.omit_formula_cache
-                                            && let Some(val) =
-                                                evaluated.and_then(|e| e.get_cell(&cell_id))
-                                        {
-                                            formula = formula.set_result(val.to_string());
+                                    match &node.payload {
+                                        CellPayload::Literal(lit) => {
+                                            emit_value_literal(
+                                                worksheet,
+                                                coord.row,
+                                                coord.col as u16,
+                                                lit,
+                                                &cell_format,
+                                            )?;
                                         }
-                                        worksheet.write_formula_with_format(
-                                            coord.row,
-                                            coord.col as u16,
-                                            formula,
-                                            &cell_format,
-                                        )?;
-                                    } else if let Some(node) = node {
-                                        match &node.payload {
-                                            CellPayload::Literal(lit) => {
-                                                emit_value_literal(
-                                                    worksheet,
-                                                    coord.row,
-                                                    coord.col as u16,
-                                                    lit,
-                                                    &cell_format,
-                                                )?;
+                                        CellPayload::Formula(_) => {
+                                            let formula_str = lowered_formulas
+                                                .get(&cell_id)
+                                                .ok_or_else(|| EmissionError::MissingFormula {
+                                                    cell: cell_id.clone(),
+                                                })?;
+                                            let mut formula = Formula::new(formula_str);
+                                            if !options.omit_formula_cache
+                                                && let Some(eval_model) = evaluated
+                                            {
+                                                let val =
+                                                    eval_model.get_cell(&cell_id).ok_or_else(
+                                                        || EmissionError::MissingEvaluatedCell {
+                                                            cell: cell_id.clone(),
+                                                        },
+                                                    )?;
+                                                formula = formula.set_result(val.to_string());
                                             }
-                                            CellPayload::Formula(_) => {
-                                                worksheet.write_blank(
-                                                    coord.row,
-                                                    coord.col as u16,
-                                                    &cell_format,
-                                                )?;
-                                            }
+                                            worksheet.write_formula_with_format(
+                                                coord.row,
+                                                coord.col as u16,
+                                                formula,
+                                                &cell_format,
+                                            )?;
                                         }
-                                    } else {
-                                        worksheet.write_blank(
-                                            coord.row,
-                                            coord.col as u16,
-                                            &cell_format,
-                                        )?;
                                     }
                                 }
 
                                 // Attach audit note if present
-                                if let Some(note) = node.and_then(|n| n.note.as_deref()) {
+                                if let Some(note) = node.note.as_deref() {
                                     worksheet.insert_note(
                                         coord.row,
                                         coord.col as u16,
@@ -527,7 +531,7 @@ fn emit_cell_value(
 ) -> Result<(), EmissionError> {
     match value {
         CellValue::Number(n) => {
-            worksheet.write_number_with_format(row, col, *n, format)?;
+            worksheet.write_number_with_format(row, col, normalize_zero(*n), format)?;
         }
         CellValue::Text(s) => {
             worksheet.write_string_with_format(row, col, s, format)?;
@@ -555,7 +559,7 @@ fn emit_value_literal(
 ) -> Result<(), EmissionError> {
     match lit {
         ValueLiteral::Number(n) => {
-            worksheet.write_number_with_format(row, col, *n, format)?;
+            worksheet.write_number_with_format(row, col, normalize_zero(*n), format)?;
         }
         ValueLiteral::String(s) => {
             worksheet.write_string_with_format(row, col, s, format)?;
