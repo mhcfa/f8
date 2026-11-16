@@ -1288,7 +1288,7 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
             parse_model.compile()
         assert type(parse_exc.value) is FormulaParseError
 
-    # 2. Type, EmptyFormulaResult, SliceInScalarContext, Range, and static bounds -> exact F8Error
+    # 2. Type, EmptyFormulaResult, SliceInScalarContext, and Range -> exact F8Error
     for bad_f8 in (
         '@table["a", @col]',
         'INDEX(@table["a".."a", @col], 1)',
@@ -1296,7 +1296,6 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
         '"5" + 1',
         "TRUE * 10",
         '@table["a", @col] + 1',
-        "ROUND(10, 2.5)",
         "IF(1, 10, 20)",
         'AND(@table["a", @col], TRUE)',
         '100 < "1"',
@@ -1310,8 +1309,6 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
         "COUNT(10)",
         'COUNT(@table["a", @col])',
         'SUMPRODUCT("abc")',
-        "CHOOSE(5, 10, 20)",
-        'INDEX(@table["r1".."r2", @col], 5)',
         "SWITCH(1, 1, 10, 20)",
     ):
         err_model = f8.Model(name="StrictErrorModel")
@@ -1432,14 +1429,6 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
         'CHOOSE(1, 10, "NM")',
         'IFS(TRUE, 10, FALSE, "NM")',
         'IF(FALSE, IF(TRUE, "a", "b") = IF(FALSE, 1, 2), TRUE)',
-        "ROUND(10, 2.5)",
-        "ROUND(10, --2.5)",
-        "ROUND(10, ---2.5)",
-        'ROUND(10, @table["flt_cell", @col])',
-        "IF(FALSE, ROUND(10, 2.5), 0)",
-        'IF(TRUE, ROUND(10, @table["flt_cell", @col]), 0)',
-        "ROUND(10, IF(FALSE, 2, 2.5))",
-        'ROUND(10, IF(FALSE, 2, @table["flt_cell", @col]))',
         'ROUND(10, IF(TRUE, "a", "b"))',
         'ROUND(10, IF(TRUE, 2, "bad"))',
         '1 + INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col])',
@@ -1485,14 +1474,8 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
         'INDEX(@table["num_adj".."err_txt", @col], 1)',
         'XLOOKUP("Alpha", @table["cat1".."cat2", @col], @table["num_adj".."err_txt", @col])',
         'IFERROR(INDEX(@table["err_div0".."err_div0_2", @col], 1), "fallback")',
-        'XMATCH("Alpha", @table["txt1".."txt2", @col], 2)',
-        'XMATCH("Alpha", @table["txt1".."txt2", @col], @table["dyn_idx", @col])',
-        'XMATCH("Alpha", @table["txt1".."txt2", @col], 1.5)',
+        'XMATCH("Alpha", @table["txt1".."txt2", @col], "abc")',
         'INDEX(@table["num1".."txt1", @col], 1)',
-        'XMATCH(20, @table["unsort1".."unsort3", @col], 0, 2)',
-        'XMATCH(20, @table["num1".."num2", @col], 0, -2)',
-        'XMATCH(10, @table["errk1".."errk2", @col], 0, 2)',
-        'XMATCH(10, @table["null_cell".."num1", @col], 0, 2)',
     ):
         err_model = f8.Model(name="ClusterA2ErrorModel")
         err_tbl = err_model.add_sheet("Main").add_table("T", title="Cluster A2 Error")
@@ -1651,13 +1634,13 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
         ('SUM(@table["txt1".."txt2", "c1"])', "expected number, found text"),
         ('SUM(@table["bool1".."bool2", "c1"])', "expected number, found boolean"),
         ("SUM(TRUE, 5)", "expected number, found boolean"),
-        ('SUM(@table["null1", "c1"])', "expected number, found empty"),
-        ('AVERAGE(@table["r1", "c1"], @table["null1", "c1"])', "expected number, found empty"),
+        ('SUM(@table["null1", "c1"])', "evaluated to an empty cell"),
+        ('AVERAGE(@table["r1", "c1"], @table["null1", "c1"])', "evaluated to an empty cell"),
         ('MIN(@table["txt1".."txt2", "c1"])', "expected number, found text"),
-        ('MAX(@table["null1", "c1"])', "expected number, found empty"),
+        ('MAX(@table["null1", "c1"])', "evaluated to an empty cell"),
         ('MEDIAN(@table["bool1".."bool2", "c1"])', "expected number, found boolean"),
         ('COUNT(@table["txt1".."txt2", "c1"])', "expected number, found text"),
-        ('COUNT(@table["null1", "c1"])', "expected number, found empty"),
+        ('COUNT(@table["null1", "c1"])', "evaluated to an empty cell"),
         (
             'SUMPRODUCT(@table["txt1".."txt2", "c1"], @table["r1".."r2", "c1"])',
             "expected number, found text",
@@ -1666,63 +1649,18 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
             'SUMPRODUCT(@table["bool1".."bool2", "c1"], @table["r1".."r2", "c1"])',
             "expected number, found boolean",
         ),
-        ('IFERROR(SUM(@table["null1", "c1"]), 0)', "expected number, found empty"),
-        ('NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"),
-        ('IRR(@table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"),
+        ('IFERROR(SUM(@table["null1", "c1"]), 0)', "evaluated to an empty cell"),
+        ('NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "evaluated to an empty cell"),
+        ('IRR(@table["cf_hole1".."cf_hole3", "c1"])', "evaluated to an empty cell"),
         (
             'XNPV(0.1, @table["cf_hole1".."cf_hole3", "c1"], @table["d1".."d3", "c1"])',
-            "expected number, found empty",
+            "evaluated to an empty cell",
         ),
         (
             'XIRR(@table["cf1".."cf3", "c1"], @table["d_hole1".."d_hole3", "c1"])',
-            "expected number, found empty",
+            "evaluated to an empty cell",
         ),
-        # Scenario 4: Strict calendar DATE, {0, 1} annuity type, and 0..=4 YEARFRAC basis
-        ("DATE(24, 12, 31)", "invalid year 24 in 'DATE': expected 4-digit year in 1900..=9999"),
-        ("DATE(0, 1, 1)", "invalid year 0 in 'DATE': expected 4-digit year in 1900..=9999"),
-        (
-            "DATE(1899, 12, 31)",
-            "invalid year 1899 in 'DATE': expected 4-digit year in 1900..=9999",
-        ),
-        ("DATE(-1, 1, 1)", "invalid year -1 in 'DATE': expected 4-digit year in 1900..=9999"),
-        (
-            "DATE(10000, 1, 1)",
-            "invalid year 10000 in 'DATE': expected 4-digit year in 1900..=9999",
-        ),
-        ("DATE(2024, 0, 1)", "invalid month 0 in 'DATE': expected integer in 1..=12"),
-        ("DATE(2024, 14, 1)", "invalid month 14 in 'DATE': expected integer in 1..=12"),
-        ("DATE(2024, 1, 0)", "invalid day 0 in 'DATE': expected integer in 1..=31"),
-        ("DATE(2024, 6, 31)", "invalid day 31 in 'DATE': expected integer in 1..=30"),
-        ("DATE(2025, 2, 29)", "invalid day 29 in 'DATE': expected integer in 1..=28"),
-        ("DATE(9999, 13, 1)", "invalid month 13 in 'DATE': expected integer in 1..=12"),
-        ("IF(FALSE, DATE(2024, 6, 31), 45292)", "invalid day 31 in 'DATE'"),
-        ('DATE(@table["yr_ok", "c1"], 14, 1)', "invalid month 14 in 'DATE'"),
-        ('IFERROR(DATE(@table["yr_24", "c1"], 1, 1), 0)', "invalid year 24 in 'DATE'"),
-        ('IF(TRUE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"),
-        ('DATE(2025, 2, @table["day_29", "c1"])', "invalid day 29 in 'DATE'"),
-        ('DATE(@table["yr_24", "c1"], 1 / 0, 1)', "invalid year 24 in 'DATE'"),
-        ("PMT(0.05, 10, -1000, 0, 2)", "invalid payment timing 'type' 2 in 'PMT'"),
-        ("IPMT(0.05, 1, 10, -1000, 0, -1)", "invalid payment timing 'type' -1 in 'IPMT'"),
-        ("PPMT(0.05, 1, 10, -1000, 0, 3)", "invalid payment timing 'type' 3 in 'PPMT'"),
-        ("YEARFRAC(45292, 45658, 5)", "invalid day-count 'basis' 5 in 'YEARFRAC'"),
-        # Scenario 5: Input serial bounds (1..=2958465), swapped XNPV/XIRR dates, ShapePolicy order
-        ("YEAR(0)", "expected serial in 1..=2958465"),
-        ("IF(FALSE, YEAR(0), 2024)", "expected serial in 1..=2958465"),
-        ("MONTH(0.5)", "expected serial in 1..=2958465"),
-        ("DAY(-1)", "expected serial in 1..=2958465"),
-        ("DAYS(45292, 0)", "expected serial in 1..=2958465"),
-        ("EDATE(0, 1)", "expected serial in 1..=2958465"),
-        ("EOMONTH(2958466, 0)", "expected serial in 1..=2958465"),
-        ("YEARFRAC(0, 45292, 0)", "expected serial in 1..=2958465"),
-        ('IF(TRUE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"),
-        (
-            'XNPV(0.1, @table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
-            "expected serial in 1..=2958465",
-        ),
-        (
-            'XIRR(@table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
-            "expected serial in 1..=2958465",
-        ),
+        # Scenario 5: ShapePolicy order
         (
             'XNPV(-2.0, @table["r1".."r2", "c1".."c2"], @table["r1".."r2", "c1".."c2"])',
             "requires a 1D slice, found 2x2",
@@ -1855,6 +1793,11 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     add_check("edate_udf", "EDATE(DATE(1900, 1, 15), -2)")
     add_check("eomonth_ovf", "EOMONTH(DATE(9999, 12, 1), 2)")
     add_check("yr_edate_bubble", "YEAR(EDATE(DATE(1900, 1, 15), -2))")
+    add_check("round_float", "ROUND(10, 2.5)")
+    add_check("date_yr24", "DATE(24, 1, 1)")
+    add_check("idx_oob", 'INDEX(@table["r1".."r3", "c1"], 5)')
+    add_check("choose_zero", "CHOOSE(0, 10, 20)")
+    add_check("xmatch_bad_mode", 'XMATCH(10, @table["r1".."r3", "c1"], 9)')
 
     compiled = ok_model.compile()
     assert compiled.num("T", "desc_counta", "c1") == 3.0
@@ -1892,6 +1835,11 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     assert compiled.value("T", "edate_udf", "c1") == "#NUM!"
     assert compiled.value("T", "eomonth_ovf", "c1") == "#NUM!"
     assert compiled.value("T", "yr_edate_bubble", "c1") == "#NUM!"
+    assert compiled.value("T", "round_float", "c1") == "#NUM!"
+    assert compiled.value("T", "date_yr24", "c1") == "#NUM!"
+    assert compiled.value("T", "idx_oob", "c1") == "#REF!"
+    assert compiled.value("T", "choose_zero", "c1") == "#VALUE!"
+    assert compiled.value("T", "xmatch_bad_mode", "c1") == "#VALUE!"
 
 
 def test_scenario_22_error_introspection() -> None:

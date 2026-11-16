@@ -11,7 +11,7 @@ use f8_core::functions::{
     RangeGrid, ReferenceKind, RolePolicy, ShapePolicy, StageAError, StaticRef, ValidationPolicy,
 };
 use f8_core::model::table::{AxisRole, ValueLiteral};
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Mock evaluation context tracking evaluated expressions.
 #[derive(Default)]
@@ -417,23 +417,20 @@ fn test_scenario_3_abs_scalar_evaluation() {
         .unwrap();
     assert_eq!(res, CellValue::Number(42.5));
 
-    // Empty, Boolean, and Text fail strictly with TypeError::InvalidArgumentType
-    for (bad_val, expected_found) in [
-        (CellValue::Empty, ValueType::Empty),
-        (CellValue::Boolean(true), ValueType::Boolean),
-        (CellValue::Boolean(false), ValueType::Boolean),
-        (CellValue::Text("invalid".into()), ValueType::Text),
+    // Boolean and Text fail in Stage A with TypeError::InvalidArgumentType
+    for (bad_formula, expected_found) in [
+        ("ABS(TRUE)", ValueType::Boolean),
+        ("ABS(FALSE)", ValueType::Boolean),
+        ("ABS(\"invalid\")", ValueType::Text),
     ] {
-        let err = abs
-            .evaluate(&[FunctionArg::Scalar(bad_val)], &ctx)
-            .unwrap_err();
+        let expr = Expr::parse(bad_formula).unwrap();
         assert_eq!(
-            err,
+            registry.validate_expr(&expr).unwrap_err(),
             FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "ABS",
                 param: "number",
                 position: 1,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: expected_found,
             })
         );
@@ -507,47 +504,19 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
         ))
     );
 
-    // Text or Boolean inside Slice, and Empty/Text/Boolean on Scalar or SingleCell fail strictly
-    for (bad_arg, found_type) in [
-        (
-            FunctionArg::range(
-                1,
-                2,
-                vec![CellValue::Number(10.0), CellValue::Text("N/A text".into())],
-                ReferenceKind::Slice,
-            ),
-            ValueType::Text,
-        ),
-        (
-            FunctionArg::range(
-                1,
-                2,
-                vec![CellValue::Number(10.0), CellValue::Boolean(true)],
-                ReferenceKind::Slice,
-            ),
-            ValueType::Boolean,
-        ),
-        (
-            FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
-            ValueType::Empty,
-        ),
-        (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
-        (
-            FunctionArg::Scalar(CellValue::Text("error".into())),
-            ValueType::Text,
-        ),
-        (
-            FunctionArg::Scalar(CellValue::Boolean(true)),
-            ValueType::Boolean,
-        ),
+    // Text or Boolean on SUM fail in Stage A with TypeError::InvalidArgumentType
+    for (bad_formula, found_type) in [
+        ("SUM(\"error\")", ValueType::Text),
+        ("SUM(TRUE)", ValueType::Boolean),
     ] {
+        let expr = Expr::parse(bad_formula).unwrap();
         assert_eq!(
-            sum.evaluate(&[bad_arg], &ctx),
+            registry.validate_expr(&expr),
             Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "SUM",
                 param: "number1",
                 position: 1,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: found_type,
             }))
         );
@@ -862,7 +831,6 @@ fn test_registry_metadata_and_iteration() {
                 second_idx: 1,
                 second_param: "dates",
             }),
-            "DATE" => ValidationPolicy::CalendarDate,
             _ => ValidationPolicy::Standard,
         };
         if expected_policy != ValidationPolicy::Standard {
@@ -874,7 +842,7 @@ fn test_registry_metadata_and_iteration() {
             "unexpected ValidationPolicy for {name}"
         );
     }
-    assert_eq!(non_standard_count, 12);
+    assert_eq!(non_standard_count, 11);
 }
 
 #[test]
@@ -1174,18 +1142,13 @@ fn test_direct_evaluate_and_omission_invariants() {
 fn test_stage_a_static_scalar_slice_and_shape_strictness() {
     let registry = FunctionRegistry::standard();
 
-    // Scenario 2: Static AST scalar, logical, discrete Integer, and relational strictness across active and dormant branches
+    // Scenario 2: Static AST scalar, logical, and relational strictness across active and dormant branches
     for bad_formula in [
         "\"5\" + 1",
         "TRUE * 10",
         "-FALSE",
         "ABS(\"invalid\")",
         "ROUND(TRUE, 2)",
-        "ROUND(10, 2.5)",
-        "ROUND(10, 100000000000000000000)",
-        "INDEX(T[\"r1\"..\"r4\", @col], 1.5)",
-        "DATE(2024, 1.5, 1)",
-        "PMT(0.05, 10, -1000, 0, 0.5)",
         "DAYS(\"invalid\", DATE(2024, 1, 1))",
         "IF(1, 10, 20)",
         "IF(\"TRUE\", 10, 20)",
@@ -1205,9 +1168,14 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         );
     }
 
-    // Valid expressions pass Stage A
+    // Valid expressions pass Stage A (including numeric literals whose domain bounds are evaluated in Pass 4b)
     for ok_formula in [
         "\"str\"",
+        "ROUND(10, 2.5)",
+        "ROUND(10, 100000000000000000000)",
+        "INDEX(T[\"r1\"..\"r4\", @col], 1.5)",
+        "DATE(2024, 1.5, 1)",
+        "PMT(0.05, 10, -1000, 0, 0.5)",
         "INDEX(T[\"r1\"..\"r4\", @col], XMATCH(\"Beta\", T[\"r1\"..\"r4\", @col]))",
         "DATE(YEAR(T[\"r1\", @col]) + 1, MONTH(T[\"r1\", @col]), DAY(T[\"r1\", @col]))",
         "ISBLANK(T[\"r1\", @col])",
@@ -1320,14 +1288,6 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         "XNPV(-2.0, T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
         "XIRR(T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
         "INDEX(T[\"r1\"..\"r4\", \"c1\"..\"c2\"], 2)",
-        "INDEX(T[\"r1\"..\"r4\", @col], 5)",
-        "INDEX(T[\"r1\", \"c1\"..\"c4\"], 5)",
-        "INDEX(T[\"r1\"..\"r4\", @col], 0)",
-        "INDEX(T[\"r1\"..\"r4\", @col], -1)",
-        "CHOOSE(5, 100, 200, 300)",
-        "CHOOSE(0, 100)",
-        "IFERROR(INDEX(T[\"r1\"..\"r4\", @col], 5), 0)",
-        "IF(TRUE, 1, CHOOSE(0, 100))",
     ] {
         let expr = Expr::parse(shape_or_bounds).unwrap();
         let err = registry
@@ -1341,18 +1301,25 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
                         | FunctionError::LengthMismatch { .. }
                         | FunctionError::ExpectedOneDimensionalSlice { .. }
                         | FunctionError::MissingColumnIndexFor2DSlice { .. }
-                        | FunctionError::IndexOutOfBounds { .. }
                 )
             ),
-            "expected static shape/rank/bounds error for '{shape_or_bounds}', got {err:?}"
+            "expected static shape/rank error for '{shape_or_bounds}', got {err:?}"
         );
     }
 
-    // Valid 1x1 single-cell and 1x1 slice in Range/ScalarOrRange and 2-arg horizontal INDEX succeed
+    // Valid 1x1 single-cell and 1x1 slice in Range/ScalarOrRange, 2-arg horizontal INDEX, and numeric indices (checked at runtime) succeed in Stage A
     for valid_shape_case in [
         "COUNT(T[\"r1\", @col])",
         "SUM(T[\"r1\"..\"r1\", @col])",
         "INDEX(T[\"r1\", \"c1\"..\"c4\"], 3)",
+        "INDEX(T[\"r1\"..\"r4\", @col], 5)",
+        "INDEX(T[\"r1\", \"c1\"..\"c4\"], 5)",
+        "INDEX(T[\"r1\"..\"r4\", @col], 0)",
+        "INDEX(T[\"r1\"..\"r4\", @col], -1)",
+        "CHOOSE(5, 100, 200, 300)",
+        "CHOOSE(0, 100)",
+        "IFERROR(INDEX(T[\"r1\"..\"r4\", @col], 5), 0)",
+        "IF(TRUE, 1, CHOOSE(0, 100))",
     ] {
         let expr = Expr::parse(valid_shape_case).unwrap();
         assert!(
@@ -1424,7 +1391,7 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
                 found: ValueType::Text,
             }),
         ),
-        // Relational comparisons, parameter-boundary integer refinements, and XLOOKUP if_not_found
+        // Relational comparisons, parameter type mismatches, and XLOOKUP if_not_found
         (
             "IF(FALSE, IF(TRUE, \"a\", \"b\") = IF(FALSE, 1, 2), TRUE)",
             FunctionError::Type(TypeError::IncompatibleComparison {
@@ -1434,57 +1401,12 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
             }),
         ),
         (
-            "ROUND(10, 2.5)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: "2.5".into(),
-            }),
-        ),
-        (
-            "ROUND(10, -2.5)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: "-2.5".into(),
-            }),
-        ),
-        (
-            "ROUND(10, --2.5)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: "2.5".into(),
-            }),
-        ),
-        (
-            "ROUND(10, ---2.5)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: "-2.5".into(),
-            }),
-        ),
-        (
-            "IF(FALSE, ROUND(10, 2.5), 0)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: "2.5".into(),
-            }),
-        ),
-        (
             "ROUND(10, IF(TRUE, \"a\", \"b\"))",
             FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "ROUND",
                 param: "num_digits",
                 position: 2,
-                expected: ExpectedType::Integer,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             }),
         ),
@@ -1501,88 +1423,19 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
             "1 + XLOOKUP(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"num\"], \"NM\")",
             FunctionError::Type(TypeError::InvalidOperandType {
                 operator: "+",
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             }),
         ),
-        // XLOOKUP & XMATCH mode literal validation order: ParamType::Integer -> literal check -> valid mode set
         (
             "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], \"abc\")",
             FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "XMATCH",
                 param: "match_mode",
                 position: 3,
-                expected: ExpectedType::Integer,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             }),
-        ),
-        (
-            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 1.5)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "XMATCH",
-                param: "match_mode",
-                position: 3,
-                value: "1.5".into(),
-            }),
-        ),
-        (
-            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"mode\", @col])",
-            FunctionError::NonLiteralLookupMode {
-                function: "XMATCH",
-                param: "match_mode",
-                position: 3,
-            },
-        ),
-        (
-            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 0 + 0)",
-            FunctionError::NonLiteralLookupMode {
-                function: "XMATCH",
-                param: "match_mode",
-                position: 3,
-            },
-        ),
-        (
-            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], --1)",
-            FunctionError::NonLiteralLookupMode {
-                function: "XMATCH",
-                param: "match_mode",
-                position: 3,
-            },
-        ),
-        (
-            "XLOOKUP(\"A\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"cat\"], \"nf\", --1)",
-            FunctionError::NonLiteralLookupMode {
-                function: "XLOOKUP",
-                param: "match_mode",
-                position: 5,
-            },
-        ),
-        (
-            "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 2)",
-            FunctionError::InvalidLookupMode {
-                function: "XMATCH",
-                param: "match_mode",
-                position: 3,
-                mode: 2,
-            },
-        ),
-        (
-            "XLOOKUP(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"num\"], _, 99)",
-            FunctionError::InvalidLookupMode {
-                function: "XLOOKUP",
-                param: "match_mode",
-                position: 5,
-                mode: 99,
-            },
-        ),
-        (
-            "XLOOKUP(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"r1\"..\"r4\", \"num\"], _, 0, 0)",
-            FunctionError::InvalidLookupMode {
-                function: "XLOOKUP",
-                param: "search_mode",
-                position: 6,
-                mode: 0,
-            },
         ),
     ];
 
@@ -1595,7 +1448,7 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
         );
     }
 
-    // Valid monomorphic branches, NA() error bottom type, and clean literal lookup modes succeed
+    // Valid monomorphic branches, NA() error bottom type, and numeric arguments succeed in Stage A
     for valid_formula in [
         "IF(T[\"c\", @col], \"PASS\", \"FAIL\")",
         "IF(T[\"ebitda\", @col] > 0, T[\"ev\", @col] / T[\"ebitda\", @col], NA())",
@@ -1605,6 +1458,12 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
         "ROUND(10, -IF(TRUE, 2, 3))",
         "ROUND(10, IF(TRUE, 2, 2.5))",
         "ROUND(10, --2)",
+        "ROUND(10, 2.5)",
+        "ROUND(10, --2.5)",
+        "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 1.5)",
+        "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], T[\"mode\", @col])",
+        "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 0 + 0)",
+        "XMATCH(\"Beta\", T[\"r1\"..\"r4\", \"cat\"], 2)",
     ] {
         let expr = Expr::parse(valid_formula).unwrap();
         assert!(
@@ -1752,249 +1611,41 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
         );
     }
 
-    // Scenario 4 & 5: Stage A CalendarDate, AnnuityType, DayCountBasis, and DateSerial domain bounds
-    let domain_cases: &[(&str, FunctionError)] = &[
-        (
-            "DATE(24, 12, 31)",
-            FunctionError::InvalidDateYear { year: 24 },
-        ),
-        (
-            "DATE(--24, 12, 31)",
-            FunctionError::InvalidDateYear { year: 24 },
-        ),
-        ("DATE(0, 1, 1)", FunctionError::InvalidDateYear { year: 0 }),
-        (
-            "DATE(1899, 12, 31)",
-            FunctionError::InvalidDateYear { year: 1899 },
-        ),
-        (
-            "DATE(-1, 1, 1)",
-            FunctionError::InvalidDateYear { year: -1 },
-        ),
-        (
-            "DATE(10000, 1, 1)",
-            FunctionError::InvalidDateYear { year: 10000 },
-        ),
-        (
-            "DATE(2024, 0, 1)",
-            FunctionError::InvalidDateMonth { month: 0 },
-        ),
-        (
-            "DATE(2024, 14, 1)",
-            FunctionError::InvalidDateMonth { month: 14 },
-        ),
-        (
-            "DATE(9999, 13, 1)",
-            FunctionError::InvalidDateMonth { month: 13 },
-        ),
-        (
-            "DATE(T[\"y\", @col], 14, 1)",
-            FunctionError::InvalidDateMonth { month: 14 },
-        ),
-        (
-            "DATE(T[\"y\", @col], T[\"m\", @col], 0)",
-            FunctionError::InvalidDateDay {
-                day: 0,
-                max_day: 31,
-            },
-        ),
-        (
-            "DATE(T[\"y\", @col], T[\"m\", @col], 32)",
-            FunctionError::InvalidDateDay {
-                day: 32,
-                max_day: 31,
-            },
-        ),
-        (
-            "DATE(T[\"y\", @col], 6, 31)",
-            FunctionError::InvalidDateDay {
-                day: 31,
-                max_day: 30,
-            },
-        ),
-        (
-            "DATE(T[\"y\", @col], 2, 30)",
-            FunctionError::InvalidDateDay {
-                day: 30,
-                max_day: 29,
-            },
-        ),
-        (
-            "DATE(2024, 1, 0)",
-            FunctionError::InvalidDateDay {
-                day: 0,
-                max_day: 31,
-            },
-        ),
-        (
-            "DATE(2024, 6, 31)",
-            FunctionError::InvalidDateDay {
-                day: 31,
-                max_day: 30,
-            },
-        ),
-        (
-            "DATE(2025, 2, 29)",
-            FunctionError::InvalidDateDay {
-                day: 29,
-                max_day: 28,
-            },
-        ),
-        (
-            "IF(FALSE, DATE(2024, 6, 31), DATE(2024, 1, 1))",
-            FunctionError::InvalidDateDay {
-                day: 31,
-                max_day: 30,
-            },
-        ),
-        (
-            "DATE(\"2024\", 1, 1)",
-            FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "DATE",
-                param: "year",
-                position: 1,
-                expected: ExpectedType::Integer,
-                found: ValueType::Text,
-            }),
-        ),
-        (
-            "DATE(2024.5, 1, 1)",
-            FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "DATE",
-                param: "year",
-                position: 1,
-                value: "2024.5".into(),
-            }),
-        ),
-        (
-            "PMT(0.05, 10, -1000, 0, 2)",
-            FunctionError::InvalidAnnuityType {
-                function: "PMT",
-                found: 2,
-            },
-        ),
-        (
-            "IPMT(0.05, 1, 10, -1000, 0, -1)",
-            FunctionError::InvalidAnnuityType {
-                function: "IPMT",
-                found: -1,
-            },
-        ),
-        (
-            "PPMT(0.05, 1, 10, -1000, 0, 3)",
-            FunctionError::InvalidAnnuityType {
-                function: "PPMT",
-                found: 3,
-            },
-        ),
-        (
-            "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5)",
-            FunctionError::InvalidDayCountBasis { found: 5 },
-        ),
-        (
-            "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), -1)",
-            FunctionError::InvalidDayCountBasis { found: -1 },
-        ),
-        (
-            "YEAR(0)",
-            FunctionError::InvalidDateSerial {
-                function: "YEAR",
-                param: "serial_number",
-                position: 1,
-                serial: "0".into(),
-            },
-        ),
-        (
-            "YEAR(-0)",
-            FunctionError::InvalidDateSerial {
-                function: "YEAR",
-                param: "serial_number",
-                position: 1,
-                serial: "0".into(),
-            },
-        ),
-        (
-            "MONTH(0.5)",
-            FunctionError::InvalidDateSerial {
-                function: "MONTH",
-                param: "serial_number",
-                position: 1,
-                serial: "0.5".into(),
-            },
-        ),
-        (
-            "DAY(-1)",
-            FunctionError::InvalidDateSerial {
-                function: "DAY",
-                param: "serial_number",
-                position: 1,
-                serial: "-1".into(),
-            },
-        ),
-        (
-            "DAYS(2958466, 1)",
-            FunctionError::InvalidDateSerial {
-                function: "DAYS",
-                param: "end_date",
-                position: 1,
-                serial: "2958466".into(),
-            },
-        ),
-        (
-            "EDATE(0, 1)",
-            FunctionError::InvalidDateSerial {
-                function: "EDATE",
-                param: "start_date",
-                position: 1,
-                serial: "0".into(),
-            },
-        ),
-        (
-            "EOMONTH(3000000, 0)",
-            FunctionError::InvalidDateSerial {
-                function: "EOMONTH",
-                param: "start_date",
-                position: 1,
-                serial: "3000000".into(),
-            },
-        ),
-        (
-            "YEARFRAC(1, 0)",
-            FunctionError::InvalidDateSerial {
-                function: "YEARFRAC",
-                param: "end_date",
-                position: 2,
-                serial: "0".into(),
-            },
-        ),
-    ];
+    // Scenario 4 & 5: Non-numeric arguments fail Stage A, while numeric domain values pass Stage A and evaluate at runtime
+    let expr = Expr::parse("DATE(\"2024\", 1, 1)").unwrap();
+    assert_eq!(
+        registry.validate_expr(&expr).unwrap_err(),
+        FunctionError::Type(TypeError::InvalidArgumentType {
+            function: "DATE",
+            param: "year",
+            position: 1,
+            expected: ValueType::Number,
+            found: ValueType::Text,
+        })
+    );
 
-    for (formula, expected_err) in domain_cases {
-        let expr = Expr::parse(formula).unwrap();
-        assert_eq!(
-            registry.validate_expr(&expr).unwrap_err(),
-            *expected_err,
-            "mismatch on Cluster B Stage A formula: {formula}"
-        );
-    }
-
-    // Valid calendar dates, nested expressions (parameter-boundary isolation), and serial boundaries pass Stage A
+    // Valid calendar dates, nested expressions, and numeric literals pass Stage A
     for valid_formula in [
         "DATE(1900, 1, 1)",
         "DATE(1900, 2, 29)",
         "DATE(2024, 2, 29)",
         "DATE(T[\"y\", @col], 2, 29)",
         "DATE(9999, 12, 31)",
+        "DATE(24, 12, 31)",
+        "DATE(2024.5, 1, 1)",
         "YEAR(DATE(2024, 1, 15))",
+        "YEAR(0)",
         "YEAR(1)",
         "YEAR(60)",
         "YEAR(45292.5)",
         "YEAR(2958465.9)",
         "PMT(0.05, 10, -1000, 0, 0)",
         "PMT(0.05, 10, -1000, 0, 1)",
+        "PMT(0.05, 10, -1000, 0, 2)",
         "PMT(0.05, 10, -1000, 0, T[\"type\", @col])",
         "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 0)",
         "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 4)",
+        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5)",
         "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), T[\"basis\", @col])",
     ] {
         let expr = Expr::parse(valid_formula).unwrap();

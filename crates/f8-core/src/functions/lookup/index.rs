@@ -2,7 +2,6 @@
 
 use crate::functions::common::scalar_integer;
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
@@ -16,18 +15,19 @@ static INDEX_PARAMS: &[ParameterDef] = &[
         "The range of cells to index into.",
         ParamKind::Range,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
     ParameterDef::required(
         "row_num",
         "The 1-based row (or 1D element) position in the range.",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
     ParameterDef::optional(
         "col_num",
         "The 1-based column position in the range.",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
 ];
 
@@ -66,8 +66,6 @@ impl ExcelFunction for IndexFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let [array_arg, row_arg, ..] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),

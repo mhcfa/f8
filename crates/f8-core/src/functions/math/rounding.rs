@@ -1,6 +1,5 @@
 use crate::functions::common::{scalar_integer, scalar_number};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
@@ -19,7 +18,7 @@ static ROUND_PARAMS: &[ParameterDef] = &[
         "num_digits",
         "The number of digits to which you want to round the number.",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
 ];
 
@@ -56,8 +55,6 @@ macro_rules! impl_rounding_function {
                 args: &[FunctionArg<'_>],
                 _ctx: &dyn EvalContext,
             ) -> Result<CellValue, FunctionError> {
-                validate_bound_args(self, args)?;
-
                 let num = match scalar_number(&args[0]) {
                     Ok(n) => n,
                     Err(err) => return Ok(CellValue::Error(err)),

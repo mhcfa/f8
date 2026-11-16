@@ -47,9 +47,7 @@ impl Evaluator {
                 .ok_or_else(|| EvalError::cell_not_found(cell_id.clone()))?;
 
             let synth_vt = match &cell_node.payload {
-                CellPayload::Literal(lit) => CellValue::from(lit)
-                    .value_type()
-                    .filter(|vt| *vt != ValueType::Empty),
+                CellPayload::Literal(lit) => CellValue::from(lit).value_type(),
                 CellPayload::Formula(expr) => registry
                     .validate_and_synth_expr(expr, |table_ref| {
                         let slice = resolve_table_ref(cell_id, table_ref, symbol_table)?;

@@ -1,36 +1,24 @@
 use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     ReferenceKind, ShapePolicy, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ValueType};
+use crate::value::{CellValue, ExcelError, ValueType, validate_date_serial};
 
 /// Collects an ordered sequence of strict numeric cash flows across one or more validated arguments.
-///
-/// Errors bubble up immediately; non-numeric or empty cells are rejected by `validate_bound_args`
-/// (`EmptyPolicy::ForbidAll`).
 pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, ExcelError> {
     let mut cfs = Vec::new();
     for arg in args {
         match arg {
-            FunctionArg::Scalar(val) => match val.strict_number() {
-                Ok(Ok(n)) => cfs.push(n),
-                Ok(Err(e)) => return Err(e),
-                Err(_) => return Err(ExcelError::Value),
-            },
+            FunctionArg::Scalar(val) => cfs.push(val.strict_number()?),
             FunctionArg::Range {
                 values,
                 ref_kind: ReferenceKind::SingleCell | ReferenceKind::Slice,
                 ..
             } => {
                 for v in values {
-                    match v.strict_number() {
-                        Ok(Ok(n)) => cfs.push(n),
-                        Ok(Err(e)) => return Err(e),
-                        Err(_) => return Err(ExcelError::Value),
-                    }
+                    cfs.push(v.strict_number()?);
                 }
             }
             FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
@@ -43,11 +31,16 @@ pub(crate) fn collect_cash_flows(args: &[FunctionArg<'_>]) -> Result<Vec<f64>, E
 pub(crate) fn coerce_slice_numbers(slice: &[CellValue]) -> Result<Vec<f64>, ExcelError> {
     let mut result = Vec::with_capacity(slice.len());
     for v in slice {
-        match v.strict_number() {
-            Ok(Ok(n)) => result.push(n),
-            Ok(Err(e)) => return Err(e),
-            Err(_) => return Err(ExcelError::Value),
-        }
+        result.push(v.strict_number()?);
+    }
+    Ok(result)
+}
+
+/// Extracts and validates date serial entries from a 1D slice for `XNPV` and `XIRR`.
+pub(crate) fn coerce_slice_date_serials(slice: &[CellValue]) -> Result<Vec<f64>, ExcelError> {
+    let mut result = Vec::with_capacity(slice.len());
+    for v in slice {
+        result.push(validate_date_serial(v.strict_number()?)?);
     }
     Ok(result)
 }
@@ -99,8 +92,6 @@ impl ExcelFunction for NpvFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let rate = match scalar_number(&args[0]) {
             Ok(r) => r,
             Err(e) => return Ok(CellValue::Error(e)),
@@ -152,7 +143,7 @@ static XNPV_PARAMS: &[ParameterDef] = &[
         "dates",
         "1D range of payment dates corresponding to the cash flow payments.",
         ParamKind::Range,
-        ParamType::DateSerial,
+        ParamType::Number,
     )
     .measure_only(),
 ];
@@ -200,8 +191,6 @@ impl ExcelFunction for XnpvFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let raw_values = args[1].as_range_slice(self.name())?;
         let raw_dates = args[2].as_range_slice(self.name())?;
 
@@ -210,30 +199,29 @@ impl ExcelFunction for XnpvFunction {
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        // Excel quirk: XNPV rejects all non-positive rates (including 0.0 and -1.0 < rate < 0.0) with #NUM!.
-        if rate <= 0.0 {
-            return Ok(CellValue::Error(ExcelError::Num));
-        }
-
         let values = match coerce_slice_numbers(raw_values) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let dates = match coerce_slice_numbers(raw_dates) {
+        let dates = match coerce_slice_date_serials(raw_dates) {
             Ok(d) => d,
             Err(e) => return Ok(CellValue::Error(e)),
         };
+
+        // Excel quirk: XNPV rejects all non-positive rates (including 0.0 and -1.0 < rate < 0.0) with #NUM!.
+        if rate <= 0.0 {
+            return Ok(CellValue::Error(ExcelError::Num));
+        }
 
         if values.is_empty() {
             return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        let start_date = dates[0].trunc();
+        let start_date = dates[0];
         let mut xnpv = 0.0;
 
-        for (v, d) in values.iter().zip(dates.iter()) {
-            let d_trunc = d.trunc();
+        for (v, d_trunc) in values.iter().zip(dates.iter().copied()) {
             if d_trunc < start_date {
                 return Ok(CellValue::Error(ExcelError::Num));
             }

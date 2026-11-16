@@ -5,8 +5,7 @@
 
 use std::cmp::Ordering;
 
-use crate::functions::error::FunctionError;
-use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use crate::value::{CellValue, ExcelError};
 
 /// Match mode configuration for `XLOOKUP` and `XMATCH`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -22,22 +21,12 @@ pub enum MatchMode {
 
 impl MatchMode {
     /// Converts a validated mode integer (`{0, -1, 1}`) into [`MatchMode`].
-    pub fn from_mode_int(
-        mode: i64,
-        function: &'static str,
-        param: &'static str,
-        position: usize,
-    ) -> Result<Self, FunctionError> {
-        match mode {
+    pub fn from_mode_int(val: i64) -> Result<Self, ExcelError> {
+        match val {
             0 => Ok(Self::Exact),
             -1 => Ok(Self::ExactOrNextSmaller),
             1 => Ok(Self::ExactOrNextLarger),
-            _ => Err(FunctionError::InvalidLookupMode {
-                function,
-                param,
-                position,
-                mode,
-            }),
+            _ => Err(ExcelError::Value),
         }
     }
 }
@@ -57,50 +46,28 @@ pub enum SearchMode {
 }
 
 impl SearchMode {
-    /// Returns the integer mode code corresponding to this search mode.
-    #[must_use]
-    pub const fn as_mode_int(self) -> i64 {
-        match self {
-            Self::FirstToLast => 1,
-            Self::LastToFirst => -1,
-            Self::BinaryAscending => 2,
-            Self::BinaryDescending => -2,
-        }
-    }
-
     /// Converts a validated mode integer (`{1, -1, 2, -2}`) into [`SearchMode`].
-    pub fn from_mode_int(
-        mode: i64,
-        function: &'static str,
-        param: &'static str,
-        position: usize,
-    ) -> Result<Self, FunctionError> {
-        match mode {
+    pub fn from_mode_int(val: i64) -> Result<Self, ExcelError> {
+        match val {
             1 => Ok(Self::FirstToLast),
             -1 => Ok(Self::LastToFirst),
             2 => Ok(Self::BinaryAscending),
             -2 => Ok(Self::BinaryDescending),
-            _ => Err(FunctionError::InvalidLookupMode {
-                function,
-                param,
-                position,
-                mode,
-            }),
+            _ => Err(ExcelError::Value),
         }
     }
 }
 
-/// Validates `lookup_array` (position `2`) for `XLOOKUP` and `XMATCH` under binary `search_mode` (`2` / `-2`).
+/// Validates `lookup_array` for `XLOOKUP` and `XMATCH` under binary `search_mode` (`2` / `-2`).
 ///
-/// Binary search requires every element to be non-`Empty` (`ExpectedType::NonEmpty`),
-/// finite non-`Error` (`ErrorInBinaryLookupArray`), and monotonically sorted (`UnsortedBinaryLookupArray`)
-/// under `CellValue::compare_relational`. Slice homogeneity and `lookup_value` compatibility are enforced
-/// statically in Pass 4a.
+/// Binary search requires every element to be a finite non-`Empty` scalar and monotonically sorted
+/// under `CellValue::compare_relational`, bubbling `Err(e)` on `CellValue::Error(e)` (or
+/// `Err(ExcelError::Num)` on non-finite `Number`) and returning `Err(ExcelError::Value)` on
+/// `CellValue::Empty` or non-monotonic adjacent pairs.
 pub fn validate_lookup_array(
     slice: &[CellValue],
     search_mode: SearchMode,
-    function: &'static str,
-) -> Result<(), FunctionError> {
+) -> Result<(), ExcelError> {
     if !matches!(
         search_mode,
         SearchMode::BinaryAscending | SearchMode::BinaryDescending
@@ -109,36 +76,11 @@ pub fn validate_lookup_array(
     }
 
     for cell in slice {
-        if matches!(cell, CellValue::Empty) {
-            return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function,
-                param: "lookup_array",
-                position: 2,
-                expected: ExpectedType::NonEmpty,
-                found: ValueType::Empty,
-            }));
-        }
-    }
-
-    let mode_int = search_mode.as_mode_int();
-    for cell in slice {
         match cell {
-            CellValue::Error(_) => {
-                return Err(FunctionError::ErrorInBinaryLookupArray {
-                    function,
-                    search_mode: mode_int,
-                });
-            }
-            CellValue::Number(n) if !n.is_finite() => {
-                return Err(FunctionError::ErrorInBinaryLookupArray {
-                    function,
-                    search_mode: mode_int,
-                });
-            }
-            CellValue::Number(_)
-            | CellValue::Text(_)
-            | CellValue::Boolean(_)
-            | CellValue::Empty => {}
+            CellValue::Empty => return Err(ExcelError::Value),
+            CellValue::Error(err) => return Err(*err),
+            CellValue::Number(n) if !n.is_finite() => return Err(ExcelError::Num),
+            CellValue::Number(_) | CellValue::Text(_) | CellValue::Boolean(_) => {}
         }
     }
 
@@ -146,36 +88,14 @@ pub fn validate_lookup_array(
         let [prev, curr] = pair else {
             continue;
         };
-        match prev.compare_relational(curr) {
-            Ok(Ok(ord)) => {
-                let out_of_order = match search_mode {
-                    SearchMode::BinaryAscending => ord == Ordering::Greater,
-                    SearchMode::BinaryDescending => ord == Ordering::Less,
-                    SearchMode::FirstToLast | SearchMode::LastToFirst => false,
-                };
-                if out_of_order {
-                    return Err(FunctionError::UnsortedBinaryLookupArray {
-                        function,
-                        search_mode: mode_int,
-                    });
-                }
-            }
-            Ok(Err(_)) => {
-                return Err(FunctionError::ErrorInBinaryLookupArray {
-                    function,
-                    search_mode: mode_int,
-                });
-            }
-            Err((left_vt, right_vt)) => {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                    function,
-                    param: "lookup_array",
-                    position: 2,
-                    expected: ExpectedType::from_value_type(left_vt)
-                        .unwrap_or(ExpectedType::NonEmpty),
-                    found: right_vt,
-                }));
-            }
+        let ord = prev.compare_relational(curr)?;
+        let out_of_order = match search_mode {
+            SearchMode::BinaryAscending => ord == Ordering::Greater,
+            SearchMode::BinaryDescending => ord == Ordering::Less,
+            SearchMode::FirstToLast | SearchMode::LastToFirst => false,
+        };
+        if out_of_order {
+            return Err(ExcelError::Value);
         }
     }
 
@@ -235,28 +155,20 @@ where
             continue;
         }
         match cell.compare_relational(lookup_val) {
-            Ok(Ok(Ordering::Equal)) => return Ok(Some(i)),
-            Ok(Ok(ord)) if Some(ord) == target_ord => match best_approx {
+            Ok(Ordering::Equal) => return Ok(Some(i)),
+            Ok(ord) if Some(ord) == target_ord => match best_approx {
                 None => best_approx = Some((i, cell)),
                 Some((_, best_val)) => {
-                    if cell.compare_relational(best_val) == Ok(Ok(ord.reverse())) {
+                    if cell.compare_relational(best_val) == Ok(ord.reverse()) {
                         best_approx = Some((i, cell));
                     }
                 }
             },
-            Ok(Ok(_)) | Ok(Err(_)) | Err(_) => {}
+            Ok(_) | Err(_) => {}
         }
     }
 
     Ok(best_approx.map(|(idx, _)| idx))
-}
-
-fn compare_binary_cell(cell: &CellValue, lookup_val: &CellValue) -> Result<Ordering, ExcelError> {
-    match cell.compare_relational(lookup_val) {
-        Ok(Ok(ord)) => Ok(ord),
-        Ok(Err(err)) => Err(err),
-        Err(_) => Err(ExcelError::Value),
-    }
 }
 
 fn is_exact_match_at(
@@ -265,7 +177,7 @@ fn is_exact_match_at(
     lookup_val: &CellValue,
 ) -> Result<bool, ExcelError> {
     match idx.and_then(|i| slice.get(i)) {
-        Some(cell) => Ok(compare_binary_cell(cell, lookup_val)? == Ordering::Equal),
+        Some(cell) => Ok(cell.compare_relational(lookup_val)? == Ordering::Equal),
         None => Ok(false),
     }
 }
@@ -289,7 +201,7 @@ fn find_binary_ascending(
         let Some(cell) = slice.get(mid) else {
             break;
         };
-        match compare_binary_cell(cell, lookup_val)? {
+        match cell.compare_relational(lookup_val)? {
             Ordering::Less => low = mid + 1,
             Ordering::Equal | Ordering::Greater => high = mid,
         }
@@ -327,7 +239,7 @@ fn find_binary_descending(
         let Some(cell) = slice.get(mid) else {
             break;
         };
-        match compare_binary_cell(cell, lookup_val)? {
+        match cell.compare_relational(lookup_val)? {
             Ordering::Greater | Ordering::Equal => low = mid + 1,
             Ordering::Less => high = mid,
         }
@@ -442,7 +354,7 @@ mod tests {
             CellValue::Number(30.0),
             CellValue::Number(40.0),
         ];
-        validate_lookup_array(&asc, SearchMode::BinaryAscending, "XMATCH").unwrap();
+        validate_lookup_array(&asc, SearchMode::BinaryAscending).unwrap();
         let res_asc = find_match_index(
             &CellValue::Number(30.0),
             &asc,
@@ -458,7 +370,7 @@ mod tests {
             CellValue::Number(20.0),
             CellValue::Number(10.0),
         ];
-        validate_lookup_array(&desc, SearchMode::BinaryDescending, "XMATCH").unwrap();
+        validate_lookup_array(&desc, SearchMode::BinaryDescending).unwrap();
         let res_desc = find_match_index(
             &CellValue::Number(30.0),
             &desc,
@@ -621,8 +533,8 @@ mod tests {
             CellValue::Text("gamma".into()),
         ];
         let text_desc: Vec<CellValue> = text_asc.iter().cloned().rev().collect();
-        validate_lookup_array(&text_asc, SearchMode::BinaryAscending, "XLOOKUP").unwrap();
-        validate_lookup_array(&text_desc, SearchMode::BinaryDescending, "XLOOKUP").unwrap();
+        validate_lookup_array(&text_asc, SearchMode::BinaryAscending).unwrap();
+        validate_lookup_array(&text_desc, SearchMode::BinaryDescending).unwrap();
         assert_eq!(
             find_match_index(
                 &CellValue::Text("bEtA".into()),
@@ -682,7 +594,7 @@ mod tests {
             CellValue::Empty,
             CellValue::Number(30.0),
         ];
-        validate_lookup_array(&items, SearchMode::FirstToLast, "XLOOKUP").unwrap();
+        validate_lookup_array(&items, SearchMode::FirstToLast).unwrap();
 
         let res_smaller = find_match_index(
             &CellValue::Number(25.0),
@@ -711,14 +623,8 @@ mod tests {
             CellValue::Number(30.0),
         ];
         assert_eq!(
-            validate_lookup_array(&with_empty, SearchMode::BinaryAscending, "XLOOKUP"),
-            Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "XLOOKUP",
-                param: "lookup_array",
-                position: 2,
-                expected: ExpectedType::NonEmpty,
-                found: ValueType::Empty,
-            }))
+            validate_lookup_array(&with_empty, SearchMode::BinaryAscending),
+            Err(ExcelError::Value)
         );
 
         let with_err = vec![
@@ -727,11 +633,8 @@ mod tests {
             CellValue::Number(30.0),
         ];
         assert_eq!(
-            validate_lookup_array(&with_err, SearchMode::BinaryAscending, "XLOOKUP"),
-            Err(FunctionError::ErrorInBinaryLookupArray {
-                function: "XLOOKUP",
-                search_mode: 2,
-            })
+            validate_lookup_array(&with_err, SearchMode::BinaryAscending),
+            Err(ExcelError::Div0)
         );
 
         let unsorted_asc = vec![
@@ -740,11 +643,8 @@ mod tests {
             CellValue::Number(20.0),
         ];
         assert_eq!(
-            validate_lookup_array(&unsorted_asc, SearchMode::BinaryAscending, "XLOOKUP"),
-            Err(FunctionError::UnsortedBinaryLookupArray {
-                function: "XLOOKUP",
-                search_mode: 2,
-            })
+            validate_lookup_array(&unsorted_asc, SearchMode::BinaryAscending),
+            Err(ExcelError::Value)
         );
 
         let unsorted_desc = vec![
@@ -753,33 +653,14 @@ mod tests {
             CellValue::Number(30.0),
         ];
         assert_eq!(
-            validate_lookup_array(&unsorted_desc, SearchMode::BinaryDescending, "XMATCH"),
-            Err(FunctionError::UnsortedBinaryLookupArray {
-                function: "XMATCH",
-                search_mode: -2,
-            })
+            validate_lookup_array(&unsorted_desc, SearchMode::BinaryDescending),
+            Err(ExcelError::Value)
         );
     }
 
     #[test]
     fn test_strict_modes() {
-        assert_eq!(
-            MatchMode::from_mode_int(2, "XLOOKUP", "match_mode", 5),
-            Err(FunctionError::InvalidLookupMode {
-                function: "XLOOKUP",
-                param: "match_mode",
-                position: 5,
-                mode: 2,
-            })
-        );
-        assert_eq!(
-            SearchMode::from_mode_int(99, "XMATCH", "search_mode", 4),
-            Err(FunctionError::InvalidLookupMode {
-                function: "XMATCH",
-                param: "search_mode",
-                position: 4,
-                mode: 99,
-            })
-        );
+        assert_eq!(MatchMode::from_mode_int(2), Err(ExcelError::Value));
+        assert_eq!(SearchMode::from_mode_int(99), Err(ExcelError::Value));
     }
 }

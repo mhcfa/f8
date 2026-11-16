@@ -10,7 +10,7 @@ use f8_core::functions::FunctionError;
 use f8_core::functions::registry::FunctionRegistry;
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Helper to set up a standard test symbol table containing a 2-table model:
 /// - `Assumptions` table: row `tax` (`rate`: 0.25), row `flag` (`active`: TRUE), row `empty_row` (`val`: Empty)
@@ -82,18 +82,14 @@ fn test_scenario_1_formula_arithmetic_and_strict_scalar_rejection() {
     let val1 = eval_expr(&expr1, &origin, &memo, &symbols, &registry).expect("eval ok");
     assert_eq!(val1, CellValue::Number(50.0));
 
-    // Dynamic Empty + 5 fails in Stage B with InvalidOperandType
+    // Dynamic Empty + 5 fails in Stage B with EmptyOperand
     let expr2 = Expr::parse("Assumptions[\"empty_row\", \"val\"] + 5").expect("valid expr");
     let err2 = eval_expr(&expr2, &origin, &memo, &symbols, &registry).unwrap_err();
     assert!(matches!(
         err2,
         EvalError::Type {
             ref cell,
-            source: TypeError::InvalidOperandType {
-                operator: "+",
-                expected: ExpectedType::Number,
-                found: ValueType::Empty,
-            },
+            source: TypeError::EmptyOperand { operator: "+" },
         } if cell.as_ref() == &origin
     ));
 
@@ -109,7 +105,7 @@ fn test_scenario_1_formula_arithmetic_and_strict_scalar_rejection() {
             source,
             TypeError::InvalidOperandType {
                 operator: op,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Boolean,
             }
         );
@@ -130,18 +126,14 @@ fn test_scenario_2_divide_by_zero_power_anomalies_and_float_normalization() {
     let val = eval_expr(&expr_div_zero, &origin, &memo, &symbols, &registry).expect("eval ok");
     assert_eq!(val, CellValue::Error(ExcelError::Div0));
 
-    // 10 / Empty -> fails strictly with InvalidOperandType rather than coercing Empty to 0
+    // 10 / Empty -> fails strictly with EmptyOperand rather than coercing Empty to 0
     let expr_div_empty =
         Expr::parse("10 / Assumptions[\"empty_row\", \"val\"]").expect("valid expr");
     let err = eval_expr(&expr_div_empty, &origin, &memo, &symbols, &registry).unwrap_err();
     assert!(matches!(
         err,
         EvalError::Type {
-            source: TypeError::InvalidOperandType {
-                operator: "/",
-                expected: ExpectedType::Number,
-                found: ValueType::Empty,
-            },
+            source: TypeError::EmptyOperand { operator: "/" },
             ..
         }
     ));
@@ -193,7 +185,7 @@ fn test_scenario_2_divide_by_zero_power_anomalies_and_float_normalization() {
         EvalError::Type {
             source: TypeError::InvalidOperandType {
                 operator: "+",
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
             ..
@@ -276,7 +268,7 @@ fn test_scenario_3_strict_same_type_comparisons_and_relational_rejection() {
         }
     ));
 
-    // Dynamic Empty comparisons (including paired with #DIV/0!) fail in Stage B with InvalidOperandType(NonEmpty, Empty)
+    // Dynamic Empty comparisons (including paired with #DIV/0!) fail in Stage B with EmptyOperand
     memo.insert(
         CellId::new("IncomeStatement", "cogs", "2024E"),
         CellValue::Error(ExcelError::Div0),
@@ -303,15 +295,11 @@ fn test_scenario_3_strict_same_type_comparisons_and_relational_rejection() {
             matches!(
                 err,
                 EvalError::Type {
-                    source: TypeError::InvalidOperandType {
-                        expected: ExpectedType::NonEmpty,
-                        found: ValueType::Empty,
-                        ..
-                    },
+                    source: TypeError::EmptyOperand { .. },
                     ..
                 }
             ),
-            "expected InvalidOperandType(NonEmpty, Empty) on '{formula}', got {err:?}"
+            "expected EmptyOperand on '{formula}', got {err:?}"
         );
     }
 }
@@ -594,6 +582,10 @@ fn test_unary_operator_arithmetic_and_strict_rejection() {
     let origin = CellId::new("IncomeStatement", "rev", "2024E");
     let mut memo = IndexMap::new();
     memo.insert(
+        CellId::new("Assumptions", "flag", "active"),
+        CellValue::Number(5.0),
+    );
+    memo.insert(
         CellId::new("Assumptions", "empty_row", "val"),
         CellValue::Empty,
     );
@@ -623,23 +615,19 @@ fn test_unary_operator_arithmetic_and_strict_rejection() {
             source,
             TypeError::InvalidOperandType {
                 operator: "-",
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found,
             }
         );
     }
 
-    // -Empty fails in Stage B with InvalidOperandType
+    // -Empty fails in Stage B with EmptyOperand
     let expr_empty = Expr::parse("-Assumptions[\"empty_row\", \"val\"]").expect("valid expr");
     let err = eval_expr(&expr_empty, &origin, &memo, &symbols, &registry).unwrap_err();
     assert!(matches!(
         err,
         EvalError::Type {
-            source: TypeError::InvalidOperandType {
-                operator: "-",
-                expected: ExpectedType::Number,
-                found: ValueType::Empty,
-            },
+            source: TypeError::EmptyOperand { operator: "-" },
             ..
         }
     ));
@@ -672,6 +660,10 @@ fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
         CellValue::Number(0.5),
     );
     memo.insert(
+        CellId::new("Assumptions", "flag", "active"),
+        CellValue::Number(5.0),
+    );
+    memo.insert(
         CellId::new("Assumptions", "empty_row", "val"),
         CellValue::Empty,
     );
@@ -684,6 +676,7 @@ fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
         "CHOOSE(1, Assumptions[\"empty_row\", \"val\"])",
         "INDEX(Assumptions[\"tax\"..\"empty_row\", \"val\"], 3)",
         "XLOOKUP(\"k_empty\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"])",
+        "XLOOKUP(\"missing\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"], Assumptions[\"empty_row\", \"val\"])",
     ] {
         let expr = Expr::parse(formula).expect("valid expr");
         assert_eq!(
@@ -693,8 +686,9 @@ fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
         );
     }
 
-    // Value-returning IFERROR and IFNA reject evaluated CellValue::Empty arms with ExpectedType::NonEmpty
+    // Value-returning IFERROR/IFNA and IFS condition arguments reject evaluated CellValue::Empty with TypeError::EmptyArgument
     for formula in [
+        "IFS(Assumptions[\"empty_row\", \"val\"], 1)",
         "IFERROR(Assumptions[\"empty_row\", \"val\"], 1)",
         "IFERROR(1 / 0, Assumptions[\"empty_row\", \"val\"])",
         "IFNA(Assumptions[\"empty_row\", \"val\"], 1)",
@@ -706,15 +700,11 @@ fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
             matches!(
                 err,
                 EvalError::Type {
-                    source: TypeError::InvalidArgumentType {
-                        expected: ExpectedType::NonEmpty,
-                        found: ValueType::Empty,
-                        ..
-                    },
+                    source: TypeError::EmptyArgument { .. },
                     ..
                 }
             ),
-            "expected InvalidArgumentType(NonEmpty, Empty) on '{formula}', got {err:?}"
+            "expected EmptyArgument on '{formula}', got {err:?}"
         );
     }
 
@@ -743,4 +733,196 @@ fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
         eval_expr(&if_guard, &origin, &memo, &symbols, &registry).expect("eval ok"),
         CellValue::Text(String::new())
     );
+}
+
+#[test]
+fn test_pass4_acceptance_criteria() {
+    let (symbols, registry) = build_test_environment();
+    let origin = CellId::new("IncomeStatement", "rev", "2024E");
+    let mut memo = IndexMap::new();
+
+    memo.insert(
+        CellId::new("Assumptions", "tax", "rate"),
+        CellValue::Number(20.0),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "flag", "rate"),
+        CellValue::Number(10.0),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "empty_row", "rate"),
+        CellValue::Number(30.0),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "tax", "val"),
+        CellValue::Number(10.0),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "flag", "val"),
+        CellValue::Number(2.0),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "flag", "active"),
+        CellValue::Number(5.0),
+    );
+    memo.insert(
+        CellId::new("Assumptions", "empty_row", "val"),
+        CellValue::Empty,
+    );
+
+    // Scenario 1: Empty cell policy
+    for (formula, expected_msg) in [
+        (
+            "Assumptions[\"empty_row\", \"val\"] + 1",
+            "operand for '+' evaluated to an empty cell",
+        ),
+        (
+            "-Assumptions[\"empty_row\", \"val\"]",
+            "operand for '-' evaluated to an empty cell",
+        ),
+        (
+            "Assumptions[\"empty_row\", \"val\"] = 0",
+            "operand for '=' evaluated to an empty cell",
+        ),
+        (
+            "ABS(Assumptions[\"empty_row\", \"val\"])",
+            "argument for parameter 'number' at position 1 of 'ABS' evaluated to an empty cell",
+        ),
+        (
+            "IFS(Assumptions[\"empty_row\", \"val\"], 1)",
+            "argument for parameter 'logical_test1' at position 1 of 'IFS' evaluated to an empty cell",
+        ),
+        (
+            "IFERROR(Assumptions[\"empty_row\", \"val\"], 1)",
+            "argument for parameter 'value' at position 1 of 'IFERROR' evaluated to an empty cell",
+        ),
+        (
+            "XMATCH(Assumptions[\"empty_row\", \"val\"], Assumptions[\"tax\"..\"flag\", \"rate\"])",
+            "argument for parameter 'lookup_value' at position 1 of 'XMATCH' evaluated to an empty cell",
+        ),
+        (
+            "SUM(Assumptions[\"empty_row\", \"val\"])",
+            "argument for parameter 'number1' at position 1 of 'SUM' evaluated to an empty cell",
+        ),
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
+        assert!(
+            err.to_string().contains(expected_msg),
+            "expected '{expected_msg}' in error for '{formula}', got: {err}"
+        );
+    }
+
+    assert_eq!(
+        eval_expr(
+            &Expr::parse("ISBLANK(Assumptions[\"empty_row\", \"val\"])").unwrap(),
+            &origin,
+            &memo,
+            &symbols,
+            &registry
+        )
+        .unwrap(),
+        CellValue::Boolean(true)
+    );
+    assert_eq!(
+        eval_expr(
+            &Expr::parse("COUNTA(Assumptions[\"empty_row\", \"val\"])").unwrap(),
+            &origin,
+            &memo,
+            &symbols,
+            &registry
+        )
+        .unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        eval_expr(
+            &Expr::parse("SUM(Assumptions[\"tax\"..\"empty_row\", \"val\"])").unwrap(),
+            &origin,
+            &memo,
+            &symbols,
+            &registry
+        )
+        .unwrap(),
+        CellValue::Number(12.0)
+    );
+
+    // Scenario 2: Simplified value types
+    for (formula, expected_msg) in [
+        (
+            "\"x\" + 1",
+            "invalid operand type for '+': expected number, found text",
+        ),
+        (
+            "ABS(\"x\")",
+            "invalid argument type for parameter 'number' at position 1 of 'ABS': expected number, found text",
+        ),
+        (
+            "NOT(1)",
+            "invalid argument type for parameter 'logical' at position 1 of 'NOT': expected boolean, found number",
+        ),
+        (
+            "XMATCH(\"a\", Assumptions[\"tax\"..\"flag\", \"rate\"])",
+            "invalid argument type for parameter 'lookup_array' at position 2 of 'XMATCH': expected text, found number",
+        ),
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
+        assert!(
+            err.to_string().contains(expected_msg),
+            "expected '{expected_msg}' in error for '{formula}', got: {err}"
+        );
+    }
+
+    // Scenarios 3, 4, 5: Value-domain ExcelErrors
+    for (formula, expected_val) in [
+        ("ROUND(1.234, 1.5)", CellValue::Error(ExcelError::Num)),
+        ("CHOOSE(1.5, 10, 20)", CellValue::Error(ExcelError::Num)),
+        (
+            "INDEX(Assumptions[\"tax\"..\"flag\", \"rate\"], 3)",
+            CellValue::Error(ExcelError::Ref),
+        ),
+        ("CHOOSE(3, 10, 20)", CellValue::Error(ExcelError::Value)),
+        (
+            "XMATCH(10, Assumptions[\"tax\"..\"flag\", \"rate\"], 2)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XLOOKUP(10, Assumptions[\"tax\"..\"flag\", \"rate\"], Assumptions[\"tax\"..\"flag\", \"val\"], 0, 0, Assumptions[\"flag\", \"active\"])",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XLOOKUP(10, Assumptions[\"tax\"..\"flag\", \"rate\"], Assumptions[\"tax\"..\"flag\", \"val\"], 0, 0, Assumptions[\"flag\", \"val\"])",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XMATCH(20, Assumptions[\"tax\"..\"empty_row\", \"rate\"], 0, 2)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        ("DATE(2026, 2, 30)", CellValue::Error(ExcelError::Num)),
+        ("DATE(1899, 1, 1)", CellValue::Error(ExcelError::Num)),
+        ("DATE(2026, 0, 15)", CellValue::Error(ExcelError::Num)),
+        ("YEAR(-1)", CellValue::Error(ExcelError::Num)),
+        ("EDATE(0, 1)", CellValue::Error(ExcelError::Num)),
+        (
+            "YEARFRAC(45000, 45365, 5)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "PMT(0.05, 10, -1000, 0, 2)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        ("IFERROR(DATE(2026, 2, 30), 0)", CellValue::Number(0.0)),
+        (
+            "IFERROR(INDEX(Assumptions[\"tax\"..\"flag\", \"rate\"], 3), -1)",
+            CellValue::Number(-1.0),
+        ),
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        assert_eq!(
+            eval_expr(&expr, &origin, &memo, &symbols, &registry).expect("eval ok"),
+            expected_val,
+            "unexpected result for '{formula}'"
+        );
+    }
 }
