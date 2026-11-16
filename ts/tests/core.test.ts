@@ -175,7 +175,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const cell = model.inspectCell("PPE", "end_balance", "2025A");
       expect(cell.coordinate).toEqual({ table: "PPE", row: "end_balance", col: "2025A" });
       expect(cell.sheet).toBe("BalanceSheet");
-      expect(cell.physicalAddress).toBe("BalanceSheet!D8");
+      expect(cell.physicalAddress).toBe("'BalanceSheet'!D8");
       expect(cell.evaluatedValue).toEqual({ Number: 110.0 });
       expect(cell.formattedValue).toBe("$110.0");
       expect(cell.isFormula).toBe(true);

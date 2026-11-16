@@ -1,12 +1,7 @@
 //! Excel A1 coordinate conversion and boundary validation.
 
 use super::error::LayoutError;
-
-/// Maximum column count supported by OpenXML / Excel (columns 0..=16,383, i.e. A..XFD).
-pub const MAX_EXCEL_COLUMNS: u32 = 16_384;
-
-/// Maximum row count supported by OpenXML / Excel (rows 0..=1,048,575, i.e. 1..1,048,576).
-pub const MAX_EXCEL_ROWS: u32 = 1_048_576;
+pub use crate::model::{MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS};
 
 /// Maximum outline grouping level supported by native Excel (levels 1..=7).
 pub const MAX_OUTLINE_LEVEL: usize = 7;

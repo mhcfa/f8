@@ -222,9 +222,14 @@ impl CompilerError {
                     | ModelError::DuplicateRowId { table, .. }
                     | ModelError::DuplicateColumnId { table, .. }
                     | ModelError::DuplicateTableId { table }
+                    | ModelError::InvalidTableId { table }
+                    | ModelError::NonFiniteCellNumber { table, .. }
                     | ModelError::EmptyColumns { table }
                     | ModelError::EmptyRows { table } => Some(table.to_string()),
                     ModelError::DuplicateSheetName { .. }
+                    | ModelError::InvalidSheetName { .. }
+                    | ModelError::InvalidSheetTabColor { .. }
+                    | ModelError::InvalidFreezePanes { .. }
                     | ModelError::ThemeNotFound { .. }
                     | ModelError::InvalidThemeColor { .. }
                     | ModelError::InvalidThemeMetric { .. }

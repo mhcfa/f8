@@ -97,7 +97,7 @@ fn test_scenario_4_cell_inspection_formula_and_literal() {
     assert_eq!(formula_cell.coordinate.table.as_str(), "IncomeStatement");
     assert_eq!(formula_cell.coordinate.row.as_str(), "revenue");
     assert_eq!(formula_cell.coordinate.col.as_str(), "y2024e");
-    assert!(formula_cell.physical_address.starts_with("Model!"));
+    assert!(formula_cell.physical_address.starts_with("'Model'!"));
     assert!(
         (formula_cell.evaluated_value.as_number().unwrap() - 115.0).abs() < 1e-6,
         "Expected evaluated number ~115.0, got: {:?}",
@@ -680,4 +680,93 @@ fn test_scenario_inspect_sheet_not_found() {
         err,
         InspectionError::SheetNotFound(f8_core::model::id::SheetId::from("NonExistent"))
     );
+}
+
+#[test]
+fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
+    use f8_core::model::{ColumnSpec, ProjectManifest, RowSpec, SheetSpec, TableSpec, ThemeSpec};
+
+    let manifest = ProjectManifest {
+        model_name: "QuotingTest".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Sheet1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("SimpleTbl")],
+            },
+            SheetSpec {
+                name: "Cash Flow".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("CashTbl")],
+            },
+            SheetSpec {
+                name: "John's Data".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("QuoteTbl")],
+            },
+        ],
+    };
+
+    let mut simple_tbl = TableSpec::new("SimpleTbl", "Simple");
+    simple_tbl.columns.push(ColumnSpec::new("c1"));
+    simple_tbl
+        .rows
+        .push(RowSpec::new("r1").with_cell("c1", 10.0));
+
+    let mut cash_tbl = TableSpec::new("CashTbl", "Cash");
+    cash_tbl.columns.push(ColumnSpec::new("c1"));
+    cash_tbl
+        .rows
+        .push(RowSpec::new("r1").with_expr("SimpleTbl[\"r1\", \"c1\"] * 2"));
+
+    let mut quote_tbl = TableSpec::new("QuoteTbl", "Quote");
+    quote_tbl.columns.push(ColumnSpec::new("c1"));
+    quote_tbl
+        .rows
+        .push(RowSpec::new("r1").with_expr("CashTbl[\"r1\", \"c1\"] + 5"));
+
+    let compiled = Compiler::compile(&manifest, &[simple_tbl, cash_tbl, quote_tbl]).unwrap();
+
+    let simple_cell = compiled
+        .inspect_cell(
+            &TableId::from("SimpleTbl"),
+            &RowId::from("r1"),
+            &ColId::from("c1"),
+        )
+        .unwrap();
+    assert_eq!(simple_cell.physical_address, "'Sheet1'!B4");
+    assert_eq!(simple_cell.dependents[0].sheet_address, "'Cash Flow'!B4");
+
+    let cash_cell = compiled
+        .inspect_cell(
+            &TableId::from("CashTbl"),
+            &RowId::from("r1"),
+            &ColId::from("c1"),
+        )
+        .unwrap();
+    assert_eq!(cash_cell.physical_address, "'Cash Flow'!B4");
+    assert_eq!(cash_cell.precedents[0].sheet_address, "'Sheet1'!B4");
+    assert_eq!(cash_cell.dependents[0].sheet_address, "'John''s Data'!B4");
+
+    let quote_cell = compiled
+        .inspect_cell(
+            &TableId::from("QuoteTbl"),
+            &RowId::from("r1"),
+            &ColId::from("c1"),
+        )
+        .unwrap();
+    assert_eq!(quote_cell.physical_address, "'John''s Data'!B4");
+
+    let tree = compiled
+        .precedents_of(&CellId::new("QuoteTbl", "r1", "c1"), true)
+        .unwrap();
+    assert_eq!(tree.nodes[0].sheet_address, "'Cash Flow'!B4");
+    assert_eq!(tree.nodes[0].children[0].sheet_address, "'Sheet1'!B4");
 }

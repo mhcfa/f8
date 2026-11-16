@@ -277,7 +277,7 @@ impl Default for FormatDefaults {
     }
 }
 
-fn is_valid_hex_color(s: &str) -> bool {
+pub(crate) fn is_valid_hex_color(s: &str) -> bool {
     if !s.starts_with('#') {
         return false;
     }
