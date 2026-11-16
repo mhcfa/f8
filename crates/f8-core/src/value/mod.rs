@@ -285,15 +285,6 @@ impl CellValue {
         }
     }
 
-    /// Returns the contained text slice if this cell is `Text`.
-    #[must_use]
-    pub fn as_text(&self) -> Option<&str> {
-        match self {
-            Self::Text(s) => Some(s.as_str()),
-            Self::Number(_) | Self::Boolean(_) | Self::Empty | Self::Error(_) => None,
-        }
-    }
-
     /// Returns `true` if this cell is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {

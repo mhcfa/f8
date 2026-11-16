@@ -10,8 +10,9 @@ pub use search::{MatchMode, SearchMode, find_match_index};
 pub use xlookup::XlookupFunction;
 pub use xmatch::XmatchFunction;
 
-use crate::functions::registry::FunctionRegistry;
 use std::sync::Arc;
+
+use crate::functions::registry::FunctionRegistry;
 
 /// Registers all standard lookup and reference functions into the registry.
 pub fn register(registry: &mut FunctionRegistry) {
