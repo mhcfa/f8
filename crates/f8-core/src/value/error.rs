@@ -62,8 +62,6 @@ pub enum ValueType {
     Text,
     /// Boolean scalar (`TRUE` or `FALSE`).
     Boolean,
-    /// Empty / null cell (`ValueLiteral::Null`).
-    Empty,
 }
 
 impl ValueType {
@@ -74,7 +72,6 @@ impl ValueType {
             Self::Number => "number",
             Self::Text => "text",
             Self::Boolean => "boolean",
-            Self::Empty => "empty",
         }
     }
 }
@@ -85,61 +82,6 @@ impl fmt::Display for ValueType {
     }
 }
 
-/// Expected type categories for operator operands and function parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ExpectedType {
-    /// Any non-empty scalar (`Number`, `Text`, or `Boolean`).
-    NonEmpty,
-    /// Finite numeric scalar.
-    Number,
-    /// Exact integer within the IEEE-754 safe integer range.
-    Integer,
-    /// Text string scalar.
-    Text,
-    /// Boolean scalar.
-    Boolean,
-}
-
-impl ExpectedType {
-    /// Returns the lowercase diagnostic label for this expected type.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::NonEmpty => "non-empty value",
-            Self::Number => "number",
-            Self::Integer => "integer",
-            Self::Text => "text",
-            Self::Boolean => "boolean",
-        }
-    }
-
-    /// Maps a concrete [`ValueType`] into its matching [`ExpectedType`], or `None` for [`ValueType::Empty`].
-    #[must_use]
-    pub const fn from_value_type(vt: ValueType) -> Option<Self> {
-        match vt {
-            ValueType::Number => Some(Self::Number),
-            ValueType::Text => Some(Self::Text),
-            ValueType::Boolean => Some(Self::Boolean),
-            ValueType::Empty => None,
-        }
-    }
-}
-
-impl fmt::Display for ExpectedType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Failure modes when extracting a strict integer from a [`crate::value::CellValue`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StrictIntError {
-    /// Value had a non-numeric [`ValueType`] (`Text`, `Boolean`, or `Empty`).
-    WrongType(ValueType),
-    /// Numeric value had a non-zero fractional part or exceeded safe integer bounds.
-    NonInteger(String),
-}
-
 /// Static and dynamic formula type errors raised prior to workbook emission.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TypeError {
@@ -148,13 +90,31 @@ pub enum TypeError {
         "formula cannot evaluate to an empty cell; guard nullable references explicitly with IF(ISBLANK(...), ...)"
     )]
     EmptyFormulaResult,
+    /// Unary or binary operator received `CellValue::Empty`.
+    #[error("operand for '{operator}' evaluated to an empty cell")]
+    EmptyOperand {
+        /// Operator token (`"-"`, `"+"`, `"="`, etc.).
+        operator: &'static str,
+    },
+    /// Function parameter with `EmptyPolicy::Forbid` or `EmptyPolicy::AllowInSlice` received `CellValue::Empty`.
+    #[error(
+        "argument for parameter '{param}' at position {position} of '{function}' evaluated to an empty cell"
+    )]
+    EmptyArgument {
+        /// Canonical uppercase function name.
+        function: &'static str,
+        /// Parameter name.
+        param: &'static str,
+        /// 1-indexed argument position.
+        position: usize,
+    },
     /// Unary or binary operator received an operand of an invalid type.
     #[error("invalid operand type for '{operator}': expected {expected}, found {found}")]
     InvalidOperandType {
-        /// Operator token (`"-"`, `"+"`, `"="`, etc.).
+        /// Operator token (`"-"`, `"+"`, etc.).
         operator: &'static str,
-        /// Expected operand type.
-        expected: ExpectedType,
+        /// Expected operand value type.
+        expected: ValueType,
         /// Actual operand value type.
         found: ValueType,
     },
@@ -179,24 +139,10 @@ pub enum TypeError {
         param: &'static str,
         /// 1-indexed argument position.
         position: usize,
-        /// Expected parameter type.
-        expected: ExpectedType,
+        /// Expected parameter value type.
+        expected: ValueType,
         /// Actual argument value type.
         found: ValueType,
-    },
-    /// Integer parameter received a fractional or out-of-safe-range numeric value.
-    #[error(
-        "invalid argument for parameter '{param}' at position {position} of '{function}': expected integer, found {value}"
-    )]
-    NonIntegerArgument {
-        /// Canonical uppercase function name.
-        function: &'static str,
-        /// Parameter name.
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-        /// Formatted offending numeric value.
-        value: String,
     },
     /// Branching or error-handling function received result arms of incompatible types.
     #[error(

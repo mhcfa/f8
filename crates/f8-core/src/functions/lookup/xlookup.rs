@@ -5,7 +5,6 @@ use crate::functions::error::FunctionError;
 use crate::functions::lookup::search::{
     MatchMode, SearchMode, find_match_index, validate_lookup_array,
 };
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
@@ -18,38 +17,41 @@ static XLOOKUP_PARAMS: &[ParameterDef] = &[
         "lookup_value",
         "The value you want to search for.",
         ParamKind::Scalar,
-        ParamType::NonEmpty,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "lookup_array",
         "The 1D range to search.",
         ParamKind::Range,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
     ParameterDef::required(
         "return_array",
         "The 1D range to return matching items from.",
         ParamKind::Range,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
     ParameterDef::optional(
         "if_not_found",
         "The value to return if no match is found.",
         ParamKind::Lazy,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
     ParameterDef::with_default(
         "match_mode",
         "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
         CellValue::Number(0.0),
     ),
     ParameterDef::with_default(
         "search_mode",
         "The search type: 1 (first-to-last), -1 (last-to-first), 2 (binary ascending), -2 (binary descending).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
         CellValue::Number(1.0),
     ),
 ];
@@ -89,8 +91,6 @@ impl ExcelFunction for XlookupFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let [lookup_arg, lookup_arr_arg, return_arr_arg, ..] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
@@ -103,26 +103,21 @@ impl ExcelFunction for XlookupFunction {
         let lookup_slice = lookup_arr_arg.as_range_slice(self.name())?;
         let return_slice = return_arr_arg.as_range_slice(self.name())?;
 
-        let match_mode_int = optional_scalar_integer(args, 4, 0).map_err(|_| {
-            FunctionError::NonLiteralLookupMode {
-                function: self.name(),
-                param: "match_mode",
-                position: 5,
-            }
-        })?;
-        let match_mode = MatchMode::from_mode_int(match_mode_int, self.name(), "match_mode", 5)?;
+        let match_mode =
+            match optional_scalar_integer(args, 4, 0).and_then(MatchMode::from_mode_int) {
+                Ok(mode) => mode,
+                Err(err) => return Ok(CellValue::Error(err)),
+            };
 
-        let search_mode_int = optional_scalar_integer(args, 5, 1).map_err(|_| {
-            FunctionError::NonLiteralLookupMode {
-                function: self.name(),
-                param: "search_mode",
-                position: 6,
-            }
-        })?;
         let search_mode =
-            SearchMode::from_mode_int(search_mode_int, self.name(), "search_mode", 6)?;
+            match optional_scalar_integer(args, 5, 1).and_then(SearchMode::from_mode_int) {
+                Ok(mode) => mode,
+                Err(err) => return Ok(CellValue::Error(err)),
+            };
 
-        validate_lookup_array(lookup_slice, search_mode, self.name())?;
+        if let Err(err) = validate_lookup_array(lookup_slice, search_mode) {
+            return Ok(CellValue::Error(err));
+        }
 
         if let CellValue::Error(err) = lookup_val {
             return Ok(CellValue::Error(err));

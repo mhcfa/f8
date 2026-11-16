@@ -1,5 +1,5 @@
 use crate::functions::traits::{FunctionArg, ReferenceKind};
-use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType, normalize_zero};
+use crate::value::{CellValue, ExcelError, TypeError, ValueType, normalize_zero};
 
 /// Aggregated numeric statistics gathered across arguments for arithmetic functions.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,11 +47,7 @@ impl NumericCollector {
     {
         for arg in args {
             match arg {
-                FunctionArg::Scalar(val) => match val.strict_number() {
-                    Ok(Ok(n)) => f(n),
-                    Ok(Err(e)) => return Err(e),
-                    Err(_) => return Err(ExcelError::Value),
-                },
+                FunctionArg::Scalar(val) => f(val.strict_number()?),
                 FunctionArg::Range {
                     values, ref_kind, ..
                 } => {
@@ -131,18 +127,12 @@ impl BranchTypeUnifier {
         }
     }
 
-    /// Creates a new unifier pre-seeded with `initial` (when concrete non-`Empty`).
+    /// Creates a new unifier pre-seeded with `initial`.
     #[must_use]
     pub const fn with_initial(function: &'static str, initial: Option<ValueType>) -> Self {
-        let seeded = match initial {
-            Some(ValueType::Number) => Some(ValueType::Number),
-            Some(ValueType::Text) => Some(ValueType::Text),
-            Some(ValueType::Boolean) => Some(ValueType::Boolean),
-            Some(ValueType::Empty) | None => None,
-        };
         Self {
             function,
-            unified: seeded,
+            unified: initial,
         }
     }
 
@@ -158,9 +148,8 @@ impl BranchTypeUnifier {
         position: usize,
         candidate: Option<ValueType>,
     ) -> Result<Option<ValueType>, TypeError> {
-        let concrete = match candidate {
-            Some(vt @ (ValueType::Number | ValueType::Text | ValueType::Boolean)) => vt,
-            Some(ValueType::Empty) | None => return Ok(self.unified),
+        let Some(concrete) = candidate else {
+            return Ok(self.unified);
         };
         match self.unified {
             None => {
@@ -180,22 +169,6 @@ impl BranchTypeUnifier {
                 }
             }
         }
-    }
-}
-
-pub(crate) const fn value_type_satisfies(found: ValueType, expected: ExpectedType) -> bool {
-    match (expected, found) {
-        (ExpectedType::NonEmpty, ValueType::Number | ValueType::Text | ValueType::Boolean)
-        | (ExpectedType::Number | ExpectedType::Integer, ValueType::Number)
-        | (ExpectedType::Text, ValueType::Text)
-        | (ExpectedType::Boolean, ValueType::Boolean) => true,
-        (ExpectedType::NonEmpty, ValueType::Empty)
-        | (
-            ExpectedType::Number | ExpectedType::Integer,
-            ValueType::Text | ValueType::Boolean | ValueType::Empty,
-        )
-        | (ExpectedType::Text, ValueType::Number | ValueType::Boolean | ValueType::Empty)
-        | (ExpectedType::Boolean, ValueType::Number | ValueType::Text | ValueType::Empty) => false,
     }
 }
 
@@ -228,7 +201,7 @@ impl LogicalCollector {
         self.any_true = self.any_true || b;
     }
 
-    /// Collects boolean observations across arguments for `AND` and `OR` after `validate_bound_args`,
+    /// Collects boolean observations across arguments for `AND` and `OR`,
     /// skipping sparse `Empty` cells in `ReferenceKind::Slice` arguments and returning `ExcelError::Value`
     /// when `count == 0` (all-empty slice).
     pub fn collect(args: &[FunctionArg<'_>]) -> Result<Self, ExcelError> {
@@ -236,11 +209,7 @@ impl LogicalCollector {
 
         for arg in args {
             match arg {
-                FunctionArg::Scalar(val) => match val.strict_bool() {
-                    Ok(Ok(b)) => collector.record(b),
-                    Ok(Err(err)) => return Err(err),
-                    Err(_) => return Err(ExcelError::Value),
-                },
+                FunctionArg::Scalar(val) => collector.record(val.strict_bool()?),
                 FunctionArg::Range {
                     values, ref_kind, ..
                 } => {
@@ -329,13 +298,10 @@ pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
     count
 }
 
-/// Extracts a finite numeric scalar after `validate_bound_args`, bubbling `CellValue::Error(e)` as `Err(e)`.
+/// Extracts a finite numeric scalar, bubbling `CellValue::Error(e)` as `Err(e)`.
 pub fn scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
     match arg {
-        FunctionArg::Scalar(val) => match val.strict_number() {
-            Ok(res) => res,
-            Err(_) => Err(ExcelError::Value),
-        },
+        FunctionArg::Scalar(val) => val.strict_number(),
         FunctionArg::Range { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
             Err(ExcelError::Value)
         }
@@ -354,13 +320,10 @@ pub fn optional_scalar_number(
     }
 }
 
-/// Extracts a safe integer scalar after `validate_bound_args`, bubbling `CellValue::Error(e)` as `Err(e)`.
+/// Extracts a safe integer scalar, bubbling `CellValue::Error(e)` as `Err(e)`.
 pub fn scalar_integer(arg: &FunctionArg<'_>) -> Result<i64, ExcelError> {
     match arg {
-        FunctionArg::Scalar(val) => match val.strict_integer() {
-            Ok(res) => res,
-            Err(_) => Err(ExcelError::Value),
-        },
+        FunctionArg::Scalar(val) => val.strict_integer(),
         FunctionArg::Range { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
             Err(ExcelError::Value)
         }
@@ -379,13 +342,10 @@ pub fn optional_scalar_integer(
     }
 }
 
-/// Extracts a boolean scalar after `validate_bound_args`, bubbling `CellValue::Error(e)` as `Err(e)`.
+/// Extracts a boolean scalar, bubbling `CellValue::Error(e)` as `Err(e)`.
 pub fn scalar_bool(arg: &FunctionArg<'_>) -> Result<bool, ExcelError> {
     match arg {
-        FunctionArg::Scalar(val) => match val.strict_bool() {
-            Ok(res) => res,
-            Err(_) => Err(ExcelError::Value),
-        },
+        FunctionArg::Scalar(val) => val.strict_bool(),
         FunctionArg::Range { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
             Err(ExcelError::Value)
         }

@@ -1,11 +1,10 @@
 use crate::functions::common::{scalar_bool, scalar_integer};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use crate::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Positional parameter definitions for `IF`.
 static IF_PARAMS: &[ParameterDef] = &[
@@ -20,13 +19,15 @@ static IF_PARAMS: &[ParameterDef] = &[
         "The value to return if logical_test evaluates to TRUE.",
         ParamKind::Lazy,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
     ParameterDef::required(
         "value_if_false",
         "The value to return if logical_test evaluates to FALSE.",
         ParamKind::Lazy,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
 ];
 
 /// `IF(logical_test, value_if_true, value_if_false)`: Specifies a logical test to perform.
@@ -63,8 +64,6 @@ impl ExcelFunction for IfFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let [cond_arg, true_arg, false_arg] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
@@ -73,11 +72,13 @@ impl ExcelFunction for IfFunction {
             });
         };
 
-        match scalar_bool(cond_arg) {
-            Ok(true) => true_arg.eval_scalar(self.name(), ctx),
-            Ok(false) => false_arg.eval_scalar(self.name(), ctx),
-            Err(err) => Ok(CellValue::Error(err)),
-        }
+        let selected_arg = match scalar_bool(cond_arg) {
+            Ok(true) => true_arg,
+            Ok(false) => false_arg,
+            Err(err) => return Ok(CellValue::Error(err)),
+        };
+
+        selected_arg.eval_scalar(self.name(), ctx)
     }
 }
 
@@ -94,7 +95,8 @@ static IFS_PARAMS: &[ParameterDef] = &[
         "The value to return if logical_test1 evaluates to TRUE.",
         ParamKind::Lazy,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
 ];
 
 /// `IFS(logical_test1, value_if_true1, [logical_test2, value_if_true2], ...)`: Evaluates multiple conditions.
@@ -131,24 +133,20 @@ impl ExcelFunction for IfsFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         for (pair_idx, [test_arg, val_arg]) in args.as_chunks::<2>().0.iter().enumerate() {
             let cond_pos = 2 * pair_idx + 1;
             let cond_val = test_arg.eval_scalar(self.name(), ctx)?;
+            if cond_val.is_empty() {
+                return Err(FunctionError::Type(TypeError::EmptyArgument {
+                    function: self.name(),
+                    param: "logical_test1",
+                    position: cond_pos,
+                }));
+            }
             match cond_val.strict_bool() {
-                Ok(Ok(true)) => return val_arg.eval_scalar(self.name(), ctx),
-                Ok(Ok(false)) => {}
-                Ok(Err(err)) => return Ok(CellValue::Error(err)),
-                Err(found) => {
-                    return Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                        function: self.name(),
-                        param: "logical_test1",
-                        position: cond_pos,
-                        expected: ExpectedType::Boolean,
-                        found,
-                    }));
-                }
+                Ok(true) => return val_arg.eval_scalar(self.name(), ctx),
+                Ok(false) => {}
+                Err(err) => return Ok(CellValue::Error(err)),
             }
         }
 
@@ -163,14 +161,15 @@ static CHOOSE_PARAMS: &[ParameterDef] = &[
         "index_num",
         "Specifies which value argument is selected (1 to 254).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "value1",
         "Value or expression from which CHOOSE selects.",
         ParamKind::Lazy,
         ParamType::Any,
-    ),
+    )
+    .allow_empty(),
 ];
 
 /// `CHOOSE(index_num, value1, [value2], ...)`: Selects a value from a list of values based on an index.
@@ -207,8 +206,6 @@ impl ExcelFunction for ChooseFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let Some((idx_arg, choices)) = args.split_first() else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),

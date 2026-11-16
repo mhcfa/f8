@@ -1,5 +1,4 @@
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     ShapePolicy, ValidationPolicy, VariadicRule,
@@ -50,8 +49,6 @@ impl ExcelFunction for SumproductFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let mut arrays = Vec::with_capacity(args.len());
         let mut num_elements = 0;
 

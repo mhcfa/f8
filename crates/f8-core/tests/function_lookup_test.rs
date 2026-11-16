@@ -16,7 +16,7 @@ use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Mock evaluation context for direct function execution and lazy branch counting.
 struct MockContext {
@@ -532,7 +532,7 @@ fn test_scenario_6_wildcard_matching() {
         ],
     );
 
-    // Wildcard match_mode = 2 is retired on both XMATCH and XLOOKUP
+    // Wildcard match_mode = 2 is retired on both XMATCH and XLOOKUP -> #VALUE!
     assert_eq!(
         xmatch.evaluate(
             &[
@@ -542,12 +542,7 @@ fn test_scenario_6_wildcard_matching() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidLookupMode {
-            function: "XMATCH",
-            param: "match_mode",
-            position: 3,
-            mode: 2,
-        })
+        Ok(CellValue::Error(ExcelError::Value))
     );
 
     assert_eq!(
@@ -561,30 +556,20 @@ fn test_scenario_6_wildcard_matching() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidLookupMode {
-            function: "XLOOKUP",
-            param: "match_mode",
-            position: 5,
-            mode: 2,
-        })
+        Ok(CellValue::Error(ExcelError::Value))
     );
 
-    // Validation order: ParamType::Integer ("abc" -> InvalidArgumentType, 1.5 -> NonIntegerArgument)
-    // -> Error scalar -> NonLiteralLookupMode -> invalid integer -> InvalidLookupMode
+    // Validation order: ParamType::Number ("abc" -> InvalidArgumentType in Pass 4a),
+    // fractional 1.5 -> #NUM!, Error scalar bubbles, invalid integer -> #VALUE!
     assert_eq!(
-        xmatch.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Text("Apple".into())),
-                keys.clone(),
-                FunctionArg::Scalar(CellValue::Text("abc".into())),
-            ],
-            &ctx,
+        registry.validate_expr(
+            &Expr::parse("XMATCH(\"Apple\", T[\"k1\"..\"k3\", @col], \"abc\")").unwrap()
         ),
         Err(FunctionError::Type(TypeError::InvalidArgumentType {
             function: "XMATCH",
             param: "match_mode",
             position: 3,
-            expected: ExpectedType::Integer,
+            expected: ValueType::Number,
             found: ValueType::Text,
         }))
     );
@@ -598,23 +583,19 @@ fn test_scenario_6_wildcard_matching() {
             ],
             &ctx,
         ),
-        Err(FunctionError::Type(TypeError::NonIntegerArgument {
-            function: "XMATCH",
-            param: "match_mode",
-            position: 3,
-            value: "1.5".into(),
-        }))
+        Ok(CellValue::Error(ExcelError::Num))
     );
 
     assert_eq!(
-        registry.validate_expr(
-            &Expr::parse("XMATCH(\"Apple\", T[\"k1\"..\"k3\", @col], 1 / 0)").unwrap()
+        xmatch.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Text("Apple".into())),
+                keys.clone(),
+                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+            ],
+            &ctx,
         ),
-        Err(FunctionError::NonLiteralLookupMode {
-            function: "XMATCH",
-            param: "match_mode",
-            position: 3,
-        })
+        Ok(CellValue::Error(ExcelError::Div0))
     );
 
     assert_eq!(
@@ -629,12 +610,7 @@ fn test_scenario_6_wildcard_matching() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidLookupMode {
-            function: "XLOOKUP",
-            param: "search_mode",
-            position: 6,
-            mode: 99,
-        })
+        Ok(CellValue::Error(ExcelError::Value))
     );
 }
 
@@ -802,7 +778,7 @@ fn test_scenario_7_binary_search() {
         );
     }
 
-    // Binary search rejects Empty elements in lookup_array with ExpectedType::NonEmpty
+    // Binary search rejects Empty elements in lookup_array with #VALUE!
     assert_eq!(
         xmatch.evaluate(
             &[
@@ -821,16 +797,10 @@ fn test_scenario_7_binary_search() {
             ],
             &ctx,
         ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "XMATCH",
-            param: "lookup_array",
-            position: 2,
-            expected: ExpectedType::NonEmpty,
-            found: ValueType::Empty,
-        }))
+        Ok(CellValue::Error(ExcelError::Value))
     );
 
-    // Binary search rejects Error elements in lookup_array with ErrorInBinaryLookupArray
+    // Binary search bubbles Error elements in lookup_array
     assert_eq!(
         xmatch.evaluate(
             &[
@@ -849,13 +819,10 @@ fn test_scenario_7_binary_search() {
             ],
             &ctx,
         ),
-        Err(FunctionError::ErrorInBinaryLookupArray {
-            function: "XMATCH",
-            search_mode: 2,
-        })
+        Ok(CellValue::Error(ExcelError::Div0))
     );
 
-    // Binary search rejects unsorted ascending and unsorted descending lookup_array keys
+    // Binary search rejects unsorted ascending and unsorted descending lookup_array keys with #VALUE!
     assert_eq!(
         xmatch.evaluate(
             &[
@@ -874,10 +841,7 @@ fn test_scenario_7_binary_search() {
             ],
             &ctx,
         ),
-        Err(FunctionError::UnsortedBinaryLookupArray {
-            function: "XMATCH",
-            search_mode: 2,
-        })
+        Ok(CellValue::Error(ExcelError::Value))
     );
 
     assert_eq!(
@@ -898,10 +862,7 @@ fn test_scenario_7_binary_search() {
             ],
             &ctx,
         ),
-        Err(FunctionError::UnsortedBinaryLookupArray {
-            function: "XMATCH",
-            search_mode: -2,
-        })
+        Ok(CellValue::Error(ExcelError::Value))
     );
 }
 
@@ -1318,22 +1279,24 @@ fn test_excel_parity_edge_cases() {
         .unwrap();
     assert_eq!(match_zero, CellValue::Number(2.0));
 
-    // Empty lookup_value is strictly rejected with ExpectedType::NonEmpty
+    // Empty lookup_value is strictly rejected in bind_arguments with EmptyArgument
+    struct EmptyScalarContext;
+    impl EvalContext for EmptyScalarContext {
+        fn eval_expr(&self, _expr: &Expr) -> Result<CellValue, FunctionError> {
+            Ok(CellValue::Empty)
+        }
+    }
+    let dummy_args = [
+        f8_core::expr::ast::CallArg::Expr(Expr::number(0.0)),
+        f8_core::expr::ast::CallArg::Expr(Expr::number(0.0)),
+        f8_core::expr::ast::CallArg::Expr(Expr::number(0.0)),
+    ];
     assert_eq!(
-        xlookup.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Empty),
-                empty_and_zero_keys.clone(),
-                values.clone(),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
+        registry.bind_arguments(xlookup, &dummy_args, &EmptyScalarContext),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
             function: "XLOOKUP",
             param: "lookup_value",
             position: 1,
-            expected: ExpectedType::NonEmpty,
-            found: ValueType::Empty,
         }))
     );
 
@@ -1360,7 +1323,7 @@ fn test_excel_parity_edge_cases() {
                 function: "XLOOKUP",
                 param: "lookup_array",
                 position: 2,
-                expected: ExpectedType::Text,
+                expected: ValueType::Text,
                 found: ValueType::Number,
             })
         ))

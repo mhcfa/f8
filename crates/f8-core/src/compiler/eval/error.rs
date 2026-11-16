@@ -105,18 +105,7 @@ impl EvalError {
             | FunctionError::LengthMismatch { .. }
             | FunctionError::ExpectedOneDimensionalSlice { .. }
             | FunctionError::MissingColumnIndexFor2DSlice { .. }
-            | FunctionError::IndexOutOfBounds { .. }
-            | FunctionError::NonLiteralLookupMode { .. }
-            | FunctionError::InvalidLookupMode { .. }
-            | FunctionError::ErrorInBinaryLookupArray { .. }
-            | FunctionError::UnsortedBinaryLookupArray { .. }
-            | FunctionError::DescriptorReferenceNotAllowed { .. }
-            | FunctionError::InvalidDateYear { .. }
-            | FunctionError::InvalidDateMonth { .. }
-            | FunctionError::InvalidDateDay { .. }
-            | FunctionError::InvalidDateSerial { .. }
-            | FunctionError::InvalidAnnuityType { .. }
-            | FunctionError::InvalidDayCountBasis { .. }) => Self::Function {
+            | FunctionError::DescriptorReferenceNotAllowed { .. }) => Self::Function {
                 cell: Box::new(cell),
                 source: Box::new(other),
             },

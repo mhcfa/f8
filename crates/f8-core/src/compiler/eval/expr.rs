@@ -10,7 +10,7 @@ use crate::compiler::ir::symbol::SymbolTable;
 use crate::expr::ast::{BinaryOp, Expr, Literal, UnaryOp};
 use crate::functions::error::FunctionError;
 use crate::functions::registry::{FunctionRegistry, StageAError, StaticRef};
-use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use crate::value::{CellValue, ExcelError, TypeError};
 
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
 ///
@@ -35,12 +35,7 @@ pub fn eval_expr(
             let elem_types = slice
                 .cells
                 .iter()
-                .map(|cid| {
-                    memoized_values
-                        .get(cid)
-                        .and_then(CellValue::value_type)
-                        .filter(|vt| *vt != ValueType::Empty)
-                })
+                .map(|cid| memoized_values.get(cid).and_then(CellValue::value_type))
                 .collect();
             Ok(Some(StaticRef {
                 rows: slice.rows,
@@ -69,28 +64,14 @@ pub(crate) fn eval_expr_validated(
 
         Expr::Reference(table_ref) => {
             let slice = resolve_table_ref(origin, table_ref, symbol_table)?;
-            if table_ref.is_slice() {
-                return Err(EvalError::SliceInScalarContext {
-                    cell: Box::new(origin.clone()),
-                    rows: slice.rows,
-                    cols: slice.cols,
-                });
-            }
-            match slice.cells.as_slice() {
-                [] => Ok(CellValue::Error(ExcelError::Ref)),
-                [target] => {
-                    let val = memoized_values
-                        .get(target)
-                        .cloned()
-                        .ok_or_else(|| EvalError::unevaluated_dependency(target.clone()))?;
-                    Ok(val)
-                }
-                [_, _, ..] => Err(EvalError::SliceInScalarContext {
-                    cell: Box::new(origin.clone()),
-                    rows: slice.rows,
-                    cols: slice.cols,
-                }),
-            }
+            let Some(target) = slice.cells.first() else {
+                return Ok(CellValue::Error(ExcelError::Ref));
+            };
+            let val = memoized_values
+                .get(target)
+                .cloned()
+                .ok_or_else(|| EvalError::unevaluated_dependency(target.clone()))?;
+            Ok(val)
         }
 
         Expr::Unary {
@@ -99,19 +80,17 @@ pub(crate) fn eval_expr_validated(
         } => {
             let inner =
                 eval_expr_validated(inner_expr, origin, memoized_values, symbol_table, registry)?;
+            if inner.is_empty() {
+                return Err(EvalError::Type {
+                    cell: Box::new(origin.clone()),
+                    source: TypeError::EmptyOperand {
+                        operator: op.as_str(),
+                    },
+                });
+            }
             let num = match inner.strict_number() {
-                Ok(Ok(n)) => n,
-                Ok(Err(excel_err)) => return Ok(CellValue::Error(excel_err)),
-                Err(found) => {
-                    return Err(EvalError::Type {
-                        cell: Box::new(origin.clone()),
-                        source: TypeError::InvalidOperandType {
-                            operator: op.as_str(),
-                            expected: ExpectedType::Number,
-                            found,
-                        },
-                    });
-                }
+                Ok(n) => n,
+                Err(excel_err) => return Ok(CellValue::Error(excel_err)),
             };
 
             let res = match op {
@@ -185,6 +164,22 @@ fn eval_binary_op(
     }
 }
 
+fn check_numeric_operand(
+    op: BinaryOp,
+    origin: &CellId,
+    operand: &CellValue,
+) -> Result<(), EvalError> {
+    if operand.is_empty() {
+        return Err(EvalError::Type {
+            cell: Box::new(origin.clone()),
+            source: TypeError::EmptyOperand {
+                operator: op.as_str(),
+            },
+        });
+    }
+    Ok(())
+}
+
 /// Evaluates binary arithmetic operations (`+`, `-`, `*`, `/`, `^`) with strict numeric typing.
 fn eval_arithmetic_op(
     op: BinaryOp,
@@ -192,28 +187,14 @@ fn eval_arithmetic_op(
     left: &CellValue,
     right: &CellValue,
 ) -> Result<CellValue, EvalError> {
-    let lhs_res = left.strict_number().map_err(|found| EvalError::Type {
-        cell: Box::new(origin.clone()),
-        source: TypeError::InvalidOperandType {
-            operator: op.as_str(),
-            expected: ExpectedType::Number,
-            found,
-        },
-    })?;
-    let rhs_res = right.strict_number().map_err(|found| EvalError::Type {
-        cell: Box::new(origin.clone()),
-        source: TypeError::InvalidOperandType {
-            operator: op.as_str(),
-            expected: ExpectedType::Number,
-            found,
-        },
-    })?;
+    check_numeric_operand(op, origin, left)?;
+    check_numeric_operand(op, origin, right)?;
 
-    let lhs = match lhs_res {
+    let lhs = match left.strict_number() {
         Ok(n) => n,
         Err(excel_err) => return Ok(CellValue::Error(excel_err)),
     };
-    let rhs = match rhs_res {
+    let rhs = match right.strict_number() {
         Ok(n) => n,
         Err(excel_err) => return Ok(CellValue::Error(excel_err)),
     };
@@ -258,28 +239,17 @@ fn eval_comparison_op(
     left: &CellValue,
     right: &CellValue,
 ) -> Result<CellValue, EvalError> {
+    if left.is_empty() || right.is_empty() {
+        return Err(EvalError::Type {
+            cell: Box::new(origin.clone()),
+            source: TypeError::EmptyOperand {
+                operator: op.as_str(),
+            },
+        });
+    }
     let ord = match left.compare_relational(right) {
-        Ok(Ok(ord)) => ord,
-        Ok(Err(excel_err)) => return Ok(CellValue::Error(excel_err)),
-        Err((lt, rt)) => {
-            let source = if lt == ValueType::Empty || rt == ValueType::Empty {
-                TypeError::InvalidOperandType {
-                    operator: op.as_str(),
-                    expected: ExpectedType::NonEmpty,
-                    found: ValueType::Empty,
-                }
-            } else {
-                TypeError::IncompatibleComparison {
-                    operator: op.as_str(),
-                    left: lt,
-                    right: rt,
-                }
-            };
-            return Err(EvalError::Type {
-                cell: Box::new(origin.clone()),
-                source,
-            });
-        }
+        Ok(ord) => ord,
+        Err(excel_err) => return Ok(CellValue::Error(excel_err)),
     };
 
     let outcome = match op {

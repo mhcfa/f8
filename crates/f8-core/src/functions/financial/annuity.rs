@@ -1,6 +1,5 @@
 use crate::functions::common::{optional_scalar_integer, optional_scalar_number, scalar_number};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
@@ -155,7 +154,7 @@ static PMT_PARAMS: &[ParameterDef] = &[
         "type",
         "The integer 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
         ParamKind::Scalar,
-        ParamType::AnnuityType,
+        ParamType::Number,
         CellValue::Number(0.0),
     ),
 ];
@@ -190,8 +189,6 @@ impl ExcelFunction for PmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let rate = match scalar_number(&args[0]) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
@@ -209,7 +206,8 @@ impl ExcelFunction for PmtFunction {
             Err(e) => return Ok(CellValue::Error(e)),
         };
         let type_val = match optional_scalar_integer(args, 4, 0) {
-            Ok(v) => v as f64,
+            Ok(v) if (0..=1).contains(&v) => v as f64,
+            Ok(_) => return Ok(CellValue::Error(ExcelError::Num)),
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
@@ -257,7 +255,7 @@ static AMORTIZATION_PARAMS: &[ParameterDef] = &[
         "type",
         "The integer 0 or 1 indicating when payments are due (0 = end, 1 = beginning).",
         ParamKind::Scalar,
-        ParamType::AnnuityType,
+        ParamType::Number,
         CellValue::Number(0.0),
     ),
 ];
@@ -277,7 +275,11 @@ fn extract_amortization_args(args: &[FunctionArg<'_>]) -> Result<AmortizationArg
     let nper = scalar_number(&args[2])?;
     let pv = scalar_number(&args[3])?;
     let fv = optional_scalar_number(args, 4, 0.0)?;
-    let type_val = optional_scalar_integer(args, 5, 0)? as f64;
+    let type_int = optional_scalar_integer(args, 5, 0)?;
+    if !(0..=1).contains(&type_int) {
+        return Err(ExcelError::Num);
+    }
+    let type_val = type_int as f64;
 
     Ok(AmortizationArgs {
         rate,
@@ -319,8 +321,6 @@ impl ExcelFunction for IpmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let parsed = match extract_amortization_args(args) {
             Ok(parsed) => parsed,
             Err(e) => return Ok(CellValue::Error(e)),
@@ -370,8 +370,6 @@ impl ExcelFunction for PpmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let parsed = match extract_amortization_args(args) {
             Ok(parsed) => parsed,
             Err(e) => return Ok(CellValue::Error(e)),

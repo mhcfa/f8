@@ -8,7 +8,7 @@ use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
 use indexmap::IndexMap;
 
 fn eval_str(
@@ -122,60 +122,44 @@ fn test_scenario_2_npv_periodic_discounting() {
         panic!("Expected Number, got {range_res:?}");
     }
 
-    // Empty cash-flow hole, Text, or Boolean in range or scalar fails strictly with InvalidArgumentType
-    for (bad_arg, found_type) in [
-        (
-            FunctionArg::range(
-                4,
-                1,
-                vec![
-                    CellValue::Number(-1000.0),
-                    CellValue::Empty,
-                    CellValue::Number(600.0),
-                    CellValue::Number(600.0),
-                ],
-                ReferenceKind::Slice,
-            ),
-            ValueType::Empty,
-        ),
-        (
-            FunctionArg::range(
-                2,
-                1,
-                vec![CellValue::Number(-1000.0), CellValue::Text("bad".into())],
-                ReferenceKind::Slice,
-            ),
-            ValueType::Text,
-        ),
-        (
-            FunctionArg::range(
-                2,
-                1,
-                vec![CellValue::Number(-1000.0), CellValue::Boolean(true)],
-                ReferenceKind::Slice,
-            ),
-            ValueType::Boolean,
-        ),
-        (
-            FunctionArg::Scalar(CellValue::Text("bad".into())),
-            ValueType::Text,
-        ),
-        (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
+    // Text or Boolean in range or scalar fails in Pass 4a with InvalidArgumentType
+    for (formula, found_type) in [
+        ("NPV(0.10, \"bad\")", ValueType::Text),
+        ("NPV(0.10, TRUE)", ValueType::Boolean),
     ] {
         assert_eq!(
-            npv_func.evaluate(
-                &[FunctionArg::Scalar(CellValue::Number(0.10)), bad_arg],
-                &ctx,
-            ),
+            registry.validate_expr(&Expr::parse(formula).unwrap()),
             Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "NPV",
                 param: "value1",
                 position: 2,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: found_type,
             }))
         );
     }
+    let npv_slice_expr = Expr::parse("NPV(0.10, T[\"r1\"..\"r2\", \"val\"])").unwrap();
+    let mut resolve_npv_bad =
+        |_: &f8_core::expr::TableRef| -> Result<Option<f8_core::functions::StaticRef>, &'static str> {
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 2,
+                cols: 1,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![Some(ValueType::Number), Some(ValueType::Text)],
+            }))
+        };
+    assert_eq!(
+        registry.validate_expr_with_shapes(&npv_slice_expr, &mut resolve_npv_bad),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "NPV",
+                param: "value1",
+                position: 2,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            })
+        ))
+    );
 
     // Descriptor range fails statically with DescriptorReferenceNotAllowed
     let npv_desc_expr =
@@ -335,34 +319,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
         ))
     );
 
-    // Empty in values or dates fails strictly with InvalidArgumentType; swapped/OOB dates fail with InvalidDateSerial
-    assert_eq!(
-        xnpv_func.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(0.09)),
-                FunctionArg::range(
-                    2,
-                    1,
-                    vec![CellValue::Number(-1000.0), CellValue::Empty],
-                    ReferenceKind::Slice,
-                ),
-                FunctionArg::range(
-                    2,
-                    1,
-                    vec![CellValue::Number(d0), CellValue::Number(d1)],
-                    ReferenceKind::Slice,
-                ),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "XNPV",
-            param: "values",
-            position: 2,
-            expected: ExpectedType::Number,
-            found: ValueType::Empty,
-        }))
-    );
+    // OOB dates return #NUM!
     assert_eq!(
         xnpv_func.evaluate(
             &[
@@ -382,12 +339,7 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidDateSerial {
-            function: "XNPV",
-            param: "dates",
-            position: 3,
-            serial: "-1000".into(),
-        })
+        Ok(CellValue::Error(ExcelError::Num))
     );
 
     // Out-of-order date (di < d0) returns #NUM!
@@ -466,31 +418,6 @@ fn test_scenario_4_irr_periodic_solver() {
     } else {
         panic!("Expected Number, got {res:?}");
     }
-
-    // Empty cash-flow hole in IRR fails strictly with InvalidArgumentType instead of shifting timing
-    assert_eq!(
-        irr_func.evaluate(
-            &[FunctionArg::range(
-                4,
-                1,
-                vec![
-                    CellValue::Number(-1000.0),
-                    CellValue::Empty,
-                    CellValue::Number(600.0),
-                    CellValue::Number(600.0),
-                ],
-                ReferenceKind::Slice,
-            )],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "IRR",
-            param: "values",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Empty,
-        }))
-    );
 
     // All positive cash flows -> #NUM!
     let all_pos = vec![FunctionArg::range(
@@ -701,28 +628,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
         panic!("Expected Number, got {res:?}");
     }
 
-    // Empty or OOB serial in XIRR dates fails strictly
-    assert_eq!(
-        xirr_func.evaluate(
-            &[
-                args[0].clone(),
-                FunctionArg::range(
-                    2,
-                    1,
-                    vec![CellValue::Number(45292.0), CellValue::Empty],
-                    ReferenceKind::Slice,
-                ),
-            ],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "XIRR",
-            param: "dates",
-            position: 2,
-            expected: ExpectedType::Number,
-            found: ValueType::Empty,
-        }))
-    );
+    // OOB serial in XIRR dates returns #NUM!
     assert_eq!(
         xirr_func.evaluate(
             &[
@@ -736,12 +642,7 @@ fn test_scenario_5_xirr_non_periodic_solver() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidDateSerial {
-            function: "XIRR",
-            param: "dates",
-            position: 2,
-            serial: "0".into(),
-        })
+        Ok(CellValue::Error(ExcelError::Num))
     );
 
     // Realistic multi-period non-periodic project
@@ -985,7 +886,7 @@ fn test_scenario_6_pmt_annuity_payments() {
         );
     }
 
-    // Non-integer `type` argument in PMT fails strictly with NonIntegerArgument
+    // Non-integer `type` argument in PMT returns #NUM!
     let args_fractional_type = vec![
         FunctionArg::Scalar(CellValue::Number(0.05)),
         FunctionArg::Scalar(CellValue::Number(10.0)),
@@ -995,20 +896,15 @@ fn test_scenario_6_pmt_annuity_payments() {
     ];
     assert_eq!(
         pmt_func.evaluate(&args_fractional_type, &ctx),
-        Err(FunctionError::Type(TypeError::NonIntegerArgument {
-            function: "PMT",
-            param: "type",
-            position: 5,
-            value: "0.5".into(),
-        }))
+        Ok(CellValue::Error(ExcelError::Num))
     );
 
-    // Integer `type` outside {0, 1} fails strictly with InvalidAnnuityType (even when rate is Error)
+    // Integer `type` outside {0, 1} returns #NUM!
     for bad_type in [2_i64, -1, 5] {
         assert_eq!(
             pmt_func.evaluate(
                 &[
-                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                    FunctionArg::Scalar(CellValue::Number(0.05)),
                     FunctionArg::Scalar(CellValue::Number(10.0)),
                     FunctionArg::Scalar(CellValue::Number(-1000.0)),
                     FunctionArg::Scalar(CellValue::Number(0.0)),
@@ -1016,10 +912,7 @@ fn test_scenario_6_pmt_annuity_payments() {
                 ],
                 &ctx,
             ),
-            Err(FunctionError::InvalidAnnuityType {
-                function: "PMT",
-                found: bad_type,
-            })
+            Ok(CellValue::Error(ExcelError::Num))
         );
     }
 }
@@ -1167,7 +1060,7 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
         }
     }
 
-    // Invalid integer `type` in IPMT and PPMT fails strictly with InvalidAnnuityType
+    // Invalid integer `type` in IPMT and PPMT returns #NUM!
     assert_eq!(
         ipmt_func.evaluate(
             &[
@@ -1180,10 +1073,7 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidAnnuityType {
-            function: "IPMT",
-            found: -1,
-        })
+        Ok(CellValue::Error(ExcelError::Num))
     );
     assert_eq!(
         ppmt_func.evaluate(
@@ -1197,10 +1087,7 @@ fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
             ],
             &ctx,
         ),
-        Err(FunctionError::InvalidAnnuityType {
-            function: "PPMT",
-            found: 3,
-        })
+        Ok(CellValue::Error(ExcelError::Num))
     );
 }
 

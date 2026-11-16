@@ -1,6 +1,5 @@
 use crate::functions::common::{LogicalCollector, scalar_bool};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
@@ -45,8 +44,6 @@ impl ExcelFunction for AndFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match LogicalCollector::collect(args) {
             Ok(c) => Ok(CellValue::Boolean(c.all_true)),
             Err(err) => Ok(CellValue::Error(err)),
@@ -92,8 +89,6 @@ impl ExcelFunction for OrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match LogicalCollector::collect(args) {
             Ok(c) => Ok(CellValue::Boolean(c.any_true)),
             Err(err) => Ok(CellValue::Error(err)),
@@ -138,8 +133,6 @@ impl ExcelFunction for NotFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match scalar_bool(&args[0]) {
             Ok(b) => Ok(CellValue::Boolean(!b)),
             Err(err) => Ok(CellValue::Error(err)),

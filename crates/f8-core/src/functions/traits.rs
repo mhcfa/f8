@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::expr::ast::{Expr, TableRef};
 use crate::functions::error::FunctionError;
-use crate::value::{CellValue, ExpectedType, ValueType};
+use crate::value::{CellValue, ValueType};
 
 /// Functional taxonomy categories for Excel built-in functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -73,32 +73,20 @@ pub enum ReferenceKind {
 pub enum ParamType {
     /// Accepts any value type (`Number`, `Text`, `Boolean`, `Empty`, `Error`).
     Any,
-    /// Requires a non-empty scalar (`ExpectedType::NonEmpty`: `Number`, `Text`, or `Boolean`).
-    NonEmpty,
-    /// Requires a numeric scalar (`ExpectedType::Number`).
+    /// Requires a numeric scalar (`ValueType::Number`).
     Number,
-    /// Requires an exact safe integer (`ExpectedType::Integer`).
-    Integer,
-    /// Requires a finite calendar date serial in `1.0..=2_958_465.0`.
-    DateSerial,
-    /// Requires an exact annuity timing integer in `{0, 1}`.
-    AnnuityType,
-    /// Requires an exact `YEARFRAC` day-count basis integer in `0..=4`.
-    DayCountBasis,
-    /// Requires a boolean value (`ExpectedType::Boolean`).
+    /// Requires a boolean value (`ValueType::Boolean`).
     Boolean,
 }
 
 impl ParamType {
-    /// Converts this parameter type into its corresponding [`ExpectedType`], or `None` for [`Self::Any`].
+    /// Returns the required [`ValueType`] for this parameter, or `None` for [`Self::Any`].
     #[must_use]
-    pub const fn to_expected_type(self) -> Option<ExpectedType> {
+    pub const fn expected_value_type(self) -> Option<ValueType> {
         match self {
             Self::Any => None,
-            Self::NonEmpty => Some(ExpectedType::NonEmpty),
-            Self::Number | Self::DateSerial => Some(ExpectedType::Number),
-            Self::Integer | Self::AnnuityType | Self::DayCountBasis => Some(ExpectedType::Integer),
-            Self::Boolean => Some(ExpectedType::Boolean),
+            Self::Number => Some(ValueType::Number),
+            Self::Boolean => Some(ValueType::Boolean),
         }
     }
 }
@@ -113,14 +101,16 @@ pub enum RolePolicy {
     MeasureOnly,
 }
 
-/// Declarative empty-cell handling policy for non-`ParamType::Any` parameters.
+/// Declarative empty-cell handling policy for function parameters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum EmptyPolicy {
     /// Rejects `CellValue::Empty` across `Scalar`, `ReferenceKind::SingleCell`, and `ReferenceKind::Slice`.
     #[default]
-    ForbidAll,
+    Forbid,
     /// Rejects `CellValue::Empty` on `Scalar` and `ReferenceKind::SingleCell`, while permitting sparse `Empty` inside `ReferenceKind::Slice`.
     AllowInSlice,
+    /// Permits `CellValue::Empty` across `Scalar`, `ReferenceKind::SingleCell`, and `ReferenceKind::Slice`.
+    Allow,
 }
 
 /// Variadic tail behavior for function signatures.
@@ -175,7 +165,7 @@ pub struct ParameterDef {
     pub param_type: ParamType,
     /// Column axis-role policy for reference arguments.
     pub role_policy: RolePolicy,
-    /// Empty-cell policy for non-`ParamType::Any` parameters.
+    /// Empty-cell policy for this parameter.
     pub empty_policy: EmptyPolicy,
     /// Requirement and default policy for this parameter.
     pub requirement: ParamRequirement,
@@ -196,7 +186,7 @@ impl ParameterDef {
             kind,
             param_type,
             role_policy: RolePolicy::AnyRole,
-            empty_policy: EmptyPolicy::ForbidAll,
+            empty_policy: EmptyPolicy::Forbid,
             requirement: ParamRequirement::Required,
         }
     }
@@ -215,7 +205,7 @@ impl ParameterDef {
             kind,
             param_type,
             role_policy: RolePolicy::AnyRole,
-            empty_policy: EmptyPolicy::ForbidAll,
+            empty_policy: EmptyPolicy::Forbid,
             requirement: ParamRequirement::Optional,
         }
     }
@@ -235,7 +225,7 @@ impl ParameterDef {
             kind,
             param_type,
             role_policy: RolePolicy::AnyRole,
-            empty_policy: EmptyPolicy::ForbidAll,
+            empty_policy: EmptyPolicy::Forbid,
             requirement: ParamRequirement::OptionalWithDefault(default_value),
         }
     }
@@ -251,6 +241,13 @@ impl ParameterDef {
     #[must_use]
     pub const fn allow_empty_in_slice(mut self) -> Self {
         self.empty_policy = EmptyPolicy::AllowInSlice;
+        self
+    }
+
+    /// Permits `CellValue::Empty` across `Scalar`, `ReferenceKind::SingleCell`, and `ReferenceKind::Slice`.
+    #[must_use]
+    pub const fn allow_empty(mut self) -> Self {
+        self.empty_policy = EmptyPolicy::Allow;
         self
     }
 }
@@ -406,10 +403,8 @@ pub enum ValidationPolicy {
     ShapeCoupled(ShapePolicy),
     /// Short-circuiting conditional branch unification and selector validation.
     Branch(BranchPolicy),
-    /// Coordinate/vector lookup shape, mode-literal, and slice homogeneity validation.
+    /// Coordinate/vector lookup shape and slice homogeneity validation.
     Lookup(LookupPolicy),
-    /// Calendar `(year, month, day)` integer domain validation (`DATE`).
-    CalendarDate,
 }
 
 /// Evaluated 2D range grid carrying dimensions and cell values.

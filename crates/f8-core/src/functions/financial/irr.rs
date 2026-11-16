@@ -1,7 +1,8 @@
 use crate::functions::common::optional_scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::financial::discounting::{coerce_slice_numbers, collect_cash_flows};
-use crate::functions::registry::validate_bound_args;
+use crate::functions::financial::discounting::{
+    coerce_slice_date_serials, coerce_slice_numbers, collect_cash_flows,
+};
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     ShapePolicy, ValidationPolicy, VariadicRule,
@@ -69,8 +70,6 @@ impl ExcelFunction for IrrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let cfs = match collect_cash_flows(&args[0..1]) {
             Ok(c) => c,
             Err(e) => return Ok(CellValue::Error(e)),
@@ -101,7 +100,7 @@ static XIRR_PARAMS: &[ParameterDef] = &[
         "dates",
         "1D range of payment dates corresponding to cash flow payments.",
         ParamKind::Range,
-        ParamType::DateSerial,
+        ParamType::Number,
     )
     .measure_only(),
     ParameterDef::with_default(
@@ -152,8 +151,6 @@ impl ExcelFunction for XirrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let raw_values = args[0].as_range_slice(self.name())?;
         let raw_dates = args[1].as_range_slice(self.name())?;
 
@@ -162,7 +159,7 @@ impl ExcelFunction for XirrFunction {
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        let dates = match coerce_slice_numbers(raw_dates) {
+        let dates = match coerce_slice_date_serials(raw_dates) {
             Ok(d) => d,
             Err(e) => return Ok(CellValue::Error(e)),
         };
