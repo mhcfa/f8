@@ -67,20 +67,6 @@ pub enum ModelError {
         column: ColId,
     },
 
-    #[error("Table '{table}': unknown column '{column}' in {context}")]
-    UnknownColumn {
-        table: TableId,
-        column: ColId,
-        context: String,
-    },
-
-    #[error("Table '{table}': unknown row '{row}' in {context}")]
-    UnknownRow {
-        table: TableId,
-        row: RowId,
-        context: String,
-    },
-
     #[error(
         "Table '{table}': cell at row '{row}', column '{column}' specifies indent ({indent}), but column is a measure axis"
     )]
@@ -90,6 +76,12 @@ pub enum ModelError {
         column: ColId,
         indent: u8,
     },
+
+    #[error("Table '{table}': row id must not be empty or whitespace")]
+    EmptyRowId { table: TableId },
+
+    #[error("Table '{table}': column id must not be empty or whitespace")]
+    EmptyColumnId { table: TableId },
 
     #[error("Table '{table}': duplicate row id '{row}'")]
     DuplicateRowId { table: TableId, row: RowId },
@@ -105,6 +97,9 @@ pub enum ModelError {
 
     #[error("Table '{table}' has no rows declared")]
     EmptyRows { table: TableId },
+
+    #[error("Project manifest must declare at least one worksheet")]
+    EmptySheets,
 
     #[error("Duplicate sheet name '{sheet}' in project manifest")]
     DuplicateSheetName { sheet: String },

@@ -1,4 +1,4 @@
-use crate::functions::common::{scalar_bool, scalar_integer};
+use crate::functions::common::{require_args, scalar_bool, scalar_integer};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
@@ -62,13 +62,7 @@ impl ExcelFunction for IfFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [cond_arg, true_arg, false_arg] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        };
+        let [cond_arg, true_arg, false_arg] = require_args(self, args)?;
 
         let (selected_arg, param, position) = match scalar_bool(cond_arg) {
             Ok(true) => (true_arg, "value_if_true", 2),

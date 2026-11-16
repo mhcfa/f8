@@ -499,5 +499,12 @@ describe("TypeScript TableAuditor & Tabular Export", () => {
     expect(lines[0]).toContain("Value \\| Col");
     expect(lines[2]).toContain("**Sec \\| Header Sub**");
     expect(lines[3]).toContain("A \\| B C");
+
+    const untypedAuditor: {
+      toDict(orient: string): unknown;
+      toMarkdown(view: string): string;
+    } = auditor;
+    expect(() => untypedAuditor.toDict("invalid")).toThrow(/Invalid orient/);
+    expect(() => untypedAuditor.toMarkdown("invalid")).toThrow(/Invalid view mode/);
   });
 });

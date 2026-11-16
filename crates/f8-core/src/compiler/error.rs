@@ -216,9 +216,9 @@ impl CompilerError {
                     | ModelError::UnknownCellColumn { table, .. }
                     | ModelError::MutuallyExclusiveCellPayload { table, .. }
                     | ModelError::EmptyCellPayload { table, .. }
-                    | ModelError::UnknownColumn { table, .. }
-                    | ModelError::UnknownRow { table, .. }
                     | ModelError::InvalidIndentOnMeasureCell { table, .. }
+                    | ModelError::EmptyRowId { table }
+                    | ModelError::EmptyColumnId { table }
                     | ModelError::DuplicateRowId { table, .. }
                     | ModelError::DuplicateColumnId { table, .. }
                     | ModelError::DuplicateTableId { table }
@@ -226,7 +226,8 @@ impl CompilerError {
                     | ModelError::NonFiniteCellNumber { table, .. }
                     | ModelError::EmptyColumns { table }
                     | ModelError::EmptyRows { table } => Some(table.to_string()),
-                    ModelError::DuplicateSheetName { .. }
+                    ModelError::EmptySheets
+                    | ModelError::DuplicateSheetName { .. }
                     | ModelError::InvalidSheetName { .. }
                     | ModelError::InvalidSheetTabColor { .. }
                     | ModelError::InvalidFreezePanes { .. }
@@ -273,8 +274,6 @@ impl CompilerError {
                     IrError::DuplicateCell { id } => Some(id.table.to_string()),
                     IrError::DuplicateTable { table, .. }
                     | IrError::UnknownTable { table, .. }
-                    | IrError::UnknownColumn { table, .. }
-                    | IrError::UnknownRow { table, .. }
                     | IrError::EmptyTable { table }
                     | IrError::AmbiguousExpressionConflict { table, .. }
                     | IrError::UnassignedCell { table, .. }
@@ -282,9 +281,7 @@ impl CompilerError {
                     | IrError::DecimalsConflict { table, .. }
                     | IrError::CurrencyConflict { table, .. }
                     | IrError::ShadeConflict { table, .. } => Some(table.to_string()),
-                    IrError::UnknownSheet { .. }
-                    | IrError::FormulaParse { .. }
-                    | IrError::Model(_) => None,
+                    IrError::FormulaParse { .. } | IrError::Model(_) => None,
                 };
                 ErrorDiagnostic::SpecificationError {
                     message: message.clone(),

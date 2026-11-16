@@ -29,7 +29,7 @@ compiled = model.compile()
 
 ### Coordinate Addressing in `CompiledModel`
 
-Cell methods (`value`, `num`, `formatted`, `inspect_cell`, `precedents_of`, `dependents_of`) accept either a 1-argument coordinate string (`'Table["row", "col"]'`, `"Table['row', 'col']"`, or unquoted `'Table[row, col]'`, provided `row` and `col` IDs do not contain `,`, `[`, or `]`) or 3 positional arguments (`table, row, col`, which support arbitrary characters in `row` and `col`). Missing entities or malformed coordinates raise `InspectionError`:
+Cell methods (`value`, `num`, `formatted`, `inspect_cell`, `precedents_of`, `dependents_of`) accept either a 1-argument coordinate string (canonical `'Table["row", "col"]'` with `\"` and `\\` escaping, or shorthand `"Table['row', 'col']"` / `'Table[row, col]'` provided `row` and `col` IDs do not contain `,`, `[`, `]`, `'`, or `"`) or 3 positional arguments (`table, row, col`, which support arbitrary non-empty characters in `row` and `col`). Missing entities or malformed coordinates raise `InspectionError`:
 
 ```python
 v1 = compiled.num('Operations["revenue", "2024E"]')

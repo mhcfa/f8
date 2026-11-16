@@ -515,6 +515,9 @@ fn test_dotted_function_name_and_criteria_syntax_rejected() {
         "SUM(Table[\"r1\", @col], = 5)",
         "SUM(Table[\"r1\", @col], BLANK)",
         "SUM(Table[\"r1\", @col], <> BLANK)",
+        r#""bad\nescape""#,
+        r#""C:\path""#,
+        r#"Table["bad\tkey", @col]"#,
     ] {
         assert!(Expr::parse(bad).is_err(), "expected parse error on '{bad}'");
     }

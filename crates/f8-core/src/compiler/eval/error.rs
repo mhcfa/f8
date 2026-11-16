@@ -93,6 +93,9 @@ impl EvalError {
                 rows,
                 cols,
             },
+            FunctionError::UnevaluatedCell { table, row, col } => {
+                Self::UnevaluatedDependency(Box::new(CellId::new(table, row, col)))
+            }
             other @ (FunctionError::UnknownFunction(_)
             | FunctionError::TooFewArguments { .. }
             | FunctionError::TooManyArguments { .. }

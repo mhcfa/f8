@@ -141,7 +141,7 @@ export function toF8Error(err: unknown): Error {
   }
 
   if (err instanceof Error) {
-    return err;
+    return new F8Error(err.message, { cause: err });
   }
 
   return new F8Error(String(err));

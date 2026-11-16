@@ -1823,6 +1823,17 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.value("T", "iserror_na", "res")).toBe(true);
       expect(compiled.value("T", "iserror_non_err", "res")).toBe(false);
       expect(compiled.inspectCell("T", "iserror_div0", "res").excelFormula).toContain("ISERROR(");
+
+      // CompiledModel.num() diagnostic uses 'number' terminology, and toF8Error wraps generic Error in F8Error
+      expect(() => compiled.num("T", "r1", "cat")).toThrow(/did not evaluate to a number/);
+    });
+
+    it("(q) wraps generic non-F8Error Error instances in F8Error with preserved cause", async () => {
+      const { toF8Error } = await import("../src/errors.js");
+      const rawErr = new Error("wasm runtime trap");
+      const wrapped = toF8Error(rawErr);
+      expect(wrapped).toBeInstanceOf(F8Error);
+      expect(wrapped.cause).toBe(rawErr);
     });
   });
 });

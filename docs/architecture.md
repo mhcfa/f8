@@ -39,7 +39,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
 
 1. Ingest & Parse (`f8_core::model`):
    - Deserializes JSON specifications into strongly typed AST structures.
-   - Validates schema invariants: Excel sheet naming rules (`<= 31` UTF-16 code units, forbidden `: \ / ? * [ ]`, no leading/trailing `'`, non-`"History"`, case-insensitive uniqueness), `FreezePanes` grid bounds (`row < 1_048_576`, `col < 16_384`), valid identifier `TableId`s, unique table/axis IDs, non-empty dimensions, non-empty subtitles, and finite `ValueLiteral::Number` inputs.
+   - Validates schema invariants: non-empty worksheet list, Excel sheet naming rules (`<= 31` UTF-16 code units, forbidden `: \ / ? * [ ]`, no leading/trailing `'`, non-`"History"`, case-insensitive uniqueness), `FreezePanes` grid bounds (`row < 1_048_576`, `col < 16_384`), valid identifier `TableId`s, non-empty and unique table/axis IDs, non-empty dimensions, non-empty subtitles, and finite `ValueLiteral::Number` inputs.
    - Validates formatting invariants: maximum 14 decimal places (`decimals <= 14`), precision allowed only on decimal-supporting numeric presets (`currency`, `number`, `percentage`, `multiple`, `basis_points`), currency symbols allowed only on `currency` preset, valid hex colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA` on `tab_color` and palette colors, plus `"none"`/`"transparent"` on fills), and positive finite layout metrics (`col_padding >= 0.0`; `min_col_width <= max_col_width`).
 2. Grid Expansion & Formula Parsing (`f8_core::compiler::ir`):
    - Expands tables into discrete cells identified by `CellId { table, row, col }`.
@@ -78,7 +78,7 @@ Pass 6: Lowering & Emission  (crates/f8-core/src/compiler/lowering/, crates/f8-c
    - Pass 6b (Emission): writes `.xlsx` byte buffers via `rust_xlsxwriter`.
    - Format deduplication: OpenXML `<cellXfs>` synthesized and cached via `FormatCache` with `FormatAlign::VerticalCenter` on data cells and `Format::set_text_wrap()` (`wrapText="1"`) on wrapped cells.
    - Color precedence: literal inputs styled with `input_text` (blue) overriding highlight/total fills; formula cells styled with `formula_text` (black); descriptors styled with `data_text`.
-   - Presentation layout: super-headers centered across runs via `FormatAlign::CenterAcross` (zero merged cells); opt-in row outline grouping up to level 7 (`table.collapsible`); pre-populated formula `<v>` value cache tags (configurable via `EmissionOptions`).
+   - Presentation layout: super-headers centered across runs via `FormatAlign::CenterAcross` (zero merged cells); opt-in table-level row outline grouping (`table.collapsible`); pre-populated formula `<v>` value cache tags (configurable via `EmissionOptions`).
 
 ### Unified Inspection Facade (`CompiledModel`)
 

@@ -426,12 +426,13 @@ def test_scenario_11_save_workbook_str_and_path(
     compiled.save(values_only_target, options={"values_only": True})
     assert values_only_target.exists()
 
-    # Emission failure with non-writable location raises EmissionError
+    # Emission failure with non-writable location raises EmissionError with preserved OSError cause
     if not (tmp_path / "dir_blocked").exists():
         (tmp_path / "dir_blocked").mkdir()
-    with pytest.raises(EmissionError):
+    with pytest.raises(EmissionError) as exc_info:
         # Trying to save to a directory as a file path
         compiled.save(tmp_path / "dir_blocked")
+    assert isinstance(exc_info.value.__cause__, OSError)
 
 
 def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:

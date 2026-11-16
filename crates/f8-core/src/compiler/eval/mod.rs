@@ -31,7 +31,8 @@ impl Evaluator {
     ///
     /// # Errors
     /// Returns [`EvalError`] on the first cell containing an unknown function, signature violation,
-    /// static type or integer violation, scalar slice violation, or slice rank/dimension/index error.
+    /// static value-type or descriptor-role violation, branch return-type mismatch, scalar slice violation,
+    /// or slice rank/dimension error.
     pub fn validate_grid(
         grid: &CellGrid,
         graph: &DependencyGraph,

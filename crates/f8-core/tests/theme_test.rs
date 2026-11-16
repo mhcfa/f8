@@ -586,4 +586,18 @@ fn test_scenario_14_rejection_of_removed_shade_accent() {
         err.to_string()
             .contains("unknown field `shade_accent_fill`")
     );
+
+    // 3. MetricsConfig deserialization rejects retired row-height fields
+    let mut metrics_val = serde_json::to_value(Theme::corporate_navy().metrics).unwrap();
+    metrics_val.as_object_mut().unwrap().insert(
+        "title_row_height".to_string(),
+        serde_json::Value::from(24.0),
+    );
+    let err_metrics =
+        serde_json::from_value::<f8_core::model::MetricsConfig>(metrics_val).unwrap_err();
+    assert!(
+        err_metrics
+            .to_string()
+            .contains("unknown field `title_row_height`")
+    );
 }

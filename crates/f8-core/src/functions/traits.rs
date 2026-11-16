@@ -302,6 +302,36 @@ impl<'a> FunctionArg<'a> {
         }
     }
 
+    /// Extracts `(rows, cols, values)` from a 1D bound range, rejecting 2D ranges (`rows > 1 && cols > 1`).
+    pub fn as_1d_range(
+        &self,
+        function: &'static str,
+        param: &'static str,
+    ) -> Result<(usize, usize, &[CellValue]), FunctionError> {
+        match self {
+            Self::Range {
+                rows, cols, values, ..
+            } => {
+                if *rows > 1 && *cols > 1 {
+                    return Err(FunctionError::ExpectedOneDimensionalSlice {
+                        function,
+                        param,
+                        rows: *rows,
+                        cols: *cols,
+                    });
+                }
+                Ok((*rows, *cols, values.as_slice()))
+            }
+            Self::Scalar(_) | Self::Lazy(_) | Self::Omitted => {
+                Err(FunctionError::InvalidArgumentKind {
+                    function,
+                    expected: "range",
+                    found: self.kind_name(),
+                })
+            }
+        }
+    }
+
     /// Resolves this argument to a single non-empty scalar `CellValue`, evaluating lazy expressions if necessary
     /// and returning `TypeError::EmptyArgument` when the resolved value is `CellValue::Empty`.
     pub fn eval_scalar(

@@ -947,6 +947,36 @@ fn test_manifest_sheet_name_and_option_invariants_rejected() {
             .is_ok()
     );
 
+    // UTF-16 code unit boundary (31 UTF-16 units max: surrogate pairs count as 2 units)
+    assert!(
+        make_manifest(base_sheet(&"€".repeat(31)))
+            .validate()
+            .is_ok(),
+        "31 BMP chars (93 UTF-8 bytes, 31 UTF-16 units) must be valid"
+    );
+    assert!(
+        make_manifest(base_sheet(&format!("{}A", "😀".repeat(15))))
+            .validate()
+            .is_ok(),
+        "15 astral chars + 'A' (31 UTF-16 units) must be valid"
+    );
+    let astral_32 = "😀".repeat(16);
+    assert!(matches!(
+        make_manifest(base_sheet(&astral_32)).validate().unwrap_err(),
+        ModelError::InvalidSheetName { ref sheet, .. } if sheet == &astral_32
+    ));
+
+    // Empty manifest.sheets rejected
+    let empty_sheets_manifest = ProjectManifest {
+        model_name: "EmptySheets".to_string(),
+        theme: Default::default(),
+        sheets: vec![],
+    };
+    assert!(
+        empty_sheets_manifest.validate().is_err(),
+        "empty manifest.sheets must fail validation"
+    );
+
     // Case-insensitive duplicate sheet names rejected
     let dup_manifest = ProjectManifest {
         model_name: "Test".to_string(),
@@ -1055,4 +1085,67 @@ fn test_table_id_and_finite_cell_number_invariants_rejected() {
         let err2 = t2.validate().unwrap_err();
         assert!(matches!(err2, ModelError::NonFiniteCellNumber { .. }));
     }
+
+    // Empty or whitespace-only RowId and ColId rejected in Pass 1
+    for bad_axis_id in ["", "   ", "\t\n"] {
+        let mut bad_col_tbl = TableSpec::new("T1", "Title");
+        bad_col_tbl.columns.push(ColumnSpec::new(bad_axis_id));
+        bad_col_tbl
+            .rows
+            .push(RowSpec::new("r1").with_cell(bad_axis_id, 1.0));
+        assert!(
+            bad_col_tbl.validate().is_err(),
+            "expected empty/whitespace ColId {bad_axis_id:?} to fail validation"
+        );
+
+        let mut bad_row_tbl = TableSpec::new("T1", "Title");
+        bad_row_tbl.columns.push(ColumnSpec::new("c1"));
+        bad_row_tbl
+            .rows
+            .push(RowSpec::new(bad_axis_id).with_cell("c1", 1.0));
+        assert!(
+            bad_row_tbl.validate().is_err(),
+            "expected empty/whitespace RowId {bad_axis_id:?} to fail validation"
+        );
+    }
+
+    // Cross-table DuplicateTableId rejected across Compiler entrypoints and theme validated uniformly
+    let manifest = ProjectManifest {
+        model_name: "DupModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T1")],
+        }],
+    };
+    let mut dup_a = make_table("T1");
+    dup_a.rows = vec![RowSpec::new("r1").with_cell("c1", 1.0)];
+    let mut dup_b = make_table("T1");
+    dup_b.rows = vec![RowSpec::new("r2").with_cell("c1", 2.0)];
+    let dup_err = f8_core::compiler::Compiler::compile(&manifest, &[dup_a, dup_b]).unwrap_err();
+    assert!(
+        matches!(
+            dup_err,
+            f8_core::compiler::CompilerError::Model(ModelError::DuplicateTableId { ref table })
+                if table.as_str() == "T1"
+        ),
+        "expected DuplicateTableId, got {dup_err:?}"
+    );
+
+    let bad_theme_manifest = ProjectManifest {
+        model_name: "BadTheme".to_string(),
+        theme: f8_core::model::ThemeSpec::Name("nonexistent_theme".to_string()),
+        sheets: manifest.sheets.clone(),
+    };
+    assert!(matches!(
+        f8_core::compiler::Compiler::evaluate(&bad_theme_manifest, &[make_table("T1")])
+            .unwrap_err(),
+        f8_core::compiler::CompilerError::Model(ModelError::ThemeNotFound { .. })
+    ));
+
+    // ValueLiteral::Display normalizes -0.0 to "0"
+    assert_eq!(ValueLiteral::Number(-0.0).to_string(), "0");
 }

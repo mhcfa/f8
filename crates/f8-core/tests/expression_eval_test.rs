@@ -570,12 +570,19 @@ fn test_unevaluated_dependency_error() {
     let origin = CellId::new("IncomeStatement", "ebit", "2024E");
     let memo = IndexMap::new(); // Empty memo: referenced cell is missing
 
-    let expr = Expr::parse("IncomeStatement[\"rev\", @col] + 10").expect("valid expr");
-    let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
-    let EvalError::UnevaluatedDependency(target) = err else {
-        panic!("expected UnevaluatedDependency, got {err:?}");
-    };
-    assert_eq!(*target, CellId::new("IncomeStatement", "rev", "2024E"));
+    for formula in [
+        "IncomeStatement[\"rev\", @col] + 10",
+        "ABS(IncomeStatement[\"rev\", @col])",
+        "SUM(IncomeStatement[\"rev\", @col])",
+        "IF(TRUE, IncomeStatement[\"rev\", @col], 0)",
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
+        let EvalError::UnevaluatedDependency(target) = err else {
+            panic!("expected UnevaluatedDependency for '{formula}', got {err:?}");
+        };
+        assert_eq!(*target, CellId::new("IncomeStatement", "rev", "2024E"));
+    }
 }
 
 #[test]

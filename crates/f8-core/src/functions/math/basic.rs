@@ -1,4 +1,4 @@
-use crate::functions::common::scalar_number;
+use crate::functions::common::{require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
@@ -44,13 +44,7 @@ impl ExcelFunction for AbsFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [num_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [num_arg] = require_args(self, args)?;
         match scalar_number(num_arg) {
             Ok(n) => Ok(CellValue::number(n.abs())),
             Err(err) => Ok(CellValue::Error(err)),

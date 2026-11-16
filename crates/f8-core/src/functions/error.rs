@@ -1,3 +1,4 @@
+use crate::model::id::{ColId, RowId, TableId};
 use crate::value::TypeError;
 
 /// Structured errors produced by function validation, binding, and execution.
@@ -149,6 +150,17 @@ pub enum FunctionError {
         param: &'static str,
         /// 1-indexed argument position.
         position: usize,
+    },
+
+    /// A referenced cell coordinate has not yet been evaluated in the current evaluation context.
+    #[error("referenced cell '{table}[\"{row}\", \"{col}\"]' has not been evaluated")]
+    UnevaluatedCell {
+        /// Referenced table identifier.
+        table: TableId,
+        /// Referenced row identifier.
+        row: RowId,
+        /// Referenced column identifier.
+        col: ColId,
     },
 }
 

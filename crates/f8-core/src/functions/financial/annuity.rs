@@ -1,10 +1,10 @@
-use crate::functions::common::{optional_scalar_integer, optional_scalar_number, scalar_number};
+use crate::functions::common::{optional_scalar_number, require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ValueType, normalize_zero};
+use crate::value::{CellValue, ExcelError, ValueType, f64_to_strict_integer, normalize_zero};
 
 /// Calculates the periodic payment for an annuity based on constant payments and a constant interest rate.
 pub(crate) fn calculate_pmt(
@@ -114,36 +114,21 @@ impl ExcelFunction for PmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [rate_arg, nper_arg, pv_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        };
-        let rate = match scalar_number(rate_arg) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let nper = match scalar_number(nper_arg) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let pv = match scalar_number(pv_arg) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let fv = match optional_scalar_number(args, 3, 0.0) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let type_val = match optional_scalar_integer(args, 4, 0) {
-            Ok(v) if (0..=1).contains(&v) => v as f64,
-            Ok(_) => return Ok(CellValue::Error(ExcelError::Num)),
-            Err(e) => return Ok(CellValue::Error(e)),
+        let [rate_arg, nper_arg, pv_arg] = require_args(self, args)?;
+        let eval = || {
+            let rate = scalar_number(rate_arg)?;
+            let nper = scalar_number(nper_arg)?;
+            let pv = scalar_number(pv_arg)?;
+            let fv = optional_scalar_number(args, 3, 0.0)?;
+            let type_f = optional_scalar_number(args, 4, 0.0)?;
+            let type_i64 = f64_to_strict_integer(type_f)?;
+            if !(0..=1).contains(&type_i64) {
+                return Err(ExcelError::Num);
+            }
+            calculate_pmt(rate, nper, pv, fv, type_i64 as f64)
         };
 
-        match calculate_pmt(rate, nper, pv, fv, type_val) {
+        match eval() {
             Ok(val) => Ok(CellValue::number(val)),
             Err(e) => Ok(CellValue::Error(e)),
         }

@@ -544,3 +544,12 @@ def test_scenario_11_row_col_ids_with_comma_quote_and_markdown_pipe_newline_esca
     assert r"Value \| Col" in lines[0]
     assert r"**Sec \| Header Sub**" in lines[2]
     assert r"A \| B C" in lines[3]
+
+    # Formula cell without lowered excel_formula renders empty instead of value fallback
+    raw_insp = compiled.inspect_table("T")
+    for info in raw_insp["cells"].values():
+        if info["col"] == col_key:
+            info["is_formula"] = True
+            info["excel_formula"] = None
+    missing_formula_md = str(TableAuditor(raw_insp).to_markdown("formulas"))
+    assert "42" not in missing_formula_md.splitlines()[-1]

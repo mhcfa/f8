@@ -2,9 +2,6 @@
 
 use crate::value::ExcelError;
 
-/// Serial day number for Unix epoch (`1970-01-01`).
-pub const UNIX_EPOCH_SERIAL: f64 = 25569.0;
-
 /// Minimum valid input calendar date serial (`1900-01-01`).
 pub const MIN_INPUT_DATE_SERIAL: f64 = 1.0;
 
