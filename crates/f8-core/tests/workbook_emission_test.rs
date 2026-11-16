@@ -646,7 +646,7 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
 
     let emit_res3 = WorkbookEmitter::emit_to_buffer(
         &manifest,
-        &[table],
+        std::slice::from_ref(&table),
         &grid,
         &layout_map3,
         &lowered_formulas,
@@ -658,6 +658,97 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
     assert!(matches!(
         emit_res3,
         Err(EmissionError::MissingSheet { sheet }) if sheet == SheetId::from("ModelSheet")
+    ));
+
+    // 4. Missing grid cell returns MissingCell
+    let full_layout =
+        LayoutPlanner::plan(&manifest, std::slice::from_ref(&table), &grid, &theme, None).unwrap();
+    let empty_grid = f8_core::compiler::ir::cell::CellGrid::new();
+    let emit_res4 = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        std::slice::from_ref(&table),
+        &empty_grid,
+        &full_layout,
+        &lowered_formulas,
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    );
+    assert!(matches!(
+        emit_res4,
+        Err(EmissionError::MissingCell { cell }) if cell == removed_cell_id
+    ));
+
+    // 5. Missing lowered formula or evaluated entry for a formula cell returns EmissionError
+    let mut formula_table = TableSpec::new("DiagTable", "Diagnostics");
+    formula_table.columns.push(ColumnSpec::new("c1"));
+    formula_table
+        .rows
+        .push(RowSpec::new("r1").with_cell("c1", CellInput::formula("1 + 1")));
+    let (formula_sym, formula_grid) =
+        ir::expand_workbook(&manifest, std::slice::from_ref(&formula_table)).unwrap();
+    let formula_layout = LayoutPlanner::plan(
+        &manifest,
+        std::slice::from_ref(&formula_table),
+        &formula_grid,
+        &theme,
+        None,
+    )
+    .unwrap();
+    let formula_lowered =
+        FormulaLowerer::lower_grid(&formula_grid, &formula_sym, &formula_layout).unwrap();
+    let empty_lowered = f8_core::compiler::lowering::LoweredFormulaMap::new();
+    let empty_eval = f8_core::compiler::eval::EvaluatedModel::new(
+        indexmap::IndexMap::new(),
+        formula_sym.clone(),
+    );
+
+    // Missing lowered formula in live mode
+    let emit_res5 = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        std::slice::from_ref(&formula_table),
+        &formula_grid,
+        &formula_layout,
+        &empty_lowered,
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    );
+    assert!(matches!(
+        emit_res5,
+        Err(EmissionError::MissingFormula { cell }) if cell == removed_cell_id
+    ));
+
+    // Missing evaluated cell in live cached mode when evaluated model is supplied
+    let emit_res6 = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        std::slice::from_ref(&formula_table),
+        &formula_grid,
+        &formula_layout,
+        &formula_lowered,
+        &theme,
+        Some(&empty_eval),
+        &EmissionOptions::default(),
+    );
+    assert!(matches!(
+        emit_res6,
+        Err(EmissionError::MissingEvaluatedCell { cell }) if cell == removed_cell_id
+    ));
+
+    // Missing evaluated cell in values_only mode
+    let emit_res7 = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        std::slice::from_ref(&formula_table),
+        &formula_grid,
+        &formula_layout,
+        &formula_lowered,
+        &theme,
+        Some(&empty_eval),
+        &EmissionOptions::default().with_values_only(true),
+    );
+    assert!(matches!(
+        emit_res7,
+        Err(EmissionError::MissingEvaluatedCell { cell }) if cell == removed_cell_id
     ));
 }
 
@@ -1234,7 +1325,7 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         ),
     ));
 
-    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
     let t = TableId::from("BlankCoercion");
     let col = ColId::from("val");
 
@@ -1298,4 +1389,75 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         !frozen_b.contains("<f>") && !frozen_b.contains("t=\"s\"") && frozen_b.contains("<v>0</v>"),
         "guarded formula cell B must emit numeric <v>0</v> in values_only mode: {frozen_b}"
     );
+}
+
+// ----------------------------------------------------------------------------
+// Scenario 18: Negative Zero (-0.0) Literal and Evaluated Value Normalization
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_18_negative_zero_literal_and_evaluated_normalization() {
+    let mut table = TableSpec::new("NegZeroTable", "Negative Zero Normalization");
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    table
+        .rows
+        .push(RowSpec::new("lit_neg_zero").with_cell("val", CellInput::number(-0.0)));
+    table.rows.push(RowSpec::new("expr_neg_zero").with_cell(
+        "val",
+        CellInput::formula("-1 * NegZeroTable[\"lit_neg_zero\", @col]"),
+    ));
+
+    let manifest = ProjectManifest {
+        model_name: "NegZeroModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("NegZeroTable")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
+
+    // 1. Live formula mode normalizes -0.0 literal to <v>0</v>
+    let live_buf = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let live_xml = read_zip_entry(&live_buf, "xl/worksheets/sheet1.xml");
+    assert!(
+        !live_xml.contains("<v>-0</v>"),
+        "live worksheet XML must normalize -0.0 to 0: {live_xml}"
+    );
+    assert!(live_xml.contains("<v>0</v>"));
+
+    // 2. Values-only mode normalizes -0.0 CellValue/ValueLiteral to <v>0</v>
+    let mut raw_values = indexmap::IndexMap::new();
+    raw_values.insert(
+        CellId::new("NegZeroTable", "lit_neg_zero", "val"),
+        f8_core::value::CellValue::Number(-0.0),
+    );
+    raw_values.insert(
+        CellId::new("NegZeroTable", "expr_neg_zero", "val"),
+        f8_core::value::CellValue::Number(-0.0),
+    );
+    let raw_eval =
+        f8_core::compiler::eval::EvaluatedModel::new(raw_values, compiled.symbol_table.clone());
+    let values_buf = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        &[table],
+        &compiled.grid,
+        &compiled.layout_map,
+        &compiled.lowered_map,
+        &compiled.theme,
+        Some(&raw_eval),
+        &EmissionOptions::default().with_values_only(true),
+    )
+    .unwrap();
+    let values_xml = read_zip_entry(&values_buf, "xl/worksheets/sheet1.xml");
+    assert!(
+        !values_xml.contains("<v>-0</v>"),
+        "values_only worksheet XML must normalize -0.0 to 0: {values_xml}"
+    );
+    assert!(values_xml.contains("<v>0</v>"));
 }

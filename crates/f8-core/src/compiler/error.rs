@@ -338,7 +338,9 @@ impl CompilerError {
                 | EmissionError::Model(_)
                 | EmissionError::MissingSheet { .. }
                 | EmissionError::MissingTable { .. }
-                | EmissionError::MissingCell { .. },
+                | EmissionError::MissingCell { .. }
+                | EmissionError::MissingFormula { .. }
+                | EmissionError::MissingEvaluatedCell { .. },
             ) => ErrorDiagnostic::EmissionError { message },
             Self::Inspection(insp_err) => insp_err.diagnostic(),
         }
