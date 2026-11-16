@@ -231,7 +231,7 @@ fn test_scenario_3_not_scalar_inversion() {
 }
 
 #[test]
-fn test_scenario_4_iferror_and_ifna_lazy_evaluation() {
+fn test_scenario_4_iferror_lazy_evaluation_and_retired_ifna() {
     let registry = FunctionRegistry::standard();
     let iferror_func = registry.lookup("IFERROR").unwrap();
     assert!(registry.lookup("IFNA").is_none());
@@ -267,7 +267,7 @@ fn test_scenario_4_iferror_and_ifna_lazy_evaluation() {
 }
 
 #[test]
-fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
+fn test_scenario_5_if_short_circuiting_and_retired_ifs() {
     let registry = FunctionRegistry::standard();
     let if_func = registry.lookup("IF").unwrap();
     assert!(registry.lookup("IFS").is_none());
@@ -335,7 +335,7 @@ fn test_scenario_6_choose_index_selection() {
         CellValue::Error(ExcelError::Value)
     );
 
-    // Index exceeding choice count returns #VALUE!
+    // Index exceeding choice count returns #VALUE!; fewer than 2 args returns TooFewArguments
     let args_overflow = vec![
         FunctionArg::Scalar(CellValue::Number(4.0)),
         FunctionArg::Lazy(&choice1),
@@ -344,6 +344,14 @@ fn test_scenario_6_choose_index_selection() {
     assert_eq!(
         choose_func.evaluate(&args_overflow, &ctx).unwrap(),
         CellValue::Error(ExcelError::Value)
+    );
+    assert_eq!(
+        choose_func.evaluate(&[FunctionArg::Scalar(CellValue::Number(1.0))], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "CHOOSE",
+            expected: 2,
+            found: 1,
+        })
     );
 }
 

@@ -130,13 +130,20 @@ impl ExcelFunction for ChooseFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let Some((idx_arg, choices)) = args.split_first() else {
+        let [idx_arg, choices @ ..] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
                 expected: 2,
                 found: args.len(),
             });
         };
+        if choices.is_empty() {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        }
 
         let idx = match scalar_integer(idx_arg) {
             Ok(i) => i,

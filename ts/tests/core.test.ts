@@ -1193,7 +1193,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       }
     });
 
-    it("(j) enforces Cluster A1 strict operator, scalar, slice, ISBLANK, and NA contracts", () => {
+    it("(j) enforces Cluster A1 strict operator, scalar, slice, ISERROR, and NA contracts", () => {
       // 1. Grammar strictness: unary `+`, chained comparisons, and invalid prev/next offsets -> FormulaParseError
       for (const badParse of [
         "+10",

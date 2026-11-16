@@ -601,9 +601,7 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
                 .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_')
                 .count();
             let word = &cursor[..word_len];
-            let is_unsigned_sci = word_len > int_digits + 1
-                && matches!(word.as_bytes().get(int_digits), Some(b'e' | b'E'))
-                && word[int_digits + 1..].bytes().all(|b| b.is_ascii_digit());
+            let is_unsigned_sci = is_unsigned_sci_word(word, int_digits);
 
             if word_len == int_digits || is_unsigned_sci {
                 let val = parse_finite_number_literal(word, offset)?;
@@ -957,14 +955,26 @@ fn parse_bracket_access(
     Ok(Expr::Reference(TableRef::new(table, row, col)))
 }
 
+/// Returns `true` if `word` (with `int_digits` leading ASCII digits) has the form `[0-9]+[eE][0-9]+`.
+pub(crate) fn is_unsigned_sci_word(word: &str, int_digits: usize) -> bool {
+    word.len() > int_digits + 1
+        && matches!(word.as_bytes().get(int_digits), Some(b'e' | b'E'))
+        && word[int_digits + 1..].bytes().all(|b| b.is_ascii_digit())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OffsetAxis {
+    Row,
+    Col,
+}
+
 fn parse_relative_offset(
     stream: &mut TokenStream<'_>,
-    is_row: bool,
+    axis: OffsetAxis,
 ) -> Result<RelativeOffset, ParseError> {
-    let dot_expected = if is_row {
-        "'.' after 'row'"
-    } else {
-        "'.' after 'col'"
+    let dot_expected = match axis {
+        OffsetAxis::Row => "'.' after 'row'",
+        OffsetAxis::Col => "'.' after 'col'",
     };
     let _ = stream.expect(&Token::Dot, dot_expected)?;
 
@@ -988,11 +998,11 @@ fn parse_relative_offset(
     };
     stream.advance();
 
-    let expected_rparen = match (is_row, is_prev) {
-        (true, true) => "')' after row.prev offset",
-        (true, false) => "')' after row.next offset",
-        (false, true) => "')' after col.prev offset",
-        (false, false) => "')' after col.next offset",
+    let expected_rparen = match (axis, is_prev) {
+        (OffsetAxis::Row, true) => "')' after row.prev offset",
+        (OffsetAxis::Row, false) => "')' after row.next offset",
+        (OffsetAxis::Col, true) => "')' after col.prev offset",
+        (OffsetAxis::Col, false) => "')' after col.next offset",
     };
 
     let k = if stream.peek_token() == Some(&Token::LParen) {
@@ -1047,7 +1057,10 @@ fn parse_row_endpoint(stream: &mut TokenStream<'_>) -> Result<RowEndpoint, Parse
         }
         Token::Ident("row") => {
             stream.advance();
-            Ok(RowEndpoint::Offset(parse_relative_offset(stream, true)?))
+            Ok(RowEndpoint::Offset(parse_relative_offset(
+                stream,
+                OffsetAxis::Row,
+            )?))
         }
         Token::String(key) => {
             let key = key.clone();
@@ -1122,7 +1135,10 @@ fn parse_col_endpoint(stream: &mut TokenStream<'_>) -> Result<ColEndpoint, Parse
         }
         Token::Ident("col") => {
             stream.advance();
-            Ok(ColEndpoint::Offset(parse_relative_offset(stream, false)?))
+            Ok(ColEndpoint::Offset(parse_relative_offset(
+                stream,
+                OffsetAxis::Col,
+            )?))
         }
         Token::String(key) => {
             let key = key.clone();

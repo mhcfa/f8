@@ -1,8 +1,6 @@
 use crate::functions::common::optional_scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::financial::discounting::{
-    coerce_slice_date_serials, coerce_slice_numbers, collect_cash_flows,
-};
+use crate::functions::financial::discounting::{coerce_slice_date_serials, coerce_slice_numbers};
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     ShapePolicy, ValidationPolicy, VariadicRule,
@@ -70,7 +68,15 @@ impl ExcelFunction for IrrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let cfs = match collect_cash_flows(&args[0..1]) {
+        let [values_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        let raw_values = values_arg.as_range_slice(self.name())?;
+        let cfs = match coerce_slice_numbers(raw_values) {
             Ok(c) => c,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -151,8 +157,15 @@ impl ExcelFunction for XirrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let raw_values = args[0].as_range_slice(self.name())?;
-        let raw_dates = args[1].as_range_slice(self.name())?;
+        let [values_arg, dates_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 2,
+                found: args.len(),
+            });
+        };
+        let raw_values = values_arg.as_range_slice(self.name())?;
+        let raw_dates = dates_arg.as_range_slice(self.name())?;
 
         let values = match coerce_slice_numbers(raw_values) {
             Ok(v) => v,

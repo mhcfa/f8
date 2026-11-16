@@ -1113,17 +1113,12 @@ pub fn apply_unit_suffix(formatted: String, unit: &str) -> String {
     }
 }
 
-/// Helper to clean quotes and whitespace from an identifier.
-fn clean_id(s: &str) -> &str {
+/// Helper to clean optional single quotes and whitespace from a shorthand identifier.
+fn clean_shorthand_id(s: &str) -> &str {
     let trimmed = s.trim();
     trimmed
-        .strip_prefix('"')
-        .and_then(|t| t.strip_suffix('"'))
-        .or_else(|| {
-            trimmed
-                .strip_prefix('\'')
-                .and_then(|t| t.strip_suffix('\''))
-        })
+        .strip_prefix('\'')
+        .and_then(|t| t.strip_suffix('\''))
         .unwrap_or(trimmed)
         .trim()
 }
@@ -1148,31 +1143,56 @@ pub fn parse_coordinate_tokens(
 
     match (row, col) {
         (Some(r), Some(c)) => {
-            let target_trimmed = target.trim();
-            let row_trimmed = r.trim();
-            let col_trimmed = c.trim();
+            let target_trimmed = target
+                .trim()
+                .strip_prefix('"')
+                .and_then(|t| t.strip_suffix('"'))
+                .or_else(|| {
+                    target
+                        .trim()
+                        .strip_prefix('\'')
+                        .and_then(|t| t.strip_suffix('\''))
+                })
+                .unwrap_or(target.trim())
+                .trim();
 
             if target_trimmed.contains('[')
+                || target_trimmed.contains(']')
                 || target_trimmed.is_empty()
-                || row_trimmed.is_empty()
-                || col_trimmed.is_empty()
+                || r.trim().is_empty()
+                || c.trim().is_empty()
             {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
-            let table_id = TableId::from(clean_id(target_trimmed));
-            let row_id = RowId::from(clean_id(row_trimmed));
-            let col_id = ColId::from(clean_id(col_trimmed));
+            let table_id = TableId::from(target_trimmed);
+            let row_id = RowId::from(r);
+            let col_id = ColId::from(c);
             Ok((table_id, row_id, col_id))
         }
         (None, None) => {
             let trimmed = target.trim();
+            if let Ok(crate::expr::ast::Expr::Reference(crate::expr::ast::TableRef {
+                table: crate::expr::ast::TableSelector::Key(table_id),
+                row: crate::expr::ast::RowSelector::Key(row_id),
+                col: crate::expr::ast::ColSelector::Key(col_id),
+            })) = crate::expr::ast::Expr::parse(trimmed)
+                && !row_id.as_str().trim().is_empty()
+                && !col_id.as_str().trim().is_empty()
+            {
+                return Ok((table_id, row_id, col_id));
+            }
+
             let Some((table_part, rest)) = trimmed.split_once('[') else {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             };
 
-            let table_name = clean_id(table_part);
-            if table_name.is_empty() || table_part.contains('[') || table_part.contains(']') {
+            let table_name = clean_shorthand_id(table_part);
+            if table_name.is_empty()
+                || table_part.contains('[')
+                || table_part.contains(']')
+                || table_part.contains('"')
+            {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
@@ -1181,7 +1201,7 @@ pub fn parse_coordinate_tokens(
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             };
 
-            if inner.contains('[') || inner.contains(']') {
+            if inner.contains('[') || inner.contains(']') || inner.contains('"') {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
@@ -1190,8 +1210,8 @@ pub fn parse_coordinate_tokens(
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
-            let row_name = clean_id(parts[0]);
-            let col_name = clean_id(parts[1]);
+            let row_name = clean_shorthand_id(parts[0]);
+            let col_name = clean_shorthand_id(parts[1]);
 
             if row_name.is_empty() || col_name.is_empty() {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
@@ -1289,18 +1309,59 @@ mod tests {
         let table: TableSpec = serde_json::from_value(serde_json::json!({
             "id": "T1",
             "title": "Table 1",
-            "columns": [{ "kind": "data", "id": "col\", \"x", "role": "measure" }],
-            "rows": [{
-                "kind": "data",
-                "id": "row\", \"y",
-                "cells": { "col\", \"x": 42.0 }
-            }]
+            "columns": [
+                { "kind": "data", "id": "col\", \"x", "role": "measure" },
+                { "kind": "data", "id": "c", "role": "measure" },
+                { "kind": "data", "id": "b\", \"c", "role": "measure" }
+            ],
+            "rows": [
+                {
+                    "kind": "data",
+                    "id": "row\", \"y",
+                    "cells": {
+                        "col\", \"x": 42.0,
+                        "c": 1.0,
+                        "b\", \"c": 2.0
+                    }
+                },
+                {
+                    "kind": "data",
+                    "id": "a\", \"b",
+                    "cells": {
+                        "col\", \"x": 3.0,
+                        "c": 10.0,
+                        "b\", \"c": 20.0
+                    }
+                },
+                {
+                    "kind": "data",
+                    "id": "a",
+                    "cells": {
+                        "col\", \"x": 4.0,
+                        "c": 30.0,
+                        "b\", \"c": 40.0
+                    }
+                }
+            ]
         }))
         .unwrap();
 
         let compiled = Compiler::compile(&manifest, &[table]).unwrap();
         let insp = compiled.inspect_table(&TableId::from("T1")).unwrap();
         let expected_id = CellId::new("T1", "row\", \"y", "col\", \"x");
+        assert_eq!(expected_id.to_string(), r#"T1["row\", \"y", "col\", \"x"]"#);
+        assert_eq!(
+            compiled
+                .parse_coordinate(&expected_id.to_string(), None, None)
+                .unwrap(),
+            expected_id
+        );
+        assert_eq!(
+            compiled
+                .parse_coordinate("T1", Some("row\", \"y"), Some("col\", \"x"))
+                .unwrap(),
+            expected_id
+        );
         let cell_info = insp.cells.get(&expected_id).unwrap();
         assert_eq!(cell_info.row.as_str(), "row\", \"y");
         assert_eq!(cell_info.col.as_str(), "col\", \"x");
@@ -1308,5 +1369,21 @@ mod tests {
         let json_str = serde_json::to_string(&insp).unwrap();
         let roundtripped: TableInspection = serde_json::from_str(&json_str).unwrap();
         assert_eq!(roundtripped, insp);
+        assert_eq!(
+            roundtripped
+                .cells
+                .get(&CellId::new("T1", "a\", \"b", "c"))
+                .unwrap()
+                .value,
+            CellValue::Number(10.0)
+        );
+        assert_eq!(
+            roundtripped
+                .cells
+                .get(&CellId::new("T1", "a", "b\", \"c"))
+                .unwrap()
+                .value,
+            CellValue::Number(40.0)
+        );
     }
 }

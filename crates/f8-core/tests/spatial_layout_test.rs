@@ -489,7 +489,7 @@ fn test_scenario_8_exact_excel_a1_coordinate_bijection_and_boundary_checks() {
 }
 
 #[test]
-fn test_scenario_9_multi_tier_column_header_row_height_allocation() {
+fn test_scenario_9_multi_tier_column_header_row_range_allocation() {
     let mut table = TableSpec::new("MultiTierTable", "Multi Tier");
     table
         .columns
@@ -1133,7 +1133,7 @@ fn test_scenario_17_custom_gap_overrides() {
 }
 
 #[test]
-fn test_scenario_18_2d_column_width_and_row_height_arbitration() {
+fn test_scenario_18_2d_column_width_arbitration() {
     // T1 at cols 1..=2, rows 1..=10
     let mut t1 = TableSpec::new("T1", "Left Table");
     t1.columns.push(ColumnSpec::descriptor("item", "Item"));
@@ -1436,7 +1436,7 @@ fn test_scenario_20_overlapping_table_bounding_boxes_rejected() {
 }
 
 #[test]
-fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
+fn test_scenario_21_column_width_clamping_and_multiline_wrap_text() {
     let mut table = TableSpec::new("WrapTable", "Text Wrapping");
     table
         .columns
@@ -1449,25 +1449,25 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
     let exact_75 = "B".repeat(75);
     let over_76 = "C".repeat(76);
 
-    // Row 1: 180-char descriptor text -> 3 lines (45.0), short measure
+    // Row 1: 180-char descriptor text -> 3 lines (wrap_text = true), short measure
     table.rows.push(
         RowSpec::new("r_long")
             .with_cell("desc", CellInput::string(long_180))
             .with_cell("notes", CellInput::string("Short note")),
     );
-    // Row 2: short descriptor (<= max_col_width, no \n) -> unwrapped (15.0)
+    // Row 2: short descriptor (<= max_col_width, no \n) -> unwrapped (wrap_text = false)
     table.rows.push(
         RowSpec::new("r_short")
             .with_cell("desc", CellInput::string("Brief description"))
             .with_cell("notes", CellInput::string("OK")),
     );
-    // Row 3: exact 75-char boundary -> unwrapped (15.0)
+    // Row 3: exact 75-char boundary -> unwrapped (wrap_text = false)
     table.rows.push(
         RowSpec::new("r_exact_75")
             .with_cell("desc", CellInput::string(exact_75))
             .with_cell("notes", CellInput::string("OK")),
     );
-    // Row 4: 76-char measure text -> 2 lines (30.0)
+    // Row 4: 76-char measure text -> 2 lines (wrap_text = true)
     table.rows.push(
         RowSpec::new("r_over_76")
             .with_cell("desc", CellInput::string("Item"))
@@ -1495,7 +1495,7 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
     assert_eq!(sheet.col_widths.get(&1), Some(&75.0));
     assert_eq!(sheet.col_widths.get(&2), Some(&75.0));
 
-    // Row 1 (physical row 4): 180 chars -> ceil(180 / 75) = 3 lines -> 45.0
+    // Row 1 (physical row 4): 180 chars -> ceil(180 / 75) = 3 lines -> wrap_text = true
     let long_desc = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",

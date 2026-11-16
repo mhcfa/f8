@@ -31,9 +31,7 @@ pub enum ParseError {
     },
 
     /// Function identifier was not uppercase.
-    #[error(
-        "Invalid function name '{name}' at offset {offset}: must be uppercase [A-Z][A-Z0-9_]*('.'[A-Z][A-Z0-9_]*)*"
-    )]
+    #[error("Invalid function name '{name}' at offset {offset}: must be uppercase [A-Z][A-Z0-9_]*")]
     InvalidFunctionName {
         /// The invalid function name.
         name: String,

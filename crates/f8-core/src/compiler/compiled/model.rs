@@ -159,16 +159,14 @@ where
     let string_map: IndexMap<String, TableCellInfo> = IndexMap::deserialize(deserializer)?;
     let mut cells = IndexMap::with_capacity(string_map.len());
     for (key, val) in string_map {
-        if let Some((table, _)) = key.split_once("[\"")
-            && key.ends_with("\"]")
-        {
-            let cell_id = CellId::new(table, val.row.clone(), val.col.clone());
-            cells.insert(cell_id, val);
-            continue;
-        }
-        return Err(serde::de::Error::custom(format!(
-            "Invalid CellId key: {key}"
-        )));
+        let Ok((table, row, col)) =
+            crate::compiler::compiled::parse_coordinate_tokens(&key, None, None)
+        else {
+            return Err(serde::de::Error::custom(format!(
+                "Invalid CellId key: {key}"
+            )));
+        };
+        cells.insert(CellId::new(table, row, col), val);
     }
     Ok(cells)
 }

@@ -384,6 +384,27 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
     } else {
         panic!("Expected Number, got {trunc_res:?}");
     }
+
+    // Direct evaluate arity and slice-length guards on XNPV
+    assert_eq!(
+        xnpv_func.evaluate(&args[..2], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "XNPV",
+            expected: 3,
+            found: 2,
+        })
+    );
+    assert_eq!(
+        xnpv_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.09)),
+                args[1].clone(),
+                FunctionArg::range(0, 0, vec![], ReferenceKind::Slice),
+            ],
+            &ctx,
+        ),
+        Ok(CellValue::Error(ExcelError::Num))
+    );
 }
 
 #[test]
@@ -597,6 +618,24 @@ fn test_scenario_4_irr_periodic_solver() {
     } else {
         panic!("Expected Number for salvage IRR");
     }
+
+    // Direct evaluate arity and range-kind guards on IRR
+    assert_eq!(
+        irr_func.evaluate(&[], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "IRR",
+            expected: 1,
+            found: 0,
+        })
+    );
+    assert_eq!(
+        irr_func.evaluate(&[FunctionArg::Scalar(CellValue::Number(-100.0))], &ctx),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "IRR",
+            expected: "range",
+            found: "scalar",
+        })
+    );
 }
 
 #[test]

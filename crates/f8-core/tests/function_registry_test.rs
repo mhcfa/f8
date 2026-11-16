@@ -514,7 +514,7 @@ fn test_scenario_4_sum_aggregation_and_range_filtering() {
 }
 
 #[test]
-fn test_scenario_5_if_short_circuiting_lazy_branches_and_omitted_false() {
+fn test_scenario_5_if_short_circuiting_lazy_branches_and_required_false_branch() {
     let registry = FunctionRegistry::standard();
     let if_func = registry.lookup("IF").unwrap();
 
@@ -1286,7 +1286,7 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
 }
 
 #[test]
-fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
+fn test_cluster_a2_stage_a_monomorphic_branches_and_lookup_homogeneity() {
     let registry = FunctionRegistry::standard();
 
     let stage_a_cases: &[(&str, FunctionError)] = &[

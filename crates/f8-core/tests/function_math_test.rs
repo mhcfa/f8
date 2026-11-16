@@ -281,7 +281,7 @@ fn test_scenario_3_count_semantics_and_retired_counta() {
         ))
     );
 
-    // Single-cell numeric/error references are accepted by COUNT
+    // Single-cell numeric/error references are accepted by COUNT; single-cell Empty, Text, Boolean return #VALUE!; Scalar returns InvalidArgumentKind; 0 args returns TooFewArguments
     let count_single_cells = [
         FunctionArg::range(
             1,
@@ -300,6 +300,37 @@ fn test_scenario_3_count_semantics_and_retired_counta() {
         count_func.evaluate(&count_single_cells, &ctx).unwrap(),
         CellValue::Number(1.0)
     );
+    assert_eq!(
+        count_func.evaluate(&[], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "COUNT",
+            expected: 1,
+            found: 0,
+        })
+    );
+    assert_eq!(
+        count_func.evaluate(&[FunctionArg::Scalar(CellValue::Number(10.0))], &ctx),
+        Err(FunctionError::InvalidArgumentKind {
+            function: "COUNT",
+            expected: "range",
+            found: "scalar",
+        })
+    );
+    for bad_cell in [
+        FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
+        FunctionArg::range(
+            1,
+            1,
+            vec![CellValue::Text("abc".into())],
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::range(1, 1, vec![CellValue::Boolean(true)], ReferenceKind::Slice),
+    ] {
+        assert_eq!(
+            count_func.evaluate(&[bad_cell], &ctx),
+            Ok(CellValue::Error(ExcelError::Value))
+        );
+    }
 
     // Non-reference scalars are rejected statically by ParamKind::Range; COUNTA is rejected as UnknownFunction
     assert_eq!(
@@ -741,8 +772,71 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         vec![CellValue::Number(1.0), CellValue::Number(2.0)],
         ReferenceKind::Slice,
     );
-    let res_err = sumproduct.evaluate(&[r_err, r_valid], &ctx).unwrap();
+    let res_err = sumproduct
+        .evaluate(&[r_err, r_valid.clone()], &ctx)
+        .unwrap();
     assert_eq!(res_err, CellValue::Error(ExcelError::Div0));
+
+    // Direct evaluate checks on SUMPRODUCT: TooFewArguments, DimensionMismatch, and #VALUE! on Text/Boolean/SingleCell Empty
+    assert_eq!(
+        sumproduct.evaluate(&[], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "SUMPRODUCT",
+            expected: 1,
+            found: 0,
+        })
+    );
+    let r_3x1 = FunctionArg::range(
+        3,
+        1,
+        vec![
+            CellValue::Number(1.0),
+            CellValue::Number(2.0),
+            CellValue::Number(3.0),
+        ],
+        ReferenceKind::Slice,
+    );
+    assert_eq!(
+        sumproduct.evaluate(&[r_3x1, r_valid.clone()], &ctx),
+        Err(FunctionError::DimensionMismatch {
+            function: "SUMPRODUCT",
+            expected_rows: 3,
+            expected_cols: 1,
+            found_rows: 2,
+            found_cols: 1,
+        })
+    );
+    for bad_elem in [
+        FunctionArg::range(
+            2,
+            1,
+            vec![CellValue::Text("a".into()), CellValue::Number(1.0)],
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::range(
+            2,
+            1,
+            vec![CellValue::Boolean(true), CellValue::Number(1.0)],
+            ReferenceKind::Slice,
+        ),
+    ] {
+        assert_eq!(
+            sumproduct.evaluate(&[bad_elem, r_valid.clone()], &ctx),
+            Ok(CellValue::Error(ExcelError::Value))
+        );
+    }
+    assert_eq!(
+        sumproduct.evaluate(
+            &[FunctionArg::range(
+                1,
+                1,
+                vec![CellValue::Empty],
+                ReferenceKind::SingleCell,
+            )],
+            &ctx,
+        ),
+        Ok(CellValue::Error(ExcelError::Value))
+    );
 }
 
 #[test]
@@ -842,7 +936,7 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
 }
 
 #[test]
-fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
+fn test_cluster_b_aggregate_overflow_and_dormant_empty_guard() {
     let registry = FunctionRegistry::standard();
     let ctx = MockEvalContext;
     let sum = registry.lookup("SUM").unwrap();

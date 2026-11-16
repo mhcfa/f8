@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use super::id::{ColId, RowId, TableId};
+use crate::expr::parser::is_unsigned_sci_word;
 
 fn is_valid_table_id(s: &str) -> bool {
     if s.is_empty() || matches!(s, "TRUE" | "FALSE" | "_") {
@@ -19,10 +20,7 @@ fn is_valid_table_id(s: &str) -> bool {
     }
     if s.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         let int_digits = s.bytes().take_while(u8::is_ascii_digit).count();
-        let is_unsigned_sci = s.len() > int_digits + 1
-            && matches!(s.as_bytes().get(int_digits), Some(b'e' | b'E'))
-            && s[int_digits + 1..].bytes().all(|b| b.is_ascii_digit());
-        if is_unsigned_sci {
+        if is_unsigned_sci_word(s, int_digits) {
             return false;
         }
     }

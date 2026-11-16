@@ -4,11 +4,11 @@ pub mod constructors;
 pub mod parts;
 pub mod yearfrac;
 
+use std::sync::Arc;
+
 pub use constructors::{DateFunction, EdateFunction, EomonthFunction};
 pub use parts::{DayFunction, MonthFunction, YearFunction};
 pub use yearfrac::{DayCountBasis, YearfracFunction, calculate_yearfrac};
-
-use std::sync::Arc;
 
 use crate::functions::registry::FunctionRegistry;
 
