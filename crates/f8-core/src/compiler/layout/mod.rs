@@ -102,15 +102,13 @@ pub struct TablePlacement {
     pub body_row_range: (u32, u32),
 }
 
-/// Sheet-level physical layout metrics, widths, heights, and visual rows.
+/// Sheet-level physical layout metrics and column widths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SheetLayout {
     /// Worksheet identifier.
     pub sheet: SheetId,
     /// Sheet-wide column widths (0-indexed col -> character widths).
     pub col_widths: IndexMap<u32, f64>,
-    /// Sheet-wide row heights (0-indexed row -> points).
-    pub row_heights: IndexMap<u32, f64>,
     /// Frozen panes coordinate if configured.
     pub freeze_panes: Option<FreezePanes>,
     /// Gridline display visibility flag.
@@ -126,7 +124,7 @@ pub struct LayoutMap {
     pub cells: IndexMap<CellId, PhysicalCoordinate>,
     /// Bounding boxes and structural row offsets for every table.
     pub tables: IndexMap<TableId, TablePlacement>,
-    /// Sheet-level layout metrics, widths, heights, and visual rows.
+    /// Sheet-level layout metrics and column widths.
     pub sheets: IndexMap<SheetId, SheetLayout>,
 }
 
@@ -155,7 +153,7 @@ impl LayoutMap {
 pub struct LayoutPlanner;
 
 impl LayoutPlanner {
-    /// Plans 2D physical coordinates, bounding boxes, row heights, and column widths
+    /// Plans 2D physical coordinates, bounding boxes, and column widths
     /// for all tables and sheets declared in the manifest.
     ///
     /// # Errors
@@ -201,11 +199,9 @@ impl LayoutPlanner {
                 sheet_tables.push(matched);
             }
 
-            let mut row_heights: IndexMap<u32, f64> = IndexMap::new();
             let mut col_widths: IndexMap<u32, f64> = IndexMap::new();
 
-            // Default margins: Row 0 is top gutter, Column 0 is left gutter
-            row_heights.insert(0, theme.metrics.gutter_row_height);
+            // Default margin: Column 0 is left gutter
             col_widths.insert(0, theme.metrics.gutter_col_width);
 
             let mut sheet_placements: IndexMap<TableId, TablePlacement> = IndexMap::new();
@@ -223,13 +219,6 @@ impl LayoutPlanner {
                                     max: MAX_EXCEL_ROWS,
                                     actual: start_row,
                                 });
-                            }
-                            for r in (max_end_row + 1)..start_row {
-                                record_row_height(
-                                    &mut row_heights,
-                                    r,
-                                    theme.metrics.gutter_row_height,
-                                );
                             }
                             (1, start_row)
                         } else {
@@ -256,9 +245,6 @@ impl LayoutPlanner {
                                 max: MAX_EXCEL_ROWS,
                                 actual: start_row,
                             });
-                        }
-                        for r in (target_placement.end_row + 1)..start_row {
-                            record_row_height(&mut row_heights, r, theme.metrics.gutter_row_height);
                         }
                         (target_placement.start_col, start_row)
                     }
@@ -306,7 +292,6 @@ impl LayoutPlanner {
                             actual: r,
                         });
                     }
-                    record_row_height(&mut row_heights, r, theme.metrics.title_row_height);
                     current_row += 1;
                     Some(r)
                 } else {
@@ -323,7 +308,6 @@ impl LayoutPlanner {
                             actual: r,
                         });
                     }
-                    record_row_height(&mut row_heights, r, theme.metrics.data_row_height);
                     current_row += 1;
                     Some(r)
                 } else {
@@ -340,7 +324,6 @@ impl LayoutPlanner {
                             actual: r,
                         });
                     }
-                    record_row_height(&mut row_heights, r, theme.metrics.title_gutter_row_height);
                     current_row += 1;
                     Some(r)
                 } else {
@@ -368,11 +351,6 @@ impl LayoutPlanner {
                                 actual: current_row,
                             });
                         }
-                        record_row_height(
-                            &mut row_heights,
-                            current_row,
-                            theme.metrics.header_row_height,
-                        );
                         current_row += 1;
                     }
                     let header_end = current_row - 1;
@@ -393,29 +371,10 @@ impl LayoutPlanner {
                     }
 
                     match row_spec {
-                        RowSpec::Gutter => {
-                            record_row_height(
-                                &mut row_heights,
-                                current_row,
-                                theme.metrics.gutter_row_height,
-                            );
-                            current_row += 1;
-                        }
-                        RowSpec::SectionHeader(_) => {
-                            record_row_height(
-                                &mut row_heights,
-                                current_row,
-                                theme.metrics.section_row_height,
-                            );
+                        RowSpec::Gutter | RowSpec::SectionHeader(_) => {
                             current_row += 1;
                         }
                         RowSpec::Data(data_row) => {
-                            record_row_height(
-                                &mut row_heights,
-                                current_row,
-                                theme.metrics.data_row_height,
-                            );
-
                             for (c_idx, col_spec) in table.columns.iter().enumerate() {
                                 let physical_col = start_col + (c_idx as u32);
                                 let ColumnSpec::Data(data_col) = col_spec else {
@@ -514,15 +473,6 @@ impl LayoutPlanner {
                 layout_tables.insert(table.id.clone(), placement);
             }
 
-            if let Some(max_end_row) = sheet_max_end_row {
-                for r in 0..=max_end_row {
-                    row_heights
-                        .entry(r)
-                        .or_insert(theme.metrics.gutter_row_height);
-                }
-                row_heights.sort_keys();
-            }
-
             // 3. Sheet-wide column width arbitration across 2D placed tables
             ColumnArbitrationContext {
                 tables: &sheet_tables,
@@ -532,14 +482,13 @@ impl LayoutPlanner {
                 theme,
                 evaluated,
             }
-            .arbitrate(sheet_max_end_col, &mut col_widths, &mut row_heights);
+            .arbitrate(sheet_max_end_col, &mut col_widths);
 
             layout_sheets.insert(
                 sheet_id.clone(),
                 SheetLayout {
                     sheet: sheet_id,
                     col_widths,
-                    row_heights,
                     freeze_panes: sheet_spec.freeze_panes,
                     show_gridlines: sheet_spec.show_gridlines,
                     tab_color: sheet_spec.tab_color.clone(),
@@ -553,11 +502,6 @@ impl LayoutPlanner {
             sheets: layout_sheets,
         })
     }
-}
-
-fn record_row_height(row_heights: &mut IndexMap<u32, f64>, row: u32, height: f64) {
-    let existing = row_heights.get(&row).copied().unwrap_or(0.0);
-    row_heights.insert(row, existing.max(height));
 }
 
 fn resolve_placement_target<'a>(
@@ -612,13 +556,8 @@ struct ColumnArbitrationContext<'a> {
 }
 
 impl ColumnArbitrationContext<'_> {
-    /// Arbitrates sheet-wide column widths, cell text wrapping, and multi-line row heights across all tables sharing worksheet columns.
-    fn arbitrate(
-        &mut self,
-        sheet_max_end_col: u32,
-        col_widths: &mut IndexMap<u32, f64>,
-        row_heights: &mut IndexMap<u32, f64>,
-    ) {
+    /// Arbitrates sheet-wide column widths and cell text wrapping across all tables sharing worksheet columns.
+    fn arbitrate(&mut self, sheet_max_end_col: u32, col_widths: &mut IndexMap<u32, f64>) {
         for physical_col in 1..=sheet_max_end_col {
             let has_data_col = self.tables.iter().any(|t| {
                 let Some(placement) = self.placements.get(&t.id) else {
@@ -699,11 +638,6 @@ impl ColumnArbitrationContext<'_> {
                         && let Some(coord) = self.layout_cells.get_mut(&cell_id)
                     {
                         coord.wrap_text = true;
-                        record_row_height(
-                            row_heights,
-                            coord.row,
-                            (lines as f64) * self.theme.metrics.data_row_height,
-                        );
                     }
 
                     table_max_chars = table_max_chars.max(char_len);

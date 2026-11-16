@@ -63,11 +63,6 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
 
     let sheet_layout = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
-    // Row 0 is top gutter
-    assert_eq!(
-        sheet_layout.row_heights.get(&0),
-        Some(&theme.metrics.gutter_row_height)
-    );
     // Col 0 is left gutter
     assert_eq!(
         sheet_layout.col_widths.get(&0),
@@ -129,32 +124,6 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
     assert_eq!(placement.header_row_range, Some((4, 4)));
     // Data rows: Rows 5 and 6
     assert_eq!(placement.body_row_range, (5, 6));
-
-    let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
-    assert_eq!(
-        sheet.row_heights.get(&1),
-        Some(&theme.metrics.title_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&2),
-        Some(&theme.metrics.data_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&3),
-        Some(&theme.metrics.title_gutter_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&4),
-        Some(&theme.metrics.header_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&5),
-        Some(&theme.metrics.data_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&6),
-        Some(&theme.metrics.data_row_height)
-    );
 
     // Verify cell coordinates
     let rev_cell = layout
@@ -281,8 +250,6 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
     let (_sym, grid) = ir::expand_workbook(&manifest, &[table.clone()]).unwrap();
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
 
-    let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
-
     // Verify row sequencing:
     // Row 1: Title
     // Row 2: Title Gutter
@@ -293,14 +260,6 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
     // Row 7: Data Row "ad_spend"
     // Row 8: Data Row "direct_sales"
     // Row 9: Data Row "g_and_a"
-    assert_eq!(
-        sheet.row_heights.get(&4),
-        Some(&theme.metrics.section_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&6),
-        Some(&theme.metrics.section_row_height)
-    );
 
     let rd_cell = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
@@ -381,18 +340,7 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
     assert_eq!(placement1.start_row, 1);
     assert_eq!(placement1.end_row, 5);
 
-    // Inter-table gutters: Rows 6 and 7 (2 blank rows)
-    let sheet = layout.get_sheet(&SheetId::from("StackedSheet")).unwrap();
-    assert_eq!(
-        sheet.row_heights.get(&6),
-        Some(&theme.metrics.gutter_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&7),
-        Some(&theme.metrics.gutter_row_height)
-    );
-
-    // Table 2:
+    // Table 2 (after 2 inter-table gutter rows 6 and 7):
     // Row 8: Title
     // Row 9: Title Gutter
     // Row 10: Col Header
@@ -576,20 +524,6 @@ fn test_scenario_9_multi_tier_column_header_row_height_allocation() {
     // Title at row 1, gutter at row 2, 3 header rows at rows 3, 4, 5
     assert_eq!(placement.header_row_range, Some((3, 5)));
     assert_eq!(placement.body_row_range, (6, 6));
-
-    let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
-    assert_eq!(
-        sheet.row_heights.get(&3),
-        Some(&theme.metrics.header_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&4),
-        Some(&theme.metrics.header_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&5),
-        Some(&theme.metrics.header_row_height)
-    );
 }
 
 #[test]
@@ -820,37 +754,17 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
 
     // Row sequence:
     // Row 1: Title
-    // Row 2: Title Gutter (8pt)
+    // Row 2: Title Gutter
     // Row 3: Col Header (Tier 0)
     // Row 4: Data row "rev"
-    // Row 5: Explicit RowSpec::Gutter (9pt)
-    // Row 6: Section Header "Operating Expenses" (20pt)
+    // Row 5: Explicit RowSpec::Gutter
+    // Row 6: Section Header "Operating Expenses"
     // Row 7: Data row "salaries"
     // Row 8: Data row "ads"
     // Row 9: Data row "total_opex" (subtotal)
-    // Row 10: Explicit RowSpec::Gutter (9pt)
-    // Row 11: Section Header "Capital Expenditures" (20pt)
+    // Row 10: Explicit RowSpec::Gutter
+    // Row 11: Section Header "Capital Expenditures"
     // Row 12: Data row "equipment"
-
-    // Verify gutter rows
-    assert_eq!(
-        sheet.row_heights.get(&5),
-        Some(&theme.metrics.gutter_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&10),
-        Some(&theme.metrics.gutter_row_height)
-    );
-
-    // Verify section header row heights
-    assert_eq!(
-        sheet.row_heights.get(&6),
-        Some(&theme.metrics.section_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&11),
-        Some(&theme.metrics.section_row_height)
-    );
 
     // Verify physical rows
     let rev_cell = layout
@@ -1280,29 +1194,6 @@ fn test_scenario_18_2d_column_width_and_row_height_arbitration() {
         + theme.metrics.col_padding)
         .clamp(theme.metrics.min_col_width, theme.metrics.max_col_width);
     assert_eq!(sheet.col_widths.get(&4), Some(&expected_col4));
-
-    // Row 5 and 6: T1 has Data rows (data_row_height = 16.0) while T3's inter-table gutter has gutter_row_height (9.0)
-    // Must retain max(16.0, 9.0) = 16.0
-    assert_eq!(
-        sheet.row_heights.get(&5),
-        Some(&theme.metrics.data_row_height)
-    );
-    assert_eq!(
-        sheet.row_heights.get(&6),
-        Some(&theme.metrics.data_row_height)
-    );
-
-    // Row 7: T1 has Data row (16.0) while T3 has Title row (title_row_height = 26.0)
-    // Must retain max(16.0, 26.0) = 26.0
-    assert_eq!(
-        sheet.row_heights.get(&7),
-        Some(&theme.metrics.title_row_height)
-    );
-
-    // Verify row_heights keys are ordered ascending 0..=10
-    let row_keys: Vec<u32> = sheet.row_heights.keys().copied().collect();
-    let expected_keys: Vec<u32> = (0..=10).collect();
-    assert_eq!(row_keys, expected_keys);
 }
 
 #[test]
@@ -1621,9 +1512,8 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
         .unwrap();
     assert!(long_desc.wrap_text);
     assert!(!long_notes.wrap_text);
-    assert_eq!(sheet.row_heights.get(&long_desc.row), Some(&45.0));
 
-    // Row 2 (physical row 5): short text -> wrap_text = false, height = 15.0
+    // Row 2 (physical row 5): short text -> wrap_text = false
     let short_desc = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",
@@ -1632,9 +1522,8 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
         ))
         .unwrap();
     assert!(!short_desc.wrap_text);
-    assert_eq!(sheet.row_heights.get(&short_desc.row), Some(&15.0));
 
-    // Row 3 (physical row 6): exact 75 chars -> wrap_text = false, height = 15.0
+    // Row 3 (physical row 6): exact 75 chars -> wrap_text = false
     let exact_desc = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",
@@ -1643,9 +1532,8 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
         ))
         .unwrap();
     assert!(!exact_desc.wrap_text);
-    assert_eq!(sheet.row_heights.get(&exact_desc.row), Some(&15.0));
 
-    // Row 4 (physical row 7): 76 chars in measure column -> wrap_text = true, height = 30.0
+    // Row 4 (physical row 7): 76 chars in measure column -> wrap_text = true
     let over_notes = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
             "WrapTable",
@@ -1654,7 +1542,6 @@ fn test_scenario_21_column_width_clamping_and_multiline_row_height_scaling() {
         ))
         .unwrap();
     assert!(over_notes.wrap_text);
-    assert_eq!(sheet.row_heights.get(&over_notes.row), Some(&30.0));
 }
 
 #[test]
@@ -1712,10 +1599,6 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
         ))
         .unwrap();
     assert!(two_line_cell.wrap_text);
-    assert_eq!(
-        sheet.row_heights.get(&two_line_cell.row),
-        Some(&(2.0 * theme.metrics.data_row_height))
-    );
 
     let mixed_cell = layout
         .get_cell(&f8_core::compiler::ir::id::CellId::new(
@@ -1725,8 +1608,4 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
         ))
         .unwrap();
     assert!(mixed_cell.wrap_text);
-    assert_eq!(
-        sheet.row_heights.get(&mixed_cell.row),
-        Some(&(3.0 * theme.metrics.data_row_height))
-    );
 }
