@@ -416,11 +416,8 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
             },
         ),
         (
-            "IF(TRUE, 10, IFS(TRUE, 1, FALSE))",
-            FunctionError::InvalidVariadicPairs {
-                function: "IFS",
-                count: 3,
-            },
+            "IF(TRUE, 10, IFS(TRUE, 1, FALSE, 2))",
+            FunctionError::UnknownFunction("IFS".into()),
         ),
         (
             "IF(TRUE, 10, ABS(_))",
@@ -431,8 +428,8 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
             },
         ),
         (
-            "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
-            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+            "IFS(TRUE, 1, FALSE, 2)",
+            FunctionError::UnknownFunction("IFS".into()),
         ),
         (
             "IFERROR(10, UNKNOWN_FN())",
@@ -446,9 +443,22 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
                 found: 3,
             },
         ),
+        ("IFNA(10, 0)", FunctionError::UnknownFunction("IFNA".into())),
         (
-            "IFNA(10, UNKNOWN_FN())",
-            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+            "COUNTA(Assumptions[\"tax\"..\"flag\", \"rate\"])",
+            FunctionError::UnknownFunction("COUNTA".into()),
+        ),
+        (
+            "DAYS(45474, 45292)",
+            FunctionError::UnknownFunction("DAYS".into()),
+        ),
+        (
+            "ISBLANK(Assumptions[\"tax\", \"rate\"])",
+            FunctionError::UnknownFunction("ISBLANK".into()),
+        ),
+        (
+            "ISNA(Assumptions[\"tax\", \"rate\"])",
+            FunctionError::UnknownFunction("ISNA".into()),
         ),
         (
             "CHOOSE(1, 10, SUM())",
@@ -524,14 +534,6 @@ fn test_scenario_7_static_function_validation_in_eval_expr() {
                 function: "IF",
                 param: "logical_test",
                 position: 1,
-            },
-        ),
-        (
-            "IFS(TRUE, 1, FALSE, _)",
-            FunctionError::CannotOmitRequiredArgument {
-                function: "IFS",
-                param: "value_if_true1",
-                position: 4,
             },
         ),
     ];
@@ -634,7 +636,7 @@ fn test_unary_operator_arithmetic_and_strict_rejection() {
 }
 
 #[test]
-fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
+fn test_scenario_8_standalone_eval_expr_rejects_empty_root_and_empty_arguments() {
     let (symbols, registry) = build_test_environment();
     let origin = CellId::new("IncomeStatement", "rev", "2024E");
     let mut memo = IndexMap::new();
@@ -668,71 +670,142 @@ fn test_scenario_8_standalone_eval_expr_preserves_mid_expression_empty() {
         CellValue::Empty,
     );
 
-    // Standalone eval_expr returns uncoerced CellValue::Empty across direct and reference-returning branch/lookup functions
-    for formula in [
-        "Assumptions[\"empty_row\", \"val\"]",
-        "IF(TRUE, Assumptions[\"empty_row\", \"val\"], 1)",
-        "IFS(TRUE, Assumptions[\"empty_row\", \"val\"])",
-        "CHOOSE(1, Assumptions[\"empty_row\", \"val\"])",
-        "INDEX(Assumptions[\"tax\"..\"empty_row\", \"val\"], 3)",
-        "XLOOKUP(\"k_empty\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"])",
-        "XLOOKUP(\"missing\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"], Assumptions[\"empty_row\", \"val\"])",
+    // Top-level bare reference to a Null cell is rejected with TypeError::EmptyFormulaResult in standalone eval_expr
+    let root_empty = Expr::parse("Assumptions[\"empty_row\", \"val\"]").expect("valid expr");
+    let root_err = eval_expr(&root_empty, &origin, &memo, &symbols, &registry).unwrap_err();
+    assert!(
+        root_err
+            .to_string()
+            .contains("formula cannot evaluate to an empty cell")
+    );
+    let EvalError::Type { cell, source } = root_err else {
+        panic!("expected EvalError::Type on bare Null reference, got {root_err:?}");
+    };
+    assert_eq!(*cell, origin);
+    assert_eq!(source, TypeError::EmptyFormulaResult);
+
+    // Scalar, active branch, and selected lookup/index elements resolving to CellValue::Empty fail with TypeError::EmptyArgument
+    for (formula, expected_fn, expected_param, expected_pos) in [
+        (
+            "ISERROR(Assumptions[\"empty_row\", \"val\"])",
+            "ISERROR",
+            "value",
+            1,
+        ),
+        (
+            "IF(TRUE, Assumptions[\"empty_row\", \"val\"], 1)",
+            "IF",
+            "value_if_true",
+            2,
+        ),
+        (
+            "IF(FALSE, 1, Assumptions[\"empty_row\", \"val\"])",
+            "IF",
+            "value_if_false",
+            3,
+        ),
+        (
+            "CHOOSE(1, Assumptions[\"empty_row\", \"val\"], 10)",
+            "CHOOSE",
+            "value1",
+            2,
+        ),
+        (
+            "IFERROR(Assumptions[\"empty_row\", \"val\"], 1)",
+            "IFERROR",
+            "value",
+            1,
+        ),
+        (
+            "IFERROR(1 / 0, Assumptions[\"empty_row\", \"val\"])",
+            "IFERROR",
+            "value_if_error",
+            2,
+        ),
+        (
+            "INDEX(Assumptions[\"tax\"..\"empty_row\", \"val\"], 3)",
+            "INDEX",
+            "array",
+            1,
+        ),
+        (
+            "INDEX(Assumptions[\"empty_row\", \"val\"], 1)",
+            "INDEX",
+            "array",
+            1,
+        ),
+        (
+            "XLOOKUP(\"k_empty\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"])",
+            "XLOOKUP",
+            "return_array",
+            3,
+        ),
+        (
+            "XLOOKUP(\"missing\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"], Assumptions[\"empty_row\", \"val\"])",
+            "XLOOKUP",
+            "if_not_found",
+            4,
+        ),
+        (
+            "XLOOKUP(\"k_empty\", Assumptions[\"empty_row\", \"val\"], Assumptions[\"empty_row\", \"rate\"])",
+            "XLOOKUP",
+            "lookup_array",
+            2,
+        ),
+        (
+            "XMATCH(\"k_empty\", Assumptions[\"empty_row\", \"val\"])",
+            "XMATCH",
+            "lookup_array",
+            2,
+        ),
+    ] {
+        let expr = Expr::parse(formula).expect("valid expr");
+        let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
+        let EvalError::Type { cell, source } = err else {
+            panic!("expected EvalError::Type on '{formula}', got {err:?}");
+        };
+        assert_eq!(*cell, origin);
+        assert_eq!(
+            source,
+            TypeError::EmptyArgument {
+                function: expected_fn,
+                param: expected_param,
+                position: expected_pos,
+            },
+            "expected EmptyArgument on '{formula}'"
+        );
+    }
+
+    // Dormant branches referencing Null cells and non-Empty selections from sparse slices succeed
+    for (formula, expected) in [
+        (
+            "IF(FALSE, Assumptions[\"empty_row\", \"val\"], 1)",
+            CellValue::Number(1.0),
+        ),
+        (
+            "CHOOSE(2, Assumptions[\"empty_row\", \"val\"], 10)",
+            CellValue::Number(10.0),
+        ),
+        (
+            "IFERROR(10, Assumptions[\"empty_row\", \"val\"])",
+            CellValue::Number(10.0),
+        ),
+        (
+            "XLOOKUP(\"k_tax\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"], Assumptions[\"empty_row\", \"val\"])",
+            CellValue::Number(0.25),
+        ),
+        (
+            "INDEX(Assumptions[\"tax\"..\"empty_row\", \"val\"], 1)",
+            CellValue::Number(0.25),
+        ),
     ] {
         let expr = Expr::parse(formula).expect("valid expr");
         assert_eq!(
             eval_expr(&expr, &origin, &memo, &symbols, &registry).expect("eval ok"),
-            CellValue::Empty,
-            "expected uncoerced CellValue::Empty from eval_expr on '{formula}'"
+            expected,
+            "unexpected result on '{formula}'"
         );
     }
-
-    // Value-returning IFERROR/IFNA and IFS condition arguments reject evaluated CellValue::Empty with TypeError::EmptyArgument
-    for formula in [
-        "IFS(Assumptions[\"empty_row\", \"val\"], 1)",
-        "IFERROR(Assumptions[\"empty_row\", \"val\"], 1)",
-        "IFERROR(1 / 0, Assumptions[\"empty_row\", \"val\"])",
-        "IFNA(Assumptions[\"empty_row\", \"val\"], 1)",
-        "ISBLANK(IFERROR(Assumptions[\"empty_row\", \"val\"], 1))",
-    ] {
-        let expr = Expr::parse(formula).expect("valid expr");
-        let err = eval_expr(&expr, &origin, &memo, &symbols, &registry).unwrap_err();
-        assert!(
-            matches!(
-                err,
-                EvalError::Type {
-                    source: TypeError::EmptyArgument { .. },
-                    ..
-                }
-            ),
-            "expected EmptyArgument on '{formula}', got {err:?}"
-        );
-    }
-
-    // Mid-expression blank preservation in ISBLANK(...) and IF(ISBLANK(...)) guard pattern
-    let xlookup_isblank = Expr::parse(
-        "ISBLANK(XLOOKUP(\"k_empty\", Assumptions[\"tax\"..\"empty_row\", \"rate\"], Assumptions[\"tax\"..\"empty_row\", \"val\"]))",
-    )
-    .expect("valid expr");
-    assert_eq!(
-        eval_expr(&xlookup_isblank, &origin, &memo, &symbols, &registry).expect("eval ok"),
-        CellValue::Boolean(true)
-    );
-
-    let if_isblank = Expr::parse("ISBLANK(IF(TRUE, Assumptions[\"empty_row\", \"val\"], 1))")
-        .expect("valid expr");
-    assert_eq!(
-        eval_expr(&if_isblank, &origin, &memo, &symbols, &registry).expect("eval ok"),
-        CellValue::Boolean(true)
-    );
-
-    let if_guard = Expr::parse(
-        "IF(ISBLANK(Assumptions[\"empty_row\", \"val\"]), \"\", Assumptions[\"empty_row\", \"val\"])",
-    )
-    .expect("valid expr");
-    assert_eq!(
-        eval_expr(&if_guard, &origin, &memo, &symbols, &registry).expect("eval ok"),
-        CellValue::Text(String::new())
-    );
 }
 
 #[test]
@@ -789,8 +862,8 @@ fn test_pass4_acceptance_criteria() {
             "argument for parameter 'number' at position 1 of 'ABS' evaluated to an empty cell",
         ),
         (
-            "IFS(Assumptions[\"empty_row\", \"val\"], 1)",
-            "argument for parameter 'logical_test1' at position 1 of 'IFS' evaluated to an empty cell",
+            "IF(Assumptions[\"empty_row\", \"val\"], 1, 0)",
+            "argument for parameter 'logical_test' at position 1 of 'IF' evaluated to an empty cell",
         ),
         (
             "IFERROR(Assumptions[\"empty_row\", \"val\"], 1)",
@@ -815,25 +888,14 @@ fn test_pass4_acceptance_criteria() {
 
     assert_eq!(
         eval_expr(
-            &Expr::parse("ISBLANK(Assumptions[\"empty_row\", \"val\"])").unwrap(),
+            &Expr::parse("COUNT(Assumptions[\"tax\"..\"empty_row\", \"val\"])").unwrap(),
             &origin,
             &memo,
             &symbols,
             &registry
         )
         .unwrap(),
-        CellValue::Boolean(true)
-    );
-    assert_eq!(
-        eval_expr(
-            &Expr::parse("COUNTA(Assumptions[\"empty_row\", \"val\"])").unwrap(),
-            &origin,
-            &memo,
-            &symbols,
-            &registry
-        )
-        .unwrap(),
-        CellValue::Number(0.0)
+        CellValue::Number(2.0)
     );
     assert_eq!(
         eval_expr(

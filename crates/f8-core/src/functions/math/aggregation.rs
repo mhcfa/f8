@@ -1,4 +1,4 @@
-use crate::functions::common::{NumericCollector, count_non_empty, count_numbers};
+use crate::functions::common::{NumericCollector, count_numbers};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
@@ -148,50 +148,6 @@ impl ExcelFunction for CountFunction {
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
         let count = count_numbers(args);
-        Ok(CellValue::number(count as f64))
-    }
-}
-
-/// Positional parameter definitions for `COUNTA`.
-static COUNTA_PARAMS: &[ParameterDef] = &[ParameterDef::required(
-    "value1",
-    "The first cell reference or range within which you want to count non-empty cells.",
-    ParamKind::Range,
-    ParamType::Any,
-)
-.allow_empty()];
-
-/// `COUNTA(value1, [value2], ...)`: Counts the number of cells in ranges that are not empty.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct CountaFunction;
-
-impl ExcelFunction for CountaFunction {
-    fn name(&self) -> &'static str {
-        "COUNTA"
-    }
-
-    fn category(&self) -> FunctionCategory {
-        FunctionCategory::Math
-    }
-
-    fn parameters(&self) -> &'static [ParameterDef] {
-        COUNTA_PARAMS
-    }
-
-    fn return_type(&self) -> Option<ValueType> {
-        Some(ValueType::Number)
-    }
-
-    fn variadic_rule(&self) -> VariadicRule {
-        VariadicRule::Single
-    }
-
-    fn evaluate(
-        &self,
-        args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
-    ) -> Result<CellValue, FunctionError> {
-        let count = count_non_empty(args);
         Ok(CellValue::number(count as f64))
     }
 }

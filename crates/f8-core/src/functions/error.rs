@@ -53,15 +53,6 @@ pub enum FunctionError {
         position: usize,
     },
 
-    /// The variadic tail of a paired function does not have an even number of arguments.
-    #[error("invalid argument count for variadic pairs in '{function}'")]
-    InvalidVariadicPairs {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Total argument count received.
-        count: usize,
-    },
-
     /// An unexpected argument kind was passed to a parameter (e.g. array where scalar required).
     #[error("invalid argument kind for '{function}': expected {expected}, found {found}")]
     InvalidArgumentKind {
@@ -208,15 +199,6 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "trailing argument 'value_if_false' at position 3 of 'IF' cannot use '_'; omit trailing optional arguments instead"
-        );
-
-        let err = FunctionError::InvalidVariadicPairs {
-            function: "IFS",
-            count: 3,
-        };
-        assert_eq!(
-            err.to_string(),
-            "invalid argument count for variadic pairs in 'IFS'"
         );
 
         let err = FunctionError::InvalidArgumentKind {

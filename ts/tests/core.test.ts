@@ -638,13 +638,13 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       okTable.addRow("r2", { cells: { line_item: "Rev", "2024E": 30, "2025E": 40 } });
       okTable.addRowGutter();
       okTable.addRow("tot", {
-        cells: { line_item: new Cell({ expr: 'COUNTA(@table["r1".."r2", @col])' }) },
+        cells: { line_item: new Cell({ expr: 'INDEX(@table["r1".."r2", @col], 2)' }) },
         expr: 'SUM(@table["r1".."r2", "2024E".."2025E"]) + XLOOKUP("Rev", @table["r1".."r2", "line_item"], @table["r1".."r2", @col])',
       });
       const compiled = okModel.compile();
       expect(compiled.num("T", "tot", "2024E")).toBe(130);
       expect(compiled.num("T", "tot", "2025E")).toBe(140);
-      expect(compiled.num("T", "tot", "line_item")).toBe(2);
+      expect(compiled.value("T", "tot", "line_item")).toBe("Rev");
 
       // 2. Row range spanning RowGutter -> ReferenceResolutionError (col === null, row === null)
       const rgModel = new Model({ name: "RowGutterFail" });
@@ -1029,12 +1029,16 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ["IF(TRUE, 10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
         ["IF(FALSE, SUM(), 10)", "too few arguments for 'SUM'"],
         ["IF(TRUE, 10, ABS(1, 2))", "too many arguments for 'ABS'"],
-        ["IF(TRUE, 10, IFS(TRUE, 1, FALSE))", "variadic pairs in 'IFS'"],
+        ["IF(TRUE, 10, IFS(TRUE, 1, FALSE, 2))", "unknown function 'IFS'"],
         ["IF(TRUE, 10, ABS(_))", "argument 'number' at position 1 of 'ABS' cannot be omitted"],
-        ["IFS(TRUE, 1, FALSE, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
+        ["IFS(TRUE, 1, FALSE, 2)", "unknown function 'IFS'"],
         ["IFERROR(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
         ["IFERROR(ABS(1, 2, 3), 0)", "too many arguments for 'ABS'"],
-        ["IFNA(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"],
+        ["IFNA(10, 0)", "unknown function 'IFNA'"],
+        ['COUNTA(@table["k1".."k2", @col])', "unknown function 'COUNTA'"],
+        ["DAYS(45474, 45292)", "unknown function 'DAYS'"],
+        ['ISBLANK(@table["k1", @col])', "unknown function 'ISBLANK'"],
+        ['ISNA(@table["k1", @col])', "unknown function 'ISNA'"],
         ["CHOOSE(1, 10, SUM())", "too few arguments for 'SUM'"],
         ["SWITCH(1, 1, 10, 20)", "unknown function 'SWITCH'"],
         ["IF(FALSE, SWITCH(1, 1, 10, 20), 0)", "unknown function 'SWITCH'"],
@@ -1102,10 +1106,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
           "trailing argument 'search_mode' at position 6 of 'XLOOKUP' cannot use '_'",
         ],
         ["ROUND(1.5, _)", "argument 'num_digits' at position 2 of 'ROUND' cannot be omitted"],
-        [
-          "IFS(TRUE, 1, FALSE, _)",
-          "argument 'value_if_true1' at position 4 of 'IFS' cannot be omitted",
-        ],
         ["IF(_, 10, _)", "argument 'logical_test' at position 1 of 'IF' cannot be omitted"],
         [
           'INDEX(@table["k1".."k2", @col], _, 2)',
@@ -1218,29 +1218,40 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(caught).toBeInstanceOf(FormulaParseError);
       }
 
-      // 2. Type, EmptyFormulaResult, SliceInScalarContext, and ParamKind::Range -> exact F8Error (never TypeError)
-      for (const badF8 of [
-        '@table["a", @col]',
-        'INDEX(@table["a".."a", @col], 1)',
-        'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
-        '"5" + 1',
-        "TRUE * 10",
-        '@table["a", @col] + 1',
-        "IF(1, 10, 20)",
-        'AND(@table["a", @col], TRUE)',
-        '100 < "1"',
-        '"" < FALSE',
-        '@table["a", @col] = ""',
-        '@table["a", @col] = FALSE',
-        'IFERROR(@table["a", @col] + 1, 0)',
-        '@table["r1".."r2", @col]',
-        '@table["r1".."r1", @col]',
-        'ISBLANK(@table["r1".."r1", @col])',
-        "COUNT(10)",
-        'COUNT(@table["a", @col])',
-        'SUMPRODUCT("abc")',
-        "SWITCH(1, 1, 10, 20)",
-      ]) {
+      // 2. Type, EmptyFormulaResult, EmptyArgument, SliceInScalarContext, and ParamKind::Range -> exact F8Error (never TypeError)
+      for (const [badF8, expectedSubstr] of [
+        ['@table["a", @col]', "formula cannot evaluate to an empty cell"],
+        ['INDEX(@table["a".."a", @col], 1)', "evaluated to an empty cell"],
+        [
+          'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
+          "evaluated to an empty cell",
+        ],
+        [
+          'XLOOKUP("miss", @table["k".."k", @col], @table["a".."a", @col], @table["a", @col])',
+          "evaluated to an empty cell",
+        ],
+        ['IF(TRUE, @table["a", @col], 1)', "evaluated to an empty cell"],
+        ['CHOOSE(1, @table["a", @col], 1)', "evaluated to an empty cell"],
+        ['IFERROR(@table["a", @col], 1)', "evaluated to an empty cell"],
+        ['ISERROR(@table["a", @col])', "evaluated to an empty cell"],
+        ['"5" + 1', "expected number, found text"],
+        ["TRUE * 10", "expected number, found boolean"],
+        ['@table["a", @col] + 1', "evaluated to an empty cell"],
+        ["IF(1, 10, 20)", "expected boolean, found number"],
+        ['AND(@table["a", @col], TRUE)', "evaluated to an empty cell"],
+        ['100 < "1"', "cannot compare '<' operands of types number and text"],
+        ['"" < FALSE', "cannot compare '<' operands of types text and boolean"],
+        ['@table["a", @col] = ""', "evaluated to an empty cell"],
+        ['@table["a", @col] = FALSE', "evaluated to an empty cell"],
+        ['IFERROR(@table["a", @col] + 1, 0)', "evaluated to an empty cell"],
+        ['@table["r1".."r2", @col]', "slice"],
+        ['@table["r1".."r1", @col]', "slice"],
+        ['ISERROR(@table["r1".."r1", @col])', "slice"],
+        ["COUNT(10)", "expected range"],
+        ['COUNT(@table["a", @col])', "evaluated to an empty cell"],
+        ['SUMPRODUCT("abc")', "expected range"],
+        ["SWITCH(1, 1, 10, 20)", "unknown function 'SWITCH'"],
+      ] as const) {
         const errModel = new Model({ name: "StrictErrorModel" });
         const errTbl = errModel.addSheet("Main").addTable("T", "Strict Error");
         errTbl.addColumn("c1", { role: "measure", header: "C1" });
@@ -1259,10 +1270,13 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(caught).toBeInstanceOf(F8Error);
         expect(caught instanceof F8Error && caught.constructor === F8Error).toBe(true);
         expect(caught instanceof TypeError).toBe(false);
+        if (caught instanceof F8Error) {
+          expect(caught.message).toContain(expectedSubstr);
+        }
       }
 
-      // 3. Valid ISBLANK, NA(), guarded nullable formulas, parenthesized comparisons, and sparse Slice AND
-      const model = new Model({ name: "IsblankAndNaModel", theme: "corporate_navy" });
+      // 3. Valid ISERROR, NA(), dormant empty branches, parenthesized comparisons, and sparse Slice AND
+      const model = new Model({ name: "IserrorAndNaModel", theme: "corporate_navy" });
       const tbl = model
         .addSheet("Main")
         .addTable("T", "Blank Guard & Information", { currency: "USD" });
@@ -1273,31 +1287,25 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       tbl.addRow("f1", { cells: { c1: null } });
       tbl.addRow("f2", { cells: { c1: true } });
       tbl.addRow("b", {
-        expr: 'IF(ISBLANK(@table["a", @col]), 0, @table["a", @col])',
+        expr: 'IF(FALSE, @table["a", @col], 0)',
         format: "currency",
         decimals: 1,
       });
       tbl.addRow("if_guard_a", {
-        expr: 'IF(ISBLANK(@table["a", @col]), "", @table["a", @col])',
+        expr: 'IF(FALSE, @table["a", @col], "")',
         format: "currency",
         decimals: 1,
       });
-      tbl.addRow("ib_null", { expr: 'ISBLANK(@table["a", @col])' });
-      tbl.addRow("ib_guarded", { expr: 'ISBLANK(@table["b", @col])' });
-      tbl.addRow("ib_empty_str", { expr: 'ISBLANK("")' });
-      tbl.addRow("ib_div0", { expr: "ISBLANK(1 / 0)" });
-      tbl.addRow("ib_xlookup", {
-        expr: 'ISBLANK(XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col], 0))',
-      });
+      tbl.addRow("ie_guarded", { expr: 'ISERROR(@table["b", @col])' });
+      tbl.addRow("ie_empty_str", { expr: 'ISERROR("")' });
+      tbl.addRow("ie_div0", { expr: "ISERROR(1 / 0)" });
       tbl.addRow("na_cell", { expr: "NA()" });
-      tbl.addRow("na_trapped", { expr: "IFNA(IF(FALSE, 10, NA()), 0)" });
+      tbl.addRow("na_trapped", { expr: "IFERROR(IF(FALSE, 10, NA()), 0)" });
       tbl.addRow("paren_cmp", { expr: "(1 = 1) = TRUE" });
       tbl.addRow("and_sparse", { expr: 'AND(@table["f1".."f2", @col])' });
       tbl.addRow("b_eq_zero", { expr: '(@table["b", @col] = 0)' });
       tbl.addRow("count_a", { expr: 'COUNT(@table["a".."a", @col])' });
       tbl.addRow("count_b", { expr: 'COUNT(@table["b", @col])' });
-      tbl.addRow("counta_a", { expr: 'COUNTA(@table["a", @col])' });
-      tbl.addRow("counta_b", { expr: 'COUNTA(@table["b", @col])' });
 
       const compiled = model.compile();
 
@@ -1314,11 +1322,9 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
 
       expect(compiled.value("T", "if_guard_a", "c1")).toBe("");
       expect(compiled.formatted("T", "if_guard_a", "c1")).toBe("");
-      expect(compiled.value("T", "ib_null", "c1")).toBe(true);
-      expect(compiled.value("T", "ib_guarded", "c1")).toBe(false);
-      expect(compiled.value("T", "ib_empty_str", "c1")).toBe(false);
-      expect(compiled.value("T", "ib_div0", "c1")).toBe(false);
-      expect(compiled.value("T", "ib_xlookup", "c1")).toBe(true);
+      expect(compiled.value("T", "ie_guarded", "c1")).toBe(false);
+      expect(compiled.value("T", "ie_empty_str", "c1")).toBe(false);
+      expect(compiled.value("T", "ie_div0", "c1")).toBe(true);
 
       const naInfo = compiled.inspectCell("T", "na_cell", "c1");
       expect(compiled.value("T", "na_cell", "c1")).toBe("#N/A");
@@ -1331,8 +1337,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.value("T", "b_eq_zero", "c1")).toBe(true);
       expect(compiled.num("T", "count_a", "c1")).toBe(0);
       expect(compiled.num("T", "count_b", "c1")).toBe(1);
-      expect(compiled.num("T", "counta_a", "c1")).toBe(0);
-      expect(compiled.num("T", "counta_b", "c1")).toBe(1);
     });
 
     it("(k) normalizes negative zero to +0", () => {
@@ -1356,30 +1360,28 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         'IF(TRUE, 10, "NM")',
         'IFERROR(10 / 0, "N/A")',
         'CHOOSE(1, 10, "NM")',
-        'IFS(TRUE, 10, FALSE, "NM")',
         'IF(FALSE, IF(TRUE, "a", "b") = IF(FALSE, 1, 2), TRUE)',
         'ROUND(10, IF(TRUE, "a", "b"))',
         'ROUND(10, IF(TRUE, 2, "bad"))',
         '1 + INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col])',
         '1 = XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col])',
         'ABS(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]))',
-        'IFS(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10, TRUE, 20)',
+        'IF(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10, 20)',
         'XMATCH(IF(FALSE, "Alpha", NA()), @table["num1".."num2", @col])',
         'XMATCH(INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col]), @table["num1".."num2", @col])',
         'XLOOKUP(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), @table["num1".."num2", @col], @table["num1".."num2", @col])',
         '1 + XLOOKUP("Beta", @table["cat1".."cat2", @col], @table["num1".."num2", @col], "NM")',
         'IFERROR(@table["null_cell", @col], 1)',
         'IFERROR(1 / 0, @table["null_cell", @col])',
-        'IFNA(@table["null_cell", @col], 1)',
-        'ISBLANK(IFERROR(@table["null_cell", @col], 1))',
+        'ISERROR(IFERROR(@table["null_cell", @col], 1))',
         'IF(TRUE, @table["num1", @col], @table["txt1", @col])',
         'IF(@table["flag_false", @col], @table["txt1", @col] + 5, 0)',
         'IF(@table["flag_false", @col], @table["num1", @col] < @table["txt1", @col], FALSE)',
         'IF(TRUE, 10, XLOOKUP("Beta", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]))',
         'IF(TRUE, 10, INDEX(@table["txt1".."txt2", @col], @table["dyn_idx", @col]))',
         'IFERROR(INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col]), 10)',
-        'IFNA(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10)',
-        'IFNA(@table["err_txt", @col], 10)',
+        'IFERROR(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10)',
+        'IFERROR(@table["err_txt", @col], 10)',
         'IFERROR(@table["err_oob_txt", @col], 10)',
         '1 + @table["err_txt", @col]',
         '@table["err_txt", @col] = 10',
@@ -1474,9 +1476,8 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       okTbl.addRow("round_guard_cell", {
         expr: 'IF(FALSE, ROUND(10, @table["flt_cell", @col]), 0)',
       });
-      okTbl.addRow("is_null", { expr: 'ISBLANK(@table["null_cell", @col])' });
       okTbl.addRow("helper_guard", {
-        expr: 'IF(@table["is_null", @col], 0, @table["null_cell", @col] + 5)',
+        expr: 'IF(TRUE, 0, @table["null_cell", @col] + 5)',
       });
       okTbl.addRow("index_sparse", { expr: 'INDEX(@table["sp1".."sp3", @col], 3)' });
       okTbl.addRow("xmatch_bin_asc", { expr: 'XMATCH(30, @table["asc1".."asc4", @col], 0, 2)' });
@@ -1492,14 +1493,14 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       okTbl.addRow("err_div0_2", { expr: "2 / 0" });
       okTbl.addRow("c1", { cells: { c1: true } });
       okTbl.addRow("err_na", { expr: "NA()" });
-      okTbl.addRow("ok_ifna_txt", { expr: 'IFNA(@table["err_txt", @col], "fallback")' });
+      okTbl.addRow("ok_iferr_txt", { expr: 'IFERROR(@table["err_txt", @col], "fallback")' });
       okTbl.addRow("ok_iferr_div0", { expr: 'IFERROR(@table["err_div0", @col], 0)' });
       okTbl.addRow("ok_iferr_idx_div0", {
         expr: 'IFERROR(INDEX(@table["err_div0".."err_div0_2", @col], 1), 0)',
       });
       okTbl.addRow("ok_add_div0", { expr: '1 + @table["err_div0", @col]' });
-      okTbl.addRow("ok_ifna_na_num", { expr: 'IFNA(@table["err_na", @col], 10)' });
-      okTbl.addRow("ok_ifna_na_txt", { expr: 'IFNA(@table["err_na", @col], "fallback")' });
+      okTbl.addRow("ok_iferr_na_num", { expr: 'IFERROR(@table["err_na", @col], 10)' });
+      okTbl.addRow("ok_iferr_na_txt", { expr: 'IFERROR(@table["err_na", @col], "fallback")' });
       okTbl.addRow("ok_and_na_slice", { expr: 'AND(@table["c1".."err_na", @col])' });
 
       const compiled = okModel.compile();
@@ -1508,19 +1509,18 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.num("T", "round_taken_lit", "c1")).toBe(10);
       expect(compiled.num("T", "round_taken_cell", "c1")).toBe(10);
       expect(compiled.num("T", "round_guard_cell", "c1")).toBe(0);
-      expect(compiled.value("T", "is_null", "c1")).toBe(true);
       expect(compiled.num("T", "helper_guard", "c1")).toBe(0);
       expect(compiled.num("T", "index_sparse", "c1")).toBe(30);
       expect(compiled.num("T", "xmatch_bin_asc", "c1")).toBe(3);
       expect(compiled.num("T", "xlookup_bin_desc", "c1")).toBe(30);
       expect(compiled.value("T", "add_na", "c1")).toBe("#N/A");
       expect(compiled.value("T", "xmatch_na", "c1")).toBe("#N/A");
-      expect(compiled.value("T", "ok_ifna_txt", "c1")).toBe("fallback");
+      expect(compiled.value("T", "ok_iferr_txt", "c1")).toBe("fallback");
       expect(compiled.num("T", "ok_iferr_div0", "c1")).toBe(0);
       expect(compiled.num("T", "ok_iferr_idx_div0", "c1")).toBe(0);
       expect(compiled.value("T", "ok_add_div0", "c1")).toBe("#DIV/0!");
-      expect(compiled.num("T", "ok_ifna_na_num", "c1")).toBe(10);
-      expect(compiled.value("T", "ok_ifna_na_txt", "c1")).toBe("fallback");
+      expect(compiled.num("T", "ok_iferr_na_num", "c1")).toBe(10);
+      expect(compiled.value("T", "ok_iferr_na_txt", "c1")).toBe("fallback");
       expect(compiled.value("T", "ok_and_na_slice", "c1")).toBe("#N/A");
     });
 
@@ -1684,13 +1684,13 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         });
       };
 
-      addCheck("desc_counta", 'COUNTA(@table["r1".."r3", "line_item"])');
+      addCheck("desc_xmatch", 'XMATCH("OpEx", @table["r1".."r3", "line_item"])');
       addCheck(
         "desc_xlookup",
         'XLOOKUP("Rev", @table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])',
       );
       addCheck("desc_index", 'INDEX(@table["r1".."r3", "line_item"], 2)');
-      addCheck("guard_sum", 'IF(ISBLANK(@table["sp1", "c1"]), 0, SUM(@table["sp1", "c1"]))');
+      addCheck("guard_sum", 'IF(TRUE, 0, SUM(@table["sp1", "c1"]))');
 
       addCheck("sum_sparse", 'SUM(@table["sp1".."sp4", "c1"])');
       addCheck("avg_sparse", 'AVERAGE(@table["sp1".."sp4", "c1"])');
@@ -1734,7 +1734,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       addCheck("xmatch_bad_mode", 'XMATCH(10, @table["r1".."r3", "c1"], 9)');
 
       const compiled = okModel.compile();
-      expect(compiled.num("T", "desc_counta", "c1")).toBe(3);
+      expect(compiled.num("T", "desc_xmatch", "c1")).toBe(3);
       expect(compiled.num("T", "desc_xlookup", "c1")).toBe(10);
       expect(compiled.value("T", "desc_index", "c1")).toBe("Cost");
       expect(compiled.num("T", "guard_sum", "c1")).toBe(0);
@@ -1776,8 +1776,8 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.value("T", "xmatch_bad_mode", "c1")).toBe("#VALUE!");
     });
 
-    it("(n) enforces dotted function name grammar and evaluates error introspection functions", () => {
-      for (const badParse of ["ERROR . TYPE(1 / 0)", "error.type(1 / 0)"]) {
+    it("(n) rejects dotted function names and evaluates ISERROR error introspection", () => {
+      for (const badParse of ["ERROR.TYPE(1 / 0)", "ERROR . TYPE(1 / 0)", "error.type(1 / 0)"]) {
         const m = new Model({ name: "ParseCheck" });
         const t = m.addSheet("Main").addTable("T", "Parse");
         t.addColumn("c1", { role: "measure", header: "Val" });
@@ -1785,11 +1785,14 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(() => m.compile()).toThrow(FormulaParseError);
       }
 
-      const mErr = new Model({ name: "IserrorTypeCheck" });
-      const tErr = mErr.addSheet("Main").addTable("T", "Type Check");
-      tErr.addColumn("c1", { role: "measure", header: "Val" });
-      tErr.addRow("target", { expr: 'ISERROR("5" + 1)' });
-      expect(() => mErr.compile()).toThrow(F8Error);
+      for (const badIserror of ['ISERROR("5" + 1)', 'ISERROR(@table["n", "c1"])']) {
+        const mErr = new Model({ name: "IserrorTypeCheck" });
+        const tErr = mErr.addSheet("Main").addTable("T", "Type Check");
+        tErr.addColumn("c1", { role: "measure", header: "Val" });
+        tErr.addRow("n", { cells: { c1: null } });
+        tErr.addRow("target", { expr: badIserror });
+        expect(() => mErr.compile()).toThrow(F8Error);
+      }
 
       const okModel = new Model({ name: "ErrorIntrospectionOk" });
       const okTbl = okModel.addSheet("Main").addTable("T", "Error Introspection");
@@ -1812,22 +1815,14 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       };
 
       addRes("iserror_div0", "ISERROR(1 / 0)");
-      addRes("isna_div0", "ISNA(1 / 0)");
-      addRes("isna_na", 'ISNA(XMATCH("Missing", @table["r1".."r4", "cat"]))');
-      addRes("errtype_div0", "ERROR.TYPE(1 / 0)");
-      addRes("errtype_na", 'ERROR.TYPE(XMATCH("Missing", @table["r1".."r4", "cat"]))');
-      addRes("errtype_non_err", "ERROR.TYPE(42)");
+      addRes("iserror_na", 'ISERROR(XMATCH("Missing", @table["r1".."r4", "cat"]))');
+      addRes("iserror_non_err", "ISERROR(42)");
 
       const compiled = okModel.compile();
       expect(compiled.value("T", "iserror_div0", "res")).toBe(true);
-      expect(compiled.value("T", "isna_div0", "res")).toBe(false);
-      expect(compiled.value("T", "isna_na", "res")).toBe(true);
-      expect(compiled.num("T", "errtype_div0", "res")).toBe(2);
-      expect(compiled.num("T", "errtype_na", "res")).toBe(7);
-      expect(compiled.value("T", "errtype_non_err", "res")).toBe("#N/A");
-      expect(compiled.inspectCell("T", "errtype_div0", "res").excelFormula).toContain(
-        "ERROR.TYPE(",
-      );
+      expect(compiled.value("T", "iserror_na", "res")).toBe(true);
+      expect(compiled.value("T", "iserror_non_err", "res")).toBe(false);
+      expect(compiled.inspectCell("T", "iserror_div0", "res").excelFormula).toContain("ISERROR(");
     });
   });
 });

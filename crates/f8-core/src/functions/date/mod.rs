@@ -1,11 +1,11 @@
-//! Date and time functions suite (`DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`, `DAYS`).
+//! Date and time functions suite (`DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`).
 
 pub mod constructors;
 pub mod parts;
 pub mod yearfrac;
 
 pub use constructors::{DateFunction, EdateFunction, EomonthFunction};
-pub use parts::{DayFunction, DaysFunction, MonthFunction, YearFunction};
+pub use parts::{DayFunction, MonthFunction, YearFunction};
 pub use yearfrac::{DayCountBasis, YearfracFunction, calculate_yearfrac};
 
 use std::sync::Arc;
@@ -21,5 +21,4 @@ pub fn register(registry: &mut FunctionRegistry) {
     registry.register(Arc::new(YearFunction));
     registry.register(Arc::new(MonthFunction));
     registry.register(Arc::new(DayFunction));
-    registry.register(Arc::new(DaysFunction));
 }

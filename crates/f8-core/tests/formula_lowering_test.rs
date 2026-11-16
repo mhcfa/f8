@@ -856,11 +856,11 @@ fn test_scenario_19_right_hand_relational_and_float_associativity_parenthesizati
         );
     }
 
-    // 1b. ISBLANK and NA() lower directly to standard Excel functions
-    let isblank_expr = Expr::parse("ISBLANK(IncomeStatement[\"revenue\", @col])").unwrap();
+    // 1b. ISERROR and NA() lower directly to standard Excel functions
+    let iserror_expr = Expr::parse("ISERROR(IncomeStatement[\"revenue\", @col] / 0)").unwrap();
     assert_eq!(
-        FormulaLowerer::lower_cell(&origin, &isblank_expr, &symbol_table, &layout_map).unwrap(),
-        "=ISBLANK(C6)"
+        FormulaLowerer::lower_cell(&origin, &iserror_expr, &symbol_table, &layout_map).unwrap(),
+        "=ISERROR(C6/0)"
     );
     let na_expr = Expr::parse("IF(FALSE, 10, NA())").unwrap();
     assert_eq!(
@@ -1032,10 +1032,10 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
     );
 
     // 2. Vertical range on a single descriptor column succeeds
-    let ok_desc_vertical = Expr::parse("COUNTA(T[\"r1\"..\"r2\", \"line_item\"])").unwrap();
+    let ok_desc_vertical = Expr::parse("INDEX(T[\"r1\"..\"r2\", \"line_item\"], 1)").unwrap();
     assert_eq!(
         FormulaLowerer::lower_cell(&origin, &ok_desc_vertical, &symbol_table, &layout_map).unwrap(),
-        "=COUNTA($B$5:$B$6)"
+        "=INDEX($B$5:$B$6,1)"
     );
 
     // 3. Discontinuous row range across gutter
@@ -1069,7 +1069,7 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
     ));
 
     // 6. Discontinuous col range across descriptor endpoint
-    let bad_col_desc = Expr::parse("COUNTA(T[\"r1\", \"line_item\"..\"2024E\"])").unwrap();
+    let bad_col_desc = Expr::parse("INDEX(T[\"r1\", \"line_item\"..\"2024E\"], 1)").unwrap();
     assert!(matches!(
         FormulaLowerer::lower_cell(&origin, &bad_col_desc, &symbol_table, &layout_map),
         Err(LoweringError::Resolve(ResolveError::DiscontinuousRange {
@@ -1600,11 +1600,7 @@ fn test_error_introspection_lowering() {
             "ISERROR(IncomeStatement[\"revenue\", @col] / 0)",
             "=ISERROR(C6/0)",
         ),
-        ("ISNA(IncomeStatement[\"revenue\", @col])", "=ISNA(C6)"),
-        (
-            "ERROR.TYPE(IncomeStatement[\"revenue\", @col] / 0)",
-            "=ERROR.TYPE(C6/0)",
-        ),
+        ("NA()", "=NA()"),
     ];
 
     for (formula, expected_excel) in cases {

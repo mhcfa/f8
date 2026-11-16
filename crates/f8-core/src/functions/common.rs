@@ -272,32 +272,6 @@ pub fn count_numbers(args: &[FunctionArg<'_>]) -> usize {
     count
 }
 
-/// Counts non-empty cells across range arguments according to Excel `COUNTA` semantics.
-#[must_use]
-pub fn count_non_empty(args: &[FunctionArg<'_>]) -> usize {
-    let mut count = 0;
-
-    for arg in args {
-        match arg {
-            FunctionArg::Range { values, .. } => {
-                for v in values {
-                    if !matches!(v, CellValue::Empty) {
-                        count += 1;
-                    }
-                }
-            }
-            FunctionArg::Scalar(val) => {
-                if !matches!(val, CellValue::Empty) {
-                    count += 1;
-                }
-            }
-            FunctionArg::Lazy(_) | FunctionArg::Omitted => {}
-        }
-    }
-
-    count
-}
-
 /// Extracts a finite numeric scalar, bubbling `CellValue::Error(e)` as `Err(e)`.
 pub fn scalar_number(arg: &FunctionArg<'_>) -> Result<f64, ExcelError> {
     match arg {

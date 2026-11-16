@@ -5,7 +5,7 @@ use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     EmptyPolicy, EvalContext, ExcelFunction, FunctionArg, ParamKind, ParameterDef, RangeGrid,
-    ReferenceKind, VariadicRule,
+    ReferenceKind,
 };
 use crate::value::{CellValue, TypeError};
 
@@ -79,7 +79,7 @@ impl FunctionRegistry {
                 )
                 | (ParamKind::Scalar, _) => {
                     let val = ctx.eval_expr(arg_expr)?;
-                    if param.empty_policy != EmptyPolicy::Allow && val.is_empty() {
+                    if val.is_empty() {
                         return Err(FunctionError::Type(TypeError::EmptyArgument {
                             function: func.name(),
                             param: param.name,
@@ -103,24 +103,13 @@ fn bind_omitted_arg<'a>(param: &ParameterDef) -> FunctionArg<'a> {
     }
 }
 
-/// Resolves the expected parameter definition for a given 0-indexed argument position,
-/// applying cyclical pairs alternation when `VariadicRule::Pairs` is enabled.
+/// Resolves the expected parameter definition for a given 0-indexed argument position.
 pub(crate) fn resolve_parameter(
     func: &dyn ExcelFunction,
     index: usize,
 ) -> Result<&ParameterDef, FunctionError> {
     if index < func.parameters().len() {
         Ok(&func.parameters()[index])
-    } else if func.variadic_rule() == VariadicRule::Pairs {
-        let fixed_count = func.parameters().len();
-        if fixed_count < 2 {
-            return Err(FunctionError::EvaluationFailure {
-                function: func.name(),
-                message: "variadic pairs rule requires at least two parameter definitions".into(),
-            });
-        }
-        let offset = (index - fixed_count) % 2;
-        Ok(&func.parameters()[fixed_count - 2 + offset])
     } else {
         func.parameters()
             .last()

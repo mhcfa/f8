@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::expr::ast::{Expr, TableRef};
 use crate::functions::error::FunctionError;
-use crate::value::{CellValue, ValueType};
+use crate::value::{CellValue, TypeError, ValueType};
 
 /// Functional taxonomy categories for Excel built-in functions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -19,9 +19,7 @@ pub enum FunctionCategory {
     Lookup,
     /// Date and time operations (e.g. `YEARFRAC`, `DATE`).
     DateTime,
-    /// Text manipulation and string formatting (e.g. `CONCAT`, `TEXT`).
-    Text,
-    /// Metadata, cell introspection, and error inspection (e.g. `ISERROR`, `TYPE`).
+    /// Metadata, cell introspection, and error inspection (e.g. `ISERROR`, `NA`).
     Information,
 }
 
@@ -34,7 +32,6 @@ impl FunctionCategory {
             Self::Financial => "Financial",
             Self::Lookup => "Lookup",
             Self::DateTime => "Date & Time",
-            Self::Text => "Text",
             Self::Information => "Information",
         }
     }
@@ -109,8 +106,6 @@ pub enum EmptyPolicy {
     Forbid,
     /// Rejects `CellValue::Empty` on `Scalar` and `ReferenceKind::SingleCell`, while permitting sparse `Empty` inside `ReferenceKind::Slice`.
     AllowInSlice,
-    /// Permits `CellValue::Empty` across `Scalar`, `ReferenceKind::SingleCell`, and `ReferenceKind::Slice`.
-    Allow,
 }
 
 /// Variadic tail behavior for function signatures.
@@ -120,8 +115,6 @@ pub enum VariadicRule {
     None,
     /// Arbitrary number of trailing arguments matching the final parameter definition (e.g. `SUM`).
     Single,
-    /// Trailing arguments must occur in balanced pairs (e.g. `logical_test, value_if_true` in `IFS`).
-    Pairs,
 }
 
 /// Requirement and default policy for a positional function parameter.
@@ -243,13 +236,6 @@ impl ParameterDef {
         self.empty_policy = EmptyPolicy::AllowInSlice;
         self
     }
-
-    /// Permits `CellValue::Empty` across `Scalar`, `ReferenceKind::SingleCell`, and `ReferenceKind::Slice`.
-    #[must_use]
-    pub const fn allow_empty(mut self) -> Self {
-        self.empty_policy = EmptyPolicy::Allow;
-        self
-    }
 }
 
 /// Bound runtime argument supplied to an `ExcelFunction::evaluate` call.
@@ -316,38 +302,55 @@ impl<'a> FunctionArg<'a> {
         }
     }
 
-    /// Resolves this argument to a single scalar `CellValue`, evaluating lazy expressions if necessary.
+    /// Resolves this argument to a single non-empty scalar `CellValue`, evaluating lazy expressions if necessary
+    /// and returning `TypeError::EmptyArgument` when the resolved value is `CellValue::Empty`.
     pub fn eval_scalar(
         &self,
         function: &'static str,
+        param: &'static str,
+        position: usize,
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        match self {
-            Self::Scalar(val) => Ok(val.clone()),
-            Self::Lazy(expr) => ctx.eval_expr(expr),
+        let val = match self {
+            Self::Scalar(val) => val.clone(),
+            Self::Lazy(expr) => ctx.eval_expr(expr)?,
             Self::Range {
                 rows,
                 cols,
                 ref_kind: ReferenceKind::Slice,
                 ..
-            } => Err(FunctionError::SliceInScalarContext {
-                rows: *rows,
-                cols: *cols,
-            }),
+            } => {
+                return Err(FunctionError::SliceInScalarContext {
+                    rows: *rows,
+                    cols: *cols,
+                });
+            }
             Self::Range {
                 ref_kind: ReferenceKind::SingleCell,
                 ..
-            } => Err(FunctionError::InvalidArgumentKind {
+            } => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function,
+                    expected: "scalar",
+                    found: "range",
+                });
+            }
+            Self::Omitted => {
+                return Err(FunctionError::InvalidArgumentKind {
+                    function,
+                    expected: "scalar",
+                    found: "omitted",
+                });
+            }
+        };
+        if val.is_empty() {
+            return Err(FunctionError::Type(TypeError::EmptyArgument {
                 function,
-                expected: "scalar",
-                found: "range",
-            }),
-            Self::Omitted => Err(FunctionError::InvalidArgumentKind {
-                function,
-                expected: "scalar",
-                found: "omitted",
-            }),
+                param,
+                position,
+            }));
         }
+        Ok(val)
     }
 }
 
@@ -356,11 +359,9 @@ impl<'a> FunctionArg<'a> {
 pub enum BranchPolicy {
     /// `IF(logical_test, value_if_true, value_if_false)`.
     If,
-    /// `IFS(logical_test1, value_if_true1, ...)`.
-    Ifs,
     /// `CHOOSE(index_num, value1, ...)`.
     Choose,
-    /// `IFERROR(value, value_if_error)` and `IFNA(value, value_if_na)`.
+    /// `IFERROR(value, value_if_error)`.
     ErrorTrap,
 }
 
@@ -472,7 +473,7 @@ pub trait ExcelFunction: Send + Sync + fmt::Debug {
     fn max_args(&self) -> Option<usize> {
         match self.variadic_rule() {
             VariadicRule::None => Some(self.parameters().len()),
-            VariadicRule::Single | VariadicRule::Pairs => None,
+            VariadicRule::Single => None,
         }
     }
 

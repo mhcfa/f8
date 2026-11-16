@@ -134,7 +134,7 @@ describe("TypeScript CLI and module runner entrypoints", () => {
     const expectedLines = [
       "Available topics:",
       "  syntax     2D coordinates, vector expressions, column roles, gutters, indentation",
-      "  functions  41 built-in Excel functions, signatures, omission syntax, errors",
+      "  functions  34 built-in Excel functions, signatures, omission syntax, errors",
       "  audit      TableAuditor, inspection, unboxing, structured exception recovery",
       "  all        Complete concatenated guide",
     ];

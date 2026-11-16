@@ -171,11 +171,6 @@ impl<'a> TokenStream<'a> {
         self.tokens.get(self.pos)
     }
 
-    /// Peeks at the token `n` positions ahead of the cursor without advancing.
-    pub fn peek_nth(&self, n: usize) -> Option<&SpannedToken<'a>> {
-        self.tokens.get(self.pos + n)
-    }
-
     /// Peeks at the next token kind without advancing the cursor.
     pub fn peek_token(&self) -> Option<&Token<'a>> {
         self.tokens.get(self.pos).map(|st| &st.token)
@@ -790,44 +785,7 @@ fn parse_prefix(stream: &mut TokenStream<'_>) -> Result<Expr, ParseError> {
         }
         Token::Ident(ident) => {
             let name = *ident;
-            let first_end = st.offset + st.len;
             stream.advance();
-
-            let mut lookahead_idx = 0usize;
-            let mut prev_end = first_end;
-            while let (Some(dot_st), Some(seg_st)) = (
-                stream.peek_nth(lookahead_idx),
-                stream.peek_nth(lookahead_idx + 1),
-            ) {
-                if dot_st.token == Token::Dot
-                    && dot_st.offset == prev_end
-                    && let Token::Ident(_) = seg_st.token
-                    && seg_st.offset == dot_st.offset + 1
-                {
-                    prev_end = seg_st.offset + seg_st.len;
-                    lookahead_idx += 2;
-                } else {
-                    break;
-                }
-            }
-
-            if lookahead_idx > 0
-                && stream
-                    .peek_nth(lookahead_idx)
-                    .is_some_and(|after| after.token == Token::LParen)
-            {
-                let mut full_name = String::from(name);
-                for _ in 0..(lookahead_idx / 2) {
-                    stream.advance(); // '.'
-                    if let Some(seg_st) = stream.consume()
-                        && let Token::Ident(seg) = seg_st.token
-                    {
-                        full_name.push('.');
-                        full_name.push_str(seg);
-                    }
-                }
-                return parse_function_call(&full_name, offset, stream);
-            }
 
             match stream.peek() {
                 Some(st) if st.token == Token::LParen => parse_function_call(name, offset, stream),
@@ -958,15 +916,12 @@ fn parse_function_call(
     offset: usize,
     stream: &mut TokenStream<'_>,
 ) -> Result<Expr, ParseError> {
-    // Validate uppercase function name across every '.'-separated segment
+    // Validate uppercase function name
     let is_valid = !name.is_empty()
-        && name.split('.').all(|seg| {
-            !seg.is_empty()
-                && seg.starts_with(|c: char| c.is_ascii_uppercase())
-                && seg
-                    .chars()
-                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-        });
+        && name.starts_with(|c: char| c.is_ascii_uppercase())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
 
     if !is_valid {
         return Err(ParseError::InvalidFunctionName {

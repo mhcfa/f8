@@ -98,7 +98,6 @@ impl EvalError {
             | FunctionError::TooManyArguments { .. }
             | FunctionError::CannotOmitRequiredArgument { .. }
             | FunctionError::CannotOmitTrailingArgument { .. }
-            | FunctionError::InvalidVariadicPairs { .. }
             | FunctionError::InvalidArgumentKind { .. }
             | FunctionError::EvaluationFailure { .. }
             | FunctionError::DimensionMismatch { .. }
