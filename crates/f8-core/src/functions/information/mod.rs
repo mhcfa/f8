@@ -48,7 +48,14 @@ impl ExcelFunction for IserrorFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let val = args[0].eval_scalar(self.name(), "value", 1, ctx)?;
+        let [val_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        let val = val_arg.eval_scalar(self.name(), "value", 1, ctx)?;
         Ok(CellValue::Boolean(matches!(val, CellValue::Error(_))))
     }
 }

@@ -108,16 +108,10 @@ fn default_max_col_width() -> f64 {
     75.0
 }
 
-/// Physical row heights, column character widths, gutters, and margins.
+/// Column character widths, gutters, and margins.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricsConfig {
-    pub title_row_height: f64,
-    pub header_row_height: f64,
-    pub section_row_height: f64,
-    pub data_row_height: f64,
-    pub gutter_row_height: f64,
     pub gutter_col_width: f64,
-    pub title_gutter_row_height: f64,
     pub char_width_multiplier: f64,
     pub col_padding: f64,
     pub min_col_width: f64,
@@ -128,13 +122,7 @@ pub struct MetricsConfig {
 impl Default for MetricsConfig {
     fn default() -> Self {
         Self {
-            title_row_height: 24.0,
-            header_row_height: 18.0,
-            section_row_height: 18.0,
-            data_row_height: 15.0,
-            gutter_row_height: 9.0,
             gutter_col_width: 3.0,
-            title_gutter_row_height: 8.0,
             char_width_multiplier: 1.0,
             col_padding: 0.0,
             min_col_width: 12.0,
@@ -326,13 +314,7 @@ impl TypographyConfig {
 
 impl MetricsConfig {
     pub fn validate(&self) -> Result<(), ModelError> {
-        validate_metric("title_row_height", self.title_row_height)?;
-        validate_metric("header_row_height", self.header_row_height)?;
-        validate_metric("section_row_height", self.section_row_height)?;
-        validate_metric("data_row_height", self.data_row_height)?;
-        validate_metric("gutter_row_height", self.gutter_row_height)?;
         validate_metric("gutter_col_width", self.gutter_col_width)?;
-        validate_metric("title_gutter_row_height", self.title_gutter_row_height)?;
         validate_metric("char_width_multiplier", self.char_width_multiplier)?;
         validate_non_negative_metric("col_padding", self.col_padding)?;
         validate_metric("min_col_width", self.min_col_width)?;

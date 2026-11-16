@@ -23,9 +23,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert_eq!(theme.palette.gridline_color, "#E2E8F0");
 
     // Verify metrics
-    assert!(theme.metrics.gutter_row_height > 0.0);
     assert!(theme.metrics.gutter_col_width > 0.0);
-    assert!(theme.metrics.title_gutter_row_height > 0.0);
     assert_eq!(theme.metrics.col_padding, 0.0);
     assert!(theme.metrics.min_col_width > 0.0);
     assert_eq!(theme.metrics.max_col_width, 75.0);
@@ -179,13 +177,7 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
             "data_size": 11.0
         },
         "metrics": {
-            "title_row_height": 26.0,
-            "header_row_height": 20.0,
-            "section_row_height": 20.0,
-            "data_row_height": 16.0,
-            "gutter_row_height": 10.0,
             "gutter_col_width": 4.0,
-            "title_gutter_row_height": 9.0,
             "char_width_multiplier": 1.2,
             "col_padding": 2.5,
             "min_col_width": 14.0
@@ -279,10 +271,10 @@ fn test_scenario_7_rejection_of_invalid_theme_configurations() {
 
     // 2. Non-positive metric
     let mut theme = Theme::corporate_navy();
-    theme.metrics.data_row_height = 0.0;
+    theme.metrics.gutter_col_width = 0.0;
     assert!(matches!(
         theme.validate().unwrap_err(),
-        ModelError::InvalidThemeMetric { metric, value } if metric == "data_row_height" && value == 0.0
+        ModelError::InvalidThemeMetric { metric, value } if metric == "gutter_col_width" && value == 0.0
     ));
 
     let mut theme = Theme::corporate_navy();
@@ -449,13 +441,7 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
             "section_header_underline": false
         },
         "metrics": {
-            "title_row_height": 24.0,
-            "header_row_height": 18.0,
-            "section_row_height": 18.0,
-            "data_row_height": 15.0,
-            "gutter_row_height": 9.0,
             "gutter_col_width": 3.0,
-            "title_gutter_row_height": 8.0,
             "char_width_multiplier": 1.15,
             "col_padding": 2.0,
             "min_col_width": 12.0

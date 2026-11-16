@@ -3,14 +3,14 @@ pub mod basic;
 pub mod product;
 pub mod rounding;
 
+use std::sync::Arc;
+
 pub use aggregation::{
     AverageFunction, CountFunction, MaxFunction, MedianFunction, MinFunction, SumFunction,
 };
 pub use basic::AbsFunction;
 pub use product::SumproductFunction;
 pub use rounding::{RoundFunction, RounddownFunction, RoundupFunction};
-
-use std::sync::Arc;
 
 use crate::functions::registry::FunctionRegistry;
 

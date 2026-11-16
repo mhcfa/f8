@@ -55,11 +55,18 @@ macro_rules! impl_rounding_function {
                 args: &[FunctionArg<'_>],
                 _ctx: &dyn EvalContext,
             ) -> Result<CellValue, FunctionError> {
-                let num = match scalar_number(&args[0]) {
+                let [num_arg, digits_arg, ..] = args else {
+                    return Err(FunctionError::TooFewArguments {
+                        function: self.name(),
+                        expected: 2,
+                        found: args.len(),
+                    });
+                };
+                let num = match scalar_number(num_arg) {
                     Ok(n) => n,
                     Err(err) => return Ok(CellValue::Error(err)),
                 };
-                let digits_i64 = match scalar_integer(&args[1]) {
+                let digits_i64 = match scalar_integer(digits_arg) {
                     Ok(d) => d,
                     Err(err) => return Ok(CellValue::Error(err)),
                 };

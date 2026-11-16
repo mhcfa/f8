@@ -471,13 +471,7 @@ describe("TypeScript Fluent Builder DSL", () => {
         data_size: 11.0,
       },
       metrics: {
-        title_row_height: 26.0,
-        header_row_height: 20.0,
-        section_row_height: 20.0,
-        data_row_height: 16.0,
-        gutter_row_height: 10.0,
         gutter_col_width: 4.0,
-        title_gutter_row_height: 9.0,
         char_width_multiplier: 1.2,
         col_padding: 2.5,
         min_col_width: 14.0,

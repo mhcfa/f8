@@ -527,7 +527,7 @@ fn test_scenario_5_approximate_match() {
 // ============================================================================
 
 #[test]
-fn test_scenario_6_wildcard_matching() {
+fn test_scenario_6_lookup_mode_validation_and_wildcard_retirement() {
     let registry = FunctionRegistry::standard();
     let xmatch = registry.lookup("XMATCH").unwrap();
     let xlookup = registry.lookup("XLOOKUP").unwrap();

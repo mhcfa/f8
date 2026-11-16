@@ -2,6 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::expr::ast::fmt_quoted_f8_str;
 use crate::model::id::{ColId, RowId, TableId};
 
 /// Discrete cell coordinate identifier across the entire workbook.
@@ -28,7 +29,11 @@ impl CellId {
 
 impl fmt::Display for CellId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}[\"{}\", \"{}\"]", self.table, self.row, self.col)
+        write!(f, "{}[", self.table)?;
+        fmt_quoted_f8_str(self.row.as_str(), f)?;
+        f.write_str(", ")?;
+        fmt_quoted_f8_str(self.col.as_str(), f)?;
+        f.write_str("]")
     }
 }
 

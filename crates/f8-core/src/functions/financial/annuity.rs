@@ -114,15 +114,22 @@ impl ExcelFunction for PmtFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let rate = match scalar_number(&args[0]) {
+        let [rate_arg, nper_arg, pv_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 3,
+                found: args.len(),
+            });
+        };
+        let rate = match scalar_number(rate_arg) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let nper = match scalar_number(&args[1]) {
+        let nper = match scalar_number(nper_arg) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let pv = match scalar_number(&args[2]) {
+        let pv = match scalar_number(pv_arg) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };

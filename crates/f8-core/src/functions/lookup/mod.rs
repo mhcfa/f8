@@ -5,12 +5,12 @@ pub mod search;
 pub mod xlookup;
 pub mod xmatch;
 
+use std::sync::Arc;
+
 pub use index::IndexFunction;
 pub use search::{MatchMode, SearchMode, find_match_index};
 pub use xlookup::XlookupFunction;
 pub use xmatch::XmatchFunction;
-
-use std::sync::Arc;
 
 use crate::functions::registry::FunctionRegistry;
 

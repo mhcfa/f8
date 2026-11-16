@@ -44,7 +44,14 @@ impl ExcelFunction for AbsFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        match scalar_number(&args[0]) {
+        let [num_arg, ..] = args else {
+            return Err(FunctionError::TooFewArguments {
+                function: self.name(),
+                expected: 1,
+                found: args.len(),
+            });
+        };
+        match scalar_number(num_arg) {
             Ok(n) => Ok(CellValue::number(n.abs())),
             Err(err) => Ok(CellValue::Error(err)),
         }

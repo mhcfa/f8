@@ -2,11 +2,11 @@ pub mod boolean;
 pub mod branching;
 pub mod error_handling;
 
+use std::sync::Arc;
+
 pub use boolean::{AndFunction, NotFunction, OrFunction};
 pub use branching::{ChooseFunction, IfFunction};
 pub use error_handling::IferrorFunction;
-
-use std::sync::Arc;
 
 use crate::functions::registry::FunctionRegistry;
 
