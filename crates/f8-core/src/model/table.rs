@@ -6,6 +6,28 @@ use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use super::id::{ColId, RowId, TableId};
 
+fn is_valid_table_id(s: &str) -> bool {
+    if s.is_empty() || matches!(s, "TRUE" | "FALSE" | "_") {
+        return false;
+    }
+    if !s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        return false;
+    }
+    if !s.bytes().any(|b| b.is_ascii_alphabetic() || b == b'_') {
+        return false;
+    }
+    if s.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+        let int_digits = s.bytes().take_while(u8::is_ascii_digit).count();
+        let is_unsigned_sci = s.len() > int_digits + 1
+            && matches!(s.as_bytes().get(int_digits), Some(b'e' | b'E'))
+            && s[int_digits + 1..].bytes().all(|b| b.is_ascii_digit());
+        if is_unsigned_sci {
+            return false;
+        }
+    }
+    true
+}
+
 /// Calculation axis role: measures broadcast formulas; descriptors isolate labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -1056,6 +1078,11 @@ impl TableSpec {
 
     /// Validates all table-level domain invariants.
     pub fn validate(&self) -> Result<(), ModelError> {
+        if !is_valid_table_id(self.id.as_str()) {
+            return Err(ModelError::InvalidTableId {
+                table: self.id.clone(),
+            });
+        }
         if let Some(subtitle) = &self.subtitle
             && subtitle.trim().is_empty()
         {
@@ -1228,6 +1255,17 @@ impl TableSpec {
                         row: data_row.id.clone(),
                         column: col_id.clone(),
                         indent,
+                    });
+                }
+
+                if let Some(ValueLiteral::Number(n)) = cell_input.as_value()
+                    && !n.is_finite()
+                {
+                    return Err(ModelError::NonFiniteCellNumber {
+                        table: self.id.clone(),
+                        row: data_row.id.clone(),
+                        column: col_id.clone(),
+                        value: *n,
                     });
                 }
 

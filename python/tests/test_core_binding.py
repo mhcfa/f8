@@ -132,7 +132,7 @@ def test_scenario_3_cell_inspection_flexible_coordinates(
     cell_1arg = compiled.inspect_cell('OPERATIONS["gross_profit", "2024E"]')
 
     assert cell_3args == cell_1arg
-    assert cell_3args["physical_address"] == "Operations!C7"
+    assert cell_3args["physical_address"] == "'Operations'!C7"
     assert cell_3args["evaluated_value"] == {"Number": 60.0}
     assert cell_3args["formatted_value"] == "$60"
     assert cell_3args["is_formula"] is True

@@ -919,8 +919,8 @@ fn test_contiguous_data_row_and_measure_col_ranges_with_surrounding_dividers() {
         .unwrap();
     // Title (row 2), title gutter (row 3), header (row 4), section header (row 5), r1 (row 6), r2 (row 7)
     // Col B = line_item, Col C = gutter, Col D = 2024E, Col E = 2025E
-    assert_eq!(r1_2024.physical_address, "Main!D6");
-    assert_eq!(r2_2025.physical_address, "Main!E7");
+    assert_eq!(r1_2024.physical_address, "'Main'!D6");
+    assert_eq!(r2_2025.physical_address, "'Main'!E7");
     assert_eq!(tot_2024.excel_formula.as_deref(), Some("=SUM($D$6:$E$7)"));
     assert_eq!(tot_2024.precedents.len(), 4);
 }
@@ -1503,14 +1503,14 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
             .inspect_cell(&hist_id, &RowId::from("rev"), &ColId::from("2023A"))
             .unwrap()
             .physical_address,
-        "Main!C4"
+        "'Main'!C4"
     );
     assert_eq!(
         compiled
             .inspect_cell(&fcst_id, &RowId::from("rev"), &ColId::from("2025E"))
             .unwrap()
             .physical_address,
-        "Main!C9"
+        "'Main'!C9"
     );
 
     let fcst_rev_2024 = compiled
@@ -1789,14 +1789,14 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
             .inspect_cell(&sched_id, &RowId::from("r0"), &ColId::from("2024E"))
             .unwrap()
             .physical_address,
-        "Main!B4"
+        "'Main'!B4"
     );
     assert_eq!(
         compiled_scalar
             .inspect_cell(&sched_id, &RowId::from("r2"), &ColId::from("2024E"))
             .unwrap()
             .physical_address,
-        "Main!B8"
+        "'Main'!B8"
     );
     assert_eq!(
         compiled_scalar

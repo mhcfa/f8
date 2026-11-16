@@ -2,77 +2,63 @@
 
 ## Architecture & workspace
 
-- `docs/architecture.md` & `README.md`: Repository architecture, module boundaries, domain invariants, packaged skills, and CLI/API entrypoints. Read `docs/architecture.md` before planning or modifying code.
-- `docs/specs/drafts/`: Ephemeral task specs for active work (deleted on commit).
+- `docs/architecture.md` & `README.md`: Module boundaries, domain invariants, packaged skills, and CLI/API entrypoints. Read `docs/architecture.md` before planning or modifying code.
+- `docs/specs/drafts/`: Ephemeral task specs for active work.
 - `.agents/skills/`: Bundled agent skills and optional `.agents/skills/review-implementation/references/repo-checks.md` for repository-specific review checks.
 
 ## Rule vocabulary
 
-- `Never` / `Must`: Hard rule. No exceptions without explicit user approval. Tool-enforced where possible.
-- `Prefer` / `Default to` / unqualified principle: Judgment call. Deviate only with a stated reason; surface the trade-off instead of choosing silently.
+- `Never` / `Must`: Hard rule. No exceptions without explicit user approval.
+- `Prefer` / `Default to` / unqualified principle: Judgment call. Deviate only with a stated reason; surface trade-offs instead of choosing silently.
 
 ## Workflow
 
-- Spec-driven: Invoke `spec-driven-development` skill when a change alters or introduces a contract (schemas, AST/IR/DSL semantics, pass or module boundaries, public CLI/SDK/API surface), carries open architectural trade-offs, or needs more than one independently verifiable increment.
-- Direct execution: Single-increment work within existing contracts and boundaries (bug fixes, edge cases, validation, self-contained features, solver/pass refinements, optimizations, refactors, doc/skill updates). No draft spec or subagent dispatch. Escalate to spec-driven if work reveals a contract or boundary change.
-- Design alignment: Surface architectural ambiguities, cross-boundary impacts, and trade-offs before coding.
-- Test-driven execution: Default to test-first for executable behavior changes and bug fixes. Write or update targeted tests first and run them to confirm failure for the expected reason before changing production logic (define minimal new types or signatures first when needed to compile or typecheck); implement at the origin until targeted tests pass, refactor, then run the full verification suite. Exempt doc/skill updates, pure refactors under existing coverage, and non-behavioral config or styling edits. Why: witnessing failure first proves falsifiability and confirms bug hypotheses before code biases assertions.
+- Spec-driven: Invoke `spec-driven-development` when a change alters or introduces a contract (schemas, AST/IR/DSL, module boundaries, public CLI/SDK/API), carries open architectural trade-offs, or spans multiple increments.
+- Direct execution: Handle single-increment work within existing contracts (e.g., bug fixes, self-contained features, refactors, doc/skill updates) directly without draft specs or subagents. Escalate to spec-driven if a contract or boundary change emerges.
+- Design alignment: Surface architectural ambiguities, conflicting instructions or invariants, and cases where literal compliance defeats intent before coding; never silently pick a side. Separate verified facts from inferences and assumptions.
+- Testing: Every executable behavior change requires falsifiable tests that fail if the behavior regresses. For bug fixes, reproduce the defect with a failing test before changing production code to confirm root cause.
 
 ## Hard rules
 
-- Never suppress tooling to get green (`#[allow(...)]`, `# type: ignore`, `# pyright: ignore`, `# noqa`, `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`) without user approval and an inline reason.
-- Never add compatibility shims (`#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, `_v2` functions, or placeholder stubs). Update callers in place. Public Python (`__all__`) deprecation warnings only when the user or spec requires them.
-- Never patch symptoms downstream or introduce workarounds: fix defects at origin (parser, ingest, IR, schema, solver). Never add special-case branches for specific inputs or tests, silent fallback masks (e.g., permissive `.get()`, lossy `.ok()`, broad `except:`), bypass flags (e.g., `skip_validation`, `force`), or single-use callsite patches.
-- Never use `unwrap` / `expect` outside tests (clippy `unwrap_used`, `expect_used`), bare `except:` (ruff `E722`), or silently swallow exceptions.
-- Never leave `todo!()`, `unimplemented!()`, or `dbg!()` in code (clippy `todo`, `unimplemented`, `dbg_macro`).
-- Never use glob imports outside tests (clippy `wildcard_imports`).
-- Never use wildcard arms (`_ =>`) when matching AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges. Why: adding a variant must fail compilation at every match site.
-- Never use mutable default arguments or hidden global mutable state.
-- Never manually edit generated files (e.g., `routeTree.gen.ts`); regenerate via workspace scripts.
+- Never suppress tooling (`#[allow(...)]`, `# type: ignore`, `# pyright: ignore`, `# noqa`, `eslint-disable`, `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`) without user approval and an inline reason.
+- Never add compatibility shims (`#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, `_v2` functions, or placeholder stubs). Update callers in place; add public Python (`__all__`) deprecations only when requested.
+- Never patch symptoms downstream: fix defects at the origin (parser, ingest, IR, schema, solver). Never add input- or test-specific branches, silent fallback masks (permissive `.get()`, lossy `.ok()`), validation bypass flags (`skip_validation`, `force`), or single-use callsite patches.
+- Never use `unwrap` / `expect` outside tests, bare `except:`, or silently swallowed exceptions.
+- Never leave unfinished placeholders or debug macros (`todo!()`, `unimplemented!()`, `dbg!()`) or use glob imports outside tests.
+- Never use wildcard arms (`_ =>`) when matching AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges, so new variants fail compilation at every match site.
 - Must keep active draft specs in `docs/specs/drafts/` during post-implementation review and delete finished specs when preparing a commit.
 - Must pass the applicable verification suite (below) before reporting work complete.
 
 ## Core principles
 
-- Single source of truth: Define each concept (type, ID, schema, coordinate mapping, error) once; import it everywhere else. Why: forked definitions drift silently across modules and passes. Duplicated knowledge is a defect; incidental code similarity is not.
-- Canonical contracts & IR: One representation per concept in core modules, IR, and schemas; no implicit fallbacks, untyped dicts, or syntactic sugar. Ergonomics live in outer adapters (presets, Python SDK, UI wrappers, inspection facades). Why: each alternative form multiplies cases downstream.
-- Behavioral symmetry & uniformity: Treat analogous cases identically. Enforce consistent validation strictness, error policies, and boundary semantics across sibling modules, passes, and entrypoints, and handle variants and boundary sizes (`0`, `1`, `N`) through general logic without ad-hoc branches or carve-outs unless a domain invariant requires divergence. Why: cross-module policy drift and local carve-outs both create arbitrary exceptions.
-- Clean boundaries: Unidirectional dependency graph. Each stage, pass, or module consumes only upstream outputs; shared and foundational modules stay out of higher-level presets and application layers; no filesystem I/O in core compiler crates.
-- Pure data flow: Explicit inputs, outputs, and boundary-driven state transitions; no global mutable state or hidden side effects. Why: determinism and isolated testability.
-- Invalid states unrepresentable: Prefer enums, `Literal` types, interned IDs, newtypes, frozen dataclasses, Pydantic/Zod schemas, and typed structs over string heuristics and `bool` flags; 2-variant enum/union over `bool` parameter. No string inspection to infer semantics outside lexer/parser/ingest boundaries. Why: the compiler or type checker checks semantics instead of the reviewer.
-- Concrete internals, ergonomic boundaries: Internal passes take concrete types (`&str`, `&[T]`); generic conversions (`impl Into`, `impl AsRef`) only at public facades (PyO3 bindings, inspection facades).
-- Fix at the origin: Fix defects where data originates or state transitions fail (parser, ingest, IR, layout solver, schema, query), not where symptoms surface (downstream passes, formatters, UI, tests). No symptom patches (input-specific branches), masking fallbacks, or bypass flags. Why: downstream patches hide origin defects, multiply edge cases, and create technical debt.
-- Consistent conventions: Match established naming, parameter order, CLI/API shapes, and code/test idioms across sibling modules, using one pattern per problem across the codebase (never by copying a hard-rule violation). Why: asymmetric conventions force readers and agents to guess whether differences are intentional.
+- Single source of truth: Define each concept (type, ID, schema, coordinate mapping, error) once and import it everywhere. Duplicated domain knowledge is a defect; incidental code similarity is not.
+- Canonical contracts & IR: One representation per concept in core modules, IR, and schemas; no implicit fallbacks, untyped dicts, or syntactic sugar. Confine ergonomics to outer adapters (presets, SDKs, UI wrappers).
+- Behavioral symmetry & uniformity: Enforce uniform validation strictness, error policies, and boundary semantics across sibling modules and entrypoints; handle variants and boundary sizes (`0`, `1`, `N`) via general logic without ad-hoc carve-outs unless a domain invariant requires divergence.
+- Clean boundaries: Unidirectional dependencies. Modules and passes consume only upstream outputs; foundational modules stay free of higher-level presets, application layers, and unexpected I/O.
+- Pure data flow: Explicit inputs and outputs; never use hidden side effects, global mutable state, or mutable default arguments.
+- Invalid states unrepresentable: Prefer enums, `Literal` types, interned IDs, newtypes, frozen dataclasses, and Pydantic/Zod models over string heuristics and `bool` flags (`2`-variant enum/union over `bool` parameter). Never inspect strings to infer semantics outside lexer/parser/ingest boundaries.
+- Consistent conventions: Match established naming, parameter order, CLI/API shapes, and test idioms across sibling modules (never by copying a rule violation).
 - Minimal surface: No dead code, commented-out tombstones, single-use helper shims, or speculative abstractions. Abstract on the second real caller, not the first.
-
-## Reasoning & judgment
-
-- Intent over letter: Identify the purpose behind each request, rule, and spec. Flag when literal compliance defeats intent.
-- Tension surfacing: Name conflicts between instructions, specs, and invariants explicitly. Never silently pick a side.
-- Disconfirmation: Before concluding, test the strongest alternative design or root cause. Passing tests do not guarantee a sound contract.
-- Precision over hedging: Separate verified facts, inferences, and assumptions. One specific caveat beats generic disclaimers.
 
 ## Code standards & verification
 
 ### Python (3.12+)
 
 - Strict typing: `pyright` strict, explicit `-> None`, `TypedDict` / frozen dataclasses / Pydantic models over `dict[str, Any]`, no bare `Any`.
-- Exception hygiene: No bare `except:` (ruff `E722`) or swallowed `Exception`; structured diagnostics with context attributes; preserve cause via `raise ... from err`.
+- Exceptions: Structured diagnostics with context attributes; preserve cause via `raise ... from err`.
 
 ### Rust & PyO3 (2024 edition)
 
-- Panic-free production paths: Prefer `.get()` / pattern matching over indexing; propagate via `?`.
-- Structured errors: `thiserror` for compiler diagnostics and domain errors.
-- Deterministic output: `IndexMap` / `IndexSet` over `HashMap` / `HashSet` wherever iteration, layout, IR, or serialization order matters. Identical input must yield identical bytes.
-- Memory efficiency: Prefer borrowed slices (`&str`, `&[T]`) or `Cow` over cloning in compiler passes.
-- Import order: Standard library (`std::*`), external crates, crate-local modules.
-- PyO3 bridges & stubs: Keep `_core.pyi` synchronized with PyO3 crate exports and exceptions; keep `py.typed` marker present. Release GIL (`py.allow_threads` / `py.detach`) on CPU-bound tasks; prefer `memoryview` / `bytes` buffer protocols.
+- Error & panic safety: `thiserror` diagnostics propagated via `?`; prefer `.get()` or pattern matching over indexing.
+- Deterministic output: `IndexMap` / `IndexSet` over `HashMap` / `HashSet` wherever iteration, layout, IR, or serialization order matters; identical input must yield identical bytes.
+- Signatures & style: Concrete types (`&str`, `&[T]`, `Cow`) over cloning in internal passes; `impl Into` / `impl AsRef` only at public facades. Group imports `std`, external, crate-local.
+- PyO3 bridges & stubs: Keep `_core.pyi` synchronized with exports and exceptions (`py.typed` present), release GIL (`py.allow_threads` / `py.detach`) on CPU-bound work, and use `memoryview` / `bytes` buffer protocols for bulk data.
 
 ### TypeScript & React
 
-- Strict module & type hygiene: Enforce `import type` for type-only imports (`verbatimModuleSyntax`), zero unused locals/parameters, and zero floating or misused promises (`oxlint` type-aware).
+- Strict module & promise hygiene: `import type` for type-only imports (`verbatimModuleSyntax`), zero unused locals/parameters, and zero floating or misused promises (`oxlint` type-aware).
 - Boundary validation: Parse external inputs, search params, and network payloads via `zod` schemas rather than unverified type assertions (`as`).
-- React 19 & styling: Pass `ref` directly as a prop (`React.RefAttributes<T>`); never wrap components in legacy `React.forwardRef`. Compose component variants with `cva` and merge classes with `cn`; use semantic theme tokens over hardcoded values.
+- React 19 & styling: Pass `ref` directly as a prop (`React.RefAttributes<T>`) without `React.forwardRef`; compose variants with `cva`, merge classes with `cn`, and use semantic theme tokens over hardcoded values.
 
 ### Verification suite
 
@@ -95,13 +81,9 @@
 
 Applies to documentation, specs, docstrings, and commit messages.
 
-- Telegraphic and high-density:
-  - Prioritize conciseness, density, and clarity over conversational grammar or narrative prose.
-  - Favor bulleted lists, sentence fragments, structured tables.
-  - Eliminate conversational pleasantries, introductory filler, and redundant conclusions.
-  - Sentence case for list items and plain `Key: value` prefix labels.
-- No document hyperlinks: Reference workspace documents and code files by backticked filename.
-- No LaTeX math notation: Avoid `$$...$$`, `$...$`, `\frac`, or `\text` notation across all specifications and documentation unless specifically requested.
+- Telegraphic & high-density: Favor bulleted lists, sentence fragments, structured tables, sentence case, and plain `Key: value` labels; omit narrative filler, pleasantries, and redundant conclusions.
+- No document hyperlinks: Cite workspace documents and code files by backticked filename.
+- No LaTeX math: Avoid `$...$`, `$$...$$`, `\frac`, or `\text` unless requested.
 
 ## Git conventions
 

@@ -66,7 +66,7 @@ pub struct CellInspection {
     pub coordinate: CellId,
     /// Parent worksheet identifier.
     pub sheet: SheetId,
-    /// Canonical Excel sheet address (e.g. `"Financials!C18"`).
+    /// Canonical Excel sheet address (e.g. `"'Financials'!C18"`).
     pub physical_address: String,
     /// Topologically evaluated runtime value.
     pub evaluated_value: CellValue,
@@ -104,7 +104,7 @@ pub struct CellInspection {
 pub struct CellNeighborInspection {
     /// Coordinate identifier `(TableId, RowId, ColId)`.
     pub cell_id: CellId,
-    /// Canonical Excel sheet address (e.g. `"Financials!C14"`).
+    /// Canonical Excel sheet address (e.g. `"'Financials'!C14"`).
     pub sheet_address: String,
     /// Evaluated runtime value if available.
     pub value: Option<CellValue>,
@@ -253,7 +253,7 @@ pub struct DependencyTree {
 pub struct DependencyNode {
     /// Coordinate identifier of this cell.
     pub cell_id: CellId,
-    /// Canonical Excel sheet address (e.g. `"Financials!C14"`).
+    /// Canonical Excel sheet address (e.g. `"'Financials'!C14"`).
     pub sheet_address: String,
     /// Evaluated runtime value.
     pub value: Option<CellValue>,
