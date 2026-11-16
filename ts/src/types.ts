@@ -147,6 +147,8 @@ export interface RowInspection {
 }
 
 export interface TableCellInfo {
+  readonly row: string;
+  readonly col: string;
   readonly value: CellValueDict;
   readonly formattedValue: string | null;
   readonly isFormula: boolean;

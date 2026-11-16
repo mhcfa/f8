@@ -510,3 +510,37 @@ def test_scenario_10_auditor_scalar_and_vector_accessors() -> None:
         table.row_nums("unknown_row")
     with pytest.raises(KeyError):
         table.row_nums("revenue", cols=["unknown_col"])
+
+
+def test_scenario_11_row_col_ids_with_comma_quote_and_markdown_pipe_newline_escaping() -> None:
+    model = Model(name="SpecialChars", theme="corporate_navy")
+    sheet = model.add_sheet("Sheet1")
+    tbl = sheet.add_table("T", title="Special Table")
+    tbl.add_column("label", role="descriptor", header="Item | Name\nLine 2")
+    tbl.add_column('val", "c', role="measure", header="Value | Col")
+    tbl.add_section_header("Sec | Header\nSub")
+    row_key = 'rev", "sub'
+    col_key = 'val", "c'
+    tbl.add_row(
+        row_key,
+        cells={
+            "label": "A | B\nC",
+            col_key: 42.0,
+        },
+    )
+    compiled = model.compile()
+    auditor = compiled.table("T")
+
+    cell_info = auditor.cell(row_key, col_key)
+    assert cell_info["row"] == row_key
+    assert cell_info["col"] == col_key
+    assert auditor.value(row_key, col_key) == 42.0
+    assert auditor.to_dict("index")[row_key][col_key] == 42.0
+
+    md = str(auditor.to_markdown())
+    lines = [line for line in md.splitlines() if line]
+    assert len(lines) == 4  # header, align, section header, 1 data row (no raw embedded newlines)
+    assert r"Item \| Name Line 2" in lines[0]
+    assert r"Value \| Col" in lines[0]
+    assert r"**Sec \| Header Sub**" in lines[2]
+    assert r"A \| B C" in lines[3]

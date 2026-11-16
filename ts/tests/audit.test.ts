@@ -466,4 +466,38 @@ describe("TypeScript TableAuditor & Tabular Export", () => {
     expect(lboHeaderLine).toContain("Standalone at Close 2012-12-31");
     expect(lboHeaderLine).toContain("Summary");
   });
+
+  it("Scenario 5: row/col IDs with comma-quote and GFM Markdown pipe/newline escaping", () => {
+    const model = new Model({ name: "SpecialChars", theme: "corporate_navy" });
+    const sheet = model.addSheet("Sheet1");
+    const tbl = sheet.addTable("T", "Special Table");
+    const rowKey = 'rev", "sub';
+    const colKey = 'val", "c';
+    tbl.addColumn("label", { role: "descriptor", header: "Item | Name\nLine 2" });
+    tbl.addColumn(colKey, { role: "measure", header: "Value | Col" });
+    tbl.addSectionHeader("Sec | Header\nSub");
+    tbl.addRow(rowKey, {
+      cells: {
+        label: "A | B\nC",
+        [colKey]: 42.0,
+      },
+    });
+
+    const compiled = model.compile();
+    const auditor = compiled.table("T");
+
+    const cellInfo = auditor.cell(rowKey, colKey);
+    expect(cellInfo.row).toBe(rowKey);
+    expect(cellInfo.col).toBe(colKey);
+    expect(auditor.value(rowKey, colKey)).toBe(42.0);
+    expect(auditor.toDict("index")[rowKey]?.[colKey]).toBe(42.0);
+
+    const md = auditor.toMarkdown();
+    const lines = md.split("\n").filter((l) => l.length > 0);
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain("Item \\| Name Line 2");
+    expect(lines[0]).toContain("Value \\| Col");
+    expect(lines[2]).toContain("**Sec \\| Header Sub**");
+    expect(lines[3]).toContain("A \\| B C");
+  });
 });

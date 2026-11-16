@@ -71,6 +71,11 @@ def format_with_unit(formatted: str, unit: str = "") -> str:
     return f"{formatted}{unit}"
 
 
+def _escape_markdown_cell(text: str) -> str:
+    """Normalizes line breaks and escapes pipe delimiters for GFM table cells."""
+    return text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("|", r"\|")
+
+
 class MarkdownTable(str):
     """GitHub-Flavored Markdown table string with IPython and Quarto display integration."""
 
@@ -119,15 +124,10 @@ class TableAuditor:
         ]
         self._row_set: set[str] = set(self._rows)
 
-        self._cell_map: dict[tuple[str, str], TableCellInfo] = {}
-        prefix = f'{self._id}["'
-        suffix = '"]'
-        for k, cell_info in raw.get("cells", {}).items():
-            if k.startswith(prefix) and k.endswith(suffix):
-                inner = k[len(prefix) : -len(suffix)]
-                parts = inner.split('", "', 1)
-                if len(parts) == 2:
-                    self._cell_map[(parts[0], parts[1])] = cell_info
+        self._cell_map: dict[tuple[str, str], TableCellInfo] = {
+            (cell_info["row"], cell_info["col"]): cell_info
+            for cell_info in raw.get("cells", {}).values()
+        }
 
     @property
     def id(self) -> str:
@@ -182,11 +182,6 @@ class TableAuditor:
         coord = (row, col)
         if coord in self._cell_map:
             return self._cell_map[coord]
-        canonical_key = f'{self._id}["{row}", "{col}"]'
-        if canonical_key in self._raw.get("cells", {}):
-            info = self._raw["cells"][canonical_key]
-            self._cell_map[coord] = info
-            return info
         raise KeyError(f"Coordinate ('{row}', '{col}') not found in table '{self._id}'")
 
     def value(self, row: str, col: str) -> CellScalarValue:
@@ -459,7 +454,9 @@ class TableAuditor:
             else:
                 header_label = display_header
 
-            render_cols.append(_RenderColumn(col_id, header_label, is_descriptor))
+            render_cols.append(
+                _RenderColumn(col_id, _escape_markdown_cell(header_label), is_descriptor)
+            )
 
         row_indent_map: dict[str, int] = {
             rid: r.get("indent", 0) for rid, r in row_spec_by_id.items()
@@ -488,9 +485,10 @@ class TableAuditor:
                     label = f"{val_str} [{row_id}]"
                 else:
                     label = val_str
-                if is_summary and label:
-                    return f"{'  ' * indent}**{label}**"
-                return f"{'  ' * indent}{label}"
+                escaped_label = _escape_markdown_cell(label)
+                if is_summary and escaped_label:
+                    return f"{'  ' * indent}**{escaped_label}**"
+                return f"{'  ' * indent}{escaped_label}"
 
             if view == "values":
                 raw_text = val_str if val_str else "—"
@@ -507,9 +505,10 @@ class TableAuditor:
             else:
                 raw_text = cell_info.get("physical_a1", "") if cell_info is not None else ""
 
-            if is_summary and raw_text:
-                return f"**{raw_text}**"
-            return raw_text
+            escaped_text = _escape_markdown_cell(raw_text)
+            if is_summary and escaped_text:
+                return f"**{escaped_text}**"
+            return escaped_text
 
         col_widths: list[int] = [max(len(col.header), 4) for col in render_cols]
 
@@ -546,7 +545,7 @@ class TableAuditor:
         # Data & section header rows
         for r in selected_rows:
             if r.get("is_section_header"):
-                title = r.get("section_title") or ""
+                title = _escape_markdown_cell(r.get("section_title") or "")
                 empty_cols = " |" * (len(render_cols) - 1)
                 out_lines.append(f"| **{title}** |{empty_cols}")
                 continue
