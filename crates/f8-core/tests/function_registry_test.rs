@@ -346,14 +346,6 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
             },
         ),
         (
-            "IFS(TRUE, 1, FALSE, _)",
-            FunctionError::CannotOmitRequiredArgument {
-                function: "IFS",
-                param: "value_if_true1",
-                position: 4,
-            },
-        ),
-        (
             "IF(FALSE, 10, _)",
             FunctionError::CannotOmitRequiredArgument {
                 function: "IF",
@@ -721,7 +713,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 41);
+    assert_eq!(registry.len(), 34);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -732,7 +724,6 @@ fn test_registry_metadata_and_iteration() {
             "SUM",
             "AVERAGE",
             "COUNT",
-            "COUNTA",
             "MAX",
             "MIN",
             "MEDIAN",
@@ -741,9 +732,7 @@ fn test_registry_metadata_and_iteration() {
             "ROUNDDOWN",
             "SUMPRODUCT",
             "IF",
-            "IFS",
             "IFERROR",
-            "IFNA",
             "AND",
             "OR",
             "NOT",
@@ -763,11 +752,7 @@ fn test_registry_metadata_and_iteration() {
             "YEAR",
             "MONTH",
             "DAY",
-            "DAYS",
-            "ISBLANK",
             "ISERROR",
-            "ISNA",
-            "ERROR.TYPE",
             "NA",
         ]
     );
@@ -781,6 +766,20 @@ fn test_registry_metadata_and_iteration() {
     assert!(registry.lookup("IF").is_some());
     assert!(registry.lookup("If").is_some());
     for retired in [
+        "COUNTA",
+        "counta",
+        "IFS",
+        "ifs",
+        "IFNA",
+        "ifna",
+        "DAYS",
+        "days",
+        "ISBLANK",
+        "isblank",
+        "ISNA",
+        "isna",
+        "ERROR.TYPE",
+        "error.type",
         "SWITCH",
         "switch",
         "SUMIFS",
@@ -807,14 +806,13 @@ fn test_registry_metadata_and_iteration() {
     assert!(registry.get("SUM").is_some());
     assert!(registry.get("sum").is_some());
 
-    // Exhaustive ValidationPolicy matrix across all 41 standard functions
+    // Exhaustive ValidationPolicy matrix across all 34 standard functions
     let mut non_standard_count = 0usize;
     for (name, func) in registry.iter() {
         let expected_policy = match name {
             "IF" => ValidationPolicy::Branch(BranchPolicy::If),
-            "IFS" => ValidationPolicy::Branch(BranchPolicy::Ifs),
             "CHOOSE" => ValidationPolicy::Branch(BranchPolicy::Choose),
-            "IFERROR" | "IFNA" => ValidationPolicy::Branch(BranchPolicy::ErrorTrap),
+            "IFERROR" => ValidationPolicy::Branch(BranchPolicy::ErrorTrap),
             "INDEX" => ValidationPolicy::Lookup(LookupPolicy::Index),
             "XLOOKUP" => ValidationPolicy::Lookup(LookupPolicy::Xlookup),
             "XMATCH" => ValidationPolicy::Lookup(LookupPolicy::Xmatch),
@@ -842,7 +840,7 @@ fn test_registry_metadata_and_iteration() {
             "unexpected ValidationPolicy for {name}"
         );
     }
-    assert_eq!(non_standard_count, 11);
+    assert_eq!(non_standard_count, 9);
 }
 
 #[test]
@@ -879,11 +877,8 @@ fn test_validate_expr_preorder_and_nested_ast() {
             },
         ),
         (
-            "IF(TRUE, 10, IFS(TRUE, 1, FALSE))",
-            FunctionError::InvalidVariadicPairs {
-                function: "IFS",
-                count: 3,
-            },
+            "IF(TRUE, 10, IFS(TRUE, 1, FALSE, 2))",
+            FunctionError::UnknownFunction("IFS".into()),
         ),
         (
             "IF(TRUE, 10, ABS(_))",
@@ -902,16 +897,29 @@ fn test_validate_expr_preorder_and_nested_ast() {
             },
         ),
         (
-            "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
-            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+            "IFS(TRUE, 1, FALSE, 2)",
+            FunctionError::UnknownFunction("IFS".into()),
         ),
         (
             "IFERROR(10, UNKNOWN_FN())",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
+        ("IFNA(10, 0)", FunctionError::UnknownFunction("IFNA".into())),
         (
-            "IFNA(10, UNKNOWN_FN())",
-            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+            "COUNTA(T[\"k1\"..\"k2\", @col])",
+            FunctionError::UnknownFunction("COUNTA".into()),
+        ),
+        (
+            "DAYS(45474, 45292)",
+            FunctionError::UnknownFunction("DAYS".into()),
+        ),
+        (
+            "ISBLANK(T[\"k1\", @col])",
+            FunctionError::UnknownFunction("ISBLANK".into()),
+        ),
+        (
+            "ISNA(T[\"k1\", @col])",
+            FunctionError::UnknownFunction("ISNA".into()),
         ),
         (
             "CHOOSE(1, 10, SUM())",
@@ -1077,7 +1085,7 @@ fn test_direct_evaluate_and_omission_invariants() {
 
     // eval_scalar rejects FunctionArg::Omitted
     assert_eq!(
-        FunctionArg::Omitted.eval_scalar("IF", &ctx),
+        FunctionArg::Omitted.eval_scalar("IF", "value_if_true", 2, &ctx),
         Err(FunctionError::InvalidArgumentKind {
             function: "IF",
             expected: "scalar",
@@ -1097,7 +1105,6 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         "-FALSE",
         "ABS(\"invalid\")",
         "ROUND(TRUE, 2)",
-        "DAYS(\"invalid\", DATE(2024, 1, 1))",
         "IF(1, 10, 20)",
         "IF(\"TRUE\", 10, 20)",
         "NA(1)",
@@ -1126,7 +1133,7 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         "PMT(0.05, 10, -1000, 0, 0.5)",
         "INDEX(T[\"r1\"..\"r4\", @col], XMATCH(\"Beta\", T[\"r1\"..\"r4\", @col]))",
         "DATE(YEAR(T[\"r1\", @col]) + 1, MONTH(T[\"r1\", @col]), DAY(T[\"r1\", @col]))",
-        "ISBLANK(T[\"r1\", @col])",
+        "ISERROR(T[\"r1\", @col])",
         "NA()",
     ] {
         let expr = Expr::parse(ok_formula).unwrap();
@@ -1184,10 +1191,10 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         "1 + T[\"r1\"..\"r1\", @col]",
         "1 + T[\"r1\"..\"r2\", @col]",
         "ABS(T[\"r1\"..\"r2\", @col])",
-        "ISBLANK(T[\"r1\"..\"r2\", @col])",
-        "ISBLANK(T[\"r1\"..\"r1\", @col])",
+        "ISERROR(T[\"r1\"..\"r2\", @col])",
+        "ISERROR(T[\"r1\"..\"r1\", @col])",
         "IF(TRUE, 1, T[\"r1\"..\"r2\", @col])",
-        "IFS(T[\"r1\"..\"r2\", @col], 1, TRUE, 2)",
+        "IF(T[\"r1\"..\"r2\", @col], 1, 2)",
     ] {
         let expr = Expr::parse(slice_in_scalar).unwrap();
         let err = registry
@@ -1205,7 +1212,6 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
     for non_ref_range in [
         "SUMPRODUCT(\"abc\")",
         "COUNT(10)",
-        "COUNTA(\"a\")",
         "XMATCH(10, 10)",
         "XLOOKUP(10, 10, 20)",
         "INDEX(10, 1)",
@@ -1293,7 +1299,7 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
                 found: 2,
             },
         ),
-        // Monomorphic branch result unification across IF, IFS, CHOOSE, IFERROR, IFNA
+        // Monomorphic branch result unification across IF, CHOOSE, IFERROR
         (
             "IF(T[\"ebitda\", @col] > 0, T[\"ev\", @col] / T[\"ebitda\", @col], \"NM\")",
             FunctionError::Type(TypeError::IncompatibleBranchTypes {
@@ -1313,28 +1319,10 @@ fn test_cluster_a2_stage_a_monomorphic_branches_switch_keys_and_lookup_modes() {
             }),
         ),
         (
-            "IFNA(10 + 1, \"N/A\")",
-            FunctionError::Type(TypeError::IncompatibleBranchTypes {
-                function: "IFNA",
-                position: 2,
-                expected: ValueType::Number,
-                found: ValueType::Text,
-            }),
-        ),
-        (
             "CHOOSE(1, 10, \"NM\")",
             FunctionError::Type(TypeError::IncompatibleBranchTypes {
                 function: "CHOOSE",
                 position: 3,
-                expected: ValueType::Number,
-                found: ValueType::Text,
-            }),
-        ),
-        (
-            "IFS(T[\"c1\", @col], 10, T[\"c2\", @col], \"NM\")",
-            FunctionError::Type(TypeError::IncompatibleBranchTypes {
-                function: "IFS",
-                position: 4,
                 expected: ValueType::Number,
                 found: ValueType::Text,
             }),
@@ -1543,9 +1531,8 @@ fn test_cluster_b_stage_a_descriptor_roles_and_date_annuity_domains() {
         StageAError::Function(FunctionError::LengthMismatch { .. })
     ));
 
-    // Descriptor references remain permitted on COUNTA, XLOOKUP, XMATCH, and INDEX
+    // Descriptor references remain permitted on XLOOKUP, XMATCH, and INDEX
     for allowed_descriptor in [
-        "COUNTA(T[\"r1\"..\"r4\", \"line_item\"])",
         "XLOOKUP(\"Rev\", T[\"r1\"..\"r4\", \"line_item\"], T[\"r1\"..\"r4\", \"amount\"])",
         "XMATCH(\"Rev\", T[\"r1\"..\"r4\", \"line_item\"])",
         "INDEX(T[\"r1\"..\"r4\", \"line_item\"], 1)",
@@ -1610,45 +1597,39 @@ fn test_error_introspection_metadata_and_validation() {
     let ctx = MockEvalContext::default();
 
     // Error introspection metadata and evaluation
-    for (name, expected_ret) in [
-        ("ISERROR", ValueType::Boolean),
-        ("ISNA", ValueType::Boolean),
-        ("ERROR.TYPE", ValueType::Number),
-    ] {
-        let func = registry.lookup(name).unwrap();
-        assert_eq!(func.name(), name);
-        assert_eq!(func.category(), FunctionCategory::Information);
-        assert_eq!(func.min_args(), 1);
-        assert_eq!(func.max_args(), Some(1));
-        assert_eq!(func.return_type(), Some(expected_ret));
-        assert_eq!(func.parameters()[0].kind, ParamKind::Scalar);
-        assert_eq!(func.parameters()[0].param_type, ParamType::Any);
-    }
-
     let iserror = registry.lookup("ISERROR").unwrap();
-    let isna = registry.lookup("ISNA").unwrap();
-    let err_type = registry.lookup("ERROR.TYPE").unwrap();
+    assert_eq!(iserror.name(), "ISERROR");
+    assert_eq!(iserror.category(), FunctionCategory::Information);
+    assert_eq!(iserror.min_args(), 1);
+    assert_eq!(iserror.max_args(), Some(1));
+    assert_eq!(iserror.return_type(), Some(ValueType::Boolean));
+    assert_eq!(iserror.parameters()[0].kind, ParamKind::Scalar);
+    assert_eq!(iserror.parameters()[0].param_type, ParamType::Any);
+    assert_eq!(iserror.parameters()[0].empty_policy, EmptyPolicy::Forbid);
 
-    for (err, expected_code, expected_isna) in [
-        (ExcelError::Div0, 2.0, false),
-        (ExcelError::Value, 3.0, false),
-        (ExcelError::Ref, 4.0, false),
-        (ExcelError::Name, 5.0, false),
-        (ExcelError::Num, 6.0, false),
-        (ExcelError::Na, 7.0, true),
+    let na = registry.lookup("NA").unwrap();
+    assert_eq!(na.name(), "NA");
+    assert_eq!(na.category(), FunctionCategory::Information);
+    assert_eq!(na.min_args(), 0);
+    assert_eq!(na.max_args(), Some(0));
+    assert_eq!(na.return_type(), None);
+
+    assert!(registry.lookup("ISBLANK").is_none());
+    assert!(registry.lookup("ISNA").is_none());
+    assert!(registry.lookup("ERROR.TYPE").is_none());
+
+    for err in [
+        ExcelError::Div0,
+        ExcelError::Value,
+        ExcelError::Ref,
+        ExcelError::Name,
+        ExcelError::Num,
+        ExcelError::Na,
     ] {
         let scalar_err = FunctionArg::Scalar(CellValue::Error(err));
         assert_eq!(
             iserror.evaluate(std::slice::from_ref(&scalar_err), &ctx),
             Ok(CellValue::Boolean(true))
-        );
-        assert_eq!(
-            isna.evaluate(std::slice::from_ref(&scalar_err), &ctx),
-            Ok(CellValue::Boolean(expected_isna))
-        );
-        assert_eq!(
-            err_type.evaluate(std::slice::from_ref(&scalar_err), &ctx),
-            Ok(CellValue::Number(expected_code))
         );
     }
 
@@ -1656,38 +1637,30 @@ fn test_error_introspection_metadata_and_validation() {
         CellValue::Number(42.0),
         CellValue::Text("#DIV/0!".into()),
         CellValue::Boolean(true),
-        CellValue::Empty,
     ] {
         let arg = FunctionArg::Scalar(non_err);
         assert_eq!(
             iserror.evaluate(std::slice::from_ref(&arg), &ctx),
             Ok(CellValue::Boolean(false))
         );
-        assert_eq!(
-            isna.evaluate(std::slice::from_ref(&arg), &ctx),
-            Ok(CellValue::Boolean(false))
-        );
-        assert_eq!(
-            err_type.evaluate(std::slice::from_ref(&arg), &ctx),
-            Ok(CellValue::Error(ExcelError::Na))
-        );
     }
 
-    // SliceInScalarContext on ISERROR, ISNA, and ERROR.TYPE
-    for formula in [
-        "ISERROR(T[\"r1\"..\"r2\", @col])",
-        "ISNA(T[\"r1\"..\"r2\", @col])",
-        "ERROR.TYPE(T[\"r1\"..\"r2\", @col])",
-    ] {
-        let expr = Expr::parse(formula).unwrap();
-        assert!(
-            matches!(
-                registry.validate_expr(&expr),
-                Err(FunctionError::SliceInScalarContext { .. })
-            ),
-            "expected SliceInScalarContext on {formula}"
-        );
-    }
+    // ISERROR rejects Empty argument with TypeError::EmptyArgument
+    assert_eq!(
+        iserror.evaluate(&[FunctionArg::Scalar(CellValue::Empty)], &ctx),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "ISERROR",
+            param: "value",
+            position: 1,
+        }))
+    );
+
+    // SliceInScalarContext on ISERROR
+    let expr = Expr::parse("ISERROR(T[\"r1\"..\"r2\", @col])").unwrap();
+    assert!(matches!(
+        registry.validate_expr(&expr),
+        Err(FunctionError::SliceInScalarContext { .. })
+    ));
 
     // Compile-time type errors inside ISERROR are not masked
     let bad_iserror = Expr::parse("ISERROR(\"5\" + 1)").unwrap();
@@ -1695,9 +1668,6 @@ fn test_error_introspection_metadata_and_validation() {
         registry.validate_expr(&bad_iserror),
         Err(FunctionError::Type(_))
     ));
-
-    let valid_err_type = Expr::parse("ERROR.TYPE(1 / 0)").unwrap();
-    assert!(registry.validate_expr(&valid_err_type).is_ok());
 }
 
 #[test]
@@ -1799,28 +1769,26 @@ fn test_scalar_measure_only_role_policy_and_iferror_param_kind() {
     assert_eq!(res_measure, Ok(()));
     assert_eq!(resolve_calls, 1);
 
-    // 4. IFERROR and IFNA declare arg 0 (`value`) as ParamKind::Scalar and arg 1 (`value_if_error`/`value_if_na`) as ParamKind::Lazy
-    for name in ["IFERROR", "IFNA"] {
-        let func = registry.lookup(name).unwrap();
-        assert_eq!(func.parameters()[0].kind, ParamKind::Scalar);
-        assert_eq!(func.parameters()[1].kind, ParamKind::Lazy);
+    // 4. IFERROR declares arg 0 (`value`) as ParamKind::Scalar and arg 1 (`value_if_error`) as ParamKind::Lazy
+    let func = registry.lookup("IFERROR").unwrap();
+    assert_eq!(func.parameters()[0].kind, ParamKind::Scalar);
+    assert_eq!(func.parameters()[1].kind, ParamKind::Lazy);
 
-        let ctx = MockEvalContext::default();
-        let fallback_expr = Expr::number(99.0);
-        let call_args = [
-            CallArg::from(Expr::number(10.0)),
-            CallArg::from(fallback_expr.clone()),
-        ];
-        let bound = registry.bind_arguments(func, &call_args, &ctx).unwrap();
-        assert_eq!(
-            bound,
-            vec![
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Lazy(&fallback_expr),
-            ]
-        );
-        assert_eq!(ctx.recorded(), vec!["10"]);
-    }
+    let ctx = MockEvalContext::default();
+    let fallback_expr = Expr::number(99.0);
+    let call_args = [
+        CallArg::from(Expr::number(10.0)),
+        CallArg::from(fallback_expr.clone()),
+    ];
+    let bound = registry.bind_arguments(func, &call_args, &ctx).unwrap();
+    assert_eq!(
+        bound,
+        vec![
+            FunctionArg::Scalar(CellValue::Number(10.0)),
+            FunctionArg::Lazy(&fallback_expr),
+        ]
+    );
+    assert_eq!(ctx.recorded(), vec!["10"]);
 }
 
 #[test]

@@ -4,7 +4,7 @@ use crate::functions::traits::{
     BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, TypeError, ValueType};
+use crate::value::{CellValue, ExcelError, ValueType};
 
 /// Positional parameter definitions for `IF`.
 static IF_PARAMS: &[ParameterDef] = &[
@@ -19,15 +19,13 @@ static IF_PARAMS: &[ParameterDef] = &[
         "The value to return if logical_test evaluates to TRUE.",
         ParamKind::Lazy,
         ParamType::Any,
-    )
-    .allow_empty(),
+    ),
     ParameterDef::required(
         "value_if_false",
         "The value to return if logical_test evaluates to FALSE.",
         ParamKind::Lazy,
         ParamType::Any,
-    )
-    .allow_empty(),
+    ),
 ];
 
 /// `IF(logical_test, value_if_true, value_if_false)`: Specifies a logical test to perform.
@@ -72,86 +70,13 @@ impl ExcelFunction for IfFunction {
             });
         };
 
-        let selected_arg = match scalar_bool(cond_arg) {
-            Ok(true) => true_arg,
-            Ok(false) => false_arg,
+        let (selected_arg, param, position) = match scalar_bool(cond_arg) {
+            Ok(true) => (true_arg, "value_if_true", 2),
+            Ok(false) => (false_arg, "value_if_false", 3),
             Err(err) => return Ok(CellValue::Error(err)),
         };
 
-        selected_arg.eval_scalar(self.name(), ctx)
-    }
-}
-
-/// Positional parameter definitions for `IFS`.
-static IFS_PARAMS: &[ParameterDef] = &[
-    ParameterDef::required(
-        "logical_test1",
-        "A boolean value or expression that evaluates to TRUE or FALSE.",
-        ParamKind::Lazy,
-        ParamType::Boolean,
-    ),
-    ParameterDef::required(
-        "value_if_true1",
-        "The value to return if logical_test1 evaluates to TRUE.",
-        ParamKind::Lazy,
-        ParamType::Any,
-    )
-    .allow_empty(),
-];
-
-/// `IFS(logical_test1, value_if_true1, [logical_test2, value_if_true2], ...)`: Evaluates multiple conditions.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct IfsFunction;
-
-impl ExcelFunction for IfsFunction {
-    fn name(&self) -> &'static str {
-        "IFS"
-    }
-
-    fn category(&self) -> FunctionCategory {
-        FunctionCategory::Logical
-    }
-
-    fn parameters(&self) -> &'static [ParameterDef] {
-        IFS_PARAMS
-    }
-
-    fn return_type(&self) -> Option<ValueType> {
-        None
-    }
-
-    fn variadic_rule(&self) -> VariadicRule {
-        VariadicRule::Pairs
-    }
-
-    fn validation_policy(&self) -> ValidationPolicy {
-        ValidationPolicy::Branch(BranchPolicy::Ifs)
-    }
-
-    fn evaluate(
-        &self,
-        args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
-    ) -> Result<CellValue, FunctionError> {
-        for (pair_idx, [test_arg, val_arg]) in args.as_chunks::<2>().0.iter().enumerate() {
-            let cond_pos = 2 * pair_idx + 1;
-            let cond_val = test_arg.eval_scalar(self.name(), ctx)?;
-            if cond_val.is_empty() {
-                return Err(FunctionError::Type(TypeError::EmptyArgument {
-                    function: self.name(),
-                    param: "logical_test1",
-                    position: cond_pos,
-                }));
-            }
-            match cond_val.strict_bool() {
-                Ok(true) => return val_arg.eval_scalar(self.name(), ctx),
-                Ok(false) => {}
-                Err(err) => return Ok(CellValue::Error(err)),
-            }
-        }
-
-        // If no conditions evaluate to TRUE, Excel returns #N/A
-        Ok(CellValue::Error(ExcelError::Na))
+        selected_arg.eval_scalar(self.name(), param, position, ctx)
     }
 }
 
@@ -168,8 +93,7 @@ static CHOOSE_PARAMS: &[ParameterDef] = &[
         "Value or expression from which CHOOSE selects.",
         ParamKind::Lazy,
         ParamType::Any,
-    )
-    .allow_empty(),
+    ),
 ];
 
 /// `CHOOSE(index_num, value1, [value2], ...)`: Selects a value from a list of values based on an index.
@@ -231,6 +155,6 @@ impl ExcelFunction for ChooseFunction {
             return Ok(CellValue::Error(ExcelError::Value));
         };
 
-        choice.eval_scalar(self.name(), ctx)
+        choice.eval_scalar(self.name(), "value1", zero_based + 2, ctx)
     }
 }

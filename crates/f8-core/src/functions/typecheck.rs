@@ -9,7 +9,7 @@ use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     BranchPolicy, ExcelFunction, LookupPolicy, ParamKind, ParamType, RolePolicy, ShapePolicy,
-    ValidationPolicy, VariadicRule,
+    ValidationPolicy,
 };
 use crate::model::table::AxisRole;
 use crate::value::{TypeError, ValueType};
@@ -418,21 +418,6 @@ impl FunctionRegistry {
                 }
                 vec![1, 2]
             }
-            BranchPolicy::Ifs => {
-                for idx in (0..args.len()).step_by(2) {
-                    if let Some(CallArg::Expr(cond_expr)) = args.get(idx) {
-                        self.synth_and_check_param(
-                            cond_expr,
-                            func.name(),
-                            "logical_test1",
-                            idx + 1,
-                            ParamType::Boolean,
-                            resolve_ref,
-                        )?;
-                    }
-                }
-                (1..args.len()).step_by(2).collect()
-            }
             BranchPolicy::Choose => {
                 if let Some(CallArg::Expr(idx_expr)) = args.first() {
                     self.synth_and_check_param(
@@ -833,7 +818,7 @@ fn validate_shape_policy(
     Ok(())
 }
 
-/// Validates argument count, variadic pair parity, and omitted parameter eligibility against a resolved function.
+/// Validates argument count and omitted parameter eligibility against a resolved function.
 pub(crate) fn validate_signature(
     func: &dyn ExcelFunction,
     args: &[CallArg],
@@ -855,16 +840,6 @@ pub(crate) fn validate_signature(
             expected: max,
             found: args.len(),
         });
-    }
-
-    if func.variadic_rule() == VariadicRule::Pairs {
-        let fixed_count = func.parameters().len();
-        if args.len() > fixed_count && !(args.len() - fixed_count).is_multiple_of(2) {
-            return Err(FunctionError::InvalidVariadicPairs {
-                function: func.name(),
-                count: args.len(),
-            });
-        }
     }
 
     let last_present = args

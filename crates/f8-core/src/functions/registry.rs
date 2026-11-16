@@ -33,13 +33,13 @@ impl FunctionRegistry {
         }
     }
 
-    /// Returns a shared reference to the standard function registry populated with the 41 built-in Excel functions.
+    /// Returns a shared reference to the standard function registry populated with the 34 built-in Excel functions.
     #[must_use]
     pub fn standard_ref() -> &'static Self {
         &STANDARD_REGISTRY
     }
 
-    /// Constructs a standard function registry populated with the 41 built-in Excel functions.
+    /// Constructs a standard function registry populated with the 34 built-in Excel functions.
     #[must_use]
     pub fn standard() -> Self {
         STANDARD_REGISTRY.clone()

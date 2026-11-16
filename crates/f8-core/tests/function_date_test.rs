@@ -46,7 +46,8 @@ fn eval_str(
 #[test]
 fn test_date_functions_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 41);
+    assert_eq!(registry.len(), 34);
+    assert!(registry.lookup("DAYS").is_none());
 
     let date_funcs = [
         ("DATE", 3, Some(3)),
@@ -56,7 +57,6 @@ fn test_date_functions_registration_and_metadata() {
         ("YEAR", 1, Some(1)),
         ("MONTH", 1, Some(1)),
         ("DAY", 1, Some(1)),
-        ("DAYS", 2, Some(2)),
     ];
 
     for (name, min_args, max_args) in date_funcs {
@@ -350,50 +350,20 @@ fn test_scenario_4_date_component_extraction() {
 }
 
 // ============================================================================
-// Scenario 5: DAYS difference calculation
+// Scenario 5: DAYS retired in favor of date serial subtraction
 // ============================================================================
 
 #[test]
-fn test_scenario_5_days_difference() {
+fn test_scenario_5_days_retired() {
     let registry = FunctionRegistry::standard();
-    let days_fn = registry.lookup("DAYS").unwrap();
-    let ctx = MockContext::new();
-
-    // DAYS(25579, 25569) -> 10.0
-    let diff = days_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(25579.0)),
-                FunctionArg::Scalar(CellValue::Number(25569.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(diff, CellValue::Number(10.0));
-
-    // Reverse order: DAYS(25569, 25579) -> -10.0
-    let diff = days_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(25569.0)),
-                FunctionArg::Scalar(CellValue::Number(25579.0)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(diff, CellValue::Number(-10.0));
-
-    // Fractional dates: truncates to integer days
-    let diff = days_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(25579.8)),
-                FunctionArg::Scalar(CellValue::Number(25569.2)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(diff, CellValue::Number(10.0));
+    assert!(registry.lookup("DAYS").is_none());
+    let expr = Expr::parse("DAYS(25579, 25569)").unwrap();
+    assert_eq!(
+        registry.validate_expr(&expr),
+        Err(f8_core::functions::FunctionError::UnknownFunction(
+            "DAYS".into()
+        ))
+    );
 }
 
 // ============================================================================
@@ -782,9 +752,9 @@ fn test_end_to_end_date_formula_evaluation() {
     );
     assert_eq!(yf_eval, CellValue::Number(0.50));
 
-    // 5. DAYS formula
+    // 5. Date serial subtraction formula
     let days_eval = eval_str(
-        r#"DAYS(Timeline["dates", "c2"], Timeline["dates", "c1"])"#,
+        r#"Timeline["dates", "c2"] - Timeline["dates", "c1"]"#,
         &symbols,
         &values,
         &registry,
@@ -1015,39 +985,6 @@ fn test_negative_dates_and_fractional_boundaries() {
 }
 
 #[test]
-fn test_days_bounds_validation() {
-    let registry = FunctionRegistry::standard();
-    let days_fn = registry.lookup("DAYS").unwrap();
-    let ctx = MockContext::new();
-
-    // Invalid start or end date outside 1..=2958465 returns #NUM!
-    for (end_d, start_d) in [(0.0, 10.0), (10.0, -10.0), (2958466.0, 10.0)] {
-        assert_eq!(
-            days_fn.evaluate(
-                &[
-                    FunctionArg::Scalar(CellValue::Number(end_d)),
-                    FunctionArg::Scalar(CellValue::Number(start_d)),
-                ],
-                &ctx,
-            ),
-            Ok(CellValue::Error(ExcelError::Num))
-        );
-    }
-
-    // Valid fractional timestamps on bounds
-    let res = days_fn
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(2958465.75)),
-                FunctionArg::Scalar(CellValue::Number(2958460.25)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res, CellValue::Number(5.0));
-}
-
-#[test]
 fn test_yearfrac_omitted_basis_and_fractional_boundaries() {
     let registry = FunctionRegistry::standard();
     let yearfrac_fn = registry.lookup("YEARFRAC").unwrap();
@@ -1170,7 +1107,7 @@ fn test_date_functions_arity_bounds() {
     let registry = FunctionRegistry::standard();
 
     // Calling validate_expr with too few arguments returns FunctionError::TooFewArguments
-    for formula in ["DATE()", "EDATE(1)", "YEAR()", "DAYS(1)", "YEARFRAC(1)"] {
+    for formula in ["DATE()", "EDATE(1)", "YEAR()", "YEARFRAC(1)"] {
         let expr = Expr::parse(formula).unwrap();
         assert!(matches!(
             registry.validate_expr(&expr),

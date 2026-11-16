@@ -1,4 +1,4 @@
-//! Calendar component extraction and day difference functions (`YEAR`, `MONTH`, `DAY`, `DAYS`).
+//! Calendar component extraction functions (`YEAR`, `MONTH`, `DAY`).
 
 use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
@@ -125,59 +125,5 @@ impl ExcelFunction for DayFunction {
             Ok(d) => Ok(CellValue::number(f64::from(d.day))),
             Err(e) => Ok(CellValue::Error(e)),
         }
-    }
-}
-
-static DAYS_PARAMS: &[ParameterDef] = &[
-    ParameterDef::required(
-        "end_date",
-        "The end date for the date calculation.",
-        ParamKind::Scalar,
-        ParamType::Number,
-    ),
-    ParameterDef::required(
-        "start_date",
-        "The start date for the date calculation.",
-        ParamKind::Scalar,
-        ParamType::Number,
-    ),
-];
-
-/// `DAYS(end_date, start_date)`: Returns the number of days between two dates.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct DaysFunction;
-
-impl ExcelFunction for DaysFunction {
-    fn name(&self) -> &'static str {
-        "DAYS"
-    }
-
-    fn category(&self) -> FunctionCategory {
-        FunctionCategory::DateTime
-    }
-
-    fn parameters(&self) -> &'static [ParameterDef] {
-        DAYS_PARAMS
-    }
-
-    fn return_type(&self) -> Option<ValueType> {
-        Some(ValueType::Number)
-    }
-
-    fn evaluate(
-        &self,
-        args: &[FunctionArg<'_>],
-        _ctx: &dyn EvalContext,
-    ) -> Result<CellValue, FunctionError> {
-        let end_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-        let start_val = match scalar_number(&args[1]).and_then(validate_date_serial) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        Ok(CellValue::number(end_val - start_val))
     }
 }

@@ -4,8 +4,7 @@ pub mod product;
 pub mod rounding;
 
 pub use aggregation::{
-    AverageFunction, CountFunction, CountaFunction, MaxFunction, MedianFunction, MinFunction,
-    SumFunction,
+    AverageFunction, CountFunction, MaxFunction, MedianFunction, MinFunction, SumFunction,
 };
 pub use basic::AbsFunction;
 pub use product::SumproductFunction;
@@ -21,7 +20,6 @@ pub fn register(registry: &mut FunctionRegistry) {
     registry.register(Arc::new(SumFunction));
     registry.register(Arc::new(AverageFunction));
     registry.register(Arc::new(CountFunction));
-    registry.register(Arc::new(CountaFunction));
     registry.register(Arc::new(MaxFunction));
     registry.register(Arc::new(MinFunction));
     registry.register(Arc::new(MedianFunction));

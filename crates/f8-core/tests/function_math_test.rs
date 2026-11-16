@@ -25,7 +25,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 41);
+    assert_eq!(registry.len(), 34);
     for retired in [
         "SWITCH",
         "SUMIFS",
@@ -35,6 +35,13 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         "MAXIFS",
         "IPMT",
         "PPMT",
+        "COUNTA",
+        "IFS",
+        "IFNA",
+        "DAYS",
+        "ISBLANK",
+        "ISNA",
+        "ERROR.TYPE",
     ] {
         assert!(
             registry.lookup(retired).is_none(),
@@ -47,7 +54,6 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("SUM", FunctionCategory::Math),
         ("AVERAGE", FunctionCategory::Math),
         ("COUNT", FunctionCategory::Math),
-        ("COUNTA", FunctionCategory::Math),
         ("MAX", FunctionCategory::Math),
         ("MIN", FunctionCategory::Math),
         ("MEDIAN", FunctionCategory::Math),
@@ -56,9 +62,7 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("ROUNDDOWN", FunctionCategory::Math),
         ("SUMPRODUCT", FunctionCategory::Math),
         ("IF", FunctionCategory::Logical),
-        ("IFS", FunctionCategory::Logical),
         ("IFERROR", FunctionCategory::Logical),
-        ("IFNA", FunctionCategory::Logical),
         ("AND", FunctionCategory::Logical),
         ("OR", FunctionCategory::Logical),
         ("NOT", FunctionCategory::Logical),
@@ -71,10 +75,7 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("XLOOKUP", FunctionCategory::Lookup),
         ("XMATCH", FunctionCategory::Lookup),
         ("INDEX", FunctionCategory::Lookup),
-        ("ISBLANK", FunctionCategory::Information),
         ("ISERROR", FunctionCategory::Information),
-        ("ISNA", FunctionCategory::Information),
-        ("ERROR.TYPE", FunctionCategory::Information),
         ("NA", FunctionCategory::Information),
     ];
 
@@ -84,6 +85,32 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
             .unwrap_or_else(|| panic!("Function {name} should be registered"));
         assert_eq!(func.name(), name);
         assert_eq!(func.category(), category);
+    }
+
+    // Invariant: Every FunctionCategory::Math function enforces ParamType::Number, and every range-accepting Math parameter enforces RolePolicy::MeasureOnly
+    for (name, func) in registry.iter() {
+        if func.category() == FunctionCategory::Math {
+            for param in func.parameters() {
+                assert_eq!(
+                    param.param_type,
+                    f8_core::functions::ParamType::Number,
+                    "Math function {name} param {} must enforce ParamType::Number",
+                    param.name
+                );
+                if matches!(
+                    param.kind,
+                    f8_core::functions::ParamKind::Range
+                        | f8_core::functions::ParamKind::ScalarOrRange
+                ) {
+                    assert_eq!(
+                        param.role_policy,
+                        f8_core::functions::RolePolicy::MeasureOnly,
+                        "Math function {name} param {} must enforce RolePolicy::MeasureOnly",
+                        param.name
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -173,10 +200,10 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
 }
 
 #[test]
-fn test_scenario_3_count_vs_counta_semantics() {
+fn test_scenario_3_count_semantics_and_retired_counta() {
     let registry = FunctionRegistry::standard();
     let count_func = registry.lookup("COUNT").unwrap();
-    let counta_func = registry.lookup("COUNTA").unwrap();
+    assert!(registry.lookup("COUNTA").is_none());
     let sum_func = registry.lookup("SUM").unwrap();
     let ctx = MockEvalContext;
 
@@ -254,27 +281,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
         ))
     );
 
-    // COUNTA accepts mixed types, Empty, and Descriptor role: non-empty cells counted -> 4.0
-    let mixed_descriptor_range = FunctionArg::range(
-        5,
-        1,
-        vec![
-            CellValue::Number(10.0),
-            CellValue::Text("text".into()),
-            CellValue::Boolean(true),
-            CellValue::Empty,
-            CellValue::Error(ExcelError::Div0),
-        ],
-        ReferenceKind::Slice,
-    );
-    assert_eq!(
-        counta_func
-            .evaluate(std::slice::from_ref(&mixed_descriptor_range), &ctx)
-            .unwrap(),
-        CellValue::Number(4.0)
-    );
-
-    // Single-cell numeric/error references are accepted by COUNT; mixed single-cell references accepted by COUNTA
+    // Single-cell numeric/error references are accepted by COUNT
     let count_single_cells = [
         FunctionArg::range(
             1,
@@ -294,33 +301,7 @@ fn test_scenario_3_count_vs_counta_semantics() {
         CellValue::Number(1.0)
     );
 
-    let counta_single_cells = [
-        FunctionArg::range(
-            1,
-            1,
-            vec![CellValue::Number(10.0)],
-            ReferenceKind::SingleCell,
-        ),
-        FunctionArg::range(
-            1,
-            1,
-            vec![CellValue::Text("hello".into())],
-            ReferenceKind::SingleCell,
-        ),
-        FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
-        FunctionArg::range(
-            1,
-            1,
-            vec![CellValue::Error(ExcelError::Div0)],
-            ReferenceKind::SingleCell,
-        ),
-    ];
-    assert_eq!(
-        counta_func.evaluate(&counta_single_cells, &ctx).unwrap(),
-        CellValue::Number(3.0)
-    );
-
-    // Non-reference scalars are rejected statically by ParamKind::Range
+    // Non-reference scalars are rejected statically by ParamKind::Range; COUNTA is rejected as UnknownFunction
     assert_eq!(
         registry.validate_expr(&f8_core::expr::Expr::parse("COUNT(10)").unwrap()),
         Err(FunctionError::InvalidArgumentKind {
@@ -330,12 +311,10 @@ fn test_scenario_3_count_vs_counta_semantics() {
         })
     );
     assert_eq!(
-        registry.validate_expr(&f8_core::expr::Expr::parse("COUNTA(\"hello\")").unwrap()),
-        Err(FunctionError::InvalidArgumentKind {
-            function: "COUNTA",
-            expected: "range",
-            found: "scalar",
-        })
+        registry.validate_expr(
+            &f8_core::expr::Expr::parse("COUNTA(T[\"r1\"..\"r2\", \"val\"])").unwrap()
+        ),
+        Err(FunctionError::UnknownFunction("COUNTA".into()))
     );
 }
 
@@ -918,7 +897,7 @@ fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
         CellValue::Error(ExcelError::Num)
     );
 
-    // ISBLANK dormant guard on SingleCell Empty: IF(ISBLANK(T["r1", "val"]), 0, SUM(T["r1", "val"])) -> 0.0
+    // Dormant guard on SingleCell Empty: IF(FALSE, SUM(T["r1", "val"]), 0) -> 0.0
     let mut symbols = SymbolTable::new();
     let sheet_id = SheetId::from("Sheet1");
     let spec = TableSpec {
@@ -938,8 +917,7 @@ fn test_cluster_b_aggregate_overflow_and_isblank_dormant_guard() {
     let mut values = IndexMap::new();
     values.insert(cell_r1, CellValue::Empty);
 
-    let guarded =
-        Expr::parse("IF(ISBLANK(T[\"r1\", \"val\"]), 0, SUM(T[\"r1\", \"val\"]))").unwrap();
+    let guarded = Expr::parse("IF(FALSE, SUM(T[\"r1\", \"val\"]), 0)").unwrap();
     assert_eq!(
         eval_expr(&guarded, &origin, &values, &symbols, &registry).unwrap(),
         CellValue::Number(0.0)

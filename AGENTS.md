@@ -31,6 +31,7 @@
 
 ## Core principles
 
+- Simplicity & unification: Prefer the smallest unified design that fits current requirements. Extend or reshape existing types and passes in place over adding parallel mechanisms, extra layers, or speculative generality; every new concept must earn its complexity.
 - Single source of truth: Define each concept (type, ID, schema, coordinate mapping, error) once and import it everywhere. Duplicated domain knowledge is a defect; incidental code similarity is not.
 - Canonical contracts & IR: One representation per concept in core modules, IR, and schemas; no implicit fallbacks, untyped dicts, or syntactic sugar. Confine ergonomics to outer adapters (presets, SDKs, UI wrappers).
 - Behavioral symmetry & uniformity: Enforce uniform validation strictness, error policies, and boundary semantics across sibling modules and entrypoints; handle variants and boundary sizes (`0`, `1`, `N`) via general logic without ad-hoc carve-outs unless a domain invariant requires divergence.
@@ -38,7 +39,7 @@
 - Pure data flow: Explicit inputs and outputs; never use hidden side effects, global mutable state, or mutable default arguments.
 - Invalid states unrepresentable: Prefer enums, `Literal` types, interned IDs, newtypes, frozen dataclasses, and Pydantic/Zod models over string heuristics and `bool` flags (`2`-variant enum/union over `bool` parameter). Never inspect strings to infer semantics outside lexer/parser/ingest boundaries.
 - Consistent conventions: Match established naming, parameter order, CLI/API shapes, and test idioms across sibling modules (never by copying a rule violation).
-- Minimal surface: No dead code, commented-out tombstones, single-use helper shims, or speculative abstractions. Abstract on the second real caller, not the first.
+- Minimal surface: No dead code, commented-out tombstones, or single-use helper/trait abstractions. Abstract on the second real caller, not the first.
 
 ## Code standards & verification
 

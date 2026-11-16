@@ -38,19 +38,6 @@ impl ExcelError {
             Self::Name => "#NAME?",
         }
     }
-
-    /// Returns the numeric `ERROR.TYPE` code for this Excel error (`2.0..=7.0`).
-    #[must_use]
-    pub const fn error_type_code(self) -> f64 {
-        match self {
-            Self::Div0 => 2.0,
-            Self::Value => 3.0,
-            Self::Ref => 4.0,
-            Self::Name => 5.0,
-            Self::Num => 6.0,
-            Self::Na => 7.0,
-        }
-    }
 }
 
 /// Non-error runtime value categories for static and dynamic type diagnostics.
@@ -86,9 +73,7 @@ impl fmt::Display for ValueType {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TypeError {
     /// Formula cell evaluated to `CellValue::Empty` at the cell boundary.
-    #[error(
-        "formula cannot evaluate to an empty cell; guard nullable references explicitly with IF(ISBLANK(...), ...)"
-    )]
+    #[error("formula cannot evaluate to an empty cell")]
     EmptyFormulaResult,
     /// Unary or binary operator received `CellValue::Empty`.
     #[error("operand for '{operator}' evaluated to an empty cell")]
@@ -175,12 +160,10 @@ mod tests {
     }
 
     #[test]
-    fn test_excel_error_type_codes() {
-        assert_eq!(ExcelError::Div0.error_type_code(), 2.0);
-        assert_eq!(ExcelError::Value.error_type_code(), 3.0);
-        assert_eq!(ExcelError::Ref.error_type_code(), 4.0);
-        assert_eq!(ExcelError::Name.error_type_code(), 5.0);
-        assert_eq!(ExcelError::Num.error_type_code(), 6.0);
-        assert_eq!(ExcelError::Na.error_type_code(), 7.0);
+    fn test_type_error_display() {
+        assert_eq!(
+            TypeError::EmptyFormulaResult.to_string(),
+            "formula cannot evaluate to an empty cell"
+        );
     }
 }

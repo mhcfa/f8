@@ -762,7 +762,7 @@ def test_scenario_15_contiguous_and_discontinuous_range_slice_validation() -> No
     ok_table.add_row_gutter()
     ok_table.add_row(
         "tot",
-        cells={"line_item": f8.Cell(expr='COUNTA(@table["r1".."r2", @col])')},
+        cells={"line_item": f8.Cell(expr='INDEX(@table["r1".."r2", @col], 2)')},
         expr=(
             'SUM(@table["r1".."r2", "2024E".."2025E"]) + '
             'XLOOKUP("Rev", @table["r1".."r2", "line_item"], @table["r1".."r2", @col])'
@@ -771,7 +771,7 @@ def test_scenario_15_contiguous_and_discontinuous_range_slice_validation() -> No
     compiled = ok_model.compile()
     assert compiled.num("T", "tot", "2024E") == pytest.approx(130.0)
     assert compiled.num("T", "tot", "2025E") == pytest.approx(140.0)
-    assert compiled.num("T", "tot", "line_item") == pytest.approx(2.0)
+    assert compiled.value("T", "tot", "line_item") == "Rev"
 
     # 2. Row range spanning RowGutter -> ReferenceResolutionError (col=None, row=None)
     rg_model = f8.Model(name="RowGutterFail")
@@ -1088,15 +1088,19 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
         ("IF(TRUE, 10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
         ("IF(FALSE, SUM(), 10)", "too few arguments for 'SUM'"),
         ("IF(TRUE, 10, ABS(1, 2))", "too many arguments for 'ABS'"),
-        ("IF(TRUE, 10, IFS(TRUE, 1, FALSE))", "variadic pairs in 'IFS'"),
+        ("IF(TRUE, 10, IFS(TRUE, 1, FALSE, 2))", "unknown function 'IFS'"),
         (
             "IF(TRUE, 10, ABS(_))",
             "argument 'number' at position 1 of 'ABS' cannot be omitted",
         ),
-        ("IFS(TRUE, 1, FALSE, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
+        ("IFS(TRUE, 1, FALSE, 2)", "unknown function 'IFS'"),
         ("IFERROR(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
         ("IFERROR(ABS(1, 2, 3), 0)", "too many arguments for 'ABS'"),
-        ("IFNA(10, UNKNOWN_FN())", "unknown function 'UNKNOWN_FN'"),
+        ("IFNA(10, 0)", "unknown function 'IFNA'"),
+        ('COUNTA(@table["k1".."k2", @col])', "unknown function 'COUNTA'"),
+        ("DAYS(45474, 45292)", "unknown function 'DAYS'"),
+        ('ISBLANK(@table["k1", @col])', "unknown function 'ISBLANK'"),
+        ('ISNA(@table["k1", @col])', "unknown function 'ISNA'"),
         ("CHOOSE(1, 10, SUM())", "too few arguments for 'SUM'"),
         ("SWITCH(1, 1, 10, 20)", "unknown function 'SWITCH'"),
         ("IF(FALSE, SWITCH(1, 1, 10, 20), 0)", "unknown function 'SWITCH'"),
@@ -1178,10 +1182,6 @@ def test_scenario_17_static_function_validation_and_call_arg_confinement() -> No
         (
             "ROUND(1.5, _)",
             "argument 'num_digits' at position 2 of 'ROUND' cannot be omitted",
-        ),
-        (
-            "IFS(TRUE, 1, FALSE, _)",
-            "argument 'value_if_true1' at position 4 of 'IFS' cannot be omitted",
         ),
         (
             "IF(_, 10, _)",
@@ -1290,28 +1290,39 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
             parse_model.compile()
         assert type(parse_exc.value) is FormulaParseError
 
-    # 2. Type, EmptyFormulaResult, SliceInScalarContext, and Range -> exact F8Error
-    for bad_f8 in (
-        '@table["a", @col]',
-        'INDEX(@table["a".."a", @col], 1)',
-        'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
-        '"5" + 1',
-        "TRUE * 10",
-        '@table["a", @col] + 1',
-        "IF(1, 10, 20)",
-        'AND(@table["a", @col], TRUE)',
-        '100 < "1"',
-        '"" < FALSE',
-        '@table["a", @col] = ""',
-        '@table["a", @col] = FALSE',
-        'IFERROR(@table["a", @col] + 1, 0)',
-        '@table["r1".."r2", @col]',
-        '@table["r1".."r1", @col]',
-        'ISBLANK(@table["r1".."r1", @col])',
-        "COUNT(10)",
-        'COUNT(@table["a", @col])',
-        'SUMPRODUCT("abc")',
-        "SWITCH(1, 1, 10, 20)",
+    # 2. Type, EmptyFormulaResult, EmptyArgument, SliceInScalarContext, and Range -> exact F8Error
+    for bad_f8, expected_substr in (
+        ('@table["a", @col]', "formula cannot evaluate to an empty cell"),
+        ('INDEX(@table["a".."a", @col], 1)', "evaluated to an empty cell"),
+        (
+            'XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col])',
+            "evaluated to an empty cell",
+        ),
+        (
+            'XLOOKUP("miss", @table["k".."k", @col], @table["a".."a", @col], @table["a", @col])',
+            "evaluated to an empty cell",
+        ),
+        ('IF(TRUE, @table["a", @col], 1)', "evaluated to an empty cell"),
+        ('CHOOSE(1, @table["a", @col], 1)', "evaluated to an empty cell"),
+        ('IFERROR(@table["a", @col], 1)', "evaluated to an empty cell"),
+        ('ISERROR(@table["a", @col])', "evaluated to an empty cell"),
+        ('"5" + 1', "expected number, found text"),
+        ("TRUE * 10", "expected number, found boolean"),
+        ('@table["a", @col] + 1', "evaluated to an empty cell"),
+        ("IF(1, 10, 20)", "expected boolean, found number"),
+        ('AND(@table["a", @col], TRUE)', "evaluated to an empty cell"),
+        ('100 < "1"', "cannot compare '<' operands of types number and text"),
+        ('"" < FALSE', "cannot compare '<' operands of types text and boolean"),
+        ('@table["a", @col] = ""', "evaluated to an empty cell"),
+        ('@table["a", @col] = FALSE', "evaluated to an empty cell"),
+        ('IFERROR(@table["a", @col] + 1, 0)', "evaluated to an empty cell"),
+        ('@table["r1".."r2", @col]', "slice"),
+        ('@table["r1".."r1", @col]', "slice"),
+        ('ISERROR(@table["r1".."r1", @col])', "slice"),
+        ("COUNT(10)", "expected range"),
+        ('COUNT(@table["a", @col])', "evaluated to an empty cell"),
+        ('SUMPRODUCT("abc")', "expected range"),
+        ("SWITCH(1, 1, 10, 20)", "unknown function 'SWITCH'"),
     ):
         err_model = f8.Model(name="StrictErrorModel")
         err_tbl = err_model.add_sheet("Main").add_table("T", title="Strict Error")
@@ -1325,9 +1336,10 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
             err_model.compile()
         assert type(f8_exc.value) is F8Error
         assert not isinstance(f8_exc.value, TypeError)
+        assert expected_substr in f8_exc.value.message
 
-    # 3. Valid ISBLANK, NA(), guarded nullable formulas, parenthesized comparisons, sparse Slice AND
-    model = f8.Model(name="IsblankAndNaModel", theme="corporate_navy")
+    # 3. Valid ISERROR, NA(), dormant empty branches, parenthesized comparisons, sparse Slice AND
+    model = f8.Model(name="IserrorAndNaModel", theme="corporate_navy")
     sheet = model.add_sheet("Main")
     tbl = sheet.add_table("T", title="Blank Guard & Information", currency="USD")
     tbl.add_column("c1", role="measure", header="C1")
@@ -1338,33 +1350,26 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
     tbl.add_row("f2", cells={"c1": True})
     tbl.add_row(
         "b",
-        expr='IF(ISBLANK(@table["a", @col]), 0, @table["a", @col])',
+        expr='IF(FALSE, @table["a", @col], 0)',
         format="currency",
         decimals=1,
     )
     tbl.add_row(
         "if_guard_a",
-        expr='IF(ISBLANK(@table["a", @col]), "", @table["a", @col])',
+        expr='IF(FALSE, @table["a", @col], "")',
         format="currency",
         decimals=1,
     )
-    tbl.add_row("ib_null", expr='ISBLANK(@table["a", @col])')
-    tbl.add_row("ib_guarded", expr='ISBLANK(@table["b", @col])')
-    tbl.add_row("ib_empty_str", expr='ISBLANK("")')
-    tbl.add_row("ib_div0", expr="ISBLANK(1 / 0)")
-    tbl.add_row(
-        "ib_xlookup",
-        expr='ISBLANK(XLOOKUP("match", @table["k".."k", @col], @table["a".."a", @col], 0))',
-    )
+    tbl.add_row("ie_guarded", expr='ISERROR(@table["b", @col])')
+    tbl.add_row("ie_empty_str", expr='ISERROR("")')
+    tbl.add_row("ie_div0", expr="ISERROR(1 / 0)")
     tbl.add_row("na_cell", expr="NA()")
-    tbl.add_row("na_trapped", expr="IFNA(IF(FALSE, 10, NA()), 0)")
+    tbl.add_row("na_trapped", expr="IFERROR(IF(FALSE, 10, NA()), 0)")
     tbl.add_row("paren_cmp", expr="(1 = 1) = TRUE")
     tbl.add_row("and_sparse", expr='AND(@table["f1".."f2", @col])')
     tbl.add_row("b_eq_zero", expr='(@table["b", @col] = 0)')
     tbl.add_row("count_a", expr='COUNT(@table["a".."a", @col])')
     tbl.add_row("count_b", expr='COUNT(@table["b", @col])')
-    tbl.add_row("counta_a", expr='COUNTA(@table["a", @col])')
-    tbl.add_row("counta_b", expr='COUNTA(@table["b", @col])')
 
     compiled = model.compile()
 
@@ -1383,11 +1388,9 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
 
     assert compiled.value("T", "if_guard_a", "c1") == ""
     assert compiled.formatted("T", "if_guard_a", "c1") == ""
-    assert compiled.value("T", "ib_null", "c1") is True
-    assert compiled.value("T", "ib_guarded", "c1") is False
-    assert compiled.value("T", "ib_empty_str", "c1") is False
-    assert compiled.value("T", "ib_div0", "c1") is False
-    assert compiled.value("T", "ib_xlookup", "c1") is True
+    assert compiled.value("T", "ie_guarded", "c1") is False
+    assert compiled.value("T", "ie_empty_str", "c1") is False
+    assert compiled.value("T", "ie_div0", "c1") is True
 
     na_info = compiled.inspect_cell("T", "na_cell", "c1")
     assert compiled.value("T", "na_cell", "c1") == "#N/A"
@@ -1401,8 +1404,6 @@ def test_scenario_18_cluster_a1_strict_types_slices_isblank_and_na() -> None:
     assert compiled.value("T", "b_eq_zero", "c1") is True
     assert compiled.num("T", "count_a", "c1") == 0.0
     assert compiled.num("T", "count_b", "c1") == 1.0
-    assert compiled.num("T", "counta_a", "c1") == 0.0
-    assert compiled.num("T", "counta_b", "c1") == 1.0
 
 
 def test_scenario_19_neg_zero_normalization() -> None:
@@ -1429,7 +1430,6 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
         'IF(TRUE, 10, "NM")',
         'IFERROR(10 / 0, "N/A")',
         'CHOOSE(1, 10, "NM")',
-        'IFS(TRUE, 10, FALSE, "NM")',
         'IF(FALSE, IF(TRUE, "a", "b") = IF(FALSE, 1, 2), TRUE)',
         'ROUND(10, IF(TRUE, "a", "b"))',
         'ROUND(10, IF(TRUE, 2, "bad"))',
@@ -1437,8 +1437,8 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
         '1 = XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col])',
         'ABS(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]))',
         (
-            'IFS(XLOOKUP("Missing", @table["cat1".."cat2", @col], '
-            '@table["txt1".."txt2", @col]), 10, TRUE, 20)'
+            'IF(XLOOKUP("Missing", @table["cat1".."cat2", @col], '
+            '@table["txt1".."txt2", @col]), 10, 20)'
         ),
         'XMATCH(IF(FALSE, "Alpha", NA()), @table["num1".."num2", @col])',
         (
@@ -1453,16 +1453,18 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
         '1 + XLOOKUP("Beta", @table["cat1".."cat2", @col], @table["num1".."num2", @col], "NM")',
         'IFERROR(@table["null_cell", @col], 1)',
         'IFERROR(1 / 0, @table["null_cell", @col])',
-        'IFNA(@table["null_cell", @col], 1)',
-        'ISBLANK(IFERROR(@table["null_cell", @col], 1))',
+        'ISERROR(IFERROR(@table["null_cell", @col], 1))',
         'IF(TRUE, @table["num1", @col], @table["txt1", @col])',
         'IF(@table["flag_false", @col], @table["txt1", @col] + 5, 0)',
         'IF(@table["flag_false", @col], @table["num1", @col] < @table["txt1", @col], FALSE)',
         'IF(TRUE, 10, XLOOKUP("Beta", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]))',
         'IF(TRUE, 10, INDEX(@table["txt1".."txt2", @col], @table["dyn_idx", @col]))',
         'IFERROR(INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col]), 10)',
-        'IFNA(XLOOKUP("Missing", @table["cat1".."cat2", @col], @table["txt1".."txt2", @col]), 10)',
-        'IFNA(@table["err_txt", @col], 10)',
+        (
+            'IFERROR(XLOOKUP("Missing", @table["cat1".."cat2", @col], '
+            '@table["txt1".."txt2", @col]), 10)'
+        ),
+        'IFERROR(@table["err_txt", @col], 10)',
         'IFERROR(@table["err_oob_txt", @col], 10)',
         '1 + @table["err_txt", @col]',
         '@table["err_txt", @col] = 10',
@@ -1547,10 +1549,9 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
     ok_tbl.add_row("round_taken_lit", expr="ROUND(10, IF(TRUE, 2, 2.5))")
     ok_tbl.add_row("round_taken_cell", expr='ROUND(10, IF(TRUE, 2, @table["flt_cell", @col]))')
     ok_tbl.add_row("round_guard_cell", expr='IF(FALSE, ROUND(10, @table["flt_cell", @col]), 0)')
-    ok_tbl.add_row("is_null", expr='ISBLANK(@table["null_cell", @col])')
     ok_tbl.add_row(
         "helper_guard",
-        expr='IF(@table["is_null", @col], 0, @table["null_cell", @col] + 5)',
+        expr='IF(TRUE, 0, @table["null_cell", @col] + 5)',
     )
     ok_tbl.add_row("index_sparse", expr='INDEX(@table["sp1".."sp3", @col], 3)')
     ok_tbl.add_row("xmatch_bin_asc", expr='XMATCH(30, @table["asc1".."asc4", @col], 0, 2)')
@@ -1570,15 +1571,15 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
     ok_tbl.add_row("err_div0_2", expr="2 / 0")
     ok_tbl.add_row("c1", cells={"c1": True})
     ok_tbl.add_row("err_na", expr="NA()")
-    ok_tbl.add_row("ok_ifna_txt", expr='IFNA(@table["err_txt", @col], "fallback")')
+    ok_tbl.add_row("ok_iferr_txt", expr='IFERROR(@table["err_txt", @col], "fallback")')
     ok_tbl.add_row("ok_iferr_div0", expr='IFERROR(@table["err_div0", @col], 0)')
     ok_tbl.add_row(
         "ok_iferr_idx_div0",
         expr='IFERROR(INDEX(@table["err_div0".."err_div0_2", @col], 1), 0)',
     )
     ok_tbl.add_row("ok_add_div0", expr='1 + @table["err_div0", @col]')
-    ok_tbl.add_row("ok_ifna_na_num", expr='IFNA(@table["err_na", @col], 10)')
-    ok_tbl.add_row("ok_ifna_na_txt", expr='IFNA(@table["err_na", @col], "fallback")')
+    ok_tbl.add_row("ok_iferr_na_num", expr='IFERROR(@table["err_na", @col], 10)')
+    ok_tbl.add_row("ok_iferr_na_txt", expr='IFERROR(@table["err_na", @col], "fallback")')
     ok_tbl.add_row("ok_and_na_slice", expr='AND(@table["c1".."err_na", @col])')
 
     compiled = ok_model.compile()
@@ -1587,19 +1588,18 @@ def test_scenario_20_cluster_a2_monomorphic_branches_dormant_validation_and_look
     assert compiled.num("T", "round_taken_lit", "c1") == 10.0
     assert compiled.num("T", "round_taken_cell", "c1") == 10.0
     assert compiled.num("T", "round_guard_cell", "c1") == 0.0
-    assert compiled.value("T", "is_null", "c1") is True
     assert compiled.num("T", "helper_guard", "c1") == 0.0
     assert compiled.num("T", "index_sparse", "c1") == 30.0
     assert compiled.num("T", "xmatch_bin_asc", "c1") == 3.0
     assert compiled.num("T", "xlookup_bin_desc", "c1") == 30.0
     assert compiled.value("T", "add_na", "c1") == "#N/A"
     assert compiled.value("T", "xmatch_na", "c1") == "#N/A"
-    assert compiled.value("T", "ok_ifna_txt", "c1") == "fallback"
+    assert compiled.value("T", "ok_iferr_txt", "c1") == "fallback"
     assert compiled.num("T", "ok_iferr_div0", "c1") == 0.0
     assert compiled.num("T", "ok_iferr_idx_div0", "c1") == 0.0
     assert compiled.value("T", "ok_add_div0", "c1") == "#DIV/0!"
-    assert compiled.num("T", "ok_ifna_na_num", "c1") == 10.0
-    assert compiled.value("T", "ok_ifna_na_txt", "c1") == "fallback"
+    assert compiled.num("T", "ok_iferr_na_num", "c1") == 10.0
+    assert compiled.value("T", "ok_iferr_na_txt", "c1") == "fallback"
     assert compiled.value("T", "ok_and_na_slice", "c1") == "#N/A"
 
 
@@ -1753,12 +1753,12 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
             cells={"line_item": row_id, "c1": f8.Cell(expr=formula), "w": 0.0},
         )
 
-    add_check("desc_counta", 'COUNTA(@table["r1".."r3", "line_item"])')
+    add_check("desc_xmatch", 'XMATCH("OpEx", @table["r1".."r3", "line_item"])')
     add_check(
         "desc_xlookup", 'XLOOKUP("Rev", @table["r1".."r3", "line_item"], @table["r1".."r3", "c1"])'
     )
     add_check("desc_index", 'INDEX(@table["r1".."r3", "line_item"], 2)')
-    add_check("guard_sum", 'IF(ISBLANK(@table["sp1", "c1"]), 0, SUM(@table["sp1", "c1"]))')
+    add_check("guard_sum", 'IF(TRUE, 0, SUM(@table["sp1", "c1"]))')
 
     add_check("sum_sparse", 'SUM(@table["sp1".."sp4", "c1"])')
     add_check("avg_sparse", 'AVERAGE(@table["sp1".."sp4", "c1"])')
@@ -1802,7 +1802,7 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
     add_check("xmatch_bad_mode", 'XMATCH(10, @table["r1".."r3", "c1"], 9)')
 
     compiled = ok_model.compile()
-    assert compiled.num("T", "desc_counta", "c1") == 3.0
+    assert compiled.num("T", "desc_xmatch", "c1") == 3.0
     assert compiled.num("T", "desc_xlookup", "c1") == 10.0
     assert compiled.value("T", "desc_index", "c1") == "Cost"
     assert compiled.num("T", "guard_sum", "c1") == 0.0
@@ -1845,8 +1845,9 @@ def test_scenario_21_cluster_b_aggregation_roles_sparse_slices_and_date_domains(
 
 
 def test_scenario_22_error_introspection() -> None:
-    # 1. Invalid dotted function grammar rejected with FormulaParseError
+    # 1. Dotted function grammar rejected with FormulaParseError
     for bad_parse in (
+        "ERROR.TYPE(1 / 0)",
         "ERROR . TYPE(1 / 0)",
         "error.type(1 / 0)",
     ):
@@ -1857,16 +1858,18 @@ def test_scenario_22_error_introspection() -> None:
         with pytest.raises(FormulaParseError):
             m.compile()
 
-    # 2. Compile-time type error inside ISERROR raises F8Error
-    m_err = f8.Model(name="IserrorTypeCheck")
-    t_err = m_err.add_sheet("Main").add_table("T", title="Type Check")
-    t_err.add_column("c1", role="measure", header="Val")
-    t_err.add_row("target", expr='ISERROR("5" + 1)')
-    with pytest.raises(F8Error) as f8_exc:
-        m_err.compile()
-    assert type(f8_exc.value) is F8Error
+    # 2. Compile-time type error and Empty argument inside ISERROR raise F8Error
+    for bad_iserror in ('ISERROR("5" + 1)', 'ISERROR(@table["n", "c1"])'):
+        m_err = f8.Model(name="IserrorTypeCheck")
+        t_err = m_err.add_sheet("Main").add_table("T", title="Type Check")
+        t_err.add_column("c1", role="measure", header="Val")
+        t_err.add_row("n", cells={"c1": None})
+        t_err.add_row("target", expr=bad_iserror)
+        with pytest.raises(F8Error) as f8_exc:
+            m_err.compile()
+        assert type(f8_exc.value) is F8Error
 
-    # 3. Error introspection functions (ISERROR, ISNA, ERROR.TYPE)
+    # 3. Error introspection function (ISERROR)
     ok_model = f8.Model(name="ErrorIntrospectionOk")
     ok_tbl = ok_model.add_sheet("Main").add_table("T", title="Error Introspection")
     for col_id in ("cat", "res"):
@@ -1887,18 +1890,12 @@ def test_scenario_22_error_introspection() -> None:
         )
 
     add_res("iserror_div0", "ISERROR(1 / 0)")
-    add_res("isna_div0", "ISNA(1 / 0)")
-    add_res("isna_na", 'ISNA(XMATCH("Missing", @table["r1".."r4", "cat"]))')
-    add_res("errtype_div0", "ERROR.TYPE(1 / 0)")
-    add_res("errtype_na", 'ERROR.TYPE(XMATCH("Missing", @table["r1".."r4", "cat"]))')
-    add_res("errtype_non_err", "ERROR.TYPE(42)")
+    add_res("iserror_na", 'ISERROR(XMATCH("Missing", @table["r1".."r4", "cat"]))')
+    add_res("iserror_non_err", "ISERROR(42)")
 
     compiled = ok_model.compile()
     assert compiled.value("T", "iserror_div0", "res") is True
-    assert compiled.value("T", "isna_div0", "res") is False
-    assert compiled.value("T", "isna_na", "res") is True
-    assert compiled.num("T", "errtype_div0", "res") == 2.0
-    assert compiled.num("T", "errtype_na", "res") == 7.0
-    assert compiled.value("T", "errtype_non_err", "res") == "#N/A"
-    errtype_cell = compiled.inspect_cell("T", "errtype_div0", "res")
-    assert "ERROR.TYPE(" in (errtype_cell["excel_formula"] or "")
+    assert compiled.value("T", "iserror_na", "res") is True
+    assert compiled.value("T", "iserror_non_err", "res") is False
+    iserr_cell = compiled.inspect_cell("T", "iserror_div0", "res")
+    assert "ISERROR(" in (iserr_cell["excel_formula"] or "")

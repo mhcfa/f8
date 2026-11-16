@@ -565,7 +565,7 @@ impl ExcelFunction for CustomDoubleFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let val = args[0].eval_scalar(self.name(), ctx)?;
+        let val = args[0].eval_scalar(self.name(), "value", 1, ctx)?;
         match val {
             CellValue::Number(n) => Ok(CellValue::Number(n * 2.0)),
             CellValue::Error(e) => Ok(CellValue::Error(e)),
@@ -600,11 +600,8 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
             },
         ),
         (
-            "IF(TRUE, 10, IFS(TRUE, 1, FALSE))",
-            FunctionError::InvalidVariadicPairs {
-                function: "IFS",
-                count: 3,
-            },
+            "IF(TRUE, 10, IFS(TRUE, 1, FALSE, 2))",
+            FunctionError::UnknownFunction("IFS".into()),
         ),
         (
             "IF(TRUE, 10, ABS(_))",
@@ -727,14 +724,6 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
             },
         ),
         (
-            "IFS(TRUE, 1, FALSE, _)",
-            FunctionError::CannotOmitRequiredArgument {
-                function: "IFS",
-                param: "value_if_true1",
-                position: 4,
-            },
-        ),
-        (
             "IF(_, 10, _)",
             FunctionError::CannotOmitRequiredArgument {
                 function: "IF",
@@ -751,8 +740,8 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
             },
         ),
         (
-            "IFS(TRUE, 1, FALSE, UNKNOWN_FN())",
-            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+            "IFS(TRUE, 1, FALSE, 2)",
+            FunctionError::UnknownFunction("IFS".into()),
         ),
         (
             "IFERROR(10, UNKNOWN_FN())",
@@ -766,9 +755,22 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
                 found: 3,
             },
         ),
+        ("IFNA(10, 0)", FunctionError::UnknownFunction("IFNA".into())),
         (
-            "IFNA(10, UNKNOWN_FN())",
-            FunctionError::UnknownFunction("UNKNOWN_FN".into()),
+            "COUNTA(T[\"k1\"..\"k2\", @col])",
+            FunctionError::UnknownFunction("COUNTA".into()),
+        ),
+        (
+            "DAYS(45474, 45292)",
+            FunctionError::UnknownFunction("DAYS".into()),
+        ),
+        (
+            "ISBLANK(T[\"k1\", @col])",
+            FunctionError::UnknownFunction("ISBLANK".into()),
+        ),
+        (
+            "ISNA(T[\"k1\", @col])",
+            FunctionError::UnknownFunction("ISNA".into()),
         ),
         (
             "CHOOSE(1, 10, SUM())",
@@ -1280,15 +1282,8 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
 
     let manifest = manifest_for_table("T");
 
-    // Reference-returning unguarded formulas resolving to CellValue::Empty fail in Pass 4 with EmptyFormulaResult (F8Error)
-    for formula in [
-        "T[\"a\", @col]",
-        "INDEX(T[\"a\"..\"a\", @col], 1)",
-        "XLOOKUP(\"match\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col])",
-        "IF(TRUE, T[\"a\", @col], 1)",
-        "IFS(TRUE, T[\"a\", @col])",
-        "CHOOSE(1, T[\"a\", @col])",
-    ] {
+    // Top-level bare reference to a Null cell fails in Pass 4 with EmptyFormulaResult (F8Error)
+    {
         let row_a = RowSpec::new("a")
             .with_format(Some(FormatPreset::Currency))
             .with_decimals(Some(1))
@@ -1297,21 +1292,54 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
             ColId::from("c1"),
             CellInput::string("match"),
         )]));
-        let target = RowSpec::new("target").with_expr(formula);
+        let target = RowSpec::new("target").with_expr("T[\"a\", @col]");
         let table = create_table("T", &["c1"], vec![row_a, row_k, target]);
 
         let err = Compiler::compile(&manifest, &[table])
-            .expect_err(&format!("expected EmptyFormulaResult on '{formula}'"));
+            .expect_err("expected EmptyFormulaResult on bare Null reference");
         assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
+        assert!(
+            err.to_string()
+                .contains("formula cannot evaluate to an empty cell")
+        );
         let CompilerError::Eval(EvalError::Type { cell, source }) = err else {
-            panic!("expected EvalError::Type on '{formula}', got {err:?}");
+            panic!("expected EvalError::Type on bare Null reference, got {err:?}");
         };
         assert_eq!(*cell, CellId::new("T", "target", "c1"));
         assert_eq!(source, TypeError::EmptyFormulaResult);
     }
 
-    // Value-returning IFERROR / IFNA reject evaluated CellValue::Empty arms with TypeError::EmptyArgument
+    // Active branch arms, selected lookup/index elements, and scalar parameters resolving to CellValue::Empty fail with TypeError::EmptyArgument
     for (formula, expected_fn, expected_param, expected_pos) in [
+        ("INDEX(T[\"a\"..\"a\", @col], 1)", "INDEX", "array", 1),
+        ("INDEX(T[\"a\", @col], 1)", "INDEX", "array", 1),
+        (
+            "XLOOKUP(\"match\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col])",
+            "XLOOKUP",
+            "return_array",
+            3,
+        ),
+        (
+            "XLOOKUP(\"miss\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col], T[\"a\", @col])",
+            "XLOOKUP",
+            "if_not_found",
+            4,
+        ),
+        (
+            "XLOOKUP(\"match\", T[\"a\", @col], T[\"k\", @col])",
+            "XLOOKUP",
+            "lookup_array",
+            2,
+        ),
+        (
+            "XMATCH(\"match\", T[\"a\", @col])",
+            "XMATCH",
+            "lookup_array",
+            2,
+        ),
+        ("IF(TRUE, T[\"a\", @col], 1)", "IF", "value_if_true", 2),
+        ("IF(FALSE, 1, T[\"a\", @col])", "IF", "value_if_false", 3),
+        ("CHOOSE(1, T[\"a\", @col], 1)", "CHOOSE", "value1", 2),
         ("IFERROR(T[\"a\", @col], 1)", "IFERROR", "value", 1),
         (
             "IFERROR(1 / 0, T[\"a\", @col])",
@@ -1319,13 +1347,7 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
             "value_if_error",
             2,
         ),
-        ("IFNA(T[\"a\", @col], 1)", "IFNA", "value", 1),
-        (
-            "IFNA(XLOOKUP(\"miss\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col]), T[\"a\", @col])",
-            "IFNA",
-            "value_if_na",
-            2,
-        ),
+        ("ISERROR(T[\"a\", @col])", "ISERROR", "value", 1),
     ] {
         let row_a = RowSpec::new("a")
             .with_format(Some(FormatPreset::Currency))
@@ -1356,7 +1378,7 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
         );
     }
 
-    // Explicitly guarded formulas succeed, and CellValue::Empty occurs iff CellPayload::Literal(ValueLiteral::Null)
+    // Dormant branches referencing Null cells and range slices succeed, and CellValue::Empty occurs iff CellPayload::Literal(ValueLiteral::Null)
     let row_a = RowSpec::new("a")
         .with_format(Some(FormatPreset::Currency))
         .with_decimals(Some(1))
@@ -1364,21 +1386,15 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
     let row_b = RowSpec::new("b")
         .with_format(Some(FormatPreset::Currency))
         .with_decimals(Some(1))
-        .with_expr("IF(ISBLANK(T[\"a\", @col]), 0, T[\"a\", @col])");
+        .with_expr("IF(FALSE, T[\"a\", @col], 0)");
     let row_c = RowSpec::new("c")
         .with_format(Some(FormatPreset::Currency))
         .with_decimals(Some(1))
-        .with_expr("IF(ISBLANK(T[\"a\", @col]), \"\", T[\"a\", @col])");
+        .with_expr("IF(FALSE, T[\"a\", @col], \"\")");
     let count_a = RowSpec::new("count_a").with_expr("COUNT(T[\"a\"..\"a\", @col])");
     let count_b = RowSpec::new("count_b").with_expr("COUNT(T[\"b\", @col])");
-    let counta_a = RowSpec::new("counta_a").with_expr("COUNTA(T[\"a\", @col])");
-    let counta_b = RowSpec::new("counta_b").with_expr("COUNTA(T[\"b\", @col])");
 
-    let table = create_table(
-        "T",
-        &["c1"],
-        vec![row_a, row_b, row_c, count_a, count_b, counta_a, counta_b],
-    );
+    let table = create_table("T", &["c1"], vec![row_a, row_b, row_c, count_a, count_b]);
     let compiled = Compiler::compile(&manifest, &[table]).expect("compile guarded model");
     let t = TableId::from("T");
     let c1 = ColId::from("c1");
@@ -1427,18 +1443,6 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
     assert_eq!(
         compiled
             .cell_value(&t, &RowId::from("count_b"), &c1)
-            .unwrap(),
-        CellValue::Number(1.0)
-    );
-    assert_eq!(
-        compiled
-            .cell_value(&t, &RowId::from("counta_a"), &c1)
-            .unwrap(),
-        CellValue::Number(0.0)
-    );
-    assert_eq!(
-        compiled
-            .cell_value(&t, &RowId::from("counta_b"), &c1)
             .unwrap(),
         CellValue::Number(1.0)
     );
@@ -1534,7 +1538,6 @@ fn test_scenario_13_stage_a_and_stage_b_strict_type_and_iferror_non_masking() {
         "-FALSE",
         "ABS(\"invalid\")",
         "ROUND(TRUE, 2)",
-        "DAYS(\"invalid\", DATE(2024, 1, 1))",
         "IF(1, 10, 20)",
         "IF(\"TRUE\", 10, 20)",
         "NA(1)",
@@ -1661,14 +1664,13 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
         "1 + T[\"r1\"..\"r1\", @col]",
         "1 + T[\"r1\"..\"r2\", @col]",
         "ABS(T[\"r1\"..\"r2\", @col])",
-        "ISBLANK(T[\"r1\"..\"r2\", @col])",
-        "ISBLANK(T[\"r1\"..\"r1\", @col])",
+        "ISERROR(T[\"r1\"..\"r2\", @col])",
+        "ISERROR(T[\"r1\"..\"r1\", @col])",
         "IF(TRUE, 1, T[\"r1\"..\"r2\", @col])",
-        "IFS(T[\"r1\"..\"r2\", @col], 1, TRUE, 2)",
+        "IF(T[\"r1\"..\"r2\", @col], 1, 2)",
         // Non-reference scalars in ParamKind::Range slots
         "SUMPRODUCT(\"abc\")",
         "COUNT(10)",
-        "COUNTA(\"a\")",
         "XMATCH(10, 10)",
         "XLOOKUP(10, 10, 20)",
         "INDEX(10, 1)",
@@ -1792,7 +1794,7 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
 }
 
 #[test]
-fn test_scenario_15_isblank_na_nullable_guards_sparse_and_and_domain_errors() {
+fn test_scenario_15_na_dormant_empty_guards_sparse_and_and_domain_errors() {
     let manifest = manifest_for_table("T");
 
     let rows = vec![
@@ -1800,8 +1802,10 @@ fn test_scenario_15_isblank_na_nullable_guards_sparse_and_and_domain_errors() {
             .with_cells(IndexMap::from([(ColId::from("c1"), CellInput::null())])),
         RowSpec::new("empty_str")
             .with_cells(IndexMap::from([(ColId::from("c1"), CellInput::string(""))])),
-        RowSpec::new("zero_cell")
-            .with_cells(IndexMap::from([(ColId::from("c1"), CellInput::number(0.0))])),
+        RowSpec::new("zero_cell").with_cells(IndexMap::from([(
+            ColId::from("c1"),
+            CellInput::number(0.0),
+        )])),
         RowSpec::new("false_cell").with_cells(IndexMap::from([(
             ColId::from("c1"),
             CellInput::boolean(false),
@@ -1814,14 +1818,12 @@ fn test_scenario_15_isblank_na_nullable_guards_sparse_and_and_domain_errors() {
             ColId::from("c1"),
             CellInput::string("Beta"),
         )])),
-        RowSpec::new("sp1")
-            .with_cells(IndexMap::from([(ColId::from("c1"), CellInput::null())])),
+        RowSpec::new("sp1").with_cells(IndexMap::from([(ColId::from("c1"), CellInput::null())])),
         RowSpec::new("sp2").with_cells(IndexMap::from([(
             ColId::from("c1"),
             CellInput::number(42.0),
         )])),
-        RowSpec::new("f1")
-            .with_cells(IndexMap::from([(ColId::from("c1"), CellInput::null())])),
+        RowSpec::new("f1").with_cells(IndexMap::from([(ColId::from("c1"), CellInput::null())])),
         RowSpec::new("f2").with_cells(IndexMap::from([(
             ColId::from("c1"),
             CellInput::boolean(true),
@@ -1830,34 +1832,21 @@ fn test_scenario_15_isblank_na_nullable_guards_sparse_and_and_domain_errors() {
             ColId::from("c1"),
             CellInput::number(1e308),
         )])),
-        RowSpec::new("guarded_zero")
-            .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), 0, T[\"null_cell\", @col])"),
-        // ISBLANK introspection cases
-        RowSpec::new("ib_null").with_expr("ISBLANK(T[\"null_cell\", @col])"),
-        RowSpec::new("ib_guarded").with_expr("ISBLANK(T[\"guarded_zero\", @col])"),
-        RowSpec::new("ib_empty_str").with_expr("ISBLANK(T[\"empty_str\", @col])"),
-        RowSpec::new("ib_zero").with_expr("ISBLANK(T[\"zero_cell\", @col])"),
-        RowSpec::new("ib_false").with_expr("ISBLANK(T[\"false_cell\", @col])"),
-        RowSpec::new("ib_div0").with_expr("ISBLANK(1 / 0)"),
-        RowSpec::new("ib_if").with_expr("ISBLANK(IF(TRUE, T[\"null_cell\", @col], 0))"),
-        RowSpec::new("ib_ifs").with_expr("ISBLANK(IFS(TRUE, T[\"null_cell\", @col]))"),
-        RowSpec::new("ib_choose").with_expr("ISBLANK(CHOOSE(1, T[\"null_cell\", @col]))"),
-        RowSpec::new("ib_index").with_expr("ISBLANK(INDEX(T[\"sp1\"..\"sp2\", @col], 1))"),
-        RowSpec::new("ib_xlookup_hit").with_expr(
-            "ISBLANK(XLOOKUP(\"Alpha\", T[\"cat1\"..\"cat2\", @col], T[\"sp1\"..\"sp2\", @col], 0))",
-        ),
-        RowSpec::new("ib_xlookup_miss").with_expr(
-            "ISBLANK(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"sp1\"..\"sp2\", @col], 0))",
+        // ISERROR introspection cases
+        RowSpec::new("ie_empty_str").with_expr("ISERROR(T[\"empty_str\", @col])"),
+        RowSpec::new("ie_zero").with_expr("ISERROR(T[\"zero_cell\", @col])"),
+        RowSpec::new("ie_false").with_expr("ISERROR(T[\"false_cell\", @col])"),
+        RowSpec::new("ie_div0").with_expr("ISERROR(1 / 0)"),
+        RowSpec::new("ie_xlookup_miss").with_expr(
+            "ISERROR(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"sp1\"..\"sp2\", @col]))",
         ),
         // NA() ratio suppression
         RowSpec::new("na_direct").with_expr("NA()"),
         RowSpec::new("na_prop").with_expr("1 + IF(FALSE, 10, NA())"),
-        RowSpec::new("na_trapped").with_expr("IFNA(IF(FALSE, 10, NA()), 0)"),
-        // Lazy nullable guards
-        RowSpec::new("guard_str")
-            .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), \"\", T[\"null_cell\", @col])"),
-        RowSpec::new("guard_arith")
-            .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), 0, T[\"null_cell\", @col] + 5)"),
+        RowSpec::new("na_trapped").with_expr("IFERROR(IF(FALSE, 10, NA()), 0)"),
+        // Dormant branches referencing Null cells
+        RowSpec::new("guard_str").with_expr("IF(TRUE, \"\", T[\"null_cell\", @col])"),
+        RowSpec::new("guard_arith").with_expr("IF(TRUE, 0, T[\"null_cell\", @col] + 5)"),
         // Sparse ReferenceKind::Slice AND
         RowSpec::new("and_sparse_true").with_expr("AND(T[\"f1\"..\"f2\", @col])"),
         RowSpec::new("and_all_null").with_expr("AND(T[\"f1\"..\"f1\", @col])"),
@@ -1882,23 +1871,16 @@ fn test_scenario_15_isblank_na_nullable_guards_sparse_and_and_domain_errors() {
         rows,
     };
 
-    let compiled = Compiler::compile(&manifest, &[table]).expect("compile Scenario 5 model");
+    let compiled = Compiler::compile(&manifest, &[table]).expect("compile Scenario 15 model");
     let t = TableId::from("T");
     let c1 = ColId::from("c1");
     let get = |row: &str| compiled.cell_value(&t, &RowId::from(row), &c1).unwrap();
 
-    assert_eq!(get("ib_null"), CellValue::Boolean(true));
-    assert_eq!(get("ib_guarded"), CellValue::Boolean(false));
-    assert_eq!(get("ib_empty_str"), CellValue::Boolean(false));
-    assert_eq!(get("ib_zero"), CellValue::Boolean(false));
-    assert_eq!(get("ib_false"), CellValue::Boolean(false));
-    assert_eq!(get("ib_div0"), CellValue::Boolean(false));
-    assert_eq!(get("ib_if"), CellValue::Boolean(true));
-    assert_eq!(get("ib_ifs"), CellValue::Boolean(true));
-    assert_eq!(get("ib_choose"), CellValue::Boolean(true));
-    assert_eq!(get("ib_index"), CellValue::Boolean(true));
-    assert_eq!(get("ib_xlookup_hit"), CellValue::Boolean(true));
-    assert_eq!(get("ib_xlookup_miss"), CellValue::Boolean(false));
+    assert_eq!(get("ie_empty_str"), CellValue::Boolean(false));
+    assert_eq!(get("ie_zero"), CellValue::Boolean(false));
+    assert_eq!(get("ie_false"), CellValue::Boolean(false));
+    assert_eq!(get("ie_div0"), CellValue::Boolean(true));
+    assert_eq!(get("ie_xlookup_miss"), CellValue::Boolean(true));
 
     assert_eq!(get("na_direct"), CellValue::Error(ExcelError::Na));
     assert_eq!(get("na_prop"), CellValue::Error(ExcelError::Na));
@@ -1919,10 +1901,6 @@ fn test_scenario_15_isblank_na_nullable_guards_sparse_and_and_domain_errors() {
     }
     assert_eq!(get("iferror_div0"), CellValue::Number(99.0));
 
-    assert_eq!(
-        compiled.lowered_map.get(&CellId::new("T", "ib_null", "c1")),
-        Some("=ISBLANK(C5)")
-    );
     assert_eq!(
         compiled
             .lowered_map
@@ -1956,7 +1934,6 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
             cell("cat1", CellInput::string("Alpha")),
             cell("cat2", CellInput::string("Beta")),
             cell("null_cell", CellInput::null()),
-            RowSpec::new("is_null").with_expr("ISBLANK(T[\"null_cell\", @col])"),
             RowSpec::new("f_txt").with_expr("IF(TRUE, \"hello\", \"world\")"),
             // Mixed slice [10.0, "two"]
             cell("mixed1", CellInput::number(10.0)),
@@ -2005,16 +1982,14 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "IF(T[\"ebitda\", @col] > 0, T[\"ev\", @col] / T[\"ebitda\", @col], \"NM\")",
         "IFERROR(10 / 0, \"N/A\")",
         "CHOOSE(1, 10, \"NM\")",
-        "IFS(T[\"c1\", @col], 10, T[\"c2\", @col], \"NM\")",
         "IF(FALSE, IF(TRUE, \"a\", \"b\") = IF(FALSE, 1, 2), TRUE)",
         "ROUND(10, IF(TRUE, \"a\", \"b\"))",
         "ROUND(10, IF(TRUE, 2, \"bad\"))",
         "1 + XLOOKUP(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col], \"NM\")",
-        // Scenario 2 (Stage B: IFERROR/IFNA Empty, runtime unification, dormant memoized checks)
+        // Scenario 2 (Stage B: IFERROR Empty, runtime unification, dormant memoized checks)
         "IFERROR(T[\"null_cell\", @col], 1)",
         "IFERROR(1 / 0, T[\"null_cell\", @col])",
-        "IFNA(T[\"null_cell\", @col], 1)",
-        "ISBLANK(IFERROR(T[\"null_cell\", @col], 1))",
+        "ISERROR(IFERROR(T[\"null_cell\", @col], 1))",
         "IF(TRUE, T[\"num1\", @col], T[\"txt_cell\", @col])",
         "1 + T[\"f_txt\", @col]",
         "IF(FALSE, 1 + T[\"f_txt\", @col], 0)",
@@ -2024,9 +1999,9 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "IF(TRUE, 10, INDEX(T[\"txt1\"..\"txt2\", @col], 1))",
         "IF(TRUE, 10, INDEX(T[\"txt1\"..\"txt2\", @col], T[\"dyn_idx\", @col]))",
         "IFERROR(INDEX(T[\"txt1\"..\"txt2\", @col], T[\"dyn_oob_idx\", @col]), 10)",
-        "IFNA(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10)",
+        "IFERROR(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10)",
         "IFERROR(XLOOKUP(1 / 0, T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10)",
-        "IF(ISBLANK(T[\"txt_cell\", @col]), 0, T[\"txt_cell\", @col])",
+        "IF(ISERROR(T[\"txt_cell\", @col]), 0, T[\"txt_cell\", @col])",
         "IF(FALSE, 0, T[\"null_cell\", @col] + 5)",
         // Scenario 3 (Lookup mode type mismatch, Empty lookup_value, array homogeneity)
         "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], \"abc\")",
@@ -2143,7 +2118,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "\"a\" < INDEX(T[\"num1\"..\"num2\", @col], T[\"dyn_oob_idx\", @col])",
         "ABS(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]))",
         "AND(TRUE, XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]))",
-        "IFS(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10, TRUE, 20)",
+        "IF(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10, 20)",
         "XMATCH(IF(FALSE, \"Alpha\", NA()), T[\"num1\"..\"num2\", @col])",
         "XMATCH(INDEX(T[\"txt1\"..\"txt2\", @col], T[\"dyn_oob_idx\", @col]), T[\"num1\"..\"num2\", @col])",
         "XLOOKUP(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), T[\"num1\"..\"num2\", @col], T[\"num1\"..\"num2\", @col])",
@@ -2174,16 +2149,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
             .with_expr("IF(T[\"flag_false\", @col], ROUND(10, T[\"float_cell\", @col]), 0)"),
         RowSpec::new("ok_dormant_bin_unsort")
             .with_expr("IF(TRUE, 0, XMATCH(20, T[\"unsort1\"..\"unsort3\", @col], 0, 2))"),
-        RowSpec::new("ok_guard_str")
-            .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), \"\", T[\"null_cell\", @col])"),
-        RowSpec::new("ok_guard_arith")
-            .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), 0, T[\"null_cell\", @col] + 5)"),
-        RowSpec::new("ok_guard_cmp")
-            .with_expr("IF(ISBLANK(T[\"null_cell\", @col]), FALSE, T[\"null_cell\", @col] > 0)"),
-        RowSpec::new("ok_helper_guard")
-            .with_expr("IF(T[\"is_null\", @col], 0, T[\"null_cell\", @col] + 5)"),
         RowSpec::new("ok_dormant_empty").with_expr("IF(TRUE, 0, T[\"null_cell\", @col] + 5)"),
-        RowSpec::new("ok_ib_if").with_expr("ISBLANK(IF(TRUE, T[\"null_cell\", @col], 0))"),
         RowSpec::new("ok_lin_sparse")
             .with_expr("XMATCH(30, T[\"lin_sparse1\"..\"lin_sparse4\", @col])"),
         RowSpec::new("ok_idx_sparse")
@@ -2199,7 +2165,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         RowSpec::new("ok_add_na").with_expr("1 + IF(FALSE, 10, NA())"),
         RowSpec::new("ok_eq_na").with_expr("1 = IF(FALSE, 10, NA())"),
         RowSpec::new("ok_abs_na").with_expr("ABS(IF(FALSE, 10, NA()))"),
-        RowSpec::new("ok_ifs_err_cond").with_expr("IFS((1 / 0) > 0, 10, TRUE, 20)"),
+        RowSpec::new("ok_if_err_cond").with_expr("IF((1 / 0) > 0, 10, 20)"),
         RowSpec::new("ok_xmatch_na").with_expr("XMATCH(NA(), T[\"num1\"..\"num2\", @col])"),
         RowSpec::new("ok_xlookup_na")
             .with_expr("XLOOKUP(NA(), T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col])"),
@@ -2220,12 +2186,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
     assert_eq!(get("ok_round_taken_cell"), CellValue::Number(10.0));
     assert_eq!(get("ok_dormant_dyn_int"), CellValue::Number(0.0));
     assert_eq!(get("ok_dormant_bin_unsort"), CellValue::Number(0.0));
-    assert_eq!(get("ok_guard_str"), CellValue::Text(String::new()));
-    assert_eq!(get("ok_guard_arith"), CellValue::Number(0.0));
-    assert_eq!(get("ok_guard_cmp"), CellValue::Boolean(false));
-    assert_eq!(get("ok_helper_guard"), CellValue::Number(0.0));
     assert_eq!(get("ok_dormant_empty"), CellValue::Number(0.0));
-    assert_eq!(get("ok_ib_if"), CellValue::Boolean(true));
     assert_eq!(get("ok_lin_sparse"), CellValue::Number(4.0));
     assert_eq!(get("ok_idx_sparse"), CellValue::Number(10.0));
     assert_eq!(get("ok_bin_asc"), CellValue::Number(3.0));
@@ -2235,7 +2196,7 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
     assert_eq!(get("ok_add_na"), CellValue::Error(ExcelError::Na));
     assert_eq!(get("ok_eq_na"), CellValue::Error(ExcelError::Na));
     assert_eq!(get("ok_abs_na"), CellValue::Error(ExcelError::Na));
-    assert_eq!(get("ok_ifs_err_cond"), CellValue::Error(ExcelError::Div0));
+    assert_eq!(get("ok_if_err_cond"), CellValue::Error(ExcelError::Div0));
     assert_eq!(get("ok_xmatch_na"), CellValue::Error(ExcelError::Na));
     assert_eq!(get("ok_xlookup_na"), CellValue::Error(ExcelError::Na));
     assert_eq!(
@@ -2283,9 +2244,9 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
     let rejected_cases = [
         (
             false,
-            "IFNA(T[\"err_txt\", @col], 10)",
+            "IFERROR(T[\"err_txt\", @col], 10)",
             TypeError::IncompatibleBranchTypes {
-                function: "IFNA",
+                function: "IFERROR",
                 position: 2,
                 expected: ValueType::Text,
                 found: ValueType::Number,
@@ -2508,13 +2469,13 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
         RowSpec::new("err_div0_2").with_expr("2 / 0"),
         cell("c1", CellInput::boolean(true)),
         RowSpec::new("err_na").with_expr("NA()"),
-        RowSpec::new("ok_ifna_txt").with_expr("IFNA(T[\"err_txt\", @col], \"fallback\")"),
+        RowSpec::new("ok_iferr_txt").with_expr("IFERROR(T[\"err_txt\", @col], \"fallback\")"),
         RowSpec::new("ok_iferr_div0").with_expr("IFERROR(T[\"err_div0\", @col], 0)"),
         RowSpec::new("ok_iferr_idx_div0")
             .with_expr("IFERROR(INDEX(T[\"err_div0\"..\"err_div0_2\", @col], 1), 0)"),
         RowSpec::new("ok_add_div0").with_expr("1 + T[\"err_div0\", @col]"),
-        RowSpec::new("ok_ifna_na_num").with_expr("IFNA(T[\"err_na\", @col], 10)"),
-        RowSpec::new("ok_ifna_na_txt").with_expr("IFNA(T[\"err_na\", @col], \"fallback\")"),
+        RowSpec::new("ok_iferr_na_num").with_expr("IFERROR(T[\"err_na\", @col], 10)"),
+        RowSpec::new("ok_iferr_na_txt").with_expr("IFERROR(T[\"err_na\", @col], \"fallback\")"),
         RowSpec::new("ok_and_na_slice").with_expr("AND(T[\"c1\"..\"err_na\", @col])"),
         RowSpec::new("ok_dormant_and_na_slice")
             .with_expr("IF(TRUE, TRUE, AND(T[\"c1\"..\"err_na\", @col]))"),
@@ -2531,12 +2492,12 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
     assert_eq!(get("err_div0"), CellValue::Error(ExcelError::Div0));
     assert_eq!(get("err_div0_2"), CellValue::Error(ExcelError::Div0));
     assert_eq!(get("err_na"), CellValue::Error(ExcelError::Na));
-    assert_eq!(get("ok_ifna_txt"), CellValue::Text("fallback".into()));
+    assert_eq!(get("ok_iferr_txt"), CellValue::Text("fallback".into()));
     assert_eq!(get("ok_iferr_div0"), CellValue::Number(0.0));
     assert_eq!(get("ok_iferr_idx_div0"), CellValue::Number(0.0));
     assert_eq!(get("ok_add_div0"), CellValue::Error(ExcelError::Div0));
-    assert_eq!(get("ok_ifna_na_num"), CellValue::Number(10.0));
-    assert_eq!(get("ok_ifna_na_txt"), CellValue::Text("fallback".into()));
+    assert_eq!(get("ok_iferr_na_num"), CellValue::Number(10.0));
+    assert_eq!(get("ok_iferr_na_txt"), CellValue::Text("fallback".into()));
     assert_eq!(get("ok_and_na_slice"), CellValue::Error(ExcelError::Na));
     assert_eq!(get("ok_dormant_and_na_slice"), CellValue::Boolean(true));
 }
@@ -2721,15 +2682,11 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
             CellValue::Error(ExcelError::Num),
         ),
         (
-            "COUNTA(T[\"n1\"..\"n2\", \"line_item\"])",
-            CellValue::Number(2.0),
-        ),
-        (
             "XLOOKUP(\"COGS\", T[\"n1\"..\"n2\", \"line_item\"], T[\"n1\"..\"n2\", \"c1\"])",
             CellValue::Number(20.0),
         ),
         (
-            "IF(ISBLANK(T[\"hole\", \"c1\"]), 0, SUM(T[\"hole\", \"c1\"]))",
+            "IF(TRUE, 0, SUM(T[\"hole\", \"c1\"]))",
             CellValue::Number(0.0),
         ),
         (
@@ -2810,25 +2767,13 @@ fn test_scenario_18_error_introspection() {
         }
     };
 
-    // Dynamic OOB INDEX(r1..r4, dyn_9) -> #REF! (4.0), ISERROR, ISNA, ERROR.TYPE
+    // Dynamic OOB INDEX(r1..r4, dyn_9) -> #REF!, ISERROR
     for (formula, expected) in [
         (
             "ISERROR(INDEX(T[\"r1\"..\"r4\", \"num_a\"], T[\"helpers\", \"num_a\"]))",
             CellValue::Boolean(true),
         ),
-        (
-            "ISNA(INDEX(T[\"r1\"..\"r4\", \"num_a\"], T[\"helpers\", \"num_a\"]))",
-            CellValue::Boolean(false),
-        ),
-        (
-            "ERROR.TYPE(INDEX(T[\"r1\"..\"r4\", \"num_a\"], T[\"helpers\", \"num_a\"]))",
-            CellValue::Number(4.0),
-        ),
-        ("ERROR.TYPE(42)", CellValue::Error(ExcelError::Na)),
-        (
-            "ERROR.TYPE(T[\"helpers\", \"nulls\"])",
-            CellValue::Error(ExcelError::Na),
-        ),
+        ("ISERROR(42)", CellValue::Boolean(false)),
     ] {
         let compiled = Compiler::compile(&manifest, &[build_model(formula)])
             .unwrap_or_else(|e| panic!("expected ok on {formula}, got {e:?}"));
@@ -2844,6 +2789,24 @@ fn test_scenario_18_error_introspection() {
             "mismatch on {formula}"
         );
     }
+
+    // ISERROR rejects Empty argument with TypeError::EmptyArgument
+    let err = Compiler::compile(
+        &manifest,
+        &[build_model("ISERROR(T[\"helpers\", \"nulls\"])")],
+    )
+    .expect_err("expected EmptyArgument on ISERROR(Empty)");
+    assert!(matches!(
+        err,
+        CompilerError::Eval(EvalError::Type {
+            source: TypeError::EmptyArgument {
+                function: "ISERROR",
+                param: "value",
+                position: 1,
+            },
+            ..
+        })
+    ));
 }
 
 #[test]
