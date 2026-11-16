@@ -25,7 +25,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 43);
+    assert_eq!(registry.len(), 41);
     for retired in [
         "SWITCH",
         "SUMIFS",
@@ -33,6 +33,8 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         "AVERAGEIFS",
         "MINIFS",
         "MAXIFS",
+        "IPMT",
+        "PPMT",
     ] {
         assert!(
             registry.lookup(retired).is_none(),
@@ -66,8 +68,6 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         ("IRR", FunctionCategory::Financial),
         ("XIRR", FunctionCategory::Financial),
         ("PMT", FunctionCategory::Financial),
-        ("IPMT", FunctionCategory::Financial),
-        ("PPMT", FunctionCategory::Financial),
         ("XLOOKUP", FunctionCategory::Lookup),
         ("XMATCH", FunctionCategory::Lookup),
         ("INDEX", FunctionCategory::Lookup),

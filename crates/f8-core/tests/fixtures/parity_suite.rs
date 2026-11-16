@@ -1,14 +1,17 @@
-//! Canonical Excel calculation parity test fixture covering all 43 registered standard functions,
+//! Canonical Excel calculation parity test fixture covering all 41 registered standard functions,
 //! domain error semantics (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`, `#REF!`), and calculation edge cases.
 //!
-//! Organizes tests into 7 vertical tables on a single worksheet:
-//! 1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows, sparse cells) for ranges and lookups.
-//! 2. `MathParity`: 12 standard math and aggregation functions + edge and error cases.
-//! 3. `LogicalParity`: 8 logical, branching, and error-handling functions + edge and error cases.
-//! 4. `FinancialParity`: 7 discounting, return, and loan amortization functions + edge and error cases.
-//! 5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
-//! 6. `DateParity`: 8 serial date construction, decomposition, and difference functions + edge and error cases.
-//! 7. `InformationParity`: 5 cell-blank/error introspection and `#N/A` generation functions + edge and error cases.
+//! Organizes tests across two worksheets:
+//! - Sheet 1 (`ParityVerification`): 7 vertical tables where live Excel matches mathematical ground truth:
+//!   1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows, sparse cells) for ranges and lookups.
+//!   2. `MathParity`: 12 standard math and aggregation functions + edge and error cases.
+//!   3. `LogicalParity`: 8 logical, branching, and error-handling functions + edge and error cases.
+//!   4. `FinancialParity`: 5 discounting, return, and annuity functions + edge and error cases.
+//!   5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
+//!   6. `DateParity`: 8 serial date construction, decomposition, and difference functions + edge and error cases.
+//!   7. `InformationParity`: 5 cell-blank/error introspection and `#N/A` generation functions + edge and error cases.
+//! - Sheet 2 (`ExcelDivergences`): `IrrXirrDivergences` documenting 4 `IRR`/`XIRR` cases where `f8` enforces
+//!   mathematical ground truth and domain symmetry over legacy Excel solver/error quirks.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test fixture")]
 
@@ -79,6 +82,16 @@ struct ParityGroup {
     title: &'static str,
     subtitle: &'static str,
     cases: &'static [ParityCase],
+}
+
+/// Intentional mathematical divergence case where `f8` differs from a legacy Excel solver/error quirk.
+struct DivergenceCase {
+    id: &'static str,
+    label: &'static str,
+    formula: &'static str,
+    expected: ParityExpected,
+    excel_quirk: &'static str,
+    rationale: &'static str,
 }
 
 const MATH_CASES: &[ParityCase] = &[
@@ -568,7 +581,7 @@ const LOGICAL_CASES: &[ParityCase] = &[
 ];
 
 const FINANCIAL_CASES: &[ParityCase] = &[
-    // Core 7 functions
+    // Core 5 functions
     ParityCase {
         id: "npv",
         label: "NPV(0.1, cash_flows)",
@@ -599,18 +612,6 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         formula: "PMT(0.06 / 12, 36, -10000)",
         expected: ParityExpected::ApproxNum(304.219_374_515_557_15),
     },
-    ParityCase {
-        id: "ipmt",
-        label: "IPMT(0.06/12, 1, 36, -10000)",
-        formula: "IPMT(0.06 / 12, 1, 36, -10000)",
-        expected: ParityExpected::ApproxNum(50.0),
-    },
-    ParityCase {
-        id: "ppmt",
-        label: "PPMT(0.06/12, 1, 36, -10000)",
-        formula: "PPMT(0.06 / 12, 1, 36, -10000)",
-        expected: ParityExpected::ApproxNum(254.219_374_515_557_15),
-    },
     // Edge cases
     ParityCase {
         id: "irr_custom_guess",
@@ -622,12 +623,6 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         id: "irr_leading_zero",
         label: "IRR([0, 0, -100, 110]) [leading zero cash flows]",
         formula: "IRR(SeedData[\"r1\"..\"r4\", \"cf_lead_zero\"])",
-        expected: ParityExpected::ApproxNum(0.1),
-    },
-    ParityCase {
-        id: "xirr_leading_zero",
-        label: "XIRR([0, 0, -100, 110], dates) [leading zero cash flows]",
-        formula: "XIRR(SeedData[\"r1\"..\"r4\", \"cf_lead_zero\"], SeedData[\"r1\"..\"r4\", \"date\"])",
         expected: ParityExpected::ApproxNum(0.1),
     },
     ParityCase {
@@ -649,12 +644,6 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::ApproxNum(-0.999_999),
     },
     ParityCase {
-        id: "xirr_salvage_wipeout",
-        label: "XIRR([-1000000, 1], r1..r2 dates) [severe-loss root near -1.0]",
-        formula: "XIRR(SeedData[\"r1\"..\"r2\", \"cf_salvage\"], SeedData[\"r1\"..\"r2\", \"date\"])",
-        expected: ParityExpected::ApproxNum(-0.999_999_999_999_025),
-    },
-    ParityCase {
         id: "pmt_zero_rate",
         label: "PMT(0, 10, -1000) [zero interest rate]",
         formula: "PMT(0, 10, -1000)",
@@ -666,35 +655,11 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         formula: "PMT(0.06 / 12, 36, -10000, 2000, 1)",
         expected: ParityExpected::ApproxNum(252.114_924_987_508_2),
     },
-    ParityCase {
-        id: "ipmt_mid_period",
-        label: "IPMT(0.06/12, 18, 36, -10000) [mid-schedule period]",
-        formula: "IPMT(0.06 / 12, 18, 36, -10000)",
-        expected: ParityExpected::ApproxNum(27.505_015_529_156_335),
-    },
-    ParityCase {
-        id: "ppmt_mid_period",
-        label: "PPMT(0.06/12, 18, 36, -10000) [mid-schedule period]",
-        formula: "PPMT(0.06 / 12, 18, 36, -10000)",
-        expected: ParityExpected::ApproxNum(276.714_358_986_400_84),
-    },
     // Error cases
     ParityCase {
         id: "irr_no_sign_change_err",
         label: "IRR(r2..r4) [all positive cash flows -> #NUM!]",
         formula: "IRR(SeedData[\"r2\"..\"r4\", \"cash_flow\"])",
-        expected: ParityExpected::Error(ExcelError::Num),
-    },
-    ParityCase {
-        id: "irr_guess_neg_one_err",
-        label: "IRR(cash_flows, -1.0) [guess <= -1 -> #NUM!]",
-        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], -1.0)",
-        expected: ParityExpected::Error(ExcelError::Num),
-    },
-    ParityCase {
-        id: "irr_guess_lt_neg_one_err",
-        label: "IRR(cash_flows, -1.5) [guess <= -1 -> #NUM!]",
-        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], -1.5)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
     ParityCase {
@@ -757,35 +722,40 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         formula: "PMT(-1.0, 5, -1000)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
-    ParityCase {
-        id: "ipmt_rate_neg_one_due_err",
-        label: "IPMT(-1.0, 1, 5, -1000, 0, 1) [rate <= -1 -> #NUM!]",
-        formula: "IPMT(-1.0, 1, 5, -1000, 0, 1)",
-        expected: ParityExpected::Error(ExcelError::Num),
+];
+
+const DIVERGENCE_CASES: &[DivergenceCase] = &[
+    DivergenceCase {
+        id: "xirr_leading_zero",
+        label: "XIRR([0, 0, -100, 110], dates) [leading zero cash flows]",
+        formula: "XIRR(SeedData[\"r1\"..\"r4\", \"cf_lead_zero\"], SeedData[\"r1\"..\"r4\", \"date\"])",
+        expected: ParityExpected::ApproxNum(0.1),
+        excel_quirk: "2.98023E-09",
+        rationale: "Leading zero cash flows on early dates do not alter NPV; true mathematical IRR is 0.10 (Excel stalls near 0)",
     },
-    ParityCase {
-        id: "ipmt_frac_per_oob_err",
-        label: "IPMT(0.1, 5.5, 5, -1000) [fractional per > nper -> #NUM!]",
-        formula: "IPMT(0.1, 5.5, 5, -1000)",
-        expected: ParityExpected::Error(ExcelError::Num),
+    DivergenceCase {
+        id: "xirr_salvage_wipeout",
+        label: "XIRR([-1000000, 1], r1..r2 dates) [severe-loss root near -1.0]",
+        formula: "XIRR(SeedData[\"r1\"..\"r2\", \"cf_salvage\"], SeedData[\"r1\"..\"r2\", \"date\"])",
+        expected: ParityExpected::ApproxNum(-0.999_999_999_999_073_1),
+        excel_quirk: "#NUM!",
+        rationale: "Exact 182-day root (1e-6)^(365/182) - 1 = -0.9999999999990731 exists in (-1, +inf) (Excel unbracketed Newton overshoots -1)",
     },
-    ParityCase {
-        id: "ipmt_per_oob_err",
-        label: "IPMT(0.06/12, 40, 36, -10000) [per > nper -> #NUM!]",
-        formula: "IPMT(0.06 / 12, 40, 36, -10000)",
+    DivergenceCase {
+        id: "irr_guess_neg_one_err",
+        label: "IRR(cash_flows, -1.0) [guess <= -1 -> #NUM!]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], -1.0)",
         expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "#VALUE!",
+        rationale: "Discount factor 1 + rate <= 0 is a numeric domain pole (#NUM!), matching XIRR, XNPV, and PMT (Excel IRR returns #VALUE!)",
     },
-    ParityCase {
-        id: "ppmt_zero_nper_err",
-        label: "PPMT(0.05, 1, 0, -1000) [nper = 0 -> #NUM!]",
-        formula: "PPMT(0.05, 1, 0, -1000)",
+    DivergenceCase {
+        id: "irr_guess_lt_neg_one_err",
+        label: "IRR(cash_flows, -1.5) [guess <= -1 -> #NUM!]",
+        formula: "IRR(SeedData[\"r1\"..\"r4\", \"cash_flow\"], -1.5)",
         expected: ParityExpected::Error(ExcelError::Num),
-    },
-    ParityCase {
-        id: "ppmt_per_zero_err",
-        label: "PPMT(0.06/12, 0, 36, -10000) [per < 1 -> #NUM!]",
-        formula: "PPMT(0.06 / 12, 0, 36, -10000)",
-        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "#VALUE!",
+        rationale: "Discount factor 1 + rate <= 0 is a numeric domain pole (#NUM!), matching XIRR, XNPV, and PMT (Excel IRR returns #VALUE!)",
     },
 ];
 
@@ -1343,8 +1313,8 @@ const PARITY_GROUPS: &[ParityGroup] = &[
     },
     ParityGroup {
         table_id: "FinancialParity",
-        title: "Financial & Return Functions (7 Functions + Edge & Error Cases)",
-        subtitle: "NPV, XNPV, IRR, XIRR, PMT, IPMT, PPMT",
+        title: "Financial & Return Functions (5 Functions + Edge & Error Cases)",
+        subtitle: "NPV, XNPV, IRR, XIRR, PMT",
         cases: FINANCIAL_CASES,
     },
     ParityGroup {
@@ -1400,7 +1370,43 @@ fn build_category_table(group: &ParityGroup) -> TableSpec {
     }
 }
 
-/// Constructs the complete 43-function Excel parity verification model with pinned ground-truth constants.
+fn build_divergence_table() -> TableSpec {
+    let cols = vec![
+        build_descriptor_col("func_desc", "Function / Test"),
+        build_measure_col_label("formula_val", "Excel Formula"),
+        build_measure_col_label("expected_val", "f8 Expected"),
+        build_measure_col_label("excel_quirk", "Live Excel Output"),
+        build_descriptor_col("rationale", "Rationale"),
+    ];
+
+    let rows = DIVERGENCE_CASES
+        .iter()
+        .map(|case| {
+            RowBuilder::descriptor(case.id, "func_desc", case.label)
+                .cell_formula("formula_val", case.formula)
+                .cell("expected_val", case.expected.to_cell_input())
+                .cell_str("excel_quirk", case.excel_quirk)
+                .cell_str("rationale", case.rationale)
+                .build()
+        })
+        .collect();
+
+    TableSpec {
+        id: TableId::from("IrrXirrDivergences"),
+        title: "Intentional Mathematical Divergences from Excel Quirks".to_string(),
+        subtitle: Some(
+            "Cases where f8 enforces mathematical ground truth and domain symmetry over legacy Excel solver/error quirks"
+                .to_string(),
+        ),
+        currency: None,
+        collapsible: false,
+        placement: PlacementSpec::default(),
+        columns: cols,
+        rows,
+    }
+}
+
+/// Constructs the complete 41-function Excel parity verification model with pinned ground-truth constants.
 #[must_use]
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let mut sheet_tables = Vec::with_capacity(1 + PARITY_GROUPS.len());
@@ -1412,13 +1418,22 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let manifest = ProjectManifest {
         model_name: "ExcelParityVerification".to_string(),
         theme: Default::default(),
-        sheets: vec![SheetSpec {
-            name: "ParityVerification".to_string(),
-            tab_color: None,
-            freeze_panes: None,
-            show_gridlines: true,
-            tables: sheet_tables,
-        }],
+        sheets: vec![
+            SheetSpec {
+                name: "ParityVerification".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: sheet_tables,
+            },
+            SheetSpec {
+                name: "ExcelDivergences".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("IrrXirrDivergences")],
+            },
+        ],
     };
 
     let seed_cols = vec![
@@ -1530,148 +1545,146 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         rows: seed_rows,
     };
 
-    let mut tables = Vec::with_capacity(1 + PARITY_GROUPS.len());
+    let mut tables = Vec::with_capacity(2 + PARITY_GROUPS.len());
     tables.push(seed_table);
     for group in PARITY_GROUPS {
         tables.push(build_category_table(group));
     }
+    tables.push(build_divergence_table());
 
     (manifest, tables)
 }
 
+fn assert_case_value(
+    evaluated: &EvaluatedModel,
+    table_id: &TableId,
+    case_id: &str,
+    expected: ParityExpected,
+    formula_col: &ColId,
+    expected_col: &ColId,
+    expected_error_count: &mut usize,
+) {
+    let row_id = RowId::from(case_id);
+    let actual = evaluated
+        .get_value(table_id, &row_id, formula_col)
+        .unwrap_or_else(|| {
+            panic!("Missing evaluated formula_val for case '{case_id}' in table '{table_id}'")
+        });
+
+    match expected {
+        ParityExpected::ExactNum(expected_num) => match actual {
+            CellValue::Number(n) => {
+                assert!(
+                    n.to_bits() == expected_num.to_bits(),
+                    "Exact numeric mismatch for '{case_id}' in '{table_id}': expected {expected_num:?} (bits={:#x}), got {n:?} (bits={:#x})",
+                    expected_num.to_bits(),
+                    n.to_bits(),
+                );
+            }
+            CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty | CellValue::Error(_) => {
+                panic!(
+                    "Type mismatch for '{case_id}' in '{table_id}': expected Number({expected_num:?}), got {actual:?}"
+                );
+            }
+        },
+        ParityExpected::ApproxNum(expected_num) => match actual {
+            CellValue::Number(n) => {
+                let diff = (*n - expected_num).abs();
+                let max_err = RELATIVE_TOLERANCE * expected_num.abs();
+                assert!(
+                    n.is_finite() && diff <= max_err,
+                    "Approximate numeric mismatch for '{case_id}' in '{table_id}': expected {expected_num:.15}, got {n:.15} (abs_diff={diff:.3e}, max_allowed={max_err:.3e})",
+                );
+            }
+            CellValue::Text(_) | CellValue::Boolean(_) | CellValue::Empty | CellValue::Error(_) => {
+                panic!(
+                    "Type mismatch for '{case_id}' in '{table_id}': expected approx Number({expected_num:?}), got {actual:?}"
+                );
+            }
+        },
+        ParityExpected::Bool(expected_bool) => match actual {
+            CellValue::Boolean(b) => {
+                assert_eq!(
+                    *b, expected_bool,
+                    "Boolean mismatch for '{case_id}' in '{table_id}'"
+                );
+            }
+            CellValue::Number(_) | CellValue::Text(_) | CellValue::Empty | CellValue::Error(_) => {
+                panic!(
+                    "Type mismatch for '{case_id}' in '{table_id}': expected Boolean({expected_bool}), got {actual:?}"
+                );
+            }
+        },
+        ParityExpected::Text(expected_text) => match actual {
+            CellValue::Text(s) => {
+                assert_eq!(
+                    s.as_str(),
+                    expected_text,
+                    "Text mismatch for '{case_id}' in '{table_id}'"
+                );
+            }
+            CellValue::Number(_)
+            | CellValue::Boolean(_)
+            | CellValue::Empty
+            | CellValue::Error(_) => {
+                panic!(
+                    "Type mismatch for '{case_id}' in '{table_id}': expected Text({expected_text:?}), got {actual:?}"
+                );
+            }
+        },
+        ParityExpected::Error(expected_err) => {
+            *expected_error_count += 1;
+            match actual {
+                CellValue::Error(actual_err) => {
+                    assert_eq!(
+                        *actual_err, expected_err,
+                        "Domain error mismatch for '{case_id}' in '{table_id}'"
+                    );
+                }
+                CellValue::Number(_)
+                | CellValue::Text(_)
+                | CellValue::Boolean(_)
+                | CellValue::Empty => {
+                    panic!(
+                        "Expected error {expected_err} for '{case_id}' in '{table_id}', got {actual:?}"
+                    );
+                }
+            }
+            let recorded = evaluated.get_value(table_id, &row_id, expected_col);
+            assert_eq!(
+                recorded,
+                Some(&CellValue::Text(expected_err.as_str().to_string())),
+                "Error case '{case_id}' in '{table_id}' must store canonical error text in expected_val"
+            );
+        }
+    }
+}
+
 /// Asserts that every parity case in `evaluated` matches its pinned Excel ground-truth constant,
-/// every `parity_status` formula evaluates to `"PASS"`, and no unexpected domain errors exist.
+/// every `parity_status` formula evaluates to `"PASS"`, every documented divergence case in
+/// `IrrXirrDivergences` evaluates to its mathematical ground truth, and no unexpected domain errors exist.
 pub fn assert_evaluated_parity(evaluated: &EvaluatedModel) {
     let formula_col = ColId::from("formula_val");
     let expected_col = ColId::from("expected_val");
     let status_col = ColId::from("parity_status");
+    let quirk_col = ColId::from("excel_quirk");
+    let rationale_col = ColId::from("rationale");
     let mut expected_error_count = 0usize;
 
     for group in PARITY_GROUPS {
         let table_id = TableId::from(group.table_id);
         for case in group.cases {
+            assert_case_value(
+                evaluated,
+                &table_id,
+                case.id,
+                case.expected,
+                &formula_col,
+                &expected_col,
+                &mut expected_error_count,
+            );
+
             let row_id = RowId::from(case.id);
-            let actual = evaluated
-                .get_value(&table_id, &row_id, &formula_col)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Missing evaluated formula_val for case '{}' in table '{}'",
-                        case.id, group.table_id
-                    )
-                });
-
-            match case.expected {
-                ParityExpected::ExactNum(expected) => match actual {
-                    CellValue::Number(n) => {
-                        assert!(
-                            n.to_bits() == expected.to_bits(),
-                            "Exact numeric mismatch for '{}' in '{}': expected {expected:?} (bits={:#x}), got {n:?} (bits={:#x})",
-                            case.id,
-                            group.table_id,
-                            expected.to_bits(),
-                            n.to_bits(),
-                        );
-                    }
-                    CellValue::Text(_)
-                    | CellValue::Boolean(_)
-                    | CellValue::Empty
-                    | CellValue::Error(_) => {
-                        panic!(
-                            "Type mismatch for '{}' in '{}': expected Number({expected:?}), got {actual:?}",
-                            case.id, group.table_id
-                        );
-                    }
-                },
-                ParityExpected::ApproxNum(expected) => match actual {
-                    CellValue::Number(n) => {
-                        let diff = (*n - expected).abs();
-                        let max_err = RELATIVE_TOLERANCE * expected.abs();
-                        assert!(
-                            n.is_finite() && diff <= max_err,
-                            "Approximate numeric mismatch for '{}' in '{}': expected {expected:.15}, got {n:.15} (abs_diff={diff:.3e}, max_allowed={max_err:.3e})",
-                            case.id,
-                            group.table_id,
-                        );
-                    }
-                    CellValue::Text(_)
-                    | CellValue::Boolean(_)
-                    | CellValue::Empty
-                    | CellValue::Error(_) => {
-                        panic!(
-                            "Type mismatch for '{}' in '{}': expected approx Number({expected:?}), got {actual:?}",
-                            case.id, group.table_id
-                        );
-                    }
-                },
-                ParityExpected::Bool(expected) => match actual {
-                    CellValue::Boolean(b) => {
-                        assert_eq!(
-                            *b, expected,
-                            "Boolean mismatch for '{}' in '{}'",
-                            case.id, group.table_id
-                        );
-                    }
-                    CellValue::Number(_)
-                    | CellValue::Text(_)
-                    | CellValue::Empty
-                    | CellValue::Error(_) => {
-                        panic!(
-                            "Type mismatch for '{}' in '{}': expected Boolean({expected}), got {actual:?}",
-                            case.id, group.table_id
-                        );
-                    }
-                },
-                ParityExpected::Text(expected) => match actual {
-                    CellValue::Text(s) => {
-                        assert_eq!(
-                            s.as_str(),
-                            expected,
-                            "Text mismatch for '{}' in '{}'",
-                            case.id,
-                            group.table_id
-                        );
-                    }
-                    CellValue::Number(_)
-                    | CellValue::Boolean(_)
-                    | CellValue::Empty
-                    | CellValue::Error(_) => {
-                        panic!(
-                            "Type mismatch for '{}' in '{}': expected Text({expected:?}), got {actual:?}",
-                            case.id, group.table_id
-                        );
-                    }
-                },
-                ParityExpected::Error(expected_err) => {
-                    expected_error_count += 1;
-                    match actual {
-                        CellValue::Error(actual_err) => {
-                            assert_eq!(
-                                *actual_err, expected_err,
-                                "Domain error mismatch for '{}' in '{}'",
-                                case.id, group.table_id
-                            );
-                        }
-                        CellValue::Number(_)
-                        | CellValue::Text(_)
-                        | CellValue::Boolean(_)
-                        | CellValue::Empty => {
-                            panic!(
-                                "Expected error {expected_err} for '{}' in '{}', got {actual:?}",
-                                case.id, group.table_id
-                            );
-                        }
-                    }
-                    let recorded = evaluated.get_value(&table_id, &row_id, &expected_col);
-                    assert_eq!(
-                        recorded,
-                        Some(&CellValue::Text(expected_err.as_str().to_string())),
-                        "Error case '{}' in '{}' must store canonical error text in expected_val",
-                        case.id,
-                        group.table_id
-                    );
-                }
-            }
-
             let status = evaluated.get_value(&table_id, &row_id, &status_col);
             assert_eq!(
                 status,
@@ -1681,6 +1694,38 @@ pub fn assert_evaluated_parity(evaluated: &EvaluatedModel) {
                 group.table_id
             );
         }
+    }
+
+    let div_table_id = TableId::from("IrrXirrDivergences");
+    for case in DIVERGENCE_CASES {
+        assert_case_value(
+            evaluated,
+            &div_table_id,
+            case.id,
+            case.expected,
+            &formula_col,
+            &expected_col,
+            &mut expected_error_count,
+        );
+
+        let row_id = RowId::from(case.id);
+        assert!(
+            !case.excel_quirk.is_empty() && !case.rationale.is_empty(),
+            "Divergence case '{}' must document non-empty excel_quirk and rationale",
+            case.id
+        );
+        assert_eq!(
+            evaluated.get_value(&div_table_id, &row_id, &quirk_col),
+            Some(&CellValue::Text(case.excel_quirk.to_string())),
+            "Mismatch in excel_quirk for '{}'",
+            case.id
+        );
+        assert_eq!(
+            evaluated.get_value(&div_table_id, &row_id, &rationale_col),
+            Some(&CellValue::Text(case.rationale.to_string())),
+            "Mismatch in rationale for '{}'",
+            case.id
+        );
     }
 
     let all_errors = evaluated.find_errors();
