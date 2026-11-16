@@ -22,7 +22,7 @@ description: >-
 ### 1. Explore & align (Lead Orchestrator)
 
 - Ground designs in existing modules, schemas, AST/IR types, and reference docs listed in `AGENTS.md`.
-- Surface candidate approaches with explicit trade-offs.
+- Default to the simplest unified extension of existing types and passes; surface alternative approaches with explicit trade-offs when genuine design tensions exist.
 
 ### 2. Specify (Lead Orchestrator)
 

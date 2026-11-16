@@ -3,7 +3,7 @@ use crate::functions::traits::{
     BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, TypeError, ValueType};
+use crate::value::{CellValue, ValueType};
 
 static IFERROR_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
@@ -62,93 +62,10 @@ impl ExcelFunction for IferrorFunction {
             });
         };
 
-        let evaluated_value = val_arg.eval_scalar(self.name(), ctx)?;
+        let evaluated_value = val_arg.eval_scalar(self.name(), "value", 1, ctx)?;
 
         if matches!(evaluated_value, CellValue::Error(_)) {
-            let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
-            if fallback_value.is_empty() {
-                return Err(FunctionError::Type(TypeError::EmptyArgument {
-                    function: self.name(),
-                    param: "value_if_error",
-                    position: 2,
-                }));
-            }
-            Ok(fallback_value)
-        } else {
-            Ok(evaluated_value)
-        }
-    }
-}
-
-static IFNA_PARAMS: &[ParameterDef] = &[
-    ParameterDef::required(
-        "value",
-        "The value or expression to check for an #N/A error.",
-        ParamKind::Scalar,
-        ParamType::Any,
-    ),
-    ParameterDef::required(
-        "value_if_na",
-        "The value to return if the formula evaluates to #N/A.",
-        ParamKind::Lazy,
-        ParamType::Any,
-    ),
-];
-
-/// `IFNA(value, value_if_na)`: Returns value_if_na if value evaluates to #N/A; otherwise returns value.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct IfnaFunction;
-
-impl ExcelFunction for IfnaFunction {
-    fn name(&self) -> &'static str {
-        "IFNA"
-    }
-
-    fn category(&self) -> FunctionCategory {
-        FunctionCategory::Logical
-    }
-
-    fn parameters(&self) -> &'static [ParameterDef] {
-        IFNA_PARAMS
-    }
-
-    fn return_type(&self) -> Option<ValueType> {
-        None
-    }
-
-    fn variadic_rule(&self) -> VariadicRule {
-        VariadicRule::None
-    }
-
-    fn validation_policy(&self) -> ValidationPolicy {
-        ValidationPolicy::Branch(BranchPolicy::ErrorTrap)
-    }
-
-    fn evaluate(
-        &self,
-        args: &[FunctionArg<'_>],
-        ctx: &dyn EvalContext,
-    ) -> Result<CellValue, FunctionError> {
-        let [val_arg, fallback_arg] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        };
-
-        let evaluated_value = val_arg.eval_scalar(self.name(), ctx)?;
-
-        if matches!(evaluated_value, CellValue::Error(ExcelError::Na)) {
-            let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
-            if fallback_value.is_empty() {
-                return Err(FunctionError::Type(TypeError::EmptyArgument {
-                    function: self.name(),
-                    param: "value_if_na",
-                    position: 2,
-                }));
-            }
-            Ok(fallback_value)
+            fallback_arg.eval_scalar(self.name(), "value_if_error", 2, ctx)
         } else {
             Ok(evaluated_value)
         }

@@ -9,7 +9,7 @@ use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ValueType};
+use crate::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Positional parameter definitions for `XLOOKUP`.
 static XLOOKUP_PARAMS: &[ParameterDef] = &[
@@ -25,21 +25,20 @@ static XLOOKUP_PARAMS: &[ParameterDef] = &[
         ParamKind::Range,
         ParamType::Any,
     )
-    .allow_empty(),
+    .allow_empty_in_slice(),
     ParameterDef::required(
         "return_array",
         "The 1D range to return matching items from.",
         ParamKind::Range,
         ParamType::Any,
     )
-    .allow_empty(),
+    .allow_empty_in_slice(),
     ParameterDef::optional(
         "if_not_found",
         "The value to return if no match is found.",
         ParamKind::Lazy,
         ParamType::Any,
-    )
-    .allow_empty(),
+    ),
     ParameterDef::with_default(
         "match_mode",
         "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger).",
@@ -99,7 +98,7 @@ impl ExcelFunction for XlookupFunction {
             });
         };
 
-        let lookup_val = lookup_arg.eval_scalar(self.name(), ctx)?;
+        let lookup_val = lookup_arg.eval_scalar(self.name(), "lookup_value", 1, ctx)?;
         let lookup_slice = lookup_arr_arg.as_range_slice(self.name())?;
         let return_slice = return_arr_arg.as_range_slice(self.name())?;
 
@@ -124,13 +123,25 @@ impl ExcelFunction for XlookupFunction {
         }
 
         match find_match_index(&lookup_val, lookup_slice, match_mode, search_mode) {
-            Ok(Some(idx)) => Ok(return_slice
-                .get(idx)
-                .cloned()
-                .unwrap_or(CellValue::Error(ExcelError::Ref))),
+            Ok(Some(idx)) => {
+                let val = return_slice
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or(CellValue::Error(ExcelError::Ref));
+                if val.is_empty() {
+                    return Err(FunctionError::Type(TypeError::EmptyArgument {
+                        function: self.name(),
+                        param: "return_array",
+                        position: 3,
+                    }));
+                }
+                Ok(val)
+            }
             Ok(None) => match args.get(3) {
                 None | Some(FunctionArg::Omitted) => Ok(CellValue::Error(ExcelError::Na)),
-                Some(not_found_arg) => not_found_arg.eval_scalar(self.name(), ctx),
+                Some(not_found_arg) => {
+                    not_found_arg.eval_scalar(self.name(), "if_not_found", 4, ctx)
+                }
             },
             Err(err) => Ok(CellValue::Error(err)),
         }

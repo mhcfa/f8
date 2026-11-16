@@ -6,7 +6,7 @@ use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ValueType};
+use crate::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Positional parameter definitions for `INDEX`.
 static INDEX_PARAMS: &[ParameterDef] = &[
@@ -16,7 +16,7 @@ static INDEX_PARAMS: &[ParameterDef] = &[
         ParamKind::Range,
         ParamType::Any,
     )
-    .allow_empty(),
+    .allow_empty_in_slice(),
     ParameterDef::required(
         "row_num",
         "The 1-based row (or 1D element) position in the range.",
@@ -120,9 +120,17 @@ impl ExcelFunction for IndexFunction {
         }
 
         let idx = (target_row - 1) as usize * cols + (target_col - 1) as usize;
-        Ok(values
+        let val = values
             .get(idx)
             .cloned()
-            .unwrap_or(CellValue::Error(ExcelError::Ref)))
+            .unwrap_or(CellValue::Error(ExcelError::Ref));
+        if val.is_empty() {
+            return Err(FunctionError::Type(TypeError::EmptyArgument {
+                function: self.name(),
+                param: "array",
+                position: 1,
+            }));
+        }
+        Ok(val)
     }
 }

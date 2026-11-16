@@ -85,14 +85,34 @@ fn test_registration_and_metadata() {
     let xlookup = registry.lookup("XLOOKUP").unwrap();
     assert_eq!(xlookup.min_args(), 3);
     assert_eq!(xlookup.max_args(), Some(6));
+    assert_eq!(
+        xlookup.parameters()[1].empty_policy,
+        f8_core::functions::EmptyPolicy::AllowInSlice
+    );
+    assert_eq!(
+        xlookup.parameters()[2].empty_policy,
+        f8_core::functions::EmptyPolicy::AllowInSlice
+    );
+    assert_eq!(
+        xlookup.parameters()[3].empty_policy,
+        f8_core::functions::EmptyPolicy::Forbid
+    );
 
     let xmatch = registry.lookup("XMATCH").unwrap();
     assert_eq!(xmatch.min_args(), 2);
     assert_eq!(xmatch.max_args(), Some(4));
+    assert_eq!(
+        xmatch.parameters()[1].empty_policy,
+        f8_core::functions::EmptyPolicy::AllowInSlice
+    );
 
     let index = registry.lookup("INDEX").unwrap();
     assert_eq!(index.min_args(), 2);
     assert_eq!(index.max_args(), Some(3));
+    assert_eq!(
+        index.parameters()[0].empty_policy,
+        f8_core::functions::EmptyPolicy::AllowInSlice
+    );
 }
 
 // ============================================================================
@@ -1458,6 +1478,79 @@ fn test_excel_parity_edge_cases() {
             )
             .unwrap(),
         CellValue::Error(ExcelError::Div0)
+    );
+
+    // 4. Passing an Empty lookup_value, selecting an Empty cell from XLOOKUP return_array or INDEX array,
+    // or evaluating an Empty if_not_found arm fails with TypeError::EmptyArgument
+    let sparse_return = make_array(2, 1, vec![CellValue::Empty, CellValue::Number(20.0)]);
+    let keys_two = make_array(2, 1, vec![CellValue::Number(1.0), CellValue::Number(2.0)]);
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Empty),
+                keys_two.clone(),
+                sparse_return.clone(),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "XLOOKUP",
+            param: "lookup_value",
+            position: 1,
+        }))
+    );
+    assert_eq!(
+        xmatch.evaluate(
+            &[FunctionArg::Scalar(CellValue::Empty), keys_two.clone()],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "XMATCH",
+            param: "lookup_value",
+            position: 1,
+        }))
+    );
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                keys_two.clone(),
+                sparse_return.clone(),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "XLOOKUP",
+            param: "return_array",
+            position: 3,
+        }))
+    );
+    assert_eq!(
+        xlookup.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(99.0)),
+                keys_two,
+                sparse_return.clone(),
+                FunctionArg::Scalar(CellValue::Empty),
+            ],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "XLOOKUP",
+            param: "if_not_found",
+            position: 4,
+        }))
+    );
+    assert_eq!(
+        index.evaluate(
+            &[sparse_return, FunctionArg::Scalar(CellValue::Number(1.0))],
+            &ctx,
+        ),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "INDEX",
+            param: "array",
+            position: 1,
+        }))
     );
 }
 

@@ -25,7 +25,7 @@ static XMATCH_PARAMS: &[ParameterDef] = &[
         ParamKind::Range,
         ParamType::Any,
     )
-    .allow_empty(),
+    .allow_empty_in_slice(),
     ParameterDef::with_default(
         "match_mode",
         "The match type: 0 (exact), -1 (exact or next smaller), 1 (exact or next larger).",
@@ -85,7 +85,7 @@ impl ExcelFunction for XmatchFunction {
             });
         };
 
-        let lookup_val = lookup_arg.eval_scalar(self.name(), ctx)?;
+        let lookup_val = lookup_arg.eval_scalar(self.name(), "lookup_value", 1, ctx)?;
         let slice = lookup_arr_arg.as_range_slice(self.name())?;
 
         let match_mode =

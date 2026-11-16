@@ -469,7 +469,7 @@ fn test_cluster_a1_scenario_1_grammar_strictness() {
         );
     }
 
-    // 4. Valid binary '+', unary '-', parenthesized comparisons, positive integer offsets, ISBLANK, and NA() succeed
+    // 4. Valid binary '+', unary '-', parenthesized comparisons, positive integer offsets, ISERROR, and NA() succeed
     for valid in [
         "1 + 2",
         "-10",
@@ -477,7 +477,7 @@ fn test_cluster_a1_scenario_1_grammar_strictness() {
         "TRUE = (1 = 1)",
         "Table[@row, col.prev]",
         "Table[@row, col.prev(2)]",
-        "ISBLANK(Table[\"r1\", @col])",
+        "ISERROR(Table[\"r1\", @col])",
         "NA()",
     ] {
         let parsed = Expr::parse(valid).unwrap_or_else(|e| panic!("'{valid}' should parse: {e}"));
@@ -488,13 +488,17 @@ fn test_cluster_a1_scenario_1_grammar_strictness() {
 }
 
 #[test]
-fn test_dotted_function_name_roundtrip_and_diagnostics() {
-    let formula = "ERROR.TYPE(1 / 0)";
-    let parsed = Expr::parse(formula).unwrap_or_else(|e| panic!("'{formula}' must parse: {e}"));
-    let displayed = parsed.to_string();
-    assert_eq!(displayed, formula, "Display mismatch for '{formula}'");
-    let reparsed = Expr::parse(&displayed).unwrap();
-    assert_eq!(reparsed, parsed, "Round-trip AST mismatch for '{formula}'");
+fn test_dotted_function_name_and_criteria_syntax_rejected() {
+    // Dotted function names such as ERROR.TYPE fail in Pass 2 with UnexpectedToken('.')
+    let err_dot = Expr::parse("ERROR.TYPE(1 / 0)").unwrap_err();
+    assert_eq!(
+        err_dot,
+        ParseError::UnexpectedToken {
+            expected: "function call '(' or table reference '['",
+            found: ".".to_string(),
+            offset: 5,
+        }
+    );
 
     // Malformed dotted function names, bare identifiers, and retired criteria call-arg syntax fail parsing
     for bad in [

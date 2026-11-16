@@ -1266,10 +1266,10 @@ fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
 }
 
 // ----------------------------------------------------------------------------
-// Scenario 17: EmptyFormulaResult Rejection & Guarded IF(ISBLANK(...)) Emission
+// Scenario 17: EmptyFormulaResult Rejection & Sparse Slice / Null Cell Emission
 // ----------------------------------------------------------------------------
 #[test]
-fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
+fn test_scenario_17_empty_formula_rejected_and_sparse_slice_emission() {
     use f8_core::compiler::eval::EvalError;
     use f8_core::compiler::{CompilerError, ErrorDiagnostic};
     use f8_core::model::id::{ColId, RowId};
@@ -1310,7 +1310,7 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         })
     ));
 
-    // 2. Explicitly guarded IF(ISBLANK(...), 0, ...) emits cleanly in cached and values_only modes
+    // 2. Sparse slice SUM(a..a) over Null cell `a` emits cleanly in cached and values_only modes
     let mut table = TableSpec::new("BlankCoercion", "Blank Coercion");
     table
         .columns
@@ -1320,9 +1320,7 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         .push(RowSpec::new("a").with_cell("val", CellInput::null()));
     table.rows.push(RowSpec::new("b").with_cell(
         "val",
-        CellInput::formula(
-            "IF(ISBLANK(BlankCoercion[\"a\", @col]), 0, BlankCoercion[\"a\", @col])",
-        ),
+        CellInput::formula("SUM(BlankCoercion[\"a\"..\"a\", @col])"),
     ));
 
     let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
@@ -1353,7 +1351,7 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         }
     };
 
-    // Cached formula emission: `b` writes `<f>` with `ISBLANK(` and `<v>0</v>` while `a` has no `<v>` tag
+    // Cached formula emission: `b` writes `<f>` with `SUM(` and `<v>0</v>` while `a` has no `<v>` tag
     let cached_buf = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
     let cached_xml = read_zip_entry(&cached_buf, "xl/worksheets/sheet1.xml");
     let cached_a = extract_cell_element(&cached_xml, a_ref).expect("a blank cell written");
@@ -1364,8 +1362,8 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         "null literal cell A must remain blank without <v> or <f>: {cached_a}"
     );
     assert!(
-        cached_b.contains("<f>") && cached_b.contains("ISBLANK(") && cached_b.contains("<v>0</v>"),
-        "guarded formula cell B must emit ISBLANK <f> and cached <v>0</v>: {cached_b}"
+        cached_b.contains("<f>") && cached_b.contains("SUM(") && cached_b.contains("<v>0</v>"),
+        "formula cell B must emit SUM <f> and cached <v>0</v>: {cached_b}"
     );
 
     // values_only emission: `b` writes numeric `0` while `a` remains blank
@@ -1387,7 +1385,7 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
     );
     assert!(
         !frozen_b.contains("<f>") && !frozen_b.contains("t=\"s\"") && frozen_b.contains("<v>0</v>"),
-        "guarded formula cell B must emit numeric <v>0</v> in values_only mode: {frozen_b}"
+        "formula cell B must emit numeric <v>0</v> in values_only mode: {frozen_b}"
     );
 }
 

@@ -1,15 +1,15 @@
-//! Canonical Excel calculation parity test fixture covering all 41 registered standard functions,
+//! Canonical Excel calculation parity test fixture covering all 34 registered standard functions,
 //! domain error semantics (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`, `#REF!`), and calculation edge cases.
 //!
 //! Organizes tests across two worksheets:
 //! - Sheet 1 (`ParityVerification`): 7 vertical tables where live Excel matches mathematical ground truth:
 //!   1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows, sparse cells) for ranges and lookups.
-//!   2. `MathParity`: 12 standard math and aggregation functions + edge and error cases.
-//!   3. `LogicalParity`: 8 logical, branching, and error-handling functions + edge and error cases.
+//!   2. `MathParity`: 11 standard math and aggregation functions + edge and error cases.
+//!   3. `LogicalParity`: 6 logical, branching, and error-handling functions + edge and error cases.
 //!   4. `FinancialParity`: 5 discounting, return, and annuity functions + edge and error cases.
 //!   5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
-//!   6. `DateParity`: 8 serial date construction, decomposition, and difference functions + edge and error cases.
-//!   7. `InformationParity`: 5 cell-blank/error introspection and `#N/A` generation functions + edge and error cases.
+//!   6. `DateParity`: 7 serial date construction and decomposition functions + edge and error cases.
+//!   7. `InformationParity`: 2 error introspection and `#N/A` generation functions + edge and error cases.
 //! - Sheet 2 (`ExcelDivergences`): `RuntimeDivergences` documenting live Pass 4b formulas where `f8`
 //!   enforces strict calendar dates, date serials `>= 1`, exact discrete integers, binary-search
 //!   monotonicity, and mathematical `IRR`/`XIRR` ground truth over legacy Excel quirks.
@@ -39,7 +39,7 @@ enum ParityExpected {
     Bool(bool),
     /// Exact string equality.
     Text(&'static str),
-    /// Domain error parity (`ERROR.TYPE(formula_val) = expected_code`) verifying the exact `ExcelError` variant.
+    /// Domain error parity (`ISERROR(formula_val)` in live Excel sheet + exact `ExcelError` variant assertion in Rust).
     Error(ExcelError),
 }
 
@@ -61,10 +61,9 @@ impl ParityExpected {
             Self::ApproxNum(_) => format!(
                 "IF(IFERROR(ABS({table_id}[@row, \"formula_val\"] - {table_id}[@row, \"expected_val\"]) <= 0.000000001 * ABS({table_id}[@row, \"expected_val\"]), FALSE), \"PASS\", \"FAIL\")"
             ),
-            Self::Error(err) => format!(
-                "IF(IFERROR(ERROR.TYPE({table_id}[@row, \"formula_val\"]) = {}, FALSE), \"PASS\", \"FAIL\")",
-                err.error_type_code() as u8
-            ),
+            Self::Error(_) => {
+                format!("IF(ISERROR({table_id}[@row, \"formula_val\"]), \"PASS\", \"FAIL\")")
+            }
         }
     }
 }
@@ -96,7 +95,7 @@ struct DivergenceCase {
 }
 
 const MATH_CASES: &[ParityCase] = &[
-    // Core 12 functions
+    // Core 11 functions
     ParityCase {
         id: "abs",
         label: "ABS(-42.5)",
@@ -119,12 +118,6 @@ const MATH_CASES: &[ParityCase] = &[
         id: "count",
         label: "COUNT(num_a)",
         formula: "COUNT(SeedData[\"r1\"..\"r4\", \"num_a\"])",
-        expected: ParityExpected::ExactNum(4.0),
-    },
-    ParityCase {
-        id: "counta",
-        label: "COUNTA(category)",
-        formula: "COUNTA(SeedData[\"r1\"..\"r4\", \"category\"])",
         expected: ParityExpected::ExactNum(4.0),
     },
     ParityCase {
@@ -274,14 +267,8 @@ const MATH_CASES: &[ParityCase] = &[
     },
     ParityCase {
         id: "count_sparse",
-        label: "COUNT(sparse) [null ignored, formula-blank 0 counted]",
+        label: "COUNT(sparse) [null ignored, formula 0 counted]",
         formula: "COUNT(SeedData[\"r1\"..\"r4\", \"sparse\"])",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "counta_sparse",
-        label: "COUNTA(sparse) [null ignored, formula-blank 0 counted]",
-        formula: "COUNTA(SeedData[\"r1\"..\"r4\", \"sparse\"])",
         expected: ParityExpected::ExactNum(2.0),
     },
     ParityCase {
@@ -426,7 +413,7 @@ const MATH_CASES: &[ParityCase] = &[
 ];
 
 const LOGICAL_CASES: &[ParityCase] = &[
-    // Core 8 functions
+    // Core 6 functions
     ParityCase {
         id: "if_fn",
         label: "IF(10 > 5, 100, 200)",
@@ -434,22 +421,10 @@ const LOGICAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(100.0),
     },
     ParityCase {
-        id: "ifs_fn",
-        label: "IFS(10 < 5, 1, 10 > 5, 2)",
-        formula: "IFS(10 < 5, 1, 10 > 5, 2)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
         id: "iferror",
         label: "IFERROR(10 / 0, 999)",
         formula: "IFERROR(10 / 0, 999)",
         expected: ParityExpected::ExactNum(999.0),
-    },
-    ParityCase {
-        id: "ifna",
-        label: "IFNA(XLOOKUP(\"missing\", ...), 888)",
-        formula: "IFNA(XLOOKUP(\"missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"]), 888)",
-        expected: ParityExpected::ExactNum(888.0),
     },
     ParityCase {
         id: "and_fn",
@@ -513,60 +488,12 @@ const LOGICAL_CASES: &[ParityCase] = &[
         expected: ParityExpected::Bool(true),
     },
     ParityCase {
-        id: "if_blank_guard",
-        label: "IF(ISBLANK(sparse[r1]), \"\", sparse[r1]) [explicit blank guard]",
-        formula: "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), \"\", SeedData[\"r1\", \"sparse\"])",
-        expected: ParityExpected::Text(""),
-    },
-    ParityCase {
-        id: "if_blank_guard_arith",
-        label: "IF(ISBLANK(sparse[r1]), 0, sparse[r1] + 5) [lazy guarded arithmetic]",
-        formula: "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), 0, SeedData[\"r1\", \"sparse\"] + 5)",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
-        id: "if_helper_blank_guard",
-        label: "IF(sparse_is_null[r1], 0, sparse[r1] + 5) [helper-cell ISBLANK guard]",
-        formula: "IF(SeedData[\"r1\", \"sparse_is_null\"], 0, SeedData[\"r1\", \"sparse\"] + 5)",
-        expected: ParityExpected::ExactNum(0.0),
-    },
-    ParityCase {
         id: "and_sparse_slice_true",
         label: "AND(sparse_bool[r1..r2]) [skips null in syntactic slice -> TRUE]",
         formula: "AND(SeedData[\"r1\"..\"r2\", \"sparse_bool\"])",
         expected: ParityExpected::Bool(true),
     },
-    ParityCase {
-        id: "if_blank_mid_isblank",
-        label: "ISBLANK(IF(TRUE, sparse[r1], 1)) [mid-expression IF blank]",
-        formula: "ISBLANK(IF(TRUE, SeedData[\"r1\", \"sparse\"], 1))",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "ifs_blank_mid_isblank",
-        label: "ISBLANK(IFS(TRUE, sparse[r1])) [mid-expression IFS blank]",
-        formula: "ISBLANK(IFS(TRUE, SeedData[\"r1\", \"sparse\"]))",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "choose_blank_mid_isblank",
-        label: "ISBLANK(CHOOSE(1, sparse[r1])) [mid-expression CHOOSE blank]",
-        formula: "ISBLANK(CHOOSE(1, SeedData[\"r1\", \"sparse\"]))",
-        expected: ParityExpected::Bool(true),
-    },
     // Error cases
-    ParityCase {
-        id: "ifna_passthrough_div0",
-        label: "IFNA(10 / 0, 888) [non-#N/A error bubbles -> #DIV/0!]",
-        formula: "IFNA(10 / 0, 888)",
-        expected: ParityExpected::Error(ExcelError::Div0),
-    },
-    ParityCase {
-        id: "ifs_no_match_err",
-        label: "IFS(10 < 5, 1, 20 < 10, 2) [no true branch -> #N/A]",
-        formula: "IFS(10 < 5, 1, 20 < 10, 2)",
-        expected: ParityExpected::Error(ExcelError::Na),
-    },
     ParityCase {
         id: "choose_dyn_oob_err",
         label: "CHOOSE(num_b[r4], 100, 200, 300) [dynamic index 5 out of bounds -> #VALUE!]",
@@ -838,14 +765,6 @@ const DIVERGENCE_CASES: &[DivergenceCase] = &[
         expected: ParityExpected::Error(ExcelError::Num),
         excel_quirk: "0",
         rationale: "Calendar day 0 does not exist; rejects fictitious Lotus serial 0 (1900-01-00) where Excel returns day 0",
-    },
-    DivergenceCase {
-        id: "days_serial_zero_err",
-        label: "DAYS(DATE(2024, 1, 1), 0) [serial 0 start_date -> #NUM!]",
-        formula: "DAYS(DATE(2024, 1, 1), 0)",
-        expected: ParityExpected::Error(ExcelError::Num),
-        excel_quirk: "45292",
-        rationale: "Both end_date and start_date must be valid date serials in 1..=2958465; rejects serial 0",
     },
     DivergenceCase {
         id: "edate_serial_zero_err",
@@ -1159,26 +1078,8 @@ const LOOKUP_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(2.0),
     },
     ParityCase {
-        id: "index_blank_mid_isblank",
-        label: "ISBLANK(INDEX(sparse, 1)) [mid-expression INDEX blank preserved]",
-        formula: "ISBLANK(INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 1))",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "xlookup_blank_mid_isblank",
-        label: "ISBLANK(XLOOKUP(\"Alpha\", cat, sparse, 0)) [mid-expression blank preserved]",
-        formula: "ISBLANK(XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"], 0))",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "xlookup_miss_isblank_false",
-        label: "ISBLANK(XLOOKUP(\"Missing\", cat, sparse, 0)) [fallback 0 is non-blank]",
-        formula: "ISBLANK(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"], 0))",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
         id: "xlookup_zero_skips_null_hits_formula",
-        label: "XLOOKUP(0, sparse, num_a) [skips null r1, matches guarded 0 r2]",
+        label: "XLOOKUP(0, sparse, num_a) [skips null r1, matches 0 r2]",
         formula: "XLOOKUP(0, SeedData[\"r1\"..\"r4\", \"sparse\"], SeedData[\"r1\"..\"r4\", \"num_a\"])",
         expected: ParityExpected::ExactNum(20.0),
     },
@@ -1216,7 +1117,7 @@ const LOOKUP_CASES: &[ParityCase] = &[
 ];
 
 const DATE_CASES: &[ParityCase] = &[
-    // Core 8 functions
+    // Core 7 functions
     ParityCase {
         id: "date_fn",
         label: "DATE(2024, 6, 15)",
@@ -1259,12 +1160,6 @@ const DATE_CASES: &[ParityCase] = &[
         formula: "DAY(DATE(2024, 6, 15))",
         expected: ParityExpected::ExactNum(15.0),
     },
-    ParityCase {
-        id: "days_fn",
-        label: "DAYS(DATE(2024, 6, 15), DATE(2024, 6, 1))",
-        formula: "DAYS(DATE(2024, 6, 15), DATE(2024, 6, 1))",
-        expected: ParityExpected::ExactNum(14.0),
-    },
     // Edge cases
     ParityCase {
         id: "lotus_leap_day_bug",
@@ -1273,9 +1168,9 @@ const DATE_CASES: &[ParityCase] = &[
         expected: ParityExpected::ExactNum(60.0),
     },
     ParityCase {
-        id: "days_across_1900_bug",
-        label: "DAYS(DATE(1900, 3, 1), DATE(1900, 2, 28)) [spans serial 60]",
-        formula: "DAYS(DATE(1900, 3, 1), DATE(1900, 2, 28))",
+        id: "serial_diff_across_1900_bug",
+        label: "DATE(1900, 3, 1) - DATE(1900, 2, 28) [spans serial 60]",
+        formula: "DATE(1900, 3, 1) - DATE(1900, 2, 28)",
         expected: ParityExpected::ExactNum(2.0),
     },
     ParityCase {
@@ -1390,43 +1285,7 @@ const DATE_CASES: &[ParityCase] = &[
 ];
 
 const INFORMATION_CASES: &[ParityCase] = &[
-    // Core 5 functions (ISBLANK, ISERROR, ISNA, ERROR.TYPE, NA) + edge and error cases
-    ParityCase {
-        id: "isblank_null",
-        label: "ISBLANK(sparse[r1]) [null literal -> TRUE]",
-        formula: "ISBLANK(SeedData[\"r1\", \"sparse\"])",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "isblank_guarded_zero",
-        label: "ISBLANK(sparse[r2]) [guarded formula 0 -> FALSE]",
-        formula: "ISBLANK(SeedData[\"r2\", \"sparse\"])",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isblank_empty_str",
-        label: "ISBLANK(\"\") [empty string -> FALSE]",
-        formula: "ISBLANK(\"\")",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isblank_zero",
-        label: "ISBLANK(0) [numeric zero -> FALSE]",
-        formula: "ISBLANK(0)",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isblank_false",
-        label: "ISBLANK(FALSE) [boolean false -> FALSE]",
-        formula: "ISBLANK(FALSE)",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isblank_div0",
-        label: "ISBLANK(10 / 0) [domain error does not bubble -> FALSE]",
-        formula: "ISBLANK(10 / 0)",
-        expected: ParityExpected::Bool(false),
-    },
+    // Core 2 functions (ISERROR, NA) + edge and error cases
     ParityCase {
         id: "iserror_div0",
         label: "ISERROR(1 / 0) [#DIV/0! -> TRUE]",
@@ -1476,114 +1335,12 @@ const INFORMATION_CASES: &[ParityCase] = &[
         expected: ParityExpected::Bool(false),
     },
     ParityCase {
-        id: "iserror_null",
-        label: "ISERROR(sparse[r1]) [null -> FALSE]",
-        formula: "ISERROR(SeedData[\"r1\", \"sparse\"])",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isna_na",
-        label: "ISNA(XMATCH(\"Missing\", cat)) [#N/A -> TRUE]",
-        formula: "ISNA(XMATCH(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"]))",
-        expected: ParityExpected::Bool(true),
-    },
-    ParityCase {
-        id: "isna_div0",
-        label: "ISNA(1 / 0) [#DIV/0! -> FALSE]",
-        formula: "ISNA(1 / 0)",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isna_value",
-        label: "ISNA(AND(sparse_bool[r3..r4])) [#VALUE! -> FALSE]",
-        formula: "ISNA(AND(SeedData[\"r3\"..\"r4\", \"sparse_bool\"]))",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isna_ref",
-        label: "ISNA(INDEX(num_a, num_b[r4])) [#REF! -> FALSE]",
-        formula: "ISNA(INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r4\", \"num_b\"]))",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isna_num",
-        label: "ISNA(EDATE(DATE(1900, 1, 15), -2)) [#NUM! -> FALSE]",
-        formula: "ISNA(EDATE(DATE(1900, 1, 15), -2))",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isna_non_error",
-        label: "ISNA(42) [number -> FALSE]",
-        formula: "ISNA(42)",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "isna_null",
-        label: "ISNA(sparse[r1]) [null -> FALSE]",
-        formula: "ISNA(SeedData[\"r1\", \"sparse\"])",
-        expected: ParityExpected::Bool(false),
-    },
-    ParityCase {
-        id: "errortype_div0",
-        label: "ERROR.TYPE(1 / 0) [#DIV/0! -> 2]",
-        formula: "ERROR.TYPE(1 / 0)",
-        expected: ParityExpected::ExactNum(2.0),
-    },
-    ParityCase {
-        id: "errortype_value",
-        label: "ERROR.TYPE(AND(sparse_bool[r3..r4])) [#VALUE! -> 3]",
-        formula: "ERROR.TYPE(AND(SeedData[\"r3\"..\"r4\", \"sparse_bool\"]))",
-        expected: ParityExpected::ExactNum(3.0),
-    },
-    ParityCase {
-        id: "errortype_ref",
-        label: "ERROR.TYPE(INDEX(num_a, num_b[r4])) [#REF! -> 4]",
-        formula: "ERROR.TYPE(INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r4\", \"num_b\"]))",
-        expected: ParityExpected::ExactNum(4.0),
-    },
-    ParityCase {
-        id: "errortype_num",
-        label: "ERROR.TYPE(EDATE(DATE(1900, 1, 15), -2)) [#NUM! -> 6]",
-        formula: "ERROR.TYPE(EDATE(DATE(1900, 1, 15), -2))",
-        expected: ParityExpected::ExactNum(6.0),
-    },
-    ParityCase {
-        id: "errortype_na",
-        label: "ERROR.TYPE(XMATCH(\"Missing\", cat)) [#N/A -> 7]",
-        formula: "ERROR.TYPE(XMATCH(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"]))",
-        expected: ParityExpected::ExactNum(7.0),
-    },
-    ParityCase {
-        id: "na_trapped_ifna",
-        label: "IFNA(IF(FALSE, 10, NA()), 0) [trapped NA() -> 0]",
-        formula: "IFNA(IF(FALSE, 10, NA()), 0)",
+        id: "na_trapped_iferror",
+        label: "IFERROR(IF(FALSE, 10, NA()), 0) [trapped NA() -> 0]",
+        formula: "IFERROR(IF(FALSE, 10, NA()), 0)",
         expected: ParityExpected::ExactNum(0.0),
     },
     // Error cases
-    ParityCase {
-        id: "errortype_non_error_num",
-        label: "ERROR.TYPE(42) [non-error number -> #N/A]",
-        formula: "ERROR.TYPE(42)",
-        expected: ParityExpected::Error(ExcelError::Na),
-    },
-    ParityCase {
-        id: "errortype_non_error_text",
-        label: "ERROR.TYPE(\"#DIV/0!\") [error-like text -> #N/A]",
-        formula: "ERROR.TYPE(\"#DIV/0!\")",
-        expected: ParityExpected::Error(ExcelError::Na),
-    },
-    ParityCase {
-        id: "errortype_non_error_bool",
-        label: "ERROR.TYPE(TRUE) [boolean -> #N/A]",
-        formula: "ERROR.TYPE(TRUE)",
-        expected: ParityExpected::Error(ExcelError::Na),
-    },
-    ParityCase {
-        id: "errortype_non_error_null",
-        label: "ERROR.TYPE(sparse[r1]) [null -> #N/A]",
-        formula: "ERROR.TYPE(SeedData[\"r1\", \"sparse\"])",
-        expected: ParityExpected::Error(ExcelError::Na),
-    },
     ParityCase {
         id: "na_fn",
         label: "NA() [explicit #N/A]",
@@ -1601,14 +1358,14 @@ const INFORMATION_CASES: &[ParityCase] = &[
 const PARITY_GROUPS: &[ParityGroup] = &[
     ParityGroup {
         table_id: "MathParity",
-        title: "Math & Aggregation Functions (12 Functions + Edge & Error Cases)",
-        subtitle: "ABS, SUM, AVERAGE, COUNT, COUNTA, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT",
+        title: "Math & Aggregation Functions (11 Functions + Edge & Error Cases)",
+        subtitle: "ABS, SUM, AVERAGE, COUNT, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT",
         cases: MATH_CASES,
     },
     ParityGroup {
         table_id: "LogicalParity",
-        title: "Logical & Branching Functions (8 Functions + Edge & Error Cases)",
-        subtitle: "IF, IFS, IFERROR, IFNA, AND, OR, NOT, CHOOSE",
+        title: "Logical & Branching Functions (6 Functions + Edge & Error Cases)",
+        subtitle: "IF, IFERROR, AND, OR, NOT, CHOOSE",
         cases: LOGICAL_CASES,
     },
     ParityGroup {
@@ -1625,14 +1382,14 @@ const PARITY_GROUPS: &[ParityGroup] = &[
     },
     ParityGroup {
         table_id: "DateParity",
-        title: "Date Construction & Difference Functions (8 Functions + Edge & Error Cases)",
-        subtitle: "DATE, EDATE, EOMONTH, YEARFRAC, YEAR, MONTH, DAY, DAYS",
+        title: "Date Construction & Decomposition Functions (7 Functions + Edge & Error Cases)",
+        subtitle: "DATE, EDATE, EOMONTH, YEARFRAC, YEAR, MONTH, DAY",
         cases: DATE_CASES,
     },
     ParityGroup {
         table_id: "InformationParity",
-        title: "Information Functions (5 Functions + Edge & Error Cases)",
-        subtitle: "ISBLANK, ISERROR, ISNA, ERROR.TYPE, NA",
+        title: "Information Functions (2 Functions + Edge & Error Cases)",
+        subtitle: "ISERROR, NA",
         cases: INFORMATION_CASES,
     },
 ];
@@ -1706,7 +1463,7 @@ fn build_divergence_table() -> TableSpec {
     }
 }
 
-/// Constructs the complete 41-function Excel parity verification model with pinned ground-truth constants.
+/// Constructs the complete 34-function Excel parity verification model with pinned ground-truth constants.
 #[must_use]
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let mut sheet_tables = Vec::with_capacity(1 + PARITY_GROUPS.len());
@@ -1746,7 +1503,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         build_measure_col_label("cash_flow", "Cash Flow"),
         build_measure_col_label("sparse", "Sparse"),
         build_measure_col_label("all_null", "All Null"),
-        build_measure_col_label("sparse_is_null", "Sparse Is Null"),
         build_measure_col_label("sparse_bool", "Sparse Bool"),
         build_measure_col_label("num_dup_asc", "Vector Dup Asc"),
         build_measure_col_label("num_dup_desc", "Vector Dup Desc"),
@@ -1766,7 +1522,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("cash_flow", -1000.0)
             .cell("sparse", CellInput::null())
             .cell("all_null", CellInput::null())
-            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
             .cell_num("num_dup_asc", 20.0)
             .cell_num("num_dup_desc", 40.0)
@@ -1782,12 +1537,8 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_str("category", "Beta")
             .cell_num("date", 45474.0) // 2024-07-01
             .cell_num("cash_flow", 300.0)
-            .cell_formula(
-                "sparse",
-                "IF(ISBLANK(SeedData[\"r1\", \"sparse\"]), 0, SeedData[\"r1\", \"sparse\"])",
-            )
+            .cell_formula("sparse", "IF(TRUE, 0, 1)")
             .cell("all_null", CellInput::null())
-            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::boolean(true))
             .cell_num("num_dup_asc", 20.0)
             .cell_num("num_dup_desc", 40.0)
@@ -1805,7 +1556,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("cash_flow", 400.0)
             .cell_num("sparse", 20.0)
             .cell("all_null", CellInput::null())
-            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
             .cell_num("num_dup_asc", 40.0)
             .cell_num("num_dup_desc", 20.0)
@@ -1823,7 +1573,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
             .cell_num("cash_flow", 600.0)
             .cell("sparse", CellInput::null())
             .cell("all_null", CellInput::null())
-            .cell_formula("sparse_is_null", "ISBLANK(SeedData[@row, \"sparse\"])")
             .cell("sparse_bool", CellInput::null())
             .cell_num("num_dup_asc", 40.0)
             .cell_num("num_dup_desc", 20.0)

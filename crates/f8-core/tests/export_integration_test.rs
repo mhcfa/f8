@@ -142,10 +142,10 @@ fn test_models_emit_in_memory() {
     );
     assert!(
         combined_sheets.contains("XLOOKUP")
-            && combined_sheets.contains("IFS")
+            && combined_sheets.contains("IF(")
             && combined_sheets.contains("PMT")
             && combined_sheets.contains("XIRR"),
-        "Expected lowered financial and logical functions (XLOOKUP, IFS, PMT, XIRR) in formula tags"
+        "Expected lowered financial and logical functions (XLOOKUP, IF, PMT, XIRR) in formula tags"
     );
 
     let lbo_shared_strings = read_zip_entry(&lbo_buffer, "xl/sharedStrings.xml");
@@ -216,7 +216,7 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 41 Standard Functions + Edge & Error Cases)
+    // 5. Excel Parity Verification Suite (All 34 Standard Functions + Edge & Error Cases)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     assert_eq!(parity_manifest.sheets.len(), 2);
     assert_eq!(parity_manifest.sheets[0].name, "ParityVerification");
@@ -319,8 +319,8 @@ fn test_models_emit_in_memory() {
         "Parity check formulas must lower 1e-9 relative tolerance in compact uppercase E notation"
     );
     assert!(
-        uncached_sheet_xml.contains("ERROR.TYPE("),
-        "Parity check formulas must grade error cases via ERROR.TYPE"
+        uncached_sheet_xml.contains("ISERROR("),
+        "Parity check formulas must grade error cases via ISERROR"
     );
     assert!(
         !uncached_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),
@@ -385,7 +385,6 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
 
     let migrated_compile_errors = [
         "ABS(\"invalid\")",
-        "DAYS(\"invalid\", DATE(2024, 1, 1))",
         "100 < \"1\"",
         "\"zzz\" < FALSE",
         "SeedData[\"r1\", \"sparse\"]",
@@ -393,16 +392,23 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         "SeedData[\"r1\", \"sparse\"] = FALSE",
         "INDEX(SeedData[\"r1\"..\"r4\", \"sparse\"], 1)",
         "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"sparse\"])",
-        // Cluster A2 migrated parity cases & retired SWITCH
+        "IF(TRUE, SeedData[\"r1\", \"sparse\"], 1)",
+        "CHOOSE(1, SeedData[\"r1\", \"sparse\"], 1)",
+        "IFERROR(SeedData[\"r1\", \"sparse\"], 1)",
+        "IFERROR(1 / 0, SeedData[\"r1\", \"sparse\"])",
+        "ISERROR(SeedData[\"r1\", \"sparse\"])",
+        // Cluster A2 migrated parity cases & retired functions
         "IF(10 < 5, 100)",
         "IF(10 > 5, 100, \"NM\")",
         "IFERROR(10 / 0, \"N/A\")",
         "SWITCH(1, 1, 10, 20)",
         "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
-        "ISBLANK(IFERROR(SeedData[\"r1\", \"sparse\"], 1))",
-        "ISBLANK(IFERROR(1 / 0, SeedData[\"r1\", \"sparse\"]))",
-        "ISBLANK(IFNA(SeedData[\"r1\", \"sparse\"], 1))",
-        "ISBLANK(IFNA(XLOOKUP(\"Missing\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"]), SeedData[\"r1\", \"sparse\"]))",
+        "COUNTA(SeedData[\"r1\"..\"r4\", \"category\"])",
+        "IFS(TRUE, 1, FALSE, 2)",
+        "IFNA(1 / 0, 0)",
+        "DAYS(DATE(2024, 6, 15), DATE(2024, 6, 1))",
+        "ISBLANK(SeedData[\"r1\", \"sparse\"])",
+        "ISNA(1 / 0)",
         "INDEX(SeedData[\"r1\"..\"r4\", \"num_desc\"..\"category\"], 1, 1)",
         // Cluster B migrated parity cases & strict aggregation / descriptor checks
         "SUM(SeedData[\"r1\"..\"r4\", \"category\"], TRUE, 5)",
@@ -652,7 +658,7 @@ fn test_export_xlsx_to_disk() {
 
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 41 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 34 Functions)".to_string()),
         author: Some("f8 Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,

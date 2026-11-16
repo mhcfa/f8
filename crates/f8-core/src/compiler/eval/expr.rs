@@ -15,9 +15,7 @@ use crate::value::{CellValue, ExcelError, TypeError};
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
 ///
 /// - Statically validates all function calls, types, and slice shapes across the AST before evaluating.
-/// - Preserves uncoerced `CellValue::Empty` when references or reference-returning branch/lookup functions
-///   (`INDEX`, `XLOOKUP`, `IF`, `IFS`, `CHOOSE`) resolve to a blank cell;
-///   root `EmptyFormulaResult` rejection applies at the formula-cell boundary in `Evaluator::evaluate`.
+/// - Rejects a top-level `CellValue::Empty` result with `TypeError::EmptyFormulaResult`.
 ///
 /// # Errors
 /// Returns `EvalError` on internal compiler, function signature, resolution, slice, or typing failures.
@@ -48,10 +46,31 @@ pub fn eval_expr(
             StageAError::Function(source) => EvalError::function(origin.clone(), source),
             StageAError::Resolve(source) => EvalError::Resolve(source),
         })?;
-    eval_expr_validated(expr, origin, memoized_values, symbol_table, registry)
+    eval_root_expr_validated(expr, origin, memoized_values, symbol_table, registry)
 }
 
-/// Evaluates an already-validated formula AST expression at `origin`, preserving mid-expression `CellValue::Empty`.
+/// Evaluates an already-validated root formula AST expression at `origin`, rejecting a top-level
+/// `CellValue::Empty` result with `TypeError::EmptyFormulaResult`.
+pub(crate) fn eval_root_expr_validated(
+    expr: &Expr,
+    origin: &CellId,
+    memoized_values: &IndexMap<CellId, CellValue>,
+    symbol_table: &SymbolTable,
+    registry: &FunctionRegistry,
+) -> Result<CellValue, EvalError> {
+    match eval_expr_validated(expr, origin, memoized_values, symbol_table, registry)? {
+        CellValue::Empty => Err(EvalError::Type {
+            cell: Box::new(origin.clone()),
+            source: TypeError::EmptyFormulaResult,
+        }),
+        other @ (CellValue::Number(_)
+        | CellValue::Text(_)
+        | CellValue::Boolean(_)
+        | CellValue::Error(_)) => Ok(other),
+    }
+}
+
+/// Evaluates an already-validated formula AST sub-expression at `origin`.
 pub(crate) fn eval_expr_validated(
     expr: &Expr,
     origin: &CellId,

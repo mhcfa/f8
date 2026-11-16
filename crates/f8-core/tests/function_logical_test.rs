@@ -58,11 +58,12 @@ fn eval_str(
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 41);
-    assert!(registry.lookup("SWITCH").is_none());
-    assert!(registry.lookup("switch").is_none());
+    assert_eq!(registry.len(), 34);
+    for retired in ["SWITCH", "switch", "IFS", "ifs", "IFNA", "ifna"] {
+        assert!(registry.lookup(retired).is_none());
+    }
 
-    let logical_funcs = ["IF", "IFS", "IFERROR", "IFNA", "AND", "OR", "NOT", "CHOOSE"];
+    let logical_funcs = ["IF", "IFERROR", "AND", "OR", "NOT", "CHOOSE"];
 
     for name in logical_funcs {
         let func = registry
@@ -233,7 +234,7 @@ fn test_scenario_3_not_scalar_inversion() {
 fn test_scenario_4_iferror_and_ifna_lazy_evaluation() {
     let registry = FunctionRegistry::standard();
     let iferror_func = registry.lookup("IFERROR").unwrap();
-    let ifna_func = registry.lookup("IFNA").unwrap();
+    assert!(registry.lookup("IFNA").is_none());
     let ctx = MockContext::new();
 
     let dummy_expr = Expr::Literal(f8_core::expr::ast::Literal::Number(42.0));
@@ -263,141 +264,32 @@ fn test_scenario_4_iferror_and_ifna_lazy_evaluation() {
         .unwrap();
     assert_eq!(res_err, CellValue::Number(42.0));
     assert_eq!(ctx.count(), 1); // fallback expression WAS evaluated
-
-    // IFNA: valid value does not evaluate fallback
-    let res_na_val = ifna_func
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(99.0)),
-                FunctionArg::Lazy(&dummy_expr),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res_na_val, CellValue::Number(99.0));
-
-    // IFNA: other errors (e.g. #DIV/0!) are NOT caught; fallback not evaluated
-    let res_div0 = ifna_func
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-                FunctionArg::Lazy(&dummy_expr),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res_div0, CellValue::Error(ExcelError::Div0));
-
-    // IFNA: #N/A is caught; fallback evaluated
-    let res_caught = ifna_func
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Na)),
-                FunctionArg::Lazy(&dummy_expr),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    assert_eq!(res_caught, CellValue::Number(42.0));
 }
 
 #[test]
 fn test_scenario_5_ifs_short_circuiting_and_na_fallback() {
     let registry = FunctionRegistry::standard();
-    let ifs_func = registry.lookup("IFS").unwrap();
+    let if_func = registry.lookup("IF").unwrap();
+    assert!(registry.lookup("IFS").is_none());
     let ctx = MockContext::new();
 
-    let expr_true = Expr::Literal(f8_core::expr::ast::Literal::Boolean(true));
-    let expr_false = Expr::Literal(f8_core::expr::ast::Literal::Boolean(false));
     let expr_res1 = Expr::Literal(f8_core::expr::ast::Literal::String("first".into()));
     let expr_res2 = Expr::Literal(f8_core::expr::ast::Literal::String("second".into()));
-    let expr_unreachable = Expr::Literal(f8_core::expr::ast::Literal::String("unreachable".into()));
 
-    // IFS(FALSE, "first", TRUE, "second", FALSE, "unreachable")
+    // IF(FALSE, "first", "second") evaluates only "second"
     let args = vec![
-        FunctionArg::Lazy(&expr_false),
+        FunctionArg::Scalar(CellValue::Boolean(false)),
         FunctionArg::Lazy(&expr_res1),
-        FunctionArg::Lazy(&expr_true),
         FunctionArg::Lazy(&expr_res2),
-        FunctionArg::Lazy(&expr_false),
-        FunctionArg::Lazy(&expr_unreachable),
     ];
-    let res = ifs_func.evaluate(&args, &ctx).unwrap();
+    let res = if_func.evaluate(&args, &ctx).unwrap();
     assert_eq!(res, CellValue::Text("second".into()));
-    assert_eq!(ctx.count(), 3);
+    assert_eq!(ctx.count(), 1);
 
-    // All false conditions return #N/A
-    let args_all_false = vec![
-        FunctionArg::Lazy(&expr_false),
-        FunctionArg::Lazy(&expr_res1),
-        FunctionArg::Lazy(&expr_false),
-        FunctionArg::Lazy(&expr_res2),
-    ];
-    let res_na = ifs_func.evaluate(&args_all_false, &ctx).unwrap();
-    assert_eq!(res_na, CellValue::Error(ExcelError::Na));
-
-    // Validation rejects odd argument counts
-    let single_arg = vec![CallArg::from(Expr::Literal(
-        f8_core::expr::ast::Literal::Boolean(true),
-    ))];
-    assert!(matches!(
-        registry.validate_call("IFS", &single_arg),
-        Err(FunctionError::TooFewArguments { .. })
-    ));
-
-    let odd_args = vec![
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))),
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(1.0))),
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(false))),
-    ];
-    assert!(matches!(
-        registry.validate_call("IFS", &odd_args),
-        Err(FunctionError::InvalidVariadicPairs { .. })
-    ));
-
-    // Validation correctly associates cyclical parameter names for omitted arguments in pairs
-    let omitted_cond = vec![
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))),
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(1.0))),
-        CallArg::Omitted,
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(2.0))),
-    ];
-    match registry.validate_call("IFS", &omitted_cond) {
-        Err(FunctionError::CannotOmitRequiredArgument {
-            param, position, ..
-        }) => {
-            assert_eq!(param, "logical_test1");
-            assert_eq!(position, 3);
-        }
-        other => panic!("expected CannotOmitRequiredArgument for position 3, got {other:?}"),
-    }
-
-    let omitted_val = vec![
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(true))),
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Number(1.0))),
-        CallArg::from(Expr::Literal(f8_core::expr::ast::Literal::Boolean(false))),
-        CallArg::Omitted,
-    ];
-    match registry.validate_call("IFS", &omitted_val) {
-        Err(FunctionError::CannotOmitRequiredArgument {
-            param, position, ..
-        }) => {
-            assert_eq!(param, "value_if_true1");
-            assert_eq!(position, 4);
-        }
-        other => panic!("expected CannotOmitRequiredArgument for position 4, got {other:?}"),
-    }
-
-    // Non-boolean condition in IFS fails in Pass 4a with InvalidArgumentType
+    // IFS is rejected as UnknownFunction
     assert_eq!(
-        registry.validate_expr(&Expr::parse("IFS(\"true\", \"first\")").unwrap()),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "IFS",
-            param: "logical_test1",
-            position: 1,
-            expected: ValueType::Boolean,
-            found: ValueType::Text,
-        }))
+        registry.validate_expr(&Expr::parse("IFS(TRUE, \"first\", FALSE, \"second\")").unwrap()),
+        Err(FunctionError::UnknownFunction("IFS".into()))
     );
 }
 
@@ -456,9 +348,11 @@ fn test_scenario_6_choose_index_selection() {
 }
 
 #[test]
-fn test_scenario_7_switch_retired_unknown_function() {
+fn test_scenario_7_retired_functions_unknown_function() {
     let registry = FunctionRegistry::standard();
-    assert!(registry.lookup("SWITCH").is_none());
+    for retired in ["SWITCH", "COUNTA", "IFS", "IFNA", "DAYS", "ISBLANK", "ISNA"] {
+        assert!(registry.lookup(retired).is_none());
+    }
 
     let mut symbols = SymbolTable::new();
     let sheet = SheetId::from("Sheet1");
@@ -476,23 +370,32 @@ fn test_scenario_7_switch_retired_unknown_function() {
     let origin = CellId::new("Data", "r1", "c1");
     let values = IndexMap::new();
 
-    for formula in [
-        "SWITCH(1, 1, 10, 20)",
-        "IF(FALSE, SWITCH(1, 1, 10, 20), 0)",
-        "ISBLANK(SWITCH(1, 1, 10))",
+    for (formula, fn_name) in [
+        ("SWITCH(1, 1, 10, 20)", "SWITCH"),
+        ("IF(FALSE, SWITCH(1, 1, 10, 20), 0)", "SWITCH"),
+        ("IFS(TRUE, 10, FALSE, 20)", "IFS"),
+        ("IF(FALSE, IFS(TRUE, 10), 0)", "IFS"),
+        ("IFNA(1 / 0, 0)", "IFNA"),
+        ("IF(FALSE, IFNA(1 / 0, 0), 0)", "IFNA"),
+        ("ISBLANK(Data[\"r1\", \"c1\"])", "ISBLANK"),
+        ("IF(FALSE, ISBLANK(Data[\"r1\", \"c1\"]), FALSE)", "ISBLANK"),
+        ("ISNA(1 / 0)", "ISNA"),
+        ("IF(FALSE, ISNA(1 / 0), FALSE)", "ISNA"),
+        ("COUNTA(Data[\"r1\", \"c1\"])", "COUNTA"),
+        ("DAYS(45292, 45000)", "DAYS"),
     ] {
         let expr = Expr::parse(formula).unwrap();
         assert_eq!(
             registry.validate_expr(&expr),
-            Err(FunctionError::UnknownFunction("SWITCH".into())),
-            "expected UnknownFunction(\"SWITCH\") in Stage A for '{formula}'"
+            Err(FunctionError::UnknownFunction(fn_name.into())),
+            "expected UnknownFunction({fn_name:?}) in Stage A for '{formula}'"
         );
         let err = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap_err();
         let EvalError::Function { cell, source } = err else {
             panic!("expected EvalError::Function for '{formula}', got {err:?}");
         };
         assert_eq!(*cell, origin);
-        assert_eq!(*source, FunctionError::UnknownFunction("SWITCH".into()));
+        assert_eq!(*source, FunctionError::UnknownFunction(fn_name.into()));
     }
 }
 
@@ -547,16 +450,10 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         CellValue::Number(42.0)
     );
 
-    // IFNA formula ignoring division by zero
-    assert_eq!(
-        eval_str("IFNA(10 / 0, 42)", &symbols, &values, &registry, &origin),
-        CellValue::Error(ExcelError::Div0)
-    );
-
-    // IFS formula short-circuiting
+    // Nested IF formula short-circuiting
     assert_eq!(
         eval_str(
-            "IFS(1 = 2, 100, 3 = 3, 200, 4 = 4, 300)",
+            "IF(1 = 2, 100, IF(3 = 3, 200, 300))",
             &symbols,
             &values,
             &registry,
@@ -591,14 +488,14 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         );
     }
 
-    // ISBLANK and NA() end-to-end formulas
+    // ISERROR and NA() end-to-end formulas
     assert_eq!(
-        eval_str("ISBLANK(\"\")", &symbols, &values, &registry, &origin),
+        eval_str("ISERROR(\"\")", &symbols, &values, &registry, &origin),
         CellValue::Boolean(false)
     );
     assert_eq!(
-        eval_str("ISBLANK(1 / 0)", &symbols, &values, &registry, &origin),
-        CellValue::Boolean(false)
+        eval_str("ISERROR(1 / 0)", &symbols, &values, &registry, &origin),
+        CellValue::Boolean(true)
     );
     assert_eq!(
         eval_str("NA()", &symbols, &values, &registry, &origin),
@@ -606,7 +503,7 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
     );
     assert_eq!(
         eval_str(
-            "IFNA(IF(FALSE, 10, NA()), 0)",
+            "IFERROR(IF(FALSE, 10, NA()), 0)",
             &symbols,
             &values,
             &registry,
@@ -617,7 +514,7 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
 }
 
 #[test]
-fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_errors_only() {
+fn test_scenario_9_iferror_propagates_function_error_and_traps_domain_errors_only() {
     struct FailingFirstEvalContext {
         eval_count: std::cell::Cell<usize>,
     }
@@ -682,9 +579,8 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
     assert_eq!(*cell, origin);
     assert_eq!(*source, FunctionError::UnknownFunction("UNKNOWN_FN".into()));
 
-    // 4. Runtime FunctionError (InvalidArgumentKind and EvaluationFailure) on args[0] in IFERROR and IFNA propagates
+    // 4. Runtime FunctionError (InvalidArgumentKind and EvaluationFailure) on args[0] in IFERROR propagates
     let iferror_func = registry.lookup("IFERROR").unwrap();
-    let ifna_func = registry.lookup("IFNA").unwrap();
     let fallback_expr = Expr::number(42.0);
     let primary_expr = Expr::number(1.0);
 
@@ -692,22 +588,10 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
     let array_arg = FunctionArg::range(1, 1, vec![CellValue::Number(1.0)], ReferenceKind::Slice);
 
     let err_kind_iferror = iferror_func
-        .evaluate(
-            &[array_arg.clone(), FunctionArg::Lazy(&fallback_expr)],
-            &mock_ctx,
-        )
-        .unwrap_err();
-    assert_eq!(
-        err_kind_iferror,
-        FunctionError::SliceInScalarContext { rows: 1, cols: 1 }
-    );
-    assert_eq!(mock_ctx.count(), 0);
-
-    let err_kind_ifna = ifna_func
         .evaluate(&[array_arg, FunctionArg::Lazy(&fallback_expr)], &mock_ctx)
         .unwrap_err();
     assert_eq!(
-        err_kind_ifna,
+        err_kind_iferror,
         FunctionError::SliceInScalarContext { rows: 1, cols: 1 }
     );
     assert_eq!(mock_ctx.count(), 0);
@@ -729,40 +613,20 @@ fn test_scenario_9_iferror_and_ifna_propagate_function_error_and_trap_domain_err
         FunctionError::EvaluationFailure { .. }
     ));
     assert_eq!(fail_ctx.eval_count.get(), 1);
-
-    let fail_ctx_na = FailingFirstEvalContext {
-        eval_count: std::cell::Cell::new(0),
-    };
-    let err_eval_ifna = ifna_func
-        .evaluate(
-            &[
-                FunctionArg::Lazy(&primary_expr),
-                FunctionArg::Lazy(&fallback_expr),
-            ],
-            &fail_ctx_na,
-        )
-        .unwrap_err();
-    assert!(matches!(
-        err_eval_ifna,
-        FunctionError::EvaluationFailure { .. }
-    ));
-    assert_eq!(fail_ctx_na.eval_count.get(), 1);
 }
 
 #[test]
-fn test_scenario_10_static_monomorphic_branch_unification_and_iferror_non_empty() {
+fn test_scenario_10_static_monomorphic_branch_unification_and_non_empty_lazy_arms() {
     let registry = FunctionRegistry::standard();
+    let if_fn = registry.lookup("IF").unwrap();
+    let choose_fn = registry.lookup("CHOOSE").unwrap();
     let iferror_fn = registry.lookup("IFERROR").unwrap();
-    let ifna_fn = registry.lookup("IFNA").unwrap();
-    let ctx = MockContext::new();
 
-    // Static IncompatibleBranchTypes across IF, IFS, CHOOSE, IFERROR, IFNA
+    // Static IncompatibleBranchTypes across IF, CHOOSE, IFERROR
     for (formula, fn_name, pos) in [
         ("IF(TRUE, 10, \"NM\")", "IF", 3),
-        ("IFS(TRUE, 10, FALSE, \"NM\")", "IFS", 4),
         ("CHOOSE(1, 10, \"NM\")", "CHOOSE", 3),
         ("IFERROR(10, \"N/A\")", "IFERROR", 2),
-        ("IFNA(10, \"N/A\")", "IFNA", 2),
     ] {
         let expr = Expr::parse(formula).unwrap();
         assert_eq!(
@@ -783,7 +647,7 @@ fn test_scenario_10_static_monomorphic_branch_unification_and_iferror_non_empty(
         }
     }
 
-    // IFERROR and IFNA reject CellValue::Empty on evaluated non-Error arms with EmptyArgument
+    // IF, CHOOSE, and IFERROR reject CellValue::Empty on evaluated arms with EmptyArgument
     let call_args = [
         CallArg::Expr(Expr::parse("1").unwrap()),
         CallArg::Expr(Expr::parse("1").unwrap()),
@@ -796,13 +660,14 @@ fn test_scenario_10_static_monomorphic_branch_unification_and_iferror_non_empty(
             position: 1,
         }))
     );
+    let dummy = Expr::number(1.0);
     assert_eq!(
         iferror_fn.evaluate(
             &[
                 FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
-                FunctionArg::Scalar(CellValue::Empty),
+                FunctionArg::Lazy(&dummy),
             ],
-            &ctx,
+            &EmptyEvalContext,
         ),
         Err(FunctionError::Type(TypeError::EmptyArgument {
             function: "IFERROR",
@@ -811,25 +676,48 @@ fn test_scenario_10_static_monomorphic_branch_unification_and_iferror_non_empty(
         }))
     );
     assert_eq!(
-        registry.bind_arguments(ifna_fn, &call_args, &EmptyEvalContext),
+        if_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Boolean(true)),
+                FunctionArg::Lazy(&dummy),
+                FunctionArg::Lazy(&dummy),
+            ],
+            &EmptyEvalContext,
+        ),
         Err(FunctionError::Type(TypeError::EmptyArgument {
-            function: "IFNA",
-            param: "value",
-            position: 1,
+            function: "IF",
+            param: "value_if_true",
+            position: 2,
         }))
     );
     assert_eq!(
-        ifna_fn.evaluate(
+        if_fn.evaluate(
             &[
-                FunctionArg::Scalar(CellValue::Error(ExcelError::Na)),
-                FunctionArg::Scalar(CellValue::Empty),
+                FunctionArg::Scalar(CellValue::Boolean(false)),
+                FunctionArg::Lazy(&dummy),
+                FunctionArg::Lazy(&dummy),
             ],
-            &ctx,
+            &EmptyEvalContext,
         ),
         Err(FunctionError::Type(TypeError::EmptyArgument {
-            function: "IFNA",
-            param: "value_if_na",
-            position: 2,
+            function: "IF",
+            param: "value_if_false",
+            position: 3,
+        }))
+    );
+    assert_eq!(
+        choose_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(2.0)),
+                FunctionArg::Lazy(&dummy),
+                FunctionArg::Lazy(&dummy),
+            ],
+            &EmptyEvalContext,
+        ),
+        Err(FunctionError::Type(TypeError::EmptyArgument {
+            function: "CHOOSE",
+            param: "value1",
+            position: 3,
         }))
     );
 }

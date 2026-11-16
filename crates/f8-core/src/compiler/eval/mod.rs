@@ -19,7 +19,7 @@ use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::functions::registry::{FunctionRegistry, StageAError, StaticRef};
-use crate::value::{CellValue, TypeError, ValueType};
+use crate::value::{CellValue, ValueType};
 
 /// In-memory topological evaluator executing cells across compiled model DAGs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -79,8 +79,8 @@ impl Evaluator {
     /// Evaluates all cells in the grid in topological dependency order.
     ///
     /// - `CellPayload::Literal`: converts directly via `CellValue::from` (`ValueLiteral::Null` remains `CellValue::Empty`).
-    /// - `CellPayload::Formula`: evaluates via `eval_expr_validated` (preserving mid-expression `CellValue::Empty`)
-    ///   and rejects a top-level `CellValue::Empty` result with `TypeError::EmptyFormulaResult`.
+    /// - `CellPayload::Formula`: evaluates via `eval_root_expr_validated`, rejecting a top-level
+    ///   `CellValue::Empty` result with `TypeError::EmptyFormulaResult`.
     ///
     /// # Errors
     /// Returns `EvalError` if static validation fails, a referenced dependency is missing from the grid,
@@ -103,19 +103,7 @@ impl Evaluator {
             let value = match &cell_node.payload {
                 CellPayload::Literal(lit) => CellValue::from(lit),
                 CellPayload::Formula(expr) => {
-                    match expr::eval_expr_validated(expr, cell_id, &values, symbol_table, registry)?
-                    {
-                        CellValue::Empty => {
-                            return Err(EvalError::Type {
-                                cell: Box::new(cell_id.clone()),
-                                source: TypeError::EmptyFormulaResult,
-                            });
-                        }
-                        other @ (CellValue::Number(_)
-                        | CellValue::Text(_)
-                        | CellValue::Boolean(_)
-                        | CellValue::Error(_)) => other,
-                    }
+                    expr::eval_root_expr_validated(expr, cell_id, &values, symbol_table, registry)?
                 }
             };
 

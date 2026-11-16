@@ -956,7 +956,7 @@ fn test_vertical_range_on_single_descriptor_column_succeeds() {
             RowSpec::new("summary")
                 .with_cell(
                     "line_item",
-                    CellInput::formula("COUNTA(@table[\"r1\"..\"r2\", @col])"),
+                    CellInput::formula("XMATCH(\"Rev\", @table[\"r1\"..\"r3\", @col])"),
                 )
                 .with_expr(
                     "XLOOKUP(\"Rev\", @table[\"r1\"..\"r3\", \"line_item\"], @table[\"r1\"..\"r3\", @col])",
