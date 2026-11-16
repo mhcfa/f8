@@ -456,7 +456,7 @@ export class CompiledModel {
         throw err;
       }
       const msg = err instanceof Error ? err.message : String(err);
-      throw new EmissionError(`Failed to save workbook to '${path}': ${msg}`);
+      throw new EmissionError(`Failed to save workbook to '${path}': ${msg}`, { cause: err });
     }
   }
 

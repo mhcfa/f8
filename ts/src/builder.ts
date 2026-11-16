@@ -698,6 +698,10 @@ export class Sheet {
   }
 }
 
+function isPlainObject(val: unknown): val is Readonly<Record<string, unknown>> {
+  return typeof val === "object" && val !== null && !Array.isArray(val);
+}
+
 function resolveThemeInput(theme: ThemeInput): string | Readonly<Record<string, unknown>> {
   if (theme instanceof URL) {
     const fs =
@@ -709,10 +713,10 @@ function resolveThemeInput(theme: ThemeInput): string | Readonly<Record<string, 
     }
     const rawText = fs.readFileSync(theme, "utf-8");
     const parsed: unknown = JSON.parse(rawText);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    if (!isPlainObject(parsed)) {
       throw new Error(`Theme JSON file '${theme.toString()}' must contain a JSON object at root`);
     }
-    return parsed as Readonly<Record<string, unknown>>;
+    return parsed;
   }
   return theme;
 }
