@@ -28,6 +28,7 @@ pub struct TableMetadata {
     pub columns: Vec<DataColumnSpec>,
     pub column_index: IndexMap<ColId, usize>,
     pub measure_columns: Vec<ColId>,
+    pub measure_column_index: IndexMap<ColId, usize>,
     pub rows: IndexSet<RowId>,
     pub row_slots: Vec<RowSlot>,
     pub row_slot_index: IndexMap<RowId, usize>,
@@ -47,6 +48,7 @@ impl TableMetadata {
         let mut columns = Vec::new();
         let mut column_index = IndexMap::new();
         let mut measure_columns = Vec::new();
+        let mut measure_column_index = IndexMap::new();
         let mut col_slots = Vec::with_capacity(table.columns.len());
         let mut col_slot_index = IndexMap::new();
 
@@ -59,6 +61,8 @@ impl TableMetadata {
                     col_slot_index.insert(d.id.clone(), slot_idx);
                     let slot = match d.role {
                         AxisRole::Measure => {
+                            let measure_idx = measure_columns.len();
+                            measure_column_index.insert(d.id.clone(), measure_idx);
                             measure_columns.push(d.id.clone());
                             ColSlot::Measure(d.id.clone())
                         }
@@ -101,6 +105,7 @@ impl TableMetadata {
             columns,
             column_index,
             measure_columns,
+            measure_column_index,
             rows,
             row_slots,
             row_slot_index,
@@ -119,6 +124,11 @@ impl TableMetadata {
     /// Returns the axis role of a column.
     pub fn col_role(&self, col: &ColId) -> Option<AxisRole> {
         self.col_spec(col).map(|c| c.role)
+    }
+
+    /// Returns the 0-based index of a column within `measure_columns` in `O(1)` time.
+    pub fn measure_col_index(&self, col: &ColId) -> Option<usize> {
+        self.measure_column_index.get(col).copied()
     }
 }
 
@@ -335,6 +345,9 @@ mod tests {
         assert_eq!(meta.col_slot_index.get(&ColId::new("line_item")), Some(&0));
         assert_eq!(meta.col_slot_index.get(&ColId::new("2024E")), Some(&1));
         assert_eq!(meta.col_slot_index.get(&ColId::new("2025E")), Some(&3));
+        assert_eq!(meta.measure_col_index(&ColId::new("line_item")), None);
+        assert_eq!(meta.measure_col_index(&ColId::new("2024E")), Some(0));
+        assert_eq!(meta.measure_col_index(&ColId::new("2025E")), Some(1));
 
         assert_eq!(
             meta.row_slots,

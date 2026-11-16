@@ -48,7 +48,7 @@ impl Compiler {
         manifest: &ProjectManifest,
         tables: &[TableSpec],
     ) -> Result<EvaluatedModel, CompilerError> {
-        Self::evaluate_with_registry(manifest, tables, &FunctionRegistry::standard())
+        Self::evaluate_with_registry(manifest, tables, FunctionRegistry::standard_ref())
     }
 
     /// Compiles and topologically evaluates a model specification using a custom function registry.
@@ -122,7 +122,7 @@ impl Compiler {
         manifest: &ProjectManifest,
         tables: &[TableSpec],
     ) -> Result<CompiledModel, CompilerError> {
-        Self::compile_with_registry(manifest, tables, &FunctionRegistry::standard())
+        Self::compile_with_registry(manifest, tables, FunctionRegistry::standard_ref())
     }
 
     /// Compiles a complete model specification through Passes 1–6a using a custom function registry.
