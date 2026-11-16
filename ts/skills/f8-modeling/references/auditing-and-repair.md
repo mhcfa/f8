@@ -26,6 +26,7 @@ const compiled = model.compile();
 | `compiled.dependentsOf(coord, opts?)` / `compiled.dependentsOf(t, r, c, o?)` | `DependencyTree` | Downstream dependent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)       |
 | `compiled.save(path, options?)`                                             | `void`            | Emits `.xlsx` workbook to `path` via `node:fs` (creates parent directories automatically)                          |
 | `compiled.emitWorkbook(options?)`                                           | `Uint8Array`      | Emits `.xlsx` workbook as an in-memory `Uint8Array` byte buffer                                                    |
+| `compiled.dispose()` / `compiled[Symbol.dispose]()`                         | `void`            | Deterministically frees WASM linear memory (idempotent; subsequent method calls throw `F8Error`)                   |
 
 ### Coordinate Addressing in `CompiledModel`
 

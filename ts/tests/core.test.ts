@@ -22,11 +22,38 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
   it("exposes package version and default corporate_navy theme", () => {
     const pkg = JSON.parse(
       readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
-    ) as { version: string };
+    ) as { version: string; engines: { node: string } };
     expect(VERSION).toBe(pkg.version);
+    expect(pkg.engines.node).toBe(">=22.3.0");
     const theme = defaultTheme();
     expect(theme).toBeTypeOf("object");
     expect(theme["name"]).toBe("corporate_navy");
+  });
+
+  it("supports deterministic WASM disposal via dispose() and [Symbol.dispose]()", () => {
+    const m = new Model({ name: "DisposableModel" });
+    const t = m.addSheet("Main").addTable("T", "Table");
+    t.addColumn("c1", { role: "measure", header: "Val" });
+    t.addRow("r1", { cells: { c1: 100.0 } });
+
+    const compiled = m.compile();
+    expect(compiled.num("T", "r1", "c1")).toBe(100.0);
+
+    compiled.dispose();
+    // Idempotent second call
+    compiled.dispose();
+    compiled[Symbol.dispose]();
+
+    expect(() => compiled.summary()).toThrow(F8Error);
+    expect(() => compiled.value("T", "r1", "c1")).toThrow(F8Error);
+    expect(() => compiled.num("T", "r1", "c1")).toThrow(F8Error);
+    expect(() => compiled.formatted("T", "r1", "c1")).toThrow(F8Error);
+    expect(() => compiled.inspectCell("T", "r1", "c1")).toThrow(F8Error);
+    expect(() => compiled.inspectTable("T")).toThrow(F8Error);
+    expect(() => compiled.inspectSheet("Main")).toThrow(F8Error);
+    expect(() => compiled.precedentsOf("T", "r1", "c1")).toThrow(F8Error);
+    expect(() => compiled.dependentsOf("T", "r1", "c1")).toThrow(F8Error);
+    expect(() => compiled.emitWorkbook()).toThrow(F8Error);
   });
 
   describe("Scenario 1: Nominal compilation, scalar lookup, and inspection", () => {
