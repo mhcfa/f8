@@ -1,6 +1,5 @@
 use crate::functions::common::{NumericCollector, count_non_empty, count_numbers};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
@@ -47,8 +46,6 @@ impl ExcelFunction for SumFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match NumericCollector::collect(args) {
             Ok(collector) => Ok(CellValue::number(collector.sum)),
             Err(err) => Ok(CellValue::Error(err)),
@@ -96,8 +93,6 @@ impl ExcelFunction for AverageFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match NumericCollector::collect(args) {
             Ok(collector) => {
                 if collector.count == 0 {
@@ -152,8 +147,6 @@ impl ExcelFunction for CountFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let count = count_numbers(args);
         Ok(CellValue::number(count as f64))
     }
@@ -165,7 +158,8 @@ static COUNTA_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The first cell reference or range within which you want to count non-empty cells.",
     ParamKind::Range,
     ParamType::Any,
-)];
+)
+.allow_empty()];
 
 /// `COUNTA(value1, [value2], ...)`: Counts the number of cells in ranges that are not empty.
 #[derive(Debug, Default, Clone, Copy)]
@@ -197,8 +191,6 @@ impl ExcelFunction for CountaFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let count = count_non_empty(args);
         Ok(CellValue::number(count as f64))
     }
@@ -244,8 +236,6 @@ impl ExcelFunction for MaxFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match NumericCollector::collect(args) {
             Ok(collector) => Ok(CellValue::number(collector.max_or_zero())),
             Err(err) => Ok(CellValue::Error(err)),
@@ -293,8 +283,6 @@ impl ExcelFunction for MinFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match NumericCollector::collect(args) {
             Ok(collector) => Ok(CellValue::number(collector.min_or_zero())),
             Err(err) => Ok(CellValue::Error(err)),
@@ -342,8 +330,6 @@ impl ExcelFunction for MedianFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match NumericCollector::collect_values(args) {
             Ok(mut values) => {
                 if values.is_empty() {

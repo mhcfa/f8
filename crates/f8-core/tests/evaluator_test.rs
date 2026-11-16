@@ -18,7 +18,7 @@ use f8_core::model::id::{ColId, RowId, SheetId, TableId};
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
 use f8_core::model::table::{CellInput, ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use f8_core::model::theme::ThemeSpec;
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
 
 fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec {
     TableSpec {
@@ -1338,12 +1338,22 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
         assert_eq!(source, TypeError::EmptyFormulaResult);
     }
 
-    // Value-returning IFERROR / IFNA reject evaluated CellValue::Empty arms with ExpectedType::NonEmpty
-    for formula in [
-        "IFERROR(T[\"a\", @col], 1)",
-        "IFERROR(1 / 0, T[\"a\", @col])",
-        "IFNA(T[\"a\", @col], 1)",
-        "IFNA(XLOOKUP(\"miss\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col]), T[\"a\", @col])",
+    // Value-returning IFERROR / IFNA reject evaluated CellValue::Empty arms with TypeError::EmptyArgument
+    for (formula, expected_fn, expected_param, expected_pos) in [
+        ("IFERROR(T[\"a\", @col], 1)", "IFERROR", "value", 1),
+        (
+            "IFERROR(1 / 0, T[\"a\", @col])",
+            "IFERROR",
+            "value_if_error",
+            2,
+        ),
+        ("IFNA(T[\"a\", @col], 1)", "IFNA", "value", 1),
+        (
+            "IFNA(XLOOKUP(\"miss\", T[\"k\"..\"k\", @col], T[\"a\"..\"a\", @col]), T[\"a\", @col])",
+            "IFNA",
+            "value_if_na",
+            2,
+        ),
     ] {
         let row_a = RowSpec::new("a")
             .with_format(Some(FormatPreset::Currency))
@@ -1356,24 +1366,21 @@ fn test_scenario_12_empty_formula_result_rejected_and_null_literal_invariant() {
         let target = RowSpec::new("target").with_expr(formula);
         let table = create_table("T", &["c1"], vec![row_a, row_k, target]);
 
-        let err = Compiler::compile(&manifest, &[table]).expect_err(&format!(
-            "expected InvalidArgumentType(NonEmpty) on '{formula}'"
-        ));
+        let err = Compiler::compile(&manifest, &[table])
+            .expect_err(&format!("expected EmptyArgument on '{formula}'"));
         assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
         let CompilerError::Eval(EvalError::Type { cell, source }) = err else {
             panic!("expected EvalError::Type on '{formula}', got {err:?}");
         };
         assert_eq!(*cell, CellId::new("T", "target", "c1"));
-        assert!(
-            matches!(
-                source,
-                TypeError::InvalidArgumentType {
-                    expected: f8_core::value::ExpectedType::NonEmpty,
-                    found: ValueType::Empty,
-                    ..
-                }
-            ),
-            "expected InvalidArgumentType(NonEmpty, Empty) on '{formula}', got {source:?}"
+        assert_eq!(
+            source,
+            TypeError::EmptyArgument {
+                function: expected_fn,
+                param: expected_param,
+                position: expected_pos,
+            },
+            "expected EmptyArgument on '{formula}', got {source:?}"
         );
     }
 
@@ -1555,11 +1562,6 @@ fn test_scenario_13_stage_a_and_stage_b_strict_type_and_iferror_non_masking() {
         "-FALSE",
         "ABS(\"invalid\")",
         "ROUND(TRUE, 2)",
-        "ROUND(10, 2.5)",
-        "ROUND(10, 100000000000000000000)",
-        "INDEX(T[\"r1\"..\"r4\", @col], 1.5)",
-        "DATE(2024, 1.5, 1)",
-        "PMT(0.05, 10, -1000, 0, 0.5)",
         "DAYS(\"invalid\", DATE(2024, 1, 1))",
         "IF(1, 10, 20)",
         "IF(\"TRUE\", 10, 20)",
@@ -1576,8 +1578,6 @@ fn test_scenario_13_stage_a_and_stage_b_strict_type_and_iferror_non_masking() {
         "T[\"null_cell\", @col] + 1",
         "-T[\"null_cell\", @col]",
         "ABS(T[\"txt_cell\", @col])",
-        "ROUND(10, T[\"float_cell\", @col])",
-        "ROUND(10, T[\"huge_float_cell\", @col])",
         "IF(T[\"r1\", @col], 1, 0)",
         "IF(T[\"null_cell\", @col], 1, 0)",
         "NOT(T[\"null_cell\", @col])",
@@ -1595,7 +1595,6 @@ fn test_scenario_13_stage_a_and_stage_b_strict_type_and_iferror_non_masking() {
         "IFERROR(T[\"txt_cell\", @col] + 1, 0)",
         "IFERROR(T[\"null_cell\", @col] = \"\", FALSE)",
         "IFERROR(AND(T[\"null_cell\", @col], TRUE), FALSE)",
-        "IFERROR(ROUND(10, T[\"float_cell\", @col]), 0)",
     ];
 
     for formula in failing_formulas {
@@ -1606,6 +1605,52 @@ fn test_scenario_13_stage_a_and_stage_b_strict_type_and_iferror_non_masking() {
         assert!(
             matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }),
             "expected ErrorDiagnostic::F8Error on '{formula}', got {err:?}"
+        );
+    }
+
+    // Numeric domain violations (fractional/huge integer inputs) evaluate to ExcelError values at runtime
+    for (formula, expected_val) in [
+        ("ROUND(10, 2.5)", CellValue::Error(ExcelError::Num)),
+        (
+            "ROUND(10, 100000000000000000000)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "INDEX(T[\"r1\"..\"r4\", @col], 1.5)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        ("DATE(2024, 1.5, 1)", CellValue::Error(ExcelError::Num)),
+        (
+            "PMT(0.05, 10, -1000, 0, 0.5)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "ROUND(10, T[\"float_cell\", @col])",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "ROUND(10, T[\"huge_float_cell\", @col])",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "IFERROR(ROUND(10, T[\"float_cell\", @col]), 0)",
+            CellValue::Number(0.0),
+        ),
+    ] {
+        let mut rows = seed_rows();
+        rows.push(RowSpec::new("target").with_expr(formula));
+        let compiled = Compiler::compile(&manifest, &[create_table("T", &["c1"], rows)])
+            .unwrap_or_else(|e| panic!("expected runtime evaluation on '{formula}', got {e:?}"));
+        assert_eq!(
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("c1")
+                )
+                .unwrap(),
+            expected_val,
+            "mismatch on '{formula}'"
         );
     }
 }
@@ -1668,17 +1713,8 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
         "XLOOKUP(10, T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"r1\"..\"r2\", \"c1\"..\"c2\"])",
         "XNPV(-2.0, T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"d1\"..\"d2\", \"c1\"..\"c2\"])",
         "XIRR(T[\"r1\"..\"r2\", \"c1\"..\"c2\"], T[\"d1\"..\"d2\", \"c1\"..\"c2\"])",
-        // 2-arg INDEX on 2D slice & constant out-of-bounds indices
+        // 2-arg INDEX on 2D slice
         "INDEX(T[\"r1\"..\"r4\", \"c1\"..\"c2\"], 2)",
-        "INDEX(T[\"r1\"..\"r4\", \"c1\"], 5)",
-        "INDEX(T[\"r1\", \"c1\"..\"c4\"], 5)",
-        "INDEX(T[\"r1\"..\"r4\", \"c1\"], 0)",
-        "INDEX(T[\"r1\"..\"r4\", \"c1\"], -1)",
-        "CHOOSE(5, 100, 200, 300)",
-        "CHOOSE(0, 100)",
-        // Inside IFERROR and dormant IF branches
-        "IFERROR(INDEX(T[\"r1\"..\"r4\", \"c1\"], 5), 0)",
-        "IF(TRUE, 1, CHOOSE(5, 100, 200, 300))",
     ];
 
     for formula in failing_q07 {
@@ -1688,7 +1724,7 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
         assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
     }
 
-    // Valid Q-07 cases succeed with Excel parity (1x1 SingleCell & Slice in Range/ScalarOrRange, 2-arg horizontal INDEX, dynamic OOB)
+    // Valid Q-07 cases succeed with Excel parity (1x1 SingleCell & Slice in Range/ScalarOrRange, 2-arg horizontal INDEX, constant & dynamic OOB)
     let mut valid_rows = build_rows("COUNT(T[\"r1\", @col])");
     valid_rows.push(RowSpec::new("sum_1x1").with_expr("SUM(T[\"r1\"..\"r1\", @col])"));
     valid_rows.push(RowSpec::new("idx_horiz").with_expr("INDEX(T[\"r1\", \"c1\"..\"c4\"], 3)"));
@@ -1698,6 +1734,16 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
     );
     valid_rows
         .push(RowSpec::new("choose_dyn_oob").with_expr("CHOOSE(T[\"dyn_oob\", @col], 100, 200)"));
+    valid_rows.push(RowSpec::new("idx_lit_oob").with_expr("INDEX(T[\"r1\"..\"r4\", \"c1\"], 5)"));
+    valid_rows.push(RowSpec::new("idx_lit_zero").with_expr("INDEX(T[\"r1\"..\"r4\", \"c1\"], 0)"));
+    valid_rows.push(RowSpec::new("choose_lit_oob").with_expr("CHOOSE(5, 100, 200, 300)"));
+    valid_rows.push(RowSpec::new("choose_lit_zero").with_expr("CHOOSE(0, 100)"));
+    valid_rows.push(
+        RowSpec::new("iferr_idx_oob").with_expr("IFERROR(INDEX(T[\"r1\"..\"r4\", \"c1\"], 5), 0)"),
+    );
+    valid_rows.push(
+        RowSpec::new("dormant_choose_oob").with_expr("IF(TRUE, 1, CHOOSE(5, 100, 200, 300))"),
+    );
     let compiled = Compiler::compile(
         &manifest,
         &[create_table("T", &["c1", "c2", "c3", "c4"], valid_rows)],
@@ -1734,6 +1780,42 @@ fn test_scenario_14_syntactic_slices_range_kinds_and_static_shape_bounds() {
             .cell_value(&t, &RowId::from("choose_dyn_oob"), &c1)
             .unwrap(),
         CellValue::Error(ExcelError::Value)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t, &RowId::from("idx_lit_oob"), &c1)
+            .unwrap(),
+        CellValue::Error(ExcelError::Ref)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t, &RowId::from("idx_lit_zero"), &c1)
+            .unwrap(),
+        CellValue::Error(ExcelError::Ref)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t, &RowId::from("choose_lit_oob"), &c1)
+            .unwrap(),
+        CellValue::Error(ExcelError::Value)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t, &RowId::from("choose_lit_zero"), &c1)
+            .unwrap(),
+        CellValue::Error(ExcelError::Value)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t, &RowId::from("iferr_idx_oob"), &c1)
+            .unwrap(),
+        CellValue::Number(0.0)
+    );
+    assert_eq!(
+        compiled
+            .cell_value(&t, &RowId::from("dormant_choose_oob"), &c1)
+            .unwrap(),
+        CellValue::Number(1.0)
     );
 }
 
@@ -1953,11 +2035,10 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "CHOOSE(1, 10, \"NM\")",
         "IFS(T[\"c1\", @col], 10, T[\"c2\", @col], \"NM\")",
         "IF(FALSE, IF(TRUE, \"a\", \"b\") = IF(FALSE, 1, 2), TRUE)",
-        "ROUND(10, IF(FALSE, 2, 2.5))",
         "ROUND(10, IF(TRUE, \"a\", \"b\"))",
         "ROUND(10, IF(TRUE, 2, \"bad\"))",
         "1 + XLOOKUP(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col], \"NM\")",
-        // Scenario 2 (Stage B: IFERROR/IFNA Empty, runtime unification, dormant memoized checks, taken-branch integer bounds)
+        // Scenario 2 (Stage B: IFERROR/IFNA Empty, runtime unification, dormant memoized checks)
         "IFERROR(T[\"null_cell\", @col], 1)",
         "IFERROR(1 / 0, T[\"null_cell\", @col])",
         "IFNA(T[\"null_cell\", @col], 1)",
@@ -1966,7 +2047,6 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "1 + T[\"f_txt\", @col]",
         "IF(FALSE, 1 + T[\"f_txt\", @col], 0)",
         "IF(T[\"flag_false\", @col], T[\"txt_cell\", @col] + 5, 0)",
-        "IF(T[\"c1\", @col], ROUND(10, T[\"float_cell\", @col]), 0)",
         "IF(T[\"flag_false\", @col], T[\"num1\", @col] < T[\"txt_cell\", @col], FALSE)",
         "IF(TRUE, 10, XLOOKUP(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]))",
         "IF(TRUE, 10, INDEX(T[\"txt1\"..\"txt2\", @col], 1))",
@@ -1975,30 +2055,16 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         "IFNA(XLOOKUP(\"Missing\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10)",
         "IFERROR(XLOOKUP(1 / 0, T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col]), 10)",
         "IF(ISBLANK(T[\"txt_cell\", @col]), 0, T[\"txt_cell\", @col])",
-        "ROUND(10, IF(FALSE, 2, T[\"float_cell\", @col]))",
         "IF(FALSE, 0, T[\"null_cell\", @col] + 5)",
-        // Scenario 3 (Lookup modes, Empty lookup_value, array homogeneity, binary search cleanliness & monotonicity)
+        // Scenario 3 (Lookup mode type mismatch, Empty lookup_value, array homogeneity)
         "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], \"abc\")",
-        "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], 1.5)",
-        "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"num1\", @col])",
-        "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], 0 + 0)",
-        "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], 2)",
-        "XLOOKUP(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col], _, 99)",
         "XLOOKUP(T[\"null_cell\", @col], T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col])",
         "XLOOKUP(1 / 0, T[\"mixed1\"..\"mixed2\", @col], T[\"num1\"..\"num2\", @col])",
         "XLOOKUP(\"Alpha\", T[\"cat1\"..\"cat2\", @col], T[\"mixed1\"..\"mixed2\", @col])",
         "XLOOKUP(\"Alpha\", T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col], T[\"txt_cell\", @col])",
         "INDEX(T[\"mixed1\"..\"mixed2\", @col], 1)",
-        "XMATCH(10, T[\"sp1\"..\"sp3\", @col], 0, 2)",
-        "XMATCH(10, T[\"errk1\"..\"errk3\", @col], 0, 2)",
-        "XMATCH(20, T[\"unsort1\"..\"unsort3\", @col], 0, 2)",
-        "XMATCH(20, T[\"asc1\"..\"asc3\", @col], 0, -2)",
         // Mixed slice inside untaken IF branch still fails statically in Pass 4a
         "IF(TRUE, 0, INDEX(T[\"mixed1\"..\"mixed2\", @col], 1))",
-        // Signed literal integer checks & lookup mode literal checks
-        "ROUND(10, --2.5)",
-        "ROUND(10, ---2.5)",
-        "XLOOKUP(\"Alpha\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col], \"nf\", --1)",
     ];
 
     for formula in failing_cluster_a2 {
@@ -2016,36 +2082,83 @@ fn test_scenario_16_cluster_a2_monomorphic_branches_dormant_validation_and_looku
         );
     }
 
-    // Exact Scenario 2 parameter-boundary integer diagnostics (never 'dormant')
+    // Numeric domain & lookup mode / binary-search runtime values
     for (formula, expected_val) in [
-        ("ROUND(10, 2.5)", "2.5"),
-        ("ROUND(10, --2.5)", "2.5"),
-        ("ROUND(10, ---2.5)", "-2.5"),
-        ("ROUND(10, T[\"float_cell\", @col])", "2.5"),
-        ("IF(FALSE, ROUND(10, 2.5), 0)", "2.5"),
+        ("ROUND(10, 2.5)", CellValue::Error(ExcelError::Num)),
+        ("ROUND(10, --2.5)", CellValue::Error(ExcelError::Num)),
+        ("ROUND(10, ---2.5)", CellValue::Error(ExcelError::Num)),
+        (
+            "ROUND(10, T[\"float_cell\", @col])",
+            CellValue::Error(ExcelError::Num),
+        ),
+        ("IF(FALSE, ROUND(10, 2.5), 0)", CellValue::Number(0.0)),
         (
             "IF(T[\"c1\", @col], ROUND(10, T[\"float_cell\", @col]), 0)",
-            "2.5",
+            CellValue::Error(ExcelError::Num),
         ),
-        ("ROUND(10, IF(FALSE, 2, 2.5))", "2.5"),
-        ("ROUND(10, IF(FALSE, 2, T[\"float_cell\", @col]))", "2.5"),
+        (
+            "ROUND(10, IF(FALSE, 2, 2.5))",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "ROUND(10, IF(FALSE, 2, T[\"float_cell\", @col]))",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], 1.5)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"num1\", @col])",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], 0 + 0)",
+            CellValue::Number(2.0),
+        ),
+        (
+            "XMATCH(\"Beta\", T[\"cat1\"..\"cat2\", @col], 2)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XLOOKUP(\"Beta\", T[\"cat1\"..\"cat2\", @col], T[\"num1\"..\"num2\", @col], _, 99)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XMATCH(10, T[\"sp1\"..\"sp3\", @col], 0, 2)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XMATCH(10, T[\"errk1\"..\"errk3\", @col], 0, 2)",
+            CellValue::Error(ExcelError::Div0),
+        ),
+        (
+            "XMATCH(20, T[\"unsort1\"..\"unsort3\", @col], 0, 2)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XMATCH(20, T[\"asc1\"..\"asc3\", @col], 0, -2)",
+            CellValue::Error(ExcelError::Value),
+        ),
+        (
+            "XLOOKUP(\"Alpha\", T[\"cat1\"..\"cat2\", @col], T[\"txt1\"..\"txt2\", @col], \"nf\", --1)",
+            CellValue::Text("one".into()),
+        ),
     ] {
         let mut rows = seed_rows();
         rows.push(RowSpec::new("target").with_expr(formula));
-        let err = Compiler::compile(&manifest, &[create_table("T", &["c1"], rows)])
-            .expect_err(&format!("expected NonIntegerArgument on '{formula}'"));
-        let CompilerError::Eval(EvalError::Type { source, .. }) = err else {
-            panic!("expected EvalError::Type on '{formula}', got {err:?}");
-        };
+        let compiled = Compiler::compile(&manifest, &[create_table("T", &["c1"], rows)])
+            .unwrap_or_else(|e| panic!("expected runtime value on '{formula}', got {e:?}"));
         assert_eq!(
-            source,
-            TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: expected_val.into(),
-            },
-            "unexpected TypeError on '{formula}'"
+            compiled
+                .cell_value(
+                    &TableId::from("T"),
+                    &RowId::from("target"),
+                    &ColId::from("c1")
+                )
+                .unwrap(),
+            expected_val,
+            "unexpected runtime value on '{formula}'"
         );
     }
 
@@ -2221,7 +2334,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
             "1 + T[\"err_txt\", @col]",
             TypeError::InvalidOperandType {
                 operator: "+",
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2249,7 +2362,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
             "IF(FALSE, 1 + T[\"err_txt\", @col], 0)",
             TypeError::InvalidOperandType {
                 operator: "+",
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2260,7 +2373,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "AND",
                 param: "logical1",
                 position: 1,
-                expected: ExpectedType::Boolean,
+                expected: ValueType::Boolean,
                 found: ValueType::Text,
             },
         ),
@@ -2271,7 +2384,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "AND",
                 param: "logical1",
                 position: 1,
-                expected: ExpectedType::Boolean,
+                expected: ValueType::Boolean,
                 found: ValueType::Text,
             },
         ),
@@ -2282,7 +2395,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "AND",
                 param: "logical1",
                 position: 1,
-                expected: ExpectedType::Boolean,
+                expected: ValueType::Boolean,
                 found: ValueType::Text,
             },
         ),
@@ -2293,7 +2406,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "AND",
                 param: "logical1",
                 position: 1,
-                expected: ExpectedType::Boolean,
+                expected: ValueType::Boolean,
                 found: ValueType::Text,
             },
         ),
@@ -2304,7 +2417,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "AND",
                 param: "logical1",
                 position: 1,
-                expected: ExpectedType::Boolean,
+                expected: ValueType::Boolean,
                 found: ValueType::Text,
             },
         ),
@@ -2315,7 +2428,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "XLOOKUP",
                 param: "lookup_array",
                 position: 2,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2326,7 +2439,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "XMATCH",
                 param: "lookup_array",
                 position: 2,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2337,7 +2450,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "XMATCH",
                 param: "lookup_array",
                 position: 2,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2348,7 +2461,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "INDEX",
                 param: "array",
                 position: 1,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2359,7 +2472,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "INDEX",
                 param: "array",
                 position: 1,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2370,7 +2483,7 @@ fn test_cross_cell_error_value_type_provenance_referential_transparency() {
                 function: "XLOOKUP",
                 param: "return_array",
                 position: 3,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: ValueType::Text,
             },
         ),
@@ -2568,6 +2681,7 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
         "XNPV(0.1, T[\"cf0\"..\"cf3\", \"c1\"], T[\"d0\"..\"d3\", \"c1\"])",
         "XIRR(T[\"cf0\"..\"cf3\", \"c1\"], T[\"d0\"..\"d3\", \"c1\"])",
         "XIRR(T[\"n1\"..\"flag\", \"c1\"], T[\"hole\"..\"cf2\", \"c1\"])",
+        "XIRR(T[\"d0\"..\"d3\", \"c1\"], T[\"cf0\"..\"cf3\", \"c1\"])",
     ] {
         let err = Compiler::compile(&manifest, &[build_model_with_target(type_err_formula)])
             .expect_err(&format!("expected EvalError::Type on {type_err_formula}"));
@@ -2578,36 +2692,62 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
         );
     }
 
-    // Scenario 4 & 5: Date, serial, annuity type, and day-count basis domain errors (Stage A & Stage B)
-    for domain_err_formula in [
-        "DATE(24, 12, 31)",
-        "DATE(2024, 6, 31)",
-        "DATE(2025, 2, 29)",
-        "IF(FALSE, DATE(2024, 6, 31), DATE(2024, 1, 1))",
-        "DATE(T[\"yr24\", \"c1\"], 14, 1)",
-        "IFERROR(DATE(T[\"yr24\", \"c1\"], 1, 1), 0)",
-        "IF(TRUE, DATE(T[\"yr24\", \"c1\"], 1, 1), DATE(2024, 1, 1))",
-        "PMT(0.05, 10, -1000, 0, T[\"type2\", \"c1\"])",
-        "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), T[\"basis5\", \"c1\"])",
-        "YEAR(0)",
-        "IF(FALSE, YEAR(0), 2024)",
-        "YEAR(T[\"zero\", \"c1\"])",
-        "IF(TRUE, YEAR(T[\"zero\", \"c1\"]), 2024)",
-        "XNPV(0.1, T[\"n1\"..\"n2\", \"c1\"], T[\"cf0\"..\"cf0\", \"c1\"])",
-        "XNPV(0.1, T[\"d0\"..\"d1\", \"c1\"], T[\"yr24\"..\"zero\", \"c1\"])",
-        "XIRR(T[\"d0\"..\"d3\", \"c1\"], T[\"cf0\"..\"cf3\", \"c1\"])",
-    ] {
-        let err = Compiler::compile(&manifest, &[build_model_with_target(domain_err_formula)])
-            .expect_err(&format!("expected FunctionError on {domain_err_formula}"));
-        assert!(matches!(err.diagnostic(), ErrorDiagnostic::F8Error { .. }));
-        assert!(
-            matches!(err, CompilerError::Eval(EvalError::Function { .. })),
-            "expected EvalError::Function on {domain_err_formula}, got {err:?}"
-        );
-    }
+    // Static shape mismatch in XNPV still fails with EvalError::Function
+    let err = Compiler::compile(
+        &manifest,
+        &[build_model_with_target(
+            "XNPV(0.1, T[\"n1\"..\"n2\", \"c1\"], T[\"cf0\"..\"cf0\", \"c1\"])",
+        )],
+    )
+    .expect_err("expected FunctionError on XNPV length mismatch");
+    assert!(matches!(
+        err,
+        CompilerError::Eval(EvalError::Function { .. })
+    ));
 
-    // Valid Cluster B scenarios compile and evaluate cleanly
+    // Scenario 4 & 5: Date, serial, annuity type, and day-count basis domain errors evaluate to ExcelError::Num at runtime
     for (ok_formula, expected_val) in [
+        ("DATE(24, 12, 31)", CellValue::Error(ExcelError::Num)),
+        ("DATE(2024, 6, 31)", CellValue::Error(ExcelError::Num)),
+        ("DATE(2025, 2, 29)", CellValue::Error(ExcelError::Num)),
+        (
+            "IF(FALSE, DATE(2024, 6, 31), DATE(2024, 1, 1))",
+            CellValue::Number(45292.0),
+        ),
+        (
+            "DATE(T[\"yr24\", \"c1\"], 14, 1)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "IFERROR(DATE(T[\"yr24\", \"c1\"], 1, 1), 0)",
+            CellValue::Number(0.0),
+        ),
+        (
+            "IF(TRUE, DATE(T[\"yr24\", \"c1\"], 1, 1), DATE(2024, 1, 1))",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "PMT(0.05, 10, -1000, 0, T[\"type2\", \"c1\"])",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), T[\"basis5\", \"c1\"])",
+            CellValue::Error(ExcelError::Num),
+        ),
+        ("YEAR(0)", CellValue::Error(ExcelError::Num)),
+        ("IF(FALSE, YEAR(0), 2024)", CellValue::Number(2024.0)),
+        (
+            "YEAR(T[\"zero\", \"c1\"])",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "IF(TRUE, YEAR(T[\"zero\", \"c1\"]), 2024)",
+            CellValue::Error(ExcelError::Num),
+        ),
+        (
+            "XNPV(0.1, T[\"d0\"..\"d1\", \"c1\"], T[\"yr24\"..\"zero\", \"c1\"])",
+            CellValue::Error(ExcelError::Num),
+        ),
         (
             "COUNTA(T[\"n1\"..\"n2\", \"line_item\"])",
             CellValue::Number(2.0),

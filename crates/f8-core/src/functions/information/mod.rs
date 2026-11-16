@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::functions::error::FunctionError;
-use crate::functions::registry::{FunctionRegistry, validate_bound_args};
+use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
@@ -16,7 +16,8 @@ static ISBLANK_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The value or cell reference you want to test for blankness.",
     ParamKind::Scalar,
     ParamType::Any,
-)];
+)
+.allow_empty()];
 
 /// Positional parameter definitions for `ISERROR`.
 static ISERROR_PARAMS: &[ParameterDef] = &[ParameterDef::required(
@@ -24,7 +25,8 @@ static ISERROR_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The value or expression you want to test for any error.",
     ParamKind::Scalar,
     ParamType::Any,
-)];
+)
+.allow_empty()];
 
 /// Positional parameter definitions for `ISNA`.
 static ISNA_PARAMS: &[ParameterDef] = &[ParameterDef::required(
@@ -32,7 +34,8 @@ static ISNA_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The value or expression you want to test for the #N/A error value.",
     ParamKind::Scalar,
     ParamType::Any,
-)];
+)
+.allow_empty()];
 
 /// Positional parameter definitions for `ERROR.TYPE`.
 static ERRORTYPE_PARAMS: &[ParameterDef] = &[ParameterDef::required(
@@ -40,7 +43,8 @@ static ERRORTYPE_PARAMS: &[ParameterDef] = &[ParameterDef::required(
     "The error value whose numeric Excel code you want to find.",
     ParamKind::Scalar,
     ParamType::Any,
-)];
+)
+.allow_empty()];
 
 /// `ISBLANK(value)`: Returns `TRUE` if `value` refers to an empty cell, and `FALSE` otherwise.
 #[derive(Debug, Default, Clone, Copy)]
@@ -72,7 +76,6 @@ impl ExcelFunction for IsblankFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
         let val = args[0].eval_scalar(self.name(), ctx)?;
         Ok(CellValue::Boolean(matches!(val, CellValue::Empty)))
     }
@@ -108,7 +111,6 @@ impl ExcelFunction for IserrorFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
         let val = args[0].eval_scalar(self.name(), ctx)?;
         Ok(CellValue::Boolean(matches!(val, CellValue::Error(_))))
     }
@@ -144,7 +146,6 @@ impl ExcelFunction for IsnaFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
         let val = args[0].eval_scalar(self.name(), ctx)?;
         Ok(CellValue::Boolean(matches!(
             val,
@@ -183,7 +184,6 @@ impl ExcelFunction for ErrortypeFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
         let val = args[0].eval_scalar(self.name(), ctx)?;
         match val {
             CellValue::Error(err) => Ok(CellValue::Number(err.error_type_code())),
@@ -222,10 +222,9 @@ impl ExcelFunction for NaFunction {
 
     fn evaluate(
         &self,
-        args: &[FunctionArg<'_>],
+        _args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
         Ok(CellValue::Error(ExcelError::Na))
     }
 }

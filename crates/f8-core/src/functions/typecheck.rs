@@ -3,20 +3,16 @@
 use std::convert::Infallible;
 
 use crate::expr::ast::{BinaryOp, CallArg, Expr, Literal, TableRef, UnaryOp};
-use crate::functions::binder::{resolve_parameter, validate_calendar_date_components};
-use crate::functions::common::{BranchTypeUnifier, value_type_satisfies};
+use crate::functions::binder::resolve_parameter;
+use crate::functions::common::BranchTypeUnifier;
 use crate::functions::error::FunctionError;
-use crate::functions::lookup::search::{MatchMode, SearchMode};
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     BranchPolicy, ExcelFunction, LookupPolicy, ParamKind, ParamType, RolePolicy, ShapePolicy,
     ValidationPolicy, VariadicRule,
 };
 use crate::model::table::AxisRole;
-use crate::value::{
-    ExpectedType, MAX_SAFE_INTEGER, TypeError, ValueType, is_valid_input_date_serial,
-    normalize_zero,
-};
+use crate::value::{TypeError, ValueType};
 
 /// Static metadata for a resolved [`TableRef`] during Pass 4a type checking.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,12 +135,7 @@ impl FunctionRegistry {
                         cols: res.cols,
                     }));
                 }
-                Ok(res
-                    .elem_types
-                    .first()
-                    .copied()
-                    .flatten()
-                    .filter(|vt| *vt != ValueType::Empty))
+                Ok(res.elem_types.first().copied().flatten())
             }
 
             Expr::Unary { op, expr: inner } => match op {
@@ -155,7 +146,7 @@ impl FunctionRegistry {
                         return Err(StageAError::Function(FunctionError::Type(
                             TypeError::InvalidOperandType {
                                 operator: op.as_str(),
-                                expected: ExpectedType::Number,
+                                expected: ValueType::Number,
                                 found,
                             },
                         )));
@@ -172,7 +163,7 @@ impl FunctionRegistry {
                         return Err(StageAError::Function(FunctionError::Type(
                             TypeError::InvalidOperandType {
                                 operator: op.as_str(),
-                                expected: ExpectedType::Number,
+                                expected: ValueType::Number,
                                 found,
                             },
                         )));
@@ -183,7 +174,7 @@ impl FunctionRegistry {
                         return Err(StageAError::Function(FunctionError::Type(
                             TypeError::InvalidOperandType {
                                 operator: op.as_str(),
-                                expected: ExpectedType::Number,
+                                expected: ValueType::Number,
                                 found,
                             },
                         )));
@@ -228,12 +219,6 @@ impl FunctionRegistry {
                         PositionalPolicy::ShapeCoupled(shape_policy),
                         resolve_ref,
                     ),
-                    ValidationPolicy::CalendarDate => self.synth_positional_call(
-                        func,
-                        args,
-                        PositionalPolicy::CalendarDate,
-                        resolve_ref,
-                    ),
                     ValidationPolicy::Branch(branch_policy) => {
                         self.synth_branch_call(func, args, branch_policy, resolve_ref)
                     }
@@ -259,9 +244,8 @@ impl FunctionRegistry {
     {
         let vt_opt = self.synth_expr(arg_expr, resolve_ref)?;
         if let Some(found) = vt_opt {
-            check_param_value_type(arg_expr, found, function, param, position, param_type)?;
+            check_param_value_type(found, function, param, position, param_type)?;
         }
-        validate_param_const_domain(arg_expr, function, param, position, param_type)?;
         Ok(vt_opt)
     }
 
@@ -407,14 +391,6 @@ impl FunctionRegistry {
             }
         }
 
-        // Pass E: Calendar `(year, month, day)` constant literal validation after `ParamType::Integer` checks.
-        if call_policy == PositionalPolicy::CalendarDate {
-            let year = extract_calendar_const_int(args.first());
-            let month = extract_calendar_const_int(args.get(1));
-            let day = extract_calendar_const_int(args.get(2));
-            validate_calendar_date_components(year, month, day)?;
-        }
-
         Ok(func.return_type())
     }
 
@@ -464,22 +440,9 @@ impl FunctionRegistry {
                         func.name(),
                         "index_num",
                         1,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
-                    let choices_len = args.len().saturating_sub(1);
-                    if choices_len > 0
-                        && let Some(idx) = extract_const_integer_literal(idx_expr)
-                        && !index_in_bounds(idx, choices_len)
-                    {
-                        return Err(StageAError::Function(FunctionError::IndexOutOfBounds {
-                            function: func.name(),
-                            param: "index_num",
-                            index: idx,
-                            min: 1,
-                            max: choices_len,
-                        }));
-                    }
                 }
                 (1..args.len()).collect()
             }
@@ -524,7 +487,7 @@ impl FunctionRegistry {
                         func.name(),
                         "row_num",
                         2,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
                 }
@@ -535,16 +498,23 @@ impl FunctionRegistry {
                         func.name(),
                         "col_num",
                         3,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
                 }
 
-                if let Some(res) = &resolved_arr
-                    && res.rows > 0
-                    && res.cols > 0
+                if args.len() == 2
+                    && let Some(res) = &resolved_arr
+                    && res.rows > 1
+                    && res.cols > 1
                 {
-                    validate_index_bounds(func.name(), args, res.rows, res.cols)?;
+                    return Err(StageAError::Function(
+                        FunctionError::MissingColumnIndexFor2DSlice {
+                            function: func.name(),
+                            rows: res.rows,
+                            cols: res.cols,
+                        },
+                    ));
                 }
 
                 if let Some(res) = &resolved_arr {
@@ -563,14 +533,7 @@ impl FunctionRegistry {
 
             LookupPolicy::Xlookup => {
                 let lookup_vt = if let Some(CallArg::Expr(lv_expr)) = args.first() {
-                    self.synth_and_check_param(
-                        lv_expr,
-                        func.name(),
-                        "lookup_value",
-                        1,
-                        ParamType::NonEmpty,
-                        resolve_ref,
-                    )?
+                    self.synth_expr(lv_expr, resolve_ref)?
                 } else {
                     None
                 };
@@ -599,10 +562,9 @@ impl FunctionRegistry {
                         func.name(),
                         "match_mode",
                         5,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
-                    validate_match_mode_literal(func.name(), "match_mode", 5, mm_expr)?;
                 }
 
                 if let Some(CallArg::Expr(sm_expr)) = args.get(5) {
@@ -611,10 +573,9 @@ impl FunctionRegistry {
                         func.name(),
                         "search_mode",
                         6,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
-                    parse_search_mode_literal(func.name(), "search_mode", 6, sm_expr)?;
                 }
 
                 let l_shape = resolved_l.as_ref().map(|r| (r.rows, r.cols));
@@ -665,14 +626,7 @@ impl FunctionRegistry {
 
             LookupPolicy::Xmatch => {
                 let lookup_vt = if let Some(CallArg::Expr(lv_expr)) = args.first() {
-                    self.synth_and_check_param(
-                        lv_expr,
-                        func.name(),
-                        "lookup_value",
-                        1,
-                        ParamType::NonEmpty,
-                        resolve_ref,
-                    )?
+                    self.synth_expr(lv_expr, resolve_ref)?
                 } else {
                     None
                 };
@@ -692,10 +646,9 @@ impl FunctionRegistry {
                         func.name(),
                         "match_mode",
                         3,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
-                    validate_match_mode_literal(func.name(), "match_mode", 3, mm_expr)?;
                 }
 
                 if let Some(CallArg::Expr(sm_expr)) = args.get(3) {
@@ -704,10 +657,9 @@ impl FunctionRegistry {
                         func.name(),
                         "search_mode",
                         4,
-                        ParamType::Integer,
+                        ParamType::Number,
                         resolve_ref,
                     )?;
-                    parse_search_mode_literal(func.name(), "search_mode", 4, sm_expr)?;
                 }
 
                 let l_shape = resolved_l.as_ref().map(|r| (r.rows, r.cols));
@@ -733,7 +685,6 @@ impl FunctionRegistry {
 enum PositionalPolicy {
     Standard,
     ShapeCoupled(ShapePolicy),
-    CalendarDate,
 }
 
 fn validate_homogeneous_elem_types(
@@ -743,14 +694,11 @@ fn validate_homogeneous_elem_types(
     param: &'static str,
     position: usize,
 ) -> Result<Option<ValueType>, FunctionError> {
-    let mut expected_vt = initial_vt.filter(|vt| *vt != ValueType::Empty);
+    let mut expected_vt = initial_vt;
     for &vt_opt in elem_types {
         let Some(vt) = vt_opt else {
             continue;
         };
-        if vt == ValueType::Empty {
-            continue;
-        }
         match expected_vt {
             None => expected_vt = Some(vt),
             Some(exp_vt) => {
@@ -759,8 +707,7 @@ fn validate_homogeneous_elem_types(
                         function,
                         param,
                         position,
-                        expected: ExpectedType::from_value_type(exp_vt)
-                            .unwrap_or(ExpectedType::NonEmpty),
+                        expected: exp_vt,
                         found: vt,
                     }));
                 }
@@ -777,17 +724,14 @@ fn validate_static_range_elem_types(
     position: usize,
     param_type: ParamType,
 ) -> Result<(), FunctionError> {
-    let Some(expected) = param_type.to_expected_type() else {
+    let Some(expected) = param_type.expected_value_type() else {
         return Ok(());
     };
     for &vt_opt in &res.elem_types {
         let Some(found) = vt_opt else {
             continue;
         };
-        if found == ValueType::Empty {
-            continue;
-        }
-        if !value_type_satisfies(found, expected) {
+        if found != expected {
             return Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function,
                 param,
@@ -801,17 +745,15 @@ fn validate_static_range_elem_types(
 }
 
 fn check_param_value_type(
-    arg_expr: &Expr,
     found: ValueType,
     function: &'static str,
     param: &'static str,
     position: usize,
     param_type: ParamType,
 ) -> Result<(), FunctionError> {
-    let Some(expected) = param_type.to_expected_type() else {
-        return Ok(());
-    };
-    if !value_type_satisfies(found, expected) {
+    if let Some(expected) = param_type.expected_value_type()
+        && found != expected
+    {
         return Err(FunctionError::Type(TypeError::InvalidArgumentType {
             function,
             param,
@@ -820,224 +762,7 @@ fn check_param_value_type(
             found,
         }));
     }
-    if expected == ExpectedType::Integer
-        && let Some(raw) = extract_signed_const_number(arg_expr)
-        && raw.is_finite()
-    {
-        let norm = normalize_zero(raw);
-        if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
-            return Err(FunctionError::Type(TypeError::NonIntegerArgument {
-                function,
-                param,
-                position,
-                value: norm.to_string(),
-            }));
-        }
-    }
     Ok(())
-}
-
-fn validate_param_const_domain(
-    arg_expr: &Expr,
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-    param_type: ParamType,
-) -> Result<(), FunctionError> {
-    match param_type {
-        ParamType::Any
-        | ParamType::NonEmpty
-        | ParamType::Number
-        | ParamType::Integer
-        | ParamType::Boolean => Ok(()),
-        ParamType::DateSerial => {
-            if let Some(raw) = extract_signed_const_number(arg_expr)
-                && raw.is_finite()
-            {
-                let serial = normalize_zero(raw);
-                if !is_valid_input_date_serial(serial) {
-                    return Err(FunctionError::InvalidDateSerial {
-                        function,
-                        param,
-                        position,
-                        serial: serial.to_string(),
-                    });
-                }
-            }
-            Ok(())
-        }
-        ParamType::AnnuityType => {
-            if let Some(iv) = extract_signed_const_integer(arg_expr)
-                && !(0..=1).contains(&iv)
-            {
-                return Err(FunctionError::InvalidAnnuityType {
-                    function,
-                    found: iv,
-                });
-            }
-            Ok(())
-        }
-        ParamType::DayCountBasis => {
-            if let Some(iv) = extract_signed_const_integer(arg_expr)
-                && !(0..=4).contains(&iv)
-            {
-                return Err(FunctionError::InvalidDayCountBasis { found: iv });
-            }
-            Ok(())
-        }
-    }
-}
-
-fn extract_calendar_const_int(call_arg: Option<&CallArg>) -> Option<i64> {
-    match call_arg {
-        Some(CallArg::Expr(arg_expr)) => extract_signed_const_integer(arg_expr),
-        Some(CallArg::Omitted) | None => None,
-    }
-}
-
-fn validate_match_mode_literal(
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-    arg_expr: &Expr,
-) -> Result<MatchMode, FunctionError> {
-    let mode =
-        extract_const_integer_literal(arg_expr).ok_or(FunctionError::NonLiteralLookupMode {
-            function,
-            param,
-            position,
-        })?;
-    MatchMode::from_mode_int(mode, function, param, position)
-}
-
-fn parse_search_mode_literal(
-    function: &'static str,
-    param: &'static str,
-    position: usize,
-    arg_expr: &Expr,
-) -> Result<SearchMode, FunctionError> {
-    let mode =
-        extract_const_integer_literal(arg_expr).ok_or(FunctionError::NonLiteralLookupMode {
-            function,
-            param,
-            position,
-        })?;
-    SearchMode::from_mode_int(mode, function, param, position)
-}
-
-fn extract_const_number_literal(expr: &Expr) -> Option<f64> {
-    match expr {
-        Expr::Literal(Literal::Number(n)) => Some(*n),
-        Expr::Unary {
-            op: UnaryOp::Neg,
-            expr: inner,
-        } => match inner.as_ref() {
-            Expr::Literal(Literal::Number(n)) => Some(-*n),
-            Expr::Literal(Literal::String(_) | Literal::Boolean(_))
-            | Expr::Reference(_)
-            | Expr::Unary { .. }
-            | Expr::Binary { .. }
-            | Expr::FunctionCall { .. } => None,
-        },
-        Expr::Literal(Literal::String(_) | Literal::Boolean(_))
-        | Expr::Reference(_)
-        | Expr::Binary { .. }
-        | Expr::FunctionCall { .. } => None,
-    }
-}
-
-fn extract_signed_const_number(expr: &Expr) -> Option<f64> {
-    match expr {
-        Expr::Literal(Literal::Number(n)) => Some(*n),
-        Expr::Unary {
-            op: UnaryOp::Neg,
-            expr: inner,
-        } => extract_signed_const_number(inner).map(|n| -n),
-        Expr::Literal(Literal::String(_) | Literal::Boolean(_))
-        | Expr::Reference(_)
-        | Expr::Binary { .. }
-        | Expr::FunctionCall { .. } => None,
-    }
-}
-
-fn f64_to_safe_int(raw: f64) -> Option<i64> {
-    if !raw.is_finite() {
-        return None;
-    }
-    let norm = normalize_zero(raw);
-    if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
-        return None;
-    }
-    Some(norm as i64)
-}
-
-fn extract_signed_const_integer(expr: &Expr) -> Option<i64> {
-    extract_signed_const_number(expr).and_then(f64_to_safe_int)
-}
-
-fn extract_const_integer_literal(expr: &Expr) -> Option<i64> {
-    extract_const_number_literal(expr).and_then(f64_to_safe_int)
-}
-
-fn validate_index_bounds(
-    function: &'static str,
-    args: &[CallArg],
-    rows: usize,
-    cols: usize,
-) -> Result<(), FunctionError> {
-    if args.len() == 2 {
-        if rows > 1 && cols > 1 {
-            return Err(FunctionError::MissingColumnIndexFor2DSlice {
-                function,
-                rows,
-                cols,
-            });
-        }
-        let len = rows.max(cols);
-        if let Some(CallArg::Expr(row_expr)) = args.get(1)
-            && let Some(idx) = extract_const_integer_literal(row_expr)
-            && !index_in_bounds(idx, len)
-        {
-            return Err(FunctionError::IndexOutOfBounds {
-                function,
-                param: "row_num",
-                index: idx,
-                min: 1,
-                max: len,
-            });
-        }
-    } else if args.len() == 3 {
-        if let Some(CallArg::Expr(row_expr)) = args.get(1)
-            && let Some(r_idx) = extract_const_integer_literal(row_expr)
-            && !index_in_bounds(r_idx, rows)
-        {
-            return Err(FunctionError::IndexOutOfBounds {
-                function,
-                param: "row_num",
-                index: r_idx,
-                min: 1,
-                max: rows,
-            });
-        }
-        if let Some(CallArg::Expr(col_expr)) = args.get(2)
-            && let Some(c_idx) = extract_const_integer_literal(col_expr)
-            && !index_in_bounds(c_idx, cols)
-        {
-            return Err(FunctionError::IndexOutOfBounds {
-                function,
-                param: "col_num",
-                index: c_idx,
-                min: 1,
-                max: cols,
-            });
-        }
-    }
-    Ok(())
-}
-
-/// Returns `true` when 1-based integer index `idx` lies within `1..=max`.
-fn index_in_bounds(idx: i64, max: usize) -> bool {
-    matches!(usize::try_from(idx), Ok(u) if u >= 1 && u <= max)
 }
 
 fn require_1d_slice(

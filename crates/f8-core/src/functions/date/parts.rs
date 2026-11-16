@@ -2,17 +2,16 @@
 
 use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, DateSerial, ValueType};
+use crate::value::{CellValue, DateSerial, ValueType, validate_date_serial};
 
 static SERIAL_NUMBER_PARAM: &[ParameterDef] = &[ParameterDef::required(
     "serial_number",
     "The date of the year/month/day you want to find.",
     ParamKind::Scalar,
-    ParamType::DateSerial,
+    ParamType::Number,
 )];
 
 /// `YEAR(serial_number)`: Returns the year corresponding to a serial date (1900-9999).
@@ -41,9 +40,7 @@ impl ExcelFunction for YearFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
-        let serial_val = match scalar_number(&args[0]) {
+        let serial_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -81,9 +78,7 @@ impl ExcelFunction for MonthFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
-        let serial_val = match scalar_number(&args[0]) {
+        let serial_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -121,9 +116,7 @@ impl ExcelFunction for DayFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
-        let serial_val = match scalar_number(&args[0]) {
+        let serial_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
@@ -140,13 +133,13 @@ static DAYS_PARAMS: &[ParameterDef] = &[
         "end_date",
         "The end date for the date calculation.",
         ParamKind::Scalar,
-        ParamType::DateSerial,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "start_date",
         "The start date for the date calculation.",
         ParamKind::Scalar,
-        ParamType::DateSerial,
+        ParamType::Number,
     ),
 ];
 
@@ -176,17 +169,15 @@ impl ExcelFunction for DaysFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
-        let end_val = match scalar_number(&args[0]) {
+        let end_val = match scalar_number(&args[0]).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
-        let start_val = match scalar_number(&args[1]) {
+        let start_val = match scalar_number(&args[1]).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
         };
 
-        Ok(CellValue::number(end_val.floor() - start_val.floor()))
+        Ok(CellValue::number(end_val - start_val))
     }
 }

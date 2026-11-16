@@ -147,71 +147,6 @@ pub enum FunctionError {
         cols: usize,
     },
 
-    /// Constant integer index in `INDEX` or `CHOOSE` is outside static 1-based bounds.
-    #[error(
-        "constant index {index} for parameter '{param}' of '{function}' is out of bounds ({min}..={max})"
-    )]
-    IndexOutOfBounds {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier (`"row_num"`, `"col_num"`, or `"index_num"`).
-        param: &'static str,
-        /// Constant index supplied.
-        index: i64,
-        /// Minimum valid 1-based index (`1`).
-        min: usize,
-        /// Maximum valid 1-based index.
-        max: usize,
-    },
-
-    /// Lookup mode parameter received a non-literal expression instead of an integer literal.
-    #[error(
-        "parameter '{param}' at position {position} of '{function}' requires an integer literal"
-    )]
-    NonLiteralLookupMode {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier (`"match_mode"` or `"search_mode"`).
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-    },
-
-    /// Lookup mode parameter received an integer outside the supported mode set.
-    #[error("invalid {param} {mode} at position {position} of '{function}'")]
-    InvalidLookupMode {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier (`"match_mode"` or `"search_mode"`).
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-        /// Invalid integer mode value supplied.
-        mode: i64,
-    },
-
-    /// Binary search (`search_mode` `2` or `-2`) received a `lookup_array` containing `CellValue::Error`.
-    #[error(
-        "binary search (search_mode {search_mode}) in '{function}' cannot search 'lookup_array' containing error cells"
-    )]
-    ErrorInBinaryLookupArray {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Binary search mode (`2` or `-2`).
-        search_mode: i64,
-    },
-
-    /// Binary search (`search_mode` `2` or `-2`) received a `lookup_array` whose keys are not monotonically sorted.
-    #[error(
-        "binary search (search_mode {search_mode}) in '{function}' requires monotonically sorted 'lookup_array' keys"
-    )]
-    UnsortedBinaryLookupArray {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Binary search mode (`2` or `-2`).
-        search_mode: i64,
-    },
-
     /// A `RolePolicy::MeasureOnly` parameter received a reference to an `AxisRole::Descriptor` column.
     #[error(
         "parameter '{param}' at position {position} of '{function}' cannot reference descriptor column"
@@ -223,60 +158,6 @@ pub enum FunctionError {
         param: &'static str,
         /// 1-indexed argument position.
         position: usize,
-    },
-
-    /// `DATE` `year` argument is outside `1900..=9999`.
-    #[error("invalid year {year} in 'DATE': expected 4-digit year in 1900..=9999")]
-    InvalidDateYear {
-        /// Invalid year integer supplied.
-        year: i64,
-    },
-
-    /// `DATE` `month` argument is outside `1..=12`.
-    #[error("invalid month {month} in 'DATE': expected integer in 1..=12")]
-    InvalidDateMonth {
-        /// Invalid month integer supplied.
-        month: i64,
-    },
-
-    /// `DATE` `day` argument is outside `1..=max_day`.
-    #[error("invalid day {day} in 'DATE': expected integer in 1..={max_day}")]
-    InvalidDateDay {
-        /// Invalid day integer supplied.
-        day: i64,
-        /// Maximum valid calendar day for the resolved `(year, month)` (`28..=31`).
-        max_day: u32,
-    },
-
-    /// A `ParamType::DateSerial` argument received a finite serial outside `1.0..=2_958_465.0`.
-    #[error(
-        "invalid date serial {serial} for parameter '{param}' at position {position} of '{function}': expected serial in 1..=2958465"
-    )]
-    InvalidDateSerial {
-        /// Canonical uppercase function identifier.
-        function: &'static str,
-        /// Parameter identifier.
-        param: &'static str,
-        /// 1-indexed argument position.
-        position: usize,
-        /// Canonical formatted representation of the out-of-bounds serial value supplied.
-        serial: String,
-    },
-
-    /// Annuity payment timing `type` is outside `{0, 1}`.
-    #[error("invalid payment timing 'type' {found} in '{function}': expected 0 or 1")]
-    InvalidAnnuityType {
-        /// Canonical uppercase function identifier (`"PMT"`, `"IPMT"`, or `"PPMT"`).
-        function: &'static str,
-        /// Invalid integer timing value supplied.
-        found: i64,
-    },
-
-    /// `YEARFRAC` day-count `basis` is outside `0..=4`.
-    #[error("invalid day-count 'basis' {found} in 'YEARFRAC': expected integer in 0..=4")]
-    InvalidDayCountBasis {
-        /// Invalid integer basis value supplied.
-        found: i64,
     },
 }
 

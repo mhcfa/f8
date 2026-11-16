@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 
-pub(crate) use crate::functions::binder::validate_bound_args;
 use crate::functions::traits::ExcelFunction;
 pub use crate::functions::typecheck::{StageAError, StaticRef};
 

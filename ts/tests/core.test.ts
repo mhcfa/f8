@@ -1184,7 +1184,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         expect(caught).toBeInstanceOf(FormulaParseError);
       }
 
-      // 2. Type, EmptyFormulaResult, SliceInScalarContext, ParamKind::Range, and static shape/bounds -> exact F8Error (never TypeError)
+      // 2. Type, EmptyFormulaResult, SliceInScalarContext, and ParamKind::Range -> exact F8Error (never TypeError)
       for (const badF8 of [
         '@table["a", @col]',
         'INDEX(@table["a".."a", @col], 1)',
@@ -1192,7 +1192,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         '"5" + 1',
         "TRUE * 10",
         '@table["a", @col] + 1',
-        "ROUND(10, 2.5)",
         "IF(1, 10, 20)",
         'AND(@table["a", @col], TRUE)',
         '100 < "1"',
@@ -1206,8 +1205,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         "COUNT(10)",
         'COUNT(@table["a", @col])',
         'SUMPRODUCT("abc")',
-        "CHOOSE(5, 10, 20)",
-        'INDEX(@table["r1".."r2", @col], 5)',
         "SWITCH(1, 1, 10, 20)",
       ]) {
         const errModel = new Model({ name: "StrictErrorModel" });
@@ -1327,14 +1324,6 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         'CHOOSE(1, 10, "NM")',
         'IFS(TRUE, 10, FALSE, "NM")',
         'IF(FALSE, IF(TRUE, "a", "b") = IF(FALSE, 1, 2), TRUE)',
-        "ROUND(10, 2.5)",
-        "ROUND(10, --2.5)",
-        "ROUND(10, ---2.5)",
-        'ROUND(10, @table["flt_cell", @col])',
-        "IF(FALSE, ROUND(10, 2.5), 0)",
-        'IF(TRUE, ROUND(10, @table["flt_cell", @col]), 0)',
-        "ROUND(10, IF(FALSE, 2, 2.5))",
-        'ROUND(10, IF(FALSE, 2, @table["flt_cell", @col]))',
         'ROUND(10, IF(TRUE, "a", "b"))',
         'ROUND(10, IF(TRUE, 2, "bad"))',
         '1 + INDEX(@table["txt1".."txt2", @col], @table["dyn_oob_idx", @col])',
@@ -1370,14 +1359,8 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         'INDEX(@table["num_adj".."err_txt", @col], 1)',
         'XLOOKUP("Alpha", @table["cat1".."cat2", @col], @table["num_adj".."err_txt", @col])',
         'IFERROR(INDEX(@table["err_div0".."err_div0_2", @col], 1), "fallback")',
-        'XMATCH("Alpha", @table["txt1".."txt2", @col], 2)',
-        'XMATCH("Alpha", @table["txt1".."txt2", @col], @table["dyn_idx", @col])',
-        'XMATCH("Alpha", @table["txt1".."txt2", @col], 1.5)',
+        'XMATCH("Alpha", @table["txt1".."txt2", @col], "abc")',
         'INDEX(@table["num1".."txt1", @col], 1)',
-        'XMATCH(20, @table["unsort1".."unsort3", @col], 0, 2)',
-        'XMATCH(20, @table["num1".."num2", @col], 0, -2)',
-        'XMATCH(10, @table["errk1".."errk2", @col], 0, 2)',
-        'XMATCH(10, @table["null_cell".."num1", @col], 0, 2)',
       ]) {
         const errModel = new Model({ name: "ClusterA2ErrorModel" });
         const errTbl = errModel.addSheet("Main").addTable("T", "Cluster A2 Error");
@@ -1540,13 +1523,13 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
         ['SUM(@table["txt1".."txt2", "c1"])', "expected number, found text"],
         ['SUM(@table["bool1".."bool2", "c1"])', "expected number, found boolean"],
         ["SUM(TRUE, 5)", "expected number, found boolean"],
-        ['SUM(@table["null1", "c1"])', "expected number, found empty"],
-        ['AVERAGE(@table["r1", "c1"], @table["null1", "c1"])', "expected number, found empty"],
+        ['SUM(@table["null1", "c1"])', "evaluated to an empty cell"],
+        ['AVERAGE(@table["r1", "c1"], @table["null1", "c1"])', "evaluated to an empty cell"],
         ['MIN(@table["txt1".."txt2", "c1"])', "expected number, found text"],
-        ['MAX(@table["null1", "c1"])', "expected number, found empty"],
+        ['MAX(@table["null1", "c1"])', "evaluated to an empty cell"],
         ['MEDIAN(@table["bool1".."bool2", "c1"])', "expected number, found boolean"],
         ['COUNT(@table["txt1".."txt2", "c1"])', "expected number, found text"],
-        ['COUNT(@table["null1", "c1"])', "expected number, found empty"],
+        ['COUNT(@table["null1", "c1"])', "evaluated to an empty cell"],
         [
           'SUMPRODUCT(@table["txt1".."txt2", "c1"], @table["r1".."r2", "c1"])',
           "expected number, found text",
@@ -1555,57 +1538,18 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
           'SUMPRODUCT(@table["bool1".."bool2", "c1"], @table["r1".."r2", "c1"])',
           "expected number, found boolean",
         ],
-        ['IFERROR(SUM(@table["null1", "c1"]), 0)', "expected number, found empty"],
-        ['NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"],
-        ['IRR(@table["cf_hole1".."cf_hole3", "c1"])', "expected number, found empty"],
+        ['IFERROR(SUM(@table["null1", "c1"]), 0)', "evaluated to an empty cell"],
+        ['NPV(0.1, @table["cf_hole1".."cf_hole3", "c1"])', "evaluated to an empty cell"],
+        ['IRR(@table["cf_hole1".."cf_hole3", "c1"])', "evaluated to an empty cell"],
         [
           'XNPV(0.1, @table["cf_hole1".."cf_hole3", "c1"], @table["d1".."d3", "c1"])',
-          "expected number, found empty",
+          "evaluated to an empty cell",
         ],
         [
           'XIRR(@table["cf1".."cf3", "c1"], @table["d_hole1".."d_hole3", "c1"])',
-          "expected number, found empty",
+          "evaluated to an empty cell",
         ],
-        // Scenario 4: Strict calendar DATE, {0, 1} annuity type, and 0..=4 YEARFRAC basis
-        ["DATE(24, 12, 31)", "invalid year 24 in 'DATE': expected 4-digit year in 1900..=9999"],
-        ["DATE(0, 1, 1)", "invalid year 0 in 'DATE': expected 4-digit year in 1900..=9999"],
-        ["DATE(1899, 12, 31)", "invalid year 1899 in 'DATE': expected 4-digit year in 1900..=9999"],
-        ["DATE(-1, 1, 1)", "invalid year -1 in 'DATE': expected 4-digit year in 1900..=9999"],
-        ["DATE(10000, 1, 1)", "invalid year 10000 in 'DATE': expected 4-digit year in 1900..=9999"],
-        ["DATE(2024, 0, 1)", "invalid month 0 in 'DATE': expected integer in 1..=12"],
-        ["DATE(2024, 14, 1)", "invalid month 14 in 'DATE': expected integer in 1..=12"],
-        ["DATE(2024, 1, 0)", "invalid day 0 in 'DATE': expected integer in 1..=31"],
-        ["DATE(2024, 6, 31)", "invalid day 31 in 'DATE': expected integer in 1..=30"],
-        ["DATE(2025, 2, 29)", "invalid day 29 in 'DATE': expected integer in 1..=28"],
-        ["DATE(9999, 13, 1)", "invalid month 13 in 'DATE': expected integer in 1..=12"],
-        ["IF(FALSE, DATE(2024, 6, 31), 45292)", "invalid day 31 in 'DATE'"],
-        ['DATE(@table["yr_ok", "c1"], 14, 1)', "invalid month 14 in 'DATE'"],
-        ['IFERROR(DATE(@table["yr_24", "c1"], 1, 1), 0)', "invalid year 24 in 'DATE'"],
-        ['IF(TRUE, DATE(@table["yr_24", "c1"], 1, 1), 45292)', "invalid year 24 in 'DATE'"],
-        ['DATE(2025, 2, @table["day_29", "c1"])', "invalid day 29 in 'DATE'"],
-        ['DATE(@table["yr_24", "c1"], 1 / 0, 1)', "invalid year 24 in 'DATE'"],
-        ["PMT(0.05, 10, -1000, 0, 2)", "invalid payment timing 'type' 2 in 'PMT'"],
-        ["IPMT(0.05, 1, 10, -1000, 0, -1)", "invalid payment timing 'type' -1 in 'IPMT'"],
-        ["PPMT(0.05, 1, 10, -1000, 0, 3)", "invalid payment timing 'type' 3 in 'PPMT'"],
-        ["YEARFRAC(45292, 45658, 5)", "invalid day-count 'basis' 5 in 'YEARFRAC'"],
-        // Scenario 5: Input serial bounds (1..=2958465), swapped XNPV/XIRR dates, ShapePolicy precedence
-        ["YEAR(0)", "expected serial in 1..=2958465"],
-        ["IF(FALSE, YEAR(0), 2024)", "expected serial in 1..=2958465"],
-        ["MONTH(0.5)", "expected serial in 1..=2958465"],
-        ["DAY(-1)", "expected serial in 1..=2958465"],
-        ["DAYS(45292, 0)", "expected serial in 1..=2958465"],
-        ["EDATE(0, 1)", "expected serial in 1..=2958465"],
-        ["EOMONTH(2958466, 0)", "expected serial in 1..=2958465"],
-        ["YEARFRAC(0, 45292, 0)", "expected serial in 1..=2958465"],
-        ['IF(TRUE, YEAR(@table["zero_serial", "c1"]), 2024)', "expected serial in 1..=2958465"],
-        [
-          'XNPV(0.1, @table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
-          "expected serial in 1..=2958465",
-        ],
-        [
-          'XIRR(@table["d1".."d3", "c1"], @table["cf1".."cf3", "c1"])',
-          "expected serial in 1..=2958465",
-        ],
+        // Scenario 5: ShapePolicy precedence
         [
           'XNPV(-2.0, @table["r1".."r2", "c1".."c2"], @table["r1".."r2", "c1".."c2"])',
           "requires a 1D slice, found 2x2",
@@ -1749,6 +1693,11 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       addCheck("edate_udf", "EDATE(DATE(1900, 1, 15), -2)");
       addCheck("eomonth_ovf", "EOMONTH(DATE(9999, 12, 1), 2)");
       addCheck("yr_edate_bubble", "YEAR(EDATE(DATE(1900, 1, 15), -2))");
+      addCheck("round_float", "ROUND(10, 2.5)");
+      addCheck("date_yr24", "DATE(24, 1, 1)");
+      addCheck("idx_oob", 'INDEX(@table["r1".."r3", "c1"], 5)');
+      addCheck("choose_zero", "CHOOSE(0, 10, 20)");
+      addCheck("xmatch_bad_mode", 'XMATCH(10, @table["r1".."r3", "c1"], 9)');
 
       const compiled = okModel.compile();
       expect(compiled.num("T", "desc_counta", "c1")).toBe(3);
@@ -1786,6 +1735,11 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(compiled.value("T", "edate_udf", "c1")).toBe("#NUM!");
       expect(compiled.value("T", "eomonth_ovf", "c1")).toBe("#NUM!");
       expect(compiled.value("T", "yr_edate_bubble", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "round_float", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "date_yr24", "c1")).toBe("#NUM!");
+      expect(compiled.value("T", "idx_oob", "c1")).toBe("#REF!");
+      expect(compiled.value("T", "choose_zero", "c1")).toBe("#VALUE!");
+      expect(compiled.value("T", "xmatch_bad_mode", "c1")).toBe("#VALUE!");
     });
 
     it("(n) enforces dotted function name grammar and evaluates error introspection functions", () => {

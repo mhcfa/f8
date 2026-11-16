@@ -1,23 +1,22 @@
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use crate::value::{CellValue, ExcelError, TypeError, ValueType};
 
 static IFERROR_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "value",
         "The value or expression to check for an error.",
         ParamKind::Scalar,
-        ParamType::NonEmpty,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "value_if_error",
         "The value to return if the formula evaluates to an error.",
         ParamKind::Lazy,
-        ParamType::NonEmpty,
+        ParamType::Any,
     ),
 ];
 
@@ -55,8 +54,6 @@ impl ExcelFunction for IferrorFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let [val_arg, fallback_arg] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
@@ -69,13 +66,11 @@ impl ExcelFunction for IferrorFunction {
 
         if matches!(evaluated_value, CellValue::Error(_)) {
             let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
-            if matches!(fallback_value, CellValue::Empty) {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            if fallback_value.is_empty() {
+                return Err(FunctionError::Type(TypeError::EmptyArgument {
                     function: self.name(),
                     param: "value_if_error",
                     position: 2,
-                    expected: ExpectedType::NonEmpty,
-                    found: ValueType::Empty,
                 }));
             }
             Ok(fallback_value)
@@ -90,13 +85,13 @@ static IFNA_PARAMS: &[ParameterDef] = &[
         "value",
         "The value or expression to check for an #N/A error.",
         ParamKind::Scalar,
-        ParamType::NonEmpty,
+        ParamType::Any,
     ),
     ParameterDef::required(
         "value_if_na",
         "The value to return if the formula evaluates to #N/A.",
         ParamKind::Lazy,
-        ParamType::NonEmpty,
+        ParamType::Any,
     ),
 ];
 
@@ -134,8 +129,6 @@ impl ExcelFunction for IfnaFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let [val_arg, fallback_arg] = args else {
             return Err(FunctionError::TooFewArguments {
                 function: self.name(),
@@ -148,13 +141,11 @@ impl ExcelFunction for IfnaFunction {
 
         if matches!(evaluated_value, CellValue::Error(ExcelError::Na)) {
             let fallback_value = fallback_arg.eval_scalar(self.name(), ctx)?;
-            if matches!(fallback_value, CellValue::Empty) {
-                return Err(FunctionError::Type(TypeError::InvalidArgumentType {
+            if fallback_value.is_empty() {
+                return Err(FunctionError::Type(TypeError::EmptyArgument {
                     function: self.name(),
                     param: "value_if_na",
                     position: 2,
-                    expected: ExpectedType::NonEmpty,
-                    found: ValueType::Empty,
                 }));
             }
             Ok(fallback_value)

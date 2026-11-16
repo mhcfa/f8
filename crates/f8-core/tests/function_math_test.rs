@@ -10,7 +10,7 @@ use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
 use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
-use f8_core::value::{CellValue, ExcelError, ExpectedType, TypeError, ValueType};
+use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
 
 /// Mock evaluation context for unit tests.
 #[derive(Default)]
@@ -130,42 +130,46 @@ fn test_scenario_2_average_calculation_and_empty_divisor() {
     let res = avg.evaluate(&[err_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 
-    // Text, Boolean, Scalar Empty, and SingleCell Empty fail strictly with InvalidArgumentType
-    for (bad_arg, found_type) in [
-        (
-            FunctionArg::Scalar(CellValue::Text("text".into())),
-            ValueType::Text,
-        ),
-        (
-            FunctionArg::Scalar(CellValue::Boolean(true)),
-            ValueType::Boolean,
-        ),
-        (FunctionArg::Scalar(CellValue::Empty), ValueType::Empty),
-        (
-            FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell),
-            ValueType::Empty,
-        ),
-        (
-            FunctionArg::range(
-                2,
-                1,
-                vec![CellValue::Number(10.0), CellValue::Text("bad".into())],
-                ReferenceKind::Slice,
-            ),
-            ValueType::Text,
-        ),
+    // Text and Boolean fail in Pass 4a with InvalidArgumentType; Empty fails in bind_arguments with EmptyArgument
+    for (formula, found_type) in [
+        ("AVERAGE(\"text\")", ValueType::Text),
+        ("AVERAGE(TRUE)", ValueType::Boolean),
     ] {
         assert_eq!(
-            avg.evaluate(&[bad_arg], &ctx),
+            registry.validate_expr(&Expr::parse(formula).unwrap()),
             Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "AVERAGE",
                 param: "number1",
                 position: 1,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found: found_type,
             }))
         );
     }
+    let avg_slice_expr = Expr::parse("AVERAGE(T[\"r1\"..\"r2\", \"val\"])").unwrap();
+    let mut resolve_avg_bad = |_: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number), Some(ValueType::Text)],
+        }))
+    };
+    assert_eq!(
+        registry.validate_expr_with_shapes(&avg_slice_expr, &mut resolve_avg_bad),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "AVERAGE",
+                param: "number1",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            })
+        ))
+    );
 }
 
 #[test]
@@ -203,41 +207,29 @@ fn test_scenario_3_count_vs_counta_semantics() {
     );
 
     // COUNT rejects Text, Boolean, SingleCell Empty, and Descriptor role
-    assert_eq!(
-        count_func.evaluate(
-            &[FunctionArg::range(
-                2,
-                1,
-                vec![CellValue::Number(10.0), CellValue::Text("text".into())],
-                ReferenceKind::Slice,
-            )],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "COUNT",
-            param: "value1",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Text,
+    let count_slice_expr = Expr::parse("COUNT(T[\"r1\"..\"r2\", \"val\"])").unwrap();
+    let mut resolve_count_text = |_: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number), Some(ValueType::Text)],
         }))
-    );
+    };
     assert_eq!(
-        count_func.evaluate(
-            &[FunctionArg::range(
-                1,
-                1,
-                vec![CellValue::Empty],
-                ReferenceKind::SingleCell,
-            )],
-            &ctx,
-        ),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "COUNT",
-            param: "value1",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Empty,
-        }))
+        registry.validate_expr_with_shapes(&count_slice_expr, &mut resolve_count_text),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "COUNT",
+                param: "value1",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            })
+        ))
     );
     let count_desc_expr = f8_core::expr::Expr::parse("COUNT(T[\"r1\"..\"r2\", \"desc\"])").unwrap();
     let mut resolve_count_desc = |_: &f8_core::expr::TableRef| -> Result<
@@ -423,33 +415,30 @@ fn test_scenario_4_max_and_min_with_range_filtering_and_empty_fallback() {
         CellValue::Number(0.0)
     );
 
-    // Text in slice or Empty on SingleCell fails strictly with InvalidArgumentType
-    let text_range = FunctionArg::range(
-        1,
-        1,
-        vec![CellValue::Text("text".into())],
-        ReferenceKind::Slice,
-    );
-    assert_eq!(
-        min_func.evaluate(std::slice::from_ref(&text_range), &ctx),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "MIN",
-            param: "number1",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Text,
+    // Text in slice fails in Pass 4a with InvalidArgumentType
+    let min_text_expr = Expr::parse("MIN(T[\"r1\"..\"r2\", \"val\"])").unwrap();
+    let mut resolve_min_text = |_: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 1,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Text)],
         }))
-    );
-    let single_empty = FunctionArg::range(1, 1, vec![CellValue::Empty], ReferenceKind::SingleCell);
+    };
     assert_eq!(
-        max_func.evaluate(&[single_empty], &ctx),
-        Err(FunctionError::Type(TypeError::InvalidArgumentType {
-            function: "MAX",
-            param: "number1",
-            position: 1,
-            expected: ExpectedType::Number,
-            found: ValueType::Empty,
-        }))
+        registry.validate_expr_with_shapes(&min_text_expr, &mut resolve_min_text),
+        Err(f8_core::functions::StageAError::Function(
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "MIN",
+                param: "number1",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            })
+        ))
     );
 }
 
@@ -525,7 +514,7 @@ fn test_scenario_5_round_roundup_and_rounddown_variants() {
         CellValue::Number(130.0)
     );
 
-    // ROUND with non-integer or oversized digits fails strictly with NonIntegerArgument
+    // ROUND with non-integer or oversized digits returns #NUM!
     for bad_digits in [1.9, 1e20] {
         let args_non_int = [
             FunctionArg::Scalar(CellValue::Number(2.15)),
@@ -533,12 +522,7 @@ fn test_scenario_5_round_roundup_and_rounddown_variants() {
         ];
         assert_eq!(
             round_func.evaluate(&args_non_int, &ctx),
-            Err(FunctionError::Type(TypeError::NonIntegerArgument {
-                function: "ROUND",
-                param: "num_digits",
-                position: 2,
-                value: bad_digits.to_string(),
-            }))
+            Ok(CellValue::Error(ExcelError::Num))
         );
     }
 
@@ -694,36 +678,38 @@ fn test_scenario_6_sumproduct_dimension_checking_and_calculation() {
         CellValue::Number(80.0)
     );
 
-    // Non-numeric text or boolean in range fails strictly with InvalidArgumentType
-    for (bad_cell, found_type) in [
-        (CellValue::Text("text".into()), ValueType::Text),
-        (CellValue::Boolean(true), ValueType::Boolean),
-    ] {
-        let r_bad = FunctionArg::range(
-            3,
-            1,
-            vec![CellValue::Number(1.0), bad_cell, CellValue::Number(3.0)],
-            ReferenceKind::Slice,
-        );
-        let r_other = FunctionArg::range(
-            3,
-            1,
-            vec![
-                CellValue::Number(4.0),
-                CellValue::Number(5.0),
-                CellValue::Number(6.0),
-            ],
-            ReferenceKind::Slice,
-        );
-        assert_eq!(
-            sumproduct.evaluate(&[r_bad, r_other], &ctx),
-            Err(FunctionError::Type(TypeError::InvalidArgumentType {
-                function: "SUMPRODUCT",
-                param: "array1",
-                position: 1,
-                expected: ExpectedType::Number,
-                found: found_type,
+    // Non-numeric text or boolean in range fails in Pass 4a with InvalidArgumentType
+    for found_type in [ValueType::Text, ValueType::Boolean] {
+        let sp_type_expr = f8_core::expr::Expr::parse(
+            "SUMPRODUCT(T[\"a1\"..\"a3\", @col], T[\"b1\"..\"b3\", @col])",
+        )
+        .unwrap();
+        let mut resolve_sp_type = |_: &f8_core::expr::TableRef| -> Result<
+            Option<f8_core::functions::StaticRef>,
+            &'static str,
+        > {
+            Ok(Some(f8_core::functions::StaticRef {
+                rows: 3,
+                cols: 1,
+                axis_role: AxisRole::Measure,
+                elem_types: vec![
+                    Some(ValueType::Number),
+                    Some(found_type),
+                    Some(ValueType::Number),
+                ],
             }))
+        };
+        assert_eq!(
+            registry.validate_expr_with_shapes(&sp_type_expr, &mut resolve_sp_type),
+            Err(f8_core::functions::StageAError::Function(
+                FunctionError::Type(TypeError::InvalidArgumentType {
+                    function: "SUMPRODUCT",
+                    param: "array1",
+                    position: 1,
+                    expected: ValueType::Number,
+                    found: found_type,
+                })
+            ))
         );
     }
 
@@ -841,42 +827,18 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     let res = median.evaluate(&[empty_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Num));
 
-    // 5. Direct scalar boolean or text or SingleCell Empty fails strictly with InvalidArgumentType
-    for (bad_args, pos, found) in [
-        (
-            vec![
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Boolean(true)),
-            ],
-            2,
-            ValueType::Boolean,
-        ),
-        (
-            vec![
-                FunctionArg::Scalar(CellValue::Number(10.0)),
-                FunctionArg::Scalar(CellValue::Text("invalid".into())),
-            ],
-            2,
-            ValueType::Text,
-        ),
-        (
-            vec![FunctionArg::range(
-                1,
-                1,
-                vec![CellValue::Empty],
-                ReferenceKind::SingleCell,
-            )],
-            1,
-            ValueType::Empty,
-        ),
+    // 5. Direct scalar boolean or text fails in Pass 4a with InvalidArgumentType
+    for (formula, pos, found) in [
+        ("MEDIAN(10, TRUE)", 2, ValueType::Boolean),
+        ("MEDIAN(10, \"invalid\")", 2, ValueType::Text),
     ] {
         assert_eq!(
-            median.evaluate(&bad_args, &ctx),
+            registry.validate_expr(&Expr::parse(formula).unwrap()),
             Err(FunctionError::Type(TypeError::InvalidArgumentType {
                 function: "MEDIAN",
                 param: "number1",
                 position: pos,
-                expected: ExpectedType::Number,
+                expected: ValueType::Number,
                 found,
             }))
         );
@@ -892,8 +854,8 @@ fn test_scenario_11_median_odd_even_ranges_and_errors() {
     let res = median.evaluate(&[error_range], &ctx).unwrap();
     assert_eq!(res, CellValue::Error(ExcelError::Ref));
 
-    // 7. Too few arguments (0 args)
-    let res_empty = median.evaluate(&[], &ctx);
+    // 7. Too few arguments (0 args) fails in Pass 4a
+    let res_empty = registry.validate_expr(&Expr::parse("MEDIAN()").unwrap());
     assert!(matches!(
         res_empty,
         Err(FunctionError::TooFewArguments { .. })

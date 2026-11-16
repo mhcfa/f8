@@ -1,6 +1,5 @@
 use crate::functions::common::scalar_number;
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
@@ -45,8 +44,6 @@ impl ExcelFunction for AbsFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match scalar_number(&args[0]) {
             Ok(n) => Ok(CellValue::number(n.abs())),
             Err(err) => Ok(CellValue::Error(err)),

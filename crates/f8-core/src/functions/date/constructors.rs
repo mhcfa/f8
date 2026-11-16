@@ -2,31 +2,29 @@
 
 use crate::functions::common::{scalar_integer, scalar_number};
 use crate::functions::error::FunctionError;
-use crate::functions::registry::validate_bound_args;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
-    ValidationPolicy,
 };
-use crate::value::{CellValue, DateSerial, ExcelError, ValueType};
+use crate::value::{CellValue, DateSerial, ExcelError, ValueType, validate_date_serial};
 
 static DATE_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
         "year",
         "The 4-digit calendar year of the date (1900-9999).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "month",
         "The calendar month of the year (1-12).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "day",
         "The calendar day of the month (1..=days_in_month).",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
 ];
 
@@ -51,17 +49,11 @@ impl ExcelFunction for DateFunction {
         Some(ValueType::Number)
     }
 
-    fn validation_policy(&self) -> ValidationPolicy {
-        ValidationPolicy::CalendarDate
-    }
-
     fn evaluate(
         &self,
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         let eval = || -> Result<f64, ExcelError> {
             let year_i64 = scalar_integer(&args[0])?;
             let month_i64 = scalar_integer(&args[1])?;
@@ -88,7 +80,7 @@ enum MonthStepDay {
 }
 
 fn step_months(args: &[FunctionArg<'_>], day_mode: MonthStepDay) -> Result<f64, ExcelError> {
-    let start_val = scalar_number(&args[0])?;
+    let start_val = validate_date_serial(scalar_number(&args[0])?)?;
     let m_offset = scalar_integer(&args[1])?;
     if m_offset.abs() > 120_000 {
         return Err(ExcelError::Num);
@@ -116,13 +108,13 @@ static EDATE_PARAMS: &[ParameterDef] = &[
         "start_date",
         "A serial number that represents the start date.",
         ParamKind::Scalar,
-        ParamType::DateSerial,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "months",
         "The integer number of months before or after start_date.",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
 ];
 
@@ -152,8 +144,6 @@ impl ExcelFunction for EdateFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match step_months(args, MonthStepDay::ClampOriginal) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
@@ -166,13 +156,13 @@ static EOMONTH_PARAMS: &[ParameterDef] = &[
         "start_date",
         "A serial number that represents the start date.",
         ParamKind::Scalar,
-        ParamType::DateSerial,
+        ParamType::Number,
     ),
     ParameterDef::required(
         "months",
         "The integer number of months before or after start_date.",
         ParamKind::Scalar,
-        ParamType::Integer,
+        ParamType::Number,
     ),
 ];
 
@@ -202,8 +192,6 @@ impl ExcelFunction for EomonthFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        validate_bound_args(self, args)?;
-
         match step_months(args, MonthStepDay::EndOfMonth) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
