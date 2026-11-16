@@ -1,7 +1,8 @@
-use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::fmt;
 use std::ops::Deref;
+
+use serde::{Deserialize, Serialize};
 
 macro_rules! define_id {
     ($name:ident, $doc:expr) => {

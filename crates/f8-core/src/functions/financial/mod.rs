@@ -2,11 +2,11 @@ pub mod annuity;
 pub mod discounting;
 pub mod irr;
 
-use std::sync::Arc;
-
 pub use annuity::PmtFunction;
 pub use discounting::{NpvFunction, XnpvFunction};
 pub use irr::{IrrFunction, XirrFunction};
+
+use std::sync::Arc;
 
 use crate::functions::registry::FunctionRegistry;
 

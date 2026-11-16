@@ -99,12 +99,6 @@ impl EvaluatedModel {
         &self.values
     }
 
-    /// Consumes the model and returns the map of evaluated cell values.
-    #[must_use]
-    pub fn into_values(self) -> IndexMap<CellId, CellValue> {
-        self.values
-    }
-
     /// Iterates over all evaluated cell IDs and their values.
     pub fn iter(&self) -> impl Iterator<Item = (&CellId, &CellValue)> {
         self.values.iter()

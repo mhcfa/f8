@@ -807,7 +807,7 @@ impl CompiledModel {
                                             Some(expr.to_string()),
                                             self.lowered_map.get(&cell_id).map(ToString::to_string),
                                         ),
-                                        _ => (None, None),
+                                        Some(CellPayload::Literal(_)) | None => (None, None),
                                     };
                                     cells_map.insert(
                                         (current_row, physical_col),
