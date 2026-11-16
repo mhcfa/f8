@@ -10,8 +10,9 @@
 //!   5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
 //!   6. `DateParity`: 8 serial date construction, decomposition, and difference functions + edge and error cases.
 //!   7. `InformationParity`: 5 cell-blank/error introspection and `#N/A` generation functions + edge and error cases.
-//! - Sheet 2 (`ExcelDivergences`): `IrrXirrDivergences` documenting 4 `IRR`/`XIRR` cases where `f8` enforces
-//!   mathematical ground truth and domain symmetry over legacy Excel solver/error quirks.
+//! - Sheet 2 (`ExcelDivergences`): `RuntimeDivergences` documenting live Pass 4b formulas where `f8`
+//!   enforces strict calendar dates, date serials `>= 1`, exact discrete integers, binary-search
+//!   monotonicity, and mathematical `IRR`/`XIRR` ground truth over legacy Excel quirks.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test fixture")]
 
@@ -84,7 +85,7 @@ struct ParityGroup {
     cases: &'static [ParityCase],
 }
 
-/// Intentional mathematical divergence case where `f8` differs from a legacy Excel solver/error quirk.
+/// Intentional runtime divergence case where `f8` Pass 4b differs from a legacy Excel calculation/error quirk.
 struct DivergenceCase {
     id: &'static str,
     label: &'static str,
@@ -722,9 +723,16 @@ const FINANCIAL_CASES: &[ParityCase] = &[
         formula: "PMT(-1.0, 5, -1000)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
+    ParityCase {
+        id: "xnpv_neg_date_serial_err",
+        label: "XNPV(0.1, dates, cash_flows) [negative date serial -1000 -> #NUM!]",
+        formula: "XNPV(0.1, SeedData[\"r1\"..\"r4\", \"date\"], SeedData[\"r1\"..\"r4\", \"cash_flow\"])",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
 ];
 
 const DIVERGENCE_CASES: &[DivergenceCase] = &[
+    // IRR & XIRR solver and domain symmetry
     DivergenceCase {
         id: "xirr_leading_zero",
         label: "XIRR([0, 0, -100, 110], dates) [leading zero cash flows]",
@@ -756,6 +764,250 @@ const DIVERGENCE_CASES: &[DivergenceCase] = &[
         expected: ParityExpected::Error(ExcelError::Num),
         excel_quirk: "#VALUE!",
         rationale: "Discount factor 1 + rate <= 0 is a numeric domain pole (#NUM!), matching XIRR, XNPV, and PMT (Excel IRR returns #VALUE!)",
+    },
+    // Strict calendar DATE(year, month, day): no 2-digit year expansion or month/day rollover
+    DivergenceCase {
+        id: "date_two_digit_year_err",
+        label: "DATE(24, 12, 31) [2-digit year < 1900 -> #NUM!]",
+        formula: "DATE(24, 12, 31)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "9132 (1924-12-31)",
+        rationale: "Requires explicit 4-digit year in 1900..=9999; rejects Lotus/Excel implicit 1900 + year expansion on 0..=1899",
+    },
+    DivergenceCase {
+        id: "date_month_overflow_rollover_err",
+        label: "DATE(2024, 14, 1) [month > 12 rollover -> #NUM!]",
+        formula: "DATE(2024, 14, 1)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45689 (2025-02-01)",
+        rationale: "Requires calendar month in 1..=12; rejects silent forward rollover into subsequent year (use EDATE for month offsets)",
+    },
+    DivergenceCase {
+        id: "date_month_zero_rollover_err",
+        label: "DATE(2024, 0, 1) [month < 1 rollover -> #NUM!]",
+        formula: "DATE(2024, 0, 1)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45261 (2023-12-01)",
+        rationale: "Requires calendar month in 1..=12; rejects silent backward rollover into prior year",
+    },
+    DivergenceCase {
+        id: "date_day_overflow_30day_month_err",
+        label: "DATE(2024, 6, 31) [invalid June 31 rollover -> #NUM!]",
+        formula: "DATE(2024, 6, 31)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45474 (2024-07-01)",
+        rationale: "Requires calendar day in 1..=days_in_month; rejects moving 1 day forward to July 1 on nonexistent June 31",
+    },
+    DivergenceCase {
+        id: "date_day_overflow_nonleap_feb29_err",
+        label: "DATE(2025, 2, 29) [non-leap Feb 29 rollover -> #NUM!]",
+        formula: "DATE(2025, 2, 29)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45717 (2025-03-01)",
+        rationale: "2025 is not a leap year; rejects moving 1 day forward to March 1 on nonexistent 2025-02-29",
+    },
+    DivergenceCase {
+        id: "date_day_zero_rollover_err",
+        label: "DATE(2024, 1, 0) [day < 1 backward rollover -> #NUM!]",
+        formula: "DATE(2024, 1, 0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45291 (2023-12-31)",
+        rationale: "Requires calendar day in 1..=days_in_month; rejects moving 1 day backward to prior month-end on day 0",
+    },
+    // Input date serial 0 (1900-01-00) rejection across date & scheduled cash-flow functions
+    DivergenceCase {
+        id: "year_serial_zero_err",
+        label: "YEAR(0) [serial 0 (1900-01-00) -> #NUM!]",
+        formula: "YEAR(0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "1900",
+        rationale: "Input date serials must be >= 1 (1900-01-01); rejects fictitious Lotus serial 0 (1900-01-00) from zero/uninitialized cells",
+    },
+    DivergenceCase {
+        id: "month_serial_zero_err",
+        label: "MONTH(0) [serial 0 (1900-01-00) -> #NUM!]",
+        formula: "MONTH(0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "1",
+        rationale: "Input date serials must be >= 1 (1900-01-01); rejects fictitious Lotus serial 0 (1900-01-00)",
+    },
+    DivergenceCase {
+        id: "day_serial_zero_err",
+        label: "DAY(0) [serial 0 (1900-01-00) -> #NUM!]",
+        formula: "DAY(0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "0",
+        rationale: "Calendar day 0 does not exist; rejects fictitious Lotus serial 0 (1900-01-00) where Excel returns day 0",
+    },
+    DivergenceCase {
+        id: "days_serial_zero_err",
+        label: "DAYS(DATE(2024, 1, 1), 0) [serial 0 start_date -> #NUM!]",
+        formula: "DAYS(DATE(2024, 1, 1), 0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45292",
+        rationale: "Both end_date and start_date must be valid date serials in 1..=2958465; rejects serial 0",
+    },
+    DivergenceCase {
+        id: "edate_serial_zero_err",
+        label: "EDATE(0, 1) [serial 0 start_date -> #NUM!]",
+        formula: "EDATE(0, 1)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "31 (1900-01-31)",
+        rationale: "start_date must be a valid calendar serial in 1..=2958465; rejects stepping from fictitious 1900-01-00",
+    },
+    DivergenceCase {
+        id: "eomonth_serial_zero_err",
+        label: "EOMONTH(0, 0) [serial 0 start_date -> #NUM!]",
+        formula: "EOMONTH(0, 0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "31 (1900-01-31)",
+        rationale: "start_date must be a valid calendar serial in 1..=2958465; rejects computing month-end from fictitious 1900-01-00",
+    },
+    DivergenceCase {
+        id: "yearfrac_serial_zero_err",
+        label: "YEARFRAC(0, DATE(1900, 7, 1), 0) [serial 0 start_date -> #NUM!]",
+        formula: "YEARFRAC(0, DATE(1900, 7, 1), 0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "0.502777778",
+        rationale: "start_date and end_date must be valid calendar serials in 1..=2958465; rejects day-count fractions anchored at 1900-01-00",
+    },
+    DivergenceCase {
+        id: "xnpv_serial_zero_date_err",
+        label: "XNPV(0.1, r1..r2 cf, [0, 20] dates) [serial 0 in dates -> #NUM!]",
+        formula: "XNPV(0.1, SeedData[\"r1\"..\"r2\", \"cash_flow\"], SeedData[\"r2\"..\"r3\", \"sparse\"])",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "-701.559724",
+        rationale: "Scheduled cash-flow dates in XNPV and XIRR must be valid date serials in 1..=2958465; rejects serial 0",
+    },
+    DivergenceCase {
+        id: "xirr_serial_zero_date_err",
+        label: "XIRR(r1..r2 cf, [0, 20] dates) [serial 0 in dates -> #NUM!]",
+        formula: "XIRR(SeedData[\"r1\"..\"r2\", \"cash_flow\"], SeedData[\"r2\"..\"r3\", \"sparse\"])",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "#NUM! / -0.999999999",
+        rationale: "Scheduled cash-flow dates in XNPV and XIRR must be valid date serials in 1..=2958465; rejects serial 0",
+    },
+    // Strict discrete integers (strict_integer) and binary annuity timing flag
+    DivergenceCase {
+        id: "round_non_int_digits_err",
+        label: "ROUND(123.456, 2.5) [non-integer num_digits -> #NUM!]",
+        formula: "ROUND(123.456, 2.5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "123.46",
+        rationale: "Discrete integer parameter num_digits requires exact integer (fract() == 0.0); rejects silent truncation of 2.5 to 2",
+    },
+    DivergenceCase {
+        id: "roundup_non_int_digits_err",
+        label: "ROUNDUP(123.456, 2.5) [non-integer num_digits -> #NUM!]",
+        formula: "ROUNDUP(123.456, 2.5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "123.46",
+        rationale: "Discrete integer parameter num_digits requires exact integer; rejects silent truncation of 2.5 to 2",
+    },
+    DivergenceCase {
+        id: "rounddown_non_int_digits_err",
+        label: "ROUNDDOWN(123.456, 2.5) [non-integer num_digits -> #NUM!]",
+        formula: "ROUNDDOWN(123.456, 2.5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "123.45",
+        rationale: "Discrete integer parameter num_digits requires exact integer; rejects silent truncation of 2.5 to 2",
+    },
+    DivergenceCase {
+        id: "date_non_int_component_err",
+        label: "DATE(2024, 6, 15.7) [non-integer day component -> #NUM!]",
+        formula: "DATE(2024, 6, 15.7)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45458 (2024-06-15)",
+        rationale: "Calendar year, month, and day components require exact integers; rejects silent fractional truncation",
+    },
+    DivergenceCase {
+        id: "edate_non_int_months_err",
+        label: "EDATE(DATE(2024, 1, 15), 1.9) [non-integer months -> #NUM!]",
+        formula: "EDATE(DATE(2024, 1, 15), 1.9)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "45337 (2024-02-15)",
+        rationale: "Month offset requires exact integer; rejects silent truncation of 1.9 months to 1 month",
+    },
+    DivergenceCase {
+        id: "yearfrac_non_int_basis_err",
+        label: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 0.7) [non-integer basis -> #NUM!]",
+        formula: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 0.7)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "0.5",
+        rationale: "Day-count convention basis code requires exact integer in 0..=4; rejects silent truncation of 0.7 to basis 0",
+    },
+    DivergenceCase {
+        id: "choose_non_int_index_err",
+        label: "CHOOSE(1.9, 100, 200, 300) [non-integer index_num -> #NUM!]",
+        formula: "CHOOSE(1.9, 100, 200, 300)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "100",
+        rationale: "1-based branch selector index_num requires exact integer; rejects silent truncation of 1.9 to branch 1",
+    },
+    DivergenceCase {
+        id: "index_non_int_row_err",
+        label: "INDEX(num_a, 2.8) [non-integer row_num -> #NUM!]",
+        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], 2.8)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "20",
+        rationale: "1-based coordinate index row_num requires exact integer; rejects silent truncation of 2.8 to row 2",
+    },
+    DivergenceCase {
+        id: "pmt_invalid_type_err",
+        label: "PMT(0.05, 10, -1000, 0, 2) [annuity type outside {0, 1} -> #NUM!]",
+        formula: "PMT(0.05, 10, -1000, 0, 2)",
+        expected: ParityExpected::Error(ExcelError::Num),
+        excel_quirk: "123.33769",
+        rationale: "Annuity payment timing flag type must be 0 (end) or 1 (beginning); rejects Excel quirk treating any non-zero number as 1",
+    },
+    // Lookup wildcard exclusion, binary-search monotonicity/blank checks, and 1-based INDEX
+    DivergenceCase {
+        id: "xlookup_wildcard_mode_err",
+        label: "XLOOKUP(\"G*\", category, num_a, _, 2) [wildcard match_mode=2 -> #VALUE!]",
+        formula: "XLOOKUP(\"G*\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"], _, 2)",
+        expected: ParityExpected::Error(ExcelError::Value),
+        excel_quirk: "40",
+        rationale: "Wildcard pattern matching (match_mode = 2) is excluded so string lookup keys always compare literally",
+    },
+    DivergenceCase {
+        id: "xmatch_wildcard_mode_err",
+        label: "XMATCH(\"G*\", category, 2) [wildcard match_mode=2 -> #VALUE!]",
+        formula: "XMATCH(\"G*\", SeedData[\"r1\"..\"r4\", \"category\"], 2)",
+        expected: ParityExpected::Error(ExcelError::Value),
+        excel_quirk: "4",
+        rationale: "Wildcard pattern matching (match_mode = 2) is excluded so string lookup keys always compare literally",
+    },
+    DivergenceCase {
+        id: "xmatch_binary_asc_unsorted_err",
+        label: "XMATCH(\"Alpha\", category, 0, 2) [unsorted binary ascending -> #VALUE!]",
+        formula: "XMATCH(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], 0, 2)",
+        expected: ParityExpected::Error(ExcelError::Value),
+        excel_quirk: "1",
+        rationale: "Binary search (search_mode = 2) requires monotonically non-decreasing keys; rejects unsorted array instead of bisecting silently",
+    },
+    DivergenceCase {
+        id: "xmatch_binary_desc_unsorted_err",
+        label: "XMATCH(20, num_a, 0, -2) [ascending array in binary descending -> #VALUE!]",
+        formula: "XMATCH(20, SeedData[\"r1\"..\"r4\", \"num_a\"], 0, -2)",
+        expected: ParityExpected::Error(ExcelError::Value),
+        excel_quirk: "#N/A",
+        rationale: "Binary search (search_mode = -2) requires monotonically non-increasing keys; returns #VALUE! instead of a false #N/A miss",
+    },
+    DivergenceCase {
+        id: "xmatch_binary_sparse_empty_err",
+        label: "XMATCH(20, sparse, 0, 2) [empty cell in binary lookup_array -> #VALUE!]",
+        formula: "XMATCH(20, SeedData[\"r1\"..\"r4\", \"sparse\"], 0, 2)",
+        expected: ParityExpected::Error(ExcelError::Value),
+        excel_quirk: "3",
+        rationale: "Binary search requires every lookup_array element to be non-empty so bisection ordering is total and well-defined",
+    },
+    DivergenceCase {
+        id: "index_zero_row_err",
+        label: "INDEX(num_a, 0) [row_num = 0 whole-vector slice -> #REF!]",
+        formula: "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], 0)",
+        expected: ParityExpected::Error(ExcelError::Ref),
+        excel_quirk: "Spill / #VALUE!",
+        rationale: "Enforces strict 1-based scalar indexing (row_num >= 1); dynamic array slicing via index 0 is excluded",
     },
 ];
 
@@ -949,6 +1201,18 @@ const LOOKUP_CASES: &[ParityCase] = &[
         formula: "INDEX(SeedData[\"r1\"..\"r4\", \"num_a\"], SeedData[\"r4\", \"num_b\"])",
         expected: ParityExpected::Error(ExcelError::Ref),
     },
+    ParityCase {
+        id: "xlookup_invalid_match_mode_err",
+        label: "XLOOKUP(\"Alpha\", cat, num_a, _, 99) [invalid match_mode 99 -> #VALUE!]",
+        formula: "XLOOKUP(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], SeedData[\"r1\"..\"r4\", \"num_a\"], _, 99)",
+        expected: ParityExpected::Error(ExcelError::Value),
+    },
+    ParityCase {
+        id: "xmatch_invalid_search_mode_err",
+        label: "XMATCH(\"Alpha\", cat, 0, 99) [invalid search_mode 99 -> #VALUE!]",
+        formula: "XMATCH(\"Alpha\", SeedData[\"r1\"..\"r4\", \"category\"], 0, 99)",
+        expected: ParityExpected::Error(ExcelError::Value),
+    },
 ];
 
 const DATE_CASES: &[ParityCase] = &[
@@ -1085,6 +1349,42 @@ const DATE_CASES: &[ParityCase] = &[
         id: "year_edate_bubble_err",
         label: "YEAR(EDATE(DATE(1900, 1, 15), -2)) [upstream #NUM! bubbles]",
         formula: "YEAR(EDATE(DATE(1900, 1, 15), -2))",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "date_year_neg_err",
+        label: "DATE(-1, 1, 1) [negative year -> #NUM!]",
+        formula: "DATE(-1, 1, 1)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "date_year_overflow_err",
+        label: "DATE(10000, 1, 1) [year > 9999 -> #NUM!]",
+        formula: "DATE(10000, 1, 1)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "year_neg_serial_err",
+        label: "YEAR(-1) [negative date serial -> #NUM!]",
+        formula: "YEAR(-1)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "year_overflow_serial_err",
+        label: "YEAR(3000000) [serial > 2958465 -> #NUM!]",
+        formula: "YEAR(3000000)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "yearfrac_invalid_basis_err",
+        label: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5) [basis > 4 -> #NUM!]",
+        formula: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), 5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "yearfrac_neg_basis_err",
+        label: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), -1) [basis < 0 -> #NUM!]",
+        formula: "YEARFRAC(DATE(2024, 1, 1), DATE(2024, 7, 1), -1)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
 ];
@@ -1392,10 +1692,10 @@ fn build_divergence_table() -> TableSpec {
         .collect();
 
     TableSpec {
-        id: TableId::from("IrrXirrDivergences"),
-        title: "Intentional Mathematical Divergences from Excel Quirks".to_string(),
+        id: TableId::from("RuntimeDivergences"),
+        title: "Pass 4b Runtime Domain & Solver Divergences (Live Formulas)".to_string(),
         subtitle: Some(
-            "Cases where f8 enforces mathematical ground truth and domain symmetry over legacy Excel solver/error quirks"
+            "Live formulas where f8 enforces strict calendar dates, serial >= 1, discrete integers, sorted binary search, and exact IRR/XIRR roots over legacy Excel quirks"
                 .to_string(),
         ),
         currency: None,
@@ -1431,7 +1731,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
-                tables: vec![TableId::from("IrrXirrDivergences")],
+                tables: vec![TableId::from("RuntimeDivergences")],
             },
         ],
     };
@@ -1662,7 +1962,7 @@ fn assert_case_value(
 
 /// Asserts that every parity case in `evaluated` matches its pinned Excel ground-truth constant,
 /// every `parity_status` formula evaluates to `"PASS"`, every documented divergence case in
-/// `IrrXirrDivergences` evaluates to its mathematical ground truth, and no unexpected domain errors exist.
+/// `RuntimeDivergences` evaluates to its mathematical/domain ground truth, and no unexpected domain errors exist.
 pub fn assert_evaluated_parity(evaluated: &EvaluatedModel) {
     let formula_col = ColId::from("formula_val");
     let expected_col = ColId::from("expected_val");
@@ -1696,7 +1996,7 @@ pub fn assert_evaluated_parity(evaluated: &EvaluatedModel) {
         }
     }
 
-    let div_table_id = TableId::from("IrrXirrDivergences");
+    let div_table_id = TableId::from("RuntimeDivergences");
     for case in DIVERGENCE_CASES {
         assert_case_value(
             evaluated,
