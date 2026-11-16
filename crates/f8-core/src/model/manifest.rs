@@ -3,7 +3,50 @@ use serde::{Deserialize, Serialize};
 
 use super::error::ModelError;
 use super::id::TableId;
-use super::theme::{Theme, ThemeSpec};
+use super::theme::{Theme, ThemeSpec, is_valid_hex_color};
+
+/// Maximum column count supported by OpenXML / Excel (columns 0..=16,383, i.e. A..XFD).
+pub const MAX_EXCEL_COLUMNS: u32 = 16_384;
+
+/// Maximum row count supported by OpenXML / Excel (rows 0..=1,048,575, i.e. 1..1,048,576).
+pub const MAX_EXCEL_ROWS: u32 = 1_048_576;
+
+fn validate_sheet_name(name: &str) -> Result<(), ModelError> {
+    if name.is_empty() {
+        return Err(ModelError::InvalidSheetName {
+            sheet: name.to_string(),
+            reason: "sheet name must not be empty",
+        });
+    }
+    if name.encode_utf16().count() > 31 {
+        return Err(ModelError::InvalidSheetName {
+            sheet: name.to_string(),
+            reason: "sheet name must not exceed 31 UTF-16 code units",
+        });
+    }
+    if name.starts_with('\'') || name.ends_with('\'') {
+        return Err(ModelError::InvalidSheetName {
+            sheet: name.to_string(),
+            reason: "sheet name must not start or end with a single quote",
+        });
+    }
+    if name
+        .chars()
+        .any(|c| matches!(c, ':' | '\\' | '/' | '?' | '*' | '[' | ']'))
+    {
+        return Err(ModelError::InvalidSheetName {
+            sheet: name.to_string(),
+            reason: "sheet name must not contain ':', '\\', '/', '?', '*', '[', or ']'",
+        });
+    }
+    if name.eq_ignore_ascii_case("history") {
+        return Err(ModelError::InvalidSheetName {
+            sheet: name.to_string(),
+            reason: "sheet name 'History' is reserved by Excel",
+        });
+    }
+    Ok(())
+}
 
 /// Root workbook manifest defining model metadata, theme, and sheet ordering.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,9 +62,29 @@ impl ProjectManifest {
     pub fn validate(&self) -> Result<(), ModelError> {
         let mut seen_sheets = IndexSet::new();
         for sheet in &self.sheets {
-            if !seen_sheets.insert(&sheet.name) {
+            validate_sheet_name(&sheet.name)?;
+            if !seen_sheets.insert(sheet.name.to_lowercase()) {
                 return Err(ModelError::DuplicateSheetName {
                     sheet: sheet.name.clone(),
+                });
+            }
+            if let Some(color) = &sheet.tab_color
+                && !is_valid_hex_color(color)
+            {
+                return Err(ModelError::InvalidSheetTabColor {
+                    sheet: sheet.name.clone(),
+                    color: color.clone(),
+                });
+            }
+            if let Some(freeze) = sheet.freeze_panes
+                && (freeze.row >= MAX_EXCEL_ROWS || freeze.col >= MAX_EXCEL_COLUMNS)
+            {
+                return Err(ModelError::InvalidFreezePanes {
+                    sheet: sheet.name.clone(),
+                    row: freeze.row,
+                    col: freeze.col,
+                    max_rows: MAX_EXCEL_ROWS,
+                    max_cols: MAX_EXCEL_COLUMNS,
                 });
             }
         }

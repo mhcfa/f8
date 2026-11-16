@@ -730,15 +730,15 @@ describe("TypeScript Fluent Builder DSL", () => {
 
     // Verify physical coordinates and lowered formulas
     const t2Cell = compiled.inspectCell("T2", "m1", "val");
-    expect(t2Cell.physicalAddress).toBe("Dashboard!G5");
+    expect(t2Cell.physicalAddress).toBe("'Dashboard'!G5");
     expect(t2Cell.excelFormula).toBe("=$D$5");
 
     const t3Cell = compiled.inspectCell("T3", "m2", "val");
-    expect(t3Cell.physicalAddress).toBe("Dashboard!G11");
+    expect(t3Cell.physicalAddress).toBe("'Dashboard'!G11");
     expect(t3Cell.excelFormula).toBe("=$G$5*2");
 
     const t4Cell = compiled.inspectCell("T4", "sum_row", "total");
-    expect(t4Cell.physicalAddress).toBe("Dashboard!C20");
+    expect(t4Cell.physicalAddress).toBe("'Dashboard'!C20");
     expect(t4Cell.excelFormula).toBe("=$G$5+$G$11");
 
     const sheetInsp = compiled.inspectSheet("Dashboard");

@@ -12,6 +12,13 @@ pub fn format_sheet_qualifier(sheet: &SheetId) -> String {
     format!("'{escaped}'!")
 }
 
+/// Formats a worksheet-qualified Excel cell address (`'Sheet1'!C14`, `'John''s Data'!C14`),
+/// unconditionally single-quoting and escaping the sheet name.
+#[must_use]
+pub fn format_sheet_address(sheet: &SheetId, a1: &str) -> String {
+    format!("{}{a1}", format_sheet_qualifier(sheet))
+}
+
 /// Formats 0-indexed `(col, row)` coordinates into an Excel A1 address with optional `$` pinning.
 ///
 /// # Examples
@@ -42,7 +49,7 @@ pub fn format_single_cell(
     if sheet == origin_sheet {
         addr
     } else {
-        format!("{}{}", format_sheet_qualifier(sheet), addr)
+        format_sheet_address(sheet, &addr)
     }
 }
 

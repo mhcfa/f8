@@ -1246,8 +1246,8 @@ fn test_scenario_17_empty_formula_rejected_and_guarded_isblank_emission() {
         .inspect_cell(&t, &RowId::from("b"), &col)
         .unwrap()
         .physical_address;
-    let a_ref = a_addr.strip_prefix("Sheet1!").unwrap_or(&a_addr);
-    let b_ref = b_addr.strip_prefix("Sheet1!").unwrap_or(&b_addr);
+    let a_ref = a_addr.strip_prefix("'Sheet1'!").unwrap_or(&a_addr);
+    let b_ref = b_addr.strip_prefix("'Sheet1'!").unwrap_or(&b_addr);
 
     let extract_cell_element = |xml: &str, cell_ref: &str| -> Option<String> {
         let needle = format!("r=\"{cell_ref}\"");

@@ -109,6 +109,38 @@ pub enum ModelError {
     #[error("Duplicate sheet name '{sheet}' in project manifest")]
     DuplicateSheetName { sheet: String },
 
+    #[error("Invalid sheet name '{sheet}': {reason}")]
+    InvalidSheetName { sheet: String, reason: &'static str },
+
+    #[error("Sheet '{sheet}': invalid hex color code '{color}' for 'tab_color'")]
+    InvalidSheetTabColor { sheet: String, color: String },
+
+    #[error(
+        "Sheet '{sheet}': freeze_panes ({row}, {col}) exceeds Excel grid bounds ({max_rows} rows, {max_cols} columns)"
+    )]
+    InvalidFreezePanes {
+        sheet: String,
+        row: u32,
+        col: u32,
+        max_rows: u32,
+        max_cols: u32,
+    },
+
+    #[error(
+        "Table '{table}': table id must be a valid f8 identifier ([A-Za-z0-9_]+ with at least one letter or '_', excluding 'TRUE', 'FALSE', '_', and scientific notation)"
+    )]
+    InvalidTableId { table: TableId },
+
+    #[error(
+        "Table '{table}': row '{row}', column '{column}' cell specifies non-finite numeric value ({value})"
+    )]
+    NonFiniteCellNumber {
+        table: TableId,
+        row: RowId,
+        column: ColId,
+        value: f64,
+    },
+
     #[error("Theme '{name}' not found in built-in catalog")]
     ThemeNotFound { name: String },
 

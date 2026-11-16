@@ -8,24 +8,24 @@ use f8_core::model::{
 
 #[test]
 fn test_scenario_1_deserialize_valid_manifest() {
-    let json_data = r#"{
+    let json_data = r##"{
         "model_name": "LBO_Simple",
         "theme": "corporate_navy",
         "sheets": [
             {
                 "name": "Summary",
-                "tab_color": "navy",
+                "tab_color": "#00356B",
                 "tables": ["Assumptions"]
             },
             {
                 "name": "Model",
-                "tab_color": "forest_green",
+                "tab_color": "#228B22",
                 "freeze_panes": { "row": 2, "col": 1 },
                 "show_gridlines": true,
                 "tables": ["IncomeStatement"]
             }
         ]
-    }"#;
+    }"##;
 
     let manifest: ProjectManifest = serde_json::from_str(json_data).unwrap();
     assert_eq!(manifest.model_name, "LBO_Simple");
@@ -898,4 +898,161 @@ fn test_detailed_cell_input_rejects_unknown_source_field() {
     );
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("unknown field `source`"));
+}
+
+#[test]
+fn test_manifest_sheet_name_and_option_invariants_rejected() {
+    let make_manifest = |sheet: SheetSpec| ProjectManifest {
+        model_name: "Test".to_string(),
+        theme: Default::default(),
+        sheets: vec![sheet],
+    };
+
+    let base_sheet = |name: &str| SheetSpec {
+        name: name.to_string(),
+        tab_color: None,
+        freeze_panes: None,
+        show_gridlines: true,
+        tables: vec![TableId::from("T1")],
+    };
+
+    for invalid_name in [
+        "",
+        "A_sheet_name_that_exceeds_31_chr",
+        "Bad:Name",
+        "Bad\\Name",
+        "Bad/Name",
+        "Bad?Name",
+        "Bad*Name",
+        "Bad[Name",
+        "Bad]Name",
+        "'LeadingQuote",
+        "TrailingQuote'",
+        "History",
+        "history",
+    ] {
+        let err = make_manifest(base_sheet(invalid_name))
+            .validate()
+            .unwrap_err();
+        assert!(
+            matches!(err, ModelError::InvalidSheetName { ref sheet, .. } if sheet == invalid_name),
+            "expected InvalidSheetName for {invalid_name:?}, got {err:?}"
+        );
+    }
+
+    // Valid sheet with internal single quote and spaces is allowed
+    assert!(
+        make_manifest(base_sheet("John's Cash Flow"))
+            .validate()
+            .is_ok()
+    );
+
+    // Case-insensitive duplicate sheet names rejected
+    let dup_manifest = ProjectManifest {
+        model_name: "Test".to_string(),
+        theme: Default::default(),
+        sheets: vec![base_sheet("Sheet1"), base_sheet("sheet1")],
+    };
+    let dup_err = dup_manifest.validate().unwrap_err();
+    assert!(matches!(
+        dup_err,
+        ModelError::DuplicateSheetName { ref sheet } if sheet == "sheet1"
+    ));
+
+    // Invalid tab_color hex rejected in Pass 1
+    for bad_color in ["navy", "#GGG", "#12345", "1B365D"] {
+        let mut sheet = base_sheet("Model");
+        sheet.tab_color = Some(bad_color.to_string());
+        let err = make_manifest(sheet).validate().unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ModelError::InvalidSheetTabColor { ref sheet, ref color }
+                    if sheet == "Model" && color == bad_color
+            ),
+            "expected InvalidSheetTabColor for {bad_color}, got {err:?}"
+        );
+    }
+
+    // Out-of-bounds freeze_panes rejected in Pass 1
+    for (row, col) in [(1_048_576, 0), (0, 16_384), (0, 70_000)] {
+        let mut sheet = base_sheet("Model");
+        sheet.freeze_panes = Some(FreezePanes { row, col });
+        let err = make_manifest(sheet).validate().unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ModelError::InvalidFreezePanes {
+                    ref sheet,
+                    row: r,
+                    col: c,
+                    ..
+                } if sheet == "Model" && r == row && c == col
+            ),
+            "expected InvalidFreezePanes for ({row}, {col}), got {err:?}"
+        );
+    }
+}
+
+#[test]
+fn test_table_id_and_finite_cell_number_invariants_rejected() {
+    let make_table = |id: &str| {
+        let mut t = TableSpec::new(id, "Title");
+        t.columns.push(ColumnSpec::new("c1"));
+        t.rows.push(RowSpec::new("r1").with_cell("c1", 1.0));
+        t
+    };
+
+    for bad_id in [
+        "",
+        "Income Statement",
+        "123",
+        "1e5",
+        "2E10",
+        "TRUE",
+        "FALSE",
+        "_",
+    ] {
+        let err = make_table(bad_id).validate().unwrap_err();
+        assert!(
+            matches!(err, ModelError::InvalidTableId { ref table } if table.as_str() == bad_id),
+            "expected InvalidTableId for {bad_id:?}, got {err:?}"
+        );
+    }
+
+    for valid_id in ["IncomeStatement", "3Statement", "_internal", "T_1"] {
+        assert!(
+            make_table(valid_id).validate().is_ok(),
+            "expected valid TableId for {valid_id:?}"
+        );
+    }
+
+    for non_finite in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut t1 = make_table("T1");
+        t1.rows = vec![
+            RowSpec::new("r1")
+                .with_cell("c1", CellInput::Literal(ValueLiteral::Number(non_finite))),
+        ];
+        let err1 = t1.validate().unwrap_err();
+        assert!(matches!(
+            err1,
+            ModelError::NonFiniteCellNumber {
+                ref table,
+                ref row,
+                ref column,
+                ..
+            } if table.as_str() == "T1" && row.as_str() == "r1" && column.as_str() == "c1"
+        ));
+
+        let mut t2 = make_table("T1");
+        t2.rows = vec![RowSpec::new("r1").with_cell(
+            "c1",
+            CellInput::Detailed(DetailedCellInput {
+                value: Some(ValueLiteral::Number(non_finite)),
+                ..Default::default()
+            }),
+        )];
+        let err2 = t2.validate().unwrap_err();
+        assert!(matches!(err2, ModelError::NonFiniteCellNumber { .. }));
+    }
 }

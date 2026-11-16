@@ -23,6 +23,7 @@ use crate::compiler::ir::id::CellId;
 use crate::compiler::ir::symbol::SymbolTable;
 use crate::compiler::layout::{LayoutMap, coordinate_to_a1};
 use crate::compiler::lowering::LoweredFormulaMap;
+use crate::compiler::lowering::address::format_sheet_address;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
 use crate::model::manifest::ProjectManifest;
@@ -217,7 +218,7 @@ impl CompiledModel {
             .get_cell(&cell_id)
             .ok_or_else(|| InspectionError::CellNotFound(cell_id.clone()))?;
 
-        let physical_address = format!("{}!{}", physical_coord.sheet, physical_coord.a1);
+        let physical_address = format_sheet_address(&physical_coord.sheet, &physical_coord.a1);
         let evaluated_value = self
             .evaluated
             .get_cell(&cell_id)
@@ -1153,7 +1154,7 @@ impl CompiledModel {
         let sheet_address = self
             .layout_map
             .get_cell(cell_id)
-            .map(|c| format!("{}!{}", c.sheet, c.a1))
+            .map(|c| format_sheet_address(&c.sheet, &c.a1))
             .unwrap_or_default();
         let value = self.evaluated.get_cell(cell_id).cloned();
         let formatted_value = value.as_ref().map(|v| {
