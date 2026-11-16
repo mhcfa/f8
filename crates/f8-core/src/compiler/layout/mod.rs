@@ -5,9 +5,7 @@
 pub mod a1;
 pub mod error;
 
-pub use a1::{
-    MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, MAX_OUTLINE_LEVEL, col_to_excel_col, coordinate_to_a1,
-};
+pub use a1::{MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, col_to_excel_col, coordinate_to_a1};
 pub use error::LayoutError;
 
 use indexmap::IndexMap;
@@ -158,7 +156,7 @@ impl LayoutPlanner {
     ///
     /// # Errors
     /// Returns [`LayoutError`] if unassigned tables exist, referenced tables cannot be resolved,
-    /// outline hierarchy exceeds depth 7, or coordinates exceed Excel grid limits.
+    /// tables overlap, or coordinates exceed Excel grid limits.
     pub fn plan(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
@@ -673,7 +671,8 @@ fn measure_text_segments(
     let mut max_chars = 0;
     let mut total_lines = 0;
 
-    for segment in s.split('\n') {
+    for raw_segment in s.split('\n') {
+        let segment = raw_segment.strip_suffix('\r').unwrap_or(raw_segment);
         let seg_chars = segment.chars().count() + trailing_pad + indent_chars;
         max_chars = max_chars.max(seg_chars);
         let seg_lines = if seg_chars == 0 {

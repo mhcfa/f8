@@ -3,9 +3,6 @@
 use super::error::LayoutError;
 pub use crate::model::{MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS};
 
-/// Maximum outline grouping level supported by native Excel (levels 1..=7).
-pub const MAX_OUTLINE_LEVEL: usize = 7;
-
 /// Converts a 0-indexed column integer into its canonical Excel letter representation.
 ///
 /// # Examples

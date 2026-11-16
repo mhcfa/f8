@@ -29,7 +29,18 @@ pub use lowering::{FormulaLowerer, LoweredFormulaMap, LoweringError};
 
 use crate::functions::registry::FunctionRegistry;
 use crate::model::manifest::ProjectManifest;
-use crate::model::table::TableSpec;
+use crate::model::table::{TableSpec, validate_tables};
+use crate::model::theme::Theme;
+
+fn validate_workbook_specs(
+    manifest: &ProjectManifest,
+    tables: &[TableSpec],
+) -> Result<Theme, CompilerError> {
+    manifest.validate()?;
+    let theme = manifest.resolve_theme()?;
+    validate_tables(tables)?;
+    Ok(theme)
+}
 
 /// High-level compiler driver orchestrating compilation passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -60,12 +71,9 @@ impl Compiler {
         tables: &[TableSpec],
         registry: &FunctionRegistry,
     ) -> Result<EvaluatedModel, CompilerError> {
-        manifest.validate()?;
-        for table in tables {
-            table.validate()?;
-        }
+        validate_workbook_specs(manifest, tables)?;
 
-        let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let (symbol_table, grid) = ir::expand::expand_validated_workbook(manifest, tables)?;
         let graph = graph::DependencyGraph::from_grid(&grid, &symbol_table)?;
         let evaluated_model = eval::Evaluator::evaluate(&grid, &graph, &symbol_table, registry)?;
 
@@ -81,13 +89,9 @@ impl Compiler {
         tables: &[TableSpec],
         evaluated: Option<&EvaluatedModel>,
     ) -> Result<LayoutMap, CompilerError> {
-        manifest.validate()?;
-        for table in tables {
-            table.validate()?;
-        }
-        let theme = manifest.resolve_theme()?;
+        let theme = validate_workbook_specs(manifest, tables)?;
 
-        let (_symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let (_symbol_table, grid) = ir::expand::expand_validated_workbook(manifest, tables)?;
         let layout_map = layout::LayoutPlanner::plan(manifest, tables, &grid, &theme, evaluated)?;
         Ok(layout_map)
     }
@@ -101,12 +105,9 @@ impl Compiler {
         tables: &[TableSpec],
         layout_map: &LayoutMap,
     ) -> Result<LoweredFormulaMap, CompilerError> {
-        manifest.validate()?;
-        for table in tables {
-            table.validate()?;
-        }
+        validate_workbook_specs(manifest, tables)?;
 
-        let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let (symbol_table, grid) = ir::expand::expand_validated_workbook(manifest, tables)?;
         let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, layout_map)?;
         Ok(lowered_map)
     }
@@ -134,13 +135,9 @@ impl Compiler {
         tables: &[TableSpec],
         registry: &FunctionRegistry,
     ) -> Result<CompiledModel, CompilerError> {
-        manifest.validate()?;
-        for table in tables {
-            table.validate()?;
-        }
-        let theme = manifest.resolve_theme()?;
+        let theme = validate_workbook_specs(manifest, tables)?;
 
-        let (symbol_table, grid) = ir::expand_workbook(manifest, tables)?;
+        let (symbol_table, grid) = ir::expand::expand_validated_workbook(manifest, tables)?;
         let graph = graph::DependencyGraph::from_grid(&grid, &symbol_table)?;
         let evaluated = eval::Evaluator::evaluate(&grid, &graph, &symbol_table, registry)?;
         let layout_map =

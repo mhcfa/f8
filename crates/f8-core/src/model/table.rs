@@ -8,7 +8,7 @@ use super::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use super::id::{ColId, RowId, TableId};
 use crate::expr::parser::is_unsigned_sci_word;
 
-fn is_valid_table_id(s: &str) -> bool {
+pub(crate) fn is_valid_table_id(s: &str) -> bool {
     if s.is_empty() || matches!(s, "TRUE" | "FALSE" | "_") {
         return false;
     }
@@ -370,7 +370,7 @@ pub enum ValueLiteral {
 impl fmt::Display for ValueLiteral {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Number(n) => write!(f, "{n}"),
+            Self::Number(n) => write!(f, "{}", crate::value::normalize_zero(*n)),
             Self::String(s) => write!(f, "{s}"),
             Self::Boolean(b) => write!(f, "{b}"),
             Self::Null => write!(f, "null"),
@@ -1111,6 +1111,12 @@ impl TableSpec {
                 ColumnSpec::Gutter => continue,
             };
 
+            if data_col.id.trim().is_empty() {
+                return Err(ModelError::EmptyColumnId {
+                    table: self.id.clone(),
+                });
+            }
+
             if !seen_cols.insert(&data_col.id) {
                 return Err(ModelError::DuplicateColumnId {
                     table: self.id.clone(),
@@ -1176,6 +1182,12 @@ impl TableSpec {
                 RowSpec::Data(d) => d,
                 RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
             };
+
+            if data_row.id.trim().is_empty() {
+                return Err(ModelError::EmptyRowId {
+                    table: self.id.clone(),
+                });
+            }
 
             if !seen_rows.insert(&data_row.id) {
                 return Err(ModelError::DuplicateRowId {
@@ -1320,4 +1332,18 @@ impl TableSpec {
         }
         Ok(())
     }
+}
+
+/// Validates cross-table identifier uniqueness and per-table schema invariants across a workbook.
+pub fn validate_tables(tables: &[TableSpec]) -> Result<(), ModelError> {
+    let mut seen = IndexSet::with_capacity(tables.len());
+    for table in tables {
+        if !seen.insert(&table.id) {
+            return Err(ModelError::DuplicateTableId {
+                table: table.id.clone(),
+            });
+        }
+        table.validate()?;
+    }
+    Ok(())
 }

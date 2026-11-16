@@ -57,8 +57,12 @@ impl EvalContext for CellEvalContext<'_> {
             EvalError::SliceInScalarContext { rows, cols, .. } => {
                 FunctionError::SliceInScalarContext { rows, cols }
             }
+            EvalError::UnevaluatedDependency(cid) => FunctionError::UnevaluatedCell {
+                table: cid.table,
+                row: cid.row,
+                col: cid.col,
+            },
             other @ (EvalError::CellNotFound(_)
-            | EvalError::UnevaluatedDependency(_)
             | EvalError::Resolve(_)
             | EvalError::TableNotFound(_)
             | EvalError::RowNotFound { .. }) => FunctionError::EvaluationFailure {
@@ -80,12 +84,10 @@ impl EvalContext for CellEvalContext<'_> {
         let mut values = Vec::with_capacity(slice.cells.len());
         for cell_id in &slice.cells {
             let val = self.memoized_values.get(cell_id).cloned().ok_or_else(|| {
-                FunctionError::EvaluationFailure {
-                    function: "eval_range",
-                    message: format!(
-                        "referenced cell '{cell_id}' has not been evaluated prior to origin '{}'",
-                        self.origin
-                    ),
+                FunctionError::UnevaluatedCell {
+                    table: cell_id.table.clone(),
+                    row: cell_id.row.clone(),
+                    col: cell_id.col.clone(),
                 }
             })?;
             values.push(val);

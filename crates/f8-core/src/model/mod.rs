@@ -12,7 +12,7 @@ pub use manifest::{FreezePanes, MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, ProjectManife
 pub use table::{
     AxisRole, CellInput, ColumnSpec, DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP,
     DataColumnSpec, DataRowSpec, DetailedCellInput, PlacementSpec, RowSpec, SectionHeaderRowSpec,
-    TableSpec, ValueLiteral,
+    TableSpec, ValueLiteral, validate_tables,
 };
 pub use theme::{
     BorderStyle, BordersConfig, FormatDefaults, MetricsConfig, NumberFormatsConfig, PaletteConfig,

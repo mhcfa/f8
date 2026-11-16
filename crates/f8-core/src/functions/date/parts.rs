@@ -1,6 +1,6 @@
 //! Calendar component extraction functions (`YEAR`, `MONTH`, `DAY`).
 
-use crate::functions::common::scalar_number;
+use crate::functions::common::{require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
@@ -40,13 +40,7 @@ impl ExcelFunction for YearFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [serial_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [serial_arg] = require_args(self, args)?;
         let serial_val = match scalar_number(serial_arg).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
@@ -85,13 +79,7 @@ impl ExcelFunction for MonthFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [serial_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [serial_arg] = require_args(self, args)?;
         let serial_val = match scalar_number(serial_arg).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),
@@ -130,13 +118,7 @@ impl ExcelFunction for DayFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [serial_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [serial_arg] = require_args(self, args)?;
         let serial_val = match scalar_number(serial_arg).and_then(validate_date_serial) {
             Ok(v) => v,
             Err(e) => return Ok(CellValue::Error(e)),

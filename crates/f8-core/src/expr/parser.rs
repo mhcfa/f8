@@ -468,7 +468,15 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<SpannedToken<'_>>, ParseError>
                 while let Some((idx, c)) = chars.next() {
                     if c == '\\' {
                         if let Some((_, next_c)) = chars.next() {
-                            out.push(next_c);
+                            if matches!(next_c, '\\' | '"') {
+                                out.push(next_c);
+                            } else {
+                                return Err(ParseError::UnexpectedToken {
+                                    expected: "'\\\\' or '\\\"' escape sequence",
+                                    found: format!("\\{next_c}"),
+                                    offset: offset + 1 + idx,
+                                });
+                            }
                         } else {
                             return Err(ParseError::UnexpectedEof {
                                 expected: "escaped character",

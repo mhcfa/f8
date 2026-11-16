@@ -389,6 +389,12 @@ function mapDependencyTree(raw: RawDependencyTree): DependencyTree {
   };
 }
 
+declare global {
+  interface SymbolConstructor {
+    readonly dispose: unique symbol;
+  }
+}
+
 export class CompiledModel {
   readonly #wasm: WasmCompiledModelBinding;
   #disposed = false;

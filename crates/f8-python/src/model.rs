@@ -27,7 +27,10 @@ impl PyCompiledModel {
 
 enum SaveError {
     Compiler(CompilerError),
-    Io(String),
+    Io {
+        message: String,
+        source: std::io::Error,
+    },
 }
 
 #[pymethods]
@@ -56,28 +59,30 @@ impl PyCompiledModel {
                 && !parent.as_os_str().is_empty()
                 && !parent.exists()
             {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    SaveError::Io(format!(
+                std::fs::create_dir_all(parent).map_err(|e| SaveError::Io {
+                    message: format!(
                         "Failed to create parent directory '{}': {}",
                         parent.display(),
                         e
-                    ))
+                    ),
+                    source: e,
                 })?;
             }
 
-            std::fs::write(&path, &bytes).map_err(|e| {
-                SaveError::Io(format!(
-                    "Failed to write workbook to '{}': {}",
-                    path.display(),
-                    e
-                ))
+            std::fs::write(&path, &bytes).map_err(|e| SaveError::Io {
+                message: format!("Failed to write workbook to '{}': {}", path.display(), e),
+                source: e,
             })?;
 
             Ok(())
         })
         .map_err(|err| match err {
             SaveError::Compiler(compiler_err) => map_compiler_error(py, &compiler_err),
-            SaveError::Io(io_err) => make_emission_error(py, io_err),
+            SaveError::Io { message, source } => {
+                let py_err = make_emission_error(py, message);
+                py_err.set_cause(py, Some(PyErr::from(source)));
+                py_err
+            }
         })?;
 
         Ok(())

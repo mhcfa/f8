@@ -1,11 +1,13 @@
 //! Date constructor and monthly stepping functions (`DATE`, `EDATE`, `EOMONTH`).
 
-use crate::functions::common::{scalar_integer, scalar_number};
+use crate::functions::common::{require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, DateSerial, ExcelError, ValueType, validate_date_serial};
+use crate::value::{
+    CellValue, DateSerial, ExcelError, ValueType, f64_to_strict_integer, validate_date_serial,
+};
 
 static DATE_PARAMS: &[ParameterDef] = &[
     ParameterDef::required(
@@ -54,17 +56,15 @@ impl ExcelFunction for DateFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [year_arg, month_arg, day_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 3,
-                found: args.len(),
-            });
-        };
+        let [year_arg, month_arg, day_arg] = require_args(self, args)?;
         let eval = || -> Result<f64, ExcelError> {
-            let year_i64 = scalar_integer(year_arg)?;
-            let month_i64 = scalar_integer(month_arg)?;
-            let day_i64 = scalar_integer(day_arg)?;
+            let year_f = scalar_number(year_arg)?;
+            let month_f = scalar_number(month_arg)?;
+            let day_f = scalar_number(day_arg)?;
+
+            let year_i64 = f64_to_strict_integer(year_f)?;
+            let month_i64 = f64_to_strict_integer(month_f)?;
+            let day_i64 = f64_to_strict_integer(day_f)?;
 
             let y = i32::try_from(year_i64).map_err(|_| ExcelError::Num)?;
             let m = u32::try_from(month_i64).map_err(|_| ExcelError::Num)?;
@@ -91,8 +91,10 @@ fn step_months(
     months_arg: &FunctionArg<'_>,
     day_mode: MonthStepDay,
 ) -> Result<f64, ExcelError> {
-    let start_val = validate_date_serial(scalar_number(start_arg)?)?;
-    let m_offset = scalar_integer(months_arg)?;
+    let start_f = scalar_number(start_arg)?;
+    let months_f = scalar_number(months_arg)?;
+    let start_val = validate_date_serial(start_f)?;
+    let m_offset = f64_to_strict_integer(months_f)?;
     if m_offset.abs() > 120_000 {
         return Err(ExcelError::Num);
     }
@@ -155,13 +157,7 @@ impl ExcelFunction for EdateFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [start_arg, months_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        };
+        let [start_arg, months_arg] = require_args(self, args)?;
         match step_months(start_arg, months_arg, MonthStepDay::ClampOriginal) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),
@@ -210,13 +206,7 @@ impl ExcelFunction for EomonthFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [start_arg, months_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        };
+        let [start_arg, months_arg] = require_args(self, args)?;
         match step_months(start_arg, months_arg, MonthStepDay::EndOfMonth) {
             Ok(serial) => Ok(CellValue::number(serial)),
             Err(e) => Ok(CellValue::Error(e)),

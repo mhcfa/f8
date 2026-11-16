@@ -158,12 +158,12 @@ impl WorkbookEmitter {
 
             // Apply freeze panes if configured
             if let Some(freeze) = sheet_layout.freeze_panes {
-                worksheet.set_freeze_panes(freeze.row, freeze.col as u16)?;
+                worksheet.set_freeze_panes(freeze.row, excel_col_u16(freeze.col)?)?;
             }
 
             // Apply sheet-wide column widths
             for (&col, &width) in &sheet_layout.col_widths {
-                worksheet.set_column_width(col as u16, width)?;
+                worksheet.set_column_width(excel_col_u16(col)?, width)?;
             }
 
             // Note: Row heights are left automatic so Excel dynamically sizes rows based on
@@ -190,14 +190,14 @@ impl WorkbookEmitter {
                 {
                     worksheet.write_string_with_format(
                         title_row,
-                        placement.start_col as u16,
+                        excel_col_u16(placement.start_col)?,
                         &table.title,
                         &format_cache.title_format(),
                     )?;
                     for col in (placement.start_col + 1)..=placement.end_col {
                         worksheet.write_blank(
                             title_row,
-                            col as u16,
+                            excel_col_u16(col)?,
                             &format_cache.title_format(),
                         )?;
                     }
@@ -209,7 +209,7 @@ impl WorkbookEmitter {
                 {
                     worksheet.write_string_with_format(
                         subtitle_row,
-                        placement.start_col as u16,
+                        excel_col_u16(placement.start_col)?,
                         subtitle,
                         &format_cache.subtitle_format(),
                     )?;
@@ -247,7 +247,7 @@ impl WorkbookEmitter {
                                     }
 
                                     let first_phys_col =
-                                        (placement.start_col + start_c as u32) as u16;
+                                        excel_col_u16(placement.start_col + start_c as u32)?;
                                     worksheet.write_string_with_format(
                                         tier_row,
                                         first_phys_col,
@@ -255,7 +255,8 @@ impl WorkbookEmitter {
                                         &format_cache.super_header_format(),
                                     )?;
                                     for c in (start_c + 1)..=end_c {
-                                        let phys_col = (placement.start_col + c as u32) as u16;
+                                        let phys_col =
+                                            excel_col_u16(placement.start_col + c as u32)?;
                                         worksheet.write_blank(
                                             tier_row,
                                             phys_col,
@@ -272,7 +273,7 @@ impl WorkbookEmitter {
 
                         // Step B (Per-column stacked headers across all t in 0..total_tiers)
                         for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                            let col_idx = (placement.start_col + c_idx as u32) as u16;
+                            let col_idx = excel_col_u16(placement.start_col + c_idx as u32)?;
                             match col_spec {
                                 ColumnSpec::Gutter => {
                                     // Gutter column: continue header bottom border and fill across gutter
@@ -328,9 +329,10 @@ impl WorkbookEmitter {
                             // Gutter row: cells remain blank without borders
                         }
                         RowSpec::SectionHeader(sh) => {
+                            let start_col_u16 = excel_col_u16(placement.start_col)?;
                             worksheet.write_string_with_format(
                                 current_phys_row,
-                                placement.start_col as u16,
+                                start_col_u16,
                                 &sh.title,
                                 &format_cache.section_header_format(sh.indent),
                             )?;
@@ -338,7 +340,7 @@ impl WorkbookEmitter {
                             if let Some(ref note) = sh.note {
                                 worksheet.insert_note(
                                     current_phys_row,
-                                    placement.start_col as u16,
+                                    start_col_u16,
                                     &rust_xlsxwriter::Note::new(note),
                                 )?;
                             }
@@ -348,7 +350,7 @@ impl WorkbookEmitter {
                                 for col in (placement.start_col + 1)..=placement.end_col {
                                     worksheet.write_blank(
                                         current_phys_row,
-                                        col as u16,
+                                        excel_col_u16(col)?,
                                         &band_fmt,
                                     )?;
                                 }
@@ -376,7 +378,7 @@ impl WorkbookEmitter {
                                             let cell_format =
                                                 format_cache.get_cell_format(&format_key)?;
                                             let phys_col =
-                                                (placement.start_col + c_idx as u32) as u16;
+                                                excel_col_u16(placement.start_col + c_idx as u32)?;
                                             worksheet.write_blank(
                                                 current_phys_row,
                                                 phys_col,
@@ -417,6 +419,7 @@ impl WorkbookEmitter {
                                 )
                                 .with_wrap_text(coord.wrap_text);
                                 let cell_format = format_cache.get_cell_format(&format_key)?;
+                                let coord_col = excel_col_u16(coord.col)?;
 
                                 if options.values_only {
                                     // Values-only freezing: write evaluated result as literal
@@ -428,7 +431,7 @@ impl WorkbookEmitter {
                                                 emit_cell_value(
                                                     worksheet,
                                                     coord.row,
-                                                    coord.col as u16,
+                                                    coord_col,
                                                     val,
                                                     &cell_format,
                                                 )?;
@@ -436,7 +439,7 @@ impl WorkbookEmitter {
                                                 emit_value_literal(
                                                     worksheet,
                                                     coord.row,
-                                                    coord.col as u16,
+                                                    coord_col,
                                                     lit,
                                                     &cell_format,
                                                 )?;
@@ -453,7 +456,7 @@ impl WorkbookEmitter {
                                             emit_cell_value(
                                                 worksheet,
                                                 coord.row,
-                                                coord.col as u16,
+                                                coord_col,
                                                 val,
                                                 &cell_format,
                                             )?;
@@ -466,7 +469,7 @@ impl WorkbookEmitter {
                                             emit_value_literal(
                                                 worksheet,
                                                 coord.row,
-                                                coord.col as u16,
+                                                coord_col,
                                                 lit,
                                                 &cell_format,
                                             )?;
@@ -478,23 +481,62 @@ impl WorkbookEmitter {
                                                     cell: cell_id.clone(),
                                                 })?;
                                             let mut formula = Formula::new(formula_str);
-                                            if !options.omit_formula_cache
-                                                && let Some(eval_model) = evaluated
-                                            {
+                                            let mut force_empty_str_cache = false;
+                                            if let Some(eval_model) = evaluated {
                                                 let val =
                                                     eval_model.get_cell(&cell_id).ok_or_else(
                                                         || EmissionError::MissingEvaluatedCell {
                                                             cell: cell_id.clone(),
                                                         },
                                                     )?;
-                                                formula = formula.set_result(val.to_string());
+                                                match val {
+                                                    CellValue::Number(n) => {
+                                                        let finite = finite_excel_number(*n)?;
+                                                        if !options.omit_formula_cache {
+                                                            formula = formula.set_result(
+                                                                crate::expr::ast::format_number_literal(
+                                                                    finite,
+                                                                ),
+                                                            );
+                                                        }
+                                                    }
+                                                    CellValue::Boolean(b) => {
+                                                        if !options.omit_formula_cache {
+                                                            formula = formula.set_result(if *b {
+                                                                "TRUE"
+                                                            } else {
+                                                                "FALSE"
+                                                            });
+                                                        }
+                                                    }
+                                                    CellValue::Error(e) => {
+                                                        if !options.omit_formula_cache {
+                                                            formula =
+                                                                formula.set_result(e.as_str());
+                                                        }
+                                                    }
+                                                    CellValue::Text(s) => {
+                                                        if !options.omit_formula_cache {
+                                                            if is_ambiguous_xlsx_formula_text(s) {
+                                                                force_empty_str_cache = true;
+                                                            } else {
+                                                                formula = formula.set_result(s);
+                                                            }
+                                                        }
+                                                    }
+                                                    CellValue::Empty => {}
+                                                }
                                             }
                                             worksheet.write_formula_with_format(
                                                 coord.row,
-                                                coord.col as u16,
+                                                coord_col,
                                                 formula,
                                                 &cell_format,
                                             )?;
+                                            if force_empty_str_cache {
+                                                worksheet
+                                                    .set_formula_result(coord.row, coord_col, "");
+                                            }
                                         }
                                     }
                                 }
@@ -503,7 +545,7 @@ impl WorkbookEmitter {
                                 if let Some(note) = node.note.as_deref() {
                                     worksheet.insert_note(
                                         coord.row,
-                                        coord.col as u16,
+                                        coord_col,
                                         &rust_xlsxwriter::Note::new(note),
                                     )?;
                                 }
@@ -528,7 +570,7 @@ fn emit_cell_value(
 ) -> Result<(), EmissionError> {
     match value {
         CellValue::Number(n) => {
-            worksheet.write_number_with_format(row, col, normalize_zero(*n), format)?;
+            worksheet.write_number_with_format(row, col, finite_excel_number(*n)?, format)?;
         }
         CellValue::Text(s) => {
             worksheet.write_string_with_format(row, col, s, format)?;
@@ -556,7 +598,7 @@ fn emit_value_literal(
 ) -> Result<(), EmissionError> {
     match lit {
         ValueLiteral::Number(n) => {
-            worksheet.write_number_with_format(row, col, normalize_zero(*n), format)?;
+            worksheet.write_number_with_format(row, col, finite_excel_number(*n)?, format)?;
         }
         ValueLiteral::String(s) => {
             worksheet.write_string_with_format(row, col, s, format)?;
@@ -569,4 +611,44 @@ fn emit_value_literal(
         }
     }
     Ok(())
+}
+
+fn finite_excel_number(n: f64) -> Result<f64, EmissionError> {
+    if !n.is_finite() {
+        return Err(rust_xlsxwriter::XlsxError::ParameterError(format!(
+            "Cannot emit non-finite numeric value ({n}) into Excel cell"
+        ))
+        .into());
+    }
+    Ok(normalize_zero(n))
+}
+
+fn excel_col_u16(col: u32) -> Result<u16, EmissionError> {
+    if col >= crate::model::MAX_EXCEL_COLUMNS {
+        return Err(rust_xlsxwriter::XlsxError::RowColumnLimitError.into());
+    }
+    let Ok(col_u16) = u16::try_from(col) else {
+        return Err(rust_xlsxwriter::XlsxError::RowColumnLimitError.into());
+    };
+    Ok(col_u16)
+}
+
+/// Returns `true` when `s` would be misclassified by `rust_xlsxwriter::Formula::set_result`
+/// as an unset default (`""`), numeric (`f64::from_str`, including `"NaN"`/`"inf"`), boolean, or error tag.
+fn is_ambiguous_xlsx_formula_text(s: &str) -> bool {
+    s.is_empty()
+        || s.parse::<f64>().is_ok()
+        || matches!(
+            s,
+            "TRUE"
+                | "FALSE"
+                | "#DIV/0!"
+                | "#N/A"
+                | "#NAME?"
+                | "#NULL!"
+                | "#NUM!"
+                | "#REF!"
+                | "#VALUE!"
+                | "#GETTING_DATA"
+        )
 }

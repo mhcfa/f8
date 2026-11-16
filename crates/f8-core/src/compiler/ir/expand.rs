@@ -20,7 +20,13 @@ pub fn expand_table(
     table: &TableSpec,
 ) -> Result<Vec<CellNode>, IrError> {
     table.validate()?;
+    expand_validated_table(symbol_table, table)
+}
 
+fn expand_validated_table(
+    symbol_table: &SymbolTable,
+    table: &TableSpec,
+) -> Result<Vec<CellNode>, IrError> {
     let sheet_id =
         symbol_table
             .get_sheet(&table.id)
@@ -397,13 +403,36 @@ pub fn expand_grid(symbol_table: &SymbolTable, tables: &[TableSpec]) -> Result<C
     Ok(grid)
 }
 
+fn expand_validated_grid(
+    symbol_table: &SymbolTable,
+    tables: &[TableSpec],
+) -> Result<CellGrid, IrError> {
+    let mut grid = CellGrid::new();
+
+    for table in tables {
+        let nodes = expand_validated_table(symbol_table, table)?;
+        for node in nodes {
+            grid.insert(node)?;
+        }
+    }
+
+    Ok(grid)
+}
+
 /// Orchestrates workbook symbol registration and grid expansion from a manifest and table specs.
 pub fn expand_workbook(
     manifest: &ProjectManifest,
     tables: &[TableSpec],
 ) -> Result<(SymbolTable, CellGrid), IrError> {
     manifest.validate()?;
+    crate::model::table::validate_tables(tables)?;
+    expand_validated_workbook(manifest, tables)
+}
 
+pub(crate) fn expand_validated_workbook(
+    manifest: &ProjectManifest,
+    tables: &[TableSpec],
+) -> Result<(SymbolTable, CellGrid), IrError> {
     let mut symbol_table = SymbolTable::new();
 
     for sheet in &manifest.sheets {
@@ -433,7 +462,7 @@ pub fn expand_workbook(
         }
     }
 
-    let grid = expand_grid(&symbol_table, tables)?;
+    let grid = expand_validated_grid(&symbol_table, tables)?;
     Ok((symbol_table, grid))
 }
 

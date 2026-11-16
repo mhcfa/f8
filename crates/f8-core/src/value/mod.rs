@@ -16,13 +16,25 @@ pub mod format;
 
 pub use date::{
     DateSerial, DateTuple, EXCEL_1900_LEAP_DAY_SERIAL, MAX_EXCEL_SERIAL, MIN_INPUT_DATE_SERIAL,
-    UNIX_EPOCH_SERIAL, is_valid_input_date_serial, validate_date_serial,
+    is_valid_input_date_serial, validate_date_serial,
 };
 pub use error::{ExcelError, TypeError, ValueType};
 pub use format::{format_accounting_number, format_cell_value};
 
 /// Maximum exact integer magnitude representable without precision loss in IEEE-754 `f64` (`2^53 - 1`).
 pub(crate) const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+/// Converts a finite `f64` into an exact safe integer in `-9_007_199_254_740_991..=9_007_199_254_740_991`.
+pub(crate) fn f64_to_strict_integer(n: f64) -> Result<i64, ExcelError> {
+    if !n.is_finite() {
+        return Err(ExcelError::Num);
+    }
+    let norm = normalize_zero(n);
+    if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
+        return Err(ExcelError::Num);
+    }
+    Ok(norm as i64)
+}
 
 /// Normalizes IEEE-754 negative zero (`-0.0`) to canonical positive zero (`0.0`).
 #[inline]
@@ -343,16 +355,7 @@ impl CellValue {
     /// - `Text` / `Boolean` / `Empty` -> `Err(ExcelError::Value)`
     pub fn strict_integer(&self) -> Result<i64, ExcelError> {
         match self {
-            Self::Number(n) => {
-                if !n.is_finite() {
-                    return Err(ExcelError::Num);
-                }
-                let norm = normalize_zero(*n);
-                if norm.fract() != 0.0 || !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&norm) {
-                    return Err(ExcelError::Num);
-                }
-                Ok(norm as i64)
-            }
+            Self::Number(n) => f64_to_strict_integer(*n),
             Self::Error(e) => Err(*e),
             Self::Text(_) | Self::Boolean(_) | Self::Empty => Err(ExcelError::Value),
         }

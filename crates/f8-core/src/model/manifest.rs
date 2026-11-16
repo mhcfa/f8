@@ -60,6 +60,9 @@ pub struct ProjectManifest {
 impl ProjectManifest {
     /// Validates sheet naming uniqueness and structural invariants.
     pub fn validate(&self) -> Result<(), ModelError> {
+        if self.sheets.is_empty() {
+            return Err(ModelError::EmptySheets);
+        }
         let mut seen_sheets = IndexSet::new();
         for sheet in &self.sheets {
             validate_sheet_name(&sheet.name)?;

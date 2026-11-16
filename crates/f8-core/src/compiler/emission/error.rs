@@ -11,7 +11,7 @@ use crate::model::id::{SheetId, TableId};
 pub enum EmissionError {
     /// Failure during xlsx generation or format configuration.
     #[error("Excel emission error: {0}")]
-    Xlsx(#[from] rust_xlsxwriter::XlsxError),
+    Xlsx(#[source] Box<rust_xlsxwriter::XlsxError>),
 
     /// Invalid hex color string encountered during theme translation.
     #[error(
@@ -62,4 +62,10 @@ pub enum EmissionError {
         /// Cell identifier.
         cell: CellId,
     },
+}
+
+impl From<rust_xlsxwriter::XlsxError> for EmissionError {
+    fn from(err: rust_xlsxwriter::XlsxError) -> Self {
+        Self::Xlsx(Box::new(err))
+    }
 }

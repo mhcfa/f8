@@ -1,4 +1,4 @@
-use crate::functions::common::scalar_number;
+use crate::functions::common::{require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
@@ -36,11 +36,11 @@ pub(crate) fn coerce_slice_numbers(slice: &[CellValue]) -> Result<Vec<f64>, Exce
     Ok(result)
 }
 
-/// Extracts and validates date serial entries from a 1D slice for `XNPV` and `XIRR`.
-pub(crate) fn coerce_slice_date_serials(slice: &[CellValue]) -> Result<Vec<f64>, ExcelError> {
-    let mut result = Vec::with_capacity(slice.len());
-    for v in slice {
-        result.push(validate_date_serial(v.strict_number()?)?);
+/// Validates extracted numeric date entries as calendar date serials (`1.0..=2_958_465.0`).
+pub(crate) fn validate_slice_date_serials(raw_dates: &[f64]) -> Result<Vec<f64>, ExcelError> {
+    let mut result = Vec::with_capacity(raw_dates.len());
+    for &d in raw_dates {
+        result.push(validate_date_serial(d)?);
     }
     Ok(result)
 }
@@ -120,18 +120,18 @@ impl ExcelFunction for NpvFunction {
             return Ok(CellValue::number(0.0));
         }
 
-        if rate == -1.0 {
+        let one_plus_r = 1.0 + rate;
+        if rate == -1.0 || one_plus_r == 0.0 {
             return Ok(CellValue::Error(ExcelError::Div0));
         }
 
         let mut npv = 0.0;
         for (idx, &cf) in cfs.iter().enumerate() {
-            let period = (idx + 1) as i32;
-            let denom = (1.0 + rate).powi(period);
-            if denom == 0.0 {
-                return Ok(CellValue::Error(ExcelError::Div0));
+            if cf == 0.0 {
+                continue;
             }
-            npv += cf / denom;
+            let period = (idx + 1) as i32;
+            npv += cf / one_plus_r.powi(period);
         }
 
         Ok(CellValue::number(npv))
@@ -205,54 +205,47 @@ impl ExcelFunction for XnpvFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [rate_arg, values_arg, dates_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
+        let [rate_arg, values_arg, dates_arg] = require_args(self, args)?;
+        let (_, _, raw_values) = values_arg.as_1d_range(self.name(), "values")?;
+        let (_, _, raw_dates) = dates_arg.as_1d_range(self.name(), "dates")?;
+        if raw_values.len() != raw_dates.len() {
+            return Err(FunctionError::LengthMismatch {
                 function: self.name(),
-                expected: 3,
-                found: args.len(),
+                expected: raw_values.len(),
+                found: raw_dates.len(),
             });
-        };
-        let raw_values = values_arg.as_range_slice(self.name())?;
-        let raw_dates = dates_arg.as_range_slice(self.name())?;
-
-        let rate = match scalar_number(rate_arg) {
-            Ok(r) => r,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        let values = match coerce_slice_numbers(raw_values) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        let dates = match coerce_slice_date_serials(raw_dates) {
-            Ok(d) => d,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        // Excel quirk: XNPV rejects all non-positive rates (including 0.0 and -1.0 < rate < 0.0) with #NUM!.
-        if rate <= 0.0 {
-            return Ok(CellValue::Error(ExcelError::Num));
         }
 
-        if values.is_empty() || values.len() != dates.len() {
-            return Ok(CellValue::Error(ExcelError::Num));
-        }
+        let eval = || -> Result<f64, ExcelError> {
+            let rate = scalar_number(rate_arg)?;
+            let values = coerce_slice_numbers(raw_values)?;
+            let raw_date_nums = coerce_slice_numbers(raw_dates)?;
+            let dates = validate_slice_date_serials(&raw_date_nums)?;
 
-        let Some(&start_date) = dates.first() else {
-            return Ok(CellValue::Error(ExcelError::Num));
-        };
-        let mut xnpv = 0.0;
-
-        for (v, d_trunc) in values.iter().zip(dates.iter().copied()) {
-            if d_trunc < start_date {
-                return Ok(CellValue::Error(ExcelError::Num));
+            // Excel quirk: XNPV rejects all non-positive rates (including 0.0 and -1.0 < rate < 0.0) with #NUM!.
+            if rate <= 0.0 {
+                return Err(ExcelError::Num);
             }
-            let year_fraction = (d_trunc - start_date) / 365.0;
-            let denom = (1.0 + rate).powf(year_fraction);
-            xnpv += v / denom;
-        }
 
-        Ok(CellValue::number(xnpv))
+            let Some(&start_date) = dates.first() else {
+                return Err(ExcelError::Num);
+            };
+            let mut xnpv = 0.0;
+
+            for (v, d_trunc) in values.iter().zip(dates.iter().copied()) {
+                if d_trunc < start_date {
+                    return Err(ExcelError::Num);
+                }
+                let year_fraction = (d_trunc - start_date) / 365.0;
+                let denom = (1.0 + rate).powf(year_fraction);
+                xnpv += v / denom;
+            }
+            Ok(xnpv)
+        };
+
+        match eval() {
+            Ok(xnpv) => Ok(CellValue::number(xnpv)),
+            Err(e) => Ok(CellValue::Error(e)),
+        }
     }
 }

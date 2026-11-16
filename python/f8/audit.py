@@ -494,7 +494,7 @@ class TableAuditor:
                 raw_text = val_str if val_str else "—"
             elif view == "formulas":
                 if cell_info is not None and cell_info.get("is_formula"):
-                    raw_text = cell_info.get("excel_formula") or val_str
+                    raw_text = cell_info.get("excel_formula") or ""
                 else:
                     raw_text = val_str
             elif view == "expr":

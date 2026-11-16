@@ -325,6 +325,10 @@ export class TableAuditor {
           data,
         };
       }
+      default:
+        throw new Error(
+          `Invalid orient '${String(orient)}'. Expected one of 'records', 'dict', 'index', 'split'.`,
+        );
     }
   }
 
@@ -343,6 +347,12 @@ export class TableAuditor {
     } else {
       opts = arg1;
       view = arg1?.view ?? "values";
+    }
+
+    if (view !== "values" && view !== "formulas" && view !== "expr" && view !== "addresses") {
+      throw new Error(
+        `Invalid view mode '${String(view)}'. Expected one of 'values', 'formulas', 'expr', 'addresses'.`,
+      );
     }
 
     const rows = opts?.rows;
@@ -507,14 +517,14 @@ export class TableAuditor {
           break;
         case "formulas":
           if (cellInfo !== undefined && cellInfo.isFormula) {
-            rawText = cellInfo.excelFormula || valStr;
+            rawText = cellInfo.excelFormula ?? "";
           } else {
             rawText = valStr;
           }
           break;
         case "expr":
           if (cellInfo !== undefined && cellInfo.isFormula) {
-            rawText = cellInfo.formulaExpr || valStr;
+            rawText = cellInfo.formulaExpr ?? "";
           } else {
             rawText = valStr;
           }

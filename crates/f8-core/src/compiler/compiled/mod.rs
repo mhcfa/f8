@@ -1113,14 +1113,36 @@ pub fn apply_unit_suffix(formatted: String, unit: &str) -> String {
     }
 }
 
-/// Helper to clean optional single quotes and whitespace from a shorthand identifier.
-fn clean_shorthand_id(s: &str) -> &str {
+/// Strips optional matching outer quotes (`"..."` or `'...'`) from a table identifier token.
+fn strip_matching_quotes(s: &str) -> Option<&str> {
     let trimmed = s.trim();
-    trimmed
-        .strip_prefix('\'')
-        .and_then(|t| t.strip_suffix('\''))
-        .unwrap_or(trimmed)
-        .trim()
+    if trimmed.starts_with('"') || trimmed.ends_with('"') {
+        return trimmed.strip_prefix('"').and_then(|s| s.strip_suffix('"'));
+    }
+    if trimmed.starts_with('\'') || trimmed.ends_with('\'') {
+        return trimmed
+            .strip_prefix('\'')
+            .and_then(|s| s.strip_suffix('\''));
+    }
+    Some(trimmed)
+}
+
+/// Parses a shorthand single-quoted or unquoted axis identifier inside `Table[...]`.
+fn parse_shorthand_axis_id(s: &str) -> Option<&str> {
+    let trimmed = s.trim();
+    if trimmed.starts_with('\'') || trimmed.ends_with('\'') {
+        let inner = trimmed
+            .strip_prefix('\'')
+            .and_then(|s| s.strip_suffix('\''))?;
+        if inner.contains('\'') || inner.trim().is_empty() {
+            return None;
+        }
+        return Some(inner);
+    }
+    if trimmed.is_empty() || trimmed.contains(['\'', '"', '@', '.', '(', ')']) {
+        return None;
+    }
+    Some(trimmed)
 }
 
 /// Parses coordinate arguments from either 3 positional tokens or 1 canonical IR string.
@@ -1128,12 +1150,14 @@ fn clean_shorthand_id(s: &str) -> &str {
 /// Supported formats:
 /// - 3 tokens: `("IncomeStatement", Some("cogs"), Some("y2024e"))`
 /// - Canonical IR string: `("IncomeStatement[\"cogs\", \"y2024e\"]", None, None)`
-/// - Canonical IR string (unquoted IDs): `("IncomeStatement[cogs, y2024e]", None, None)`
+/// - Shorthand IR string (single-quoted or unquoted IDs): `("IncomeStatement[cogs, y2024e]", None, None)`
 pub fn parse_coordinate_tokens(
     target: &str,
     row: Option<&str>,
     col: Option<&str>,
 ) -> Result<(TableId, RowId, ColId), InspectionError> {
+    use crate::model::table::is_valid_table_id;
+
     let input_repr = match (row, col) {
         (Some(r), Some(c)) => format!("{target} {r} {c}"),
         (Some(r), None) => format!("{target} {r}"),
@@ -1143,56 +1167,50 @@ pub fn parse_coordinate_tokens(
 
     match (row, col) {
         (Some(r), Some(c)) => {
-            let target_trimmed = target
-                .trim()
-                .strip_prefix('"')
-                .and_then(|t| t.strip_suffix('"'))
-                .or_else(|| {
-                    target
-                        .trim()
-                        .strip_prefix('\'')
-                        .and_then(|t| t.strip_suffix('\''))
-                })
-                .unwrap_or(target.trim())
-                .trim();
+            let Some(target_clean) = strip_matching_quotes(target).map(str::trim) else {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            };
 
-            if target_trimmed.contains('[')
-                || target_trimmed.contains(']')
-                || target_trimmed.is_empty()
-                || r.trim().is_empty()
-                || c.trim().is_empty()
-            {
+            if !is_valid_table_id(target_clean) || r.trim().is_empty() || c.trim().is_empty() {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
-            let table_id = TableId::from(target_trimmed);
+            let table_id = TableId::from(target_clean);
             let row_id = RowId::from(r);
             let col_id = ColId::from(c);
             Ok((table_id, row_id, col_id))
         }
         (None, None) => {
             let trimmed = target.trim();
-            if let Ok(crate::expr::ast::Expr::Reference(crate::expr::ast::TableRef {
-                table: crate::expr::ast::TableSelector::Key(table_id),
-                row: crate::expr::ast::RowSelector::Key(row_id),
-                col: crate::expr::ast::ColSelector::Key(col_id),
-            })) = crate::expr::ast::Expr::parse(trimmed)
-                && !row_id.as_str().trim().is_empty()
-                && !col_id.as_str().trim().is_empty()
-            {
-                return Ok((table_id, row_id, col_id));
+            match crate::expr::ast::Expr::parse(trimmed) {
+                Ok(crate::expr::ast::Expr::Reference(crate::expr::ast::TableRef {
+                    table: crate::expr::ast::TableSelector::Key(table_id),
+                    row: crate::expr::ast::RowSelector::Key(row_id),
+                    col: crate::expr::ast::ColSelector::Key(col_id),
+                })) => {
+                    if !is_valid_table_id(table_id.as_str())
+                        || row_id.as_str().trim().is_empty()
+                        || col_id.as_str().trim().is_empty()
+                    {
+                        return Err(InspectionError::InvalidCoordinate(input_repr));
+                    }
+                    return Ok((table_id, row_id, col_id));
+                }
+                Ok(_) => return Err(InspectionError::InvalidCoordinate(input_repr)),
+                Err(_) => {}
             }
 
             let Some((table_part, rest)) = trimmed.split_once('[') else {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             };
 
-            let table_name = clean_shorthand_id(table_part);
-            if table_name.is_empty()
-                || table_part.contains('[')
-                || table_part.contains(']')
-                || table_part.contains('"')
-            {
+            if table_part.contains('"') {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            }
+            let Some(table_name) = strip_matching_quotes(table_part).map(str::trim) else {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            };
+            if !is_valid_table_id(table_name) {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
@@ -1205,17 +1223,19 @@ pub fn parse_coordinate_tokens(
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
-            let parts: Vec<&str> = inner.split(',').collect();
-            if parts.len() != 2 {
+            let Some((row_part, col_part)) = inner.split_once(',') else {
+                return Err(InspectionError::InvalidCoordinate(input_repr));
+            };
+            if col_part.contains(',') {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
             }
 
-            let row_name = clean_shorthand_id(parts[0]);
-            let col_name = clean_shorthand_id(parts[1]);
-
-            if row_name.is_empty() || col_name.is_empty() {
+            let (Some(row_name), Some(col_name)) = (
+                parse_shorthand_axis_id(row_part),
+                parse_shorthand_axis_id(col_part),
+            ) else {
                 return Err(InspectionError::InvalidCoordinate(input_repr));
-            }
+            };
 
             Ok((
                 TableId::from(table_name),
@@ -1223,7 +1243,7 @@ pub fn parse_coordinate_tokens(
                 ColId::from(col_name),
             ))
         }
-        _ => Err(InspectionError::InvalidCoordinate(input_repr)),
+        (Some(_), None) | (None, Some(_)) => Err(InspectionError::InvalidCoordinate(input_repr)),
     }
 }
 
