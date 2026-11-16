@@ -464,6 +464,12 @@ fn test_scenario_9_dependents_of_direct_and_recursive() {
     assert_eq!(direct_tree.root, growth_id);
     assert_eq!(direct_tree.direct_count, 3); // revenue in y2024e, y2025e, y2026e
     assert_eq!(direct_tree.transitive_count, 3);
+    let direct_cols: Vec<&str> = direct_tree
+        .nodes
+        .iter()
+        .map(|n| n.cell_id.col.as_str())
+        .collect();
+    assert_eq!(direct_cols, vec!["y2024e", "y2025e", "y2026e"]);
     for node in &direct_tree.nodes {
         assert_eq!(node.cell_id.row.as_str(), "revenue");
         assert!(node.children.is_empty());

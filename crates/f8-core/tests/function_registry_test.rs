@@ -1822,3 +1822,15 @@ fn test_scalar_measure_only_role_policy_and_iferror_param_kind() {
         assert_eq!(ctx.recorded(), vec!["10"]);
     }
 }
+
+#[test]
+fn test_standard_function_registry_shares_cached_arc_instances() {
+    let r1 = FunctionRegistry::standard();
+    let r2 = FunctionRegistry::standard();
+    let sum1 = r1.get("SUM").unwrap();
+    let sum2 = r2.get("SUM").unwrap();
+    assert!(
+        std::sync::Arc::ptr_eq(&sum1, &sum2),
+        "FunctionRegistry::standard() must share LazyLock-cached Arc<dyn ExcelFunction> instances"
+    );
+}

@@ -1,11 +1,22 @@
 //! Thread-safe registry and catalog of built-in and user-defined Excel functions.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use indexmap::IndexMap;
 
 use crate::functions::traits::ExcelFunction;
 pub use crate::functions::typecheck::{StageAError, StaticRef};
+
+static STANDARD_REGISTRY: LazyLock<FunctionRegistry> = LazyLock::new(|| {
+    let mut registry = FunctionRegistry::new();
+    crate::functions::math::register(&mut registry);
+    crate::functions::logical::register(&mut registry);
+    crate::functions::financial::register(&mut registry);
+    crate::functions::lookup::register(&mut registry);
+    crate::functions::date::register(&mut registry);
+    crate::functions::information::register(&mut registry);
+    registry
+});
 
 /// Thread-safe registry and dispatcher of built-in and user-defined Excel functions.
 #[derive(Clone, Default)]
@@ -22,17 +33,16 @@ impl FunctionRegistry {
         }
     }
 
+    /// Returns a shared reference to the standard function registry populated with the 41 built-in Excel functions.
+    #[must_use]
+    pub fn standard_ref() -> &'static Self {
+        &STANDARD_REGISTRY
+    }
+
     /// Constructs a standard function registry populated with the 41 built-in Excel functions.
     #[must_use]
     pub fn standard() -> Self {
-        let mut registry = Self::new();
-        crate::functions::math::register(&mut registry);
-        crate::functions::logical::register(&mut registry);
-        crate::functions::financial::register(&mut registry);
-        crate::functions::lookup::register(&mut registry);
-        crate::functions::date::register(&mut registry);
-        crate::functions::information::register(&mut registry);
-        registry
+        STANDARD_REGISTRY.clone()
     }
 
     /// Registers a function implementation, storing it by canonical uppercase name.
