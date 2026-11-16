@@ -225,13 +225,13 @@ fn test_models_emit_in_memory() {
     let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
     let div_inspection = parity_compiled
-        .inspect_table(&f8_core::model::id::TableId::from("IrrXirrDivergences"))
-        .expect("IrrXirrDivergences must be inspectable");
+        .inspect_table(&f8_core::model::id::TableId::from("RuntimeDivergences"))
+        .expect("RuntimeDivergences must be inspectable");
     let rationale_col_info = div_inspection
         .columns
         .iter()
         .find(|col| col.id.as_ref().map(|id| id.as_str()) == Some("rationale"))
-        .expect("rationale column must exist in IrrXirrDivergences");
+        .expect("rationale column must exist in RuntimeDivergences");
     assert!(
         rationale_col_info.is_descriptor,
         "rationale column on ExcelDivergences must use AxisRole::Descriptor for left-alignment"
@@ -421,11 +421,14 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
 
     for formula in migrated_compile_errors {
         let (manifest, mut tables) = fixtures::parity_suite::build_parity_model();
-        // Inject the migrated invalid formula into MathParity["abs", "formula_val"]
+        // Inject the migrated invalid formula into MathParity["abs", "formula_val"] and neutralize its downstream parity_status
         if let RowSpec::Data(abs_row) = &mut tables[1].rows[0] {
             abs_row
                 .cells
                 .insert(ColId::from("formula_val"), CellInput::formula(formula));
+            abs_row
+                .cells
+                .insert(ColId::from("parity_status"), CellInput::string("N/A"));
         }
         let err = Compiler::compile(&manifest, &tables)
             .expect_err(&format!("expected F8Error on migrated formula '{formula}'"));
@@ -462,6 +465,9 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
                 ColId::from("formula_val"),
                 CellInput::formula(valid_formula),
             );
+            abs_row
+                .cells
+                .insert(ColId::from("parity_status"), CellInput::string("N/A"));
         }
         assert!(
             Compiler::compile(&manifest, &tables).is_ok(),
