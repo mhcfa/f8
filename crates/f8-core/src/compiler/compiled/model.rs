@@ -159,11 +159,10 @@ where
     let string_map: IndexMap<String, TableCellInfo> = IndexMap::deserialize(deserializer)?;
     let mut cells = IndexMap::with_capacity(string_map.len());
     for (key, val) in string_map {
-        if let Some((table, rest)) = key.split_once("[\"")
-            && let Some((row, rest2)) = rest.split_once("\", \"")
-            && let Some((col, _)) = rest2.split_once("\"]")
+        if let Some((table, _)) = key.split_once("[\"")
+            && key.ends_with("\"]")
         {
-            let cell_id = CellId::new(table, row, col);
+            let cell_id = CellId::new(table, val.row.clone(), val.col.clone());
             cells.insert(cell_id, val);
             continue;
         }
@@ -215,6 +214,10 @@ pub struct RowInspection {
 /// Cell-level audit information within a table inspection view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TableCellInfo {
+    /// Programmatic row identifier.
+    pub row: RowId,
+    /// Programmatic column identifier.
+    pub col: ColId,
     /// Evaluated cell value.
     pub value: CellValue,
     /// Pre-formatted runtime value string according to cell format preset, currency, and decimals.

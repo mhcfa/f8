@@ -143,6 +143,8 @@ class RowInspection(TypedDict):
 class TableCellInfo(TypedDict):
     """Cell audit metadata within a 2D table inspection view."""
 
+    row: str
+    col: str
     value: CellValueDict
     formatted_value: str | None
     is_formula: bool
