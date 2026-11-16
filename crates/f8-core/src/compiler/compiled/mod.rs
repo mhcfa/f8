@@ -415,6 +415,8 @@ impl CompiledModel {
                 cells.insert(
                     cell_id,
                     TableCellInfo {
+                        row: row_id.clone(),
+                        col: col_id.clone(),
                         value,
                         formatted_value,
                         is_formula,
@@ -1271,5 +1273,40 @@ mod tests {
         let err2 = parse_coordinate_tokens("IncomeStatement[cogs, y2024e, extra]", None, None)
             .unwrap_err();
         assert!(matches!(err2, InspectionError::InvalidCoordinate(_)));
+    }
+
+    #[test]
+    fn test_inspect_table_cells_roundtrip_with_comma_quote_in_row_id() {
+        use crate::compiler::Compiler;
+        use crate::model::manifest::ProjectManifest;
+        use crate::model::table::TableSpec;
+
+        let manifest: ProjectManifest = serde_json::from_value(serde_json::json!({
+            "model_name": "Test",
+            "sheets": [{ "name": "S1", "tables": ["T1"] }]
+        }))
+        .unwrap();
+        let table: TableSpec = serde_json::from_value(serde_json::json!({
+            "id": "T1",
+            "title": "Table 1",
+            "columns": [{ "kind": "data", "id": "col\", \"x", "role": "measure" }],
+            "rows": [{
+                "kind": "data",
+                "id": "row\", \"y",
+                "cells": { "col\", \"x": 42.0 }
+            }]
+        }))
+        .unwrap();
+
+        let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+        let insp = compiled.inspect_table(&TableId::from("T1")).unwrap();
+        let expected_id = CellId::new("T1", "row\", \"y", "col\", \"x");
+        let cell_info = insp.cells.get(&expected_id).unwrap();
+        assert_eq!(cell_info.row.as_str(), "row\", \"y");
+        assert_eq!(cell_info.col.as_str(), "col\", \"x");
+
+        let json_str = serde_json::to_string(&insp).unwrap();
+        let roundtripped: TableInspection = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(roundtripped, insp);
     }
 }

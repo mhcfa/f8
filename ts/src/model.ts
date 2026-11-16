@@ -121,6 +121,8 @@ interface RawRowInspection {
 }
 
 interface RawTableCellInfo {
+  readonly row: string;
+  readonly col: string;
   readonly value: CellValueDict;
   readonly formatted_value: string | null;
   readonly is_formula: boolean;
@@ -289,6 +291,8 @@ function mapRowInspection(row: RawRowInspection): RowInspection {
 
 function mapTableCellInfo(cell: RawTableCellInfo): TableCellInfo {
   return {
+    row: cell.row,
+    col: cell.col,
     value: cell.value,
     formattedValue: cell.formatted_value ?? null,
     isFormula: Boolean(cell.is_formula),

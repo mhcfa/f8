@@ -86,6 +86,10 @@ export function formatWithUnit(formatted: string, unit = ""): string {
   return `${formatted}${unit}`;
 }
 
+function escapeMarkdownCell(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, " ").replace(/\|/g, "\\|");
+}
+
 interface RenderColumn {
   readonly id: string | null;
   readonly header: string;
@@ -134,18 +138,8 @@ export class TableAuditor {
     this.#rowSet = new Set(dataRows);
 
     this.#cellMap = new Map();
-    const prefix = `${this.#id}["`;
-    const suffix = '"]';
-    for (const [k, cellInfo] of Object.entries(raw.cells ?? {})) {
-      if (k.startsWith(prefix) && k.endsWith(suffix)) {
-        const inner = k.slice(prefix.length, k.length - suffix.length);
-        const sepIdx = inner.indexOf('", "');
-        if (sepIdx !== -1) {
-          const r = inner.slice(0, sepIdx);
-          const c = inner.slice(sepIdx + 4);
-          this.#setCell(r, c, cellInfo);
-        }
-      }
+    for (const cellInfo of Object.values(raw.cells ?? {})) {
+      this.#setCell(cellInfo.row, cellInfo.col, cellInfo);
     }
   }
 
@@ -159,19 +153,7 @@ export class TableAuditor {
   }
 
   #getCell(row: string, col: string): TableCellInfo | undefined {
-    const cached = this.#cellMap.get(row)?.get(col);
-    if (cached !== undefined) {
-      return cached;
-    }
-    const canonicalKey = `${this.#id}["${row}", "${col}"]`;
-    if (Object.prototype.hasOwnProperty.call(this.#raw.cells, canonicalKey)) {
-      const info = this.#raw.cells[canonicalKey];
-      if (info !== undefined) {
-        this.#setCell(row, col, info);
-        return info;
-      }
-    }
-    return undefined;
+    return this.#cellMap.get(row)?.get(col);
   }
 
   get id(): string {
@@ -475,7 +457,7 @@ export class TableAuditor {
 
       return {
         id: colId,
-        header: headerLabel,
+        header: escapeMarkdownCell(headerLabel),
         isDescriptor,
       };
     });
@@ -510,11 +492,12 @@ export class TableAuditor {
         } else {
           label = valStr;
         }
+        const escapedLabel = escapeMarkdownCell(label);
         const pad = "  ".repeat(indent);
-        if (isSummary && label) {
-          return `${pad}**${label}**`;
+        if (isSummary && escapedLabel) {
+          return `${pad}**${escapedLabel}**`;
         }
-        return `${pad}${label}`;
+        return `${pad}${escapedLabel}`;
       }
 
       let rawText: string;
@@ -541,10 +524,11 @@ export class TableAuditor {
           break;
       }
 
-      if (isSummary && rawText) {
-        return `**${rawText}**`;
+      const escapedText = escapeMarkdownCell(rawText);
+      if (isSummary && escapedText) {
+        return `**${escapedText}**`;
       }
-      return rawText;
+      return escapedText;
     };
 
     const colWidths: number[] = renderCols.map((col) => Math.max(col.header.length, 4));
@@ -598,7 +582,7 @@ export class TableAuditor {
 
     for (const r of selectedRows) {
       if (r.isSectionHeader) {
-        const title = r.sectionTitle ?? "";
+        const title = escapeMarkdownCell(r.sectionTitle ?? "");
         const emptyCols = " |".repeat(renderCols.length - 1);
         outLines.push(`| **${title}** |${emptyCols}`);
         continue;
