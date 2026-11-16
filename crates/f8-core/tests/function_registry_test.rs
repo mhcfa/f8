@@ -1802,3 +1802,95 @@ fn test_standard_function_registry_shares_cached_arc_instances() {
         "FunctionRegistry::standard() must share LazyLock-cached Arc<dyn ExcelFunction> instances"
     );
 }
+
+#[test]
+fn test_bind_arguments_and_fixed_arity_evaluate_guards() {
+    let registry = FunctionRegistry::standard();
+    let abs_fn = registry.lookup("ABS").unwrap();
+    let na_fn = registry.lookup("NA").unwrap();
+    let pmt_fn = registry.lookup("PMT").unwrap();
+    let ctx = MockEvalContext::default();
+
+    // 1. bind_arguments enforces arity and omission rules directly
+    assert_eq!(
+        registry.bind_arguments(abs_fn, &[], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "ABS",
+            expected: 1,
+            found: 0,
+        })
+    );
+    assert_eq!(
+        registry.bind_arguments(
+            abs_fn,
+            &[
+                CallArg::from(Expr::number(1.0)),
+                CallArg::from(Expr::number(2.0))
+            ],
+            &ctx
+        ),
+        Err(FunctionError::TooManyArguments {
+            function: "ABS",
+            expected: 1,
+            found: 2,
+        })
+    );
+    assert_eq!(
+        registry.bind_arguments(na_fn, &[CallArg::from(Expr::number(1.0))], &ctx),
+        Err(FunctionError::TooManyArguments {
+            function: "NA",
+            expected: 0,
+            found: 1,
+        })
+    );
+    assert_eq!(
+        registry.bind_arguments(
+            pmt_fn,
+            &[
+                CallArg::from(Expr::number(0.05)),
+                CallArg::from(Expr::number(10.0)),
+                CallArg::from(Expr::number(-1000.0)),
+                CallArg::Omitted,
+            ],
+            &ctx
+        ),
+        Err(FunctionError::CannotOmitTrailingArgument {
+            function: "PMT",
+            param: "fv",
+            position: 4,
+        })
+    );
+
+    // 2. bind_arguments rejects slice reference on ParamKind::Scalar
+    let slice_arg = [CallArg::from(
+        Expr::parse("T[\"r1\"..\"r2\", @col]").unwrap(),
+    )];
+    assert!(matches!(
+        registry.bind_arguments(abs_fn, &slice_arg, &ctx),
+        Err(FunctionError::SliceInScalarContext { .. })
+    ));
+
+    // 3. Direct fixed-arity .evaluate() rejects excess trailing arguments
+    assert_eq!(
+        abs_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Scalar(CellValue::Number(2.0)),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::TooManyArguments {
+            function: "ABS",
+            expected: 1,
+            found: 2,
+        })
+    );
+    assert_eq!(
+        na_fn.evaluate(&[FunctionArg::Scalar(CellValue::Number(1.0))], &ctx),
+        Err(FunctionError::TooManyArguments {
+            function: "NA",
+            expected: 0,
+            found: 1,
+        })
+    );
+}

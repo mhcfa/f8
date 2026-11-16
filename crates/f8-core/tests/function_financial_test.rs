@@ -403,6 +403,21 @@ fn test_scenario_3_xnpv_non_periodic_discounting() {
             ],
             &ctx,
         ),
+        Err(FunctionError::LengthMismatch {
+            function: "XNPV",
+            expected: 4,
+            found: 0,
+        })
+    );
+    assert_eq!(
+        xnpv_func.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.09)),
+                FunctionArg::range(0, 0, vec![], ReferenceKind::Slice),
+                FunctionArg::range(0, 0, vec![], ReferenceKind::Slice),
+            ],
+            &ctx,
+        ),
         Ok(CellValue::Error(ExcelError::Num))
     );
 }
@@ -1097,4 +1112,133 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
     } else {
         panic!("Expected Number, got {irr_res:?}");
     }
+}
+
+#[test]
+fn test_npv_subnormal_underflow_and_financial_direct_guards_and_error_bubbling() {
+    use f8_core::functions::FunctionError;
+
+    let registry = FunctionRegistry::standard();
+    let npv_fn = registry.lookup("NPV").unwrap();
+    let xnpv_fn = registry.lookup("XNPV").unwrap();
+    let xirr_fn = registry.lookup("XIRR").unwrap();
+    let ctx = MockContext;
+
+    // 1. NPV with rate = -0.9 over 325 periods: (1 + rate)^325 underflows IEEE-754 f64 to 0.0
+    let mut trailing_zeros = vec![CellValue::Number(100.0)];
+    trailing_zeros.extend(std::iter::repeat_n(CellValue::Number(0.0), 325));
+    let npv_zero_tail = npv_fn
+        .evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(-0.9)),
+                FunctionArg::range(326, 1, trailing_zeros, ReferenceKind::Slice),
+            ],
+            &ctx,
+        )
+        .unwrap();
+    let CellValue::Number(v_zero_tail) = npv_zero_tail else {
+        panic!("expected finite NPV for trailing zeros, got {npv_zero_tail:?}");
+    };
+    assert!((v_zero_tail - 1000.0).abs() < 1e-11);
+
+    let mut overflow_tail = vec![CellValue::Number(0.0); 325];
+    overflow_tail[324] = CellValue::Number(1.0);
+    let npv_overflow = npv_fn
+        .evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(-0.9)),
+                FunctionArg::range(325, 1, overflow_tail, ReferenceKind::Slice),
+            ],
+            &ctx,
+        )
+        .unwrap();
+    assert_eq!(
+        npv_overflow,
+        CellValue::Error(ExcelError::Num),
+        "true f64 overflow must return #NUM!, not #DIV/0!"
+    );
+
+    // 2. Eager ExcelError in dates or guess bubbles before date-serial domain #NUM!
+    let cfs_valid = FunctionArg::range(
+        2,
+        1,
+        vec![CellValue::Number(-100.0), CellValue::Number(120.0)],
+        ReferenceKind::Slice,
+    );
+    let dates_bad_then_div0 = FunctionArg::range(
+        2,
+        1,
+        vec![CellValue::Number(0.0), CellValue::Error(ExcelError::Div0)],
+        ReferenceKind::Slice,
+    );
+    assert_eq!(
+        xnpv_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.1)),
+                    cfs_valid.clone(),
+                    dates_bad_then_div0,
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+
+    let dates_bad_first = FunctionArg::range(
+        2,
+        1,
+        vec![CellValue::Number(0.0), CellValue::Number(45657.0)],
+        ReferenceKind::Slice,
+    );
+    assert_eq!(
+        xirr_fn
+            .evaluate(
+                &[
+                    cfs_valid.clone(),
+                    dates_bad_first,
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+
+    // 3. Direct .evaluate() guards 2D slices and unequal lengths on XNPV and XIRR
+    let slice_2d = FunctionArg::range(2, 2, vec![CellValue::Number(1.0); 4], ReferenceKind::Slice);
+    assert_eq!(
+        xnpv_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(0.1)),
+                slice_2d.clone(),
+                slice_2d.clone(),
+            ],
+            &ctx
+        ),
+        Err(FunctionError::ExpectedOneDimensionalSlice {
+            function: "XNPV",
+            param: "values",
+            rows: 2,
+            cols: 2,
+        })
+    );
+    let dates_3 = FunctionArg::range(
+        3,
+        1,
+        vec![
+            CellValue::Number(45292.0),
+            CellValue::Number(45657.0),
+            CellValue::Number(46022.0),
+        ],
+        ReferenceKind::Slice,
+    );
+    assert_eq!(
+        xirr_fn.evaluate(&[cfs_valid, dates_3], &ctx),
+        Err(FunctionError::LengthMismatch {
+            function: "XIRR",
+            expected: 2,
+            found: 3,
+        })
+    );
 }

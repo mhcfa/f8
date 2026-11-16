@@ -1779,3 +1779,180 @@ fn test_lookup_positional_omission_contract() {
         assert_eq!(*source, expected_err, "mismatch on {formula}");
     }
 }
+
+#[test]
+fn test_lookup_direct_guards_error_bubbling_and_find_match_validation() {
+    use f8_core::functions::lookup::{MatchMode, SearchMode, find_match_index};
+
+    let registry = FunctionRegistry::standard();
+    let index_fn = registry.lookup("INDEX").unwrap();
+    let xlookup_fn = registry.lookup("XLOOKUP").unwrap();
+    let xmatch_fn = registry.lookup("XMATCH").unwrap();
+    let ctx = MockContext::new();
+
+    // 1. Direct INDEX 2-arg call on 2D slice rejects with MissingColumnIndexFor2DSlice
+    let mat_2x2 = make_array(2, 2, vec![CellValue::Number(1.0); 4]);
+    assert_eq!(
+        index_fn.evaluate(
+            &[mat_2x2.clone(), FunctionArg::Scalar(CellValue::Number(1.0))],
+            &ctx
+        ),
+        Err(FunctionError::MissingColumnIndexFor2DSlice {
+            function: "INDEX",
+            rows: 2,
+            cols: 2,
+        })
+    );
+
+    // 2. Direct XLOOKUP and XMATCH guard 1D rank and parallel dimensions
+    assert_eq!(
+        xmatch_fn.evaluate(
+            &[FunctionArg::Scalar(CellValue::Number(1.0)), mat_2x2.clone()],
+            &ctx
+        ),
+        Err(FunctionError::ExpectedOneDimensionalSlice {
+            function: "XMATCH",
+            param: "lookup_array",
+            rows: 2,
+            cols: 2,
+        })
+    );
+    let col_3x1 = make_array(3, 1, vec![CellValue::Number(1.0); 3]);
+    let row_1x3 = make_array(1, 3, vec![CellValue::Number(1.0); 3]);
+    assert_eq!(
+        xlookup_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                col_3x1.clone(),
+                row_1x3,
+            ],
+            &ctx
+        ),
+        Err(FunctionError::DimensionMismatch {
+            function: "XLOOKUP",
+            expected_rows: 3,
+            expected_cols: 1,
+            found_rows: 1,
+            found_cols: 3,
+        })
+    );
+
+    // 3. Eager ExcelError in col_num / lookup_value / search_mode bubbles before fractional/mode/array domain errors
+    assert_eq!(
+        index_fn
+            .evaluate(
+                &[
+                    mat_2x2.clone(),
+                    FunctionArg::Scalar(CellValue::Number(1.5)),
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+    let sparse_arr = make_array(2, 1, vec![CellValue::Number(1.0), CellValue::Empty]);
+    assert_eq!(
+        xmatch_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Na)),
+                    sparse_arr.clone(),
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                    FunctionArg::Scalar(CellValue::Number(2.0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Na)
+    );
+    assert_eq!(
+        xlookup_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                    col_3x1.clone(),
+                    col_3x1,
+                    FunctionArg::Omitted,
+                    FunctionArg::Scalar(CellValue::Number(99.0)),
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                ],
+                &ctx
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+
+    // 4. Direct find_match_index enforces binary-search array validation
+    let unsorted = [CellValue::Number(20.0), CellValue::Number(10.0)];
+    assert_eq!(
+        find_match_index(
+            &CellValue::Number(10.0),
+            &unsorted,
+            MatchMode::Exact,
+            SearchMode::BinaryAscending,
+        ),
+        Err(ExcelError::Value)
+    );
+
+    // 5. Stage A lookup pass order checks rank/shape before scalar ParamType and evaluates pos 1..=N left-to-right
+    use f8_core::functions::{StageAError, StaticRef};
+    let resolve_2d = |_: &f8_core::expr::ast::TableRef| -> Result<Option<StaticRef>, ()> {
+        Ok(Some(StaticRef {
+            rows: 2,
+            cols: 2,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number); 4],
+        }))
+    };
+    assert_eq!(
+        registry.validate_expr_with_shapes(
+            &Expr::parse("XMATCH(10, T[\"r1\"..\"r2\", \"c1\"..\"c2\"], \"bad\")").unwrap(),
+            resolve_2d,
+        ),
+        Err(StageAError::Function(
+            FunctionError::ExpectedOneDimensionalSlice {
+                function: "XMATCH",
+                param: "lookup_array",
+                rows: 2,
+                cols: 2,
+            }
+        ))
+    );
+    assert_eq!(
+        registry.validate_expr_with_shapes(
+            &Expr::parse("INDEX(T[\"r1\"..\"r2\", \"c1\"..\"c2\"], \"bad\")").unwrap(),
+            resolve_2d,
+        ),
+        Err(StageAError::Function(
+            FunctionError::MissingColumnIndexFor2DSlice {
+                function: "INDEX",
+                rows: 2,
+                cols: 2,
+            }
+        ))
+    );
+    let resolve_mixed_1d = |_: &f8_core::expr::ast::TableRef| -> Result<Option<StaticRef>, ()> {
+        Ok(Some(StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number), Some(ValueType::Text)],
+        }))
+    };
+    assert_eq!(
+        registry.validate_expr_with_shapes(
+            &Expr::parse("INDEX(T[\"r1\"..\"r2\", \"c1\"], \"bad\", 1)").unwrap(),
+            resolve_mixed_1d,
+        ),
+        Err(StageAError::Function(FunctionError::Type(
+            TypeError::InvalidArgumentType {
+                function: "INDEX",
+                param: "array",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }
+        )))
+    );
+}

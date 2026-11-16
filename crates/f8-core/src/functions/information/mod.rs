@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::functions::common::require_args;
 use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
@@ -48,13 +49,7 @@ impl ExcelFunction for IserrorFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [val_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [val_arg] = require_args(self, args)?;
         let val = val_arg.eval_scalar(self.name(), "value", 1, ctx)?;
         Ok(CellValue::Boolean(matches!(val, CellValue::Error(_))))
     }
@@ -87,9 +82,10 @@ impl ExcelFunction for NaFunction {
 
     fn evaluate(
         &self,
-        _args: &[FunctionArg<'_>],
+        args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
+        let [] = require_args(self, args)?;
         Ok(CellValue::Error(ExcelError::Na))
     }
 }

@@ -60,6 +60,7 @@ impl<'de> Deserialize<'de> for ThemeSpec {
 
 /// Complete visual styling, typography, dimensions, palette, borders, and number format specification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Theme {
     #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
     pub schema: Option<String>,
@@ -77,6 +78,7 @@ fn default_section_header_underline() -> bool {
 
 /// Font family and point sizes for workbook hierarchy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TypographyConfig {
     pub font_family: String,
     pub title_size: f64,
@@ -110,6 +112,7 @@ fn default_max_col_width() -> f64 {
 
 /// Column character widths, gutters, and margins.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MetricsConfig {
     pub gutter_col_width: f64,
     pub char_width_multiplier: f64,
@@ -178,6 +181,7 @@ pub enum BorderStyle {
 
 /// Border styling rules for structural headers and summary totals.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BordersConfig {
     pub table_title_border_bottom: BorderStyle,
     pub super_header_border_bottom: BorderStyle,
@@ -214,6 +218,7 @@ fn default_integer_format() -> String {
 
 /// Number format templates and default precisions across all semantic presets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct NumberFormatsConfig {
     pub currency: String,
     pub number: String,
@@ -245,6 +250,7 @@ impl Default for NumberFormatsConfig {
 
 /// Default fractional decimal precision per numeric preset family.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FormatDefaults {
     pub currency_decimals: u32,
     pub number_decimals: u32,

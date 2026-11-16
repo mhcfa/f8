@@ -118,8 +118,8 @@ impl FunctionRegistry {
         Ok(func)
     }
 
-    /// Statically validates function signatures, static types, syntactic scalar-slice exclusions,
-    /// and constant index bounds across all active and dormant branches of `expr`.
+    /// Statically validates function signatures, value types, branch monomorphism, and syntactic scalar-slice
+    /// exclusions across all active and dormant branches of `expr`.
     pub fn validate_expr(&self, expr: &Expr) -> Result<(), FunctionError> {
         match self.validate_expr_with_shapes(expr, |_| Ok::<_, Infallible>(None)) {
             Ok(()) => Ok(()),
@@ -303,20 +303,17 @@ impl FunctionRegistry {
         Ok(vt_opt)
     }
 
-    fn synth_positional_call<E, F>(
-        &self,
+    fn resolve_arg_shapes<E, F>(
         func: &dyn ExcelFunction,
         args: &[CallArg],
-        call_policy: PositionalPolicy,
         resolve_ref: &mut F,
-    ) -> Result<Option<ValueType>, StageAError<E>>
+    ) -> Result<ResolvedArgShapes, StageAError<E>>
     where
         F: FnMut(&TableRef) -> Result<Option<StaticRef>, E>,
     {
         let mut shapes: Vec<Option<(usize, usize)>> = Vec::with_capacity(args.len());
         let mut resolved_refs: Vec<Option<StaticRef>> = Vec::with_capacity(args.len());
 
-        // Pass A: Resolve reference shapes/roles and validate `ParamKind::Range` and scalar-slice constraints.
         for (idx, call_arg) in args.iter().enumerate() {
             let param = resolve_parameter(func, idx)?;
             match (param.kind, call_arg) {
@@ -383,7 +380,59 @@ impl FunctionRegistry {
             }
         }
 
-        // Pass B: Coupled slice-shape invariants run before role and element type/domain checks.
+        Ok((shapes, resolved_refs))
+    }
+
+    fn synth_resolved_scalar_arg<E, F>(
+        &self,
+        func: &dyn ExcelFunction,
+        args: &[CallArg],
+        resolved_refs: &[Option<StaticRef>],
+        idx: usize,
+        resolve_ref: &mut F,
+    ) -> Result<Option<ValueType>, StageAError<E>>
+    where
+        F: FnMut(&TableRef) -> Result<Option<StaticRef>, E>,
+    {
+        let Some(CallArg::Expr(arg_expr)) = args.get(idx) else {
+            return Ok(None);
+        };
+        let param = resolve_parameter(func, idx)?;
+        let position = idx + 1;
+        if let Expr::Reference(_) = arg_expr {
+            let vt_opt = resolved_refs
+                .get(idx)
+                .and_then(Option::as_ref)
+                .and_then(|res| res.elem_types.first().copied().flatten());
+            if let Some(found) = vt_opt {
+                check_param_value_type(found, func.name(), param.name, position, param.param_type)?;
+            }
+            return Ok(vt_opt);
+        }
+        self.synth_and_check_param(
+            arg_expr,
+            func.name(),
+            param.name,
+            position,
+            param.param_type,
+            resolve_ref,
+        )
+    }
+
+    fn synth_positional_call<E, F>(
+        &self,
+        func: &dyn ExcelFunction,
+        args: &[CallArg],
+        call_policy: PositionalPolicy,
+        resolve_ref: &mut F,
+    ) -> Result<Option<ValueType>, StageAError<E>>
+    where
+        F: FnMut(&TableRef) -> Result<Option<StaticRef>, E>,
+    {
+        // Pass A: Resolve reference shapes/roles and validate `ParamKind::Range` and scalar-slice constraints.
+        let (shapes, resolved_refs) = Self::resolve_arg_shapes(func, args, resolve_ref)?;
+
+        // Pass B: Coupled slice-shape invariants run before role and element value-type checks.
         if let PositionalPolicy::ShapeCoupled(shape_policy) = call_policy {
             validate_shape_policy(func.name(), shape_policy, &shapes)?;
         }
@@ -405,7 +454,7 @@ impl FunctionRegistry {
             }
         }
 
-        // Pass D: Per-argument value-type, subtree, and parameter-boundary domain validation.
+        // Pass D: Per-argument value-type and subtree validation.
         for (idx, call_arg) in args.iter().enumerate() {
             let param = resolve_parameter(func, idx)?;
             let position = idx + 1;
@@ -415,7 +464,7 @@ impl FunctionRegistry {
             match (param.kind, arg_expr) {
                 (ParamKind::Range, _)
                 | (ParamKind::ScalarOrRange | ParamKind::Scalar, Expr::Reference(_)) => {
-                    if let Some(res) = &resolved_refs[idx] {
+                    if let Some(res) = resolved_refs.get(idx).and_then(Option::as_ref) {
                         validate_static_range_elem_types(
                             res,
                             func.name(),
@@ -509,116 +558,46 @@ impl FunctionRegistry {
     where
         F: FnMut(&TableRef) -> Result<Option<StaticRef>, E>,
     {
+        // Pass A: Resolve reference shapes and validate `ParamKind::Range` / scalar-slice constraints.
+        let (shapes, resolved_refs) = Self::resolve_arg_shapes(func, args, resolve_ref)?;
+
         match lookup_policy {
             LookupPolicy::Index => {
-                let Some(CallArg::Expr(Expr::Reference(arr_ref))) = args.first() else {
-                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
-                        function: func.name(),
-                        expected: "range",
-                        found: "scalar",
-                    }));
-                };
-                let resolved_arr = resolve_ref(arr_ref).map_err(StageAError::Resolve)?;
-
-                if let Some(CallArg::Expr(row_expr)) = args.get(1) {
-                    self.synth_and_check_param(
-                        row_expr,
-                        func.name(),
-                        "row_num",
-                        2,
-                        ParamType::Number,
-                        resolve_ref,
-                    )?;
-                }
-
-                if let Some(CallArg::Expr(col_expr)) = args.get(2) {
-                    self.synth_and_check_param(
-                        col_expr,
-                        func.name(),
-                        "col_num",
-                        3,
-                        ParamType::Number,
-                        resolve_ref,
-                    )?;
-                }
-
+                // Pass B: Coupled rank/arity invariant before value-type checks.
                 if args.len() == 2
-                    && let Some(res) = &resolved_arr
-                    && res.rows > 1
-                    && res.cols > 1
+                    && let Some((rows, cols)) = shapes.first().copied().flatten()
+                    && rows > 1
+                    && cols > 1
                 {
                     return Err(StageAError::Function(
                         FunctionError::MissingColumnIndexFor2DSlice {
                             function: func.name(),
-                            rows: res.rows,
-                            cols: res.cols,
+                            rows,
+                            cols,
                         },
                     ));
                 }
 
-                if let Some(res) = &resolved_arr {
-                    let arr_vt = validate_homogeneous_elem_types(
+                // Pass D: Left-to-right element homogeneity and argument type validation (pos 1..=3).
+                let arr_vt = match resolved_refs.first().and_then(Option::as_ref) {
+                    Some(res) => validate_homogeneous_elem_types(
                         &res.elem_types,
                         None,
                         func.name(),
                         "array",
                         1,
-                    )?;
-                    Ok(arr_vt)
-                } else {
-                    Ok(None)
-                }
+                    )?,
+                    None => None,
+                };
+                self.synth_resolved_scalar_arg(func, args, &resolved_refs, 1, resolve_ref)?;
+                self.synth_resolved_scalar_arg(func, args, &resolved_refs, 2, resolve_ref)?;
+                Ok(arr_vt)
             }
 
             LookupPolicy::Xlookup => {
-                let lookup_vt = if let Some(CallArg::Expr(lv_expr)) = args.first() {
-                    self.synth_expr(lv_expr, resolve_ref)?
-                } else {
-                    None
-                };
-
-                let Some(CallArg::Expr(Expr::Reference(l_ref))) = args.get(1) else {
-                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
-                        function: func.name(),
-                        expected: "range",
-                        found: "scalar",
-                    }));
-                };
-                let Some(CallArg::Expr(Expr::Reference(r_ref))) = args.get(2) else {
-                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
-                        function: func.name(),
-                        expected: "range",
-                        found: "scalar",
-                    }));
-                };
-
-                let resolved_l = resolve_ref(l_ref).map_err(StageAError::Resolve)?;
-                let resolved_r = resolve_ref(r_ref).map_err(StageAError::Resolve)?;
-
-                if let Some(CallArg::Expr(mm_expr)) = args.get(4) {
-                    self.synth_and_check_param(
-                        mm_expr,
-                        func.name(),
-                        "match_mode",
-                        5,
-                        ParamType::Number,
-                        resolve_ref,
-                    )?;
-                }
-
-                if let Some(CallArg::Expr(sm_expr)) = args.get(5) {
-                    self.synth_and_check_param(
-                        sm_expr,
-                        func.name(),
-                        "search_mode",
-                        6,
-                        ParamType::Number,
-                        resolve_ref,
-                    )?;
-                }
-
-                let l_shape = resolved_l.as_ref().map(|r| (r.rows, r.cols));
-                let r_shape = resolved_r.as_ref().map(|r| (r.rows, r.cols));
+                // Pass B: 1D rank and parallel dimension invariants before value-type checks.
+                let l_shape = shapes.get(1).copied().flatten();
+                let r_shape = shapes.get(2).copied().flatten();
                 require_1d_slice(func.name(), "lookup_array", l_shape)?;
                 require_1d_slice(func.name(), "return_array", r_shape)?;
                 if let (Some((lr, lc)), Some((rr, rc))) = (l_shape, r_shape)
@@ -633,7 +612,11 @@ impl FunctionRegistry {
                     }));
                 }
 
-                if let Some(res_l) = &resolved_l {
+                // Pass D: Left-to-right synthesis, homogeneity, and branch unification (pos 1..=6).
+                let lookup_vt =
+                    self.synth_resolved_scalar_arg(func, args, &resolved_refs, 0, resolve_ref)?;
+
+                if let Some(res_l) = resolved_refs.get(1).and_then(Option::as_ref) {
                     validate_homogeneous_elem_types(
                         &res_l.elem_types,
                         lookup_vt,
@@ -643,7 +626,7 @@ impl FunctionRegistry {
                     )?;
                 }
 
-                let ret_vt = match &resolved_r {
+                let ret_vt = match resolved_refs.get(2).and_then(Option::as_ref) {
                     Some(res_r) => validate_homogeneous_elem_types(
                         &res_r.elem_types,
                         None,
@@ -660,51 +643,22 @@ impl FunctionRegistry {
                     unifier.record(4, nf_vt)?;
                 }
 
+                self.synth_resolved_scalar_arg(func, args, &resolved_refs, 4, resolve_ref)?;
+                self.synth_resolved_scalar_arg(func, args, &resolved_refs, 5, resolve_ref)?;
+
                 Ok(unifier.unified())
             }
 
             LookupPolicy::Xmatch => {
-                let lookup_vt = if let Some(CallArg::Expr(lv_expr)) = args.first() {
-                    self.synth_expr(lv_expr, resolve_ref)?
-                } else {
-                    None
-                };
-
-                let Some(CallArg::Expr(Expr::Reference(l_ref))) = args.get(1) else {
-                    return Err(StageAError::Function(FunctionError::InvalidArgumentKind {
-                        function: func.name(),
-                        expected: "range",
-                        found: "scalar",
-                    }));
-                };
-                let resolved_l = resolve_ref(l_ref).map_err(StageAError::Resolve)?;
-
-                if let Some(CallArg::Expr(mm_expr)) = args.get(2) {
-                    self.synth_and_check_param(
-                        mm_expr,
-                        func.name(),
-                        "match_mode",
-                        3,
-                        ParamType::Number,
-                        resolve_ref,
-                    )?;
-                }
-
-                if let Some(CallArg::Expr(sm_expr)) = args.get(3) {
-                    self.synth_and_check_param(
-                        sm_expr,
-                        func.name(),
-                        "search_mode",
-                        4,
-                        ParamType::Number,
-                        resolve_ref,
-                    )?;
-                }
-
-                let l_shape = resolved_l.as_ref().map(|r| (r.rows, r.cols));
+                // Pass B: 1D rank invariant before value-type checks.
+                let l_shape = shapes.get(1).copied().flatten();
                 require_1d_slice(func.name(), "lookup_array", l_shape)?;
 
-                if let Some(res_l) = &resolved_l {
+                // Pass D: Left-to-right synthesis and homogeneity validation (pos 1..=4).
+                let lookup_vt =
+                    self.synth_resolved_scalar_arg(func, args, &resolved_refs, 0, resolve_ref)?;
+
+                if let Some(res_l) = resolved_refs.get(1).and_then(Option::as_ref) {
                     validate_homogeneous_elem_types(
                         &res_l.elem_types,
                         lookup_vt,
@@ -714,11 +668,16 @@ impl FunctionRegistry {
                     )?;
                 }
 
+                self.synth_resolved_scalar_arg(func, args, &resolved_refs, 2, resolve_ref)?;
+                self.synth_resolved_scalar_arg(func, args, &resolved_refs, 3, resolve_ref)?;
+
                 Ok(Some(ValueType::Number))
             }
         }
     }
 }
+
+type ResolvedArgShapes = (Vec<Option<(usize, usize)>>, Vec<Option<StaticRef>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PositionalPolicy {

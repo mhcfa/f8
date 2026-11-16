@@ -728,4 +728,37 @@ fn test_scenario_10_static_monomorphic_branch_unification_and_non_empty_lazy_arm
             position: 3,
         }))
     );
+
+    // Direct .evaluate() with excess arguments on IF and IFERROR returns TooManyArguments (not TooFewArguments)
+    assert_eq!(
+        if_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Boolean(true)),
+                FunctionArg::Lazy(&dummy),
+                FunctionArg::Lazy(&dummy),
+                FunctionArg::Lazy(&dummy),
+            ],
+            &EmptyEvalContext,
+        ),
+        Err(FunctionError::TooManyArguments {
+            function: "IF",
+            expected: 3,
+            found: 4,
+        })
+    );
+    assert_eq!(
+        iferror_fn.evaluate(
+            &[
+                FunctionArg::Scalar(CellValue::Number(1.0)),
+                FunctionArg::Lazy(&dummy),
+                FunctionArg::Lazy(&dummy),
+            ],
+            &EmptyEvalContext,
+        ),
+        Err(FunctionError::TooManyArguments {
+            function: "IFERROR",
+            expected: 2,
+            found: 3,
+        })
+    );
 }

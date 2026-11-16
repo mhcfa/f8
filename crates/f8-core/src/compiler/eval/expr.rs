@@ -14,7 +14,8 @@ use crate::value::{CellValue, ExcelError, TypeError};
 
 /// Evaluates a formula AST expression within the context of an origin cell coordinate.
 ///
-/// - Statically validates all function calls, types, and slice shapes across the AST before evaluating.
+/// - Statically validates all function calls, types, and slice shapes across the AST before evaluating
+///   (deriving upstream cell `ValueType`s from `memoized_values`, where pre-evaluated `Empty`/`Error` cells carry `None`).
 /// - Rejects a top-level `CellValue::Empty` result with `TypeError::EmptyFormulaResult`.
 ///
 /// # Errors

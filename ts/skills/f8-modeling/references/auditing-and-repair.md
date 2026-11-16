@@ -30,7 +30,7 @@ const compiled = model.compile();
 
 ### Coordinate Addressing in `CompiledModel`
 
-Cell methods (`value`, `num`, `formatted`, `inspectCell`, `precedentsOf`, `dependentsOf`) accept either a 1-argument coordinate string (`'Table["row", "col"]'`, `"Table['row', 'col']"`, or unquoted `'Table[row, col]'`, provided `row` and `col` IDs do not contain `,`, `[`, or `]`) or 3 positional arguments (`table, row, col`, which support arbitrary characters in `row` and `col`). Missing entities or malformed coordinates throw `InspectionError`:
+Cell methods (`value`, `num`, `formatted`, `inspectCell`, `precedentsOf`, `dependentsOf`) accept either a 1-argument coordinate string (canonical `'Table["row", "col"]'` with `\"` and `\\` escaping, or shorthand `"Table['row', 'col']"` / `'Table[row, col]'` provided `row` and `col` IDs do not contain `,`, `[`, `]`, `'`, or `"`) or 3 positional arguments (`table, row, col`, which support arbitrary non-empty characters in `row` and `col`). Missing entities or malformed coordinates throw `InspectionError`:
 
 ```ts
 const v1 = compiled.num('Operations["revenue", "2024E"]');
@@ -103,7 +103,7 @@ const mdView: string = auditor.toMarkdown(
 );
 ```
 
-- `view` modes (`TableViewMode`; `descriptor` columns always display their indented text label across all modes, falling back to `rowId` when empty, while `measure` columns switch by `view`):
+- `view` modes (`TableViewMode`; unrecognized value throws `Error`; `descriptor` columns always display their indented text label across all modes, falling back to `rowId` when empty, while `measure` columns switch by `view`):
   - `"values"` (default): Pre-formatted strings (`"—"` for empty `measure` cells).
   - `"formulas"`: Lowered Excel formulas (`"=C5*1.15"`) for formula cells, formatted values for literals (`""` if empty).
   - `"expr"`: Source `f8` expressions for formula cells, formatted values for literals (`""` if empty).

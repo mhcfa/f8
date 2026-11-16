@@ -1,5 +1,28 @@
-use crate::functions::traits::{FunctionArg, ReferenceKind};
+use crate::functions::error::FunctionError;
+use crate::functions::traits::{ExcelFunction, FunctionArg, ReferenceKind};
 use crate::value::{CellValue, ExcelError, normalize_zero};
+
+/// Enforces minimum and maximum argument count bounds and extracts the required prefix arguments.
+pub(crate) fn require_args<'a, 'b, const MIN: usize>(
+    func: &dyn ExcelFunction,
+    args: &'b [FunctionArg<'a>],
+) -> Result<&'b [FunctionArg<'a>; MIN], FunctionError> {
+    if let Some(max) = func.max_args()
+        && args.len() > max
+    {
+        return Err(FunctionError::TooManyArguments {
+            function: func.name(),
+            expected: max,
+            found: args.len(),
+        });
+    }
+    args.first_chunk::<MIN>()
+        .ok_or_else(|| FunctionError::TooFewArguments {
+            function: func.name(),
+            expected: MIN,
+            found: args.len(),
+        })
+}
 
 /// Aggregated numeric statistics gathered across arguments for arithmetic functions.
 #[derive(Debug, Clone, PartialEq)]
@@ -212,18 +235,6 @@ pub fn scalar_integer(arg: &FunctionArg<'_>) -> Result<i64, ExcelError> {
         FunctionArg::Range { .. } | FunctionArg::Lazy(_) | FunctionArg::Omitted => {
             Err(ExcelError::Value)
         }
-    }
-}
-
-/// Extracts an optional safe integer scalar at `idx`, returning `Ok(default)` when omitted or out of bounds.
-pub fn optional_scalar_integer(
-    args: &[FunctionArg<'_>],
-    idx: usize,
-    default: i64,
-) -> Result<i64, ExcelError> {
-    match args.get(idx) {
-        None | Some(FunctionArg::Omitted) => Ok(default),
-        Some(arg) => scalar_integer(arg),
     }
 }
 

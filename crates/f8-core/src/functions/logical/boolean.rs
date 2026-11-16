@@ -1,4 +1,4 @@
-use crate::functions::common::{LogicalCollector, scalar_bool};
+use crate::functions::common::{LogicalCollector, require_args, scalar_bool};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
@@ -147,13 +147,7 @@ impl ExcelFunction for NotFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [arg] = require_args(self, args)?;
         match scalar_bool(arg) {
             Ok(b) => Ok(CellValue::Boolean(!b)),
             Err(err) => Ok(CellValue::Error(err)),

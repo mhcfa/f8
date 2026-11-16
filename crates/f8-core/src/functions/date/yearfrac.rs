@@ -1,9 +1,11 @@
-use crate::functions::common::{optional_scalar_integer, scalar_number};
+use crate::functions::common::{optional_scalar_number, require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
 };
-use crate::value::{CellValue, DateSerial, ExcelError, ValueType, validate_date_serial};
+use crate::value::{
+    CellValue, DateSerial, ExcelError, ValueType, f64_to_strict_integer, validate_date_serial,
+};
 
 /// Supported financial day-count conventions for `YEARFRAC`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,17 +192,12 @@ impl ExcelFunction for YearfracFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [start_arg, end_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        };
+        let [start_arg, end_arg] = require_args(self, args)?;
         let eval = || -> Result<f64, ExcelError> {
             let start_val = scalar_number(start_arg)?;
             let end_val = scalar_number(end_arg)?;
-            let basis_i64 = optional_scalar_integer(args, 2, 0)?;
+            let basis_f = optional_scalar_number(args, 2, 0.0)?;
+            let basis_i64 = f64_to_strict_integer(basis_f)?;
             let basis = DayCountBasis::from_i64(basis_i64)?;
             calculate_yearfrac(start_val, end_val, basis)
         };

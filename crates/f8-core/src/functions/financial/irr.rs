@@ -1,6 +1,6 @@
-use crate::functions::common::optional_scalar_number;
+use crate::functions::common::{optional_scalar_number, require_args};
 use crate::functions::error::FunctionError;
-use crate::functions::financial::discounting::{coerce_slice_date_serials, coerce_slice_numbers};
+use crate::functions::financial::discounting::{coerce_slice_numbers, validate_slice_date_serials};
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     ShapePolicy, ValidationPolicy, VariadicRule,
@@ -68,25 +68,14 @@ impl ExcelFunction for IrrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [values_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 1,
-                found: args.len(),
-            });
-        };
+        let [values_arg] = require_args(self, args)?;
         let raw_values = values_arg.as_range_slice(self.name())?;
-        let cfs = match coerce_slice_numbers(raw_values) {
-            Ok(c) => c,
-            Err(e) => return Ok(CellValue::Error(e)),
+        let eval = || {
+            let cfs = coerce_slice_numbers(raw_values)?;
+            let guess = optional_scalar_number(args, 1, 0.10)?;
+            solve_periodic_irr(&cfs, guess)
         };
-
-        let guess = match optional_scalar_number(args, 1, 0.10) {
-            Ok(g) => g,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        match solve_periodic_irr(&cfs, guess) {
+        match eval() {
             Ok(rate) => Ok(CellValue::number(rate)),
             Err(err) => Ok(CellValue::Error(err)),
         }
@@ -157,32 +146,26 @@ impl ExcelFunction for XirrFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [values_arg, dates_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
+        let [values_arg, dates_arg] = require_args(self, args)?;
+        let (_, _, raw_values) = values_arg.as_1d_range(self.name(), "values")?;
+        let (_, _, raw_dates) = dates_arg.as_1d_range(self.name(), "dates")?;
+        if raw_values.len() != raw_dates.len() {
+            return Err(FunctionError::LengthMismatch {
                 function: self.name(),
-                expected: 2,
-                found: args.len(),
+                expected: raw_values.len(),
+                found: raw_dates.len(),
             });
-        };
-        let raw_values = values_arg.as_range_slice(self.name())?;
-        let raw_dates = dates_arg.as_range_slice(self.name())?;
+        }
 
-        let values = match coerce_slice_numbers(raw_values) {
-            Ok(v) => v,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        let dates = match coerce_slice_date_serials(raw_dates) {
-            Ok(d) => d,
-            Err(e) => return Ok(CellValue::Error(e)),
+        let eval = || {
+            let values = coerce_slice_numbers(raw_values)?;
+            let raw_date_nums = coerce_slice_numbers(raw_dates)?;
+            let guess = optional_scalar_number(args, 2, 0.10)?;
+            let dates = validate_slice_date_serials(&raw_date_nums)?;
+            solve_scheduled_xirr(&values, &dates, guess)
         };
 
-        let guess = match optional_scalar_number(args, 2, 0.10) {
-            Ok(g) => g,
-            Err(e) => return Ok(CellValue::Error(e)),
-        };
-
-        match solve_scheduled_xirr(&values, &dates, guess) {
+        match eval() {
             Ok(rate) => Ok(CellValue::number(rate)),
             Err(err) => Ok(CellValue::Error(err)),
         }
@@ -308,7 +291,9 @@ pub(crate) fn solve_scheduled_xirr(
         return Err(ExcelError::Num);
     }
 
-    let first_date = dates[0];
+    let Some(&first_date) = dates.first() else {
+        return Err(ExcelError::Num);
+    };
     if !first_date.is_finite() {
         return Err(ExcelError::Num);
     }
@@ -376,7 +361,9 @@ pub(crate) fn solve_scheduled_xirr(
 
     normalize_cash_flow_scale(&mut net_cfs);
 
-    let base_day = coalesced[0].0;
+    let Some(&(base_day, _)) = coalesced.first() else {
+        return Err(ExcelError::Num);
+    };
     let mut schedule = Vec::with_capacity(coalesced.len());
     for ((day, _), cf) in coalesced.into_iter().zip(net_cfs) {
         let yf = (day - base_day) / 365.0;
@@ -386,7 +373,10 @@ pub(crate) fn solve_scheduled_xirr(
         schedule.push((yf, cf));
     }
 
-    let max_exponent = schedule[schedule.len() - 1].0.max(1.0);
+    let Some(&(last_yf, _)) = schedule.last() else {
+        return Err(ExcelError::Num);
+    };
+    let max_exponent = last_yf.max(1.0);
     solve_irr_root(guess, max_exponent, |rate| {
         eval_scheduled_xnpv(&schedule, rate)
     })
@@ -462,11 +452,14 @@ fn eval_scheduled_xnpv(schedule: &[(f64, f64)], rate: f64) -> Option<ObjectiveEv
     }
 
     if ln_1p_r >= 0.0 {
-        let mut f_val = schedule[0].1;
-        let mut mag_sum = schedule[0].1.abs();
+        let &[(_, first_cf), ref rest @ ..] = schedule else {
+            return None;
+        };
+        let mut f_val = first_cf;
+        let mut mag_sum = first_cf.abs();
         let mut deriv_sum = 0.0_f64;
 
-        for &(yf, cf) in &schedule[1..] {
+        for &(yf, cf) in rest {
             let disc = (-yf * ln_1p_r).exp();
             if !disc.is_finite() {
                 return None;
@@ -490,7 +483,7 @@ fn eval_scheduled_xnpv(schedule: &[(f64, f64)], rate: f64) -> Option<ObjectiveEv
             mag_sum,
         })
     } else {
-        let yf_max = schedule[schedule.len() - 1].0;
+        let &(yf_max, _) = schedule.last()?;
         let mut f_val = 0.0_f64;
         let mut mag_sum = 0.0_f64;
         let mut deriv_sum = 0.0_f64;

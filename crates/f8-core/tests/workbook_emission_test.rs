@@ -1459,3 +1459,125 @@ fn test_scenario_18_negative_zero_literal_and_evaluated_normalization() {
     );
     assert!(values_xml.contains("<v>0</v>"));
 }
+
+#[test]
+fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
+    let mut table = TableSpec::new("TextCacheTable", "Text Formula Cache");
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    table.rows.push(RowSpec::new("r_nan").with_expr("\"NaN\""));
+    table.rows.push(RowSpec::new("r_inf").with_expr("\"inf\""));
+    table
+        .rows
+        .push(RowSpec::new("r_num_str").with_expr("\"42\""));
+    table
+        .rows
+        .push(RowSpec::new("r_bool_str").with_expr("\"TRUE\""));
+    table
+        .rows
+        .push(RowSpec::new("r_err_str").with_expr("\"#N/A\""));
+    table
+        .rows
+        .push(RowSpec::new("r_empty_str").with_expr("\"\""));
+    table
+        .rows
+        .push(RowSpec::new("r_plain_str").with_expr("\"Hello\""));
+
+    let manifest = ProjectManifest {
+        model_name: "TextCacheModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("TextCacheTable")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
+    let buf = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let xml = read_zip_entry(&buf, "xl/worksheets/sheet1.xml");
+
+    assert!(
+        !xml.contains("<v>NaN</v>") && !xml.contains("<v>inf</v>"),
+        "worksheet XML must never emit invalid numeric <v>NaN</v> or <v>inf</v>: {xml}"
+    );
+    assert!(
+        xml.contains("t=\"str\"><f>\"\"</f><v></v></c>"),
+        "empty string formula must emit t=\"str\" and empty <v></v>: {xml}"
+    );
+    assert!(
+        xml.contains("t=\"str\"><f>\"NaN\"</f>")
+            && xml.contains("t=\"str\"><f>\"42\"</f>")
+            && xml.contains("t=\"str\"><f>\"TRUE\"</f>")
+            && xml.contains("t=\"str\"><f>\"#N/A\"</f>")
+            && xml.contains("t=\"str\"><f>\"Hello\"</f><v>Hello</v></c>"),
+        "all text formulas must carry t=\"str\" in worksheet XML: {xml}"
+    );
+
+    // Direct WorkbookEmitter call with non-finite CellValue::Number fails in cached live mode
+    let mut num_table = TableSpec::new("NanTable", "NaN");
+    num_table.columns.push(ColumnSpec::new("val"));
+    num_table.rows.push(RowSpec::new("r1").with_expr("1 + 1"));
+    let nan_manifest = ProjectManifest {
+        model_name: "NanModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("NanTable")],
+        }],
+    };
+    let nan_compiled = Compiler::compile(&nan_manifest, std::slice::from_ref(&num_table)).unwrap();
+    let mut bad_values = indexmap::IndexMap::new();
+    bad_values.insert(
+        CellId::new("NanTable", "r1", "val"),
+        f8_core::value::CellValue::Number(f64::NAN),
+    );
+    let bad_eval =
+        f8_core::compiler::eval::EvaluatedModel::new(bad_values, nan_compiled.symbol_table.clone());
+    for opts in [
+        EmissionOptions::default(),
+        EmissionOptions::default().with_values_only(true),
+        EmissionOptions::default().with_omit_formula_cache(true),
+    ] {
+        assert!(
+            WorkbookEmitter::emit_to_buffer(
+                &nan_manifest,
+                std::slice::from_ref(&num_table),
+                &nan_compiled.grid,
+                &nan_compiled.layout_map,
+                &nan_compiled.lowered_map,
+                &nan_compiled.theme,
+                Some(&bad_eval),
+                &opts,
+            )
+            .is_err()
+        );
+    }
+
+    // Unevaluated literal fallback with non-finite ValueLiteral::Number also fails
+    let mut nan_lit_grid = nan_compiled.grid.clone();
+    nan_lit_grid
+        .get_mut(&CellId::new("NanTable", "r1", "val"))
+        .unwrap()
+        .payload =
+        f8_core::compiler::ir::CellPayload::Literal(f8_core::model::ValueLiteral::Number(f64::NAN));
+    assert!(
+        WorkbookEmitter::emit_to_buffer(
+            &nan_manifest,
+            &[num_table],
+            &nan_lit_grid,
+            &nan_compiled.layout_map,
+            &nan_compiled.lowered_map,
+            &nan_compiled.theme,
+            None,
+            &EmissionOptions::default(),
+        )
+        .is_err()
+    );
+}

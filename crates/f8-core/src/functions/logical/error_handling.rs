@@ -1,3 +1,4 @@
+use crate::functions::common::require_args;
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     BranchPolicy, EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType,
@@ -54,13 +55,7 @@ impl ExcelFunction for IferrorFunction {
         args: &[FunctionArg<'_>],
         ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [val_arg, fallback_arg] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        };
+        let [val_arg, fallback_arg] = require_args(self, args)?;
 
         let evaluated_value = val_arg.eval_scalar(self.name(), "value", 1, ctx)?;
 

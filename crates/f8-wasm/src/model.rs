@@ -113,7 +113,7 @@ impl WasmCompiledModel {
             | CellValue::Boolean(_)
             | CellValue::Empty
             | CellValue::Error(_)) => Err(diagnostic_to_js_value(&WasmErrorPayload::TypeError {
-                message: format!("Cell {cell_id} did not evaluate to a float (got {other:?})"),
+                message: format!("Cell {cell_id} did not evaluate to a number (got {other:?})"),
             })),
         }
     }

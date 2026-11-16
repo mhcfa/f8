@@ -776,3 +776,98 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
     assert_eq!(tree.nodes[0].sheet_address, "'Cash Flow'!B4");
     assert_eq!(tree.nodes[0].children[0].sheet_address, "'Sheet1'!B4");
 }
+
+#[test]
+fn test_scenario_15_coordinate_parsing_strictness_and_special_key_roundtrip() {
+    use f8_core::model::{ColumnSpec, ProjectManifest, RowSpec, SheetSpec, TableSpec};
+
+    let manifest = ProjectManifest {
+        model_name: "CoordStrictModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T1")],
+        }],
+    };
+
+    let special_keys = [
+        r#"C:\ops\"item""#,
+        "[bracket, key]",
+        "a]b",
+        "it's",
+        "  padded  ",
+        "@row",
+    ];
+
+    let mut tbl = TableSpec::new("T1", "Special Keys");
+    for key in special_keys {
+        tbl.columns.push(ColumnSpec::new(key));
+    }
+    for (idx, r_key) in special_keys.iter().enumerate() {
+        let mut row = RowSpec::new(*r_key);
+        for (c_idx, c_key) in special_keys.iter().enumerate() {
+            row = row.with_cell(*c_key, (idx * 10 + c_idx) as f64);
+        }
+        tbl.rows.push(row);
+    }
+
+    let compiled = Compiler::compile(&manifest, &[tbl]).unwrap();
+    let insp = compiled.inspect_table(&TableId::from("T1")).unwrap();
+    let roundtripped: f8_core::compiler::TableInspection =
+        serde_json::from_str(&serde_json::to_string(&insp).unwrap()).unwrap();
+    assert_eq!(roundtripped, insp);
+
+    for r_key in special_keys {
+        for c_key in special_keys {
+            let expected = CellId::new("T1", r_key, c_key);
+            assert_eq!(
+                compiled
+                    .parse_coordinate(&expected.to_string(), None, None)
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                compiled
+                    .parse_coordinate("T1", Some(r_key), Some(c_key))
+                    .unwrap(),
+                expected
+            );
+        }
+    }
+
+    // Dynamic/range TableRefs, unbalanced quotes, and invalid TableIds must fail with InvalidCoordinate
+    for bad_coord in [
+        "T1[@row, @col]",
+        "T1[row.prev, col.next]",
+        "@table[r1, c1]",
+        "T1[r1..r2, c1]",
+        "T1['r1', @col]",
+        "T1['cogs, 'y2024e']",
+        "T1['a'b', 'c']",
+        "123[r1, c1]",
+        "1e5[r1, c1]",
+    ] {
+        let err = compiled
+            .parse_coordinate(bad_coord, None, None)
+            .unwrap_err();
+        assert!(
+            matches!(err, InspectionError::InvalidCoordinate(_)),
+            "expected InvalidCoordinate for {bad_coord:?}, got {err:?}"
+        );
+    }
+    assert!(matches!(
+        compiled
+            .parse_coordinate("\"T1", Some("r1"), Some("c1"))
+            .unwrap_err(),
+        InspectionError::InvalidCoordinate(_)
+    ));
+    assert!(matches!(
+        compiled
+            .parse_coordinate("123", Some("r1"), Some("c1"))
+            .unwrap_err(),
+        InspectionError::InvalidCoordinate(_)
+    ));
+}

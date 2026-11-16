@@ -5,8 +5,9 @@ use crate::functions::error::FunctionError;
 use crate::functions::registry::FunctionRegistry;
 use crate::functions::traits::{
     EmptyPolicy, EvalContext, ExcelFunction, FunctionArg, ParamKind, ParameterDef, RangeGrid,
-    ReferenceKind,
+    ReferenceKind, VariadicRule,
 };
+use crate::functions::typecheck::validate_signature;
 use crate::value::{CellValue, TypeError};
 
 impl FunctionRegistry {
@@ -18,6 +19,7 @@ impl FunctionRegistry {
         expr_args: &'a [CallArg],
         ctx: &dyn EvalContext,
     ) -> Result<Vec<FunctionArg<'a>>, FunctionError> {
+        validate_signature(func, expr_args)?;
         let mut bound = Vec::with_capacity(expr_args.len());
 
         for (i, call_arg) in expr_args.iter().enumerate() {
@@ -57,6 +59,27 @@ impl FunctionRegistry {
                     }
                     bound.push(FunctionArg::range(rows, cols, values, ref_kind));
                 }
+                (ParamKind::Scalar, Expr::Reference(table_ref)) => {
+                    if table_ref.is_slice() {
+                        let (rows, cols) = ctx
+                            .eval_range(table_ref)
+                            .map_or((0, 0), |g| (g.rows, g.cols));
+                        return Err(FunctionError::SliceInScalarContext { rows, cols });
+                    }
+                    let RangeGrid { rows, cols, values } = ctx.eval_range(table_ref)?;
+                    if rows * cols > 1 {
+                        return Err(FunctionError::SliceInScalarContext { rows, cols });
+                    }
+                    let val = values.into_iter().next().unwrap_or(CellValue::Empty);
+                    if val.is_empty() {
+                        return Err(FunctionError::Type(TypeError::EmptyArgument {
+                            function: func.name(),
+                            param: param.name,
+                            position: i + 1,
+                        }));
+                    }
+                    bound.push(FunctionArg::Scalar(val));
+                }
                 (
                     ParamKind::Range,
                     Expr::Literal(_)
@@ -71,13 +94,12 @@ impl FunctionRegistry {
                     });
                 }
                 (
-                    ParamKind::ScalarOrRange,
+                    ParamKind::ScalarOrRange | ParamKind::Scalar,
                     Expr::Literal(_)
                     | Expr::Unary { .. }
                     | Expr::Binary { .. }
                     | Expr::FunctionCall { .. },
-                )
-                | (ParamKind::Scalar, _) => {
+                ) => {
                     let val = ctx.eval_expr(arg_expr)?;
                     if val.is_empty() {
                         return Err(FunctionError::Type(TypeError::EmptyArgument {
@@ -108,14 +130,21 @@ pub(crate) fn resolve_parameter(
     func: &dyn ExcelFunction,
     index: usize,
 ) -> Result<&ParameterDef, FunctionError> {
-    if index < func.parameters().len() {
-        Ok(&func.parameters()[index])
-    } else {
+    if let Some(param) = func.parameters().get(index) {
+        return Ok(param);
+    }
+    if func.variadic_rule() == VariadicRule::Single {
         func.parameters()
             .last()
             .ok_or_else(|| FunctionError::EvaluationFailure {
                 function: func.name(),
                 message: "variadic argument without parameter definition".into(),
             })
+    } else {
+        Err(FunctionError::TooManyArguments {
+            function: func.name(),
+            expected: func.parameters().len(),
+            found: index + 1,
+        })
     }
 }

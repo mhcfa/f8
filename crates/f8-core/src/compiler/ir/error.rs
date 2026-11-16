@@ -22,23 +22,6 @@ pub enum IrError {
     #[error("unknown table '{table}' in {context}")]
     UnknownTable { table: TableId, context: String },
 
-    #[error("unknown column '{column}' in table '{table}' ({context})")]
-    UnknownColumn {
-        table: TableId,
-        column: ColId,
-        context: String,
-    },
-
-    #[error("unknown row '{row}' in table '{table}' ({context})")]
-    UnknownRow {
-        table: TableId,
-        row: RowId,
-        context: String,
-    },
-
-    #[error("unknown sheet '{sheet}'")]
-    UnknownSheet { sheet: SheetId },
-
     #[error("table '{table}' contains no columns")]
     EmptyTable { table: TableId },
 

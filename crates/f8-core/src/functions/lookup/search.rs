@@ -116,6 +116,8 @@ pub fn find_match_index(
         return Err(*err);
     }
 
+    validate_lookup_array(slice, search_mode)?;
+
     if slice.is_empty() {
         return Ok(None);
     }

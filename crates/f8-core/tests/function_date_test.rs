@@ -1114,4 +1114,48 @@ fn test_date_functions_arity_bounds() {
             Err(f8_core::functions::FunctionError::TooFewArguments { .. })
         ));
     }
+
+    // Eager ExcelError in later arguments bubbles before domain #NUM! in DATE, EDATE, EOMONTH
+    let ctx = MockContext::new();
+    let date_fn = registry.lookup("DATE").unwrap();
+    let edate_fn = registry.lookup("EDATE").unwrap();
+    let eomonth_fn = registry.lookup("EOMONTH").unwrap();
+
+    assert_eq!(
+        date_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(1.5)),
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                    FunctionArg::Scalar(CellValue::Number(1.0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+    assert_eq!(
+        edate_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(-1.0)),
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Div0)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+    assert_eq!(
+        eomonth_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(0.0)),
+                    FunctionArg::Scalar(CellValue::Error(ExcelError::Na)),
+                ],
+                &ctx,
+            )
+            .unwrap(),
+        CellValue::Error(ExcelError::Na)
+    );
 }

@@ -1,10 +1,12 @@
-use crate::functions::common::{scalar_integer, scalar_number};
+use crate::functions::common::{require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, ParamKind, ParamType, ParameterDef,
     VariadicRule,
 };
-use crate::value::{CellValue, DecimalRoundingMode, ValueType, round_decimal_f64};
+use crate::value::{
+    CellValue, DecimalRoundingMode, ValueType, f64_to_strict_integer, round_decimal_f64,
+};
 
 /// Positional parameter definitions for rounding functions (`ROUND`, `ROUNDUP`, `ROUNDDOWN`).
 static ROUND_PARAMS: &[ParameterDef] = &[
@@ -55,24 +57,17 @@ macro_rules! impl_rounding_function {
                 args: &[FunctionArg<'_>],
                 _ctx: &dyn EvalContext,
             ) -> Result<CellValue, FunctionError> {
-                let [num_arg, digits_arg, ..] = args else {
-                    return Err(FunctionError::TooFewArguments {
-                        function: self.name(),
-                        expected: 2,
-                        found: args.len(),
-                    });
+                let [num_arg, digits_arg] = require_args(self, args)?;
+                let eval = || {
+                    let num = scalar_number(num_arg)?;
+                    let digits_f64 = scalar_number(digits_arg)?;
+                    let digits_i64 = f64_to_strict_integer(digits_f64)?;
+                    Ok(round_decimal_f64(num, digits_i64, $round_mode))
                 };
-                let num = match scalar_number(num_arg) {
-                    Ok(n) => n,
-                    Err(err) => return Ok(CellValue::Error(err)),
-                };
-                let digits_i64 = match scalar_integer(digits_arg) {
-                    Ok(d) => d,
-                    Err(err) => return Ok(CellValue::Error(err)),
-                };
-
-                let result = round_decimal_f64(num, digits_i64, $round_mode);
-                Ok(CellValue::number(result))
+                match eval() {
+                    Ok(result) => Ok(CellValue::number(result)),
+                    Err(err) => Ok(CellValue::Error(err)),
+                }
             }
         }
     };

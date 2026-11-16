@@ -1,12 +1,12 @@
 //! `INDEX` function implementation.
 
-use crate::functions::common::scalar_integer;
+use crate::functions::common::{require_args, scalar_number};
 use crate::functions::error::FunctionError;
 use crate::functions::traits::{
     EvalContext, ExcelFunction, FunctionArg, FunctionCategory, LookupPolicy, ParamKind, ParamType,
     ParameterDef, ValidationPolicy, VariadicRule,
 };
-use crate::value::{CellValue, ExcelError, TypeError, ValueType};
+use crate::value::{CellValue, ExcelError, TypeError, ValueType, f64_to_strict_integer};
 
 /// Positional parameter definitions for `INDEX`.
 static INDEX_PARAMS: &[ParameterDef] = &[
@@ -66,13 +66,7 @@ impl ExcelFunction for IndexFunction {
         args: &[FunctionArg<'_>],
         _ctx: &dyn EvalContext,
     ) -> Result<CellValue, FunctionError> {
-        let [array_arg, row_arg, ..] = args else {
-            return Err(FunctionError::TooFewArguments {
-                function: self.name(),
-                expected: 2,
-                found: args.len(),
-            });
-        };
+        let [array_arg, row_arg] = require_args(self, args)?;
         let FunctionArg::Range {
             rows, cols, values, ..
         } = array_arg
@@ -85,23 +79,42 @@ impl ExcelFunction for IndexFunction {
         };
         let (rows, cols, values) = (*rows, *cols, values.as_slice());
 
-        let row_res = scalar_integer(row_arg);
-        let col_res = match args.get(2) {
+        let col_slot = match args.get(2) {
             None | Some(FunctionArg::Omitted) => None,
-            Some(col_slot) => Some(scalar_integer(col_slot)),
+            Some(slot) => Some(slot),
         };
+        if col_slot.is_none() && rows > 1 && cols > 1 {
+            return Err(FunctionError::MissingColumnIndexFor2DSlice {
+                function: self.name(),
+                rows,
+                cols,
+            });
+        }
+
+        let row_f_res = scalar_number(row_arg);
+        let col_f_res = col_slot.map(scalar_number);
 
         if rows == 0 || cols == 0 || values.is_empty() {
             return Ok(CellValue::Error(ExcelError::Ref));
         }
 
-        let row_num = match row_res {
+        let row_f = match row_f_res {
+            Ok(r) => r,
+            Err(err) => return Ok(CellValue::Error(err)),
+        };
+        let col_f_opt = match col_f_res {
+            Some(Ok(c)) => Some(c),
+            Some(Err(err)) => return Ok(CellValue::Error(err)),
+            None => None,
+        };
+
+        let row_num = match f64_to_strict_integer(row_f) {
             Ok(r) => r,
             Err(err) => return Ok(CellValue::Error(err)),
         };
 
-        let (target_row, target_col) = if let Some(col_res) = col_res {
-            let col_num = match col_res {
+        let (target_row, target_col) = if let Some(col_f) = col_f_opt {
+            let col_num = match f64_to_strict_integer(col_f) {
                 Ok(c) => c,
                 Err(err) => return Ok(CellValue::Error(err)),
             };
