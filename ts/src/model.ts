@@ -28,6 +28,7 @@ import type {
 } from "./types.js";
 
 export interface WasmCompiledModelBinding {
+  free(): void;
   emitWorkbook(options?: unknown): Uint8Array;
   summary(): unknown;
   value(target: string, row?: string, col?: string): unknown;
@@ -390,12 +391,32 @@ function mapDependencyTree(raw: RawDependencyTree): DependencyTree {
 
 export class CompiledModel {
   readonly #wasm: WasmCompiledModelBinding;
+  #disposed = false;
 
   constructor(wasm: WasmCompiledModelBinding) {
     this.#wasm = wasm;
   }
 
+  dispose(): void {
+    if (this.#disposed) {
+      return;
+    }
+    this.#disposed = true;
+    this.#wasm.free();
+  }
+
+  [Symbol.dispose](): void {
+    this.dispose();
+  }
+
+  #ensureNotDisposed(): void {
+    if (this.#disposed) {
+      throw new F8Error("CompiledModel has already been disposed");
+    }
+  }
+
   emitWorkbook(options?: EmissionOptions): Uint8Array {
+    this.#ensureNotDisposed();
     try {
       const rawOptions = options
         ? {
@@ -440,6 +461,7 @@ export class CompiledModel {
   }
 
   summary(): ModelSummary {
+    this.#ensureNotDisposed();
     try {
       const raw = this.#wasm.summary() as RawModelSummary;
       return mapModelSummary(raw);
@@ -451,6 +473,7 @@ export class CompiledModel {
   value(coordinate: string): CellScalarValue;
   value(table: string, row: string, col: string): CellScalarValue;
   value(target: string, row?: string, col?: string): CellScalarValue {
+    this.#ensureNotDisposed();
     try {
       const val = this.#wasm.value(target, row, col);
       return val as CellScalarValue;
@@ -462,6 +485,7 @@ export class CompiledModel {
   num(coordinate: string): number;
   num(table: string, row: string, col: string): number;
   num(target: string, row?: string, col?: string): number {
+    this.#ensureNotDisposed();
     try {
       return this.#wasm.num(target, row, col);
     } catch (err) {
@@ -477,6 +501,7 @@ export class CompiledModel {
     arg3?: string,
     arg4?: FormattedOptions,
   ): string {
+    this.#ensureNotDisposed();
     try {
       let row: string | undefined;
       let col: string | undefined;
@@ -500,6 +525,7 @@ export class CompiledModel {
   inspectCell(coordinate: string): CellInspection;
   inspectCell(table: string, row: string, col: string): CellInspection;
   inspectCell(target: string, row?: string, col?: string): CellInspection {
+    this.#ensureNotDisposed();
     try {
       const raw = this.#wasm.inspectCell(target, row, col) as RawCellInspection;
       return mapCellInspection(raw);
@@ -509,6 +535,7 @@ export class CompiledModel {
   }
 
   inspectTable(table: string): TableInspection {
+    this.#ensureNotDisposed();
     try {
       const raw = this.#wasm.inspectTable(table) as RawTableInspection;
       return mapTableInspection(raw);
@@ -522,6 +549,7 @@ export class CompiledModel {
   }
 
   inspectSheet(sheet: string): SheetInspection {
+    this.#ensureNotDisposed();
     try {
       const raw = this.#wasm.inspectSheet(sheet) as RawSheetInspection;
       return mapSheetInspection(raw);
@@ -543,6 +571,7 @@ export class CompiledModel {
     arg3?: string,
     arg4?: DependencyTraceOptions,
   ): DependencyTree {
+    this.#ensureNotDisposed();
     try {
       let row: string | undefined;
       let col: string | undefined;
@@ -578,6 +607,7 @@ export class CompiledModel {
     arg3?: string,
     arg4?: DependencyTraceOptions,
   ): DependencyTree {
+    this.#ensureNotDisposed();
     try {
       let row: string | undefined;
       let col: string | undefined;
