@@ -23,7 +23,7 @@ GUIDE_TOPICS: dict[str, tuple[str, str]] = {
     ),
     "functions": (
         "references/functions.md",
-        "43 built-in Excel functions, signatures, omission syntax, errors",
+        "41 built-in Excel functions, signatures, omission syntax, errors",
     ),
     "audit": (
         "references/auditing-and-repair.md",

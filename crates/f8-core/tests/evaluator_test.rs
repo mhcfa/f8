@@ -807,6 +807,14 @@ fn test_scenario_7_static_validation_of_dormant_branches_and_iferror() {
             FunctionError::UnknownFunction("MAXIFS".into()),
         ),
         (
+            "IPMT(0.05, 1, 10, -1000)",
+            FunctionError::UnknownFunction("IPMT".into()),
+        ),
+        (
+            "PPMT(0.05, 1, 10, -1000)",
+            FunctionError::UnknownFunction("PPMT".into()),
+        ),
+        (
             "XLOOKUP(1, T[\"k1\"..\"k2\", @col], T[\"v1\"..\"v2\", @col], UNKNOWN_FN())",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
@@ -1140,10 +1148,6 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
 
     let pmt_skip = RowSpec::new("pmt_skip").with_expr("PMT(0.05, 10, -1000, _, 1)");
     let pmt_explicit = RowSpec::new("pmt_explicit").with_expr("PMT(0.05, 10, -1000, 0, 1)");
-    let ipmt_skip = RowSpec::new("ipmt_skip").with_expr("IPMT(0.05, 1, 10, -1000, _, 1)");
-    let ipmt_explicit = RowSpec::new("ipmt_explicit").with_expr("IPMT(0.05, 1, 10, -1000, 0, 1)");
-    let ppmt_skip = RowSpec::new("ppmt_skip").with_expr("PPMT(0.05, 1, 10, -1000, _, 1)");
-    let ppmt_explicit = RowSpec::new("ppmt_explicit").with_expr("PPMT(0.05, 1, 10, -1000, 0, 1)");
     let xmatch_skip =
         RowSpec::new("xmatch_skip").with_expr("XMATCH(\"A\", T[\"k1\"..\"k3\", \"c1\"], _, -1)");
     let xlookup_1skip = RowSpec::new("xlookup_1skip").with_expr(
@@ -1177,10 +1181,6 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
             k3,
             pmt_skip,
             pmt_explicit,
-            ipmt_skip,
-            ipmt_explicit,
-            ppmt_skip,
-            ppmt_explicit,
             xmatch_skip,
             xlookup_1skip,
             xlookup_2skip,
@@ -1201,22 +1201,6 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
         compiled
             .evaluated
             .get_value(&t, &RowId::from("pmt_explicit"), &c1),
-    );
-    assert_eq!(
-        compiled
-            .evaluated
-            .get_value(&t, &RowId::from("ipmt_skip"), &c1),
-        compiled
-            .evaluated
-            .get_value(&t, &RowId::from("ipmt_explicit"), &c1),
-    );
-    assert_eq!(
-        compiled
-            .evaluated
-            .get_value(&t, &RowId::from("ppmt_skip"), &c1),
-        compiled
-            .evaluated
-            .get_value(&t, &RowId::from("ppmt_explicit"), &c1),
     );
     assert_eq!(
         compiled
@@ -1243,18 +1227,6 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
             .lowered_map
             .get(&CellId::new("T", "pmt_skip", "c1")),
         Some("=PMT(0.05,10,-1000,,1)"),
-    );
-    assert_eq!(
-        compiled
-            .lowered_map
-            .get(&CellId::new("T", "ipmt_skip", "c1")),
-        Some("=IPMT(0.05,1,10,-1000,,1)"),
-    );
-    assert_eq!(
-        compiled
-            .lowered_map
-            .get(&CellId::new("T", "ppmt_skip", "c1")),
-        Some("=PPMT(0.05,1,10,-1000,,1)"),
     );
     assert_eq!(
         compiled
