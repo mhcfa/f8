@@ -1,6 +1,7 @@
+use std::fmt;
+
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 use super::error::ModelError;
 use super::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};

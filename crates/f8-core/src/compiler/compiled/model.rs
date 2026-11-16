@@ -51,7 +51,7 @@ pub struct TableSummary {
     pub row_count: usize,
     /// Declared column count.
     pub col_count: usize,
-    /// Total cell count in table ($R \times C$).
+    /// Total cell count in table (`R x C`).
     pub cell_count: usize,
     /// Number of literal input driver cells.
     pub driver_count: usize,

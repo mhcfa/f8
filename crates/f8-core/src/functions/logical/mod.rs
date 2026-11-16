@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use crate::functions::registry::FunctionRegistry;
-
 pub mod boolean;
 pub mod branching;
 pub mod error_handling;
@@ -9,6 +5,10 @@ pub mod error_handling;
 pub use boolean::{AndFunction, NotFunction, OrFunction};
 pub use branching::{ChooseFunction, IfFunction, IfsFunction};
 pub use error_handling::{IferrorFunction, IfnaFunction};
+
+use std::sync::Arc;
+
+use crate::functions::registry::FunctionRegistry;
 
 /// Registers all standard logical functions into the registry.
 pub fn register(registry: &mut FunctionRegistry) {

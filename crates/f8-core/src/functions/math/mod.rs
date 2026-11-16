@@ -3,10 +3,6 @@ pub mod basic;
 pub mod product;
 pub mod rounding;
 
-use std::sync::Arc;
-
-use crate::functions::registry::FunctionRegistry;
-
 pub use aggregation::{
     AverageFunction, CountFunction, CountaFunction, MaxFunction, MedianFunction, MinFunction,
     SumFunction,
@@ -14,6 +10,10 @@ pub use aggregation::{
 pub use basic::AbsFunction;
 pub use product::SumproductFunction;
 pub use rounding::{RoundFunction, RounddownFunction, RoundupFunction};
+
+use std::sync::Arc;
+
+use crate::functions::registry::FunctionRegistry;
 
 /// Registers all standard mathematical and aggregation functions into the registry.
 pub fn register(registry: &mut FunctionRegistry) {

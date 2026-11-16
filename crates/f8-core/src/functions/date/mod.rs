@@ -1,7 +1,5 @@
 //! Date and time functions suite (`DATE`, `EDATE`, `EOMONTH`, `YEARFRAC`, `YEAR`, `MONTH`, `DAY`, `DAYS`).
 
-use std::sync::Arc;
-
 pub mod constructors;
 pub mod parts;
 pub mod yearfrac;
@@ -9,6 +7,8 @@ pub mod yearfrac;
 pub use constructors::{DateFunction, EdateFunction, EomonthFunction};
 pub use parts::{DayFunction, DaysFunction, MonthFunction, YearFunction};
 pub use yearfrac::{DayCountBasis, YearfracFunction, calculate_yearfrac};
+
+use std::sync::Arc;
 
 use crate::functions::registry::FunctionRegistry;
 
