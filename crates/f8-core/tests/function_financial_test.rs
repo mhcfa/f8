@@ -37,15 +37,22 @@ impl EvalContext for MockContext {
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 43);
+    assert_eq!(registry.len(), 41);
 
-    let financial_names = ["NPV", "XNPV", "IRR", "XIRR", "PMT", "IPMT", "PPMT"];
+    let financial_names = ["NPV", "XNPV", "IRR", "XIRR", "PMT"];
     for name in financial_names {
         let func = registry
             .lookup(name)
             .unwrap_or_else(|| panic!("Function {name} must be registered"));
         assert_eq!(func.name(), name);
         assert_eq!(func.category(), FunctionCategory::Financial);
+    }
+
+    for retired in ["IPMT", "ipmt", "PPMT", "ppmt"] {
+        assert!(
+            registry.lookup(retired).is_none(),
+            "{retired} must not be registered"
+        );
     }
 
     let npv = registry.lookup("NPV").unwrap();
@@ -67,14 +74,6 @@ fn test_scenario_1_registration_and_metadata() {
     let pmt = registry.lookup("PMT").unwrap();
     assert_eq!(pmt.min_args(), 3);
     assert_eq!(pmt.max_args(), Some(5));
-
-    let ipmt = registry.lookup("IPMT").unwrap();
-    assert_eq!(ipmt.min_args(), 4);
-    assert_eq!(ipmt.max_args(), Some(6));
-
-    let ppmt = registry.lookup("PPMT").unwrap();
-    assert_eq!(ppmt.min_args(), 4);
-    assert_eq!(ppmt.max_args(), Some(6));
 }
 
 #[test]
@@ -801,6 +800,30 @@ fn test_scenario_5_xirr_non_periodic_solver() {
     } else {
         panic!("Expected Number for salvage XIRR");
     }
+
+    // Half-year (182-day) salvage XIRR converges to within 2e-16 of exact root -0.999_999_999_999_073_1
+    let xirr_half_year_salvage = vec![
+        FunctionArg::range(
+            2,
+            1,
+            vec![CellValue::Number(-1_000_000.0), CellValue::Number(1.0)],
+            ReferenceKind::Slice,
+        ),
+        FunctionArg::range(
+            2,
+            1,
+            vec![CellValue::Number(45292.0), CellValue::Number(45474.0)],
+            ReferenceKind::Slice,
+        ),
+    ];
+    if let CellValue::Number(rate) = xirr_func.evaluate(&xirr_half_year_salvage, &ctx).unwrap() {
+        assert!(
+            (rate - (-0.999_999_999_999_073_1)).abs() <= 2e-16,
+            "Half-year salvage XIRR was {rate:.16}"
+        );
+    } else {
+        panic!("Expected Number for half-year salvage XIRR");
+    }
 }
 
 #[test]
@@ -918,177 +941,22 @@ fn test_scenario_6_pmt_annuity_payments() {
 }
 
 #[test]
-fn test_scenario_7_ipmt_and_ppmt_amortization_identity() {
+fn test_scenario_7_ipmt_and_ppmt_retired() {
     let registry = FunctionRegistry::standard();
-    let pmt_func = registry.lookup("PMT").unwrap();
-    let ipmt_func = registry.lookup("IPMT").unwrap();
-    let ppmt_func = registry.lookup("PPMT").unwrap();
-    let ctx = MockContext;
 
-    let rate = 0.08 / 12.0;
-    let nper = 120.0;
-    let pv = 10000.0;
-
-    let res = pmt_func
-        .evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(rate)),
-                FunctionArg::Scalar(CellValue::Number(nper)),
-                FunctionArg::Scalar(CellValue::Number(pv)),
-            ],
-            &ctx,
-        )
-        .unwrap();
-    let CellValue::Number(pmt_val) = res else {
-        panic!("Expected Number, got {res:?}");
-    };
-
-    // Amortization invariant for Type 0:
-    // Across periods 1 to 120, IPMT + PPMT == PMT
-    for period in [1, 2, 60, 119, 120] {
-        let args = vec![
-            FunctionArg::Scalar(CellValue::Number(rate)),
-            FunctionArg::Scalar(CellValue::Number(period as f64)),
-            FunctionArg::Scalar(CellValue::Number(nper)),
-            FunctionArg::Scalar(CellValue::Number(pv)),
-        ];
-
-        let ipmt_res = ipmt_func.evaluate(&args, &ctx).unwrap();
-        let ppmt_res = ppmt_func.evaluate(&args, &ctx).unwrap();
-
-        match (ipmt_res, ppmt_res) {
-            (CellValue::Number(ipmt), CellValue::Number(ppmt)) => {
-                assert!(
-                    (ipmt + ppmt - pmt_val).abs() < 1e-6,
-                    "Period {period}: IPMT ({ipmt}) + PPMT ({ppmt}) != PMT ({pmt_val})"
-                );
-                // Period 1 interest check: exactly -10000 * (0.08/12) = -66.66667
-                if period == 1 {
-                    assert!((ipmt - (-66.66667)).abs() < 1e-4);
-                }
-            }
-            other => panic!("Expected Numbers, got {other:?}"),
-        }
-    }
-
-    // Type 1 (beginning of period): period 1 interest must be 0.0
-    let args_type1_p1 = vec![
-        FunctionArg::Scalar(CellValue::Number(rate)),
-        FunctionArg::Scalar(CellValue::Number(1.0)),
-        FunctionArg::Scalar(CellValue::Number(nper)),
-        FunctionArg::Scalar(CellValue::Number(pv)),
-        FunctionArg::Scalar(CellValue::Number(0.0)),
-        FunctionArg::Scalar(CellValue::Number(1.0)),
-    ];
-    let ipmt_p1_res = ipmt_func.evaluate(&args_type1_p1, &ctx).unwrap();
-    assert_eq!(ipmt_p1_res, CellValue::Number(0.0));
-
-    // Out of bounds period (per > nper or per < 1), nper = 0, and rate <= -1.0 return #NUM!
-    for bad_amort_args in [
-        vec![
-            FunctionArg::Scalar(CellValue::Number(rate)),
-            FunctionArg::Scalar(CellValue::Number(121.0)),
-            FunctionArg::Scalar(CellValue::Number(nper)),
-            FunctionArg::Scalar(CellValue::Number(pv)),
-        ],
-        // Fractional per > nper (5.5 > 5.0) must not be masked by truncation
-        vec![
-            FunctionArg::Scalar(CellValue::Number(0.1)),
-            FunctionArg::Scalar(CellValue::Number(5.5)),
-            FunctionArg::Scalar(CellValue::Number(5.0)),
-            FunctionArg::Scalar(CellValue::Number(-1000.0)),
-        ],
-        // nper = 0 returns #NUM!
-        vec![
-            FunctionArg::Scalar(CellValue::Number(0.05)),
-            FunctionArg::Scalar(CellValue::Number(1.0)),
-            FunctionArg::Scalar(CellValue::Number(0.0)),
-            FunctionArg::Scalar(CellValue::Number(-1000.0)),
-        ],
-        // rate <= -1.0 returns #NUM! even when type = 1 and per = 1
-        vec![
-            FunctionArg::Scalar(CellValue::Number(-1.0)),
-            FunctionArg::Scalar(CellValue::Number(1.0)),
-            FunctionArg::Scalar(CellValue::Number(5.0)),
-            FunctionArg::Scalar(CellValue::Number(1000.0)),
-            FunctionArg::Scalar(CellValue::Number(0.0)),
-            FunctionArg::Scalar(CellValue::Number(1.0)),
-        ],
+    for (formula, fn_name) in [
+        ("IPMT(0.06 / 12, 1, 36, -10000)", "IPMT"),
+        ("PPMT(0.06 / 12, 1, 36, -10000)", "PPMT"),
+        ("IF(FALSE, IPMT(0.05, 1, 10, -1000), 0)", "IPMT"),
+        ("IF(FALSE, PPMT(0.05, 1, 10, -1000), 0)", "PPMT"),
     ] {
+        let expr = Expr::parse(formula).unwrap();
         assert_eq!(
-            ipmt_func.evaluate(&bad_amort_args, &ctx).unwrap(),
-            CellValue::Error(ExcelError::Num)
-        );
-        assert_eq!(
-            ppmt_func.evaluate(&bad_amort_args, &ctx).unwrap(),
-            CellValue::Error(ExcelError::Num)
+            registry.validate_expr(&expr),
+            Err(FunctionError::UnknownFunction(fn_name.into())),
+            "expected UnknownFunction for {formula}"
         );
     }
-
-    // Fractional per & nper preserve IPMT + PPMT == PMT across type 0 and type 1
-    for annuity_type in [0.0, 1.0] {
-        let pmt_frac = pmt_func
-            .evaluate(
-                &[
-                    FunctionArg::Scalar(CellValue::Number(0.1)),
-                    FunctionArg::Scalar(CellValue::Number(5.5)),
-                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
-                    FunctionArg::Scalar(CellValue::Number(0.0)),
-                    FunctionArg::Scalar(CellValue::Number(annuity_type)),
-                ],
-                &ctx,
-            )
-            .unwrap();
-        let amort_frac_args = [
-            FunctionArg::Scalar(CellValue::Number(0.1)),
-            FunctionArg::Scalar(CellValue::Number(2.5)),
-            FunctionArg::Scalar(CellValue::Number(5.5)),
-            FunctionArg::Scalar(CellValue::Number(-1000.0)),
-            FunctionArg::Scalar(CellValue::Number(0.0)),
-            FunctionArg::Scalar(CellValue::Number(annuity_type)),
-        ];
-        let ipmt_frac = ipmt_func.evaluate(&amort_frac_args, &ctx).unwrap();
-        let ppmt_frac = ppmt_func.evaluate(&amort_frac_args, &ctx).unwrap();
-        match (pmt_frac, ipmt_frac, ppmt_frac) {
-            (CellValue::Number(p), CellValue::Number(i), CellValue::Number(pr)) => {
-                assert!(
-                    (i + pr - p).abs() < 1e-12,
-                    "fractional type {annuity_type}: IPMT ({i}) + PPMT ({pr}) != PMT ({p})"
-                );
-            }
-            other => panic!("Expected Numbers, got {other:?}"),
-        }
-    }
-
-    // Invalid integer `type` in IPMT and PPMT returns #NUM!
-    assert_eq!(
-        ipmt_func.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(rate)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(nper)),
-                FunctionArg::Scalar(CellValue::Number(pv)),
-                FunctionArg::Scalar(CellValue::Number(0.0)),
-                FunctionArg::Scalar(CellValue::Number(-1.0)),
-            ],
-            &ctx,
-        ),
-        Ok(CellValue::Error(ExcelError::Num))
-    );
-    assert_eq!(
-        ppmt_func.evaluate(
-            &[
-                FunctionArg::Scalar(CellValue::Number(rate)),
-                FunctionArg::Scalar(CellValue::Number(1.0)),
-                FunctionArg::Scalar(CellValue::Number(nper)),
-                FunctionArg::Scalar(CellValue::Number(pv)),
-                FunctionArg::Scalar(CellValue::Number(0.0)),
-                FunctionArg::Scalar(CellValue::Number(3.0)),
-            ],
-            &ctx,
-        ),
-        Ok(CellValue::Error(ExcelError::Num))
-    );
 }
 
 #[test]
@@ -1110,8 +978,6 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
             RowSpec::new("interest_rate"),
             RowSpec::new("periods"),
             RowSpec::new("monthly_pmt"),
-            RowSpec::new("first_month_interest"),
-            RowSpec::new("first_month_principal"),
             RowSpec::new("cf0"),
             RowSpec::new("cf1"),
             RowSpec::new("cf2"),
@@ -1163,34 +1029,6 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         assert!((pmt - (-121.32759)).abs() < 1e-4);
     } else {
         panic!("Expected Number, got {pmt_res:?}");
-    }
-
-    // IPMT formula
-    let ipmt_res = eval_str(
-        "IPMT(DebtService[\"interest_rate\", \"value\"], 1, DebtService[\"periods\", \"value\"], DebtService[\"loan_amount\", \"value\"])",
-        &symbols,
-        &values,
-        &registry,
-        &origin,
-    );
-    if let CellValue::Number(ipmt) = ipmt_res {
-        assert!((ipmt - (-66.66667)).abs() < 1e-4);
-    } else {
-        panic!("Expected Number, got {ipmt_res:?}");
-    }
-
-    // PPMT formula
-    let ppmt_res = eval_str(
-        "PPMT(DebtService[\"interest_rate\", \"value\"], 1, DebtService[\"periods\", \"value\"], DebtService[\"loan_amount\", \"value\"])",
-        &symbols,
-        &values,
-        &registry,
-        &origin,
-    );
-    if let CellValue::Number(ppmt) = ppmt_res {
-        assert!((ppmt - (-54.66092)).abs() < 1e-4);
-    } else {
-        panic!("Expected Number, got {ppmt_res:?}");
     }
 
     // NPV formula referencing range slice

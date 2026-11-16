@@ -675,7 +675,7 @@ where
             return solve_brent_from_rates(lo, f_lo, hi, f_hi, max_exponent, &eval);
         }
 
-        let step_limit = STEP_TOLERANCE * next_rate.abs().max(1.0);
+        let step_limit = (STEP_TOLERANCE * (1.0 + next_rate)).max(4.0 * f64::EPSILON);
         if delta.abs() <= step_limit
             && let Some(ev_next) = eval(next_rate)
         {
@@ -1003,7 +1003,9 @@ where
             fc = fa;
         }
 
-        let tol = 2.0 * f64::EPSILON * b.abs() + 0.5 * BRENT_LOG_TOLERANCE;
+        let r_b = b.exp_m1();
+        let dx_ulp = (f64::EPSILON * r_b.abs().max(0.5)) / (1.0 + r_b);
+        let tol = 2.0 * f64::EPSILON * b.abs() + 0.5 * BRENT_LOG_TOLERANCE.max(dx_ulp);
         let m = 0.5 * (c - b);
         if m.abs() <= tol || fb == 0.0 {
             context = RootContext::ConvergedBracket;
@@ -1299,6 +1301,19 @@ mod tests {
 
             let xirr_exact = solve_scheduled_xirr(&cfs, &dates, expected)?;
             assert!((xirr_exact - expected).abs() <= 2e-16);
+        }
+
+        // Half-year (182-day) salvage schedule where (1e-6)^(365/182) - 1 = -0.999_999_999_999_073_1
+        // exercises log-space ULP-aware Brent floor (dx_ulp) and (1 + next_rate)-scaled Newton step limit.
+        let half_year_dates = [45292.0, 45474.0];
+        let half_year_cfs = [-1_000_000.0, 1.0];
+        let half_year_expected = -0.999_999_999_999_073_1_f64;
+        for guess in [0.10, -0.999_999_999_99, -0.999_999_999_998_5] {
+            let r_half = solve_scheduled_xirr(&half_year_cfs, &half_year_dates, guess)?;
+            assert!(
+                (r_half - half_year_expected).abs() <= 2e-16,
+                "guess={guess}: expected {half_year_expected:.16}, got {r_half:.16}"
+            );
         }
 
         // Roots closer to -1.0 than f64 spacing (1 + r* = 1e-20 << 2^-53) have no representable root > -1.0.

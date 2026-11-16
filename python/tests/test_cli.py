@@ -76,7 +76,7 @@ def test_guide_list_topics(capsys: pytest.CaptureFixture[str]) -> None:
     expected_lines = [
         "Available topics:",
         "  syntax     2D coordinates, vector expressions, column roles, gutters, indentation",
-        "  functions  43 built-in Excel functions, signatures, omission syntax, errors",
+        "  functions  41 built-in Excel functions, signatures, omission syntax, errors",
         "  audit      TableAuditor, inspection, unboxing, structured exception recovery",
         "  all        Complete concatenated guide",
     ]

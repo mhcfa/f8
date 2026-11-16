@@ -216,10 +216,26 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 43 Standard Functions + Edge & Error Cases)
+    // 5. Excel Parity Verification Suite (All 41 Standard Functions + Edge & Error Cases)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
+    assert_eq!(parity_manifest.sheets.len(), 2);
+    assert_eq!(parity_manifest.sheets[0].name, "ParityVerification");
+    assert_eq!(parity_manifest.sheets[1].name, "ExcelDivergences");
+
     let parity_compiled = Compiler::compile(&parity_manifest, &parity_tables)
         .expect("Parity model must compile and evaluate cleanly");
+    let div_inspection = parity_compiled
+        .inspect_table(&f8_core::model::id::TableId::from("IrrXirrDivergences"))
+        .expect("IrrXirrDivergences must be inspectable");
+    let rationale_col_info = div_inspection
+        .columns
+        .iter()
+        .find(|col| col.id.as_ref().map(|id| id.as_str()) == Some("rationale"))
+        .expect("rationale column must exist in IrrXirrDivergences");
+    assert!(
+        rationale_col_info.is_descriptor,
+        "rationale column on ExcelDivergences must use AxisRole::Descriptor for left-alignment"
+    );
     let parity_evaluated = &parity_compiled.evaluated;
 
     // Directly verify Pass 4 evaluated values and in-sheet parity_status against pinned Excel constants
@@ -277,10 +293,26 @@ fn test_models_emit_in_memory() {
         .expect("Uncached parity model must emit to OpenXML buffer");
 
     assert_eq!(&uncached_buffer[0..4], &[0x50, 0x4B, 0x03, 0x04]);
+    assert!(has_zip_entry(&uncached_buffer, "xl/worksheets/sheet1.xml"));
+    assert!(has_zip_entry(&uncached_buffer, "xl/worksheets/sheet2.xml"));
+    let uncached_workbook_xml = read_zip_entry(&uncached_buffer, "xl/workbook.xml");
+    assert!(uncached_workbook_xml.contains("name=\"ParityVerification\""));
+    assert!(uncached_workbook_xml.contains("name=\"ExcelDivergences\""));
     let uncached_sheet_xml = read_zip_entry(&uncached_buffer, "xl/worksheets/sheet1.xml");
+    let uncached_sheet2_xml = read_zip_entry(&uncached_buffer, "xl/worksheets/sheet2.xml");
     assert!(
         uncached_sheet_xml.contains("<f>"),
         "Formulas must be emitted in uncached mode"
+    );
+    assert!(
+        uncached_sheet2_xml.contains("<f>"),
+        "Divergence formulas must be emitted on sheet 2"
+    );
+    assert!(
+        uncached_sheet2_xml.contains("&apos;ParityVerification&apos;!")
+            || uncached_sheet2_xml.contains("'ParityVerification'!")
+            || uncached_sheet2_xml.contains("ParityVerification!"),
+        "ExcelDivergences sheet must cross-reference SeedData on ParityVerification"
     );
     assert!(
         uncached_sheet_xml.contains("1E-9*ABS("),
@@ -382,6 +414,9 @@ fn test_migrated_parity_cases_rejected_with_f8_error() {
         "NPV(0.1, SeedData[\"r1\"..\"r4\", \"sparse\"])",
         "IRR(SeedData[\"r1\"..\"r4\", \"sparse\"])",
         "ISERROR(\"5\" + 1)",
+        // Retired IPMT and PPMT
+        "IPMT(0.06 / 12, 1, 36, -10000)",
+        "PPMT(0.06 / 12, 1, 36, -10000)",
     ];
 
     for formula in migrated_compile_errors {
@@ -611,7 +646,7 @@ fn test_export_xlsx_to_disk() {
 
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 43 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 41 Functions)".to_string()),
         author: Some("f8 Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,
@@ -628,6 +663,7 @@ fn test_export_xlsx_to_disk() {
     assert_eq!(&parity_bytes[0..4], &[0x50, 0x4B, 0x03, 0x04]);
     assert!(has_zip_entry(&parity_bytes, "xl/workbook.xml"));
     assert!(has_zip_entry(&parity_bytes, "xl/worksheets/sheet1.xml"));
+    assert!(has_zip_entry(&parity_bytes, "xl/worksheets/sheet2.xml"));
 
     let parity_sheet_xml = read_zip_entry(&parity_bytes, "xl/worksheets/sheet1.xml");
     assert!(

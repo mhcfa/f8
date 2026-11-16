@@ -230,8 +230,6 @@ fn test_scenario_2_registry_signature_arity_and_omission_validation() {
     // Scenario 1: Valid intermediate optional positional skips
     for valid_intermediate in [
         "PMT(0.05, 10, -1000, _, 1)",
-        "IPMT(0.05, 1, 10, -1000, _, 1)",
-        "PPMT(0.05, 1, 10, -1000, _, 1)",
         "XMATCH(\"A\", R[\"k1\"..\"k3\", @col], _, -1)",
         "XLOOKUP(\"A\", R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _, 0, -1)",
         "XLOOKUP(\"A\", R[\"k1\"..\"k3\", @col], R[\"v1\"..\"v3\", @col], _, _, -1)",
@@ -723,7 +721,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 43);
+    assert_eq!(registry.len(), 41);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -755,8 +753,6 @@ fn test_registry_metadata_and_iteration() {
             "IRR",
             "XIRR",
             "PMT",
-            "IPMT",
-            "PPMT",
             "XLOOKUP",
             "XMATCH",
             "INDEX",
@@ -792,6 +788,10 @@ fn test_registry_metadata_and_iteration() {
         "AVERAGEIFS",
         "MINIFS",
         "MAXIFS",
+        "IPMT",
+        "ipmt",
+        "PPMT",
+        "ppmt",
         "UNKNOWN_FN",
         "unknown_fn",
     ] {
@@ -807,7 +807,7 @@ fn test_registry_metadata_and_iteration() {
     assert!(registry.get("SUM").is_some());
     assert!(registry.get("sum").is_some());
 
-    // Exhaustive ValidationPolicy matrix across all 43 standard functions
+    // Exhaustive ValidationPolicy matrix across all 41 standard functions
     let mut non_standard_count = 0usize;
     for (name, func) in registry.iter() {
         let expected_policy = match name {
@@ -950,6 +950,14 @@ fn test_validate_expr_preorder_and_nested_ast() {
             FunctionError::UnknownFunction("MAXIFS".into()),
         ),
         (
+            "IPMT(0.05, 1, 10, -1000)",
+            FunctionError::UnknownFunction("IPMT".into()),
+        ),
+        (
+            "PPMT(0.05, 1, 10, -1000)",
+            FunctionError::UnknownFunction("PPMT".into()),
+        ),
+        (
             "XLOOKUP(1, R1[\"k\", @col], R2[\"v\", @col], UNKNOWN_FN())",
             FunctionError::UnknownFunction("UNKNOWN_FN".into()),
         ),
@@ -1066,66 +1074,6 @@ fn test_direct_evaluate_and_omission_invariants() {
         )
         .unwrap();
     assert_eq!(pmt_omitted_fv, pmt_explicit_fv);
-
-    let ipmt_fn = registry.lookup("IPMT").unwrap();
-    assert_eq!(
-        ipmt_fn
-            .evaluate(
-                &[
-                    FunctionArg::Scalar(CellValue::Number(0.05)),
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                    FunctionArg::Scalar(CellValue::Number(10.0)),
-                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
-                    FunctionArg::Omitted,
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                ],
-                &ctx,
-            )
-            .unwrap(),
-        ipmt_fn
-            .evaluate(
-                &[
-                    FunctionArg::Scalar(CellValue::Number(0.05)),
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                    FunctionArg::Scalar(CellValue::Number(10.0)),
-                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
-                    FunctionArg::Scalar(CellValue::Number(0.0)),
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                ],
-                &ctx,
-            )
-            .unwrap(),
-    );
-
-    let ppmt_fn = registry.lookup("PPMT").unwrap();
-    assert_eq!(
-        ppmt_fn
-            .evaluate(
-                &[
-                    FunctionArg::Scalar(CellValue::Number(0.05)),
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                    FunctionArg::Scalar(CellValue::Number(10.0)),
-                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
-                    FunctionArg::Omitted,
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                ],
-                &ctx,
-            )
-            .unwrap(),
-        ppmt_fn
-            .evaluate(
-                &[
-                    FunctionArg::Scalar(CellValue::Number(0.05)),
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                    FunctionArg::Scalar(CellValue::Number(10.0)),
-                    FunctionArg::Scalar(CellValue::Number(-1000.0)),
-                    FunctionArg::Scalar(CellValue::Number(0.0)),
-                    FunctionArg::Scalar(CellValue::Number(1.0)),
-                ],
-                &ctx,
-            )
-            .unwrap(),
-    );
 
     // eval_scalar rejects FunctionArg::Omitted
     assert_eq!(
