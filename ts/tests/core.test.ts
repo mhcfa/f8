@@ -358,8 +358,15 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
 
       try {
         // Trying to save directly to an existing directory path throws EmissionError
-        expect(() => model.save(tempDir)).toThrow(EmissionError);
-        expect(() => model.save(tempDir)).toThrow(F8Error);
+        let caught: unknown;
+        try {
+          model.save(tempDir);
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(EmissionError);
+        expect(caught).toBeInstanceOf(F8Error);
+        expect((caught as EmissionError).cause).toBeInstanceOf(Error);
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }

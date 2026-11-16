@@ -100,7 +100,9 @@ def test_scenario_1_in_memory_compilation_and_emission(
     sample_model: SampleModelFixture,
 ) -> None:
     manifest, tables = sample_model
-    compiled = core_compile(manifest, tables)
+    assert f8.compile is core_compile
+    assert f8.default_theme()["name"] == "corporate_navy"
+    compiled = f8.compile(manifest, tables)
 
     assert isinstance(compiled, CompiledModel)
     buffer = compiled.emit_workbook()

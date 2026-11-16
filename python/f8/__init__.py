@@ -10,6 +10,8 @@ from f8._core import (
     ReferenceResolutionError,
     SpecificationError,
     __version__,
+    compile,
+    default_theme,
 )
 from f8.audit import MarkdownTable, TableAuditor, unbox_cell_value
 from f8.builder import AxisSelector, Cell, CellInputValue, Model, Sheet, Table
@@ -48,6 +50,8 @@ from f8.types import (
 
 __all__ = [
     "__version__",
+    "compile",
+    "default_theme",
     "CompiledModel",
     "Model",
     "Sheet",

@@ -96,10 +96,10 @@ table = sheet.add_table(
 | `Sheet`   | `sheet.__f8_spec__()`         | `SheetSpecDict`                                 | Serializes worksheet into raw specification dictionary                                        |
 | `Table`   | `table.__f8_spec__()`         | `TableSpecDict`                                 | Serializes table into raw specification dictionary                                            |
 
-- Low-level compilation: `f8._core.compile(manifest, tables) -> CompiledModel` compiles raw `ProjectManifestDict` and `Sequence[TableSpecDict]` payloads directly.
+- Low-level compilation: `f8.compile(manifest, tables) -> CompiledModel` compiles raw `ProjectManifestDict` and `Sequence[TableSpecDict]` payloads directly.
 - Theme resolution (`ThemeInput = Mapping[str, object] | Path | str`):
   - `str` (default `"corporate_navy"`): Resolves strictly to a compiled-in preset in `f8-core` (does not read disk files; unknown preset name raises `SpecificationError`).
-  - `Path` (e.g. `Path("theme.json")`): Reads and parses a JSON theme file into `model.theme`. Use `f8 theme init` (or `f8._core.default_theme()`) to inspect or scaffold the default `corporate_navy` schema.
+  - `Path` (e.g. `Path("theme.json")`): Reads and parses a JSON theme file into `model.theme`. Use `f8 theme init` (or `f8.default_theme()`) to inspect or scaffold the default `corporate_navy` schema.
   - `Mapping[str, object]`: Inline custom theme dictionary. Compiler validates hex colors (`#RGB`, `#RRGGBB`, `#RRGGBBAA`, or `"none"`/`"transparent"` on fills), positive finite metrics, `{dec}`/`{sym}` format placeholders, and default decimals `<= 14`.
 - Worksheet options: `name` enforces Excel worksheet rules (`1..=31` UTF-16 code units, no `: \ / ? * [ ]`, no leading/trailing `'`, not `"History"`, case-insensitive uniqueness; violations raise `SpecificationError`). `tab_color` accepts `#RGB`, `#RRGGBB`, or `#RRGGBBAA` hex color strings (invalid hex raises `SpecificationError`). `freeze_panes=(row, col)` sets 0-indexed split coordinates within Excel grid bounds (`row < 1_048_576`, `col < 16_384`).
 

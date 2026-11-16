@@ -9,8 +9,8 @@ export class F8Error extends Error {
 export class CycleDetectedError extends F8Error {
   readonly cycle: readonly string[];
 
-  constructor(message: string, cycle: readonly string[]) {
-    super(message);
+  constructor(message: string, cycle: readonly string[], options?: ErrorOptions) {
+    super(message, options);
     this.cycle = cycle;
   }
 }
@@ -27,8 +27,9 @@ export class ReferenceResolutionError extends F8Error {
     targetTable: string,
     row?: string | null,
     col?: string | null,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.coordinate = coordinate;
     this.targetTable = targetTable;
     this.row = row ?? null;
@@ -40,8 +41,8 @@ export class SpecificationError extends F8Error {
   readonly table: string | null;
   readonly reason: string;
 
-  constructor(message: string, table?: string | null, reason?: string) {
-    super(message);
+  constructor(message: string, table?: string | null, reason?: string, options?: ErrorOptions) {
+    super(message, options);
     this.table = table ?? null;
     this.reason = reason ?? message;
   }
@@ -59,8 +60,9 @@ export class FormulaParseError extends F8Error {
     row?: string | null,
     col?: string | null,
     tokenOffset?: number | null,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.table = table;
     this.row = row ?? null;
     this.col = col ?? null;
@@ -71,15 +73,15 @@ export class FormulaParseError extends F8Error {
 export class InspectionError extends F8Error {
   readonly entity: string;
 
-  constructor(message: string, entity: string) {
-    super(message);
+  constructor(message: string, entity: string, options?: ErrorOptions) {
+    super(message, options);
     this.entity = entity;
   }
 }
 
 export class EmissionError extends F8Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
   }
 }
 
