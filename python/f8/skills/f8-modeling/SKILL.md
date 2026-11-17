@@ -27,6 +27,7 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 5. Emit: Write `.xlsx` to disk via `compiled.save(path, options=...)` or in-memory bytes via `compiled.emit_workbook(options=...)`.
 
 CLI commands (`f8` or `python -m f8`):
+
 - `f8 guide [syntax|functions|audit|all|--list]`: Stream reference documentation to stdout.
 - `f8 agent init [--dest DIR] [-f|--force]`: Scaffold `.agents/skills/f8-modeling` into workspace.
 - `f8 theme init [-f|--force]`: Write default `corporate_navy` theme specification to `theme.json`.

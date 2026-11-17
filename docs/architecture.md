@@ -147,18 +147,18 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
 
 ## 5. Technology Stack
 
-| Component             | Technology                                  | Purpose                                                                      |
-| :-------------------- | :------------------------------------------ | :--------------------------------------------------------------------------- |
-| **Serialization**     | `serde`, `serde_json`                       | Type-safe JSON specification parsing and validation                          |
-| **Formula parser**    | Custom lexer & Pratt parser                 | Formula expression tokenization and AST parsing                              |
-| **Graph engine**      | `petgraph`                                  | Directed dependency graph, Tarjan SCC cycle detection, Kahn topological sort |
-| **Evaluation engine** | Native Rust                                 | Topological evaluation with Excel parity and lazy branch dispatch            |
-| **Function catalog**  | Extensible trait registry                   | Built-in Excel function implementations                                      |
-| **Workbook emitter**  | `rust_xlsxwriter`                           | Native OpenXML `.xlsx` generation with live formulas and deduplicated styles |
-| **Python bridge**     | `pyo3`, `maturin`, `pythonize`              | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
-| **Python SDK**        | Python 3.12+ (`uv`)                         | Fluent builder DSL, table auditor, CLI, bundled agent skills                 |
-| **WASM bridge**       | `wasm-bindgen`, `serde-wasm-bindgen`        | Universal `wasm32-unknown-unknown` compiler and inspection bindings          |
-| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`)   | Fluent builder DSL, table auditor, CLI, bundled agent skills                 |
+| Component             | Technology                                | Purpose                                                                      |
+| :-------------------- | :---------------------------------------- | :--------------------------------------------------------------------------- |
+| **Serialization**     | `serde`, `serde_json`                     | Type-safe JSON specification parsing and validation                          |
+| **Formula parser**    | Custom lexer & Pratt parser               | Formula expression tokenization and AST parsing                              |
+| **Graph engine**      | `petgraph`                                | Directed dependency graph, Tarjan SCC cycle detection, Kahn topological sort |
+| **Evaluation engine** | Native Rust                               | Topological evaluation with Excel parity and lazy branch dispatch            |
+| **Function catalog**  | Extensible trait registry                 | Built-in Excel function implementations                                      |
+| **Workbook emitter**  | `rust_xlsxwriter`                         | Native OpenXML `.xlsx` generation with live formulas and deduplicated styles |
+| **Python bridge**     | `pyo3`, `maturin`, `pythonize`            | Native C-extension (`abi3-py312`), GIL release, exception mapping            |
+| **Python SDK**        | Python 3.12+ (`uv`)                       | Fluent builder DSL, table auditor, CLI, bundled agent skills                 |
+| **WASM bridge**       | `wasm-bindgen`, `serde-wasm-bindgen`      | Universal `wasm32-unknown-unknown` compiler and inspection bindings          |
+| **TypeScript SDK**    | TypeScript 7 (`pnpm`, `oxlint`, `vitest`) | Fluent builder DSL, table auditor, CLI, bundled agent skills                 |
 
 ## 6. Workspace Architecture
 

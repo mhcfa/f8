@@ -7,34 +7,34 @@ Model inspection via `CompiledModel` and `TableAuditor`, TypeScript inspection i
 ## 1. `CompiledModel` API
 
 ```ts
-const compiled = model.compile();
+const compiled = model.compile()
 ```
 
 ### Methods
 
-| Method                                                                      | Return type       | Behavior                                                                                                           |
-| :-------------------------------------------------------------------------- | :---------------- | :----------------------------------------------------------------------------------------------------------------- |
-| `compiled.summary()`                                                        | `ModelSummary`    | Counts for sheets, tables, cells, literal drivers, formulas, and per-sheet/per-table breakdowns                    |
-| `compiled.table(table)`                                                     | `TableAuditor`    | High-level 2D table wrapper for coordinate lookup, row extraction, and Markdown/object export                      |
-| `compiled.value(coordinate)` / `compiled.value(table, row, col)`            | `CellScalarValue` | Unboxed scalar (`number`, `string`, `boolean`, `null`, or Excel error string `"#DIV/0!"`, `"#VALUE!"`, etc.)       |
-| `compiled.num(coordinate)` / `compiled.num(table, row, col)`                | `number`          | Evaluated numeric `number` (throws `TypeError` if cell is text, `boolean`, `null`, or error)                       |
-| `compiled.formatted(coordinate, opts?)` / `compiled.formatted(t, r, c, o?)` | `string`          | Formatted display string with optional `opts?.unit` spliced inside trailing `)` (e.g. `"($115.0M)"`)               |
-| `compiled.inspectCell(coordinate)` / `compiled.inspectCell(table, row, col)` | `CellInspection` | Full cell record including evaluated/formatted values, formulas, formatting, and direct neighbors                  |
-| `compiled.inspectTable(table)`                                              | `TableInspection` | Raw 2D table inspection object                                                                                     |
-| `compiled.inspectSheet(sheet)`                                              | `SheetInspection` | Physical worksheet bounding box, column character widths, and row/cell layout records                              |
-| `compiled.precedentsOf(coord, opts?)` / `compiled.precedentsOf(t, r, c, o?)` | `DependencyTree` | Upstream precedent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)         |
-| `compiled.dependentsOf(coord, opts?)` / `compiled.dependentsOf(t, r, c, o?)` | `DependencyTree` | Downstream dependent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)       |
-| `compiled.save(path, options?)`                                             | `void`            | Emits `.xlsx` workbook to `path` via `node:fs` (creates parent directories automatically)                          |
-| `compiled.emitWorkbook(options?)`                                           | `Uint8Array`      | Emits `.xlsx` workbook as an in-memory `Uint8Array` byte buffer                                                    |
-| `compiled.dispose()` / `compiled[Symbol.dispose]()`                         | `void`            | Deterministically frees WASM linear memory (idempotent; subsequent method calls throw `F8Error`)                   |
+| Method                                                                       | Return type       | Behavior                                                                                                     |
+| :--------------------------------------------------------------------------- | :---------------- | :----------------------------------------------------------------------------------------------------------- |
+| `compiled.summary()`                                                         | `ModelSummary`    | Counts for sheets, tables, cells, literal drivers, formulas, and per-sheet/per-table breakdowns              |
+| `compiled.table(table)`                                                      | `TableAuditor`    | High-level 2D table wrapper for coordinate lookup, row extraction, and Markdown/object export                |
+| `compiled.value(coordinate)` / `compiled.value(table, row, col)`             | `CellScalarValue` | Unboxed scalar (`number`, `string`, `boolean`, `null`, or Excel error string `"#DIV/0!"`, `"#VALUE!"`, etc.) |
+| `compiled.num(coordinate)` / `compiled.num(table, row, col)`                 | `number`          | Evaluated numeric `number` (throws `TypeError` if cell is text, `boolean`, `null`, or error)                 |
+| `compiled.formatted(coordinate, opts?)` / `compiled.formatted(t, r, c, o?)`  | `string`          | Formatted display string with optional `opts?.unit` spliced inside trailing `)` (e.g. `"($115.0M)"`)         |
+| `compiled.inspectCell(coordinate)` / `compiled.inspectCell(table, row, col)` | `CellInspection`  | Full cell record including evaluated/formatted values, formulas, formatting, and direct neighbors            |
+| `compiled.inspectTable(table)`                                               | `TableInspection` | Raw 2D table inspection object                                                                               |
+| `compiled.inspectSheet(sheet)`                                               | `SheetInspection` | Physical worksheet bounding box, column character widths, and row/cell layout records                        |
+| `compiled.precedentsOf(coord, opts?)` / `compiled.precedentsOf(t, r, c, o?)` | `DependencyTree`  | Upstream precedent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)   |
+| `compiled.dependentsOf(coord, opts?)` / `compiled.dependentsOf(t, r, c, o?)` | `DependencyTree`  | Downstream dependent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`) |
+| `compiled.save(path, options?)`                                              | `void`            | Emits `.xlsx` workbook to `path` via `node:fs` (creates parent directories automatically)                    |
+| `compiled.emitWorkbook(options?)`                                            | `Uint8Array`      | Emits `.xlsx` workbook as an in-memory `Uint8Array` byte buffer                                              |
+| `compiled.dispose()` / `compiled[Symbol.dispose]()`                          | `void`            | Deterministically frees WASM linear memory (idempotent; subsequent method calls throw `F8Error`)             |
 
 ### Coordinate Addressing in `CompiledModel`
 
 Cell methods (`value`, `num`, `formatted`, `inspectCell`, `precedentsOf`, `dependentsOf`) accept either a 1-argument coordinate string (canonical `'Table["row", "col"]'` with `\"` and `\\` escaping, or shorthand `"Table['row', 'col']"` / `'Table[row, col]'` provided `row` and `col` IDs do not contain `,`, `[`, `]`, `'`, or `"`) or 3 positional arguments (`table, row, col`, which support arbitrary non-empty characters in `row` and `col`). Missing entities or malformed coordinates throw `InspectionError`:
 
 ```ts
-const v1 = compiled.num('Operations["revenue", "2024E"]');
-const v2 = compiled.num("Operations", "revenue", "2024E");
+const v1 = compiled.num('Operations["revenue", "2024E"]')
+const v2 = compiled.num("Operations", "revenue", "2024E")
 ```
 
 ### Workbook Emission Options (`EmissionOptions`)
@@ -51,31 +51,31 @@ Optional object passed to `compiled.save(path, options)` or `compiled.emitWorkbo
 ## 2. `TableAuditor` API
 
 ```ts
-const auditor = compiled.table("Operations");
+const auditor = compiled.table("Operations")
 ```
 
 ### Properties and Methods
 
-| Member                                | Return type         | Behavior                                                                                        |
-| :------------------------------------ | :------------------ | :---------------------------------------------------------------------------------------------- |
-| `auditor.id`                          | `string`            | Table programmatic identifier                                                                   |
-| `auditor.title`                       | `string`            | Table display title                                                                             |
-| `auditor.subtitle`                    | `string \| null`    | Optional table subtitle                                                                         |
-| `auditor.sheet`                       | `string`            | Parent worksheet name                                                                           |
-| `auditor.rows`                        | `string[]`          | Non-gutter, non-section-header data row IDs in declaration order                                |
-| `auditor.columns`                     | `string[]`          | Non-gutter data column IDs (`descriptor` and `measure`) in declaration order                    |
-| `auditor.measureColumns`              | `string[]`          | Non-gutter `measure` column IDs in declaration order                                            |
-| `auditor.shape`                       | `readonly [number, number]` | `[auditor.rows.length, auditor.columns.length]`                                         |
-| `auditor.length`                      | `number`            | `auditor.rows.length`                                                                           |
-| `auditor.value(row, col)`             | `CellScalarValue`   | Unboxed scalar (`number`, `string`, `boolean`, `null`, or Excel error string; absent -> `Error`) |
-| `auditor.num(row, col)`               | `number`            | Evaluated numeric `number` (absent -> `Error`; non-numeric/bool/empty/error -> `TypeError`)     |
-| `auditor.formatted(row, col, opts?)`  | `string`            | Formatted display string with optional `opts?.unit` spliced inside trailing `)`                 |
-| `auditor.rowValues(row, cols?)`       | `CellScalarValue[]` | 1D array of `value(row, c)` across `measureColumns` (or explicit `cols`)                        |
-| `auditor.rowNums(row, cols?)`         | `number[]`          | 1D array of `num(row, c)` across `measureColumns` (or explicit `cols`)                          |
-| `auditor.formula(row, col)`           | `string \| null`    | Lowered Excel formula string (e.g. `"=C5*1.1"`), or `null` if literal driver                    |
-| `auditor.expr(row, col)`              | `string \| null`    | Source `f8` expression string, or `null` if literal driver                                      |
-| `auditor.address(row, col)`           | `string`            | Worksheet-local A1 cell address (e.g. `"C6"`)                                                   |
-| `auditor.cell(row, col)`              | `TableCellInfo`     | Raw cell inspection object (throws `Error` if absent)                                           |
+| Member                               | Return type                 | Behavior                                                                                         |
+| :----------------------------------- | :-------------------------- | :----------------------------------------------------------------------------------------------- |
+| `auditor.id`                         | `string`                    | Table programmatic identifier                                                                    |
+| `auditor.title`                      | `string`                    | Table display title                                                                              |
+| `auditor.subtitle`                   | `string \| null`            | Optional table subtitle                                                                          |
+| `auditor.sheet`                      | `string`                    | Parent worksheet name                                                                            |
+| `auditor.rows`                       | `string[]`                  | Non-gutter, non-section-header data row IDs in declaration order                                 |
+| `auditor.columns`                    | `string[]`                  | Non-gutter data column IDs (`descriptor` and `measure`) in declaration order                     |
+| `auditor.measureColumns`             | `string[]`                  | Non-gutter `measure` column IDs in declaration order                                             |
+| `auditor.shape`                      | `readonly [number, number]` | `[auditor.rows.length, auditor.columns.length]`                                                  |
+| `auditor.length`                     | `number`                    | `auditor.rows.length`                                                                            |
+| `auditor.value(row, col)`            | `CellScalarValue`           | Unboxed scalar (`number`, `string`, `boolean`, `null`, or Excel error string; absent -> `Error`) |
+| `auditor.num(row, col)`              | `number`                    | Evaluated numeric `number` (absent -> `Error`; non-numeric/bool/empty/error -> `TypeError`)      |
+| `auditor.formatted(row, col, opts?)` | `string`                    | Formatted display string with optional `opts?.unit` spliced inside trailing `)`                  |
+| `auditor.rowValues(row, cols?)`      | `CellScalarValue[]`         | 1D array of `value(row, c)` across `measureColumns` (or explicit `cols`)                         |
+| `auditor.rowNums(row, cols?)`        | `number[]`                  | 1D array of `num(row, c)` across `measureColumns` (or explicit `cols`)                           |
+| `auditor.formula(row, col)`          | `string \| null`            | Lowered Excel formula string (e.g. `"=C5*1.1"`), or `null` if literal driver                     |
+| `auditor.expr(row, col)`             | `string \| null`            | Source `f8` expression string, or `null` if literal driver                                       |
+| `auditor.address(row, col)`          | `string`                    | Worksheet-local A1 cell address (e.g. `"C6"`)                                                    |
+| `auditor.cell(row, col)`             | `TableCellInfo`             | Raw cell inspection object (throws `Error` if absent)                                            |
 
 ### Unboxing Raw `CellValueDict` Payloads
 
@@ -120,12 +120,12 @@ const mdView: string = auditor.toMarkdown(
 const data = auditor.toDict(orient: TableOrient = "records");
 ```
 
-| `orient`              | Return type                                     | Structure (shape `auditor.rows.length` x `auditor.columns.length`, omitting section headers/gutters) |
-| :-------------------- | :---------------------------------------------- | :--------------------------------------------------------------------------------------------------- |
-| `"records"` (default) | `Record<string, CellScalarValue>[]`             | Row array of `{ [colId]: scalarValue }` objects                                                      |
-| `"dict"`              | `Record<string, CellScalarValue[]>`             | `{ [colId]: [rowOrderedValues] }`                                                                    |
-| `"index"`             | `Record<string, Record<string, CellScalarValue>>` | `{ [rowId]: { [colId]: scalarValue } }`                                                            |
-| `"split"`             | `SplitDict`                                     | `{ columns: string[], index: string[], data: CellScalarValue[][] }`                                  |
+| `orient`              | Return type                                       | Structure (shape `auditor.rows.length` x `auditor.columns.length`, omitting section headers/gutters) |
+| :-------------------- | :------------------------------------------------ | :--------------------------------------------------------------------------------------------------- |
+| `"records"` (default) | `Record<string, CellScalarValue>[]`               | Row array of `{ [colId]: scalarValue }` objects                                                      |
+| `"dict"`              | `Record<string, CellScalarValue[]>`               | `{ [colId]: [rowOrderedValues] }`                                                                    |
+| `"index"`             | `Record<string, Record<string, CellScalarValue>>` | `{ [rowId]: { [colId]: scalarValue } }`                                                              |
+| `"split"`             | `SplitDict`                                       | `{ columns: string[], index: string[], data: CellScalarValue[][] }`                                  |
 
 ---
 
@@ -152,25 +152,25 @@ const data = auditor.toDict(orient: TableOrient = "records");
 
 All compiler, evaluation, inspection, and emission errors inherit from `F8Error extends Error` (`ts/src/errors.ts`) and expose typed properties:
 
-| Exception                  | Properties                                                                                                      | Trigger conditions                                                                                                                                                            |
-| :------------------------- | :-------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exception                  | Properties                                                                                                      | Trigger conditions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| :------------------------- | :-------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `F8Error`                  | `message: string`                                                                                               | Base error class; thrown directly on Pass 4 compile-time function, type, shape, role, slice-context, branch-homogeneity, and `Empty` validation failures (`UnknownFunction`, `TooFewArguments`, `TooManyArguments`, `CannotOmitRequiredArgument`, `CannotOmitTrailingArgument`, `SliceInScalarContext`, `InvalidArgumentKind`, `DimensionMismatch`, `LengthMismatch`, `ExpectedOneDimensionalSlice`, `MissingColumnIndexFor2DSlice`, `DescriptorReferenceNotAllowed`, `EmptyFormulaResult`, `EmptyOperand`, `EmptyArgument`, `InvalidOperandType`, `IncompatibleComparison`, `InvalidArgumentType`, `IncompatibleBranchTypes`) |
-| `CycleDetectedError`       | `cycle: readonly string[]`, `message: string`                                                                   | Circular dependency in DAG; `cycle` contains ordered coordinate strings forming the loop (`['T["a", "c1"]', 'T["b", "c1"]', 'T["a", "c1"]']`)                                  |
-| `ReferenceResolutionError` | `coordinate: string`, `targetTable: string`, `row: string \| null`, `col: string \| null`, `message: string`   | Unresolved table/row/col key, active axis mismatch, inverted or discontinuous slice, or out-of-bounds `prev`/`next` offset from origin `coordinate`                      |
-| `FormulaParseError`        | `table: string`, `row: string \| null`, `col: string \| null`, `tokenOffset: number \| null`, `message: string` | Lexical or grammatical syntax error in formula (`tokenOffset` is byte offset in expression string, or `null` on unexpected EOF)                                               |
-| `SpecificationError`       | `table: string \| null`, `reason: string`, `message: string`                                                    | Schema, 3-tier lattice, formatting, theme, or spatial layout violation (`table` is `null` for manifest/theme/deserialization errors)                                          |
-| `InspectionError`          | `entity: string`, `message: string`                                                                             | Unknown sheet, table, or cell coordinate (or malformed coordinate string) passed to `CompiledModel` inspection methods                                                        |
-| `EmissionError`            | `message: string`                                                                                               | OpenXML serialization error or file I/O failure during `save`/`emitWorkbook`                                                                                                  |
+| `CycleDetectedError`       | `cycle: readonly string[]`, `message: string`                                                                   | Circular dependency in DAG; `cycle` contains ordered coordinate strings forming the loop (`['T["a", "c1"]', 'T["b", "c1"]', 'T["a", "c1"]']`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `ReferenceResolutionError` | `coordinate: string`, `targetTable: string`, `row: string \| null`, `col: string \| null`, `message: string`    | Unresolved table/row/col key, active axis mismatch, inverted or discontinuous slice, or out-of-bounds `prev`/`next` offset from origin `coordinate`                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `FormulaParseError`        | `table: string`, `row: string \| null`, `col: string \| null`, `tokenOffset: number \| null`, `message: string` | Lexical or grammatical syntax error in formula (`tokenOffset` is byte offset in expression string, or `null` on unexpected EOF)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `SpecificationError`       | `table: string \| null`, `reason: string`, `message: string`                                                    | Schema, 3-tier lattice, formatting, theme, or spatial layout violation (`table` is `null` for manifest/theme/deserialization errors)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `InspectionError`          | `entity: string`, `message: string`                                                                             | Unknown sheet, table, or cell coordinate (or malformed coordinate string) passed to `CompiledModel` inspection methods                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `EmissionError`            | `message: string`                                                                                               | OpenXML serialization error or file I/O failure during `save`/`emitWorkbook`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ### `ReferenceResolutionError` Property Matrix
 
-| Failure kind                         | `targetTable` | `row`    | `col`    | Cause                                                                                                                   |
-| :----------------------------------- | :------------ | :------- | :------- | :---------------------------------------------------------------------------------------------------------------------- |
-| `UnknownTable` / `UnregisteredTable` | `string`      | `null`   | `null`   | Referenced table ID does not exist in model                                                                             |
-| `InvertedRange`                      | `string`      | `null`   | `null`   | Slice `start..end` resolves to `start_idx > end_idx` in `targetTable`                                                   |
-| `DiscontinuousRange`                 | `string`      | `null`   | `string \| null` | Slice `start..end` spans a row/column gutter, section header (`col = null`), or `descriptor` column (`col = string`) |
-| `UnknownRow`                         | `string`      | `string` | `null`   | Explicit row key does not exist in `targetTable`                                                                        |
-| `ActiveRowMismatch`                  | `string`      | `string` | `null`   | `@row` or `row.prev`/`row.next` evaluated at origin row ID that does not exist in `targetTable`                         |
-| `UnknownColumn`                      | `string`      | `null`   | `string` | Explicit column key does not exist in `targetTable`                                                                     |
-| `ActiveColumnMismatch`               | `string`      | `null`   | `string` | `@col` or `col.prev`/`col.next` evaluated at origin column ID that does not exist in `targetTable`                      |
-| `TemporalOffsetOutOfBounds`          | `string`      | `null`   | `null`   | `col.prev`/`col.next` or `row.prev`/`row.next` steps outside `targetTable` axis bounds (or `col.prev`/`col.next` evaluated at a column declared as `descriptor` in `targetTable`) |
+| Failure kind                         | `targetTable` | `row`    | `col`            | Cause                                                                                                                                                                             |
+| :----------------------------------- | :------------ | :------- | :--------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UnknownTable` / `UnregisteredTable` | `string`      | `null`   | `null`           | Referenced table ID does not exist in model                                                                                                                                       |
+| `InvertedRange`                      | `string`      | `null`   | `null`           | Slice `start..end` resolves to `start_idx > end_idx` in `targetTable`                                                                                                             |
+| `DiscontinuousRange`                 | `string`      | `null`   | `string \| null` | Slice `start..end` spans a row/column gutter, section header (`col = null`), or `descriptor` column (`col = string`)                                                              |
+| `UnknownRow`                         | `string`      | `string` | `null`           | Explicit row key does not exist in `targetTable`                                                                                                                                  |
+| `ActiveRowMismatch`                  | `string`      | `string` | `null`           | `@row` or `row.prev`/`row.next` evaluated at origin row ID that does not exist in `targetTable`                                                                                   |
+| `UnknownColumn`                      | `string`      | `null`   | `string`         | Explicit column key does not exist in `targetTable`                                                                                                                               |
+| `ActiveColumnMismatch`               | `string`      | `null`   | `string`         | `@col` or `col.prev`/`col.next` evaluated at origin column ID that does not exist in `targetTable`                                                                                |
+| `TemporalOffsetOutOfBounds`          | `string`      | `null`   | `null`           | `col.prev`/`col.next` or `row.prev`/`row.next` steps outside `targetTable` axis bounds (or `col.prev`/`col.next` evaluated at a column declared as `descriptor` in `targetTable`) |

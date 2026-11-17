@@ -1,14 +1,11 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [
-    "docs/**",
-    "python/**",
-    "crates/**",
-    "dist/**",
-    "ts/wasm/**",
-    "*.toml",
-    "*.md",
-    "*.yaml",
-    "*.lock"
-  ]
+  "endOfLine": "lf",
+  "semi": false,
+  "singleQuote": false,
+  "tabWidth": 2,
+  "trailingComma": "es5",
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "ignorePatterns": ["dist", "node_modules", "pnpm-lock.yaml", "ts/wasm"]
 }

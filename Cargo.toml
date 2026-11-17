@@ -1,10 +1,6 @@
 [workspace]
 resolver = "3"
-members = [
-    "crates/f8-core",
-    "crates/f8-python",
-    "crates/f8-wasm",
-]
+members = ["crates/f8-core", "crates/f8-python", "crates/f8-wasm"]
 
 [workspace.package]
 version = "0.6.0"
