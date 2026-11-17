@@ -149,7 +149,8 @@ Output:
 
 Inspect compiled deliverables generated from real-world models:
 
-- [costco_financial_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/costco_financial_model.xlsx): Compiled financial model with live Excel formulas.
+- [costco-valuation.xlsx](https://github.com/mhcfa/f8/releases/latest/download/costco-valuation.xlsx): Compiled 3-statement, DCF, and trading comparables financial model with live Excel formulas.
+- [costco-equity-valuation.pdf](https://github.com/mhcfa/f8/releases/latest/download/costco-equity-valuation.pdf): Equity valuation report and presentation rendered from the compiled `f8` model.
 - [lbo_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/lbo_model.xlsx): Multi-sheet leveraged buyout (LBO) model with transaction structuring, debt waterfall, and returns analysis.
 
 ### LBO model demo

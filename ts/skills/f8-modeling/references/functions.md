@@ -48,7 +48,7 @@ Signatures, parameter defaults, compile-time type/shape rules, argument omission
 
 - Conditional sum: Define a helper row/column `IF(cond, value, 0)` and aggregate with `SUM(...)`, or define a `0`/`1` flag row/column `IF(cond, 1, 0)` and aggregate with `SUMPRODUCT(values, flags)`.
 - Conditional count: Define a `0`/`1` flag row/column `IF(cond, 1, 0)` (combining multiple conditions via `AND(...)` / `OR(...)`) and aggregate with `SUM(flags)`.
-- Conditional average: Combine `values` and `0`/`1` `flags` via `SUMPRODUCT(values, flags) / SUM(flags)` (guarding `SUM(flags) = 0` with `IF` if needed).
+- Conditional average: Combine finite `values` and `0`/`1` `flags` via `SUMPRODUCT(values, flags) / SUM(flags)`, or `SUM(zeroed_helper) / SUM(flags)` when excluded cells evaluate to `NA()` (`SUMPRODUCT` propagates `#N/A` even against a `0` flag; guard `SUM(flags) = 0` with `IF` if needed).
 - Outlier-excluded `MIN` / `MAX` / `AVERAGE` / `MEDIAN`: `MIN`, `MAX`, `AVERAGE`, and `MEDIAN` skip `Empty` (`null`) cells inside `start..end` range slices—use 0D `null` overrides on excluded cells in a helper row/column when computing static subset extrema.
 
 ---
