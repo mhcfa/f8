@@ -90,8 +90,8 @@ pub struct TablePlacement {
     pub end_row: u32,
     /// Physical row index of the table title banner if present.
     pub title_row: Option<u32>,
-    /// Physical row index of the table subtitle banner if present.
-    pub subtitle_row: Option<u32>,
+    /// Inclusive physical row range of table subtitle banners, or None if the table has zero subtitles.
+    pub subtitle_row_range: Option<(u32, u32)>,
     /// Physical row index of the blank buffer gutter below title/subtitle if present.
     pub title_gutter_row: Option<u32>,
     /// Inclusive physical row range of header tiers, or None if the table has zero headers.
@@ -296,24 +296,27 @@ impl LayoutPlanner {
                     None
                 };
 
-                // Table Subtitle Row
-                let subtitle_row = if table.subtitle.is_some() {
-                    let r = current_row;
-                    if r >= MAX_EXCEL_ROWS {
-                        return Err(LayoutError::GridLimitExceeded {
-                            dimension: "rows",
-                            max: MAX_EXCEL_ROWS,
-                            actual: r,
-                        });
+                // Table Subtitle Rows
+                let subtitle_row_range = if !table.subtitles.is_empty() {
+                    let subtitle_start = current_row;
+                    for _ in &table.subtitles {
+                        if current_row >= MAX_EXCEL_ROWS {
+                            return Err(LayoutError::GridLimitExceeded {
+                                dimension: "rows",
+                                max: MAX_EXCEL_ROWS,
+                                actual: current_row,
+                            });
+                        }
+                        current_row += 1;
                     }
-                    current_row += 1;
-                    Some(r)
+                    let subtitle_end = current_row - 1;
+                    Some((subtitle_start, subtitle_end))
                 } else {
                     None
                 };
 
                 // Title Buffer Gutter
-                let title_gutter_row = if title_row.is_some() || subtitle_row.is_some() {
+                let title_gutter_row = if title_row.is_some() || subtitle_row_range.is_some() {
                     let r = current_row;
                     if r >= MAX_EXCEL_ROWS {
                         return Err(LayoutError::GridLimitExceeded {
@@ -458,7 +461,7 @@ impl LayoutPlanner {
                     end_col,
                     end_row: table_end_row,
                     title_row,
-                    subtitle_row,
+                    subtitle_row_range,
                     title_gutter_row,
                     header_row_range,
                     body_row_range: (body_start_row, body_end_row),

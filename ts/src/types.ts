@@ -163,7 +163,7 @@ export interface TableCellInfo {
 export interface TableInspection {
   readonly tableId: string
   readonly title: string
-  readonly subtitle: string | null
+  readonly subtitles: readonly string[]
   readonly sheet: string
   readonly columns: readonly ColumnInspection[]
   readonly rows: readonly RowInspection[]
@@ -363,7 +363,7 @@ export type PlacementSpecInput =
 export interface TableSpecInput {
   readonly id: string
   readonly title: string
-  readonly subtitle?: string
+  readonly subtitles?: readonly string[]
   readonly currency?: CurrencyCode
   readonly collapsible?: boolean
   readonly placement?: PlacementSpecInput
@@ -400,7 +400,7 @@ export interface SheetOptions {
 }
 
 export interface TableOptions {
-  readonly subtitle?: string
+  readonly subtitle?: string | readonly string[]
   readonly currency?: CurrencyCode
   readonly collapsible?: boolean
   readonly rightOf?: string | Table

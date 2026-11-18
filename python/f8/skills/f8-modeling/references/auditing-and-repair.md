@@ -59,7 +59,7 @@ auditor = compiled.table("Operations")
 | :---------------------------------------- | :---------------------- | :-------------------------------------------------------------------------------------------- |
 | `auditor.id`                              | `str`                   | Table programmatic identifier                                                                 |
 | `auditor.title`                           | `str`                   | Table display title                                                                           |
-| `auditor.subtitle`                        | `str \| None`           | Optional table subtitle                                                                       |
+| `auditor.subtitles`                       | `list[str]`             | Declared table subtitle lines (`[]` when omitted)                                             |
 | `auditor.sheet`                           | `str`                   | Parent worksheet name                                                                         |
 | `auditor.rows`                            | `list[str]`             | Non-gutter, non-section-header data row IDs in declaration order                              |
 | `auditor.columns`                         | `list[str]`             | Non-gutter data column IDs (`descriptor` and `measure`) in declaration order                  |
@@ -133,7 +133,7 @@ data = auditor.to_dict(orient: TableOrient = "records")
   - `CellNeighborInspection`: `cell_id: CellCoordinate`, `sheet_address: str`, `value: CellValueDict | None`, `formatted_value: str | None`.
 - `DependencyTree`: `root: CellCoordinate`, `direct_count: int`, `transitive_count: int`, `nodes: list[DependencyNode]`.
   - `DependencyNode`: `cell_id: CellCoordinate`, `sheet_address: str`, `value: CellValueDict | None`, `formatted_value: str | None`, `excel_formula: str | None`, `is_pruned: bool` (marks already-expanded subtrees when `recursive=True`), `children: list[DependencyNode]`.
-- `TableInspection`: `table_id: str`, `title: str`, `subtitle: str | None`, `sheet: str`, `columns: list[ColumnInspection]`, `rows: list[RowInspection]`, `cells: dict[str, TableCellInfo]` (keyed by `'Table["row", "col"]'`).
+- `TableInspection`: `table_id: str`, `title: str`, `subtitles: list[str]`, `sheet: str`, `columns: list[ColumnInspection]`, `rows: list[RowInspection]`, `cells: dict[str, TableCellInfo]` (keyed by `'Table["row", "col"]'`).
   - `ColumnInspection`: `id: str | None`, `group: str | None`, `headers: list[str]`, `is_gutter: bool`, `is_descriptor: bool`, `style: SemanticStyle | None` (defaults to `"data"` on data columns; `None` on gutters), `shade: Shade | None`.
   - `RowInspection`: `id: str | None`, `section_title: str | None`, `is_section_header: bool`, `is_gutter: bool`, `indent: int` (for data rows, max `cell.indent` across all cells in that row; for section headers, `SectionHeaderSpec.indent` or `0`; `to_markdown()` indents all descriptor columns on data rows by `'  ' * indent`), `style: SemanticStyle | None` (defaults to `"data"` on data rows; `None` on gutters/section headers), `shade: Shade | None`.
   - `TableCellInfo`: `row: str`, `col: str`, `value: CellValueDict`, `formatted_value: str | None`, `is_formula: bool`, `formula_expr: str | None`, `excel_formula: str | None`, `physical_a1: str` (`"C14"` without sheet prefix), `format: FormatPreset | None`, `decimals: int | None`, `currency: CurrencyCode | None`.

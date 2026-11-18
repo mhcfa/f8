@@ -138,7 +138,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::from("T"),
             title: "T".into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),

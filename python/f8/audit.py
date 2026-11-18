@@ -100,7 +100,7 @@ class TableAuditor:
         self._raw = raw
         self._id: str = raw["table_id"]
         self._title: str = raw["title"]
-        self._subtitle: str | None = raw.get("subtitle")
+        self._subtitles: list[str] = list(raw.get("subtitles", []))
         self._sheet: str = raw["sheet"]
 
         self._columns: list[str] = [
@@ -140,9 +140,9 @@ class TableAuditor:
         return self._title
 
     @property
-    def subtitle(self) -> str | None:
-        """Optional table subtitle or units label."""
-        return self._subtitle
+    def subtitles(self) -> list[str]:
+        """Table subtitle lines."""
+        return list(self._subtitles)
 
     @property
     def sheet(self) -> str:

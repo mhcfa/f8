@@ -43,7 +43,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let scenarios_table = TableSpec {
         id: TableId::from("Scenarios"),
         title: "Operating & Exit Scenarios".to_string(),
-        subtitle: Some("Management Case Sensitivity Matrix".to_string()),
+        subtitles: vec!["Management Case Sensitivity Matrix".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -88,7 +88,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let deal_assumptions_table = TableSpec {
         id: TableId::from("DealAssumptions"),
         title: "Transaction & Financing Assumptions".to_string(),
-        subtitle: Some("Capital Structure, Debt Terms & Purchase Price".to_string()),
+        subtitles: vec!["Capital Structure, Debt Terms & Purchase Price".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -260,9 +260,9 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let sources_and_uses_table = TableSpec {
         id: TableId::from("SourcesAndUses"),
         title: "Transaction Sources & Uses of Funds".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "7-Column Irregular Layout with Intra-Table Dividing Gutter".to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -336,7 +336,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let returns_summary_table = TableSpec {
         id: TableId::from("ReturnsSummary"),
         title: "Exit Valuation & Sponsor Returns".to_string(),
-        subtitle: Some("5-Year Exit Multiples, IRR & Waterfall Proceeds".to_string()),
+        subtitles: vec!["5-Year Exit Multiples, IRR & Waterfall Proceeds".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -428,7 +428,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let timeline_table = TableSpec {
         id: TableId::from("Timeline"),
         title: "Investment Timeline".to_string(),
-        subtitle: Some("Annual Financial Calendar & Year Fractions".to_string()),
+        subtitles: vec!["Annual Financial Calendar & Year Fractions".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -464,7 +464,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let operations_table = TableSpec {
         id: TableId::from("Operations"),
         title: "Operating Forecast & Cash Flows".to_string(),
-        subtitle: Some("($ in Millions)".to_string()),
+        subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -544,7 +544,9 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let debt_schedule_table = TableSpec {
         id: TableId::from("DebtSchedule"),
         title: "Debt Schedule & Cash Sweep".to_string(),
-        subtitle: Some("($ in Millions) - Senior Debt 5% Mandatory Amortization & 100% Cash Sweep".to_string()),
+        subtitles: vec![
+            "($ in Millions) - Senior Debt 5% Mandatory Amortization & 100% Cash Sweep".to_string(),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -640,9 +642,9 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
     let cash_flows_table = TableSpec {
         id: TableId::from("CashFlows"),
         title: "Sponsor Equity Cash Flows".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "($ in Millions) - Initial Equity Investment & Exit Equity Proceeds".to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

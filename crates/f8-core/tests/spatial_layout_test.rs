@@ -80,8 +80,8 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
 
 #[test]
 fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_headers() {
-    let mut table = TableSpec::new("IncomeStatement", "Income Statement");
-    table.subtitle = Some("($ in thousands)".to_string());
+    let mut table =
+        TableSpec::new("IncomeStatement", "Income Statement").with_subtitle("($ in thousands)");
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
@@ -117,7 +117,7 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
     // Row 1: Title
     assert_eq!(placement.title_row, Some(1));
     // Row 2: Subtitle
-    assert_eq!(placement.subtitle_row, Some(2));
+    assert_eq!(placement.subtitle_row_range, Some((2, 2)));
     // Row 3: Title gutter
     assert_eq!(placement.title_gutter_row, Some(3));
     // Row 4: Column header
@@ -147,6 +147,69 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
     assert_eq!(rev_2023a.col, 2);
     assert_eq!(rev_2023a.row, 5);
     assert_eq!(rev_2023a.a1, "C6");
+}
+
+#[test]
+fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
+    // 1. Multi-row subtitles with title banner
+    let mut table_with_title = TableSpec::new("Assumptions", "Assumptions")
+        .with_subtitles(["($ in Millions)", "Audited FY22-FY24; Projected FY25-FY28"]);
+    table_with_title
+        .columns
+        .push(ColumnSpec::descriptor("param", "Parameter"));
+    table_with_title
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    table_with_title.rows.push(RowSpec::new("tax_rate"));
+    populate_table_cells(&mut table_with_title);
+
+    // 2. Subtitle-only table banner (empty title with multi-line subtitles)
+    let mut subtitle_only = TableSpec::new("SubOnly", "").with_subtitles(["Line 1", "Line 2"]);
+    subtitle_only
+        .columns
+        .push(ColumnSpec::new("c1").with_header("Col 1"));
+    subtitle_only.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut subtitle_only);
+
+    let manifest = ProjectManifest {
+        model_name: "MultiSubtitleModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Sheet1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("Assumptions")],
+            },
+            SheetSpec {
+                name: "Sheet2".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("SubOnly")],
+            },
+        ],
+    };
+
+    let theme = create_test_theme();
+    let tables = vec![table_with_title, subtitle_only];
+    let (_sym, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+
+    let p1 = layout.get_table(&TableId::from("Assumptions")).unwrap();
+    assert_eq!(p1.title_row, Some(1));
+    assert_eq!(p1.subtitle_row_range, Some((2, 3)));
+    assert_eq!(p1.title_gutter_row, Some(4));
+    assert_eq!(p1.header_row_range, Some((5, 5)));
+    assert_eq!(p1.body_row_range, (6, 6));
+
+    let p2 = layout.get_table(&TableId::from("SubOnly")).unwrap();
+    assert_eq!(p2.title_row, None);
+    assert_eq!(p2.subtitle_row_range, Some((1, 2)));
+    assert_eq!(p2.title_gutter_row, Some(3));
+    assert_eq!(p2.header_row_range, Some((4, 4)));
+    assert_eq!(p2.body_row_range, (5, 5));
 }
 
 #[test]

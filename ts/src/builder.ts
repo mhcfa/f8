@@ -174,7 +174,7 @@ function isAxisSlice(
 export class Table {
   readonly id: string
   readonly title: string
-  readonly subtitle: string | null
+  readonly subtitles: readonly string[]
   readonly currency: CurrencyCode | null
   readonly collapsible: boolean
   readonly rightOf: string | null
@@ -201,7 +201,13 @@ export class Table {
 
     this.id = id
     this.title = title
-    this.subtitle = options?.subtitle ?? null
+    if (options?.subtitle === undefined) {
+      this.subtitles = []
+    } else if (typeof options.subtitle === "string") {
+      this.subtitles = [options.subtitle]
+    } else {
+      this.subtitles = [...options.subtitle]
+    }
     this.currency = options?.currency ?? null
     this.collapsible = options?.collapsible ?? false
     this.rightOf =
@@ -669,7 +675,7 @@ export class Table {
       collapsible: this.collapsible,
       columns: colsSpec,
       rows: rowsSpec,
-      ...(this.subtitle !== null ? { subtitle: this.subtitle } : {}),
+      ...(this.subtitles.length > 0 ? { subtitles: [...this.subtitles] } : {}),
       ...(this.currency !== null
         ? { currency: normalizeCurrency(this.currency) }
         : {}),

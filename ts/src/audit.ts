@@ -100,7 +100,7 @@ export class TableAuditor {
   readonly #raw: TableInspection
   readonly #id: string
   readonly #title: string
-  readonly #subtitle: string | null
+  readonly #subtitles: readonly string[]
   readonly #sheet: string
   readonly #columns: readonly string[]
   readonly #measureColumns: readonly string[]
@@ -112,7 +112,7 @@ export class TableAuditor {
     this.#raw = raw
     this.#id = raw.tableId
     this.#title = raw.title
-    this.#subtitle = raw.subtitle ?? null
+    this.#subtitles = [...(raw.subtitles ?? [])]
     this.#sheet = raw.sheet
 
     const cols: string[] = []
@@ -164,8 +164,8 @@ export class TableAuditor {
     return this.#title
   }
 
-  get subtitle(): string | null {
-    return this.#subtitle
+  get subtitles(): string[] {
+    return [...this.#subtitles]
   }
 
   get sheet(): string {

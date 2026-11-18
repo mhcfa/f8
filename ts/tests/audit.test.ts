@@ -87,7 +87,7 @@ describe("TypeScript TableAuditor & Tabular Export", () => {
     expect(table).toBeInstanceOf(TableAuditor)
     expect(table.id).toBe("Performance")
     expect(table.title).toBe("Performance")
-    expect(table.subtitle).toBe("($ in Millions)")
+    expect(table.subtitles).toEqual(["($ in Millions)"])
     expect(table.sheet).toBe("Financials")
     expect(table.columns).toEqual(["line_item", "2023A", "2024E", "2025E"])
     expect(table.measureColumns).toEqual(["2023A", "2024E", "2025E"])

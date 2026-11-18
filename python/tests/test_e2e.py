@@ -264,7 +264,7 @@ def test_scenario_2_e2e_model_compilation_and_table_auditing() -> None:
     is_auditor = compiled.table("income_statement")
     assert is_auditor.id == "income_statement"
     assert is_auditor.title == "Consolidated Statement of Operations"
-    assert is_auditor.subtitle == "USD Thousands ($)"
+    assert is_auditor.subtitles == ["USD Thousands ($)"]
     assert is_auditor.columns == ["line_item", "y2023a", "y2024e", "y2025e", "y2026e"]
     assert is_auditor.rows == ["rev", "cogs", "gp", "sga", "ebitda", "tax", "net_income"]
     assert is_auditor.shape == (7, 5)

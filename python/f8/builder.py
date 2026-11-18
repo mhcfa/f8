@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -185,7 +185,7 @@ class Table:
         self,
         id: str,
         title: str,
-        subtitle: str | None = None,
+        subtitle: str | Sequence[str] | None = None,
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
         sheet: Sheet | None = None,
@@ -201,7 +201,12 @@ class Table:
 
         self.id = id
         self.title = title
-        self.subtitle = subtitle
+        if subtitle is None:
+            self.subtitles: list[str] = []
+        elif isinstance(subtitle, str):
+            self.subtitles = [subtitle]
+        else:
+            self.subtitles = list(subtitle)
         self.currency = currency
         self.collapsible = collapsible
         self.right_of: str | None = right_of.id if isinstance(right_of, Table) else right_of
@@ -720,8 +725,8 @@ class Table:
             "columns": cols_spec,
             "rows": rows_spec,
         }
-        if self.subtitle is not None:
-            table_spec["subtitle"] = self.subtitle
+        if self.subtitles:
+            table_spec["subtitles"] = list(self.subtitles)
         if self.currency is not None:
             table_spec["currency"] = _normalize_currency(self.currency)
         if self.right_of is not None:
@@ -781,7 +786,7 @@ class Sheet:
         self,
         id: str,
         title: str,
-        subtitle: str | None = None,
+        subtitle: str | Sequence[str] | None = None,
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
         *,

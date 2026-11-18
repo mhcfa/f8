@@ -368,7 +368,7 @@ describe("TypeScript End-to-End Integration Suite", () => {
     const isAuditor = compiled.table("income_statement")
     expect(isAuditor.id).toBe("income_statement")
     expect(isAuditor.title).toBe("Consolidated Statement of Operations")
-    expect(isAuditor.subtitle).toBe("USD Thousands ($)")
+    expect(isAuditor.subtitles).toEqual(["USD Thousands ($)"])
     expect(isAuditor.columns).toEqual([
       "line_item",
       "y2023a",

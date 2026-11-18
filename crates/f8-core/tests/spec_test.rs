@@ -390,7 +390,7 @@ fn sample_table() -> TableSpec {
     TableSpec {
         id: TableId::from("TestTable"),
         title: "Test Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -718,25 +718,44 @@ fn test_scenario_9_reject_invalid_currency_serde() {
 #[test]
 fn test_scenario_11_table_subtitle_validation() {
     // Empty subtitle
-    let mut table = sample_table();
-    table.subtitle = Some("".to_string());
+    let table = sample_table().with_subtitle("");
     assert!(matches!(
         table.validate().unwrap_err(),
         ModelError::EmptyTableSubtitle { .. }
     ));
 
     // Whitespace subtitle
-    let mut table = sample_table();
-    table.subtitle = Some("   \t\n  ".to_string());
+    let table = sample_table().with_subtitle("   \t\n  ");
     assert!(matches!(
         table.validate().unwrap_err(),
         ModelError::EmptyTableSubtitle { .. }
     ));
 
-    // Valid subtitle
-    let mut table = sample_table();
-    table.subtitle = Some("($ in thousands)".to_string());
+    // Multi-line subtitle with empty/whitespace line
+    let table = sample_table().with_subtitles(["Valid line", "   "]);
+    assert!(matches!(
+        table.validate().unwrap_err(),
+        ModelError::EmptyTableSubtitle { .. }
+    ));
+
+    // Valid single and multi-line subtitles
+    let table = sample_table().with_subtitle("($ in thousands)");
     assert!(table.validate().is_ok());
+    assert_eq!(table.subtitles, vec!["($ in thousands)".to_string()]);
+
+    let table_multi = sample_table().with_subtitles(["($ in Millions)", "Audited FY22-FY24"]);
+    assert!(table_multi.validate().is_ok());
+    assert_eq!(
+        table_multi.subtitles,
+        vec![
+            "($ in Millions)".to_string(),
+            "Audited FY22-FY24".to_string()
+        ]
+    );
+
+    // Empty subtitles omitted when serialized
+    let empty_json = serde_json::to_value(sample_table()).unwrap();
+    assert!(empty_json.get("subtitles").is_none());
 }
 
 #[test]

@@ -74,7 +74,7 @@ const table: Table = sheet.addTable(
   id: string,
   title: string,
   options?: {
-    subtitle?: string;
+    subtitle?: string | readonly string[];
     currency?: CurrencyCode;
     collapsible?: boolean; // default false
     rightOf?: string | Table;
@@ -274,7 +274,7 @@ table.addColumnGutter(): this;
   - `rightOf: "TargetTable"` (or `Table` instance): Aligns `start_row = target.start_row` and places table at `target.end_col + 1 + gap` (default `gap: 1` gutter column).
   - Placement validation: `rightOf` and `below` are mutually exclusive (`Error`), and `gap < 0` throws `Error`. Target table must be declared earlier on the same worksheet, and table bounding boxes cannot overlap (violations throw `SpecificationError`).
 - Table banners and collapsing:
-  - Non-empty `title` emits a full-width title banner row (`start_col..=end_col`). `subtitle` emits a subtitle row beneath `title` (passing an empty or whitespace-only `subtitle: ""` throws `SpecificationError`; omit `subtitle` when unused). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title: ""` (with no `subtitle`) omits both banner and buffer gutter so column headers start at `start_row`.
+  - Non-empty `title` emits a full-width title banner row (`start_col..=end_col`). `subtitle` accepts a single string or an array of strings (`subtitle: ["($ in Millions)", "Audited FY22–FY24"]`, normalized to `table.subtitles: readonly string[]`), emitting one subtitle row per line beneath `title` (on narrow 1–2 column tables, split long subtitles into an array of shorter lines so text does not overflow far to the right; passing an empty or whitespace-only line `""` throws `SpecificationError`; omit `subtitle` or pass `[]` when unused). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title: ""` (with no `subtitle`) omits both banner and buffer gutter so column headers start at `start_row`.
   - `collapsible: true`: Groups physical rows `start_row + 1..=end_row` in Excel outline with summary symbols above (`group_symbols_above(true)`).
 - Column width arbitration & text wrapping: Each physical worksheet column takes the maximum width across all tables spanning that column, computed as `round(clamp(max_chars * char_width_multiplier + col_padding, min_col_width, max_col_width), 2)` (default `col_padding=0.0`, `min_col_width=12.0`, `max_col_width=75.0`, where `max_chars` spans per-column header lines—excluding spanning `group`—and `\n`-delimited data cell segments with `indent * 2` plus `+1` alignment-space character on formatted values with trailing alignment spaces; gutter-only columns use `gutter_col_width=3.0`). Cells whose effective width exceeds `max_col_width` or that contain `\n` newlines enable OpenXML `wrapText="1"` (`FormatAlign::VerticalCenter` on all data cells) while leaving `.xlsx` row heights automatic for Excel font auto-fitting.
 

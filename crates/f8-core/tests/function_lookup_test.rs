@@ -1192,7 +1192,7 @@ fn test_end_to_end_formula_evaluation() {
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1563,7 +1563,7 @@ fn test_xlookup_dormant_if_not_found_static_validation() {
     let table = TableSpec {
         id: TableId::from("Lookup"),
         title: "Lookup".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1631,7 +1631,7 @@ fn test_lookup_positional_omission_contract() {
     let table = TableSpec {
         id: TableId::from("Lookup"),
         title: "Lookup".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

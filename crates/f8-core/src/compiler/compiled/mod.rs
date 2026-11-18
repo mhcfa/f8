@@ -434,7 +434,7 @@ impl CompiledModel {
         Ok(TableInspection {
             table_id: table.clone(),
             title: table_spec.title.clone(),
-            subtitle: table_spec.subtitle.clone(),
+            subtitles: table_spec.subtitles.clone(),
             sheet,
             columns,
             rows,
@@ -553,46 +553,48 @@ impl CompiledModel {
                 }
             }
 
-            // 2. Subtitle Banner
-            if let (Some(subtitle_row), Some(subtitle)) = (placement.subtitle_row, &table.subtitle)
-            {
-                for col in placement.start_col..=placement.end_col {
-                    let physical_a1 = coordinate_to_a1(col, subtitle_row)
-                        .unwrap_or_else(|_| format!("R{subtitle_row}C{col}"));
-                    if col == placement.start_col {
-                        cells_map.insert(
-                            (subtitle_row, col),
-                            SheetCellInspection {
-                                physical_col: col,
-                                physical_a1,
-                                table_id: Some(table.id.clone()),
-                                row_id: None,
-                                col_id: None,
-                                kind: SheetCellKind::TableSubtitle,
-                                is_descriptor: false,
-                                value: CellValue::Text(subtitle.clone()),
-                                formatted_value: Some(subtitle.clone()),
-                                formula_expr: None,
-                                excel_formula: None,
-                            },
-                        );
-                    } else {
-                        cells_map.insert(
-                            (subtitle_row, col),
-                            SheetCellInspection {
-                                physical_col: col,
-                                physical_a1,
-                                table_id: Some(table.id.clone()),
-                                row_id: None,
-                                col_id: None,
-                                kind: SheetCellKind::TableSubtitle,
-                                is_descriptor: false,
-                                value: CellValue::Empty,
-                                formatted_value: None,
-                                formula_expr: None,
-                                excel_formula: None,
-                            },
-                        );
+            // 2. Subtitle Banners
+            if let Some((subtitle_start_row, _)) = placement.subtitle_row_range {
+                for (idx, subtitle) in table.subtitles.iter().enumerate() {
+                    let subtitle_row = subtitle_start_row + idx as u32;
+                    for col in placement.start_col..=placement.end_col {
+                        let physical_a1 = coordinate_to_a1(col, subtitle_row)
+                            .unwrap_or_else(|_| format!("R{subtitle_row}C{col}"));
+                        if col == placement.start_col {
+                            cells_map.insert(
+                                (subtitle_row, col),
+                                SheetCellInspection {
+                                    physical_col: col,
+                                    physical_a1,
+                                    table_id: Some(table.id.clone()),
+                                    row_id: None,
+                                    col_id: None,
+                                    kind: SheetCellKind::TableSubtitle,
+                                    is_descriptor: false,
+                                    value: CellValue::Text(subtitle.clone()),
+                                    formatted_value: Some(subtitle.clone()),
+                                    formula_expr: None,
+                                    excel_formula: None,
+                                },
+                            );
+                        } else {
+                            cells_map.insert(
+                                (subtitle_row, col),
+                                SheetCellInspection {
+                                    physical_col: col,
+                                    physical_a1,
+                                    table_id: Some(table.id.clone()),
+                                    row_id: None,
+                                    col_id: None,
+                                    kind: SheetCellKind::TableSubtitle,
+                                    is_descriptor: false,
+                                    value: CellValue::Empty,
+                                    formatted_value: None,
+                                    formula_expr: None,
+                                    excel_formula: None,
+                                },
+                            );
+                        }
                     }
                 }
             }

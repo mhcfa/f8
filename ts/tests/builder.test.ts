@@ -1042,4 +1042,56 @@ describe("TypeScript Fluent Builder DSL", () => {
     )
     expect(inspY2.evaluatedValue).toEqual({ Number: 130.0 })
   })
+
+  it("table subtitle normalization and validation", () => {
+    const model = new Model({ name: "SubtitlesModel" })
+    const sheet = model.addSheet("Summary")
+
+    const t1 = sheet.addTable("T1", "T1", { subtitle: "Single" })
+    const t2 = sheet.addTable("T2", "T2", {
+      subtitle: ["Line 1", "Line 2"],
+    })
+    const t3 = sheet.addTable("T3", "T3", { subtitle: [] })
+    const t4 = sheet.addTable("T4", "T4")
+
+    for (const t of [t1, t2, t3, t4]) {
+      t.addColumn("c1", { header: "Col 1" })
+      t.addRow("r1", { cells: { c1: 1.0 } })
+    }
+
+    expect(t1.subtitles).toEqual(["Single"])
+    expect(t2.subtitles).toEqual(["Line 1", "Line 2"])
+    expect(t3.subtitles).toEqual([])
+    expect(t4.subtitles).toEqual([])
+
+    expect(t1.toSpec().subtitles).toEqual(["Single"])
+    expect(t2.toSpec().subtitles).toEqual(["Line 1", "Line 2"])
+    expect("subtitles" in t3.toSpec()).toBe(false)
+    expect("subtitles" in t4.toSpec()).toBe(false)
+
+    const compiled = model.compile()
+    expect(compiled.table("T1").subtitles).toEqual(["Single"])
+    expect(compiled.table("T2").subtitles).toEqual(["Line 1", "Line 2"])
+    expect(compiled.table("T3").subtitles).toEqual([])
+    expect(compiled.table("T4").subtitles).toEqual([])
+
+    const sheetInsp = compiled.inspectSheet("Summary")
+    const subtitleCells = sheetInsp.rows
+      .flatMap((row) => row.cells)
+      .filter((c) => c.tableId === "T2" && c.kind === "table_subtitle")
+    expect(subtitleCells).toHaveLength(2)
+    expect(subtitleCells.map((c) => c.formattedValue)).toEqual([
+      "Line 1",
+      "Line 2",
+    ])
+
+    for (const badSub of ["", ["Valid", "   "]]) {
+      const badModel = new Model({ name: "BadSubtitle" })
+      const badSheet = badModel.addSheet("S1")
+      const badT = badSheet.addTable("Bad", "Bad", { subtitle: badSub })
+      badT.addColumn("c1", { header: "Col 1" })
+      badT.addRow("r1", { cells: { c1: 1.0 } })
+      expect(() => badModel.compile()).toThrow(SpecificationError)
+    }
+  })
 })

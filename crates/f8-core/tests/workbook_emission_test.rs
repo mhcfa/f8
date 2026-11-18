@@ -165,8 +165,8 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
 // ----------------------------------------------------------------------------
 #[test]
 fn test_scenario_3_structural_headers_and_super_headers_emission() {
-    let mut table = TableSpec::new("HeaderTable", "Table Title Banner");
-    table.subtitle = Some("($ in thousands, except per share data)".to_string());
+    let mut table = TableSpec::new("HeaderTable", "Table Title Banner")
+        .with_subtitle("($ in thousands, except per share data)");
     table
         .columns
         .push(ColumnSpec::descriptor("line_item", "Line Item"));
@@ -230,6 +230,94 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
     assert!(shared_strings.contains("2024E"));
     assert!(shared_strings.contains("2025E"));
     assert!(shared_strings.contains("2026E"));
+}
+
+#[test]
+fn test_scenario_3b_multi_row_subtitles_emission_and_inspection() {
+    use f8_core::compiler::SheetCellKind;
+    use f8_core::value::CellValue;
+
+    let mut table = TableSpec::new("Assumptions", "Assumptions")
+        .with_subtitles(["($ in Millions)", "Audited FY22-FY24; Projected FY25-FY28"]);
+    table
+        .columns
+        .push(ColumnSpec::descriptor("param", "Parameter"));
+    table
+        .columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    table.rows.push(RowSpec::new("tax_rate"));
+    populate_table_cells(&mut table);
+
+    let manifest = ProjectManifest {
+        model_name: "MultiSubtitleEmission".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Assumptions")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
+    let placement = compiled
+        .layout_map
+        .get_table(&TableId::from("Assumptions"))
+        .unwrap();
+    assert_eq!(placement.title_row, Some(1));
+    assert_eq!(placement.subtitle_row_range, Some((2, 3)));
+    assert_eq!(placement.title_gutter_row, Some(4));
+    assert_eq!(placement.header_row_range, Some((5, 5)));
+
+    let table_insp = compiled
+        .inspect_table(&TableId::from("Assumptions"))
+        .unwrap();
+    assert_eq!(
+        table_insp.subtitles,
+        vec![
+            "($ in Millions)".to_string(),
+            "Audited FY22-FY24; Projected FY25-FY28".to_string()
+        ]
+    );
+
+    let sheet_insp = compiled.inspect_sheet(&SheetId::from("Summary")).unwrap();
+    // Row 0 in sheet_insp.rows is physical_row 1 (Title), Row 1 is physical_row 2 (Subtitle 1), Row 2 is physical_row 3 (Subtitle 2)
+    let sub_row_1 = &sheet_insp.rows[1];
+    assert_eq!(sub_row_1.physical_row, 2);
+    assert_eq!(sub_row_1.excel_row, 3);
+    assert_eq!(sub_row_1.cells[0].physical_a1, "B3");
+    assert_eq!(sub_row_1.cells[0].kind, SheetCellKind::TableSubtitle);
+    assert_eq!(
+        sub_row_1.cells[0].value,
+        CellValue::Text("($ in Millions)".to_string())
+    );
+    assert_eq!(sub_row_1.cells[1].physical_a1, "C3");
+    assert_eq!(sub_row_1.cells[1].kind, SheetCellKind::TableSubtitle);
+    assert_eq!(sub_row_1.cells[1].value, CellValue::Empty);
+
+    let sub_row_2 = &sheet_insp.rows[2];
+    assert_eq!(sub_row_2.physical_row, 3);
+    assert_eq!(sub_row_2.excel_row, 4);
+    assert_eq!(sub_row_2.cells[0].physical_a1, "B4");
+    assert_eq!(sub_row_2.cells[0].kind, SheetCellKind::TableSubtitle);
+    assert_eq!(
+        sub_row_2.cells[0].value,
+        CellValue::Text("Audited FY22-FY24; Projected FY25-FY28".to_string())
+    );
+    assert_eq!(sub_row_2.cells[1].physical_a1, "C4");
+    assert_eq!(sub_row_2.cells[1].kind, SheetCellKind::TableSubtitle);
+    assert_eq!(sub_row_2.cells[1].value, CellValue::Empty);
+
+    let buffer = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let shared_strings = read_zip_entry(&buffer, "xl/sharedStrings.xml");
+    assert!(shared_strings.contains("($ in Millions)"));
+    assert!(shared_strings.contains("Audited FY22-FY24; Projected FY25-FY28"));
+    assert!(sheet_xml.contains("r=\"B3\""));
+    assert!(sheet_xml.contains("r=\"B4\""));
+    assert!(!sheet_xml.contains("r=\"B5\"")); // Blank title gutter row at physical row 4 (Excel row 5)
+    assert!(sheet_xml.contains("r=\"B6\"")); // Column header at physical row 5 (Excel row 6)
 }
 
 // ----------------------------------------------------------------------------

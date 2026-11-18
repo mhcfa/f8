@@ -55,7 +55,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
     let cap_table = TableSpec {
         id: TableId::from("CapTable"),
         title: "Capitalization Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -76,7 +76,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
     let valuation_table = TableSpec {
         id: TableId::from("Valuation"),
         title: "Valuation Scenario".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

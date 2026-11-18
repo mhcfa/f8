@@ -148,7 +148,7 @@ interface RawTableCellInfo {
 interface RawTableInspection {
   readonly table_id: string
   readonly title: string
-  readonly subtitle: string | null
+  readonly subtitles?: readonly string[]
   readonly sheet: string
   readonly columns: readonly RawColumnInspection[]
   readonly rows: readonly RawRowInspection[]
@@ -326,7 +326,7 @@ function mapTableInspection(raw: RawTableInspection): TableInspection {
   return {
     tableId: raw.table_id,
     title: raw.title,
-    subtitle: raw.subtitle ?? null,
+    subtitles: raw.subtitles ?? [],
     sheet: raw.sheet,
     columns: (raw.columns ?? []).map(mapColumnInspection),
     rows: (raw.rows ?? []).map(mapRowInspection),

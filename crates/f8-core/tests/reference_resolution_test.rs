@@ -17,7 +17,7 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
     let table1 = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -41,7 +41,7 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
     let table2 = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Key Assumptions".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -94,7 +94,7 @@ fn test_scenario_2_resolving_active_column_reference() {
     let is_table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "IS".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -504,7 +504,7 @@ fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
     let debt_table = TableSpec {
         id: TableId::from("Debt"),
         title: "Debt Schedule".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -687,7 +687,7 @@ fn test_active_table_selector_model_compilation_and_inspection() {
     let table_active = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -710,7 +710,7 @@ fn test_active_table_selector_model_compilation_and_inspection() {
     let table_explicit = TableSpec {
         id: TableId::from("IncomeStatementExplicit"),
         title: "Income Statement Explicit".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -856,7 +856,7 @@ fn test_contiguous_data_row_and_measure_col_ranges_with_surrounding_dividers() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Contiguous Sub-Block".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -934,7 +934,7 @@ fn test_vertical_range_on_single_descriptor_column_succeeds() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Descriptor Vertical Slice".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1001,7 +1001,7 @@ fn test_row_range_spanning_gutter_rejected() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Row Gutter".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1085,7 +1085,7 @@ fn test_row_range_spanning_section_header_rejected_including_untaken_branch() {
         let table = TableSpec {
             id: TableId::from("T"),
             title: "Section Header".into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: f8_core::model::PlacementSpec::default(),
@@ -1139,7 +1139,7 @@ fn test_col_range_spanning_gutter_rejected() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Column Gutter".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1191,7 +1191,7 @@ fn test_col_range_including_descriptor_endpoint_or_intermediate_rejected() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Descriptor Column Range".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1283,7 +1283,7 @@ fn test_inverted_range_precedes_discontinuity_and_first_discontinuity_order() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Ordering".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1373,7 +1373,7 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
     let history = TableSpec {
         id: TableId::from("History"),
         title: "History".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1393,7 +1393,7 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
     let forecast = TableSpec {
         id: TableId::from("Forecast"),
         title: "Forecast".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1552,7 +1552,7 @@ fn test_cross_table_col_offset_steps_along_target_measure_columns() {
     let detail = TableSpec {
         id: TableId::from("Detail"),
         title: "Detail".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1575,7 +1575,7 @@ fn test_cross_table_col_offset_steps_along_target_measure_columns() {
     let summary = TableSpec {
         id: TableId::from("Summary"),
         title: "Summary".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1672,7 +1672,7 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
     let schedule = TableSpec {
         id: TableId::from("Schedule"),
         title: "Schedule".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1690,7 +1690,7 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
     let driver_scalar = TableSpec {
         id: TableId::from("DriverTable"),
         title: "Drivers".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1818,7 +1818,7 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
     let driver_range = TableSpec {
         id: TableId::from("DriverTable"),
         title: "Drivers".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1855,7 +1855,7 @@ fn test_cross_table_offset_active_mismatch_rejected() {
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1866,7 +1866,7 @@ fn test_cross_table_offset_active_mismatch_rejected() {
     let forecast_base = TableSpec {
         id: TableId::from("Forecast"),
         title: "Forecast".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1994,7 +1994,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
     let target = TableSpec {
         id: TableId::from("Target"),
         title: "Target".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -2011,7 +2011,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
     let origin_table = TableSpec {
         id: TableId::from("Origin"),
         title: "Origin".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -2027,7 +2027,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
     let origin_measure_label = TableSpec {
         id: TableId::from("OriginMeasureLabel"),
         title: "Origin Measure Label".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -2165,7 +2165,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
     let history_a = TableSpec {
         id: TableId::from("HistoryA"),
         title: "History A".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -2207,7 +2207,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
     let target_full = TableSpec {
         id: TableId::from("Target"),
         title: "Target".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -2294,7 +2294,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         let origin_multi = TableSpec {
             id: TableId::from("Origin"),
             title: "Origin".into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: f8_core::model::PlacementSpec::default(),

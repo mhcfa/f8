@@ -167,8 +167,8 @@ function normalizeTables(
       id: t.id,
       title: t.title,
     }
-    if (t.subtitle !== undefined) {
-      normTable.subtitle = t.subtitle
+    if (t.subtitles !== undefined && t.subtitles.length > 0) {
+      normTable.subtitles = [...t.subtitles]
     }
     if (t.currency !== undefined) {
       normTable.currency = t.currency.toLowerCase()

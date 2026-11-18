@@ -452,7 +452,7 @@ def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
     table: TableSpecDict = {
         "id": "T1",
         "title": "Typed Table",
-        "subtitle": "Subtitle",
+        "subtitles": ["Subtitle"],
         "currency": "usd",
         "collapsible": False,
         "placement": {"kind": "stack", "gap": 2},
