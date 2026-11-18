@@ -262,7 +262,7 @@ def test_scenario_8_dimension_and_metadata_introspection() -> None:
     table = compiled.table("Performance")
 
     assert table.title == "Performance"
-    assert table.subtitle == "($ in Millions)"
+    assert table.subtitles == ["($ in Millions)"]
     assert table.sheet == "Financials"
     assert table.columns == ["line_item", "2023A", "2024E", "2025E"]
     assert table.measure_columns == ["2023A", "2024E", "2025E"]

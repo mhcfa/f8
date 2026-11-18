@@ -203,16 +203,17 @@ impl WorkbookEmitter {
                     }
                 }
 
-                // Table Subtitle Banner
-                if let (Some(subtitle_row), Some(subtitle)) =
-                    (placement.subtitle_row, &table.subtitle)
-                {
-                    worksheet.write_string_with_format(
-                        subtitle_row,
-                        excel_col_u16(placement.start_col)?,
-                        subtitle,
-                        &format_cache.subtitle_format(),
-                    )?;
+                // Table Subtitle Banners
+                if let Some((subtitle_start_row, _)) = placement.subtitle_row_range {
+                    for (idx, subtitle) in table.subtitles.iter().enumerate() {
+                        let subtitle_row = subtitle_start_row + idx as u32;
+                        worksheet.write_string_with_format(
+                            subtitle_row,
+                            excel_col_u16(placement.start_col)?,
+                            subtitle,
+                            &format_cache.subtitle_format(),
+                        )?;
+                    }
                 }
 
                 // Multi-Tier Column Headers

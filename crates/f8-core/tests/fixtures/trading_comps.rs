@@ -243,7 +243,10 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
     let comps_table = TableSpec {
         id: TableId::from("Comps"),
         title: "Public Trading Comparables (SaaS Peers)".to_string(),
-        subtitle: Some("Enterprise Value and Operational Trading Multiples ($ in Millions, except share price)".to_string()),
+        subtitles: vec![
+            "Enterprise Value and Operational Trading Multiples ($ in Millions, except share price)"
+                .to_string(),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -339,10 +342,10 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
     let target_val_table = TableSpec {
         id: TableId::from("TargetValuation"),
         title: "Target Valuation Benchmarking".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Implied Enterprise and Equity Valuation Based on Peer Medians ($ in Millions)"
                 .to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

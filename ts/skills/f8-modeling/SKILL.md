@@ -28,6 +28,7 @@ Financial modeling compiler, evaluator, and TypeScript DSL bridging programmatic
 6. Emit: Write `.xlsx` to disk via `compiled.save(path, options)` or in-memory bytes (`Uint8Array`) via `compiled.emitWorkbook(options)`.
 
 CLI commands (`f8` or `npx f8`):
+
 - `f8 guide [syntax|functions|audit|all|--list]`: Stream reference documentation to stdout.
 - `f8 agent init [--dest DIR] [-f|--force]`: Scaffold `.agents/skills/f8-modeling` into workspace.
 - `f8 theme init [-f|--force]`: Write default `corporate_navy` theme specification to `theme.json`.

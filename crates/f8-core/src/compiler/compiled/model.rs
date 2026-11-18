@@ -119,8 +119,8 @@ pub struct TableInspection {
     pub table_id: TableId,
     /// Table display title.
     pub title: String,
-    /// Table display subtitle if defined.
-    pub subtitle: Option<String>,
+    /// Table display subtitle lines.
+    pub subtitles: Vec<String>,
     /// Worksheet containing this table.
     pub sheet: SheetId,
     /// Declared columns with header label tiers.

@@ -98,40 +98,42 @@ compiled.save("forecast.xlsx")
 ### TypeScript
 
 ```typescript
-import { Model } from "f8-engine";
+import { Model } from "f8-engine"
 
-const years = ["2025A", "2026E", "2027E"] as const;
-const capex = { "2025A": 25.0, "2026E": 30.0, "2027E": 35.0 };
-const depr = { "2025A": -15.0, "2026E": -18.0, "2027E": -22.0 };
+const years = ["2025A", "2026E", "2027E"] as const
+const capex = { "2025A": 25.0, "2026E": 30.0, "2027E": 35.0 }
+const depr = { "2025A": -15.0, "2026E": -18.0, "2027E": -22.0 }
 
-const model = new Model({ name: "Operating Forecast" });
-const sheet = model.addSheet("Summary");
+const model = new Model({ name: "Operating Forecast" })
+const sheet = model.addSheet("Summary")
 
-const ppe = sheet.addTable("PPE", "PP&E Corkscrew Schedule", { subtitle: "($ in millions)" });
-ppe.addColumn("item", { role: "descriptor", header: "Line Item" });
+const ppe = sheet.addTable("PPE", "PP&E Corkscrew Schedule", {
+  subtitle: "($ in millions)",
+})
+ppe.addColumn("item", { role: "descriptor", header: "Line Item" })
 for (const year of years) {
-  ppe.addColumn(year, { header: year, format: "currency", decimals: 1 });
+  ppe.addColumn(year, { header: year, format: "currency", decimals: 1 })
 }
 
 ppe.addRow("beg_balance", {
   cells: { item: "Beginning Balance", "2025A": 100.0 },
   expr: 'PPE["end_balance", col.prev]',
-});
-ppe.addRow("capex", { cells: { item: "Capital Expenditures", ...capex } });
-ppe.addRow("depreciation", { cells: { item: "Depreciation", ...depr } });
+})
+ppe.addRow("capex", { cells: { item: "Capital Expenditures", ...capex } })
+ppe.addRow("depreciation", { cells: { item: "Depreciation", ...depr } })
 ppe.addRow("end_balance", {
   cells: { item: "Ending Balance" },
   expr: 'SUM(PPE["beg_balance".."depreciation", @col])',
   style: "total",
-});
+})
 
-const compiled = model.compile();
+const compiled = model.compile()
 
 // Audit evaluated values in memory (or pass { view: "formulas" } to inspect lowered Excel formulas)
-console.log(compiled.table("PPE").toMarkdown());
+console.log(compiled.table("PPE").toMarkdown())
 
 // Emit a live .xlsx workbook with native Excel formulas and styling (you don't have to)
-compiled.save("forecast.xlsx");
+compiled.save("forecast.xlsx")
 ```
 
 Output:

@@ -1048,3 +1048,53 @@ def test_active_table_selector_dsl() -> None:
     insp_y2 = compiled.inspect_cell("IncomeStatement", "gp", "y2")
     assert insp_y2["formula_expr"] == '@table["rev", @col] - @table["cogs", @col]'
     assert insp_y2["evaluated_value"] == {"Number": 130.0}
+
+
+def test_table_subtitle_normalization_and_validation() -> None:
+    model = Model(name="SubtitlesModel")
+    sheet = model.add_sheet("Summary")
+
+    t1 = sheet.add_table("T1", title="T1", subtitle="Single")
+    t2 = sheet.add_table("T2", title="T2", subtitle=["Line 1", "Line 2"])
+    t3 = sheet.add_table("T3", title="T3", subtitle=[])
+    t4 = sheet.add_table("T4", title="T4", subtitle=None)
+
+    for t in (t1, t2, t3, t4):
+        t.add_column("c1", header="Col 1")
+        t.add_row("r1", cells={"c1": 1.0})
+
+    assert t1.subtitles == ["Single"]
+    assert t2.subtitles == ["Line 1", "Line 2"]
+    assert t3.subtitles == []
+    assert t4.subtitles == []
+
+    assert t1.__f8_spec__().get("subtitles") == ["Single"]
+    assert t2.__f8_spec__().get("subtitles") == ["Line 1", "Line 2"]
+    assert "subtitles" not in t3.__f8_spec__()
+    assert "subtitles" not in t4.__f8_spec__()
+
+    compiled = model.compile()
+    assert compiled.table("T1").subtitles == ["Single"]
+    assert compiled.table("T2").subtitles == ["Line 1", "Line 2"]
+    assert compiled.table("T3").subtitles == []
+    assert compiled.table("T4").subtitles == []
+
+    sheet_insp = compiled.inspect_sheet("Summary")
+    subtitle_cells = [
+        cell
+        for row in sheet_insp["rows"]
+        for cell in row["cells"]
+        if cell["table_id"] == "T2" and cell["kind"] == "table_subtitle"
+    ]
+    assert len(subtitle_cells) == 2
+    assert [c["formatted_value"] for c in subtitle_cells] == ["Line 1", "Line 2"]
+
+    # Reject empty or whitespace subtitle lines
+    for bad_sub in ("", ["Valid", "   "]):
+        bad_model = Model(name="BadSubtitle")
+        bad_sheet = bad_model.add_sheet("S1")
+        bad_t = bad_sheet.add_table("Bad", title="Bad", subtitle=bad_sub)
+        bad_t.add_column("c1", header="Col 1")
+        bad_t.add_row("r1", cells={"c1": 1.0})
+        with pytest.raises(SpecificationError, match="subtitle must not be empty"):
+            bad_model.compile()

@@ -53,7 +53,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     let income_statement = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -87,7 +87,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     let cap_table = TableSpec {
         id: TableId::from("CapTable"),
         title: "Cap Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -120,7 +120,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     let balance_sheet = TableSpec {
         id: TableId::from("BalanceSheet"),
         title: "Balance Sheet".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -145,7 +145,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     let cash_flow = TableSpec {
         id: TableId::from("CashFlow"),
         title: "Cash Flow Statement".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -175,7 +175,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     let debt_schedule = TableSpec {
         id: TableId::from("DebtSchedule"),
         title: "Debt Schedule".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -197,7 +197,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Model Assumptions".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -963,7 +963,7 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Lowering Contiguity".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1087,7 +1087,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let history = TableSpec {
         id: TableId::from("History"),
         title: "History".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1107,7 +1107,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let detail = TableSpec {
         id: TableId::from("Detail"),
         title: "Detail".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1130,7 +1130,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let schedule = TableSpec {
         id: TableId::from("Schedule"),
         title: "Schedule".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1148,7 +1148,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let forecast = TableSpec {
         id: TableId::from("Forecast"),
         title: "Forecast".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1166,7 +1166,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let driver = TableSpec {
         id: TableId::from("DriverTable"),
         title: "Drivers".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1180,7 +1180,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let assumptions = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1191,7 +1191,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let target = TableSpec {
         id: TableId::from("Target"),
         title: "Target".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1211,7 +1211,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let origin_tbl = TableSpec {
         id: TableId::from("Origin"),
         title: "Origin".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1238,7 +1238,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
     let history_a = TableSpec {
         id: TableId::from("HistoryA"),
         title: "History A".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

@@ -687,7 +687,7 @@ fn test_end_to_end_date_formula_evaluation() {
     let dates_table = TableSpec {
         id: TableId::from("Timeline"),
         title: "Timeline".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

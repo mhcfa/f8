@@ -35,7 +35,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     let assumptions_table = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Model Assumptions".to_string(),
-        subtitle: Some("Key Operating Drivers & Macro Parameters".to_string()),
+        subtitles: vec!["Key Operating Drivers & Macro Parameters".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -88,7 +88,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     let income_statement_table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
-        subtitle: Some("($ in Millions)".to_string()),
+        subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -156,7 +156,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     let cash_flow_table = TableSpec {
         id: TableId::from("CashFlow"),
         title: "Cash Flow Statement".to_string(),
-        subtitle: Some("($ in Millions)".to_string()),
+        subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -229,7 +229,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
     let balance_sheet_table = TableSpec {
         id: TableId::from("BalanceSheet"),
         title: "Balance Sheet".to_string(),
-        subtitle: Some("($ in Millions)".to_string()),
+        subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

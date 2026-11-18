@@ -997,7 +997,7 @@ fn test_cluster_b_aggregate_overflow_and_dormant_empty_guard() {
     let spec = TableSpec {
         id: TableId::from("T"),
         title: "T".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

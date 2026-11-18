@@ -12,17 +12,17 @@ authors = [{ name = "Michael (Chencheng) Hu, CFA" }]
 requires-python = ">=3.12"
 keywords = ["excel", "financial-modeling", "spreadsheet", "xlsx", "compiler"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Financial and Insurance Industry",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Rust",
-    "Topic :: Office/Business :: Financial :: Spreadsheet",
-    "Typing :: Typed",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Financial and Insurance Industry",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Rust",
+  "Topic :: Office/Business :: Financial :: Spreadsheet",
+  "Typing :: Typed",
 ]
 dependencies = []
 
@@ -36,12 +36,7 @@ Issues = "https://github.com/mhcfa/f8/issues"
 f8 = "f8.cli:main"
 
 [dependency-groups]
-dev = [
-    "maturin>=1.8",
-    "pytest>=8.0",
-    "ruff>=0.9",
-    "pyright>=1.1",
-]
+dev = ["maturin>=1.8", "pytest>=8.0", "ruff>=0.9", "pyright>=1.1"]
 
 [tool.maturin]
 manifest-path = "crates/f8-python/Cargo.toml"
@@ -52,12 +47,12 @@ strip = true
 
 [tool.uv]
 cache-keys = [
-    { file = "pyproject.toml" },
-    { file = "Cargo.toml" },
-    { file = "Cargo.lock" },
-    { file = "crates/f8-python/Cargo.toml" },
-    { file = "crates/f8-python/src/**/*.rs" },
-    { file = "crates/f8-core/src/**/*.rs" },
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "Cargo.lock" },
+  { file = "crates/f8-python/Cargo.toml" },
+  { file = "crates/f8-python/src/**/*.rs" },
+  { file = "crates/f8-core/src/**/*.rs" },
 ]
 
 [[tool.uv.index]]

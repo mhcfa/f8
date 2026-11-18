@@ -485,7 +485,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("Assumptions"),
             title: "Model Assumptions".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -556,7 +556,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("Unregistered"),
             title: "Unregistered Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -576,7 +576,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("BadExpr"),
             title: "Bad Expr Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -594,7 +594,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("T1"),
             title: "Table 1".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -616,7 +616,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("ConflictTable"),
             title: "Conflict Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -643,7 +643,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("ConflictResolved"),
             title: "Resolved Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -665,7 +665,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("UnassignedTable"),
             title: "Unassigned Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -689,7 +689,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("FmtConflict"),
             title: "Format Conflict Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -730,7 +730,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("FmtResolved"),
             title: "Format Resolved Table".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),

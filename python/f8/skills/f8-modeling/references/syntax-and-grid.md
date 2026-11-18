@@ -12,22 +12,22 @@ All formula cell references require explicit 2D bracket syntax:
 
 ### Coordinate Selectors
 
-| Selector type              | Syntax                          | Resolution semantics                                                    | Example                                       |
-| :------------------------- | :------------------------------ | :---------------------------------------------------------------------- | :-------------------------------------------- |
-| **Active table**           | `@table["row", @col]`           | Current evaluation table (avoids repeating table name intra-table)     | `@table["revenue", @col] - @table["cogs", @col]` |
-| **Active column**          | `Table["row", @col]`            | Current evaluation column                                               | `IS["revenue", @col] * 0.40`                  |
-| **Active row**             | `Table[@row, "col"]`            | Current evaluation row                                                  | `Assumptions[@row, "rate"] * 100`             |
-| **Absolute point**         | `Table["row", "col"]`           | Fixed coordinate (lowers to `$Col$Row`)                                 | `Assumptions["tax_rate", "val"]`              |
-| **Column lag / lead (1)**  | `Table["row", col.prev]`        | Prior (`prev`) or next (`next`) `measure` column                        | `BS["cash", col.prev] + 10.0`                 |
-| **Column lag / lead (k)**  | `Table["row", col.prev(k)]`     | `k` `measure` columns prior (`prev(k)`) or ahead (`next(k)`) (integer `1 <= k <= 2147483647`) | `Rev["sales", col.prev(2)]` |
-| **Row lag / lead (1)**     | `Table[row.prev, "col"]`        | Prior (`prev`) or next (`next`) data row                                | `Schedule[row.prev, "col"] * 1.05`            |
-| **Row lag / lead (k)**     | `Table[row.prev(k), "col"]`     | `k` data rows prior (`prev(k)`) or ahead (`next(k)`) (integer `1 <= k <= 2147483647`) | `Schedule[row.next(2), "col"]` |
-| **Column slice**           | `Table["row", "c1".."c2"]`      | Inclusive horizontal range across columns                               | `SUM(Rev["sales", "2023A".."2025E"])`         |
-| **Dynamic column slice**   | `Table["row", "c1"..@col]`      | Inclusive horizontal range between any two column endpoints             | `SUM(Debt["amort", "2024E"..col.prev])`       |
-| **Row slice (active col)** | `Table["r1".."r2", @col]`       | Inclusive vertical range across rows at active column                   | `SUM(Opex["r_and_d".."g_and_a", @col])`       |
-| **Dynamic row slice**      | `Table["r1"..@row, @col]`       | Inclusive vertical range between any two row endpoints                  | `SUM(Cohort["c1"..row.prev, @col])`           |
-| **Row slice (fixed col)**  | `Table["r1".."r2", "col"]`      | Inclusive vertical range across rows at fixed column                    | `SUM(Comps["peer1".."peer5", "ev"])`          |
-| **2D block slice**         | `Table["r1".."r2", "c1".."c2"]` | Inclusive 2D rectangular matrix range                                   | `SUM(Matrix["r1".."r3", "2023A".."2025E"])`   |
+| Selector type              | Syntax                          | Resolution semantics                                                                          | Example                                          |
+| :------------------------- | :------------------------------ | :-------------------------------------------------------------------------------------------- | :----------------------------------------------- |
+| **Active table**           | `@table["row", @col]`           | Current evaluation table (avoids repeating table name intra-table)                            | `@table["revenue", @col] - @table["cogs", @col]` |
+| **Active column**          | `Table["row", @col]`            | Current evaluation column                                                                     | `IS["revenue", @col] * 0.40`                     |
+| **Active row**             | `Table[@row, "col"]`            | Current evaluation row                                                                        | `Assumptions[@row, "rate"] * 100`                |
+| **Absolute point**         | `Table["row", "col"]`           | Fixed coordinate (lowers to `$Col$Row`)                                                       | `Assumptions["tax_rate", "val"]`                 |
+| **Column lag / lead (1)**  | `Table["row", col.prev]`        | Prior (`prev`) or next (`next`) `measure` column                                              | `BS["cash", col.prev] + 10.0`                    |
+| **Column lag / lead (k)**  | `Table["row", col.prev(k)]`     | `k` `measure` columns prior (`prev(k)`) or ahead (`next(k)`) (integer `1 <= k <= 2147483647`) | `Rev["sales", col.prev(2)]`                      |
+| **Row lag / lead (1)**     | `Table[row.prev, "col"]`        | Prior (`prev`) or next (`next`) data row                                                      | `Schedule[row.prev, "col"] * 1.05`               |
+| **Row lag / lead (k)**     | `Table[row.prev(k), "col"]`     | `k` data rows prior (`prev(k)`) or ahead (`next(k)`) (integer `1 <= k <= 2147483647`)         | `Schedule[row.next(2), "col"]`                   |
+| **Column slice**           | `Table["row", "c1".."c2"]`      | Inclusive horizontal range across columns                                                     | `SUM(Rev["sales", "2023A".."2025E"])`            |
+| **Dynamic column slice**   | `Table["row", "c1"..@col]`      | Inclusive horizontal range between any two column endpoints                                   | `SUM(Debt["amort", "2024E"..col.prev])`          |
+| **Row slice (active col)** | `Table["r1".."r2", @col]`       | Inclusive vertical range across rows at active column                                         | `SUM(Opex["r_and_d".."g_and_a", @col])`          |
+| **Dynamic row slice**      | `Table["r1"..@row, @col]`       | Inclusive vertical range between any two row endpoints                                        | `SUM(Cohort["c1"..row.prev, @col])`              |
+| **Row slice (fixed col)**  | `Table["r1".."r2", "col"]`      | Inclusive vertical range across rows at fixed column                                          | `SUM(Comps["peer1".."peer5", "ev"])`             |
+| **2D block slice**         | `Table["r1".."r2", "c1".."c2"]` | Inclusive 2D rectangular matrix range                                                         | `SUM(Matrix["r1".."r3", "2023A".."2025E"])`      |
 
 ### Lexical and Grammatical Rules
 
@@ -69,7 +69,7 @@ sheet = model.add_sheet(
 table = sheet.add_table(
     id: str,
     title: str,
-    subtitle: str | None = None,
+    subtitle: str | Sequence[str] | None = None,
     currency: CurrencyCode | None = None,
     collapsible: bool = False,
     *,
@@ -81,20 +81,20 @@ table = sheet.add_table(
 
 ### Container Methods and Properties
 
-| Container | Member                        | Return type                                     | Behavior                                                                                      |
-| :-------- | :---------------------------- | :---------------------------------------------- | :-------------------------------------------------------------------------------------------- |
-| `Model`   | `model.add_sheet(...)`        | `Sheet`                                         | Appends worksheet; duplicate `name` or negative `freeze_panes` `(row, col)` raises `ValueError` |
-| `Model`   | `model.get_sheet(name)`       | `Sheet`                                         | Looks up worksheet by `name` (raises `KeyError` if absent)                                    |
-| `Model`   | `model.get_table(id)`         | `Table`                                         | Looks up table by `id` across all worksheets (raises `KeyError` if absent)                    |
-| `Model`   | `model.sheets`                | `list[Sheet]`                                   | Ordered list of worksheets                                                                    |
-| `Model`   | `model.tables`                | `list[Table]`                                   | Ordered list of all tables across all worksheets                                              |
-| `Model`   | `model.compile()`             | `CompiledModel`                                 | Validates, expands, evaluates, lays out, and lowers model                                     |
-| `Model`   | `model.__f8_spec__()`         | `tuple[ProjectManifestDict, list[TableSpecDict]]` | Serializes model into raw manifest and table spec dictionaries                                |
-| `Sheet`   | `sheet.add_table(...)`        | `Table`                                         | Appends table; duplicate `id` across model, both `right_of` and `below`, or `gap < 0` raises `ValueError` |
-| `Sheet`   | `sheet.get_table(id)`         | `Table`                                         | Looks up table on this worksheet by `id` (raises `KeyError` if absent)                        |
-| `Sheet`   | `sheet.tables`                | `list[Table]`                                   | Ordered list of tables on this worksheet                                                      |
-| `Sheet`   | `sheet.__f8_spec__()`         | `SheetSpecDict`                                 | Serializes worksheet into raw specification dictionary                                        |
-| `Table`   | `table.__f8_spec__()`         | `TableSpecDict`                                 | Serializes table into raw specification dictionary                                            |
+| Container | Member                  | Return type                                       | Behavior                                                                                                  |
+| :-------- | :---------------------- | :------------------------------------------------ | :-------------------------------------------------------------------------------------------------------- |
+| `Model`   | `model.add_sheet(...)`  | `Sheet`                                           | Appends worksheet; duplicate `name` or negative `freeze_panes` `(row, col)` raises `ValueError`           |
+| `Model`   | `model.get_sheet(name)` | `Sheet`                                           | Looks up worksheet by `name` (raises `KeyError` if absent)                                                |
+| `Model`   | `model.get_table(id)`   | `Table`                                           | Looks up table by `id` across all worksheets (raises `KeyError` if absent)                                |
+| `Model`   | `model.sheets`          | `list[Sheet]`                                     | Ordered list of worksheets                                                                                |
+| `Model`   | `model.tables`          | `list[Table]`                                     | Ordered list of all tables across all worksheets                                                          |
+| `Model`   | `model.compile()`       | `CompiledModel`                                   | Validates, expands, evaluates, lays out, and lowers model                                                 |
+| `Model`   | `model.__f8_spec__()`   | `tuple[ProjectManifestDict, list[TableSpecDict]]` | Serializes model into raw manifest and table spec dictionaries                                            |
+| `Sheet`   | `sheet.add_table(...)`  | `Table`                                           | Appends table; duplicate `id` across model, both `right_of` and `below`, or `gap < 0` raises `ValueError` |
+| `Sheet`   | `sheet.get_table(id)`   | `Table`                                           | Looks up table on this worksheet by `id` (raises `KeyError` if absent)                                    |
+| `Sheet`   | `sheet.tables`          | `list[Table]`                                     | Ordered list of tables on this worksheet                                                                  |
+| `Sheet`   | `sheet.__f8_spec__()`   | `SheetSpecDict`                                   | Serializes worksheet into raw specification dictionary                                                    |
+| `Table`   | `table.__f8_spec__()`   | `TableSpecDict`                                   | Serializes table into raw specification dictionary                                                        |
 
 - Low-level compilation: `f8.compile(manifest, tables) -> CompiledModel` compiles raw `ProjectManifestDict` and `Sequence[TableSpecDict]` payloads directly.
 - Theme resolution (`ThemeInput = Mapping[str, object] | Path | str`):
@@ -247,17 +247,17 @@ table.set_cell("r1", "c1", highlight=True, note="Patched existing 0D cell")
 
 Every `(row, col)` data coordinate resolves its payload and formatting through a 3-tier specificity lattice (`Tier 1: 0D Cell > Tier 2: 1D Row/Col > Tier 3: Default`):
 
-| Attribute    | Tier 1 (0D Cell) | Tier 2 (1D Row vs. Column on `measure` cols)                     | Descriptor Column (`role="descriptor"`)      | Tier 3 (Fallback Default)                                         |
-| :----------- | :--------------- | :--------------------------------------------------------------- | :------------------------------------------- | :---------------------------------------------------------------- |
-| **Payload**  | `cell.value` or `cell.expr` | `row.expr` XOR `col.expr` (both -> `SpecificationError`) | Requires Tier 1 entry (`cells`), else `SpecificationError` | None (unassigned `measure` cell -> `SpecificationError`) |
-| **`format`** | `cell.format`    | `row.format` XOR `col.format` (differing -> `SpecificationError`) | `cell.format` else `col.format` (row isolated) | `None` (unformatted)                                              |
-| **`decimals`** | `cell.decimals` | `row.decimals` XOR `col.decimals` (differing -> `SpecificationError`) | `cell.decimals` else `col.decimals` (row isolated) | `theme.number_formats.defaults` for active preset (`None` if non-decimal preset) |
-| **`currency`** | `cell.currency` | `row.currency` XOR `col.currency` (differing -> `SpecificationError`) | `None` (descriptor columns ignore `currency`) | `table.currency` else `"USD"` (only when effective `format == "currency"`, else `None`) |
-| **`shade`**  | `cell.shade` (`"none"` clears to `None`) | `row.shade` XOR `col.shade` (differing non-`"none"` -> `SpecificationError`) | Same as `measure` (row `shade` spans descriptors) | `None`                                                            |
-| **`style`**  | `"data"` resets both axes to `"data"`; `"subtotal"`/`"total"` overrides horizontal axis | Orthogonal 2D composition: `(horizontal=row.style, vertical=col.style)` | Same as `measure` (row `style` spans descriptors) | `("data", "data")`                                                |
-| **`highlight`** | `cell.highlight` (`False` clears inherited highlight) | `bool(row.highlight or col.highlight)` | Same as `measure`                            | `False`                                                           |
-| **`indent`** | `cell.indent`    | N/A                                                              | `cell.indent` else `0`                       | `0` (`indent > 0` on `measure` cell -> `SpecificationError`)      |
-| **`note`**   | `cell.note`      | N/A                                                              | `cell.note` else `None`                      | `None`                                                            |
+| Attribute       | Tier 1 (0D Cell)                                                                        | Tier 2 (1D Row vs. Column on `measure` cols)                                 | Descriptor Column (`role="descriptor"`)                    | Tier 3 (Fallback Default)                                                               |
+| :-------------- | :-------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- | :--------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| **Payload**     | `cell.value` or `cell.expr`                                                             | `row.expr` XOR `col.expr` (both -> `SpecificationError`)                     | Requires Tier 1 entry (`cells`), else `SpecificationError` | None (unassigned `measure` cell -> `SpecificationError`)                                |
+| **`format`**    | `cell.format`                                                                           | `row.format` XOR `col.format` (differing -> `SpecificationError`)            | `cell.format` else `col.format` (row isolated)             | `None` (unformatted)                                                                    |
+| **`decimals`**  | `cell.decimals`                                                                         | `row.decimals` XOR `col.decimals` (differing -> `SpecificationError`)        | `cell.decimals` else `col.decimals` (row isolated)         | `theme.number_formats.defaults` for active preset (`None` if non-decimal preset)        |
+| **`currency`**  | `cell.currency`                                                                         | `row.currency` XOR `col.currency` (differing -> `SpecificationError`)        | `None` (descriptor columns ignore `currency`)              | `table.currency` else `"USD"` (only when effective `format == "currency"`, else `None`) |
+| **`shade`**     | `cell.shade` (`"none"` clears to `None`)                                                | `row.shade` XOR `col.shade` (differing non-`"none"` -> `SpecificationError`) | Same as `measure` (row `shade` spans descriptors)          | `None`                                                                                  |
+| **`style`**     | `"data"` resets both axes to `"data"`; `"subtotal"`/`"total"` overrides horizontal axis | Orthogonal 2D composition: `(horizontal=row.style, vertical=col.style)`      | Same as `measure` (row `style` spans descriptors)          | `("data", "data")`                                                                      |
+| **`highlight`** | `cell.highlight` (`False` clears inherited highlight)                                   | `bool(row.highlight or col.highlight)`                                       | Same as `measure`                                          | `False`                                                                                 |
+| **`indent`**    | `cell.indent`                                                                           | N/A                                                                          | `cell.indent` else `0`                                     | `0` (`indent > 0` on `measure` cell -> `SpecificationError`)                            |
+| **`note`**      | `cell.note`                                                                             | N/A                                                                          | `cell.note` else `None`                                    | `None`                                                                                  |
 
 ---
 
@@ -283,7 +283,7 @@ table.add_column_gutter() -> Table
   - `right_of="TargetTable"` (or `Table` instance): Aligns `start_row = target.start_row` and places table at `target.end_col + 1 + gap` (default `gap=1` gutter column).
   - Placement validation: `right_of` and `below` are mutually exclusive (`ValueError`), and `gap < 0` raises `ValueError`. Target table must be declared earlier on the same worksheet, and table bounding boxes cannot overlap (violations raise `SpecificationError`).
 - Table banners and collapsing:
-  - Non-empty `title` emits a full-width title banner row (`start_col..=end_col`). `subtitle` emits a subtitle row beneath `title` (passing an empty or whitespace-only `subtitle=""` raises `SpecificationError`; use `subtitle=None` to omit). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title=""` (with `subtitle=None`) omits both banner and buffer gutter so column headers start at `start_row`.
+  - Non-empty `title` emits a full-width title banner row (`start_col..=end_col`). `subtitle` accepts a single string or a sequence of strings (`subtitle=["($ in Millions)", "Audited FY22–FY24"]`, normalized to `table.subtitles: list[str]`), emitting one subtitle row per line beneath `title` (on narrow 1–2 column tables, split long subtitles into a list of shorter lines so text does not overflow far to the right; passing an empty or whitespace-only line `""` raises `SpecificationError`; use `subtitle=None` or `[]` to omit). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title=""` (with `subtitle=None` or `[]`) omits both banner and buffer gutter so column headers start at `start_row`.
   - `collapsible=True`: Groups physical rows `start_row + 1..=end_row` in Excel outline with summary symbols above (`group_symbols_above(True)`).
 - Column width arbitration & text wrapping: Each physical worksheet column takes the maximum width across all tables spanning that column, computed as `round(clamp(max_chars * char_width_multiplier + col_padding, min_col_width, max_col_width), 2)` (default `col_padding=0.0`, `min_col_width=12.0`, `max_col_width=75.0`, where `max_chars` spans per-column header lines—excluding spanning `group`—and `\n`-delimited data cell segments with `indent * 2` plus `+1` alignment-space character on formatted values with trailing alignment spaces; gutter-only columns use `gutter_col_width=3.0`). Cells whose effective width exceeds `max_col_width` or that contain `\n` newlines enable OpenXML `wrapText="1"` (`FormatAlign::VerticalCenter` on all data cells) while leaving `.xlsx` row heights automatic for Excel font auto-fitting.
 
@@ -293,16 +293,16 @@ table.add_column_gutter() -> Table
 
 ### Format Presets (`FormatPreset`)
 
-| Preset           | Default `decimals` | Supports `decimals` | Supports `currency` | Sample inputs (`pos`, `neg`, `zero`) | In-memory formatted output (`formatted()`, `to_markdown()`) |
-| :--------------- | :----------------- | :------------------ | :------------------ | :----------------------------------- | :---------------------------------------------------------- |
-| `"currency"`     | `0`                | Yes (`0..=14`)      | Yes (default `USD`) | `1250`, `-1250`, `0`                 | `"$1,250"` / `"($1,250)"` / `"$0"` (Excel zero mask: `$-`)  |
-| `"number"`       | `0`                | Yes (`0..=14`)      | No                  | `1250`, `-1250`, `0`                 | `"1,250"` / `"(1,250)"` / `"0"` (Excel zero mask: `-`)      |
-| `"percentage"`   | `1`                | Yes (`0..=14`)      | No                  | `0.15`, `-0.15`, `0`                 | `"15.0%"` / `"(15.0%)"` / `"0.0%"` (Excel zero mask: `-`)   |
-| `"multiple"`     | `1`                | Yes (`0..=14`)      | No                  | `12.5`, `-12.5`, `0`                 | `"12.5x"` / `"(12.5x)"` / `"0.0x"` (Excel neg: `-12.5x`)    |
-| `"basis_points"` | `0`                | Yes (`0..=14`)      | No                  | `0.015`, `-0.015`, `0`               | `"150 bps"` / `"(150 bps)"` / `"0 bps"` (scales `10,000x` in-memory; Excel `#,##0" bps"` does not scale) |
-| `"integer"`      | `None`             | No                  | No                  | `2024`, `-2024`, `0`                 | `"2024"` / `"(2024)"` / `"0"` (Excel: `2024` / `(-2024)` / `-`) |
-| `"date"`         | `None`             | No                  | No                  | `45657` (Excel serial)               | `"2024-12-31"`                                              |
-| `"text"`         | `None`             | No                  | No                  | `"Sample"`                           | `"Sample"`                                                  |
+| Preset           | Default `decimals` | Supports `decimals` | Supports `currency` | Sample inputs (`pos`, `neg`, `zero`) | In-memory formatted output (`formatted()`, `to_markdown()`)                                                                                 |
+| :--------------- | :----------------- | :------------------ | :------------------ | :----------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"currency"`     | `0`                | Yes (`0..=14`)      | Yes (default `USD`) | `1250`, `-1250`, `0`                 | `"$1,250"` / `"($1,250)"` / `"$0"` (Excel zero mask: `$-`)                                                                                  |
+| `"number"`       | `0`                | Yes (`0..=14`)      | No                  | `1250`, `-1250`, `0`                 | `"1,250"` / `"(1,250)"` / `"0"` (Excel zero mask: `-`)                                                                                      |
+| `"percentage"`   | `1`                | Yes (`0..=14`)      | No                  | `0.15`, `-0.15`, `0`                 | `"15.0%"` / `"(15.0%)"` / `"0.0%"` (Excel zero mask: `-`)                                                                                   |
+| `"multiple"`     | `1`                | Yes (`0..=14`)      | No                  | `12.5`, `-12.5`, `0`                 | `"12.5x"` / `"(12.5x)"` / `"0.0x"` (Excel neg: `-12.5x`)                                                                                    |
+| `"basis_points"` | `0`                | Yes (`0..=14`)      | No                  | `0.015`, `-0.015`, `0`               | `"150 bps"` / `"(150 bps)"` / `"0 bps"` (scales `10,000x` in-memory; Excel `#,##0" bps"` does not scale)                                    |
+| `"integer"`      | `None`             | No                  | No                  | `2024`, `-2024`, `0`                 | `"2024"` / `"(2024)"` / `"0"` (Excel: `2024` / `(-2024)` / `-`)                                                                             |
+| `"date"`         | `None`             | No                  | No                  | `45657` (Excel serial)               | `"2024-12-31"`                                                                                                                              |
+| `"text"`         | `None`             | No                  | No                  | `"Sample"`                           | `"Sample"`                                                                                                                                  |
 | `None` (default) | `None`             | Yes (in-memory)     | No                  | `1250`, `-12.5`, `0`                 | `"1,250"` / `"(12.5)"` / `"0"` (uses explicit `decimals` if set, else rounds to `1` decimal place and trims trailing `.0`; Excel `General`) |
 
 ### Semantic Styles (`SemanticStyle`)

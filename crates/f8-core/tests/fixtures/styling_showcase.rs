@@ -206,9 +206,9 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let table_borders = TableSpec {
         id: TableId::from("Styles_And_Borders"),
         title: "Institutional Accounting Borders & Semantic Styles".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Demonstrating data, subtotal, and total styles with 1D and 2D accounting borders, visual highlights, and input vs formula color coding".to_string(),
-        ),
+        ],
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -474,9 +474,9 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let table_hierarchical = TableSpec {
         id: TableId::from("Hierarchical_Outlines"),
         title: "Hierarchical Sections & Collapsible Outline Grouping".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Demonstrating nested SectionHeaderRow tiers with native Excel outline grouping levels 1 and 2".to_string(),
-        ),
+        ],
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -658,9 +658,9 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let table_formats = TableSpec {
         id: TableId::from("Format_Presets_And_Decimals"),
         title: "Number Format Presets & Precision Matrix".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Demonstrating all 7 format presets across positive, negative (parentheses), zero (dash), and decimal precisions".to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -808,9 +808,9 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let table_currencies = TableSpec {
         id: TableId::from("Currency_Denominations"),
         title: "Multi-Currency Global Denominations".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Demonstrating all 15 supported ISO 4217 currency codes with syntax-safe escaping, negative parentheses, and zero dashes".to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -920,9 +920,9 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let table_features = TableSpec {
         id: TableId::from("Cell_Features_And_Notes"),
         title: "Cell Payloads, Typographic Styles & Audit Annotations".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Demonstrating input vs formula font coloring, literal types, cell comments, and style overrides".to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1021,10 +1021,10 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
     let table_freeze = TableSpec {
         id: TableId::from("Freeze_Panes_Sample"),
         title: "Freeze Panes & Operational Matrix".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Freeze pane locked at Row 4, Column C (col index 2), with tab accent color #2C4D75"
                 .to_string(),
-        ),
+        ],
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

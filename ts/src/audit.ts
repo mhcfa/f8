@@ -9,7 +9,7 @@ import type {
   TableMarkdownOptions,
   TableOrient,
   TableViewMode,
-} from "./types.js";
+} from "./types.js"
 
 const EXCEL_ERROR_MAP: Readonly<Record<string, string>> = {
   Div0: "#DIV/0!",
@@ -18,253 +18,255 @@ const EXCEL_ERROR_MAP: Readonly<Record<string, string>> = {
   Num: "#NUM!",
   Na: "#N/A",
   Name: "#NAME?",
-};
+}
 
 export function unboxCellValue(val: unknown): CellScalarValue {
   if (val === null || val === undefined) {
-    return null;
+    return null
   }
   if (typeof val === "string") {
     if (val.toLowerCase() === "empty") {
-      return null;
+      return null
     }
-    return val;
+    return val
   }
   if (typeof val === "boolean") {
-    return val;
+    return val
   }
   if (typeof val === "number") {
-    return val;
+    return val
   }
   if (typeof val === "object") {
-    const mapping = val as Record<string, unknown>;
+    const mapping = val as Record<string, unknown>
     if ("Number" in mapping) {
-      const num = mapping.Number;
+      const num = mapping.Number
       if (typeof num === "number") {
-        return num;
+        return num
       }
-      return null;
+      return null
     }
     if ("Text" in mapping) {
-      const text = mapping.Text;
+      const text = mapping.Text
       if (typeof text === "string") {
-        return text;
+        return text
       }
       if (typeof text === "number" || typeof text === "boolean") {
-        return String(text);
+        return String(text)
       }
-      return "";
+      return ""
     }
     if ("Boolean" in mapping) {
-      return Boolean(mapping.Boolean);
+      return Boolean(mapping.Boolean)
     }
     if ("Empty" in mapping) {
-      return null;
+      return null
     }
     if ("Error" in mapping) {
-      const err = mapping.Error;
+      const err = mapping.Error
       if (typeof err === "string") {
-        return EXCEL_ERROR_MAP[err] ?? `#${err}!`;
+        return EXCEL_ERROR_MAP[err] ?? `#${err}!`
       }
-      return "#ERROR!";
+      return "#ERROR!"
     }
-    return null;
+    return null
   }
   if (typeof val === "bigint") {
-    return String(val);
+    return String(val)
   }
-  return null;
+  return null
 }
 
 export function formatWithUnit(formatted: string, unit = ""): string {
   if (!formatted || !unit) {
-    return formatted;
+    return formatted
   }
   if (formatted.endsWith(")")) {
-    return `${formatted.slice(0, -1)}${unit})`;
+    return `${formatted.slice(0, -1)}${unit})`
   }
-  return `${formatted}${unit}`;
+  return `${formatted}${unit}`
 }
 
 function escapeMarkdownCell(text: string): string {
-  return text.replace(/\r\n|\r|\n/g, " ").replace(/\|/g, "\\|");
+  return text.replace(/\r\n|\r|\n/g, " ").replace(/\|/g, "\\|")
 }
 
 interface RenderColumn {
-  readonly id: string | null;
-  readonly header: string;
-  readonly isDescriptor: boolean;
+  readonly id: string | null
+  readonly header: string
+  readonly isDescriptor: boolean
 }
 
 export class TableAuditor {
-  readonly #raw: TableInspection;
-  readonly #id: string;
-  readonly #title: string;
-  readonly #subtitle: string | null;
-  readonly #sheet: string;
-  readonly #columns: readonly string[];
-  readonly #measureColumns: readonly string[];
-  readonly #rows: readonly string[];
-  readonly #rowSet: ReadonlySet<string>;
-  readonly #cellMap: Map<string, Map<string, TableCellInfo>>;
+  readonly #raw: TableInspection
+  readonly #id: string
+  readonly #title: string
+  readonly #subtitles: readonly string[]
+  readonly #sheet: string
+  readonly #columns: readonly string[]
+  readonly #measureColumns: readonly string[]
+  readonly #rows: readonly string[]
+  readonly #rowSet: ReadonlySet<string>
+  readonly #cellMap: Map<string, Map<string, TableCellInfo>>
 
   constructor(raw: TableInspection) {
-    this.#raw = raw;
-    this.#id = raw.tableId;
-    this.#title = raw.title;
-    this.#subtitle = raw.subtitle ?? null;
-    this.#sheet = raw.sheet;
+    this.#raw = raw
+    this.#id = raw.tableId
+    this.#title = raw.title
+    this.#subtitles = [...(raw.subtitles ?? [])]
+    this.#sheet = raw.sheet
 
-    const cols: string[] = [];
-    const measureCols: string[] = [];
+    const cols: string[] = []
+    const measureCols: string[] = []
     for (const c of raw.columns ?? []) {
       if (!c.isGutter && c.id !== null) {
-        cols.push(c.id);
+        cols.push(c.id)
         if (!c.isDescriptor) {
-          measureCols.push(c.id);
+          measureCols.push(c.id)
         }
       }
     }
-    this.#columns = cols;
-    this.#measureColumns = measureCols;
+    this.#columns = cols
+    this.#measureColumns = measureCols
 
-    const dataRows: string[] = [];
+    const dataRows: string[] = []
     for (const r of raw.rows ?? []) {
       if (!r.isGutter && !r.isSectionHeader && r.id !== null) {
-        dataRows.push(r.id);
+        dataRows.push(r.id)
       }
     }
-    this.#rows = dataRows;
-    this.#rowSet = new Set(dataRows);
+    this.#rows = dataRows
+    this.#rowSet = new Set(dataRows)
 
-    this.#cellMap = new Map();
+    this.#cellMap = new Map()
     for (const cellInfo of Object.values(raw.cells ?? {})) {
-      this.#setCell(cellInfo.row, cellInfo.col, cellInfo);
+      this.#setCell(cellInfo.row, cellInfo.col, cellInfo)
     }
   }
 
   #setCell(row: string, col: string, info: TableCellInfo): void {
-    let rowMap = this.#cellMap.get(row);
+    let rowMap = this.#cellMap.get(row)
     if (rowMap === undefined) {
-      rowMap = new Map();
-      this.#cellMap.set(row, rowMap);
+      rowMap = new Map()
+      this.#cellMap.set(row, rowMap)
     }
-    rowMap.set(col, info);
+    rowMap.set(col, info)
   }
 
   #getCell(row: string, col: string): TableCellInfo | undefined {
-    return this.#cellMap.get(row)?.get(col);
+    return this.#cellMap.get(row)?.get(col)
   }
 
   get id(): string {
-    return this.#id;
+    return this.#id
   }
 
   get title(): string {
-    return this.#title;
+    return this.#title
   }
 
-  get subtitle(): string | null {
-    return this.#subtitle;
+  get subtitles(): string[] {
+    return [...this.#subtitles]
   }
 
   get sheet(): string {
-    return this.#sheet;
+    return this.#sheet
   }
 
   get columns(): string[] {
-    return [...this.#columns];
+    return [...this.#columns]
   }
 
   get measureColumns(): string[] {
-    return [...this.#measureColumns];
+    return [...this.#measureColumns]
   }
 
   get rows(): string[] {
-    return [...this.#rows];
+    return [...this.#rows]
   }
 
   get shape(): [number, number] {
-    return [this.#rows.length, this.#columns.length];
+    return [this.#rows.length, this.#columns.length]
   }
 
   get length(): number {
-    return this.#rows.length;
+    return this.#rows.length
   }
 
   cell(row: string, col: string): TableCellInfo {
-    const info = this.#getCell(row, col);
+    const info = this.#getCell(row, col)
     if (info !== undefined) {
-      return info;
+      return info
     }
-    throw new Error(`Coordinate ('${row}', '${col}') not found in table '${this.#id}'`);
+    throw new Error(
+      `Coordinate ('${row}', '${col}') not found in table '${this.#id}'`
+    )
   }
 
   value(row: string, col: string): CellScalarValue {
-    return unboxCellValue(this.cell(row, col).value);
+    return unboxCellValue(this.cell(row, col).value)
   }
 
   num(row: string, col: string): number {
-    const val = this.value(row, col);
+    const val = this.value(row, col)
     if (typeof val !== "number") {
       throw new TypeError(
-        `Cell ('${row}', '${col}') in table '${this.#id}' did not evaluate to a number (got ${JSON.stringify(val)})`,
-      );
+        `Cell ('${row}', '${col}') in table '${this.#id}' did not evaluate to a number (got ${JSON.stringify(val)})`
+      )
     }
-    return val;
+    return val
   }
 
   formatted(row: string, col: string, options?: FormattedOptions): string {
-    const cellInfo = this.cell(row, col);
-    let valStr = cellInfo.formattedValue;
+    const cellInfo = this.cell(row, col)
+    let valStr = cellInfo.formattedValue
     if (valStr === null || valStr === undefined) {
-      const rawVal = unboxCellValue(cellInfo.value);
-      valStr = rawVal !== null ? String(rawVal) : "";
+      const rawVal = unboxCellValue(cellInfo.value)
+      valStr = rawVal !== null ? String(rawVal) : ""
     }
-    return formatWithUnit(valStr, options?.unit);
+    return formatWithUnit(valStr, options?.unit)
   }
 
   rowValues(row: string, cols?: readonly string[]): CellScalarValue[] {
     if (!this.#rowSet.has(row)) {
-      throw new Error(`Row '${row}' not found in table '${this.#id}'`);
+      throw new Error(`Row '${row}' not found in table '${this.#id}'`)
     }
-    const targetCols = cols ?? this.#measureColumns;
-    return targetCols.map((col) => this.value(row, col));
+    const targetCols = cols ?? this.#measureColumns
+    return targetCols.map((col) => this.value(row, col))
   }
 
   rowNums(row: string, cols?: readonly string[]): number[] {
     if (!this.#rowSet.has(row)) {
-      throw new Error(`Row '${row}' not found in table '${this.#id}'`);
+      throw new Error(`Row '${row}' not found in table '${this.#id}'`)
     }
-    const targetCols = cols ?? this.#measureColumns;
-    return targetCols.map((col) => this.num(row, col));
+    const targetCols = cols ?? this.#measureColumns
+    return targetCols.map((col) => this.num(row, col))
   }
 
   formula(row: string, col: string): string | null {
-    return this.cell(row, col).excelFormula ?? null;
+    return this.cell(row, col).excelFormula ?? null
   }
 
   expr(row: string, col: string): string | null {
-    return this.cell(row, col).formulaExpr ?? null;
+    return this.cell(row, col).formulaExpr ?? null
   }
 
   address(row: string, col: string): string {
-    return this.cell(row, col).physicalA1 ?? "";
+    return this.cell(row, col).physicalA1 ?? ""
   }
 
-  toDict(orient?: "records"): Record<string, CellScalarValue>[];
-  toDict(orient: "dict"): Record<string, CellScalarValue[]>;
-  toDict(orient: "index"): Record<string, Record<string, CellScalarValue>>;
-  toDict(orient: "split"): SplitDict;
+  toDict(orient?: "records"): Record<string, CellScalarValue>[]
+  toDict(orient: "dict"): Record<string, CellScalarValue[]>
+  toDict(orient: "index"): Record<string, Record<string, CellScalarValue>>
+  toDict(orient: "split"): SplitDict
   toDict(
-    orient?: TableOrient,
+    orient?: TableOrient
   ):
     | Record<string, CellScalarValue>[]
     | Record<string, CellScalarValue[]>
     | Record<string, Record<string, CellScalarValue>>
-    | SplitDict;
+    | SplitDict
   toDict(
-    orient: TableOrient = "records",
+    orient: TableOrient = "records"
   ):
     | Record<string, CellScalarValue>[]
     | Record<string, CellScalarValue[]>
@@ -272,349 +274,374 @@ export class TableAuditor {
     | SplitDict {
     switch (orient) {
       case "records": {
-        const records: Record<string, CellScalarValue>[] = [];
+        const records: Record<string, CellScalarValue>[] = []
         for (const r of this.#rows) {
-          const rowDict: Record<string, CellScalarValue> = {};
+          const rowDict: Record<string, CellScalarValue> = {}
           for (const c of this.#columns) {
-            const cellInfo = this.#getCell(r, c);
-            rowDict[c] = cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null;
+            const cellInfo = this.#getCell(r, c)
+            rowDict[c] =
+              cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null
           }
-          records.push(rowDict);
+          records.push(rowDict)
         }
-        return records;
+        return records
       }
       case "dict": {
-        const colDict: Record<string, CellScalarValue[]> = {};
+        const colDict: Record<string, CellScalarValue[]> = {}
         for (const c of this.#columns) {
-          colDict[c] = [];
+          colDict[c] = []
         }
         for (const r of this.#rows) {
           for (const c of this.#columns) {
-            const cellInfo = this.#getCell(r, c);
-            const val = cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null;
-            colDict[c]?.push(val);
+            const cellInfo = this.#getCell(r, c)
+            const val =
+              cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null
+            colDict[c]?.push(val)
           }
         }
-        return colDict;
+        return colDict
       }
       case "index": {
-        const indexDict: Record<string, Record<string, CellScalarValue>> = {};
+        const indexDict: Record<string, Record<string, CellScalarValue>> = {}
         for (const r of this.#rows) {
-          const rowDict: Record<string, CellScalarValue> = {};
+          const rowDict: Record<string, CellScalarValue> = {}
           for (const c of this.#columns) {
-            const cellInfo = this.#getCell(r, c);
-            rowDict[c] = cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null;
+            const cellInfo = this.#getCell(r, c)
+            rowDict[c] =
+              cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null
           }
-          indexDict[r] = rowDict;
+          indexDict[r] = rowDict
         }
-        return indexDict;
+        return indexDict
       }
       case "split": {
-        const data: CellScalarValue[][] = [];
+        const data: CellScalarValue[][] = []
         for (const r of this.#rows) {
-          const rowData: CellScalarValue[] = [];
+          const rowData: CellScalarValue[] = []
           for (const c of this.#columns) {
-            const cellInfo = this.#getCell(r, c);
-            rowData.push(cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null);
+            const cellInfo = this.#getCell(r, c)
+            rowData.push(
+              cellInfo !== undefined ? unboxCellValue(cellInfo.value) : null
+            )
           }
-          data.push(rowData);
+          data.push(rowData)
         }
         return {
           columns: [...this.#columns],
           index: [...this.#rows],
           data,
-        };
+        }
       }
       default:
         throw new Error(
-          `Invalid orient '${String(orient)}'. Expected one of 'records', 'dict', 'index', 'split'.`,
-        );
+          `Invalid orient '${String(orient)}'. Expected one of 'records', 'dict', 'index', 'split'.`
+        )
     }
   }
 
-  toMarkdown(options?: TableMarkdownOptions): string;
-  toMarkdown(view: TableViewMode, options?: Omit<TableMarkdownOptions, "view">): string;
+  toMarkdown(options?: TableMarkdownOptions): string
+  toMarkdown(
+    view: TableViewMode,
+    options?: Omit<TableMarkdownOptions, "view">
+  ): string
   toMarkdown(
     arg1?: TableViewMode | TableMarkdownOptions,
-    arg2?: Omit<TableMarkdownOptions, "view">,
+    arg2?: Omit<TableMarkdownOptions, "view">
   ): string {
-    let view: TableViewMode;
-    let opts: Omit<TableMarkdownOptions, "view"> | undefined;
+    let view: TableViewMode
+    let opts: Omit<TableMarkdownOptions, "view"> | undefined
 
     if (typeof arg1 === "string") {
-      view = arg1;
-      opts = arg2;
+      view = arg1
+      opts = arg2
     } else {
-      opts = arg1;
-      view = arg1?.view ?? "values";
+      opts = arg1
+      view = arg1?.view ?? "values"
     }
 
-    if (view !== "values" && view !== "formulas" && view !== "expr" && view !== "addresses") {
+    if (
+      view !== "values" &&
+      view !== "formulas" &&
+      view !== "expr" &&
+      view !== "addresses"
+    ) {
       throw new Error(
-        `Invalid view mode '${String(view)}'. Expected one of 'values', 'formulas', 'expr', 'addresses'.`,
-      );
+        `Invalid view mode '${String(view)}'. Expected one of 'values', 'formulas', 'expr', 'addresses'.`
+      )
     }
 
-    const rows = opts?.rows;
-    const cols = opts?.cols;
-    const includeSectionHeaders = opts?.includeSectionHeaders;
-    const showIds = opts?.showIds ?? false;
+    const rows = opts?.rows
+    const cols = opts?.cols
+    const includeSectionHeaders = opts?.includeSectionHeaders
+    const showIds = opts?.showIds ?? false
 
-    const nonGutterCols: ColumnInspection[] = (this.#raw.columns ?? []).filter((c) => !c.isGutter);
+    const nonGutterCols: ColumnInspection[] = (this.#raw.columns ?? []).filter(
+      (c) => !c.isGutter
+    )
     if (nonGutterCols.length === 0) {
-      return "";
+      return ""
     }
 
-    const colSpecById = new Map<string, ColumnInspection>();
+    const colSpecById = new Map<string, ColumnInspection>()
     for (const c of nonGutterCols) {
       if (c.id !== null) {
-        colSpecById.set(c.id, c);
+        colSpecById.set(c.id, c)
       }
     }
 
-    let selectedCols: ColumnInspection[];
+    let selectedCols: ColumnInspection[]
     if (cols === undefined) {
-      selectedCols = nonGutterCols;
+      selectedCols = nonGutterCols
     } else {
       for (const cid of cols) {
         if (!colSpecById.has(cid)) {
-          throw new Error(`Column '${cid}' not found in table '${this.#id}'`);
+          throw new Error(`Column '${cid}' not found in table '${this.#id}'`)
         }
       }
-      const requestedColSet = new Set(cols);
+      const requestedColSet = new Set(cols)
       const retainedDescriptors = nonGutterCols.filter(
-        (c) => c.isDescriptor && (c.id === null || !requestedColSet.has(c.id)),
-      );
-      const requestedSpecs: ColumnInspection[] = [];
+        (c) => c.isDescriptor && (c.id === null || !requestedColSet.has(c.id))
+      )
+      const requestedSpecs: ColumnInspection[] = []
       for (const cid of cols) {
-        const spec = colSpecById.get(cid);
+        const spec = colSpecById.get(cid)
         if (spec !== undefined) {
-          requestedSpecs.push(spec);
+          requestedSpecs.push(spec)
         }
       }
-      selectedCols = [...retainedDescriptors, ...requestedSpecs];
+      selectedCols = [...retainedDescriptors, ...requestedSpecs]
     }
 
     if (selectedCols.length === 0) {
-      return "";
+      return ""
     }
 
-    const rawRows: RowInspection[] = (this.#raw.rows ?? []).filter((r) => !r.isGutter);
-    const rowSpecById = new Map<string, RowInspection>();
+    const rawRows: RowInspection[] = (this.#raw.rows ?? []).filter(
+      (r) => !r.isGutter
+    )
+    const rowSpecById = new Map<string, RowInspection>()
     for (const r of rawRows) {
       if (!r.isSectionHeader && r.id !== null) {
-        rowSpecById.set(r.id, r);
+        rowSpecById.set(r.id, r)
       }
     }
 
-    let selectedRows: RowInspection[];
+    let selectedRows: RowInspection[]
     if (rows === undefined) {
-      const showSections = includeSectionHeaders ?? true;
-      selectedRows = rawRows.filter((r) => showSections || !r.isSectionHeader);
+      const showSections = includeSectionHeaders ?? true
+      selectedRows = rawRows.filter((r) => showSections || !r.isSectionHeader)
     } else {
       for (const rid of rows) {
         if (!rowSpecById.has(rid)) {
-          throw new Error(`Row '${rid}' not found in table '${this.#id}'`);
+          throw new Error(`Row '${rid}' not found in table '${this.#id}'`)
         }
       }
-      const showSections = includeSectionHeaders ?? false;
+      const showSections = includeSectionHeaders ?? false
       if (!showSections) {
-        selectedRows = [];
+        selectedRows = []
         for (const rid of rows) {
-          const spec = rowSpecById.get(rid);
+          const spec = rowSpecById.get(rid)
           if (spec !== undefined) {
-            selectedRows.push(spec);
+            selectedRows.push(spec)
           }
         }
       } else {
-        const requestedRowSet = new Set(rows);
-        selectedRows = [];
-        let pendingHeader: RowInspection | null = null;
+        const requestedRowSet = new Set(rows)
+        selectedRows = []
+        let pendingHeader: RowInspection | null = null
         for (const r of rawRows) {
           if (r.isSectionHeader) {
-            pendingHeader = r;
+            pendingHeader = r
           } else if (r.id !== null && requestedRowSet.has(r.id)) {
             if (pendingHeader !== null) {
-              selectedRows.push(pendingHeader);
-              pendingHeader = null;
+              selectedRows.push(pendingHeader)
+              pendingHeader = null
             }
-            selectedRows.push(r);
+            selectedRows.push(r)
           }
         }
       }
     }
 
     const renderCols: RenderColumn[] = selectedCols.map((c) => {
-      const colId = c.id;
-      const isDescriptor = c.isDescriptor;
-      const stackedHeader = (c.headers ?? []).filter((h) => h.length > 0).join(" ");
-      const group = c.group;
-      let displayHeader: string;
+      const colId = c.id
+      const isDescriptor = c.isDescriptor
+      const stackedHeader = (c.headers ?? [])
+        .filter((h) => h.length > 0)
+        .join(" ")
+      const group = c.group
+      let displayHeader: string
       if (group && stackedHeader) {
-        displayHeader = `${group}: ${stackedHeader}`;
+        displayHeader = `${group}: ${stackedHeader}`
       } else if (group) {
-        displayHeader = group;
+        displayHeader = group
       } else if (stackedHeader) {
-        displayHeader = stackedHeader;
+        displayHeader = stackedHeader
       } else {
-        displayHeader = colId ?? "";
+        displayHeader = colId ?? ""
       }
 
       const headerLabel =
         showIds && colId && displayHeader.toLowerCase() !== colId.toLowerCase()
           ? `${displayHeader} [${colId}]`
-          : displayHeader;
+          : displayHeader
 
       return {
         id: colId,
         header: escapeMarkdownCell(headerLabel),
         isDescriptor,
-      };
-    });
+      }
+    })
 
-    const rowIndentMap = new Map<string, number>();
-    const rowSummaryMap = new Map<string, boolean>();
+    const rowIndentMap = new Map<string, number>()
+    const rowSummaryMap = new Map<string, boolean>()
     for (const [rid, r] of rowSpecById.entries()) {
-      rowIndentMap.set(rid, r.indent ?? 0);
-      rowSummaryMap.set(rid, r.style === "subtotal" || r.style === "total");
+      rowIndentMap.set(rid, r.indent ?? 0)
+      rowSummaryMap.set(rid, r.style === "subtotal" || r.style === "total")
     }
 
     const getCellText = (rowId: string, col: RenderColumn): string => {
       if (col.id === null) {
-        return "";
+        return ""
       }
-      const cellInfo = this.#getCell(rowId, col.id);
-      const isSummary = rowSummaryMap.get(rowId) ?? false;
+      const cellInfo = this.#getCell(rowId, col.id)
+      const isSummary = rowSummaryMap.get(rowId) ?? false
 
-      let valStr = cellInfo !== undefined ? (cellInfo.formattedValue ?? "") : "";
+      let valStr = cellInfo !== undefined ? (cellInfo.formattedValue ?? "") : ""
       if (!valStr && cellInfo !== undefined) {
-        const rawVal = unboxCellValue(cellInfo.value);
-        valStr = rawVal !== null ? String(rawVal) : "";
+        const rawVal = unboxCellValue(cellInfo.value)
+        valStr = rawVal !== null ? String(rawVal) : ""
       }
 
       if (col.isDescriptor) {
-        const indent = rowIndentMap.get(rowId) ?? 0;
-        let label: string;
+        const indent = rowIndentMap.get(rowId) ?? 0
+        let label: string
         if (!valStr) {
-          label = rowId;
+          label = rowId
         } else if (showIds && valStr.toLowerCase() !== rowId.toLowerCase()) {
-          label = `${valStr} [${rowId}]`;
+          label = `${valStr} [${rowId}]`
         } else {
-          label = valStr;
+          label = valStr
         }
-        const escapedLabel = escapeMarkdownCell(label);
-        const pad = "  ".repeat(indent);
+        const escapedLabel = escapeMarkdownCell(label)
+        const pad = "  ".repeat(indent)
         if (isSummary && escapedLabel) {
-          return `${pad}**${escapedLabel}**`;
+          return `${pad}**${escapedLabel}**`
         }
-        return `${pad}${escapedLabel}`;
+        return `${pad}${escapedLabel}`
       }
 
-      let rawText: string;
+      let rawText: string
       switch (view) {
         case "values":
-          rawText = valStr ? valStr : "—";
-          break;
+          rawText = valStr ? valStr : "—"
+          break
         case "formulas":
           if (cellInfo !== undefined && cellInfo.isFormula) {
-            rawText = cellInfo.excelFormula ?? "";
+            rawText = cellInfo.excelFormula ?? ""
           } else {
-            rawText = valStr;
+            rawText = valStr
           }
-          break;
+          break
         case "expr":
           if (cellInfo !== undefined && cellInfo.isFormula) {
-            rawText = cellInfo.formulaExpr ?? "";
+            rawText = cellInfo.formulaExpr ?? ""
           } else {
-            rawText = valStr;
+            rawText = valStr
           }
-          break;
+          break
         case "addresses":
-          rawText = cellInfo !== undefined ? (cellInfo.physicalA1 ?? "") : "";
-          break;
+          rawText = cellInfo !== undefined ? (cellInfo.physicalA1 ?? "") : ""
+          break
       }
 
-      const escapedText = escapeMarkdownCell(rawText);
+      const escapedText = escapeMarkdownCell(rawText)
       if (isSummary && escapedText) {
-        return `**${escapedText}**`;
+        return `**${escapedText}**`
       }
-      return escapedText;
-    };
+      return escapedText
+    }
 
-    const colWidths: number[] = renderCols.map((col) => Math.max(col.header.length, 4));
+    const colWidths: number[] = renderCols.map((col) =>
+      Math.max(col.header.length, 4)
+    )
 
     for (const r of selectedRows) {
       if (r.isSectionHeader) {
-        continue;
+        continue
       }
-      const rowId = r.id;
+      const rowId = r.id
       if (!rowId) {
-        continue;
+        continue
       }
       for (let colIdx = 0; colIdx < renderCols.length; colIdx++) {
-        const col = renderCols[colIdx];
+        const col = renderCols[colIdx]
         if (col === undefined) {
-          continue;
+          continue
         }
-        const text = getCellText(rowId, col);
-        const currentWidth = colWidths[colIdx] ?? 4;
+        const text = getCellText(rowId, col)
+        const currentWidth = colWidths[colIdx] ?? 4
         if (text.length > currentWidth) {
-          colWidths[colIdx] = text.length;
+          colWidths[colIdx] = text.length
         }
       }
     }
 
-    const outLines: string[] = [];
+    const outLines: string[] = []
 
-    const headerCells: string[] = [];
+    const headerCells: string[] = []
     for (let colIdx = 0; colIdx < renderCols.length; colIdx++) {
-      const col = renderCols[colIdx];
+      const col = renderCols[colIdx]
       if (col === undefined) {
-        continue;
+        continue
       }
-      const w = colWidths[colIdx] ?? 4;
-      const padded = col.isDescriptor ? col.header.padEnd(w, " ") : col.header.padStart(w, " ");
-      headerCells.push(` ${padded} `);
+      const w = colWidths[colIdx] ?? 4
+      const padded = col.isDescriptor
+        ? col.header.padEnd(w, " ")
+        : col.header.padStart(w, " ")
+      headerCells.push(` ${padded} `)
     }
-    outLines.push(`|${headerCells.join("|")}|`);
+    outLines.push(`|${headerCells.join("|")}|`)
 
-    const alignCells: string[] = [];
+    const alignCells: string[] = []
     for (let colIdx = 0; colIdx < renderCols.length; colIdx++) {
-      const col = renderCols[colIdx];
+      const col = renderCols[colIdx]
       if (col === undefined) {
-        continue;
+        continue
       }
-      const w = colWidths[colIdx] ?? 4;
-      const dashes = "-".repeat(w - 1);
-      alignCells.push(col.isDescriptor ? ` :${dashes} ` : ` ${dashes}: `);
+      const w = colWidths[colIdx] ?? 4
+      const dashes = "-".repeat(w - 1)
+      alignCells.push(col.isDescriptor ? ` :${dashes} ` : ` ${dashes}: `)
     }
-    outLines.push(`|${alignCells.join("|")}|`);
+    outLines.push(`|${alignCells.join("|")}|`)
 
     for (const r of selectedRows) {
       if (r.isSectionHeader) {
-        const title = escapeMarkdownCell(r.sectionTitle ?? "");
-        const emptyCols = " |".repeat(renderCols.length - 1);
-        outLines.push(`| **${title}** |${emptyCols}`);
-        continue;
+        const title = escapeMarkdownCell(r.sectionTitle ?? "")
+        const emptyCols = " |".repeat(renderCols.length - 1)
+        outLines.push(`| **${title}** |${emptyCols}`)
+        continue
       }
-      const rowId = r.id;
+      const rowId = r.id
       if (!rowId) {
-        continue;
+        continue
       }
-      const rowCells: string[] = [];
+      const rowCells: string[] = []
       for (let colIdx = 0; colIdx < renderCols.length; colIdx++) {
-        const col = renderCols[colIdx];
+        const col = renderCols[colIdx]
         if (col === undefined) {
-          continue;
+          continue
         }
-        const text = getCellText(rowId, col);
-        const w = colWidths[colIdx] ?? 4;
-        const padded = col.isDescriptor ? text.padEnd(w, " ") : text.padStart(w, " ");
-        rowCells.push(` ${padded} `);
+        const text = getCellText(rowId, col)
+        const w = colWidths[colIdx] ?? 4
+        const padded = col.isDescriptor
+          ? text.padEnd(w, " ")
+          : text.padStart(w, " ")
+        rowCells.push(` ${padded} `)
       }
-      outLines.push(`|${rowCells.join("|")}|`);
+      outLines.push(`|${rowCells.join("|")}|`)
     }
 
-    return `${outLines.join("\n")}\n`;
+    return `${outLines.join("\n")}\n`
   }
 }

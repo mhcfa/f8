@@ -144,7 +144,7 @@ fn test_compiler_facade_error_propagation() {
     let cyclic_table = TableSpec {
         id: TableId::from("CyclicTable"),
         title: "Cyclic Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -178,7 +178,7 @@ fn test_compiler_facade_error_propagation() {
     let sum_table = TableSpec {
         id: TableId::from("SumTable"),
         title: "Sum Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

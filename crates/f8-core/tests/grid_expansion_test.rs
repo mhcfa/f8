@@ -16,7 +16,7 @@ fn create_simple_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> Tab
     TableSpec {
         id: TableId::from(table_id),
         title: format!("Title for {table_id}"),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -315,7 +315,7 @@ fn test_expand_multi_tier_column_with_vector_rules() {
     let mut table = TableSpec {
         id: TableId::from("BalanceSheet"),
         title: "Balance Sheet".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -471,7 +471,7 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
     let table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -545,7 +545,7 @@ fn test_descriptor_column_isolates_formulas_and_enforces_assignment() {
     let unassigned_table = TableSpec {
         id: TableId::from("T_Unassigned"),
         title: "Test".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -572,7 +572,7 @@ fn test_descriptor_column_isolates_formulas_and_enforces_assignment() {
     let assigned_table = TableSpec {
         id: TableId::from("T_Assigned"),
         title: "Test".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -605,7 +605,7 @@ fn test_column_formula_parse_error_diagnostic() {
     let table = TableSpec {
         id: TableId::from("BadColTable"),
         title: "Bad Col".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -648,7 +648,7 @@ fn test_descriptor_column_format_isolation() {
     let table = TableSpec {
         id: TableId::from("DualDesc"),
         title: "Descriptor Isolation Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -678,7 +678,7 @@ fn test_scenario_1_symmetrical_2d_border_composition_at_matrix_intersection() {
     let table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -726,7 +726,7 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
     let table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -775,7 +775,7 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
     let table = TableSpec {
         id: TableId::from("EPS"),
         title: "EPS Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -801,7 +801,7 @@ fn test_scenario_4_measure_vector_precision_conflict_rejected() {
     let table = TableSpec {
         id: TableId::from("ConflictTable"),
         title: "Conflict Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -859,7 +859,7 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
     let table = TableSpec {
         id: TableId::from("HighlightTable"),
         title: "Highlight Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -890,7 +890,7 @@ fn test_scenario_7_highlight_inheritance_from_row_or_column() {
     let table = TableSpec {
         id: TableId::from("InheritanceTable"),
         title: "Inheritance Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -940,7 +940,7 @@ fn test_scenario_1_point_currency_override_wins_over_vectors_and_table() {
     let table = TableSpec {
         id: TableId::from("Tier1Table"),
         title: "Tier 1 Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -971,7 +971,7 @@ fn test_scenario_2_vector_currency_wins_over_table_default() {
     let table = TableSpec {
         id: TableId::from("Tier2Table"),
         title: "Tier 2 Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1003,7 +1003,7 @@ fn test_scenario_3_measure_vector_currency_conflict_rejected() {
     let table = TableSpec {
         id: TableId::from("ConflictTable"),
         title: "Conflict Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1041,7 +1041,7 @@ fn test_scenario_4_harmonious_measure_vector_currencies_accepted() {
     let table = TableSpec {
         id: TableId::from("HarmoniousTable"),
         title: "Harmonious Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1070,7 +1070,7 @@ fn test_scenario_5_table_default_applies_when_vectors_omit_currency() {
     let table = TableSpec {
         id: TableId::from("TableDefault"),
         title: "Table Default".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1099,7 +1099,7 @@ fn test_scenario_6_fallback_to_usd_when_omitted_across_all_tiers() {
     let table = TableSpec {
         id: TableId::from("UsdFallback"),
         title: "USD Fallback Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1129,7 +1129,7 @@ fn test_scenario_7_non_currency_format_presets_resolve_none() {
     let table = TableSpec {
         id: TableId::from("NonCurrency"),
         title: "Non Currency Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1154,7 +1154,7 @@ fn test_scenario_10_descriptor_axis_isolation_suppresses_currency_and_conflicts(
     let table_desc_only = TableSpec {
         id: TableId::from("DescOnly"),
         title: "Descriptor Only Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1186,7 +1186,7 @@ fn test_scenario_11_cell_level_indentation_expansion_and_defaults() {
     let table = TableSpec {
         id: TableId::from("IndentedTable"),
         title: "Indented Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1267,7 +1267,7 @@ fn test_scenario_12_independent_indentation_across_multiple_descriptor_columns()
     let table = TableSpec {
         id: TableId::from("MultiDescTable"),
         title: "Multi Descriptor Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1331,7 +1331,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
     let table = TableSpec {
         id: TableId::from("ShadeTable"),
         title: "Shade Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1406,7 +1406,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
     let conflict_table = TableSpec {
         id: TableId::from("ConflictTable"),
         title: "Conflict Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1437,7 +1437,7 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
     let matching_table = TableSpec {
         id: TableId::from("MatchingTable"),
         title: "Matching Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

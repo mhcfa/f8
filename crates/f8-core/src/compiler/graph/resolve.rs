@@ -625,7 +625,7 @@ mod tests {
         let target_table = TableSpec {
             id: TableId::from("Target"),
             title: "Target".into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),

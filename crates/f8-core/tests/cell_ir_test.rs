@@ -143,7 +143,7 @@ fn test_scenario_5_symbol_table_table_registration() {
     let table = TableSpec {
         id: TableId::new("IncomeStatement"),
         title: "Income Statement".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -204,7 +204,7 @@ fn test_scenario_6_symbol_table_duplicate_table_rejection() {
     let table = TableSpec {
         id: TableId::new("CashFlow"),
         title: "Cash Flow".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -256,7 +256,7 @@ fn test_scenario_7_symbol_table_filters_gutters_and_section_headers() {
     let table = TableSpec {
         id: TableId::new("BalanceSheet"),
         title: "Balance Sheet".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -303,7 +303,7 @@ fn test_scenario_8_symbol_table_empty_table_rejection() {
     let table = TableSpec {
         id: TableId::new("EmptyTable"),
         title: "Empty Table".to_string(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),

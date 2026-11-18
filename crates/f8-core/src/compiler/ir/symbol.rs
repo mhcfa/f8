@@ -258,7 +258,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("IncomeStatement"),
             title: "Income Statement".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),
@@ -314,7 +314,7 @@ mod tests {
         let table = TableSpec {
             id: TableId::new("T"),
             title: "Structural Slots".to_string(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: crate::model::table::PlacementSpec::default(),

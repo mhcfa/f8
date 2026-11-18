@@ -24,7 +24,7 @@ fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec 
     TableSpec {
         id: TableId::from(table_id),
         title: table_id.into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1166,7 +1166,7 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "T".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -1860,7 +1860,7 @@ fn test_scenario_15_na_dormant_empty_guards_sparse_and_and_domain_errors() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "T".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -2530,7 +2530,7 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
         TableSpec {
             id: TableId::from("T"),
             title: "T".into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: f8_core::model::PlacementSpec::default(),
@@ -2753,7 +2753,7 @@ fn test_scenario_18_error_introspection() {
         TableSpec {
             id: TableId::from("T"),
             title: "Error Introspection Test".into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: Default::default(),
@@ -2907,7 +2907,7 @@ fn test_power_zero_zero_domain_and_precedence_parity() {
     let table = TableSpec {
         id: TableId::from("T"),
         title: "Power Domain & Precedence".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: Default::default(),

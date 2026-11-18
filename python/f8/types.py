@@ -161,7 +161,7 @@ class TableInspection(TypedDict):
 
     table_id: str
     title: str
-    subtitle: str | None
+    subtitles: list[str]
     sheet: str
     columns: list[ColumnInspection]
     rows: list[RowInspection]
@@ -409,7 +409,7 @@ class TableSpecDict(TypedDict, total=False):
 
     id: str
     title: str
-    subtitle: str
+    subtitles: list[str]
     currency: CurrencyCode
     collapsible: bool
     placement: PlacementSpecDict

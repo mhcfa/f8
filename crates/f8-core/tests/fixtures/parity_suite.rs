@@ -1418,7 +1418,7 @@ fn build_category_table(group: &ParityGroup) -> TableSpec {
     TableSpec {
         id: TableId::from(group.table_id),
         title: group.title.to_string(),
-        subtitle: Some(group.subtitle.to_string()),
+        subtitles: vec![group.subtitle.to_string()],
         currency: None,
         collapsible: false,
         placement: PlacementSpec::default(),
@@ -1451,10 +1451,10 @@ fn build_divergence_table() -> TableSpec {
     TableSpec {
         id: TableId::from("RuntimeDivergences"),
         title: "Pass 4b Runtime Domain & Solver Divergences (Live Formulas)".to_string(),
-        subtitle: Some(
+        subtitles: vec![
             "Live formulas where f8 enforces strict calendar dates, serial >= 1, discrete integers, sorted binary search, and exact IRR/XIRR roots over legacy Excel quirks"
                 .to_string(),
-        ),
+        ],
         currency: None,
         collapsible: false,
         placement: PlacementSpec::default(),
@@ -1586,7 +1586,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let seed_table = TableSpec {
         id: TableId::from("SeedData"),
         title: "Seed Data".to_string(),
-        subtitle: Some("Baseline inputs for ranges, lookups, and cash flows".to_string()),
+        subtitles: vec!["Baseline inputs for ranges, lookups, and cash flows".to_string()],
         currency: None,
         collapsible: false,
         placement: PlacementSpec::default(),

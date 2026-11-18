@@ -988,8 +988,8 @@ impl PlacementSpec {
 pub struct TableSpec {
     pub id: TableId,
     pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subtitle: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subtitles: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub currency: Option<CurrencyCode>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -1006,7 +1006,7 @@ impl TableSpec {
         Self {
             id: id.into(),
             title: title.into(),
-            subtitle: None,
+            subtitles: Vec::new(),
             currency: None,
             collapsible: false,
             placement: PlacementSpec::default(),
@@ -1017,7 +1017,16 @@ impl TableSpec {
 
     /// Builder method attaching a subtitle banner.
     pub fn with_subtitle(mut self, subtitle: impl Into<String>) -> Self {
-        self.subtitle = Some(subtitle.into());
+        self.subtitles.push(subtitle.into());
+        self
+    }
+
+    /// Builder method attaching multi-row subtitle banners.
+    pub fn with_subtitles(
+        mut self,
+        subtitles: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.subtitles = subtitles.into_iter().map(Into::into).collect();
         self
     }
 
@@ -1082,9 +1091,7 @@ impl TableSpec {
                 table: self.id.clone(),
             });
         }
-        if let Some(subtitle) = &self.subtitle
-            && subtitle.trim().is_empty()
-        {
+        if self.subtitles.iter().any(|s| s.trim().is_empty()) {
             return Err(ModelError::EmptyTableSubtitle {
                 table: self.id.clone(),
             });

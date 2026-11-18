@@ -22,7 +22,7 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
     let assumptions_table = TableSpec {
         id: TableId::from("Assumptions"),
         title: "Assumptions".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
@@ -44,7 +44,7 @@ fn build_test_environment() -> (SymbolTable, FunctionRegistry) {
     let is_table = TableSpec {
         id: TableId::from("IncomeStatement"),
         title: "Income Statement".into(),
-        subtitle: None,
+        subtitles: Vec::new(),
         currency: None,
         collapsible: false,
         placement: f8_core::model::PlacementSpec::default(),
