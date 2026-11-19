@@ -149,15 +149,18 @@ Output:
 
 ## Sample deliverables
 
-Inspect compiled deliverables generated from real-world models:
+### Autonomous Costco equity research
 
-- [costco-valuation.xlsx](https://github.com/mhcfa/f8/releases/latest/download/costco-valuation.xlsx): Compiled 3-statement, DCF, and trading comparables financial model with live Excel formulas.
-- [costco-equity-valuation.pdf](https://github.com/mhcfa/f8/releases/latest/download/costco-equity-valuation.pdf): Equity valuation report and presentation rendered from the compiled `f8` model.
-- [lbo_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/lbo_model.xlsx): Multi-sheet leveraged buyout (LBO) model with transaction structuring, debt waterfall, and returns analysis.
+Built in a 4-hour, ~$70 autonomous multi-agent run across 50 SEC and macro sources with zero human intervention:
 
-### LBO model demo
+- Model repo (TypeScript): [mhcfa/faac](https://github.com/mhcfa/faac) ([`public-equity/costco`](https://github.com/mhcfa/faac/tree/main/public-equity/costco))
+- Write-up: [Running an Autonomous Agent on Costco Equity Research: Why It Called a Short](https://mhcfa.github.io/blog/autonomous-costco-equity-research/)
+- Excel model: [costco-valuation.xlsx](https://github.com/mhcfa/f8/releases/latest/download/costco-valuation.xlsx) (9 sheets, 35 tables, 6,500 cells, 4,228 live Excel formulas across 3-statement, DCF, and trading comps)
+- Valuation deck: [costco-equity-valuation.pdf](https://github.com/mhcfa/f8/releases/latest/download/costco-equity-valuation.pdf) (21 slides bound directly to the compiled `f8` model with no copy-paste)
 
-Complete model repo: https://github.com/mhcfa/f8-demo (this one is written in Python)
+### LBO model preview
+
+- Excel model: [lbo_model.xlsx](https://github.com/mhcfa/f8/releases/latest/download/lbo_model.xlsx) (multi-sheet LBO workbook with transaction structuring, debt waterfall, and returns analysis)
 
 ![LBO Executive Dashboard](https://github.com/mhcfa/f8/releases/latest/download/lbo-dashboard.png)
 
