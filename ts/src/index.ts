@@ -1,3 +1,4 @@
+import { normalizeDetailedCellObject } from "./builder.js"
 import { F8Error, toF8Error } from "./errors.js"
 import { CompiledModel } from "./model.js"
 import type {
@@ -214,14 +215,13 @@ function normalizeTables(
             if (
               typeof cell === "object" &&
               cell !== null &&
-              "currency" in cell &&
-              cell.currency !== undefined
+              !Array.isArray(cell)
             ) {
-              normCells[colId] = {
-                ...cell,
-                currency: cell.currency.toLowerCase(),
+              const normalized = normalizeDetailedCellObject(cell)
+              normCells[colId] = normalized.cell
+              if (normalized.modified) {
+                cellsModified = true
               }
-              cellsModified = true
             } else {
               normCells[colId] = cell
             }

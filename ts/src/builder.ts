@@ -36,6 +36,32 @@ function normalizeCurrency(currency: CurrencyCode): CurrencyCode {
   return currency.toLowerCase() as CurrencyCode
 }
 
+export function normalizeDetailedCellObject(cell: DetailedCellInput): {
+  readonly cell: DetailedCellInput
+  readonly modified: boolean
+} {
+  const normCell: Record<string, unknown> = {}
+  let modified = false
+  for (const [key, val] of Object.entries(cell)) {
+    if (val === undefined) {
+      modified = true
+      continue
+    }
+    if (key === "currency" && typeof val === "string") {
+      const lowered = val.toLowerCase()
+      if (lowered !== val) {
+        modified = true
+      }
+      normCell[key] = lowered
+    } else {
+      normCell[key] = val
+    }
+  }
+  return modified
+    ? { cell: normCell as DetailedCellInput, modified: true }
+    : { cell, modified: false }
+}
+
 export class Cell {
   readonly value: CellValueLiteral | undefined
   readonly expr: string | null
@@ -101,14 +127,8 @@ function serializeCellInput(cell: CellInputValue): CellInput {
     return cell.value ?? null
   }
 
-  if (typeof cell === "object" && cell !== null) {
-    if (cell.currency !== undefined) {
-      return {
-        ...cell,
-        currency: normalizeCurrency(cell.currency),
-      }
-    }
-    return cell
+  if (typeof cell === "object" && cell !== null && !Array.isArray(cell)) {
+    return normalizeDetailedCellObject(cell).cell
   }
 
   return cell
