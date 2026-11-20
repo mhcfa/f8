@@ -443,11 +443,24 @@ impl Serialize for ValueLiteral {
     }
 }
 
+fn deserialize_optional_value_literal<'de, D>(
+    deserializer: D,
+) -> Result<Option<ValueLiteral>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    ValueLiteral::deserialize(deserializer).map(Some)
+}
+
 /// Detailed cell override containing optional value, formula expression, formatting, note, or provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct DetailedCellInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_value_literal",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub value: Option<ValueLiteral>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,

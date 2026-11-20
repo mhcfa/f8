@@ -1168,3 +1168,99 @@ fn test_table_id_and_finite_cell_number_invariants_rejected() {
     // ValueLiteral::Display normalizes -0.0 to "0"
     assert_eq!(ValueLiteral::Number(-0.0).to_string(), "0");
 }
+
+#[test]
+fn test_detailed_cell_explicit_null_value_serde_and_validation() {
+    use f8_core::model::Shade;
+
+    // 1. Direct DetailedCellInput deserialization preserves explicit JSON null as Some(ValueLiteral::Null)
+    let detailed: DetailedCellInput =
+        serde_json::from_str(r#"{ "value": null, "note": "Excluded: NM", "shade": "none" }"#)
+            .unwrap();
+    assert_eq!(detailed.value, Some(ValueLiteral::Null));
+    assert_eq!(detailed.note.as_deref(), Some("Excluded: NM"));
+    assert_eq!(detailed.shade, Some(Shade::None));
+
+    // 2. JSON round-trip of DetailedCellInput { value: Some(ValueLiteral::Null), .. } is lossless
+    let roundtrip_json = serde_json::to_string(&detailed).unwrap();
+    let roundtripped: DetailedCellInput = serde_json::from_str(&roundtrip_json).unwrap();
+    assert_eq!(roundtripped, detailed);
+
+    // 3. Untagged CellInput preserves explicit null inside Detailed objects (with and without metadata)
+    let cell_with_note: CellInput =
+        serde_json::from_str(r#"{ "value": null, "note": "Excluded" }"#).unwrap();
+    assert_eq!(
+        cell_with_note,
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Null),
+            note: Some("Excluded".to_string()),
+            ..Default::default()
+        })
+    );
+    let cell_bare_obj: CellInput = serde_json::from_str(r#"{ "value": null }"#).unwrap();
+    assert_eq!(
+        cell_bare_obj,
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Null),
+            ..Default::default()
+        })
+    );
+    let cell_bare_null: CellInput = serde_json::from_str("null").unwrap();
+    assert_eq!(cell_bare_null, CellInput::Literal(ValueLiteral::Null));
+
+    // 4. TableSpec deserialized from JSON with explicit null + note passes Pass 1 validation
+    let valid_json = r#"{
+        "id": "PeerComps",
+        "title": "Peer Comps",
+        "columns": [
+            { "kind": "data", "id": "company", "role": "descriptor", "headers": ["Company"] },
+            { "kind": "data", "id": "ev_fcf", "headers": ["EV / FCF"] }
+        ],
+        "rows": [
+            {
+                "kind": "data",
+                "id": "orcl",
+                "cells": {
+                    "company": "Oracle",
+                    "ev_fcf": { "value": null, "note": "Excluded: negative FCF" }
+                }
+            }
+        ]
+    }"#;
+    let valid_table: TableSpec = serde_json::from_str(valid_json).unwrap();
+    assert!(valid_table.validate().is_ok());
+
+    // 5. Absent 'value' still deserializes as None and triggers EmptyCellPayload
+    let missing_json = r#"{
+        "id": "PeerComps",
+        "title": "Peer Comps",
+        "columns": [{ "kind": "data", "id": "c1", "headers": ["C1"] }],
+        "rows": [{ "kind": "data", "id": "r1", "cells": { "c1": { "note": "Missing payload" } } }]
+    }"#;
+    let missing_table: TableSpec = serde_json::from_str(missing_json).unwrap();
+    assert!(matches!(
+        missing_table.validate().unwrap_err(),
+        ModelError::EmptyCellPayload { .. }
+    ));
+
+    // 6. Explicit 'value': null alongside 'expr' triggers MutuallyExclusiveCellPayload
+    let conflict_json = r#"{
+        "id": "PeerComps",
+        "title": "Peer Comps",
+        "columns": [{ "kind": "data", "id": "c1", "headers": ["C1"] }],
+        "rows": [{
+            "kind": "data",
+            "id": "r1",
+            "cells": { "c1": { "value": null, "expr": "1 + 1" } }
+        }]
+    }"#;
+    let conflict_table: TableSpec = serde_json::from_str(conflict_json).unwrap();
+    assert!(matches!(
+        conflict_table.validate().unwrap_err(),
+        ModelError::MutuallyExclusiveCellPayload { .. }
+    ));
+
+    // 7. Non-literal value payload still fails deserialization
+    assert!(serde_json::from_str::<DetailedCellInput>(r#"{ "value": [1, 2] }"#).is_err());
+    assert!(serde_json::from_str::<DetailedCellInput>(r#"{ "value": { "a": 1 } }"#).is_err());
+}

@@ -1098,3 +1098,159 @@ def test_table_subtitle_normalization_and_validation() -> None:
         bad_t.add_row("r1", cells={"c1": 1.0})
         with pytest.raises(SpecificationError, match="subtitle must not be empty"):
             bad_model.compile()
+
+
+def test_detailed_empty_cell_with_metadata_and_merge() -> None:
+    model = Model(name="PeerComps")
+    sheet = model.add_sheet("Comps")
+    table = sheet.add_table("PeerComps", title="Peer Comps")
+    table.add_column("company", role="descriptor", header="Company")
+    table.add_column("ev_fcf", header="EV / FCF", format="multiple", decimals=1)
+    table.add_column("ev_ebitda", header="EV / EBITDA", format="multiple", decimals=1)
+
+    table.add_row("crm", cells={"company": "Salesforce", "ev_fcf": 18.5, "ev_ebitda": 14.0})
+    table.add_row(
+        "orcl",
+        shade="muted",
+        highlight=True,
+        cells={
+            "company": "Oracle",
+            "ev_fcf": Cell(
+                value=None,
+                note="Excluded: negative FCF",
+                shade="none",
+                highlight=False,
+            ),
+            "ev_ebitda": None,
+        },
+    )
+    # Merge metadata onto an existing bare None cell via set_cell
+    table.set_cell("orcl", "ev_ebitda", note="Merged note on empty cell")
+
+    table.add_row(
+        "raw_dict",
+        cells={
+            "company": "Raw Dict",
+            "ev_fcf": {"value": None, "note": "Raw dict null note"},
+            "ev_ebitda": {"value": None},
+        },
+    )
+    table.add_row(
+        "batch",
+        cells={"company": "Batch Null"},
+    )
+    table.set_cells("batch", ["ev_fcf", "ev_ebitda"], value=None, note="Batch excluded")
+
+    table.add_row(
+        "avg",
+        cells={"company": "Average"},
+        expr='AVERAGE(PeerComps["crm".."batch", @col])',
+    )
+
+    compiled = model.compile()
+
+    orcl_fcf = compiled.inspect_cell("PeerComps", "orcl", "ev_fcf")
+    assert orcl_fcf["evaluated_value"] == "Empty"
+    assert orcl_fcf["note"] == "Excluded: negative FCF"
+    assert orcl_fcf["shade"] is None
+    assert orcl_fcf["is_highlight"] is False
+
+    orcl_ebitda = compiled.inspect_cell("PeerComps", "orcl", "ev_ebitda")
+    assert orcl_ebitda["evaluated_value"] == "Empty"
+    assert orcl_ebitda["note"] == "Merged note on empty cell"
+
+    raw_fcf = compiled.inspect_cell("PeerComps", "raw_dict", "ev_fcf")
+    assert raw_fcf["evaluated_value"] == "Empty"
+    assert raw_fcf["note"] == "Raw dict null note"
+
+    raw_ebitda = compiled.inspect_cell("PeerComps", "raw_dict", "ev_ebitda")
+    assert raw_ebitda["evaluated_value"] == "Empty"
+    assert raw_ebitda["note"] is None
+
+    batch_fcf = compiled.inspect_cell("PeerComps", "batch", "ev_fcf")
+    assert batch_fcf["evaluated_value"] == "Empty"
+    assert batch_fcf["note"] == "Batch excluded"
+
+    assert compiled.value("PeerComps", "orcl", "ev_fcf") is None
+    assert compiled.num("PeerComps", "avg", "ev_fcf") == 18.5
+    assert compiled.num("PeerComps", "avg", "ev_ebitda") == 14.0
+    assert compiled.emit_workbook().startswith(b"PK\x03\x04")
+
+    # 0D explicit null with note overrides 1D column and row vector formulas
+    override_model = Model(name="VectorOverride")
+    override_sheet = override_model.add_sheet("Comps")
+    col_t = override_sheet.add_table("ColFormulaComps", title="Column Formula Comps")
+    col_t.add_column("company", role="descriptor", header="Company")
+    col_t.add_column("ev", header="EV", format="currency", decimals=1)
+    col_t.add_column("fcf", header="FCF", format="currency", decimals=1)
+    col_t.add_column(
+        "ev_fcf",
+        header="EV / FCF",
+        format="multiple",
+        decimals=1,
+        expr='ColFormulaComps[@row, "ev"] / ColFormulaComps[@row, "fcf"]',
+    )
+    col_t.add_row("crm", cells={"company": "Salesforce", "ev": 185.0, "fcf": 10.0})
+    col_t.add_row(
+        "orcl",
+        cells={
+            "company": "Oracle",
+            "ev": 400.0,
+            "fcf": -5.0,
+            "ev_fcf": Cell(value=None, note="Excluded: negative FCF"),
+        },
+    )
+    col_t.add_row(
+        "avg",
+        cells={
+            "company": "Average",
+            "ev": None,
+            "fcf": None,
+            "ev_fcf": Cell(expr='AVERAGE(ColFormulaComps["crm".."orcl", @col])'),
+        },
+    )
+
+    row_t = override_sheet.add_table("RowFormulaOverride", title="Row Formula Override")
+    row_t.add_column("c1", header="C1")
+    row_t.add_column("c2", header="C2")
+    row_t.add_row(
+        "r1",
+        expr="10 + 5",
+        cells={"c1": {"value": None, "note": "Excluded from row formula"}},
+    )
+
+    override_compiled = override_model.compile()
+    crm_calc = override_compiled.inspect_cell("ColFormulaComps", "crm", "ev_fcf")
+    assert crm_calc["evaluated_value"] == {"Number": 18.5}
+    assert crm_calc["is_formula"] is True
+
+    orcl_override = override_compiled.inspect_cell("ColFormulaComps", "orcl", "ev_fcf")
+    assert orcl_override["evaluated_value"] == "Empty"
+    assert orcl_override["is_formula"] is False
+    assert orcl_override["formula_expr"] is None
+    assert orcl_override["note"] == "Excluded: negative FCF"
+    assert override_compiled.num("ColFormulaComps", "avg", "ev_fcf") == 18.5
+
+    row_c1 = override_compiled.inspect_cell("RowFormulaOverride", "r1", "c1")
+    assert row_c1["evaluated_value"] == "Empty"
+    assert row_c1["is_formula"] is False
+    assert row_c1["note"] == "Excluded from row formula"
+    assert override_compiled.num("RowFormulaOverride", "r1", "c2") == 15.0
+
+    # Raw dict with both explicit value=None and expr must fail with mutual exclusivity error
+    conflict_model = Model(name="ConflictNullExpr")
+    conflict_sheet = conflict_model.add_sheet("S1")
+    conflict_t = conflict_sheet.add_table("T1", title="T1")
+    conflict_t.add_column("c1", header="C1")
+    conflict_t.add_row("r1", cells={"c1": {"value": None, "expr": "1 + 1"}})
+    with pytest.raises(SpecificationError, match="both 'value' and 'expr'"):
+        conflict_model.compile()
+
+    # Raw dict omitting both value and expr must still fail with EmptyCellPayload
+    empty_model = Model(name="MissingPayload")
+    empty_sheet = empty_model.add_sheet("S1")
+    empty_t = empty_sheet.add_table("T1", title="T1")
+    empty_t.add_column("c1", header="C1")
+    empty_t.add_row("r1", cells={"c1": {"note": "Missing payload"}})
+    with pytest.raises(SpecificationError, match="neither 'value' nor 'expr'"):
+        empty_model.compile()

@@ -14,6 +14,7 @@ import {
   type AxisSlice,
   Cell,
   type CellInputValue,
+  compile,
   CompiledModel,
   Model,
   type Shade,
@@ -1092,6 +1093,262 @@ describe("TypeScript Fluent Builder DSL", () => {
       badT.addColumn("c1", { header: "Col 1" })
       badT.addRow("r1", { cells: { c1: 1.0 } })
       expect(() => badModel.compile()).toThrow(SpecificationError)
+    }
+  })
+
+  it("explicit empty cells with metadata, setCell merge, and undefined vs null guards", () => {
+    const model = new Model({ name: "PeerComps" })
+    const sheet = model.addSheet("Comps")
+    const table = sheet.addTable("PeerComps", "Peer Comps")
+    table.addColumn("company", { role: "descriptor", header: "Company" })
+    table.addColumn("ev_fcf", {
+      header: "EV / FCF",
+      format: "multiple",
+      decimals: 1,
+    })
+    table.addColumn("ev_ebitda", {
+      header: "EV / EBITDA",
+      format: "multiple",
+      decimals: 1,
+    })
+
+    table.addRow("crm", {
+      cells: { company: "Salesforce", ev_fcf: 18.5, ev_ebitda: 14.0 },
+    })
+    table.addRow("orcl", {
+      shade: "muted",
+      highlight: true,
+      cells: {
+        company: "Oracle",
+        ev_fcf: new Cell({
+          value: null,
+          note: "Excluded: negative FCF",
+          shade: "none",
+          highlight: false,
+        }),
+        ev_ebitda: null,
+      },
+    })
+    // Merge metadata onto an existing bare null cell via setCell
+    table.setCell("orcl", "ev_ebitda", { note: "Merged note on empty cell" })
+
+    table.addRow("raw_obj", {
+      cells: {
+        company: "Raw Obj",
+        ev_fcf: { value: null, note: "Raw object null note" },
+        ev_ebitda: { value: null },
+      },
+    })
+    table.addRow("batch", {
+      cells: { company: "Batch Null" },
+    })
+    table.setCells("batch", ["ev_fcf", "ev_ebitda"], {
+      value: null,
+      note: "Batch excluded",
+    })
+    // Plain object with explicit JS undefined for value alongside expr must treat value as absent
+    table.addRow("undef_expr", {
+      cells: {
+        company: "Undef Value + Expr",
+        ev_fcf: { value: undefined, expr: "18.5", note: "Formula cell" },
+        ev_ebitda: { value: undefined, expr: "14.0" },
+      },
+    })
+    table.addRow("avg", {
+      cells: { company: "Average" },
+      expr: 'AVERAGE(PeerComps["crm".."undef_expr", @col])',
+    })
+
+    // toSpec() strips explicit JS undefined keys on raw DetailedCellInput objects (matching new Cell(...))
+    const spec = model.toSpec()
+    const undefRow = spec.tables[0].rows.find(
+      (r) => r.kind === "data" && r.id === "undef_expr"
+    )
+    expect(undefRow?.kind).toBe("data")
+    if (undefRow?.kind === "data") {
+      const undefCell = undefRow.cells?.ev_fcf
+      expect(typeof undefCell).toBe("object")
+      expect(undefCell).not.toBeNull()
+      if (typeof undefCell === "object" && undefCell !== null) {
+        expect("value" in undefCell).toBe(false)
+      }
+    }
+
+    const compiled = model.compile()
+
+    const orclFcf = compiled.inspectCell("PeerComps", "orcl", "ev_fcf")
+    expect(orclFcf.evaluatedValue).toBe("Empty")
+    expect(orclFcf.note).toBe("Excluded: negative FCF")
+    expect(orclFcf.shade).toBeNull()
+    expect(orclFcf.isHighlight).toBe(false)
+
+    const orclEbitda = compiled.inspectCell("PeerComps", "orcl", "ev_ebitda")
+    expect(orclEbitda.evaluatedValue).toBe("Empty")
+    expect(orclEbitda.note).toBe("Merged note on empty cell")
+
+    const rawFcf = compiled.inspectCell("PeerComps", "raw_obj", "ev_fcf")
+    expect(rawFcf.evaluatedValue).toBe("Empty")
+    expect(rawFcf.note).toBe("Raw object null note")
+
+    const rawEbitda = compiled.inspectCell("PeerComps", "raw_obj", "ev_ebitda")
+    expect(rawEbitda.evaluatedValue).toBe("Empty")
+    expect(rawEbitda.note).toBeNull()
+
+    const batchFcf = compiled.inspectCell("PeerComps", "batch", "ev_fcf")
+    expect(batchFcf.evaluatedValue).toBe("Empty")
+    expect(batchFcf.note).toBe("Batch excluded")
+
+    const undefExprFcf = compiled.inspectCell(
+      "PeerComps",
+      "undef_expr",
+      "ev_fcf"
+    )
+    expect(undefExprFcf.evaluatedValue).toEqual({ Number: 18.5 })
+    expect(undefExprFcf.note).toBe("Formula cell")
+
+    expect(compiled.value("PeerComps", "orcl", "ev_fcf")).toBeNull()
+    expect(compiled.num("PeerComps", "avg", "ev_fcf")).toBe(18.5)
+    expect(compiled.num("PeerComps", "avg", "ev_ebitda")).toBe(14.0)
+    const xlsx = compiled.emitWorkbook()
+    expect(xlsx[0]).toBe(0x50)
+    expect(xlsx[1]).toBe(0x4b)
+
+    // 0D explicit null with note overrides 1D column and row vector formulas
+    const overrideModel = new Model({ name: "VectorOverride" })
+    const overrideSheet = overrideModel.addSheet("Comps")
+    const colT = overrideSheet.addTable(
+      "ColFormulaComps",
+      "Column Formula Comps"
+    )
+    colT.addColumn("company", { role: "descriptor", header: "Company" })
+    colT.addColumn("ev", { header: "EV", format: "currency", decimals: 1 })
+    colT.addColumn("fcf", { header: "FCF", format: "currency", decimals: 1 })
+    colT.addColumn("ev_fcf", {
+      header: "EV / FCF",
+      format: "multiple",
+      decimals: 1,
+      expr: 'ColFormulaComps[@row, "ev"] / ColFormulaComps[@row, "fcf"]',
+    })
+    colT.addRow("crm", {
+      cells: { company: "Salesforce", ev: 185.0, fcf: 10.0 },
+    })
+    colT.addRow("orcl", {
+      cells: {
+        company: "Oracle",
+        ev: 400.0,
+        fcf: -5.0,
+        ev_fcf: new Cell({ value: null, note: "Excluded: negative FCF" }),
+      },
+    })
+    colT.addRow("avg", {
+      cells: {
+        company: "Average",
+        ev: null,
+        fcf: null,
+        ev_fcf: new Cell({
+          expr: 'AVERAGE(ColFormulaComps["crm".."orcl", @col])',
+        }),
+      },
+    })
+
+    const rowT = overrideSheet.addTable(
+      "RowFormulaOverride",
+      "Row Formula Override"
+    )
+    rowT.addColumn("c1", { header: "C1" })
+    rowT.addColumn("c2", { header: "C2" })
+    rowT.addRow("r1", {
+      expr: "10 + 5",
+      cells: { c1: { value: null, note: "Excluded from row formula" } },
+    })
+
+    const overrideCompiled = overrideModel.compile()
+    const crmCalc = overrideCompiled.inspectCell(
+      "ColFormulaComps",
+      "crm",
+      "ev_fcf"
+    )
+    expect(crmCalc.evaluatedValue).toEqual({ Number: 18.5 })
+    expect(crmCalc.isFormula).toBe(true)
+
+    const orclOverride = overrideCompiled.inspectCell(
+      "ColFormulaComps",
+      "orcl",
+      "ev_fcf"
+    )
+    expect(orclOverride.evaluatedValue).toBe("Empty")
+    expect(orclOverride.isFormula).toBe(false)
+    expect(orclOverride.formulaExpr).toBeNull()
+    expect(orclOverride.note).toBe("Excluded: negative FCF")
+    expect(overrideCompiled.num("ColFormulaComps", "avg", "ev_fcf")).toBe(18.5)
+
+    const rowC1 = overrideCompiled.inspectCell("RowFormulaOverride", "r1", "c1")
+    expect(rowC1.evaluatedValue).toBe("Empty")
+    expect(rowC1.isFormula).toBe(false)
+    expect(rowC1.note).toBe("Excluded from row formula")
+    expect(overrideCompiled.num("RowFormulaOverride", "r1", "c2")).toBe(15.0)
+
+    // Direct compile() also strips explicit undefined keys and preserves explicit null without builder pre-normalization
+    const directCompiled = compile(
+      {
+        modelName: "DirectCompileNullUndef",
+        sheets: [{ name: "S1", tables: ["T1"] }],
+      },
+      [
+        {
+          id: "T1",
+          title: "T1",
+          columns: [
+            { kind: "data", id: "c1", headers: ["C1"], format: "currency" },
+            { kind: "data", id: "c2", headers: ["C2"] },
+          ],
+          rows: [
+            {
+              kind: "data",
+              id: "r1",
+              cells: {
+                c1: {
+                  value: undefined,
+                  expr: "18.5",
+                  currency: "USD",
+                  note: "Direct formula",
+                },
+                c2: { value: null, note: "Direct empty" },
+              },
+            },
+          ],
+        },
+      ]
+    )
+    const directC1 = directCompiled.inspectCell("T1", "r1", "c1")
+    expect(directC1.evaluatedValue).toEqual({ Number: 18.5 })
+    expect(directC1.currency).toBe("usd")
+    expect(directC1.note).toBe("Direct formula")
+    const directC2 = directCompiled.inspectCell("T1", "r1", "c2")
+    expect(directC2.evaluatedValue).toBe("Empty")
+    expect(directC2.note).toBe("Direct empty")
+
+    // Raw object with both explicit value: null and expr must fail with mutual exclusivity error
+    const conflictModel = new Model({ name: "ConflictNullExpr" })
+    const conflictSheet = conflictModel.addSheet("S1")
+    const conflictT = conflictSheet.addTable("T1", "T1")
+    conflictT.addColumn("c1", { header: "C1" })
+    conflictT.addRow("r1", { cells: { c1: { value: null, expr: "1 + 1" } } })
+    expect(() => conflictModel.compile()).toThrow(SpecificationError)
+    expect(() => conflictModel.compile()).toThrow("both 'value' and 'expr'")
+
+    // Raw object omitting both value and expr (including explicit undefined) must fail with EmptyCellPayload
+    for (const badCell of [
+      { note: "Missing payload" },
+      { value: undefined, note: "Undefined value payload" },
+    ]) {
+      const emptyModel = new Model({ name: "MissingPayload" })
+      const emptySheet = emptyModel.addSheet("S1")
+      const emptyT = emptySheet.addTable("T1", "T1")
+      emptyT.addColumn("c1", { header: "C1" })
+      emptyT.addRow("r1", { cells: { c1: badCell } })
+      expect(() => emptyModel.compile()).toThrow(SpecificationError)
+      expect(() => emptyModel.compile()).toThrow("neither 'value' nor 'expr'")
     }
   })
 })

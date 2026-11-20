@@ -1669,3 +1669,143 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
         .is_err()
     );
 }
+
+#[test]
+fn test_detailed_null_cell_with_note_and_metadata_emission() {
+    use f8_core::model::id::{ColId, RowId};
+    use f8_core::value::CellValue;
+
+    let table: TableSpec = serde_json::from_str(
+        r#"{
+            "id": "PeerComps",
+            "title": "Peer Comps",
+            "columns": [
+                { "kind": "data", "id": "company", "role": "descriptor", "headers": ["Company"] },
+                { "kind": "data", "id": "ev", "headers": ["EV"], "format": "currency", "decimals": 1 },
+                { "kind": "data", "id": "fcf", "headers": ["FCF"], "format": "currency", "decimals": 1 },
+                {
+                    "kind": "data",
+                    "id": "ev_fcf",
+                    "headers": ["EV / FCF"],
+                    "format": "multiple",
+                    "decimals": 1,
+                    "expr": "PeerComps[@row, \"ev\"] / PeerComps[@row, \"fcf\"]"
+                }
+            ],
+            "rows": [
+                {
+                    "kind": "data",
+                    "id": "crm",
+                    "cells": { "company": "Salesforce", "ev": 185.0, "fcf": 10.0 }
+                },
+                {
+                    "kind": "data",
+                    "id": "orcl",
+                    "shade": "muted",
+                    "highlight": true,
+                    "cells": {
+                        "company": "Oracle",
+                        "ev": 400.0,
+                        "fcf": -5.0,
+                        "ev_fcf": {
+                            "value": null,
+                            "note": "Excluded: negative FCF due to AI capex",
+                            "shade": "none",
+                            "highlight": false
+                        }
+                    }
+                },
+                {
+                    "kind": "data",
+                    "id": "avg",
+                    "cells": {
+                        "company": "Average",
+                        "ev": null,
+                        "fcf": null,
+                        "ev_fcf": { "expr": "AVERAGE(PeerComps[\"crm\"..\"orcl\", @col])" }
+                    }
+                }
+            ]
+        }"#,
+    )
+    .unwrap();
+
+    let manifest = ProjectManifest {
+        model_name: "PeerCompsModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Comps".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("PeerComps")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, std::slice::from_ref(&table)).unwrap();
+    let t = TableId::from("PeerComps");
+    let ev_fcf = ColId::from("ev_fcf");
+
+    let crm = compiled
+        .inspect_cell(&t, &RowId::from("crm"), &ev_fcf)
+        .unwrap();
+    assert_eq!(crm.evaluated_value, CellValue::Number(18.5));
+    assert!(crm.is_formula);
+
+    let orcl = compiled
+        .inspect_cell(&t, &RowId::from("orcl"), &ev_fcf)
+        .unwrap();
+    assert_eq!(orcl.evaluated_value, CellValue::Empty);
+    assert!(!orcl.is_formula);
+    assert_eq!(orcl.formula_expr, None);
+    assert_eq!(
+        orcl.note.as_deref(),
+        Some("Excluded: negative FCF due to AI capex")
+    );
+    assert_eq!(orcl.shade, None);
+    assert!(!orcl.is_highlight);
+
+    let avg = compiled
+        .inspect_cell(&t, &RowId::from("avg"), &ev_fcf)
+        .unwrap();
+    assert_eq!(avg.evaluated_value, CellValue::Number(18.5));
+
+    let orcl_ref = orcl
+        .physical_address
+        .strip_prefix("'Comps'!")
+        .expect("orcl physical address must include sheet qualifier");
+
+    let extract_cell_element = |xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = xml.find(&needle)?;
+        let tag_start = xml[..start].rfind("<c ")?;
+        let open_end = xml[tag_start..].find('>')? + tag_start;
+        if xml[..open_end].ends_with('/') {
+            Some(xml[tag_start..=open_end].to_string())
+        } else {
+            let close_end = xml[open_end..].find("</c>")? + open_end + "</c>".len();
+            Some(xml[tag_start..close_end].to_string())
+        }
+    };
+
+    for opts in [
+        EmissionOptions::default(),
+        EmissionOptions::default().with_values_only(true),
+    ] {
+        let buffer = compiled.emit_workbook(&opts).unwrap();
+        let comments_xml = read_zip_entry(&buffer, "xl/comments1.xml");
+        assert!(
+            comments_xml.contains(&format!("ref=\"{orcl_ref}\"")),
+            "comment must anchor to {orcl_ref}: {comments_xml}"
+        );
+        assert!(comments_xml.contains("Excluded: negative FCF due to AI capex"));
+
+        let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+        let orcl_cell_xml =
+            extract_cell_element(&sheet_xml, orcl_ref).expect("orcl blank cell must be emitted");
+        assert!(
+            !orcl_cell_xml.contains("<v>") && !orcl_cell_xml.contains("<f>"),
+            "explicit null override must remain blank without <v> or <f>: {orcl_cell_xml}"
+        );
+    }
+}
