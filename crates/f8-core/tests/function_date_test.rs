@@ -46,7 +46,7 @@ fn eval_str(
 #[test]
 fn test_date_functions_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 34);
+    assert_eq!(registry.len(), 37);
     assert!(registry.lookup("DAYS").is_none());
 
     let date_funcs = [

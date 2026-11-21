@@ -1763,3 +1763,32 @@ fn test_scientific_notation_and_neg_zero_lowering_and_roundtrip() {
         "=1E-9-2E-9"
     );
 }
+
+#[test]
+fn test_ln_exp_mod_native_lowering() {
+    let (manifest, tables) = create_comprehensive_model();
+    let theme = Theme::corporate_navy();
+    let (symbol_table, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
+    let layout_map = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
+    let origin = CellId::new("IncomeStatement", "gross_profit", "2024E");
+
+    let cases = [
+        ("LN(IncomeStatement[\"revenue\", @col])", "=LN(C6)"),
+        ("LN(EXP(1))", "=LN(EXP(1))"),
+        ("EXP(IncomeStatement[\"cogs\", @col] / 100)", "=EXP(C7/100)"),
+        ("MOD(IncomeStatement[\"revenue\", @col], 3)", "=MOD(C6,3)"),
+        ("MOD(-7, 3)", "=MOD(-7,3)"),
+        ("MOD(1e20, 3)", "=MOD(1E20,3)"),
+    ];
+
+    for (formula, expected_excel) in cases {
+        let expr = Expr::parse(formula).unwrap();
+        let lowered = FormulaLowerer::lower_cell(&origin, &expr, &symbol_table, &layout_map)
+            .unwrap_or_else(|e| panic!("lowering failed on '{formula}': {e}"));
+        assert_eq!(lowered, expected_excel, "mismatch on '{formula}'");
+        assert!(
+            !lowered.contains("_xlfn."),
+            "native Excel 97+ math function must not emit _xlfn. prefix: {lowered}"
+        );
+    }
+}

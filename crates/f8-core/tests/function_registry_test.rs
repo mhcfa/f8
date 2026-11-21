@@ -713,7 +713,7 @@ fn test_bind_arguments_integration() {
 #[test]
 fn test_registry_metadata_and_iteration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 34);
+    assert_eq!(registry.len(), 37);
     assert!(!registry.is_empty());
 
     let names: Vec<&str> = registry.iter().map(|(name, _)| name).collect();
@@ -721,6 +721,9 @@ fn test_registry_metadata_and_iteration() {
         names,
         vec![
             "ABS",
+            "LN",
+            "EXP",
+            "MOD",
             "SUM",
             "AVERAGE",
             "COUNT",
@@ -756,6 +759,33 @@ fn test_registry_metadata_and_iteration() {
             "NA",
         ]
     );
+
+    // Case-insensitive lookup and metadata for LN, EXP, and MOD
+    for (canonical, aliases, expected_params) in [
+        ("LN", ["LN", "ln", "Ln"], vec!["number"]),
+        ("EXP", ["EXP", "exp", "Exp"], vec!["number"]),
+        ("MOD", ["MOD", "mod", "Mod"], vec!["number", "divisor"]),
+    ] {
+        for alias in aliases {
+            let func = registry
+                .lookup(alias)
+                .unwrap_or_else(|| panic!("missing function {alias}"));
+            assert_eq!(func.name(), canonical);
+            assert_eq!(func.category(), FunctionCategory::Math);
+            assert_eq!(func.min_args(), expected_params.len());
+            assert_eq!(func.max_args(), Some(expected_params.len()));
+            assert_eq!(func.return_type(), Some(ValueType::Number));
+            assert_eq!(func.validation_policy(), ValidationPolicy::Standard);
+            let param_names: Vec<&str> = func.parameters().iter().map(|p| p.name).collect();
+            assert_eq!(param_names, expected_params);
+            for param in func.parameters() {
+                assert_eq!(param.kind, ParamKind::Scalar);
+                assert_eq!(param.param_type, ParamType::Number);
+                assert_eq!(param.requirement, ParamRequirement::Required);
+            }
+            assert!(registry.get(alias).is_some());
+        }
+    }
 
     let if_func = registry.lookup("if").unwrap();
     assert_eq!(if_func.name(), "IF");
@@ -806,7 +836,7 @@ fn test_registry_metadata_and_iteration() {
     assert!(registry.get("SUM").is_some());
     assert!(registry.get("sum").is_some());
 
-    // Exhaustive ValidationPolicy matrix across all 34 standard functions
+    // Exhaustive ValidationPolicy matrix across all 37 standard functions
     let mut non_standard_count = 0usize;
     for (name, func) in registry.iter() {
         let expected_policy = match name {
@@ -1191,6 +1221,10 @@ fn test_stage_a_static_scalar_slice_and_shape_strictness() {
         "1 + T[\"r1\"..\"r1\", @col]",
         "1 + T[\"r1\"..\"r2\", @col]",
         "ABS(T[\"r1\"..\"r2\", @col])",
+        "LN(T[\"r1\"..\"r2\", @col])",
+        "EXP(T[\"r1\"..\"r2\", @col])",
+        "MOD(T[\"r1\"..\"r2\", @col], 2)",
+        "MOD(5, T[\"r1\"..\"r2\", @col])",
         "ISERROR(T[\"r1\"..\"r2\", @col])",
         "ISERROR(T[\"r1\"..\"r1\", @col])",
         "IF(TRUE, 1, T[\"r1\"..\"r2\", @col])",

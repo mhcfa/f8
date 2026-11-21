@@ -1,10 +1,10 @@
-//! Canonical Excel calculation parity test fixture covering all 34 registered standard functions,
+//! Canonical Excel calculation parity test fixture covering all 37 registered standard functions,
 //! domain error semantics (`#DIV/0!`, `#VALUE!`, `#NUM!`, `#N/A`, `#REF!`), and calculation edge cases.
 //!
 //! Organizes tests across two worksheets:
 //! - Sheet 1 (`ParityVerification`): 7 vertical tables where live Excel matches mathematical ground truth:
 //!   1. `SeedData`: Independent inputs (numbers, categories, dates, cash flows, sparse cells) for ranges and lookups.
-//!   2. `MathParity`: 11 standard math and aggregation functions + edge and error cases.
+//!   2. `MathParity`: 14 standard math and aggregation functions + edge and error cases.
 //!   3. `LogicalParity`: 6 logical, branching, and error-handling functions + edge and error cases.
 //!   4. `FinancialParity`: 5 discounting, return, and annuity functions + edge and error cases.
 //!   5. `LookupParity`: 3 modern lookup and index functions + edge and error cases.
@@ -95,12 +95,30 @@ struct DivergenceCase {
 }
 
 const MATH_CASES: &[ParityCase] = &[
-    // Core 11 functions
+    // Core 14 functions
     ParityCase {
         id: "abs",
         label: "ABS(-42.5)",
         formula: "ABS(-42.5)",
         expected: ParityExpected::ExactNum(42.5),
+    },
+    ParityCase {
+        id: "ln",
+        label: "LN(10)",
+        formula: "LN(10)",
+        expected: ParityExpected::ApproxNum(std::f64::consts::LN_10),
+    },
+    ParityCase {
+        id: "exp",
+        label: "EXP(1)",
+        formula: "EXP(1)",
+        expected: ParityExpected::ApproxNum(std::f64::consts::E),
+    },
+    ParityCase {
+        id: "mod_fn",
+        label: "MOD(7, 3)",
+        formula: "MOD(7, 3)",
+        expected: ParityExpected::ExactNum(1.0),
     },
     ParityCase {
         id: "sum",
@@ -343,6 +361,102 @@ const MATH_CASES: &[ParityCase] = &[
         formula: "0e-5",
         expected: ParityExpected::ExactNum(0.0),
     },
+    ParityCase {
+        id: "ln_one",
+        label: "LN(1) [exact +0.0]",
+        formula: "LN(1)",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "ln_exp_identity",
+        label: "LN(EXP(1)) [inverse identity -> 1]",
+        formula: "LN(EXP(1))",
+        expected: ParityExpected::ApproxNum(1.0),
+    },
+    ParityCase {
+        id: "ln_half",
+        label: "LN(0.5) [-ln(2)]",
+        formula: "LN(0.5)",
+        expected: ParityExpected::ApproxNum(-std::f64::consts::LN_2),
+    },
+    ParityCase {
+        id: "exp_zero",
+        label: "EXP(0) [exact 1]",
+        formula: "EXP(0)",
+        expected: ParityExpected::ExactNum(1.0),
+    },
+    ParityCase {
+        id: "exp_neg_one",
+        label: "EXP(-1) [1 / e]",
+        formula: "EXP(-1)",
+        expected: ParityExpected::ApproxNum(1.0 / std::f64::consts::E),
+    },
+    ParityCase {
+        id: "exp_underflow",
+        label: "EXP(-1000) [clean underflow -> +0.0]",
+        formula: "EXP(-1000)",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "mod_neg_dividend",
+        label: "MOD(-7, 3) [floored divisor sign -> 2]",
+        formula: "MOD(-7, 3)",
+        expected: ParityExpected::ExactNum(2.0),
+    },
+    ParityCase {
+        id: "mod_neg_divisor",
+        label: "MOD(7, -3) [floored divisor sign -> -2]",
+        formula: "MOD(7, -3)",
+        expected: ParityExpected::ExactNum(-2.0),
+    },
+    ParityCase {
+        id: "mod_both_neg",
+        label: "MOD(-7, -3) [both negative -> -1]",
+        formula: "MOD(-7, -3)",
+        expected: ParityExpected::ExactNum(-1.0),
+    },
+    ParityCase {
+        id: "mod_exact_div",
+        label: "MOD(6, 3) [exact multiple -> +0.0]",
+        formula: "MOD(6, 3)",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "mod_neg_exact_div",
+        label: "MOD(-6, 3) [negative exact multiple -> +0.0]",
+        formula: "MOD(-6, 3)",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "mod_zero_neg_div",
+        label: "MOD(0, -3) [zero dividend -> +0.0]",
+        formula: "MOD(0, -3)",
+        expected: ParityExpected::ExactNum(0.0),
+    },
+    ParityCase {
+        id: "mod_frac_pos",
+        label: "MOD(5.5, 2) [dyadic fraction -> 1.5]",
+        formula: "MOD(5.5, 2)",
+        expected: ParityExpected::ExactNum(1.5),
+    },
+    ParityCase {
+        id: "mod_frac_neg_num",
+        label: "MOD(-5.5, 2) [negative dyadic fraction -> 0.5]",
+        formula: "MOD(-5.5, 2)",
+        expected: ParityExpected::ExactNum(0.5),
+    },
+    ParityCase {
+        id: "mod_frac_neg_div",
+        label: "MOD(5.5, -2) [negative divisor dyadic fraction -> -0.5]",
+        formula: "MOD(5.5, -2)",
+        expected: ParityExpected::ExactNum(-0.5),
+    },
+    ParityCase {
+        id: "mod_frac_unit",
+        label: "MOD(3.25, 1) [unit fractional part -> 0.25]",
+        formula: "MOD(3.25, 1)",
+        expected: ParityExpected::ExactNum(0.25),
+    },
     // Error cases
     ParityCase {
         id: "div0_arith_err",
@@ -408,6 +522,42 @@ const MATH_CASES: &[ParityCase] = &[
         id: "roundup_overflow_max_err",
         label: "ROUNDUP(1.5 * (10 ^ 308), -308) [2e308 overflow -> #NUM!]",
         formula: "ROUNDUP(1.5 * (10 ^ 308), -308)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "ln_zero_err",
+        label: "LN(0) [non-positive domain -> #NUM!]",
+        formula: "LN(0)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "ln_neg_err",
+        label: "LN(-5) [negative domain -> #NUM!]",
+        formula: "LN(-5)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "exp_overflow_err",
+        label: "EXP(710) [float overflow -> #NUM!]",
+        formula: "EXP(710)",
+        expected: ParityExpected::Error(ExcelError::Num),
+    },
+    ParityCase {
+        id: "mod_div0_err",
+        label: "MOD(5, 0) [zero divisor -> #DIV/0!]",
+        formula: "MOD(5, 0)",
+        expected: ParityExpected::Error(ExcelError::Div0),
+    },
+    ParityCase {
+        id: "mod_zero_div0_err",
+        label: "MOD(0, 0) [zero divisor -> #DIV/0!]",
+        formula: "MOD(0, 0)",
+        expected: ParityExpected::Error(ExcelError::Div0),
+    },
+    ParityCase {
+        id: "mod_huge_quotient_err",
+        label: "MOD(1e20, 3) [huge quotient -> #NUM!]",
+        formula: "MOD(1e20, 3)",
         expected: ParityExpected::Error(ExcelError::Num),
     },
 ];
@@ -1358,8 +1508,8 @@ const INFORMATION_CASES: &[ParityCase] = &[
 const PARITY_GROUPS: &[ParityGroup] = &[
     ParityGroup {
         table_id: "MathParity",
-        title: "Math & Aggregation Functions (11 Functions + Edge & Error Cases)",
-        subtitle: "ABS, SUM, AVERAGE, COUNT, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT",
+        title: "Math & Aggregation Functions (14 Functions + Edge & Error Cases)",
+        subtitle: "ABS, LN, EXP, MOD, SUM, AVERAGE, COUNT, MAX, MIN, MEDIAN, ROUND, ROUNDUP, ROUNDDOWN, SUMPRODUCT",
         cases: MATH_CASES,
     },
     ParityGroup {
@@ -1463,7 +1613,7 @@ fn build_divergence_table() -> TableSpec {
     }
 }
 
-/// Constructs the complete 34-function Excel parity verification model with pinned ground-truth constants.
+/// Constructs the complete 37-function Excel parity verification model with pinned ground-truth constants.
 #[must_use]
 pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
     let mut sheet_tables = Vec::with_capacity(1 + PARITY_GROUPS.len());
