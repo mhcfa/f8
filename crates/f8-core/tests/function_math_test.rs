@@ -2,12 +2,12 @@
 
 use indexmap::IndexMap;
 
-use f8_core::compiler::eval::eval_expr;
+use f8_core::compiler::eval::{EvalError, eval_expr};
 use f8_core::compiler::ir::id::CellId;
 use f8_core::compiler::ir::symbol::SymbolTable;
 use f8_core::expr::ast::Expr;
 use f8_core::functions::traits::{EvalContext, FunctionArg, ReferenceKind};
-use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry};
+use f8_core::functions::{FunctionCategory, FunctionError, FunctionRegistry, ValidationPolicy};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::table::{AxisRole, ColumnSpec, RowSpec, TableSpec};
 use f8_core::value::{CellValue, ExcelError, TypeError, ValueType};
@@ -25,7 +25,7 @@ impl EvalContext for MockEvalContext {
 #[test]
 fn test_scenario_1_category_folder_modularization_and_registration() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 34);
+    assert_eq!(registry.len(), 37);
     for retired in [
         "SWITCH",
         "SUMIFS",
@@ -51,6 +51,9 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
 
     let expected_functions = [
         ("ABS", FunctionCategory::Math),
+        ("LN", FunctionCategory::Math),
+        ("EXP", FunctionCategory::Math),
+        ("MOD", FunctionCategory::Math),
         ("SUM", FunctionCategory::Math),
         ("AVERAGE", FunctionCategory::Math),
         ("COUNT", FunctionCategory::Math),
@@ -87,9 +90,22 @@ fn test_scenario_1_category_folder_modularization_and_registration() {
         assert_eq!(func.category(), category);
     }
 
-    // Invariant: Every FunctionCategory::Math function enforces ParamType::Number, and every range-accepting Math parameter enforces RolePolicy::MeasureOnly
+    // Invariant: Every FunctionCategory::Math function enforces ParamType::Number, return_type Some(Number),
+    // ValidationPolicy::Standard (except SUMPRODUCT), and RolePolicy::MeasureOnly on range-accepting parameters
     for (name, func) in registry.iter() {
         if func.category() == FunctionCategory::Math {
+            assert_eq!(
+                func.return_type(),
+                Some(ValueType::Number),
+                "Math function {name} must return Some(ValueType::Number)"
+            );
+            if name != "SUMPRODUCT" {
+                assert_eq!(
+                    func.validation_policy(),
+                    ValidationPolicy::Standard,
+                    "Math function {name} must use ValidationPolicy::Standard"
+                );
+            }
             for param in func.parameters() {
                 assert_eq!(
                     param.param_type,
@@ -1020,4 +1036,661 @@ fn test_cluster_b_aggregate_overflow_and_dormant_empty_guard() {
     // Unguarded SUM(T["r1", "val"]) on SingleCell Empty fails even inside IFERROR
     let unguarded = Expr::parse("IFERROR(SUM(T[\"r1\", \"val\"]), 0)").unwrap();
     assert!(eval_expr(&unguarded, &origin, &values, &symbols, &registry).is_err());
+}
+
+fn make_eval_fixture() -> (SymbolTable, CellId, IndexMap<CellId, CellValue>) {
+    let mut symbols = SymbolTable::new();
+    let sheet_id = SheetId::from("Sheet1");
+    let spec = TableSpec {
+        id: TableId::from("T"),
+        title: "T".into(),
+        subtitles: Vec::new(),
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![ColumnSpec::new("val")],
+        rows: vec![
+            RowSpec::new("r1"),
+            RowSpec::new("r2"),
+            RowSpec::new("empty"),
+        ],
+    };
+    symbols.register_table(sheet_id, &spec).unwrap();
+
+    let origin = CellId::new("T", "r1", "val");
+    let mut values = IndexMap::new();
+    values.insert(CellId::new("T", "r1", "val"), CellValue::Number(10.0));
+    values.insert(CellId::new("T", "r2", "val"), CellValue::Number(20.0));
+    values.insert(CellId::new("T", "empty", "val"), CellValue::Empty);
+    (symbols, origin, values)
+}
+
+#[test]
+fn test_ln_nominal_inverse_and_domain_errors() {
+    let registry = FunctionRegistry::standard();
+    let ln = registry.lookup("LN").unwrap();
+    let ctx = MockEvalContext;
+    let (symbols, origin, values) = make_eval_fixture();
+
+    // LN(1) -> exact +0.0
+    let ln_one = ln
+        .evaluate(&[FunctionArg::Scalar(CellValue::Number(1.0))], &ctx)
+        .unwrap();
+    assert_eq!(ln_one, CellValue::Number(0.0));
+    if let CellValue::Number(n) = ln_one {
+        assert_eq!(n.to_bits(), 0.0_f64.to_bits());
+    }
+
+    // LN(EXP(1)) -> 1.0, LN(10) -> 10_f64.ln(), LN(0.5) -> 0.5_f64.ln()
+    for (formula, expected) in [
+        ("LN(1)", 0.0_f64),
+        ("LN(EXP(1))", 1.0_f64),
+        ("LN(10)", 10.0_f64.ln()),
+        ("LN(0.5)", 0.5_f64.ln()),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        let actual = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap();
+        assert_eq!(
+            actual,
+            CellValue::Number(expected),
+            "mismatch on '{formula}'"
+        );
+        if let CellValue::Number(n) = actual {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "bit mismatch on '{formula}'"
+            );
+        }
+    }
+
+    // Domain errors: LN(0), LN(-0.0), LN(-5) -> #NUM!; non-finite -> #NUM!
+    for bad in [0.0, -0.0, -5.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(
+            ln.evaluate(&[FunctionArg::Scalar(CellValue::Number(bad))], &ctx)
+                .unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for LN({bad:?})"
+        );
+    }
+    for formula in ["LN(0)", "LN(-0)", "LN(-5)"] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for '{formula}'"
+        );
+    }
+
+    // Upstream error bubbling: LN(1 / 0) -> #DIV/0!
+    assert_eq!(
+        ln.evaluate(
+            &[FunctionArg::Scalar(CellValue::Error(ExcelError::Div0))],
+            &ctx,
+        )
+        .unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+    let div0_expr = Expr::parse("LN(1 / 0)").unwrap();
+    assert_eq!(
+        eval_expr(&div0_expr, &origin, &values, &symbols, &registry).unwrap(),
+        CellValue::Error(ExcelError::Div0)
+    );
+}
+
+#[test]
+fn test_exp_nominal_underflow_and_overflow_errors() {
+    let registry = FunctionRegistry::standard();
+    let exp = registry.lookup("EXP").unwrap();
+    let ctx = MockEvalContext;
+    let (symbols, origin, values) = make_eval_fixture();
+
+    for (formula, input, expected) in [
+        ("EXP(0)", 0.0_f64, 1.0_f64),
+        ("EXP(1)", 1.0_f64, std::f64::consts::E),
+        ("EXP(-1)", -1.0_f64, (-1.0_f64).exp()),
+        ("EXP(709)", 709.0_f64, 709.0_f64.exp()),
+        ("EXP(-1000)", -1000.0_f64, 0.0_f64),
+    ] {
+        let direct = exp
+            .evaluate(&[FunctionArg::Scalar(CellValue::Number(input))], &ctx)
+            .unwrap();
+        assert_eq!(
+            direct,
+            CellValue::Number(expected),
+            "direct mismatch for {formula}"
+        );
+        if let CellValue::Number(n) = direct {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "bit mismatch for {formula}"
+            );
+        }
+
+        let expr = Expr::parse(formula).unwrap();
+        let evaluated = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap();
+        assert_eq!(
+            evaluated,
+            CellValue::Number(expected),
+            "eval mismatch for {formula}"
+        );
+        if let CellValue::Number(n) = evaluated {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "eval bit mismatch for {formula}"
+            );
+        }
+    }
+
+    // Overflow -> #NUM!
+    assert_eq!(
+        exp.evaluate(&[FunctionArg::Scalar(CellValue::Number(710.0))], &ctx)
+            .unwrap(),
+        CellValue::Error(ExcelError::Num)
+    );
+    let overflow_expr = Expr::parse("EXP(710)").unwrap();
+    assert_eq!(
+        eval_expr(&overflow_expr, &origin, &values, &symbols, &registry).unwrap(),
+        CellValue::Error(ExcelError::Num)
+    );
+
+    // Upstream error bubbling: EXP(NA()) -> #N/A
+    assert_eq!(
+        exp.evaluate(
+            &[FunctionArg::Scalar(CellValue::Error(ExcelError::Na))],
+            &ctx,
+        )
+        .unwrap(),
+        CellValue::Error(ExcelError::Na)
+    );
+    let na_expr = Expr::parse("EXP(NA())").unwrap();
+    assert_eq!(
+        eval_expr(&na_expr, &origin, &values, &symbols, &registry).unwrap(),
+        CellValue::Error(ExcelError::Na)
+    );
+}
+
+#[test]
+fn test_mod_sign_matrix_fractions_and_neg_zero_normalization() {
+    let registry = FunctionRegistry::standard();
+    let mod_fn = registry.lookup("MOD").unwrap();
+    let ctx = MockEvalContext;
+    let (symbols, origin, values) = make_eval_fixture();
+
+    let cases = [
+        ("MOD(7, 3)", 7.0, 3.0, 1.0),
+        ("MOD(-7, 3)", -7.0, 3.0, 2.0),
+        ("MOD(7, -3)", 7.0, -3.0, -2.0),
+        ("MOD(-7, -3)", -7.0, -3.0, -1.0),
+        ("MOD(6, 3)", 6.0, 3.0, 0.0),
+        ("MOD(-6, 3)", -6.0, 3.0, 0.0),
+        ("MOD(0, -3)", 0.0, -3.0, 0.0),
+        ("MOD(5.5, 2)", 5.5, 2.0, 1.5),
+        ("MOD(-5.5, 2)", -5.5, 2.0, 0.5),
+        ("MOD(5.5, -2)", 5.5, -2.0, -0.5),
+        ("MOD(3.25, 1)", 3.25, 1.0, 0.25),
+        ("MOD(1, 0.1)", 1.0, 0.1, 0.0),
+        ("MOD(10, 0.1)", 10.0, 0.1, 0.0),
+    ];
+
+    for (formula, num, div, expected) in cases {
+        let direct = mod_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(num)),
+                    FunctionArg::Scalar(CellValue::Number(div)),
+                ],
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            direct,
+            CellValue::Number(expected),
+            "direct mismatch for {formula}"
+        );
+        if let CellValue::Number(n) = direct {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "direct bit mismatch for {formula}"
+            );
+        }
+
+        let expr = Expr::parse(formula).unwrap();
+        let evaluated = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap();
+        assert_eq!(
+            evaluated,
+            CellValue::Number(expected),
+            "eval mismatch for {formula}"
+        );
+        if let CellValue::Number(n) = evaluated {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "eval bit mismatch for {formula}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_mod_error_semantics_and_extreme_float_guards() {
+    let registry = FunctionRegistry::standard();
+    let mod_fn = registry.lookup("MOD").unwrap();
+    let ctx = MockEvalContext;
+    let (symbols, origin, values) = make_eval_fixture();
+
+    // Division by zero -> #DIV/0!
+    for formula in ["MOD(5, 0)", "MOD(0, 0)"] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap(),
+            CellValue::Error(ExcelError::Div0),
+            "expected #DIV/0! for '{formula}'"
+        );
+    }
+
+    // Left-to-right upstream error bubbling
+    for (formula, expected_err) in [
+        ("MOD(NA(), 0)", ExcelError::Na),
+        ("MOD(5, NA())", ExcelError::Na),
+        ("MOD(NA(), 1 / 0)", ExcelError::Na),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap(),
+            CellValue::Error(expected_err),
+            "error bubbling mismatch for '{formula}'"
+        );
+    }
+
+    // Quotient exceeding MAX_SAFE_INTEGER or overflowing to infinity -> #NUM!
+    for formula in [
+        "MOD(1e20, 3)",
+        "MOD(9007199254740992, 1)",
+        "MOD(-9007199254740992, 1)",
+        "MOD(1e308, 1e-308)",
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap(),
+            CellValue::Error(ExcelError::Num),
+            "expected #NUM! for '{formula}'"
+        );
+    }
+
+    // Safe integer boundary, opposite-sign quotient underflow, and intermediate product overflow guards
+    for (formula, num, div, expected) in [
+        (
+            "MOD(9007199254740991, 1)",
+            9_007_199_254_740_991.0,
+            1.0,
+            0.0,
+        ),
+        ("MOD(-1e-200, 1e200)", -1e-200, 1e200, 1e200),
+        ("MOD(1e-200, -1e200)", 1e-200, -1e200, -1e200),
+        ("MOD(-1.5e308, 1.0e308)", -1.5e308, 1.0e308, 0.5e308),
+        ("MOD(1.5e308, -1.0e308)", 1.5e308, -1.0e308, -0.5e308),
+    ] {
+        let direct = mod_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(num)),
+                    FunctionArg::Scalar(CellValue::Number(div)),
+                ],
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            direct,
+            CellValue::Number(expected),
+            "direct mismatch for {formula}"
+        );
+        if let CellValue::Number(n) = direct {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "direct bit mismatch for {formula}"
+            );
+        }
+
+        let expr = Expr::parse(formula).unwrap();
+        let evaluated = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap();
+        assert_eq!(
+            evaluated,
+            CellValue::Number(expected),
+            "eval mismatch for {formula}"
+        );
+        if let CellValue::Number(n) = evaluated {
+            assert_eq!(
+                n.to_bits(),
+                expected.to_bits(),
+                "eval bit mismatch for {formula}"
+            );
+        }
+    }
+
+    // Integer-rounded intermediate overflow boundaries across all four sign quadrants
+    // (f64::MAX / (f64::MAX / 3.0) == 3.0, while 3.0 * (f64::MAX / 3.0) overflows to infinity)
+    let max_div_3 = f64::MAX / 3.0;
+    let neg_quad_expected = (-f64::MAX - max_div_3 * -2.0) + max_div_3;
+    let pos_quad_expected = f64::MAX - max_div_3 * 2.0;
+    assert_eq!(neg_quad_expected, 9.979_201_547_673_6e291);
+    assert_eq!(pos_quad_expected, 5.992_310_449_541_052e307);
+
+    for (label, num, div, expected) in [
+        (
+            "MOD(-f64::MAX, f64::MAX / 3)",
+            -f64::MAX,
+            max_div_3,
+            neg_quad_expected,
+        ),
+        (
+            "MOD(f64::MAX, -(f64::MAX / 3))",
+            f64::MAX,
+            -max_div_3,
+            -neg_quad_expected,
+        ),
+        (
+            "MOD(f64::MAX, f64::MAX / 3)",
+            f64::MAX,
+            max_div_3,
+            pos_quad_expected,
+        ),
+        (
+            "MOD(-f64::MAX, -(f64::MAX / 3))",
+            -f64::MAX,
+            -max_div_3,
+            -pos_quad_expected,
+        ),
+    ] {
+        let direct = mod_fn
+            .evaluate(
+                &[
+                    FunctionArg::Scalar(CellValue::Number(num)),
+                    FunctionArg::Scalar(CellValue::Number(div)),
+                ],
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            direct,
+            CellValue::Number(expected),
+            "direct overflow boundary mismatch for {label}"
+        );
+        if let CellValue::Number(n) = direct {
+            assert!(n.is_finite());
+            assert_eq!(
+                n.is_sign_negative(),
+                div.is_sign_negative(),
+                "divisor sign mismatch for {label}"
+            );
+            assert_eq!(n.to_bits(), expected.to_bits(), "bit mismatch for {label}");
+        }
+    }
+}
+
+#[test]
+fn test_ln_exp_mod_strict_typing_arity_omission_slice_and_empty_rejection() {
+    let registry = FunctionRegistry::standard();
+    let ctx = MockEvalContext;
+    let (symbols, origin, values) = make_eval_fixture();
+
+    // Stage A static typing, arity, omission, and dormant-branch checks
+    let stage_a_cases: &[(&str, FunctionError)] = &[
+        (
+            "LN(\"1\")",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "LN",
+                param: "number",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "LN(TRUE)",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "LN",
+                param: "number",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Boolean,
+            }),
+        ),
+        (
+            "LN()",
+            FunctionError::TooFewArguments {
+                function: "LN",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "LN(1, 2)",
+            FunctionError::TooManyArguments {
+                function: "LN",
+                expected: 1,
+                found: 2,
+            },
+        ),
+        (
+            "LN(_)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "LN",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "EXP(\"1\")",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "EXP",
+                param: "number",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "EXP(FALSE)",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "EXP",
+                param: "number",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Boolean,
+            }),
+        ),
+        (
+            "EXP()",
+            FunctionError::TooFewArguments {
+                function: "EXP",
+                expected: 1,
+                found: 0,
+            },
+        ),
+        (
+            "EXP(1, 2)",
+            FunctionError::TooManyArguments {
+                function: "EXP",
+                expected: 1,
+                found: 2,
+            },
+        ),
+        (
+            "EXP(_)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "EXP",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "MOD(\"5\", 2)",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "MOD",
+                param: "number",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+        (
+            "MOD(5, TRUE)",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "MOD",
+                param: "divisor",
+                position: 2,
+                expected: ValueType::Number,
+                found: ValueType::Boolean,
+            }),
+        ),
+        (
+            "MOD(5)",
+            FunctionError::TooFewArguments {
+                function: "MOD",
+                expected: 2,
+                found: 1,
+            },
+        ),
+        (
+            "MOD(5, 2, 1)",
+            FunctionError::TooManyArguments {
+                function: "MOD",
+                expected: 2,
+                found: 3,
+            },
+        ),
+        (
+            "MOD(5, _)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "MOD",
+                param: "divisor",
+                position: 2,
+            },
+        ),
+        (
+            "MOD(_, 2)",
+            FunctionError::CannotOmitRequiredArgument {
+                function: "MOD",
+                param: "number",
+                position: 1,
+            },
+        ),
+        (
+            "IF(TRUE, 1, LN(\"1\"))",
+            FunctionError::Type(TypeError::InvalidArgumentType {
+                function: "LN",
+                param: "number",
+                position: 1,
+                expected: ValueType::Number,
+                found: ValueType::Text,
+            }),
+        ),
+    ];
+
+    for (formula, expected_err) in stage_a_cases {
+        let expr = Expr::parse(formula).unwrap();
+        assert_eq!(
+            registry.validate_expr(&expr).unwrap_err(),
+            *expected_err,
+            "Stage A mismatch for '{formula}'"
+        );
+    }
+
+    // Range slices rejected with SliceInScalarContext
+    let resolve_slice = |_: &f8_core::expr::TableRef| -> Result<
+        Option<f8_core::functions::StaticRef>,
+        &'static str,
+    > {
+        Ok(Some(f8_core::functions::StaticRef {
+            rows: 2,
+            cols: 1,
+            axis_role: AxisRole::Measure,
+            elem_types: vec![Some(ValueType::Number), Some(ValueType::Number)],
+        }))
+    };
+    for slice_formula in [
+        "LN(T[\"r1\"..\"r2\", @col])",
+        "EXP(T[\"r1\"..\"r2\", @col])",
+        "MOD(T[\"r1\"..\"r2\", @col], 2)",
+        "MOD(5, T[\"r1\"..\"r2\", @col])",
+    ] {
+        let expr = Expr::parse(slice_formula).unwrap();
+        assert_eq!(
+            registry
+                .validate_expr_with_shapes(&expr, resolve_slice)
+                .unwrap_err(),
+            f8_core::functions::StageAError::Function(FunctionError::SliceInScalarContext {
+                rows: 2,
+                cols: 1,
+            }),
+            "expected SliceInScalarContext for '{slice_formula}'"
+        );
+    }
+
+    // Empty cell reference passed to any LN/EXP/MOD argument fails with EmptyArgument
+    for (formula, expected_fn, expected_param, expected_pos) in [
+        ("LN(T[\"empty\", \"val\"])", "LN", "number", 1),
+        ("EXP(T[\"empty\", \"val\"])", "EXP", "number", 1),
+        ("MOD(T[\"empty\", \"val\"], 2)", "MOD", "number", 1),
+        ("MOD(5, T[\"empty\", \"val\"])", "MOD", "divisor", 2),
+    ] {
+        let expr = Expr::parse(formula).unwrap();
+        let err = eval_expr(&expr, &origin, &values, &symbols, &registry).unwrap_err();
+        let EvalError::Type { cell, source } = err else {
+            panic!("expected EvalError::Type for '{formula}', got {err:?}");
+        };
+        assert_eq!(*cell, origin, "cell mismatch for '{formula}'");
+        assert_eq!(
+            source,
+            TypeError::EmptyArgument {
+                function: expected_fn,
+                param: expected_param,
+                position: expected_pos,
+            },
+            "expected EmptyArgument for '{formula}'"
+        );
+    }
+
+    // Direct evaluate arity enforcement
+    let ln = registry.lookup("LN").unwrap();
+    let exp = registry.lookup("EXP").unwrap();
+    let mod_fn = registry.lookup("MOD").unwrap();
+    let one = FunctionArg::Scalar(CellValue::Number(1.0));
+    assert_eq!(
+        ln.evaluate(&[], &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "LN",
+            expected: 1,
+            found: 0,
+        })
+    );
+    assert_eq!(
+        exp.evaluate(&[one.clone(), one.clone()], &ctx),
+        Err(FunctionError::TooManyArguments {
+            function: "EXP",
+            expected: 1,
+            found: 2,
+        })
+    );
+    assert_eq!(
+        mod_fn.evaluate(std::slice::from_ref(&one), &ctx),
+        Err(FunctionError::TooFewArguments {
+            function: "MOD",
+            expected: 2,
+            found: 1,
+        })
+    );
+    assert_eq!(
+        mod_fn.evaluate(&[one.clone(), one.clone(), one], &ctx),
+        Err(FunctionError::TooManyArguments {
+            function: "MOD",
+            expected: 2,
+            found: 3,
+        })
+    );
 }

@@ -2056,5 +2056,165 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       expect(wrapped).toBeInstanceOf(F8Error)
       expect(wrapped.cause).toBe(rawErr)
     })
+
+    it("(r) evaluates LN, EXP, and MOD nominal values, runtime errors, native lowering, and compile-time F8Error rejections", () => {
+      const okModel = new Model({ name: "LnExpModOk" })
+      const okTbl = okModel.addSheet("Main").addTable("T", "LN EXP MOD")
+      okTbl.addColumn("c1", { role: "measure", header: "Val" })
+      okTbl.addRow("base", { cells: { c1: 10 } })
+
+      const addCase = (rowId: string, formula: string): void => {
+        okTbl.addRow(rowId, { cells: { c1: new Cell({ expr: formula }) } })
+      }
+
+      addCase("ln_one", "LN(1)")
+      addCase("ln_exp_one", "LN(EXP(1))")
+      addCase("ln_ref", 'LN(@table["base", @col])')
+      addCase("ln_half", "LN(0.5)")
+      addCase("exp_zero", "EXP(0)")
+      addCase("exp_one", "EXP(1)")
+      addCase("exp_neg_one", "EXP(-1)")
+      addCase("exp_709", "EXP(709)")
+      addCase("exp_underflow", "EXP(-1000)")
+      addCase("mod_pp", "MOD(7, 3)")
+      addCase("mod_np", "MOD(-7, 3)")
+      addCase("mod_pn", "MOD(7, -3)")
+      addCase("mod_nn", "MOD(-7, -3)")
+      addCase("mod_exact", "MOD(6, 3)")
+      addCase("mod_neg_exact", "MOD(-6, 3)")
+      addCase("mod_zero_neg", "MOD(0, -3)")
+      addCase("mod_frac_pp", "MOD(5.5, 2)")
+      addCase("mod_frac_np", "MOD(-5.5, 2)")
+      addCase("mod_frac_pn", "MOD(5.5, -2)")
+      addCase("mod_frac_unit", "MOD(3.25, 1)")
+      addCase("mod_dec_1", "MOD(1, 0.1)")
+      addCase("mod_dec_10", "MOD(10, 0.1)")
+      addCase("mod_max_safe", "MOD(9007199254740991, 1)")
+      addCase("mod_underflow_np", "MOD(-1e-200, 1e200)")
+      addCase("mod_underflow_pn", "MOD(1e-200, -1e200)")
+      addCase("mod_extreme_overflow", "MOD(-1.5e308, 1.0e308)")
+      addCase("mod_ref", 'MOD(@table["base", @col], 3)')
+
+      addCase("ln_zero_err", "LN(0)")
+      addCase("ln_neg_err", "LN(-5)")
+      addCase("ln_div0_bubble", "LN(1 / 0)")
+      addCase("exp_overflow_err", "EXP(710)")
+      addCase("exp_na_bubble", "EXP(NA())")
+      addCase("mod_div0_err", "MOD(5, 0)")
+      addCase("mod_zero_div0_err", "MOD(0, 0)")
+      addCase("mod_na_left", "MOD(NA(), 0)")
+      addCase("mod_na_right", "MOD(5, NA())")
+      addCase("mod_huge_err", "MOD(1e20, 3)")
+      addCase("mod_above_safe_err", "MOD(9007199254740992, 1)")
+
+      const compiled = okModel.compile()
+
+      for (const zeroRow of [
+        "ln_one",
+        "exp_underflow",
+        "mod_exact",
+        "mod_neg_exact",
+        "mod_zero_neg",
+        "mod_dec_1",
+        "mod_dec_10",
+        "mod_max_safe",
+      ]) {
+        expect(Object.is(compiled.num("T", zeroRow, "c1"), 0)).toBe(true)
+      }
+
+      expect(compiled.num("T", "ln_exp_one", "c1")).toBeCloseTo(1, 12)
+      expect(compiled.num("T", "ln_ref", "c1")).toBeCloseTo(Math.log(10), 12)
+      expect(compiled.num("T", "ln_half", "c1")).toBeCloseTo(Math.log(0.5), 12)
+      expect(compiled.num("T", "exp_zero", "c1")).toBe(1)
+      expect(compiled.num("T", "exp_one", "c1")).toBeCloseTo(Math.E, 12)
+      expect(compiled.num("T", "exp_neg_one", "c1")).toBeCloseTo(
+        Math.exp(-1),
+        12
+      )
+      expect(compiled.num("T", "exp_709", "c1")).toBeCloseTo(
+        Math.exp(709),
+        -295
+      )
+      expect(compiled.num("T", "mod_pp", "c1")).toBe(1)
+      expect(compiled.num("T", "mod_np", "c1")).toBe(2)
+      expect(compiled.num("T", "mod_pn", "c1")).toBe(-2)
+      expect(compiled.num("T", "mod_nn", "c1")).toBe(-1)
+      expect(compiled.num("T", "mod_frac_pp", "c1")).toBe(1.5)
+      expect(compiled.num("T", "mod_frac_np", "c1")).toBe(0.5)
+      expect(compiled.num("T", "mod_frac_pn", "c1")).toBe(-0.5)
+      expect(compiled.num("T", "mod_frac_unit", "c1")).toBe(0.25)
+      expect(compiled.num("T", "mod_underflow_np", "c1")).toBe(1e200)
+      expect(compiled.num("T", "mod_underflow_pn", "c1")).toBe(-1e200)
+      expect(compiled.num("T", "mod_extreme_overflow", "c1")).toBe(0.5e308)
+      expect(compiled.num("T", "mod_ref", "c1")).toBe(1)
+
+      expect(compiled.value("T", "ln_zero_err", "c1")).toBe("#NUM!")
+      expect(compiled.value("T", "ln_neg_err", "c1")).toBe("#NUM!")
+      expect(compiled.value("T", "ln_div0_bubble", "c1")).toBe("#DIV/0!")
+      expect(compiled.value("T", "exp_overflow_err", "c1")).toBe("#NUM!")
+      expect(compiled.value("T", "exp_na_bubble", "c1")).toBe("#N/A")
+      expect(compiled.value("T", "mod_div0_err", "c1")).toBe("#DIV/0!")
+      expect(compiled.value("T", "mod_zero_div0_err", "c1")).toBe("#DIV/0!")
+      expect(compiled.value("T", "mod_na_left", "c1")).toBe("#N/A")
+      expect(compiled.value("T", "mod_na_right", "c1")).toBe("#N/A")
+      expect(compiled.value("T", "mod_huge_err", "c1")).toBe("#NUM!")
+      expect(compiled.value("T", "mod_above_safe_err", "c1")).toBe("#NUM!")
+
+      for (const [rowId, prefix] of [
+        ["ln_ref", "=LN("],
+        ["exp_one", "=EXP("],
+        ["mod_ref", "=MOD("],
+      ] as const) {
+        const formula =
+          compiled.inspectCell("T", rowId, "c1").excelFormula ?? ""
+        expect(formula.startsWith(prefix)).toBe(true)
+        expect(formula).not.toContain("_xlfn.")
+      }
+
+      const badFormulas = [
+        'LN("1")',
+        "LN(TRUE)",
+        "LN()",
+        "LN(1, 2)",
+        "LN(_)",
+        'EXP("1")',
+        "EXP(FALSE)",
+        "EXP()",
+        "EXP(1, 2)",
+        "EXP(_)",
+        'MOD("5", 2)',
+        "MOD(5, TRUE)",
+        "MOD(5)",
+        "MOD(5, 2, 1)",
+        "MOD(5, _)",
+        'LN(@table["r1".."r2", "c1"])',
+        'EXP(@table["r1".."r2", "c1"])',
+        'MOD(@table["r1".."r2", "c1"], 2)',
+        'LN(@table["empty", "c1"])',
+        'EXP(@table["empty", "c1"])',
+        'MOD(@table["empty", "c1"], 2)',
+        'MOD(5, @table["empty", "c1"])',
+      ]
+
+      for (const formula of badFormulas) {
+        const errModel = new Model({ name: "LnExpModErr" })
+        const errTbl = errModel.addSheet("Main").addTable("T", "Err")
+        errTbl.addColumn("c1", { role: "measure", header: "Val" })
+        errTbl.addRow("r1", { cells: { c1: 1 } })
+        errTbl.addRow("r2", { cells: { c1: 2 } })
+        errTbl.addRow("empty", { cells: { c1: null } })
+        errTbl.addRow("target", { expr: formula })
+        let caught: unknown
+        try {
+          errModel.compile()
+        } catch (err: unknown) {
+          caught = err
+        }
+        expect(caught).toBeInstanceOf(F8Error)
+        expect(
+          caught instanceof F8Error && caught.constructor === F8Error
+        ).toBe(true)
+      }
+    })
   })
 })

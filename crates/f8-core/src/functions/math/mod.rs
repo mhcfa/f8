@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub use aggregation::{
     AverageFunction, CountFunction, MaxFunction, MedianFunction, MinFunction, SumFunction,
 };
-pub use basic::AbsFunction;
+pub use basic::{AbsFunction, ExpFunction, LnFunction, ModFunction};
 pub use product::SumproductFunction;
 pub use rounding::{RoundFunction, RounddownFunction, RoundupFunction};
 
@@ -17,6 +17,9 @@ use crate::functions::registry::FunctionRegistry;
 /// Registers all standard mathematical and aggregation functions into the registry.
 pub fn register(registry: &mut FunctionRegistry) {
     registry.register(Arc::new(AbsFunction));
+    registry.register(Arc::new(LnFunction));
+    registry.register(Arc::new(ExpFunction));
+    registry.register(Arc::new(ModFunction));
     registry.register(Arc::new(SumFunction));
     registry.register(Arc::new(AverageFunction));
     registry.register(Arc::new(CountFunction));

@@ -1,6 +1,6 @@
 {
   "name": "f8-engine",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Financial modeling engine with compiler verification and live Excel formulas",
   "keywords": [
     "compiler",
