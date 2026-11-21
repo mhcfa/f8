@@ -52,5 +52,5 @@ CLI commands (`f8` or `python -m f8`):
 ## Reference Index
 
 - `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`get_sheet`, `get_table`, `set_cell`, `set_cells`), 2D coordinate grammar, 3-tier resolution rules, layout placement, formatting presets, and themes.
-- `references/functions.md`: 34 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, conditional aggregation and debt amortization composition patterns, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
+- `references/functions.md`: 37 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, conditional aggregation and debt amortization composition patterns, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, `MarkdownTable` and dictionary/DataFrame exports, `TypedDict` inspection schemas, and `F8Error` exception attributes.

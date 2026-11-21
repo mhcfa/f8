@@ -37,7 +37,7 @@ impl EvalContext for MockContext {
 #[test]
 fn test_scenario_1_registration_and_metadata() {
     let registry = FunctionRegistry::standard();
-    assert_eq!(registry.len(), 34);
+    assert_eq!(registry.len(), 37);
 
     let financial_names = ["NPV", "XNPV", "IRR", "XIRR", "PMT"];
     for name in financial_names {

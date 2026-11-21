@@ -1894,3 +1894,150 @@ def test_scenario_22_error_introspection() -> None:
     assert compiled.value("T", "iserror_non_err", "res") is False
     iserr_cell = compiled.inspect_cell("T", "iserror_div0", "res")
     assert "ISERROR(" in (iserr_cell["excel_formula"] or "")
+
+
+def test_scenario_23_ln_exp_mod_functions() -> None:
+    # 1. Nominal evaluations, extreme float guards, runtime errors, and native Excel lowering
+    ok_model = f8.Model(name="LnExpModOk")
+    ok_tbl = ok_model.add_sheet("Main").add_table("T", title="LN EXP MOD")
+    ok_tbl.add_column("c1", role="measure", header="Val")
+    ok_tbl.add_row("base", cells={"c1": 10.0})
+
+    def add_case(row_id: str, formula: str) -> None:
+        ok_tbl.add_row(row_id, cells={"c1": f8.Cell(expr=formula)})
+
+    add_case("ln_one", "LN(1)")
+    add_case("ln_exp_one", "LN(EXP(1))")
+    add_case("ln_ref", 'LN(@table["base", @col])')
+    add_case("ln_half", "LN(0.5)")
+    add_case("exp_zero", "EXP(0)")
+    add_case("exp_one", "EXP(1)")
+    add_case("exp_neg_one", "EXP(-1)")
+    add_case("exp_709", "EXP(709)")
+    add_case("exp_underflow", "EXP(-1000)")
+    add_case("mod_pp", "MOD(7, 3)")
+    add_case("mod_np", "MOD(-7, 3)")
+    add_case("mod_pn", "MOD(7, -3)")
+    add_case("mod_nn", "MOD(-7, -3)")
+    add_case("mod_exact", "MOD(6, 3)")
+    add_case("mod_neg_exact", "MOD(-6, 3)")
+    add_case("mod_zero_neg", "MOD(0, -3)")
+    add_case("mod_frac_pp", "MOD(5.5, 2)")
+    add_case("mod_frac_np", "MOD(-5.5, 2)")
+    add_case("mod_frac_pn", "MOD(5.5, -2)")
+    add_case("mod_frac_unit", "MOD(3.25, 1)")
+    add_case("mod_dec_1", "MOD(1, 0.1)")
+    add_case("mod_dec_10", "MOD(10, 0.1)")
+    add_case("mod_max_safe", "MOD(9007199254740991, 1)")
+    add_case("mod_underflow_np", "MOD(-1e-200, 1e200)")
+    add_case("mod_underflow_pn", "MOD(1e-200, -1e200)")
+    add_case("mod_extreme_overflow", "MOD(-1.5e308, 1.0e308)")
+    add_case("mod_ref", 'MOD(@table["base", @col], 3)')
+
+    # Runtime domain errors
+    add_case("ln_zero_err", "LN(0)")
+    add_case("ln_neg_err", "LN(-5)")
+    add_case("ln_div0_bubble", "LN(1 / 0)")
+    add_case("exp_overflow_err", "EXP(710)")
+    add_case("exp_na_bubble", "EXP(NA())")
+    add_case("mod_div0_err", "MOD(5, 0)")
+    add_case("mod_zero_div0_err", "MOD(0, 0)")
+    add_case("mod_na_left", "MOD(NA(), 0)")
+    add_case("mod_na_right", "MOD(5, NA())")
+    add_case("mod_huge_err", "MOD(1e20, 3)")
+    add_case("mod_above_safe_err", "MOD(9007199254740992, 1)")
+
+    compiled = ok_model.compile()
+
+    for zero_row in (
+        "ln_one",
+        "exp_underflow",
+        "mod_exact",
+        "mod_neg_exact",
+        "mod_zero_neg",
+        "mod_dec_1",
+        "mod_dec_10",
+        "mod_max_safe",
+    ):
+        val = compiled.num("T", zero_row, "c1")
+        assert val == 0.0
+        assert math.copysign(1.0, val) == 1.0
+
+    assert compiled.num("T", "ln_exp_one", "c1") == pytest.approx(1.0)
+    assert compiled.num("T", "ln_ref", "c1") == pytest.approx(math.log(10.0))
+    assert compiled.num("T", "ln_half", "c1") == pytest.approx(math.log(0.5))
+    assert compiled.num("T", "exp_zero", "c1") == 1.0
+    assert compiled.num("T", "exp_one", "c1") == pytest.approx(math.e)
+    assert compiled.num("T", "exp_neg_one", "c1") == pytest.approx(math.exp(-1.0))
+    assert compiled.num("T", "exp_709", "c1") == pytest.approx(math.exp(709.0))
+    assert compiled.num("T", "mod_pp", "c1") == 1.0
+    assert compiled.num("T", "mod_np", "c1") == 2.0
+    assert compiled.num("T", "mod_pn", "c1") == -2.0
+    assert compiled.num("T", "mod_nn", "c1") == -1.0
+    assert compiled.num("T", "mod_frac_pp", "c1") == 1.5
+    assert compiled.num("T", "mod_frac_np", "c1") == 0.5
+    assert compiled.num("T", "mod_frac_pn", "c1") == -0.5
+    assert compiled.num("T", "mod_frac_unit", "c1") == 0.25
+    assert compiled.num("T", "mod_underflow_np", "c1") == 1e200
+    assert compiled.num("T", "mod_underflow_pn", "c1") == -1e200
+    assert compiled.num("T", "mod_extreme_overflow", "c1") == 0.5e308
+    assert compiled.num("T", "mod_ref", "c1") == 1.0
+
+    assert compiled.value("T", "ln_zero_err", "c1") == "#NUM!"
+    assert compiled.value("T", "ln_neg_err", "c1") == "#NUM!"
+    assert compiled.value("T", "ln_div0_bubble", "c1") == "#DIV/0!"
+    assert compiled.value("T", "exp_overflow_err", "c1") == "#NUM!"
+    assert compiled.value("T", "exp_na_bubble", "c1") == "#N/A"
+    assert compiled.value("T", "mod_div0_err", "c1") == "#DIV/0!"
+    assert compiled.value("T", "mod_zero_div0_err", "c1") == "#DIV/0!"
+    assert compiled.value("T", "mod_na_left", "c1") == "#N/A"
+    assert compiled.value("T", "mod_na_right", "c1") == "#N/A"
+    assert compiled.value("T", "mod_huge_err", "c1") == "#NUM!"
+    assert compiled.value("T", "mod_above_safe_err", "c1") == "#NUM!"
+
+    # Native Excel lowering without _xlfn.
+    for row_id, prefix in (
+        ("ln_ref", "=LN("),
+        ("exp_one", "=EXP("),
+        ("mod_ref", "=MOD("),
+    ):
+        excel_formula = compiled.inspect_cell("T", row_id, "c1")["excel_formula"] or ""
+        assert excel_formula.startswith(prefix)
+        assert "_xlfn." not in excel_formula
+
+    # 2. Compile-time F8Error rejections (typing, arity, omission, slices, Empty)
+    bad_formulas = (
+        'LN("1")',
+        "LN(TRUE)",
+        "LN()",
+        "LN(1, 2)",
+        "LN(_)",
+        'EXP("1")',
+        "EXP(FALSE)",
+        "EXP()",
+        "EXP(1, 2)",
+        "EXP(_)",
+        'MOD("5", 2)',
+        "MOD(5, TRUE)",
+        "MOD(5)",
+        "MOD(5, 2, 1)",
+        "MOD(5, _)",
+        'LN(@table["r1".."r2", "c1"])',
+        'EXP(@table["r1".."r2", "c1"])',
+        'MOD(@table["r1".."r2", "c1"], 2)',
+        'LN(@table["empty", "c1"])',
+        'EXP(@table["empty", "c1"])',
+        'MOD(@table["empty", "c1"], 2)',
+        'MOD(5, @table["empty", "c1"])',
+    )
+    for formula in bad_formulas:
+        err_model = f8.Model(name="LnExpModErr")
+        err_tbl = err_model.add_sheet("Main").add_table("T", title="Err")
+        err_tbl.add_column("c1", role="measure", header="Val")
+        err_tbl.add_row("r1", cells={"c1": 1.0})
+        err_tbl.add_row("r2", cells={"c1": 2.0})
+        err_tbl.add_row("empty", cells={"c1": None})
+        err_tbl.add_row("target", expr=formula)
+        with pytest.raises(F8Error) as exc_info:
+            err_model.compile()
+        assert type(exc_info.value) is F8Error

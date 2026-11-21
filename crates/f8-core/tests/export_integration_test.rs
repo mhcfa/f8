@@ -216,7 +216,7 @@ fn test_models_emit_in_memory() {
         "Expected thin border in styles.xml"
     );
 
-    // 5. Excel Parity Verification Suite (All 34 Standard Functions + Edge & Error Cases)
+    // 5. Excel Parity Verification Suite (All 37 Standard Functions + Edge & Error Cases)
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     assert_eq!(parity_manifest.sheets.len(), 2);
     assert_eq!(parity_manifest.sheets[0].name, "ParityVerification");
@@ -343,6 +343,19 @@ fn test_models_emit_in_memory() {
     assert!(
         cached_sheet_xml.contains("<f>ABS(-42.5)</f><v>42.5</v>"),
         "Cached mode must write precalculated value in <v> tag following formula"
+    );
+    assert!(
+        cached_sheet_xml.contains("<f>LN(10)</f>")
+            && cached_sheet_xml.contains("<f>EXP(1)</f>")
+            && cached_sheet_xml.contains("<f>MOD(7,3)</f><v>1</v>")
+            && cached_sheet_xml.contains("<f>MOD(1E20,3)</f>"),
+        "Cached parity sheet must emit native LN, EXP, and MOD formulas"
+    );
+    assert!(
+        !cached_sheet_xml.contains("_xlfn.LN")
+            && !cached_sheet_xml.contains("_xlfn.EXP")
+            && !cached_sheet_xml.contains("_xlfn.MOD"),
+        "Native Excel 97+ math functions must not emit _xlfn. prefix"
     );
 
     // 6. Institutional Public Trading Comparables Model
@@ -658,7 +671,7 @@ fn test_export_xlsx_to_disk() {
 
     let (parity_manifest, parity_tables) = fixtures::parity_suite::build_parity_model();
     let parity_options = EmissionOptions {
-        title: Some("Excel Parity Verification Suite (All 34 Functions)".to_string()),
+        title: Some("Excel Parity Verification Suite (All 37 Functions)".to_string()),
         author: Some("f8 Parity Engine".to_string()),
         values_only: false,
         omit_formula_cache: true,
