@@ -318,8 +318,8 @@ Accounting summary roles for rows (vertical aggregations) and columns (horizonta
 Applies theme palette background fill to body cells without changing font color (fill resolution: `highlight_fill` if highlighted; else `total_fill.or(shade_fill)` if `total`; else `subtotal_fill.or(shade_fill)` if `subtotal`; else `shade_fill.or(data_fill)`; font color precedence: `input_text` on `measure` literal inputs `> highlight_text > total_text > subtotal_text > data_text` on `descriptor` cells `> formula_text`):
 
 - `"none"`: No background shade; clears inherited row/column shade when set on a 0D cell override.
-- `"muted"`: Maps to `theme.palette.shade_muted_fill` (`#F8FAFC` in `corporate_navy`).
-- `"alt"`: Maps to `theme.palette.shade_alt_fill` (`#F1F5F9` in `corporate_navy`).
+- `"muted"`: Maps to `theme.palette.shade_muted_fill`.
+- `"alt"`: Maps to `theme.palette.shade_alt_fill`.
 
 ### Currency Codes (`CurrencyCode`)
 

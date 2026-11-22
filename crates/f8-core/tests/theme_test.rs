@@ -18,9 +18,9 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert!(theme.typography.title_size > theme.typography.data_size);
     assert!(theme.typography.section_header_underline);
     assert_eq!(theme.palette.section_header_fill, "none");
-    assert_eq!(theme.palette.table_subtitle_text, "#45556C");
-    assert_eq!(theme.palette.super_header_fill, "#E2E8F0");
-    assert_eq!(theme.palette.gridline_color, "#E2E8F0");
+    assert_eq!(theme.palette.table_subtitle_text, "#525252");
+    assert_eq!(theme.palette.super_header_fill, "#E5E5E5");
+    assert_eq!(theme.palette.gridline_color, "#E5E5E5");
 
     // Verify metrics
     assert!(theme.metrics.gutter_col_width > 0.0);
@@ -516,8 +516,8 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
 #[test]
 fn test_scenario_12_shade_palette_defaults_and_validation() {
     let theme = Theme::corporate_navy();
-    assert_eq!(theme.palette.shade_muted_fill, "#F8FAFC");
-    assert_eq!(theme.palette.shade_alt_fill, "#F1F5F9");
+    assert_eq!(theme.palette.shade_muted_fill, "#FAFAFA");
+    assert_eq!(theme.palette.shade_alt_fill, "#F5F5F5");
 
     for field_name in ["shade_muted_fill", "shade_alt_fill"] {
         let mut bad_theme = Theme::corporate_navy();

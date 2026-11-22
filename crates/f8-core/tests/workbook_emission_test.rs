@@ -1403,7 +1403,7 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
                 .with_header("Total")
                 .with_style(Some(SemanticStyle::Total)),
         );
-        // Col G: Muted shade column (#F8FAFC)
+        // Col G: Muted shade column (#FAFAFA)
         table.columns.push(
             ColumnSpec::new("c_shade")
                 .with_header("Forecast")
@@ -1481,14 +1481,14 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
         "F6 must preserve col_total left/right borders: {f6_border}"
     );
 
-    // G6: Shaded column -> blank with shade_muted_fill (#F8FAFC)
+    // G6: Shaded column -> blank with shade_muted_fill (#FAFAFA)
     let g6 = extract_cell_element(&sheet_xml, "G6")
         .expect("G6 (row gutter on Muted shade column) must be emitted");
     assert!(!g6.contains("<v>") && !g6.contains("<f>") && !g6.contains("t=\"s\""));
     let g6_xf = get_xf_xml(&styles_xml, get_attr_usize(&g6, "s").unwrap());
     let g6_fill = get_fill_xml(&styles_xml, get_attr_usize(&g6_xf, "fillId").unwrap());
     assert!(
-        g6_fill.contains("F8FAFC"),
+        g6_fill.contains("FAFAFA"),
         "G6 must preserve shade_muted_fill: {g6_fill}"
     );
 
