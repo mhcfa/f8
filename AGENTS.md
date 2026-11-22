@@ -15,8 +15,10 @@
 
 - Spec-driven: Invoke `spec-driven-development` when a change alters or introduces a contract (schemas, AST/IR/DSL, module boundaries, public CLI/SDK/API), carries open architectural trade-offs, or spans multiple increments.
 - Direct execution: Handle single-increment work within existing contracts (e.g., bug fixes, self-contained features, refactors, doc/skill updates) directly without draft specs or subagents. Escalate to spec-driven if a contract or boundary change emerges.
-- Design alignment: Surface architectural ambiguities, conflicting instructions or invariants, and cases where literal compliance defeats intent before coding; never silently pick a side. Separate verified facts from inferences and assumptions.
+- Design alignment: Surface architectural ambiguities, conflicting instructions or invariants, and cases where literal compliance defeats intent before coding; never silently pick a side. Settle empirical questions (runtime, API, or layout behavior) with a throwaway probe in scratch before asking. Separate verified facts from inferences and assumptions.
+- Architectural tension: When existing structure would force the change into bolted-on branches, cross-layer leaks, duplicated state, or awkward adapters, stop before patching on top—even for a scoped request. Name the structural mismatch and propose a reshape-first plan (or explicit trade-off) for approval.
 - Testing: Every executable behavior change requires falsifiable tests that fail if the behavior regresses. For bug fixes, reproduce the defect with a failing test before changing production code to confirm root cause.
+- Debugging: After two failed attempts sharing one assumption, stop—state the shared premise explicitly and test it directly before writing another fix. Revert changes from refuted hypotheses; never leave "might help" guards behind.
 
 ## Hard rules
 
