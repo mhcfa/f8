@@ -2248,3 +2248,174 @@ fn test_scenario_20_uniform_trailing_alignment_space_openxml_emission() {
         );
     }
 }
+
+#[test]
+fn test_bold_style_emits_bold_without_borders_and_skips_gutter_blanks() {
+    let mut table = TableSpec::new("BoldEmit", "Bold Emission");
+    table.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("normal").with_header("Normal"),
+        ColumnSpec::gutter(),
+        ColumnSpec::new("bold_col")
+            .with_header("Bold Col")
+            .with_style(Some(SemanticStyle::Bold)),
+        ColumnSpec::new("sub_col")
+            .with_header("Subtotal Col")
+            .with_style(Some(SemanticStyle::Subtotal)),
+    ];
+    table.rows = vec![
+        RowSpec::new("r_data")
+            .with_cell("item", "Data")
+            .with_cell(
+                "normal",
+                DetailedCellInput {
+                    value: Some(ValueLiteral::Number(10.0)),
+                    style: Some(SemanticStyle::Bold),
+                    ..Default::default()
+                },
+            )
+            .with_cell("bold_col", 20.0)
+            .with_cell("sub_col", 30.0),
+        RowSpec::new("r_bold")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_cell("item", "Bold Row")
+            .with_cell("normal", 11.0)
+            .with_cell("bold_col", 21.0)
+            .with_cell("sub_col", 31.0),
+        RowSpec::new("r_bold_shade")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_shade(Some(Shade::Muted))
+            .with_cell("item", "Bold Shaded")
+            .with_cell("normal", 12.0)
+            .with_cell("bold_col", 22.0)
+            .with_cell("sub_col", 32.0),
+        RowSpec::new("r_sub")
+            .with_style(Some(SemanticStyle::Subtotal))
+            .with_cell("item", "Subtotal Row")
+            .with_cell("normal", 13.0)
+            .with_cell("bold_col", 23.0)
+            .with_cell("sub_col", 33.0),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "BoldEmitModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("BoldEmit")],
+        }],
+    };
+
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+
+    // Extract <fonts>, <borders>, and <cellXfs> entries from styles.xml
+    let extract_tags = |xml: &str, container: &str, item: &str| -> Vec<String> {
+        let open_container = format!("<{container}");
+        let close_container = format!("</{container}>");
+        let start = xml.find(&open_container).unwrap();
+        let body_start = xml[start..].find('>').unwrap() + start + 1;
+        let end = xml[body_start..].find(&close_container).unwrap() + body_start;
+        let section = &xml[body_start..end];
+        let open_item = format!("<{item}");
+        let close_item = format!("</{item}>");
+        let mut out = Vec::new();
+        let mut rest = section;
+        while let Some(pos) = rest.find(&open_item) {
+            let tail = &rest[pos..];
+            let end_self = tail.find("/>");
+            let end_open = tail.find('>');
+            let end_close = tail.find(&close_item);
+            let len = match (end_self, end_open, end_close) {
+                (Some(s), Some(o), _) if s + 1 == o => s + 2,
+                (_, _, Some(c)) => c + close_item.len(),
+                _ => break,
+            };
+            out.push(tail[..len].to_string());
+            rest = &tail[len..];
+        }
+        out
+    };
+
+    let fonts = extract_tags(&styles_xml, "fonts", "font");
+    let borders = extract_tags(&styles_xml, "borders", "border");
+    let xfs = extract_tags(&styles_xml, "cellXfs", "xf");
+
+    let parse_attr = |tag: &str, attr: &str| -> usize {
+        let needle = format!(r#"{attr}=""#);
+        let start = tag.find(&needle).unwrap() + needle.len();
+        let end = tag[start..].find('"').unwrap() + start;
+        tag[start..end].parse().unwrap()
+    };
+
+    let cell_style_info = |cell_ref: &str| -> (String, String) {
+        let needle = format!(r#"<c r="{cell_ref}""#);
+        let start = sheet_xml
+            .find(&needle)
+            .unwrap_or_else(|| panic!("Missing cell {cell_ref} in {sheet_xml}"));
+        let end = sheet_xml[start..].find('>').unwrap() + start + 1;
+        let c_tag = &sheet_xml[start..end];
+        let xf_idx = parse_attr(c_tag, "s");
+        let xf = &xfs[xf_idx];
+        let font_id = parse_attr(xf, "fontId");
+        let border_id = parse_attr(xf, "borderId");
+        (fonts[font_id].clone(), borders[border_id].clone())
+    };
+
+    // Physical layout:
+    // Title = row 2 (idx 1), title gutter = row 3 (idx 2), header = row 4 (idx 3)
+    // Body rows: r_data = row 5, r_bold = row 6, r_bold_shade = row 7, r_sub = row 8
+    // Columns: item = B, normal = C, gutter = D, bold_col = E, sub_col = F
+
+    // 0D bold cell (C5), bold column cell (E5), and bold row cells (B6, C6, E6) -> bold font, NO borders
+    for bold_no_border_ref in ["C5", "E5", "B6", "C6", "E6"] {
+        let (font, border) = cell_style_info(bold_no_border_ref);
+        assert!(
+            font.contains("<b/>"),
+            "Cell {bold_no_border_ref} must be bold: {font}"
+        );
+        assert!(
+            !border.contains("style="),
+            "Cell {bold_no_border_ref} must have zero borders: {border}"
+        );
+    }
+
+    // Contrast: subtotal column cell (F5) and subtotal row x bold col (E8) carry accounting borders
+    let (f5_font, f5_border) = cell_style_info("F5");
+    assert!(f5_font.contains("<b/>"));
+    assert!(
+        f5_border.contains(r#"<left style="thin">"#),
+        "Subtotal col cell F5 must have thin left border: {f5_border}"
+    );
+    assert!(!f5_border.contains("<top style="));
+
+    let (e8_font, e8_border) = cell_style_info("E8");
+    assert!(e8_font.contains("<b/>"));
+    assert!(
+        e8_border.contains(r#"<top style="thin">"#),
+        "Subtotal row x bold col E8 must have thin top border: {e8_border}"
+    );
+    assert!(
+        !e8_border.contains("<left style="),
+        "Subtotal row x bold col E8 must NOT have left border: {e8_border}"
+    );
+
+    // Gutter column D: bold-only row (D6) skips emitting blank cell; bold+shade row (D7) emits shaded blank without border/bold
+    assert!(
+        !sheet_xml.contains(r#"<c r="D6""#),
+        "Bold-only row must not emit blank gutter cell D6"
+    );
+    let (d7_font, d7_border) = cell_style_info("D7");
+    assert!(
+        !d7_font.contains("<b/>"),
+        "Gutter cell D7 should reuse unbolded shade format: {d7_font}"
+    );
+    assert!(
+        !d7_border.contains("style="),
+        "Gutter cell D7 must have no borders: {d7_border}"
+    );
+}

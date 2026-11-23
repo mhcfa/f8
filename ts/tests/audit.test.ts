@@ -967,4 +967,76 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
     expect(compactFormulas).toContain("| Revenue | $100.0 | =C9*1.15 |")
     expect(compactFormulas).toContain("| Memo | $5.0 | |")
   })
+
+  it('supports style: "bold" across rows, columns, cells, and Markdown rendering', () => {
+    const model = new Model({ name: "BoldModel" })
+    const sheet = model.addSheet("Summary")
+    const tbl = sheet.addTable("KPIs", "Key Metrics", { currency: "USD" })
+    tbl.addColumn("item", { role: "descriptor", header: "Metric" })
+    tbl.addColumn("base", {
+      header: "Base Case",
+      style: "bold",
+    })
+    tbl.addColumn("upside", { header: "Upside" })
+
+    tbl.addRow("rev", {
+      format: "currency",
+      cells: {
+        item: "Revenue",
+        base: new Cell({ value: 100.0, style: "bold" }),
+        upside: 120.0,
+      },
+    })
+    tbl.addRow("margin", {
+      style: "bold",
+      format: "percentage",
+      cells: { item: "EBITDA Margin", base: 0.25, upside: 0.28 },
+    })
+    tbl.addRow("ebitda", {
+      style: "subtotal",
+      format: "currency",
+      cells: { item: "EBITDA", base: 25.0, upside: 34.0 },
+    })
+    tbl.addRow("net_income", {
+      style: "total",
+      format: "currency",
+      cells: { item: "Net Income", base: 18.0, upside: 24.0 },
+    })
+
+    const compiled = model.compile()
+    try {
+      const inspected = compiled.inspectTable("KPIs")
+      expect(inspected.columns[1]?.style).toBe("bold")
+      expect(inspected.rows[1]?.style).toBe("bold")
+
+      const mdValues = compiled.toMarkdown("values", { showIds: false })
+      expect(mdValues).toContain("| Revenue | $100 | $120 |\n")
+      expect(mdValues).toContain(
+        "| **EBITDA Margin** | **25.0%** | **28.0%** |\n"
+      )
+      expect(mdValues).toContain("| **EBITDA** | **$25** | **$34** |\n")
+      expect(mdValues).toContain("| **Net Income** | **$18** | **$24** |\n")
+
+      const mdIndex = compiled.toMarkdown("index")
+      expect(mdIndex).toContain("- `margin`: EBITDA Margin\n")
+      expect(mdIndex).not.toContain("(bold)")
+      expect(mdIndex).not.toContain("**`margin`**")
+      expect(mdIndex).toContain("- **`ebitda`** (subtotal)\n")
+      expect(mdIndex).toContain("- **`net_income`**: Net Income (total)\n")
+
+      const auditorCompact = compiled
+        .table("KPIs")
+        .toMarkdown("values", { compact: true })
+      expect(auditorCompact).toContain("| Revenue | $100 | $120 |\n")
+      expect(auditorCompact).toContain(
+        "| **EBITDA Margin** | **25.0%** | **28.0%** |\n"
+      )
+
+      const xlsx = compiled.emitWorkbook()
+      expect(xlsx[0]).toBe(0x50)
+      expect(xlsx[1]).toBe(0x4b)
+    } finally {
+      compiled.dispose()
+    }
+  })
 })

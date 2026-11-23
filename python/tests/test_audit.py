@@ -876,3 +876,64 @@ def test_table_auditor_to_markdown_compact_mode() -> None:
     compact_formulas = str(inc.to_markdown("formulas", compact=True))
     assert "| Revenue | $100.0 | =C9*1.15 |" in compact_formulas
     assert "| Memo | $5.0 | |" in compact_formulas
+
+
+def test_bold_style_values_index_and_table_auditor_markdown() -> None:
+    model = Model("BoldModel")
+    sheet = model.add_sheet("Summary")
+    tbl = sheet.add_table("KPIs", "Key Metrics", currency="USD")
+    tbl.add_column("item", role="descriptor", header="Metric")
+    tbl.add_column("base", header="Base Case", style="bold")
+    tbl.add_column("upside", header="Upside")
+
+    tbl.add_row(
+        "rev",
+        format="currency",
+        cells={"item": "Revenue", "base": Cell(100.0, style="bold"), "upside": 120.0},
+    )
+    tbl.add_row(
+        "margin",
+        style="bold",
+        format="percentage",
+        cells={"item": "EBITDA Margin", "base": 0.25, "upside": 0.28},
+    )
+    tbl.add_row(
+        "ebitda",
+        style="subtotal",
+        format="currency",
+        cells={"item": "EBITDA", "base": 25.0, "upside": 34.0},
+    )
+    tbl.add_row(
+        "net_income",
+        style="total",
+        format="currency",
+        cells={"item": "Net Income", "base": 18.0, "upside": 24.0},
+    )
+
+    compiled = model.compile()
+    inspected = compiled.inspect_table("KPIs")
+    assert inspected["columns"][1]["style"] == "bold"
+    assert inspected["rows"][1]["style"] == "bold"
+
+    # Whole-workbook Markdown: bold row bolded in values (plain in index); bold col unbolded
+    md_values = compiled.to_markdown("values", show_ids=False)
+    assert "| Revenue | $100 | $120 |\n" in md_values
+    assert "| **EBITDA Margin** | **25.0%** | **28.0%** |\n" in md_values
+    assert "| **EBITDA** | **$25** | **$34** |\n" in md_values
+    assert "| **Net Income** | **$18** | **$24** |\n" in md_values
+
+    md_index = compiled.to_markdown("index")
+    assert "- `margin`: EBITDA Margin\n" in md_index
+    assert "(bold)" not in md_index
+    assert "**`margin`**" not in md_index
+    assert "- **`ebitda`** (subtotal)\n" in md_index
+    assert "- **`net_income`**: Net Income (total)\n" in md_index
+
+    # TableAuditor Markdown matches whole-workbook values behavior
+    auditor_compact = str(compiled.table("KPIs").to_markdown("values", compact=True))
+    assert "| Revenue | $100 | $120 |\n" in auditor_compact
+    assert "| **EBITDA Margin** | **25.0%** | **28.0%** |\n" in auditor_compact
+
+    # Workbook emission succeeds cleanly
+    xlsx = compiled.emit_workbook()
+    assert xlsx[:2] == b"PK"

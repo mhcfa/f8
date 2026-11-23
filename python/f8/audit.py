@@ -469,8 +469,9 @@ class TableAuditor:
         row_indent_map: dict[str, int] = {
             rid: r.get("indent", 0) for rid, r in row_spec_by_id.items()
         }
-        row_summary_map: dict[str, bool] = {
-            rid: r.get("style") in ("subtotal", "total") for rid, r in row_spec_by_id.items()
+        row_bold_map: dict[str, bool] = {
+            rid: r.get("style") in ("bold", "subtotal", "total")
+            for rid, r in row_spec_by_id.items()
         }
 
         def get_cell_text(row_id: str, col: _RenderColumn) -> str:
@@ -478,7 +479,7 @@ class TableAuditor:
                 return ""
             coord = (row_id, col.id)
             cell_info = self._cell_map.get(coord)
-            is_summary = row_summary_map.get(row_id, False)
+            is_bold = row_bold_map.get(row_id, False)
 
             val_str = (cell_info.get("formatted_value") or "") if cell_info is not None else ""
             if not val_str and cell_info is not None:
@@ -494,7 +495,7 @@ class TableAuditor:
                 else:
                     label = val_str
                 escaped_label = _escape_markdown_cell(label)
-                if is_summary and escaped_label:
+                if is_bold and escaped_label:
                     return f"{'  ' * indent}**{escaped_label}**"
                 return f"{'  ' * indent}{escaped_label}"
 
@@ -514,7 +515,7 @@ class TableAuditor:
                 raw_text = cell_info.get("physical_a1", "") if cell_info is not None else ""
 
             escaped_text = _escape_markdown_cell(raw_text)
-            if is_summary and escaped_text:
+            if is_bold and escaped_text:
                 return f"**{escaped_text}**"
             return escaped_text
 

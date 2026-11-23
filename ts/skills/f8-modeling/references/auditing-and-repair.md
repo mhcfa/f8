@@ -57,7 +57,7 @@ const indexMd: string = compiled.toMarkdown(
 ```
 
 - `detail` modes (`ModelMarkdownDetail`; invalid string throws plain `Error`):
-  - `"values"` (default): Emits compact unpadded GFM tables (`| a | b |`, `| :--- | ---: |`) with pre-formatted values, bolded `subtotal`/`total` rows, row-max descriptor indentation, and `"—"` for empty measure cells.
+  - `"values"` (default): Emits compact unpadded GFM tables (`| a | b |`, `| :--- | ---: |`) with pre-formatted values, bolded `bold`/`subtotal`/`total` rows, row-max descriptor indentation, and `"—"` for empty measure cells.
   - `"index"`: Emits a compact coordinate catalog per table (`Columns:` with IDs, display headers, and `descriptor` roles; `Rows:` with section headers, nested row IDs, descriptor labels joined by `" | "`, and `(subtotal)`/`(total)` tags) with zero evaluated measure values (`showIds` is ignored).
 - Filtering and annotations:
   - `sheets` / `tables`: Strict union allowlist (unknown sheet or table throws `InspectionError`); preserves canonical sheet/table declaration order without duplicates. Explicit empty allowlists (`sheets: []` with `tables` omitted, or vice versa, or both empty) emit only the model header; empty selected sheets emit `_(no tables)_`.
@@ -141,7 +141,7 @@ const mdView: string = auditor.toMarkdown(
   - `rows`: Renders only requested `rows` (unknown ID throws `Error`). `includeSectionHeaders` defaults to `true` when `rows` is omitted and `false` when `rows` is specified; when `rows` is specified with `includeSectionHeaders: true`, only section headers with at least one matching child row in `rows` are emitted.
   - `showIds: true`: Appends `[{colId}]` to column headers and `[{rowId}]` to descriptor labels when display text differs (case-insensitively) from the ID.
   - `compact: true`: Emits unpadded GFM rows (`| a | b |`) and minimal alignment dividers (`| :--- | ---: |`), avoiding wide padding on `"formulas"` / `"expr"` views (default `false` preserves column-width padding).
-  - Rows with `style: "subtotal"` or `style: "total"` wrap non-empty cell text in `**...**`. Line breaks (`\r\n`, `\r`, `\n`) are normalized to spaces and `|` delimiters are escaped as `\|`.
+  - Rows with `style: "bold"`, `style: "subtotal"`, or `style: "total"` wrap non-empty cell text in `**...**`. Line breaks (`\r\n`, `\r`, `\n`) are normalized to spaces and `|` delimiters are escaped as `\|`.
 
 ### Object and Record Export (`auditor.toDict`)
 

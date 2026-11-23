@@ -338,7 +338,9 @@ fn resolve_style(
 ) -> (SemanticStyle, SemanticStyle) {
     match cell_style {
         Some(SemanticStyle::Data) => (SemanticStyle::Data, SemanticStyle::Data),
-        Some(s) => (s, col_style.unwrap_or(SemanticStyle::Data)),
+        Some(s @ (SemanticStyle::Bold | SemanticStyle::Subtotal | SemanticStyle::Total)) => {
+            (s, col_style.unwrap_or(SemanticStyle::Data))
+        }
         None => (
             row_style.unwrap_or(SemanticStyle::Data),
             col_style.unwrap_or(SemanticStyle::Data),

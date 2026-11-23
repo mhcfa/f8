@@ -441,16 +441,31 @@ fn test_reject_duplicate_row_id() {
 fn test_semantic_style_serde() {
     let data: SemanticStyle = serde_json::from_str(r#""data""#).unwrap();
     assert_eq!(data, SemanticStyle::Data);
+    assert!(data.is_data());
+    assert!(!data.uses_bold_font());
+
+    let bold: SemanticStyle = serde_json::from_str(r#""bold""#).unwrap();
+    assert_eq!(bold, SemanticStyle::Bold);
+    assert!(bold.is_bold());
+    assert!(bold.uses_bold_font());
 
     let subtotal: SemanticStyle = serde_json::from_str(r#""subtotal""#).unwrap();
     assert_eq!(subtotal, SemanticStyle::Subtotal);
+    assert!(subtotal.is_subtotal());
+    assert!(subtotal.uses_bold_font());
 
     let total: SemanticStyle = serde_json::from_str(r#""total""#).unwrap();
     assert_eq!(total, SemanticStyle::Total);
+    assert!(total.is_total());
+    assert!(total.uses_bold_font());
 
     assert_eq!(
         serde_json::to_string(&SemanticStyle::Data).unwrap(),
         r#""data""#
+    );
+    assert_eq!(
+        serde_json::to_string(&SemanticStyle::Bold).unwrap(),
+        r#""bold""#
     );
     assert_eq!(
         serde_json::to_string(&SemanticStyle::Subtotal).unwrap(),

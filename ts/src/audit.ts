@@ -499,10 +499,13 @@ export class TableAuditor {
     })
 
     const rowIndentMap = new Map<string, number>()
-    const rowSummaryMap = new Map<string, boolean>()
+    const rowBoldMap = new Map<string, boolean>()
     for (const [rid, r] of rowSpecById.entries()) {
       rowIndentMap.set(rid, r.indent ?? 0)
-      rowSummaryMap.set(rid, r.style === "subtotal" || r.style === "total")
+      rowBoldMap.set(
+        rid,
+        r.style === "bold" || r.style === "subtotal" || r.style === "total"
+      )
     }
 
     const getCellText = (rowId: string, col: RenderColumn): string => {
@@ -510,7 +513,7 @@ export class TableAuditor {
         return ""
       }
       const cellInfo = this.#getCell(rowId, col.id)
-      const isSummary = rowSummaryMap.get(rowId) ?? false
+      const isBold = rowBoldMap.get(rowId) ?? false
 
       let valStr = cellInfo !== undefined ? (cellInfo.formattedValue ?? "") : ""
       if (!valStr && cellInfo !== undefined) {
@@ -530,7 +533,7 @@ export class TableAuditor {
         }
         const escapedLabel = escapeMarkdownCell(label)
         const pad = "  ".repeat(indent)
-        if (isSummary && escapedLabel) {
+        if (isBold && escapedLabel) {
           return `${pad}**${escapedLabel}**`
         }
         return `${pad}${escapedLabel}`
@@ -561,7 +564,7 @@ export class TableAuditor {
       }
 
       const escapedText = escapeMarkdownCell(rawText)
-      if (isSummary && escapedText) {
+      if (isBold && escapedText) {
         return `**${escapedText}**`
       }
       return escapedText

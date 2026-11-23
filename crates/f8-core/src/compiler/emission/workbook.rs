@@ -362,11 +362,18 @@ impl WorkbookEmitter {
                                 let col_data = match col_spec {
                                     ColumnSpec::Data(d) => d,
                                     ColumnSpec::Gutter => {
-                                        // Gutter column: continue row formatting (horizontal borders, shade, highlight)
+                                        // Gutter column: continue row visual bands (summary borders, shade, highlight);
+                                        // bold-only typography has no visible effect on blank gutter cells
+                                        let gutter_horizontal = match row_data.style {
+                                            Some(SemanticStyle::Subtotal) => {
+                                                SemanticStyle::Subtotal
+                                            }
+                                            Some(SemanticStyle::Total) => SemanticStyle::Total,
+                                            Some(SemanticStyle::Data | SemanticStyle::Bold)
+                                            | None => SemanticStyle::Data,
+                                        };
                                         let role = StyleRole {
-                                            horizontal: row_data
-                                                .style
-                                                .unwrap_or(SemanticStyle::Data),
+                                            horizontal: gutter_horizontal,
                                             vertical: SemanticStyle::Data,
                                             is_highlight: row_data.highlight.unwrap_or(false),
                                             shade: row_data.shade.filter(|s| !s.is_none()),

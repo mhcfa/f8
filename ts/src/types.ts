@@ -61,7 +61,7 @@ export type CurrencyCode =
   | "inr"
   | "brl"
 
-export type SemanticStyle = "data" | "subtotal" | "total"
+export type SemanticStyle = "data" | "bold" | "subtotal" | "total"
 
 export type Shade = "none" | "muted" | "alt"
 

@@ -51,7 +51,7 @@ md: str = compiled.to_markdown(
 ```
 
 - `detail` modes (`ModelMarkdownDetail`; invalid string raises `ValueError`):
-  - `"values"` (default): Emits compact unpadded GFM tables (`| a | b |`, `| :--- | ---: |`) with pre-formatted values, bolded `subtotal`/`total` rows, row-max descriptor indentation, and `"—"` for empty measure cells.
+  - `"values"` (default): Emits compact unpadded GFM tables (`| a | b |`, `| :--- | ---: |`) with pre-formatted values, bolded `bold`/`subtotal`/`total` rows, row-max descriptor indentation, and `"—"` for empty measure cells.
   - `"index"`: Emits a compact coordinate catalog per table (`Columns:` with IDs, display headers, and `descriptor` roles; `Rows:` with section headers, nested row IDs, descriptor labels joined by `" | "`, and `(subtotal)`/`(total)` tags) with zero evaluated measure values (`show_ids` is ignored).
 - Filtering and annotations:
   - `sheets` / `tables`: Strict union allowlist (unknown sheet or table raises `InspectionError`); preserves canonical sheet/table declaration order without duplicates. Explicit empty allowlists (`sheets=[]` with `tables=None`, or vice versa, or both empty) emit only the model header; empty selected sheets emit `_(no tables)_`.
@@ -131,7 +131,7 @@ md: MarkdownTable = auditor.to_markdown(
   - `rows`: Renders only requested `rows` (unknown ID raises `KeyError`). `include_section_headers` defaults to `True` when `rows=None` and `False` when `rows` is specified; when `rows` is specified with `include_section_headers=True`, only section headers with at least one matching child row in `rows` are emitted.
   - `show_ids=True`: Appends `[{col_id}]` to column headers and `[{row_id}]` to descriptor labels when display text differs (case-insensitively) from the ID.
   - `compact=True`: Emits unpadded GFM rows (`| a | b |`) and minimal alignment dividers (`| :--- | ---: |`), avoiding wide padding on `"formulas"` / `"expr"` views (default `False` preserves column-width padding).
-  - Rows with `style="subtotal"` or `style="total"` wrap non-empty cell text in `**...**`. Line breaks (`\r\n`, `\r`, `\n`) are normalized to spaces and `|` delimiters are escaped as `\|`. Both `TableAuditor` and `MarkdownTable` (`str` subclass) implement `_repr_markdown_()`.
+  - Rows with `style="bold"`, `style="subtotal"`, or `style="total"` wrap non-empty cell text in `**...**`. Line breaks (`\r\n`, `\r`, `\n`) are normalized to spaces and `|` delimiters are escaped as `\|`. Both `TableAuditor` and `MarkdownTable` (`str` subclass) implement `_repr_markdown_()`.
 
 ### Dictionary and DataFrame Export (`auditor.to_dict`)
 

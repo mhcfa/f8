@@ -1455,3 +1455,163 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
     let matching_cells = expand_table(&matching_symbols, &matching_table).unwrap();
     assert_eq!(matching_cells[0].shade, Some(Shade::Muted));
 }
+
+#[test]
+fn test_bold_style_composition_and_cell_overrides() {
+    let mut data_row_cells = IndexMap::new();
+    data_row_cells.insert(ColId::from("label"), CellInput::string("Base Row"));
+    data_row_cells.insert(
+        ColId::from("normal"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(1.0)),
+            style: Some(SemanticStyle::Bold),
+            ..Default::default()
+        }),
+    );
+    data_row_cells.insert(
+        ColId::from("bold_col"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(2.0)),
+            style: Some(SemanticStyle::Data),
+            ..Default::default()
+        }),
+    );
+
+    let mut bold_row_cells = IndexMap::new();
+    bold_row_cells.insert(ColId::from("label"), CellInput::string("Bold KPI"));
+    bold_row_cells.insert(
+        ColId::from("normal"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(3.0)),
+            style: Some(SemanticStyle::Data),
+            ..Default::default()
+        }),
+    );
+
+    let mut sub_row_cells = IndexMap::new();
+    sub_row_cells.insert(ColId::from("label"), CellInput::string("Subtotal Row"));
+    sub_row_cells.insert(
+        ColId::from("normal"),
+        CellInput::Detailed(DetailedCellInput {
+            value: Some(ValueLiteral::Number(4.0)),
+            style: Some(SemanticStyle::Bold),
+            ..Default::default()
+        }),
+    );
+
+    let mut total_row_cells = IndexMap::new();
+    total_row_cells.insert(ColId::from("label"), CellInput::string("Total Row"));
+
+    let table = TableSpec {
+        id: TableId::from("BoldMatrix"),
+        title: "Bold Matrix".to_string(),
+        subtitles: Vec::new(),
+        currency: None,
+        collapsible: false,
+        placement: f8_core::model::PlacementSpec::default(),
+        columns: vec![
+            ColumnSpec::descriptor("label", "Item"),
+            ColumnSpec::new("normal"),
+            ColumnSpec::new("bold_col").with_style(Some(SemanticStyle::Bold)),
+            ColumnSpec::new("sub_col").with_style(Some(SemanticStyle::Subtotal)),
+        ],
+        rows: vec![
+            RowSpec::new("r_data")
+                .with_expr("10")
+                .with_cells(data_row_cells),
+            RowSpec::new("r_bold")
+                .with_style(Some(SemanticStyle::Bold))
+                .with_expr("20")
+                .with_cells(bold_row_cells),
+            RowSpec::new("r_sub")
+                .with_style(Some(SemanticStyle::Subtotal))
+                .with_expr("30")
+                .with_cells(sub_row_cells),
+            RowSpec::new("r_total")
+                .with_style(Some(SemanticStyle::Total))
+                .with_expr("40")
+                .with_cells(total_row_cells),
+        ],
+    };
+
+    let mut symbols = SymbolTable::new();
+    symbols
+        .register_table(SheetId::from("Model"), &table)
+        .unwrap();
+    let cells = expand_table(&symbols, &table).unwrap();
+
+    let cell_of = |row: &str, col: &str| {
+        cells
+            .iter()
+            .find(|c| c.id.row.as_str() == row && c.id.col.as_str() == col)
+            .unwrap()
+    };
+
+    // 0D bold override on data row/col
+    let c = cell_of("r_data", "normal");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Bold, SemanticStyle::Data)
+    );
+    assert!(c.is_bold());
+
+    // 0D data reset on bold column suppresses bold
+    let c = cell_of("r_data", "bold_col");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Data, SemanticStyle::Data)
+    );
+    assert!(!c.is_bold());
+
+    // Descriptor cell inherits row Bold style
+    let c = cell_of("r_bold", "label");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Bold, SemanticStyle::Data)
+    );
+    assert!(c.is_bold());
+
+    // 0D data reset on bold row suppresses bold
+    let c = cell_of("r_bold", "normal");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Data, SemanticStyle::Data)
+    );
+    assert!(!c.is_bold());
+
+    // Bold row x Bold col and Bold row x Subtotal col compose orthogonally
+    let c = cell_of("r_bold", "bold_col");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Bold, SemanticStyle::Bold)
+    );
+    assert!(c.is_bold());
+    let c = cell_of("r_bold", "sub_col");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Bold, SemanticStyle::Subtotal)
+    );
+    assert!(c.is_bold());
+
+    // Subtotal row is also bold via unified uses_bold_font(), and 0D Bold overrides horizontal subtotal
+    let c = cell_of("r_sub", "label");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Subtotal, SemanticStyle::Data)
+    );
+    assert!(c.is_bold());
+    let c = cell_of("r_sub", "normal");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Bold, SemanticStyle::Data)
+    );
+    assert!(c.is_bold());
+
+    // Total row x Bold col keeps horizontal Total and vertical Bold
+    let c = cell_of("r_total", "bold_col");
+    assert_eq!(
+        (c.horizontal, c.vertical),
+        (SemanticStyle::Total, SemanticStyle::Bold)
+    );
+    assert!(c.is_bold());
+}

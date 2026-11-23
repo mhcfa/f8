@@ -49,12 +49,13 @@ impl fmt::Display for FormatPreset {
     }
 }
 
-/// Structural presentation styles supported by f8 models.
+/// Structural and emphasis presentation styles supported by f8 models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticStyle {
     #[default]
     Data,
+    Bold,
     Subtotal,
     Total,
 }
@@ -63,24 +64,38 @@ impl SemanticStyle {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Data => "data",
+            Self::Bold => "bold",
             Self::Subtotal => "subtotal",
             Self::Total => "total",
         }
     }
 
     /// Returns true if this is standard data style.
-    pub fn is_data(&self) -> bool {
+    pub const fn is_data(&self) -> bool {
         matches!(self, Self::Data)
     }
 
+    /// Returns true if this is bold-only emphasis style (bold typography without summary borders).
+    pub const fn is_bold(&self) -> bool {
+        matches!(self, Self::Bold)
+    }
+
     /// Returns true if this is subtotal summary style.
-    pub fn is_subtotal(&self) -> bool {
+    pub const fn is_subtotal(&self) -> bool {
         matches!(self, Self::Subtotal)
     }
 
     /// Returns true if this is total summary style.
-    pub fn is_total(&self) -> bool {
+    pub const fn is_total(&self) -> bool {
         matches!(self, Self::Total)
+    }
+
+    /// Returns true if this style renders with bold typography (`Bold`, `Subtotal`, or `Total`).
+    pub const fn uses_bold_font(&self) -> bool {
+        match self {
+            Self::Bold | Self::Subtotal | Self::Total => true,
+            Self::Data => false,
+        }
     }
 }
 

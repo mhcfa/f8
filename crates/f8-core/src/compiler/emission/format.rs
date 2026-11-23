@@ -5,7 +5,7 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, FormatUnderline}
 
 use super::error::EmissionError;
 use crate::compiler::layout::StyleRole;
-use crate::model::format::{CurrencyCode, FormatPreset, Shade};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::theme::{BorderStyle, PaletteConfig, Theme};
 
 /// Parses a hexadecimal color string (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`) into a `rust_xlsxwriter::Color`.
@@ -337,12 +337,8 @@ impl FormatCache {
             .set_font_name(&self.theme.typography.font_family)
             .set_font_size(self.theme.typography.data_size);
 
-        // 1. Bolding (Total and Subtotal are bold)
-        let is_summary = key.role.horizontal.is_total()
-            || key.role.vertical.is_total()
-            || key.role.horizontal.is_subtotal()
-            || key.role.vertical.is_subtotal();
-        if is_summary {
+        // 1. Bolding (Bold, Subtotal, and Total are bold)
+        if key.role.horizontal.uses_bold_font() || key.role.vertical.uses_bold_font() {
             format = format.set_bold();
         }
 
@@ -400,53 +396,61 @@ impl FormatCache {
         };
 
         // 5. Accounting Borders
-        // Horizontal: Subtotal -> Thin top border; Total -> Thin top + Double bottom
-        if key.role.horizontal.is_subtotal() {
-            if self.theme.borders.subtotal_border_top != BorderStyle::None {
-                format = format
-                    .set_border_top(translate_border_style(
-                        self.theme.borders.subtotal_border_top,
-                    ))
-                    .set_border_top_color(self.palette.border_color);
+        // Horizontal: Subtotal -> Thin top border; Total -> Thin top + Double bottom; Data/Bold -> none
+        match key.role.horizontal {
+            SemanticStyle::Data | SemanticStyle::Bold => {}
+            SemanticStyle::Subtotal => {
+                if self.theme.borders.subtotal_border_top != BorderStyle::None {
+                    format = format
+                        .set_border_top(translate_border_style(
+                            self.theme.borders.subtotal_border_top,
+                        ))
+                        .set_border_top_color(self.palette.border_color);
+                }
             }
-        } else if key.role.horizontal.is_total() {
-            if self.theme.borders.total_border_top != BorderStyle::None {
-                format = format
-                    .set_border_top(translate_border_style(self.theme.borders.total_border_top))
-                    .set_border_top_color(self.palette.total_border_color);
-            }
-            if self.theme.borders.total_border_bottom != BorderStyle::None {
-                format = format
-                    .set_border_bottom(translate_border_style(
-                        self.theme.borders.total_border_bottom,
-                    ))
-                    .set_border_bottom_color(self.palette.total_border_color);
+            SemanticStyle::Total => {
+                if self.theme.borders.total_border_top != BorderStyle::None {
+                    format = format
+                        .set_border_top(translate_border_style(self.theme.borders.total_border_top))
+                        .set_border_top_color(self.palette.total_border_color);
+                }
+                if self.theme.borders.total_border_bottom != BorderStyle::None {
+                    format = format
+                        .set_border_bottom(translate_border_style(
+                            self.theme.borders.total_border_bottom,
+                        ))
+                        .set_border_bottom_color(self.palette.total_border_color);
+                }
             }
         }
 
-        // Vertical: Subtotal -> Left border; Total -> Left + Right borders
-        if key.role.vertical.is_subtotal() {
-            if self.theme.borders.col_subtotal_border_left != BorderStyle::None {
-                format = format
-                    .set_border_left(translate_border_style(
-                        self.theme.borders.col_subtotal_border_left,
-                    ))
-                    .set_border_left_color(self.palette.border_color);
+        // Vertical: Subtotal -> Left border; Total -> Left + Right borders; Data/Bold -> none
+        match key.role.vertical {
+            SemanticStyle::Data | SemanticStyle::Bold => {}
+            SemanticStyle::Subtotal => {
+                if self.theme.borders.col_subtotal_border_left != BorderStyle::None {
+                    format = format
+                        .set_border_left(translate_border_style(
+                            self.theme.borders.col_subtotal_border_left,
+                        ))
+                        .set_border_left_color(self.palette.border_color);
+                }
             }
-        } else if key.role.vertical.is_total() {
-            if self.theme.borders.col_total_border_left != BorderStyle::None {
-                format = format
-                    .set_border_left(translate_border_style(
-                        self.theme.borders.col_total_border_left,
-                    ))
-                    .set_border_left_color(self.palette.total_border_color);
-            }
-            if self.theme.borders.col_total_border_right != BorderStyle::None {
-                format = format
-                    .set_border_right(translate_border_style(
-                        self.theme.borders.col_total_border_right,
-                    ))
-                    .set_border_right_color(self.palette.total_border_color);
+            SemanticStyle::Total => {
+                if self.theme.borders.col_total_border_left != BorderStyle::None {
+                    format = format
+                        .set_border_left(translate_border_style(
+                            self.theme.borders.col_total_border_left,
+                        ))
+                        .set_border_left_color(self.palette.total_border_color);
+                }
+                if self.theme.borders.col_total_border_right != BorderStyle::None {
+                    format = format
+                        .set_border_right(translate_border_style(
+                            self.theme.borders.col_total_border_right,
+                        ))
+                        .set_border_right_color(self.palette.total_border_color);
+                }
             }
         }
 

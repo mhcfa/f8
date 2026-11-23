@@ -243,7 +243,7 @@ type FormatPreset = Literal[
     "integer",
 ]
 
-type SemanticStyle = Literal["data", "subtotal", "total"]
+type SemanticStyle = Literal["data", "bold", "subtotal", "total"]
 
 type Shade = Literal["none", "muted", "alt"]
 

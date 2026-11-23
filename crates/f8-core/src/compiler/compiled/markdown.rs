@@ -54,10 +54,17 @@ fn flattened_column_header(col: &DataColumnSpec) -> String {
     }
 }
 
+const fn is_bold_row_style(style: Option<SemanticStyle>) -> bool {
+    match style {
+        Some(s) => s.uses_bold_font(),
+        None => false,
+    }
+}
+
 const fn is_summary_style(style: Option<SemanticStyle>) -> bool {
     match style {
         Some(SemanticStyle::Subtotal | SemanticStyle::Total) => true,
-        Some(SemanticStyle::Data) | None => false,
+        Some(SemanticStyle::Data | SemanticStyle::Bold) | None => false,
     }
 }
 
@@ -65,7 +72,7 @@ const fn semantic_style_tag(style: Option<SemanticStyle>) -> Option<&'static str
     match style {
         Some(SemanticStyle::Subtotal) => Some("subtotal"),
         Some(SemanticStyle::Total) => Some("total"),
-        Some(SemanticStyle::Data) | None => None,
+        Some(SemanticStyle::Data | SemanticStyle::Bold) | None => None,
     }
 }
 
@@ -333,7 +340,7 @@ impl CompiledModel {
                     lines.push(format_compact_gfm_row(&cells));
                 }
                 RowSpec::Data(row_spec) => {
-                    let is_summary = is_summary_style(row_spec.style);
+                    let is_bold_row = is_bold_row_style(row_spec.style);
                     let indent = self.row_max_indent(table, &row_spec.id);
                     let indent_pad = "  ".repeat(usize::from(indent));
                     let norm_row_id = normalize_inline_text(row_spec.id.as_str());
@@ -343,7 +350,7 @@ impl CompiledModel {
                         .map(|col| match col {
                             RenderCol::SyntheticRow => {
                                 let escaped = escape_markdown_cell(&norm_row_id);
-                                if is_summary && !escaped.is_empty() {
+                                if is_bold_row && !escaped.is_empty() {
                                     format!("**{escaped}**")
                                 } else {
                                     escaped
@@ -381,7 +388,7 @@ impl CompiledModel {
                                         let escaped = escape_markdown_cell(&label);
                                         if escaped.is_empty() {
                                             String::new()
-                                        } else if is_summary {
+                                        } else if is_bold_row {
                                             format!("{indent_pad}**{escaped}**")
                                         } else {
                                             format!("{indent_pad}{escaped}")
@@ -394,7 +401,7 @@ impl CompiledModel {
                                             val_str.as_str()
                                         };
                                         let escaped = escape_markdown_cell(raw_text);
-                                        if is_summary && !escaped.is_empty() {
+                                        if is_bold_row && !escaped.is_empty() {
                                             format!("**{escaped}**")
                                         } else {
                                             escaped

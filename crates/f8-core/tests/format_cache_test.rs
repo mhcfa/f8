@@ -1280,3 +1280,175 @@ fn test_scenario_18_unformatted_general_format_and_theme_opt_out() {
     assert!(custom_measure_upper.contains(r#"num_format: "@_ ""#));
     assert!(custom_desc_hdr.contains(r#"num_format: """#));
 }
+
+#[test]
+fn test_bold_style_sets_bold_without_borders_or_summary_colors() {
+    let mut theme = Theme::corporate_navy();
+    // Use distinct subtotal/total fills and text colors to prove Bold ignores them
+    theme.palette.subtotal_fill = "#DDEEFF".to_string();
+    theme.palette.subtotal_text = "#112233".to_string();
+    theme.palette.total_fill = "#CCDDEE".to_string();
+    theme.palette.total_text = "#445566".to_string();
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    let formula_color = format!(
+        "{:?}",
+        parse_hex_color("formula_text", &theme.palette.formula_text).unwrap()
+    );
+    let input_color = format!(
+        "{:?}",
+        parse_hex_color("input_text", &theme.palette.input_text).unwrap()
+    );
+    let subtotal_fill_color = format!(
+        "{:?}",
+        parse_hex_color("subtotal_fill", &theme.palette.subtotal_fill).unwrap()
+    );
+    let total_fill_color = format!(
+        "{:?}",
+        parse_hex_color("total_fill", &theme.palette.total_fill).unwrap()
+    );
+    let shade_muted_color = format!(
+        "{:?}",
+        parse_hex_color("shade_muted_fill", &theme.palette.shade_muted_fill).unwrap()
+    );
+
+    // 1. Row-bold and Col-bold: bold=true, zero borders, standard formula/input colors, no summary fill
+    for role in [
+        StyleRole {
+            horizontal: SemanticStyle::Bold,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+            shade: None,
+        },
+        StyleRole {
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Bold,
+            is_highlight: false,
+            shade: None,
+        },
+    ] {
+        let formula_key = CellFormatKey::new(
+            role,
+            Some(FormatPreset::Percentage),
+            Some(1),
+            None,
+            false,
+            false,
+            0,
+        );
+        let debug = format!("{:?}", cache.get_cell_format(&formula_key).unwrap());
+        assert!(
+            debug.contains("bold: true"),
+            "Bold style must set bold: {debug}"
+        );
+        assert!(
+            debug.contains("top_style: None"),
+            "Bold must have no top border: {debug}"
+        );
+        assert!(
+            debug.contains("bottom_style: None"),
+            "Bold must have no bottom border: {debug}"
+        );
+        assert!(
+            debug.contains("left_style: None"),
+            "Bold must have no left border: {debug}"
+        );
+        assert!(
+            debug.contains("right_style: None"),
+            "Bold must have no right border: {debug}"
+        );
+        assert!(
+            debug.contains(&format!("color: {formula_color}")),
+            "Bold formula must use formula_text color: {debug}"
+        );
+        assert!(
+            !debug.contains(&subtotal_fill_color),
+            "Bold must not inherit subtotal_fill: {debug}"
+        );
+        assert!(
+            !debug.contains(&total_fill_color),
+            "Bold must not inherit total_fill: {debug}"
+        );
+
+        let input_key = CellFormatKey::new(
+            role,
+            Some(FormatPreset::Currency),
+            Some(0),
+            Some(CurrencyCode::Usd),
+            true,
+            false,
+            0,
+        );
+        let input_debug = format!("{:?}", cache.get_cell_format(&input_key).unwrap());
+        assert!(input_debug.contains("bold: true"));
+        assert!(
+            input_debug.contains(&format!("color: {input_color}")),
+            "Bold measure literal must preserve input_text blue: {input_debug}"
+        );
+    }
+
+    // 2. Bold + Shade applies shade fill with bold text and no borders
+    let shaded_bold_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Bold,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+            shade: Some(Shade::Muted),
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let shaded_debug = format!("{:?}", cache.get_cell_format(&shaded_bold_key).unwrap());
+    assert!(shaded_debug.contains("bold: true"));
+    assert!(shaded_debug.contains(&format!("background_color: {shade_muted_color}")));
+    assert!(shaded_debug.contains("top_style: None"));
+    assert!(shaded_debug.contains("left_style: None"));
+
+    // 3. Orthogonal composition: Total row x Bold col has top/bottom borders only (no left/right)
+    let total_x_bold = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            vertical: SemanticStyle::Bold,
+            is_highlight: false,
+            shade: None,
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let tb_debug = format!("{:?}", cache.get_cell_format(&total_x_bold).unwrap());
+    assert!(tb_debug.contains("bold: true"));
+    assert!(tb_debug.contains("top_style: Thin"));
+    assert!(tb_debug.contains("bottom_style: Double"));
+    assert!(tb_debug.contains("left_style: None"));
+    assert!(tb_debug.contains("right_style: None"));
+
+    // 4. Orthogonal composition: Bold row x Subtotal col has left border only (no top/bottom)
+    let bold_x_sub = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Bold,
+            vertical: SemanticStyle::Subtotal,
+            is_highlight: false,
+            shade: None,
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let bs_debug = format!("{:?}", cache.get_cell_format(&bold_x_sub).unwrap());
+    assert!(bs_debug.contains("bold: true"));
+    assert!(bs_debug.contains("top_style: None"));
+    assert!(bs_debug.contains("bottom_style: None"));
+    assert!(bs_debug.contains("left_style: Thin"));
+    assert!(bs_debug.contains("right_style: None"));
+}

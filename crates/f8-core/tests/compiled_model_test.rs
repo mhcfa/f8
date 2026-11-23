@@ -4,6 +4,8 @@ use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::ir::id::CellId;
 use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
 use f8_core::model::id::{ColId, RowId, SheetId, TableId};
+use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
 use f8_core::model::theme::{Theme, ThemeSpec};
 use f8_core::value::{CellValue, ExcelError};
 use f8_core::{
@@ -1451,4 +1453,85 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
         })
         .unwrap();
     assert!(ws_index_md.contains("Rows:\n- `r_blank`\n"));
+}
+
+#[test]
+fn test_bold_style_inspection_and_markdown_rendering() {
+    let mut tbl = TableSpec::new("Summary", "Summary");
+    tbl.columns = vec![
+        ColumnSpec::descriptor("item", "Metric"),
+        ColumnSpec::new("base")
+            .with_header("Base Case")
+            .with_style(Some(SemanticStyle::Bold)),
+        ColumnSpec::new("upside").with_header("Upside"),
+    ];
+    tbl.rows = vec![
+        RowSpec::new("rev")
+            .with_format(Some(FormatPreset::Currency))
+            .with_cell("item", "Revenue")
+            .with_cell("base", 100.0)
+            .with_cell("upside", 120.0),
+        RowSpec::new("ebitda_margin")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_format(Some(FormatPreset::Percentage))
+            .with_cell("item", "EBITDA Margin")
+            .with_cell("base", 0.25)
+            .with_cell("upside", 0.28),
+        RowSpec::new("ebitda")
+            .with_style(Some(SemanticStyle::Subtotal))
+            .with_format(Some(FormatPreset::Currency))
+            .with_cell("item", "EBITDA")
+            .with_cell("base", 25.0)
+            .with_cell("upside", 33.6),
+        RowSpec::new("net_income")
+            .with_style(Some(SemanticStyle::Total))
+            .with_format(Some(FormatPreset::Currency))
+            .with_cell("item", "Net Income")
+            .with_cell("base", 18.0)
+            .with_cell("upside", 24.0),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "BoldMdModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Summary")],
+        }],
+    };
+    let compiled = Compiler::compile(&manifest, &[tbl]).unwrap();
+
+    // Inspect table exposes SemanticStyle::Bold on both column and row
+    let inspected = compiled.inspect_table(&TableId::from("Summary")).unwrap();
+    assert_eq!(inspected.columns[1].style, Some(SemanticStyle::Bold));
+    assert_eq!(inspected.rows[1].style, Some(SemanticStyle::Bold));
+
+    // Values Markdown: bolds bold/subtotal/total rows; keeps bold-column cells on data rows unbolded
+    let md_values = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_values.contains("| Revenue | $100 | $120 |\n"));
+    assert!(md_values.contains("| **EBITDA Margin** | **25.0%** | **28.0%** |\n"));
+    assert!(md_values.contains("| **EBITDA** | **$25** | **$34** |\n"));
+    assert!(md_values.contains("| **Net Income** | **$18** | **$24** |\n"));
+
+    // Index Markdown: keeps bolding and style tags strictly for subtotal/total summaries
+    let md_index = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_index.contains("- `rev`: Revenue\n"));
+    assert!(md_index.contains("- `ebitda_margin`: EBITDA Margin\n"));
+    assert!(!md_index.contains("(bold)"));
+    assert!(!md_index.contains("**`ebitda_margin`**"));
+    assert!(md_index.contains("- **`ebitda`** (subtotal)\n"));
+    assert!(md_index.contains("- **`net_income`**: Net Income (total)\n"));
 }
