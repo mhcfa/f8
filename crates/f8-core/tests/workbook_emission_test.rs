@@ -11,8 +11,8 @@ use f8_core::model::format::{SemanticStyle, Shade};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use f8_core::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
-    ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, PlacementSpec, RowSpec, SectionHeaderRowSpec,
+    TableSpec, ValueLiteral,
 };
 use f8_core::model::theme::Theme;
 
@@ -2418,4 +2418,264 @@ fn test_bold_style_emits_bold_without_borders_and_skips_gutter_blanks() {
         !d7_border.contains("style="),
         "Gutter cell D7 must have no borders: {d7_border}"
     );
+}
+
+#[test]
+fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
+    let cell_style_idx = |sheet_xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!(r#"<c r="{cell_ref}""#);
+        let start = sheet_xml.find(&needle)?;
+        let end = sheet_xml[start..].find('>')? + start + 1;
+        let tag = &sheet_xml[start..end];
+        let s_needle = r#" s=""#;
+        let s_start = tag.find(s_needle)? + s_needle.len();
+        let s_end = tag[s_start..].find('"')? + s_start;
+        Some(tag[s_start..s_end].to_string())
+    };
+
+    // Part 1: Stacked tables (2, 5, 3 cols via stack and below) with subtitles and total rows
+    let make_stacked =
+        |id: &str, title: &str, subtitle: &str, cols: usize, placement: PlacementSpec| {
+            let mut t = TableSpec::new(id, title)
+                .with_subtitle(subtitle)
+                .with_placement(placement);
+            t.columns.push(ColumnSpec::descriptor("item", "Item"));
+            for c in 1..cols {
+                t.columns
+                    .push(ColumnSpec::new(format!("m{c}")).with_header(format!("M{c}")));
+            }
+            t.rows.push(RowSpec::new("r1"));
+            t.rows
+                .push(RowSpec::new("tot").with_style(Some(SemanticStyle::Total)));
+            populate_table_cells(&mut t);
+            t
+        };
+
+    let t1 = make_stacked("T1", "Narrow Top", "Sub 1", 2, PlacementSpec::stack());
+    let t2 = make_stacked("T2", "Wide Middle", "Sub 2", 5, PlacementSpec::stack());
+    let t3 = make_stacked(
+        "T3",
+        "Medium Bottom",
+        "Sub 3",
+        3,
+        PlacementSpec::below("T2"),
+    );
+
+    let stacked_manifest = ProjectManifest {
+        model_name: "AlignedBannersStacked".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Model".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+            ],
+        }],
+    };
+    let stacked_tables = vec![t1, t2, t3];
+    let compiled = Compiler::compile(&stacked_manifest, &stacked_tables).unwrap();
+
+    let buf1 = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let buf2 = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    assert_eq!(
+        buf1, buf2,
+        "Aligned banner emission must be bit-for-bit deterministic"
+    );
+
+    let sheet_xml = read_zip_entry(&buf1, "xl/worksheets/sheet1.xml");
+    let shared_strings = read_zip_entry(&buf1, "xl/sharedStrings.xml");
+    assert!(shared_strings.contains("Narrow Top"));
+    assert!(shared_strings.contains("Wide Middle"));
+    assert!(shared_strings.contains("Medium Bottom"));
+
+    // For each table: title banner spans B..F (cols 1..=5) with identical title style index,
+    // while subtitle, header, and total rows remain strictly within start_col..=end_col.
+    let expected_tables = [("T1", 2_u32), ("T2", 5_u32), ("T3", 3_u32)];
+    let mut expected_title_style: Option<String> = None;
+    for (id, end_col) in expected_tables {
+        let p = compiled.layout_map.get_table(&TableId::from(id)).unwrap();
+        assert_eq!(p.end_col, end_col);
+        assert_eq!(p.title_end_col, Some(5));
+
+        let title_excel_row = p.title_row.unwrap() + 1;
+        let b_ref = format!("B{title_excel_row}");
+        let b_style = cell_style_idx(&sheet_xml, &b_ref)
+            .unwrap_or_else(|| panic!("Missing title cell {b_ref}"));
+        if let Some(ref prev) = expected_title_style {
+            assert_eq!(
+                &b_style, prev,
+                "All title banners must reuse identical title style"
+            );
+        } else {
+            expected_title_style = Some(b_style.clone());
+        }
+        // Only B carries shared-string type t="s"; C..F are styled blanks with same style index
+        let b_tag_start = sheet_xml.find(&format!(r#"<c r="{b_ref}""#)).unwrap();
+        let b_tag_end = sheet_xml[b_tag_start..].find('>').unwrap() + b_tag_start + 1;
+        assert!(sheet_xml[b_tag_start..b_tag_end].contains(r#"t="s""#));
+
+        for col_letter in ["C", "D", "E", "F"] {
+            let cell_ref = format!("{col_letter}{title_excel_row}");
+            assert_eq!(
+                cell_style_idx(&sheet_xml, &cell_ref).as_deref(),
+                Some(b_style.as_str()),
+                "{id} title banner cell {cell_ref} must share title style"
+            );
+            let tag_start = sheet_xml.find(&format!(r#"<c r="{cell_ref}""#)).unwrap();
+            let tag_end = sheet_xml[tag_start..].find('>').unwrap() + tag_start + 1;
+            assert!(
+                !sheet_xml[tag_start..tag_end].contains(r#"t="s""#),
+                "{id} continuation title cell {cell_ref} must be styled blank"
+            );
+        }
+
+        // Subtitle, header, and total rows stay strictly within B..=end_col
+        let sub_excel_row = p.subtitle_row_range.unwrap().0 + 1;
+        let hdr_excel_row = p.header_row_range.unwrap().0 + 1;
+        let tot_excel_row = p.body_row_range.1 + 1;
+
+        assert!(cell_style_idx(&sheet_xml, &format!("B{sub_excel_row}")).is_some());
+        for col in (end_col + 1)..=5 {
+            let col_letter = f8_core::compiler::layout::col_to_excel_col(col);
+            assert!(
+                !sheet_xml.contains(&format!(r#"<c r="{col_letter}{sub_excel_row}""#)),
+                "{id} subtitle must not extend to {col_letter}{sub_excel_row}"
+            );
+            assert!(
+                !sheet_xml.contains(&format!(r#"<c r="{col_letter}{hdr_excel_row}""#)),
+                "{id} header must not extend to {col_letter}{hdr_excel_row}"
+            );
+            assert!(
+                !sheet_xml.contains(&format!(r#"<c r="{col_letter}{tot_excel_row}""#)),
+                "{id} total border must not extend to {col_letter}{tot_excel_row}"
+            );
+        }
+    }
+
+    // Part 2: Side-by-side non-collision (Scenario 3: tall L B..C beside R1 E..G, R2 E..F, R3 E..J)
+    let make_plain = |id: &str, title: &str, cols: usize, rows: usize, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, title).with_placement(placement);
+        for c in 1..=cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        for r in 1..=rows {
+            t.rows.push(RowSpec::new(format!("r{r}")));
+        }
+        populate_table_cells(&mut t);
+        t
+    };
+
+    let side_tables = vec![
+        make_plain("L", "Left Tall", 2, 27, PlacementSpec::stack()),
+        make_plain("R1", "Right 1", 3, 2, PlacementSpec::right_of("L")),
+        make_plain("R2", "Right 2", 2, 2, PlacementSpec::below("R1")),
+        make_plain("R3", "Right 3", 6, 2, PlacementSpec::below("R2")),
+    ];
+    let side_manifest = ProjectManifest {
+        model_name: "AlignedBannersSideBySide".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dashboard".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("L"),
+                TableId::from("R1"),
+                TableId::from("R2"),
+                TableId::from("R3"),
+            ],
+        }],
+    };
+    let side_compiled = Compiler::compile(&side_manifest, &side_tables).unwrap();
+    let side_buf = side_compiled
+        .emit_workbook(&EmissionOptions::default())
+        .unwrap();
+    let side_xml = read_zip_entry(&side_buf, "xl/worksheets/sheet1.xml");
+
+    // Row 2 (physical row 1): L occupies B2..C2, D2 is blank gutter, R1 occupies E2..J2
+    let l_style = cell_style_idx(&side_xml, "B2").expect("B2 title cell");
+    assert_eq!(
+        cell_style_idx(&side_xml, "C2").as_deref(),
+        Some(l_style.as_str())
+    );
+    assert!(
+        !side_xml.contains(r#"<c r="D2""#),
+        "Gutter column D2 between L and R1 must remain blank"
+    );
+    for col_letter in ["E", "F", "G", "H", "I", "J"] {
+        assert_eq!(
+            cell_style_idx(&side_xml, &format!("{col_letter}2")).as_deref(),
+            Some(l_style.as_str()),
+            "R1 title banner cell {col_letter}2 must be emitted with title style"
+        );
+    }
+
+    // R2 and R3 title rows also extend across E..J while leaving gutter col D blank
+    for right_id in ["R2", "R3"] {
+        let pr = side_compiled
+            .layout_map
+            .get_table(&TableId::from(right_id))
+            .unwrap();
+        let row_num = pr.title_row.unwrap() + 1;
+        assert!(
+            !side_xml.contains(&format!(r#"<c r="D{row_num}""#)),
+            "Gutter D{row_num} beside {right_id} title must remain blank"
+        );
+        for col_letter in ["E", "F", "G", "H", "I", "J"] {
+            assert_eq!(
+                cell_style_idx(&side_xml, &format!("{col_letter}{row_num}")).as_deref(),
+                Some(l_style.as_str()),
+                "{right_id} title cell {col_letter}{row_num} must share title style"
+            );
+        }
+    }
+
+    // Part 3: Explicit gap = 0 side-by-side non-collision (T1 B..C, T2 D..E)
+    let gap0_tables = vec![
+        make_plain("T1", "Left Tight", 2, 1, PlacementSpec::stack()),
+        make_plain(
+            "T2",
+            "Right Tight",
+            2,
+            1,
+            PlacementSpec::right_of_with_gap("T1", 0),
+        ),
+    ];
+    let gap0_manifest = ProjectManifest {
+        model_name: "GapZeroEmission".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Tight".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("T1"), TableId::from("T2")],
+        }],
+    };
+    let gap0_buf =
+        Compiler::emit_workbook(&gap0_manifest, &gap0_tables, &EmissionOptions::default()).unwrap();
+    let gap0_xml = read_zip_entry(&gap0_buf, "xl/worksheets/sheet1.xml");
+    let gap0_strings = read_zip_entry(&gap0_buf, "xl/sharedStrings.xml");
+    assert!(gap0_strings.contains("Left Tight"));
+    assert!(gap0_strings.contains("Right Tight"));
+    // Both B2 and D2 carry string values t="s" (no overwrite of D2 by T1's banner)
+    for title_start_ref in ["B2", "D2"] {
+        let pos = gap0_xml
+            .find(&format!(r#"<c r="{title_start_ref}""#))
+            .unwrap();
+        let end = gap0_xml[pos..].find('>').unwrap() + pos + 1;
+        assert!(
+            gap0_xml[pos..end].contains(r#"t="s""#),
+            "{title_start_ref} must remain a distinct title string cell"
+        );
+    }
+    assert!(cell_style_idx(&gap0_xml, "C2").is_some());
+    assert!(cell_style_idx(&gap0_xml, "E2").is_some());
+    assert!(!gap0_xml.contains(r#"<c r="F2""#));
 }

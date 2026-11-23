@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
+import re
+import zipfile
 from pathlib import Path
 from typing import cast
 
@@ -1254,3 +1257,92 @@ def test_detailed_empty_cell_with_metadata_and_merge() -> None:
     empty_t.add_row("r1", cells={"c1": {"note": "Missing payload"}})
     with pytest.raises(SpecificationError, match="neither 'value' nor 'expr'"):
         empty_model.compile()
+
+
+def test_aligned_title_banners_cross_sdk_parity() -> None:
+    model = Model(name="AlignedBannerParity")
+    sheet = model.add_sheet("Summary")
+
+    top = sheet.add_table("TopTable", title="Top Table Summary Banner")
+    top.add_column("item", role="descriptor", header="Item")
+    top.add_column("v1", header="Val 1")
+    top.add_row("r1", cells={"item": "Metric A", "v1": 100.0})
+
+    bottom = sheet.add_table("WideTable", title="Wide Forecast Table")
+    bottom.add_column("item", role="descriptor", header="Item")
+    bottom.add_column("y1", header="2024E")
+    bottom.add_column("y2", header="2025E")
+    bottom.add_column("y3", header="2026E")
+    bottom.add_row(
+        "r1",
+        cells={"item": "Revenue", "y1": 10.0, "y2": 20.0, "y3": 30.0},
+    )
+
+    compiled = model.compile()
+    sheet_insp = compiled.inspect_sheet("Summary")
+
+    assert sheet_insp["min_col"] == 1
+    assert sheet_insp["max_col"] == 4
+    assert sheet_insp["min_row"] == 1
+
+    # Row 0 (physical row 1, Excel row 2): TopTable title spans all 4 columns (B2..E2)
+    top_title_row = sheet_insp["rows"][0]
+    assert top_title_row["physical_row"] == 1
+    assert top_title_row["excel_row"] == 2
+    assert [
+        (c["physical_col"], c["physical_a1"], c["kind"], c["table_id"])
+        for c in top_title_row["cells"]
+    ] == [
+        (1, "B2", "table_title", "TopTable"),
+        (2, "C2", "table_title", "TopTable"),
+        (3, "D2", "table_title", "TopTable"),
+        (4, "E2", "table_title", "TopTable"),
+    ]
+    assert [c["formatted_value"] for c in top_title_row["cells"]] == [
+        "Top Table Summary Banner",
+        None,
+        None,
+        None,
+    ]
+
+    # TopTable header row (row 4) and data row (row 5) stay strictly on B..C
+    top_header_row = sheet_insp["rows"][2]
+    assert [(c["physical_a1"], c["kind"], c["table_id"]) for c in top_header_row["cells"]] == [
+        ("B4", "column_header", "TopTable"),
+        ("C4", "column_header", "TopTable"),
+        ("D4", "empty", None),
+        ("E4", "empty", None),
+    ]
+    top_data_row = sheet_insp["rows"][3]
+    assert [(c["physical_a1"], c["kind"], c["table_id"]) for c in top_data_row["cells"]] == [
+        ("B5", "data", "TopTable"),
+        ("C5", "data", "TopTable"),
+        ("D5", "empty", None),
+        ("E5", "empty", None),
+    ]
+
+    # Cell A1 addresses and col_widths remain unaffected by title banner alignment
+    assert compiled.table("TopTable").address("r1", "item") == "B5"
+    assert compiled.table("TopTable").address("r1", "v1") == "C5"
+    assert compiled.table("WideTable").address("r1", "y3") == "E11"
+    assert sheet_insp["col_widths"][1] == pytest.approx(12.0)
+    assert sheet_insp["col_widths"][2] == pytest.approx(12.0)
+    assert sheet_insp["col_widths"][3] == pytest.approx(12.0)
+    assert sheet_insp["col_widths"][4] == pytest.approx(12.0)
+
+    # OpenXML workbook emits styled title cells across B2..E2 while keeping headers/data on B..C
+    xlsx_bytes = compiled.emit_workbook()
+    assert xlsx_bytes.startswith(b"PK\x03\x04")
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes), "r") as zf:
+        sheet_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+
+    title_styles: list[str] = []
+    for ref in ("B2", "C2", "D2", "E2"):
+        match = re.search(rf'<c r="{ref}"[^>]*\bs="(\d+)"', sheet_xml)
+        assert match is not None, f"Missing aligned title cell {ref} in sheet1.xml"
+        title_styles.append(match.group(1))
+    assert len(set(title_styles)) == 1
+    assert '<c r="D4"' not in sheet_xml
+    assert '<c r="E4"' not in sheet_xml
+    assert '<c r="D5"' not in sheet_xml
+    assert '<c r="E5"' not in sheet_xml

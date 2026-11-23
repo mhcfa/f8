@@ -90,6 +90,9 @@ pub struct TablePlacement {
     pub end_row: u32,
     /// Physical row index of the table title banner if present.
     pub title_row: Option<u32>,
+    /// 0-indexed physical ending column of the table title banner (inclusive),
+    /// aligned across stacked tables when unobstructed; `None` when `title_row` is `None`.
+    pub title_end_col: Option<u32>,
     /// Inclusive physical row range of table subtitle banners, or None if the table has zero subtitles.
     pub subtitle_row_range: Option<(u32, u32)>,
     /// Physical row index of the blank buffer gutter below title/subtitle if present.
@@ -461,6 +464,7 @@ impl LayoutPlanner {
                     end_col,
                     end_row: table_end_row,
                     title_row,
+                    title_end_col: None,
                     subtitle_row_range,
                     title_gutter_row,
                     header_row_range,
@@ -470,9 +474,11 @@ impl LayoutPlanner {
                 sheet_max_end_row =
                     Some(sheet_max_end_row.map_or(table_end_row, |m| m.max(table_end_row)));
                 sheet_max_end_col = sheet_max_end_col.max(end_col);
-                sheet_placements.insert(table.id.clone(), placement.clone());
-                layout_tables.insert(table.id.clone(), placement);
+                sheet_placements.insert(table.id.clone(), placement);
             }
+
+            // 2b. Resolve aligned title banner right bounds per worksheet
+            resolve_title_end_cols(&mut sheet_placements);
 
             // 3. Sheet-wide column width arbitration across 2D placed tables
             ColumnArbitrationContext {
@@ -484,6 +490,8 @@ impl LayoutPlanner {
                 evaluated,
             }
             .arbitrate(sheet_max_end_col, &mut col_widths);
+
+            layout_tables.extend(sheet_placements);
 
             layout_sheets.insert(
                 sheet_id.clone(),
@@ -544,6 +552,65 @@ fn resolve_placement_target<'a>(
         sheet: sheet_id.clone(),
         reason,
     })
+}
+
+/// Computes aligned title banner right bounds (`title_end_col`) for all tables on a worksheet.
+///
+/// Unobstructed titled tables align their title banner to the sheet's rightmost table column;
+/// obstructed titled tables (those with a vertically overlapping neighbor to their right) align
+/// within their column lane while preserving at least a 1-column gutter before the nearest right
+/// neighbor when one exists. Untitled tables always resolve `title_end_col = None`.
+fn resolve_title_end_cols(sheet_placements: &mut IndexMap<TableId, TablePlacement>) {
+    let Some(sheet_max_end_col) = sheet_placements.values().map(|p| p.end_col).max() else {
+        return;
+    };
+
+    // Step 1: Compute nearest vertically overlapping right neighbor's start_col per table.
+    let blocking_cols: Vec<Option<u32>> = sheet_placements
+        .iter()
+        .map(|(id, p)| {
+            sheet_placements
+                .iter()
+                .filter(|(other_id, other)| {
+                    *other_id != id
+                        && other.start_col > p.end_col
+                        && other.start_row <= p.end_row
+                        && p.start_row <= other.end_row
+                })
+                .map(|(_, other)| other.start_col)
+                .min()
+        })
+        .collect();
+
+    // Step 2 & 3: Resolve title_end_col for each table from sheet max or obstructed lane peers.
+    let resolved: Vec<Option<u32>> = sheet_placements
+        .values()
+        .zip(&blocking_cols)
+        .map(|(t, &blocker)| {
+            t.title_row?;
+            match blocker {
+                None => Some(sheet_max_end_col),
+                Some(right_col) => {
+                    let lane_max = sheet_placements
+                        .values()
+                        .zip(&blocking_cols)
+                        .filter(|(other, other_blocker)| {
+                            other.start_col == t.start_col
+                                && other_blocker.is_some()
+                                && other.end_col.saturating_add(1) < right_col
+                        })
+                        .map(|(other, _)| other.end_col)
+                        .max()
+                        .unwrap_or(t.end_col);
+                    Some(lane_max.max(t.end_col))
+                }
+            }
+        })
+        .collect();
+
+    for (placement, title_end_col) in sheet_placements.values_mut().zip(resolved) {
+        placement.title_end_col = title_end_col;
+    }
 }
 
 /// Context and inputs for arbitrating sheet-wide column widths and cell text wrapping across placed tables.

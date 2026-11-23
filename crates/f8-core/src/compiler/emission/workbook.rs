@@ -184,8 +184,9 @@ impl WorkbookEmitter {
                             table: table.id.clone(),
                         })?;
 
-                // Table Title Banner: Fill entire table width from start_col to end_col
-                if let Some(title_row) = placement.title_row
+                // Table Title Banner: Fill aligned banner width from start_col to title_end_col
+                if let (Some(title_row), Some(title_end_col)) =
+                    (placement.title_row, placement.title_end_col)
                     && !table.title.trim().is_empty()
                 {
                     worksheet.write_string_with_format(
@@ -194,7 +195,7 @@ impl WorkbookEmitter {
                         &table.title,
                         &format_cache.title_format(),
                     )?;
-                    for col in (placement.start_col + 1)..=placement.end_col {
+                    for col in (placement.start_col + 1)..=title_end_col {
                         worksheet.write_blank(
                             title_row,
                             excel_col_u16(col)?,

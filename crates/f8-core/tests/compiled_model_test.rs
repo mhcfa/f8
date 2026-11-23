@@ -1535,3 +1535,181 @@ fn test_bold_style_inspection_and_markdown_rendering() {
     assert!(md_index.contains("- **`ebitda`** (subtotal)\n"));
     assert!(md_index.contains("- **`net_income`**: Net Income (total)\n"));
 }
+
+#[test]
+fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
+    use f8_core::compiler::compiled::SheetCellKind;
+    use f8_core::model::table::{CellInput, PlacementSpec};
+
+    let make_table = |id: &str, title: &str, cols: usize, rows: usize, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, title).with_placement(placement);
+        t.columns.push(ColumnSpec::descriptor("item", "Item"));
+        for c in 1..cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        for r in 1..=rows {
+            let mut row = RowSpec::new(format!("r{r}")).with_cell("item", format!("Row {r}"));
+            for c in 1..cols {
+                row = row.with_cell(format!("c{c}"), CellInput::number((r * 10 + c) as f64));
+            }
+            t.rows.push(row);
+        }
+        t
+    };
+
+    // Part 1: Stacked tables (2, 5, 3 cols via stack and below)
+    let stacked_tables = vec![
+        make_table("T1", "Top Narrow Table", 2, 1, PlacementSpec::stack()),
+        make_table("T2", "Middle Wide Table", 5, 1, PlacementSpec::stack()),
+        make_table(
+            "T3",
+            "Bottom Medium Table",
+            3,
+            1,
+            PlacementSpec::below("T2"),
+        ),
+    ];
+    let stacked_manifest = ProjectManifest {
+        model_name: "InspectStackedBanners".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+            ],
+        }],
+    };
+    let compiled = Compiler::compile(&stacked_manifest, &stacked_tables).unwrap();
+    let sheet = compiled.inspect_sheet(&SheetId::from("Main")).unwrap();
+
+    assert_eq!(sheet.min_col, 1);
+    assert_eq!(sheet.max_col, 5);
+
+    for (id, expected_title, end_col) in [
+        ("T1", "Top Narrow Table", 2_u32),
+        ("T2", "Middle Wide Table", 5_u32),
+        ("T3", "Bottom Medium Table", 3_u32),
+    ] {
+        let p = compiled.layout_map.get_table(&TableId::from(id)).unwrap();
+        let title_row_idx = (p.title_row.unwrap() - sheet.min_row) as usize;
+        let title_row = &sheet.rows[title_row_idx];
+        assert_eq!(title_row.cells.len(), 5);
+        for (idx, cell) in title_row.cells.iter().enumerate() {
+            let expected_col = 1 + idx as u32;
+            assert_eq!(cell.physical_col, expected_col);
+            assert_eq!(cell.kind, SheetCellKind::TableTitle);
+            assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some(id));
+            if expected_col == 1 {
+                assert_eq!(cell.value, CellValue::Text(expected_title.to_string()));
+                assert_eq!(cell.formatted_value.as_deref(), Some(expected_title));
+            } else {
+                assert_eq!(cell.value, CellValue::Empty);
+                assert_eq!(cell.formatted_value, None);
+            }
+        }
+
+        // Header and body rows remain strictly within 1..=end_col
+        let hdr_row_idx = (p.header_row_range.unwrap().0 - sheet.min_row) as usize;
+        let data_row_idx = (p.body_row_range.0 - sheet.min_row) as usize;
+        for col in 1..=5_u32 {
+            let hdr_cell = &sheet.rows[hdr_row_idx].cells[(col - 1) as usize];
+            let data_cell = &sheet.rows[data_row_idx].cells[(col - 1) as usize];
+            if col <= end_col {
+                assert_eq!(hdr_cell.kind, SheetCellKind::ColumnHeader);
+                assert_eq!(hdr_cell.table_id.as_ref().map(TableId::as_str), Some(id));
+                assert_eq!(data_cell.kind, SheetCellKind::Data);
+                assert_eq!(data_cell.table_id.as_ref().map(TableId::as_str), Some(id));
+            } else {
+                assert_eq!(hdr_cell.kind, SheetCellKind::Empty);
+                assert_eq!(hdr_cell.table_id, None);
+                assert_eq!(data_cell.kind, SheetCellKind::Empty);
+                assert_eq!(data_cell.table_id, None);
+            }
+        }
+    }
+
+    // Part 2: Obstructed left-lane alignment (Scenario 5: Left1 1..=2, Left2 1..=3 beside Right 5..=7)
+    let lane_tables = vec![
+        make_table("Left1", "Left Card 1", 2, 2, PlacementSpec::stack()),
+        make_table(
+            "Right",
+            "Right Panel",
+            3,
+            12,
+            PlacementSpec::right_of_with_gap("Left1", 2),
+        ),
+        make_table("Left2", "Left Card 2", 3, 2, PlacementSpec::below("Left1")),
+    ];
+    let lane_manifest = ProjectManifest {
+        model_name: "InspectLeftLane".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Dash".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![
+                TableId::from("Left1"),
+                TableId::from("Right"),
+                TableId::from("Left2"),
+            ],
+        }],
+    };
+    let lane_compiled = Compiler::compile(&lane_manifest, &lane_tables).unwrap();
+    let dash = lane_compiled.inspect_sheet(&SheetId::from("Dash")).unwrap();
+
+    assert_eq!(dash.min_col, 1);
+    assert_eq!(dash.max_col, 7);
+
+    // Row 0 (physical row 1): Left1 TableTitle across cols 1..=3, Empty at col 4, Right TableTitle across cols 5..=7
+    let row0 = &dash.rows[0];
+    for col in 1..=7_u32 {
+        let cell = &row0.cells[(col - 1) as usize];
+        match col {
+            1..=3 => {
+                assert_eq!(cell.kind, SheetCellKind::TableTitle);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left1"));
+            }
+            4 => {
+                assert_eq!(cell.kind, SheetCellKind::Empty);
+                assert_eq!(cell.table_id, None);
+            }
+            5..=7 => {
+                assert_eq!(cell.kind, SheetCellKind::TableTitle);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Right"));
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    // Left2's title row: Left2 TableTitle across cols 1..=3, Empty at col 4, Right Data across cols 5..=7
+    let p_l2 = lane_compiled
+        .layout_map
+        .get_table(&TableId::from("Left2"))
+        .unwrap();
+    let l2_title_row = &dash.rows[(p_l2.title_row.unwrap() - dash.min_row) as usize];
+    for col in 1..=7_u32 {
+        let cell = &l2_title_row.cells[(col - 1) as usize];
+        match col {
+            1..=3 => {
+                assert_eq!(cell.kind, SheetCellKind::TableTitle);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left2"));
+            }
+            4 => {
+                assert_eq!(cell.kind, SheetCellKind::Empty);
+                assert_eq!(cell.table_id, None);
+            }
+            5..=7 => {
+                assert_eq!(cell.kind, SheetCellKind::Data);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Right"));
+            }
+            _ => unreachable!(),
+        }
+    }
+}

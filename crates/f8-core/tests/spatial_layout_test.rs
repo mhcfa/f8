@@ -1841,3 +1841,413 @@ fn test_scenario_23_trailing_alignment_space_width_arbitration() {
         "MeasureTextLabel"
     );
 }
+
+fn build_banner_test_table(
+    id: &str,
+    title: &str,
+    num_cols: usize,
+    num_rows: usize,
+    placement: PlacementSpec,
+) -> TableSpec {
+    let mut table = TableSpec::new(id, title).with_placement(placement);
+    for c in 1..=num_cols {
+        table
+            .columns
+            .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+    }
+    for r in 1..=num_rows {
+        table.rows.push(RowSpec::new(format!("r{r}")));
+    }
+    populate_table_cells(&mut table);
+    table
+}
+
+fn single_sheet_manifest(model_name: &str, tables: &[TableSpec]) -> ProjectManifest {
+    ProjectManifest {
+        model_name: model_name.to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: tables.iter().map(|t| t.id.clone()).collect(),
+        }],
+    }
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolation() {
+    let t1 = build_banner_test_table(
+        "NarrowTop",
+        "Very Long Narrow Schedule Banner Title That Must Not Widen Columns",
+        2,
+        1,
+        PlacementSpec::stack(),
+    );
+    let t2 = build_banner_test_table("WideMid", "Wide Middle", 5, 1, PlacementSpec::stack());
+    let t3 = build_banner_test_table(
+        "MedBot",
+        "Medium Bottom",
+        3,
+        1,
+        PlacementSpec::below("WideMid"),
+    );
+    let other_sheet_wide = build_banner_test_table(
+        "OtherWide",
+        "Other Sheet Wide",
+        10,
+        1,
+        PlacementSpec::stack(),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "StackedBanners".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Sheet1".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![
+                    TableId::from("NarrowTop"),
+                    TableId::from("WideMid"),
+                    TableId::from("MedBot"),
+                ],
+            },
+            SheetSpec {
+                name: "Sheet2".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("OtherWide")],
+            },
+        ],
+    };
+
+    let tables = vec![t1, t2, t3, other_sheet_wide];
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let p1 = compiled
+        .layout_map
+        .get_table(&TableId::from("NarrowTop"))
+        .unwrap();
+    let p2 = compiled
+        .layout_map
+        .get_table(&TableId::from("WideMid"))
+        .unwrap();
+    let p3 = compiled
+        .layout_map
+        .get_table(&TableId::from("MedBot"))
+        .unwrap();
+    let p_other = compiled
+        .layout_map
+        .get_table(&TableId::from("OtherWide"))
+        .unwrap();
+
+    // Own bounding boxes remain unchanged (2, 5, 3 columns starting at col 1)
+    assert_eq!((p1.start_col, p1.end_col), (1, 2));
+    assert_eq!((p2.start_col, p2.end_col), (1, 5));
+    assert_eq!((p3.start_col, p3.end_col), (1, 3));
+
+    // All stacked titled tables on Sheet1 align title_end_col to Sheet1 max (col 5),
+    // unaffected by Sheet2's 10-column table (col 10)
+    assert_eq!(p1.title_row, Some(1));
+    assert_eq!(p1.title_end_col, Some(5));
+    assert_eq!(p2.title_row, Some(7));
+    assert_eq!(p2.title_end_col, Some(5));
+    assert_eq!(p3.title_row, Some(13));
+    assert_eq!(p3.title_end_col, Some(5));
+    assert_eq!(p_other.title_end_col, Some(10));
+
+    // Column widths remain driven strictly by cell/header content, not by long title text
+    let sheet1 = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("Sheet1"))
+        .unwrap();
+    let theme = create_test_theme();
+    for col in 1..=5 {
+        assert_eq!(
+            sheet1.col_widths.get(&col),
+            Some(&theme.metrics.min_col_width)
+        );
+    }
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_2_untitled_widest_table_sets_sheet_edge() {
+    let narrow = build_banner_test_table("NarrowTitled", "Summary", 2, 1, PlacementSpec::stack());
+    let wide_untitled = build_banner_test_table("WideUntitled", "", 6, 1, PlacementSpec::stack());
+
+    let tables = vec![narrow, wide_untitled];
+    let manifest = single_sheet_manifest("UntitledWidest", &tables);
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let p_narrow = compiled
+        .layout_map
+        .get_table(&TableId::from("NarrowTitled"))
+        .unwrap();
+    let p_wide = compiled
+        .layout_map
+        .get_table(&TableId::from("WideUntitled"))
+        .unwrap();
+
+    assert_eq!((p_narrow.start_col, p_narrow.end_col), (1, 2));
+    assert_eq!(p_narrow.title_row, Some(1));
+    assert_eq!(p_narrow.title_end_col, Some(6));
+
+    assert_eq!((p_wide.start_col, p_wide.end_col), (1, 6));
+    assert_eq!(p_wide.title_row, None);
+    assert_eq!(p_wide.title_end_col, None);
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_3_side_by_side_left_lane_and_right_stack() {
+    // Tall left table L: B..C (cols 1..=2), rows 1..=30 (title + gutter + header + 27 data rows)
+    let left = build_banner_test_table("L", "Left Lane", 2, 27, PlacementSpec::stack());
+    // Three stacked right-lane tables via right_of(L) and below: E..G (3 cols), E..F (2 cols), E..J (6 cols)
+    let r1 = build_banner_test_table("R1", "Right 1", 3, 2, PlacementSpec::right_of("L"));
+    let r2 = build_banner_test_table("R2", "Right 2", 2, 2, PlacementSpec::below("R1"));
+    let r3 = build_banner_test_table("R3", "Right 3", 6, 2, PlacementSpec::below("R2"));
+
+    let tables = vec![left, r1, r2, r3];
+    let manifest = single_sheet_manifest("SideBySideStack", &tables);
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let pl = compiled.layout_map.get_table(&TableId::from("L")).unwrap();
+    let pr1 = compiled.layout_map.get_table(&TableId::from("R1")).unwrap();
+    let pr2 = compiled.layout_map.get_table(&TableId::from("R2")).unwrap();
+    let pr3 = compiled.layout_map.get_table(&TableId::from("R3")).unwrap();
+
+    assert_eq!(
+        (pl.start_col, pl.end_col, pl.start_row, pl.end_row),
+        (1, 2, 1, 30)
+    );
+    assert_eq!(pl.title_end_col, Some(2));
+
+    assert_eq!((pr1.start_col, pr1.end_col), (4, 6));
+    assert_eq!((pr2.start_col, pr2.end_col), (4, 5));
+    assert_eq!((pr3.start_col, pr3.end_col), (4, 9));
+    assert_eq!(pr1.title_end_col, Some(9));
+    assert_eq!(pr2.title_end_col, Some(9));
+    assert_eq!(pr3.title_end_col, Some(9));
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_4_mixed_dashboard() {
+    let top_left = build_banner_test_table("TopLeft", "Top Left", 3, 2, PlacementSpec::stack());
+    let top_right = build_banner_test_table(
+        "TopRight",
+        "Top Right",
+        5,
+        2,
+        PlacementSpec::right_of("TopLeft"),
+    );
+    let bottom_1 = build_banner_test_table("Bottom1", "Bottom 1", 7, 2, PlacementSpec::stack());
+    let bottom_2 = build_banner_test_table("Bottom2", "Bottom 2", 5, 2, PlacementSpec::stack());
+
+    let tables = vec![top_left, top_right, bottom_1, bottom_2];
+    let manifest = single_sheet_manifest("MixedDashboard", &tables);
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let p_tl = compiled
+        .layout_map
+        .get_table(&TableId::from("TopLeft"))
+        .unwrap();
+    let p_tr = compiled
+        .layout_map
+        .get_table(&TableId::from("TopRight"))
+        .unwrap();
+    let p_b1 = compiled
+        .layout_map
+        .get_table(&TableId::from("Bottom1"))
+        .unwrap();
+    let p_b2 = compiled
+        .layout_map
+        .get_table(&TableId::from("Bottom2"))
+        .unwrap();
+
+    assert_eq!((p_tl.start_col, p_tl.end_col), (1, 3));
+    assert_eq!((p_tr.start_col, p_tr.end_col), (5, 9));
+    assert_eq!((p_b1.start_col, p_b1.end_col), (1, 7));
+    assert_eq!((p_b2.start_col, p_b2.end_col), (1, 5));
+
+    assert_eq!(p_tl.title_end_col, Some(3));
+    assert_eq!(p_tr.title_end_col, Some(9));
+    assert_eq!(p_b1.title_end_col, Some(9));
+    assert_eq!(p_b2.title_end_col, Some(9));
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_5_stacked_obstructed_left_lane_cards() {
+    let left_1 = build_banner_test_table("Left1", "Left Card 1", 2, 2, PlacementSpec::stack());
+    let right = build_banner_test_table(
+        "Right",
+        "Tall Right Panel",
+        3,
+        12,
+        PlacementSpec::right_of_with_gap("Left1", 2),
+    );
+    let left_2 =
+        build_banner_test_table("Left2", "Left Card 2", 3, 2, PlacementSpec::below("Left1"));
+
+    let tables = vec![left_1, right, left_2];
+    let manifest = single_sheet_manifest("LeftLaneCards", &tables);
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let p_l1 = compiled
+        .layout_map
+        .get_table(&TableId::from("Left1"))
+        .unwrap();
+    let p_r = compiled
+        .layout_map
+        .get_table(&TableId::from("Right"))
+        .unwrap();
+    let p_l2 = compiled
+        .layout_map
+        .get_table(&TableId::from("Left2"))
+        .unwrap();
+
+    assert_eq!((p_l1.start_col, p_l1.end_col), (1, 2));
+    assert_eq!((p_l2.start_col, p_l2.end_col), (1, 3));
+    assert_eq!((p_r.start_col, p_r.end_col), (5, 7));
+    // Right overlaps both Left1 and Left2 vertically
+    assert!(p_r.start_row <= p_l1.end_row && p_l1.start_row <= p_r.end_row);
+    assert!(p_r.start_row <= p_l2.end_row && p_l2.start_row <= p_r.end_row);
+
+    // Both left-lane cards align to col 3 (D), leaving gutter col 4 (E) blank before Right (col 5)
+    assert_eq!(p_l1.title_end_col, Some(3));
+    assert_eq!(p_l2.title_end_col, Some(3));
+    assert_eq!(p_r.title_end_col, Some(7));
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_6_explicit_gap_zero_and_gap_gte_two() {
+    // Part (a): explicit gap = 0
+    let t1 = build_banner_test_table("T1", "Left Zero Gap", 2, 1, PlacementSpec::stack());
+    let t2 = build_banner_test_table(
+        "T2",
+        "Right Zero Gap",
+        2,
+        1,
+        PlacementSpec::right_of_with_gap("T1", 0),
+    );
+    let tables_a = vec![t1, t2];
+    let manifest_a = single_sheet_manifest("GapZero", &tables_a);
+    let compiled_a = Compiler::compile(&manifest_a, &tables_a).unwrap();
+
+    let pt1 = compiled_a
+        .layout_map
+        .get_table(&TableId::from("T1"))
+        .unwrap();
+    let pt2 = compiled_a
+        .layout_map
+        .get_table(&TableId::from("T2"))
+        .unwrap();
+    assert_eq!((pt1.start_col, pt1.end_col), (1, 2));
+    assert_eq!((pt2.start_col, pt2.end_col), (3, 4));
+    assert_eq!(pt1.title_end_col, Some(2));
+    assert_eq!(pt2.title_end_col, Some(4));
+
+    // Part (b): explicit gap = 2 above an unobstructed stacked wider table C
+    let a = build_banner_test_table("A", "Top Left", 2, 1, PlacementSpec::stack());
+    let b = build_banner_test_table(
+        "B",
+        "Top Right",
+        3,
+        1,
+        PlacementSpec::right_of_with_gap("A", 2),
+    );
+    let c = build_banner_test_table("C", "Bottom Stack", 3, 1, PlacementSpec::stack());
+    let tables_b = vec![a, b, c];
+    let manifest_b = single_sheet_manifest("GapTwoPreserved", &tables_b);
+    let compiled_b = Compiler::compile(&manifest_b, &tables_b).unwrap();
+
+    let pa = compiled_b
+        .layout_map
+        .get_table(&TableId::from("A"))
+        .unwrap();
+    let pb = compiled_b
+        .layout_map
+        .get_table(&TableId::from("B"))
+        .unwrap();
+    let pc = compiled_b
+        .layout_map
+        .get_table(&TableId::from("C"))
+        .unwrap();
+    assert_eq!((pa.start_col, pa.end_col), (1, 2));
+    assert_eq!((pb.start_col, pb.end_col), (5, 7));
+    assert_eq!((pc.start_col, pc.end_col), (1, 3));
+    // A preserves both explicit gap columns (3..=4); C is unobstructed and does not pull A right
+    assert_eq!(pa.title_end_col, Some(2));
+    assert_eq!(pb.title_end_col, Some(7));
+    assert_eq!(pc.title_end_col, Some(7));
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_7_gap_row_vertical_overlap_guard() {
+    // L1: rows 1..=4 (1 data row)
+    let l1 = build_banner_test_table("L1", "Left 1", 2, 1, PlacementSpec::stack());
+    // L2: below(L1), gap=2 -> rows 7..=15 (6 data rows; title_row == 7)
+    let l2 = build_banner_test_table("L2", "Left 2", 2, 6, PlacementSpec::below("L1"));
+    // R1: right_of(L1) -> rows 1..=5 (2 data rows)
+    let r1 = build_banner_test_table("R1", "Right 1", 3, 2, PlacementSpec::right_of("L1"));
+    // R2: below(R1), gap=2 -> rows 8..=15 (5 data rows)
+    let r2 = build_banner_test_table("R2", "Right 2", 3, 5, PlacementSpec::below("R1"));
+
+    let tables = vec![l1, l2, r1, r2];
+    let manifest = single_sheet_manifest("GapRowGuard", &tables);
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let pl1 = compiled.layout_map.get_table(&TableId::from("L1")).unwrap();
+    let pl2 = compiled.layout_map.get_table(&TableId::from("L2")).unwrap();
+    let pr1 = compiled.layout_map.get_table(&TableId::from("R1")).unwrap();
+    let pr2 = compiled.layout_map.get_table(&TableId::from("R2")).unwrap();
+
+    assert_eq!((pl1.start_row, pl1.end_row), (1, 4));
+    assert_eq!((pl2.start_row, pl2.end_row), (7, 15));
+    assert_eq!(pl2.title_row, Some(7));
+    assert_eq!((pr1.start_row, pr1.end_row), (1, 5));
+    assert_eq!((pr2.start_row, pr2.end_row), (8, 15));
+
+    // L2.title_row (7) sits in the blank vertical gap between R1 (end 5) and R2 (start 8),
+    // but L2's vertical band (7..=15) overlaps R2 (8..=15), blocking L2 at its own end_col.
+    assert_eq!(pl1.title_end_col, Some(pl1.end_col));
+    assert_eq!(pl2.title_end_col, Some(pl2.end_col));
+    assert_eq!(pr1.title_end_col, Some(6));
+    assert_eq!(pr2.title_end_col, Some(6));
+}
+
+#[test]
+fn test_aligned_title_banners_scenario_8_untitled_right_neighbor_blocks_left_banner() {
+    let left = build_banner_test_table("LeftTitled", "Left Titled", 2, 1, PlacementSpec::stack());
+    let right = build_banner_test_table(
+        "RightUntitled",
+        "",
+        3,
+        1,
+        PlacementSpec::right_of("LeftTitled"),
+    );
+
+    let tables = vec![left, right];
+    let manifest = single_sheet_manifest("UntitledBlocker", &tables);
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+
+    let p_left = compiled
+        .layout_map
+        .get_table(&TableId::from("LeftTitled"))
+        .unwrap();
+    let p_right = compiled
+        .layout_map
+        .get_table(&TableId::from("RightUntitled"))
+        .unwrap();
+
+    assert_eq!((p_left.start_col, p_left.end_col), (1, 2));
+    assert_eq!(p_left.title_row, Some(1));
+    assert_eq!(p_left.title_end_col, Some(2));
+
+    assert_eq!((p_right.start_col, p_right.end_col), (4, 6));
+    assert_eq!(p_right.title_row, None);
+    assert_eq!(p_right.title_end_col, None);
+}

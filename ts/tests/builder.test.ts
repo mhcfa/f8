@@ -8,6 +8,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
+import { inflateRawSync } from "node:zlib"
 import { describe, expect, it } from "vitest"
 import {
   type AxisSelector,
@@ -1350,5 +1351,153 @@ describe("TypeScript Fluent Builder DSL", () => {
       expect(() => emptyModel.compile()).toThrow(SpecificationError)
       expect(() => emptyModel.compile()).toThrow("neither 'value' nor 'expr'")
     }
+  })
+
+  it("Scenario 9: aligned table title banners parity across inspectSheet and emitWorkbook", () => {
+    const readZipEntryUtf8 = (bytes: Uint8Array, entryName: string): string => {
+      const view = new DataView(
+        bytes.buffer,
+        bytes.byteOffset,
+        bytes.byteLength
+      )
+      const decoder = new TextDecoder()
+      let eocdOffset = -1
+      for (
+        let i = bytes.length - 22;
+        i >= Math.max(0, bytes.length - 65557);
+        i--
+      ) {
+        if (view.getUint32(i, true) === 0x06054b50) {
+          eocdOffset = i
+          break
+        }
+      }
+      expect(eocdOffset).toBeGreaterThanOrEqual(0)
+      const totalEntries = view.getUint16(eocdOffset + 10, true)
+      let cdOffset = view.getUint32(eocdOffset + 16, true)
+      for (let i = 0; i < totalEntries; i++) {
+        const compressionMethod = view.getUint16(cdOffset + 10, true)
+        const compressedSize = view.getUint32(cdOffset + 20, true)
+        const fileNameLen = view.getUint16(cdOffset + 28, true)
+        const extraLen = view.getUint16(cdOffset + 30, true)
+        const commentLen = view.getUint16(cdOffset + 32, true)
+        const localHeaderOffset = view.getUint32(cdOffset + 42, true)
+        const fileName = decoder.decode(
+          bytes.subarray(cdOffset + 46, cdOffset + 46 + fileNameLen)
+        )
+        if (fileName === entryName) {
+          const localNameLen = view.getUint16(localHeaderOffset + 26, true)
+          const localExtraLen = view.getUint16(localHeaderOffset + 28, true)
+          const dataStart =
+            localHeaderOffset + 30 + localNameLen + localExtraLen
+          const rawSlice = bytes.subarray(dataStart, dataStart + compressedSize)
+          const inflated =
+            compressionMethod === 8 ? inflateRawSync(rawSlice) : rawSlice
+          return decoder.decode(inflated)
+        }
+        cdOffset += 46 + fileNameLen + extraLen + commentLen
+      }
+      throw new Error(`Missing zip entry ${entryName}`)
+    }
+
+    const model = new Model({ name: "AlignedBannerParity" })
+    const sheet = model.addSheet("Summary")
+
+    const top = sheet.addTable("TopTable", "Top Table Summary Banner")
+    top.addColumn("item", { role: "descriptor", header: "Item" })
+    top.addColumn("v1", { header: "Val 1" })
+    top.addRow("r1", { cells: { item: "Metric A", v1: 100.0 } })
+
+    const bottom = sheet.addTable("WideTable", "Wide Forecast Table")
+    bottom.addColumn("item", { role: "descriptor", header: "Item" })
+    bottom.addColumn("y1", { header: "2024E" })
+    bottom.addColumn("y2", { header: "2025E" })
+    bottom.addColumn("y3", { header: "2026E" })
+    bottom.addRow("r1", {
+      cells: { item: "Revenue", y1: 10.0, y2: 20.0, y3: 30.0 },
+    })
+
+    const compiled = model.compile()
+    const sheetInsp = compiled.inspectSheet("Summary")
+
+    expect(sheetInsp.minCol).toBe(1)
+    expect(sheetInsp.maxCol).toBe(4)
+    expect(sheetInsp.minRow).toBe(1)
+
+    // Row 0 (physicalRow 1, excelRow 2): TopTable title spans all 4 columns (B2..E2)
+    const topTitleRow = sheetInsp.rows[0]
+    expect(topTitleRow?.physicalRow).toBe(1)
+    expect(topTitleRow?.excelRow).toBe(2)
+    expect(
+      topTitleRow?.cells.map((c) => [
+        c.physicalCol,
+        c.physicalA1,
+        c.kind,
+        c.tableId,
+      ])
+    ).toEqual([
+      [1, "B2", "table_title", "TopTable"],
+      [2, "C2", "table_title", "TopTable"],
+      [3, "D2", "table_title", "TopTable"],
+      [4, "E2", "table_title", "TopTable"],
+    ])
+    expect(topTitleRow?.cells.map((c) => c.formattedValue)).toEqual([
+      "Top Table Summary Banner",
+      null,
+      null,
+      null,
+    ])
+
+    // TopTable header row (B4..C4) and data row (B5..C5) remain strictly on 2 columns
+    const topHeaderRow = sheetInsp.rows[2]
+    expect(
+      topHeaderRow?.cells.map((c) => [c.physicalA1, c.kind, c.tableId])
+    ).toEqual([
+      ["B4", "column_header", "TopTable"],
+      ["C4", "column_header", "TopTable"],
+      ["D4", "empty", null],
+      ["E4", "empty", null],
+    ])
+    const topDataRow = sheetInsp.rows[3]
+    expect(
+      topDataRow?.cells.map((c) => [c.physicalA1, c.kind, c.tableId])
+    ).toEqual([
+      ["B5", "data", "TopTable"],
+      ["C5", "data", "TopTable"],
+      ["D5", "empty", null],
+      ["E5", "empty", null],
+    ])
+
+    // Cell A1 addresses and colWidths remain unchanged
+    expect(compiled.inspectCell("TopTable", "r1", "item").physicalAddress).toBe(
+      "'Summary'!B5"
+    )
+    expect(compiled.inspectCell("TopTable", "r1", "v1").physicalAddress).toBe(
+      "'Summary'!C5"
+    )
+    expect(compiled.inspectCell("WideTable", "r1", "y3").physicalAddress).toBe(
+      "'Summary'!E11"
+    )
+    expect(sheetInsp.colWidths[1]).toBeCloseTo(12.0)
+    expect(sheetInsp.colWidths[2]).toBeCloseTo(12.0)
+    expect(sheetInsp.colWidths[3]).toBeCloseTo(12.0)
+    expect(sheetInsp.colWidths[4]).toBeCloseTo(12.0)
+
+    // OpenXML workbook emits styled title cells across B2..E2 while keeping TopTable headers/data on B..C
+    const xlsxBytes = compiled.emitWorkbook()
+    expect(xlsxBytes[0]).toBe(0x50)
+    expect(xlsxBytes[1]).toBe(0x4b)
+    const sheetXml = readZipEntryUtf8(xlsxBytes, "xl/worksheets/sheet1.xml")
+
+    const titleStyles = ["B2", "C2", "D2", "E2"].map((ref) => {
+      const match = new RegExp(`<c r="${ref}"[^>]*\\bs="(\\d+)"`).exec(sheetXml)
+      expect(match).not.toBeNull()
+      return match?.[1]
+    })
+    expect(new Set(titleStyles).size).toBe(1)
+    expect(sheetXml).not.toContain('<c r="D4"')
+    expect(sheetXml).not.toContain('<c r="E4"')
+    expect(sheetXml).not.toContain('<c r="D5"')
+    expect(sheetXml).not.toContain('<c r="E5"')
   })
 })

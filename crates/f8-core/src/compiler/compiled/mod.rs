@@ -569,10 +569,11 @@ impl CompiledModel {
             };
 
             // 1. Title Banner
-            if let Some(title_row) = placement.title_row
+            if let (Some(title_row), Some(title_end_col)) =
+                (placement.title_row, placement.title_end_col)
                 && !table.title.trim().is_empty()
             {
-                for col in placement.start_col..=placement.end_col {
+                for col in placement.start_col..=title_end_col {
                     let physical_a1 = coordinate_to_a1(col, title_row)
                         .unwrap_or_else(|_| format!("R{title_row}C{col}"));
                     if col == placement.start_col {
