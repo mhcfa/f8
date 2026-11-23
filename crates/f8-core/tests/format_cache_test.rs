@@ -1452,3 +1452,103 @@ fn test_bold_style_sets_bold_without_borders_or_summary_colors() {
     assert!(bs_debug.contains("left_style: Thin"));
     assert!(bs_debug.contains("right_style: None"));
 }
+
+#[test]
+fn test_span_edge_vertical_border_gating_and_runway_visibility() {
+    use f8_core::compiler::emission::SpanEdge;
+
+    let mut theme = Theme::corporate_navy();
+    theme.borders.descriptor_border_right = BorderStyle::Thin;
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    // 1. Descriptor column with vertical Subtotal + theme descriptor_border_right=Thin
+    let desc_sub_role = StyleRole {
+        horizontal: SemanticStyle::Data,
+        vertical: SemanticStyle::Subtotal,
+        is_highlight: false,
+        shade: None,
+    };
+    let check_borders = |cache: &mut FormatCache, role: StyleRole, edge: SpanEdge| {
+        let key = CellFormatKey::new(role, None, None, None, false, true, 0).with_span_edge(edge);
+        format!("{:?}", cache.get_cell_format(&key).unwrap())
+    };
+
+    let single = check_borders(&mut cache, desc_sub_role, SpanEdge::Single);
+    assert!(single.contains("left_style: Thin"));
+    assert!(single.contains("right_style: Thin"));
+
+    let start = check_borders(&mut cache, desc_sub_role, SpanEdge::Start);
+    assert!(start.contains("left_style: Thin"));
+    assert!(start.contains("right_style: None"));
+
+    let middle = check_borders(&mut cache, desc_sub_role, SpanEdge::Middle);
+    assert!(middle.contains("left_style: None"));
+    assert!(middle.contains("right_style: None"));
+
+    let end = check_borders(&mut cache, desc_sub_role, SpanEdge::End);
+    assert!(end.contains("left_style: None"));
+    assert!(end.contains("right_style: Thin"));
+
+    // 2. Descriptor column with vertical Total (left=Thin, right=Double)
+    let desc_total_role = StyleRole {
+        horizontal: SemanticStyle::Data,
+        vertical: SemanticStyle::Total,
+        is_highlight: false,
+        shade: None,
+    };
+    let tot_start = check_borders(&mut cache, desc_total_role, SpanEdge::Start);
+    assert!(tot_start.contains("left_style: Thin"));
+    assert!(tot_start.contains("right_style: None"));
+
+    let tot_middle = check_borders(&mut cache, desc_total_role, SpanEdge::Middle);
+    assert!(tot_middle.contains("left_style: None"));
+    assert!(tot_middle.contains("right_style: None"));
+
+    let tot_end = check_borders(&mut cache, desc_total_role, SpanEdge::End);
+    assert!(tot_end.contains("left_style: None"));
+    assert!(tot_end.contains("right_style: Double"));
+
+    // 3. has_visible_runway_style on default theme (descriptor_border_right=None, data_fill=none, subtotal_fill=none)
+    let default_cache = FormatCache::new(&Theme::corporate_navy()).unwrap();
+    assert!(!default_cache.has_visible_runway_style(StyleRole::data(), SpanEdge::Middle));
+    assert!(!default_cache.has_visible_runway_style(StyleRole::data(), SpanEdge::End));
+    assert!(!default_cache.has_visible_runway_style(desc_sub_role, SpanEdge::Middle));
+    assert!(!default_cache.has_visible_runway_style(desc_sub_role, SpanEdge::End));
+    assert!(default_cache.has_visible_runway_style(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            ..StyleRole::data()
+        },
+        SpanEdge::Middle
+    ));
+    assert!(default_cache.has_visible_runway_style(
+        StyleRole {
+            shade: Some(Shade::Muted),
+            ..StyleRole::data()
+        },
+        SpanEdge::Middle
+    ));
+    assert!(default_cache.has_visible_runway_style(
+        StyleRole {
+            is_highlight: true,
+            ..StyleRole::data()
+        },
+        SpanEdge::Middle
+    ));
+    // Vertical Total in corporate_navy has total_fill="none": Middle has no fill/border (false),
+    // while End carries col_total_border_right=Double (true)
+    assert!(!default_cache.has_visible_runway_style(desc_total_role, SpanEdge::Middle));
+    assert!(default_cache.has_visible_runway_style(desc_total_role, SpanEdge::End));
+
+    // When theme configures total_fill / subtotal_fill, Middle runway also becomes visible
+    let mut filled_theme = Theme::corporate_navy();
+    filled_theme.palette.total_fill = "#D9E1F2".to_string();
+    filled_theme.palette.subtotal_fill = "#EDF2F8".to_string();
+    let filled_cache = FormatCache::new(&filled_theme).unwrap();
+    assert!(filled_cache.has_visible_runway_style(desc_total_role, SpanEdge::Middle));
+    assert!(filled_cache.has_visible_runway_style(desc_sub_role, SpanEdge::Middle));
+
+    // With descriptor_border_right=Thin: plain data row skips Middle, emits End
+    assert!(!cache.has_visible_runway_style(StyleRole::data(), SpanEdge::Middle));
+    assert!(cache.has_visible_runway_style(StyleRole::data(), SpanEdge::End));
+}

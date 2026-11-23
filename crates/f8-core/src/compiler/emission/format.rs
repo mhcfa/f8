@@ -140,6 +140,37 @@ impl ParsedPalette {
     }
 }
 
+/// Horizontal position of a physical cell within a spanned column's range,
+/// gating vertical left/right borders so they do not slice across overflowing text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SpanEdge {
+    #[default]
+    Single,
+    Start,
+    Middle,
+    End,
+}
+
+impl SpanEdge {
+    /// Returns true if vertical left borders should emit on this span edge.
+    #[must_use]
+    pub const fn emits_left_border(self) -> bool {
+        match self {
+            Self::Single | Self::Start => true,
+            Self::Middle | Self::End => false,
+        }
+    }
+
+    /// Returns true if vertical right borders should emit on this span edge.
+    #[must_use]
+    pub const fn emits_right_border(self) -> bool {
+        match self {
+            Self::Single | Self::End => true,
+            Self::Start | Self::Middle => false,
+        }
+    }
+}
+
 /// Semantic attributes defining a cell's presentation and style signature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CellFormatKey {
@@ -159,6 +190,8 @@ pub struct CellFormatKey {
     pub indent: u8,
     /// Whether the cell requires multi-line text wrapping.
     pub wrap_text: bool,
+    /// Horizontal span edge position controlling vertical left/right border gating.
+    pub span_edge: SpanEdge,
 }
 
 impl CellFormatKey {
@@ -182,6 +215,7 @@ impl CellFormatKey {
             is_descriptor,
             indent,
             wrap_text: false,
+            span_edge: SpanEdge::Single,
         }
     }
 
@@ -189,6 +223,13 @@ impl CellFormatKey {
     #[must_use]
     pub const fn with_wrap_text(mut self, wrap_text: bool) -> Self {
         self.wrap_text = wrap_text;
+        self
+    }
+
+    /// Builder method configuring the horizontal span edge position for vertical border gating.
+    #[must_use]
+    pub const fn with_span_edge(mut self, span_edge: SpanEdge) -> Self {
+        self.span_edge = span_edge;
         self
     }
 }
@@ -428,7 +469,9 @@ impl FormatCache {
         match key.role.vertical {
             SemanticStyle::Data | SemanticStyle::Bold => {}
             SemanticStyle::Subtotal => {
-                if self.theme.borders.col_subtotal_border_left != BorderStyle::None {
+                if key.span_edge.emits_left_border()
+                    && self.theme.borders.col_subtotal_border_left != BorderStyle::None
+                {
                     format = format
                         .set_border_left(translate_border_style(
                             self.theme.borders.col_subtotal_border_left,
@@ -437,14 +480,18 @@ impl FormatCache {
                 }
             }
             SemanticStyle::Total => {
-                if self.theme.borders.col_total_border_left != BorderStyle::None {
+                if key.span_edge.emits_left_border()
+                    && self.theme.borders.col_total_border_left != BorderStyle::None
+                {
                     format = format
                         .set_border_left(translate_border_style(
                             self.theme.borders.col_total_border_left,
                         ))
                         .set_border_left_color(self.palette.total_border_color);
                 }
-                if self.theme.borders.col_total_border_right != BorderStyle::None {
+                if key.span_edge.emits_right_border()
+                    && self.theme.borders.col_total_border_right != BorderStyle::None
+                {
                     format = format
                         .set_border_right(translate_border_style(
                             self.theme.borders.col_total_border_right,
@@ -456,6 +503,7 @@ impl FormatCache {
 
         // Descriptor right border (if configured in theme)
         if key.is_descriptor
+            && key.span_edge.emits_right_border()
             && self.theme.borders.descriptor_border_right != BorderStyle::None
             && !key.role.vertical.is_total()
         {
@@ -537,6 +585,34 @@ impl FormatCache {
             fmt = fmt.set_indent(indent);
         }
         fmt
+    }
+
+    /// Returns true if a descriptor overflow runway cell carries visible fill or border styling.
+    #[must_use]
+    pub fn has_visible_runway_style(&self, role: StyleRole, span_edge: SpanEdge) -> bool {
+        let has_horizontal_summary = match role.horizontal {
+            SemanticStyle::Subtotal | SemanticStyle::Total => true,
+            SemanticStyle::Data | SemanticStyle::Bold => false,
+        };
+        let has_vertical_fill = match role.vertical {
+            SemanticStyle::Subtotal => self.palette.subtotal_fill.is_some(),
+            SemanticStyle::Total => self.palette.total_fill.is_some(),
+            SemanticStyle::Data | SemanticStyle::Bold => false,
+        };
+        let has_shade = role.shade.is_some_and(|s| !s.is_none());
+        let has_right_border = span_edge.emits_right_border()
+            && if role.vertical.is_total() {
+                self.theme.borders.col_total_border_right != BorderStyle::None
+            } else {
+                self.theme.borders.descriptor_border_right != BorderStyle::None
+            };
+
+        has_horizontal_summary
+            || role.is_highlight
+            || has_shade
+            || has_vertical_fill
+            || self.palette.data_fill.is_some()
+            || has_right_border
     }
 
     /// Returns true if the theme defines a background fill for section headers.

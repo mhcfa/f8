@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from f8.builder import AxisSelector as AxisSelector
@@ -24,7 +24,10 @@ type SheetCellKind = Literal[
     "section_header",
     "gutter",
     "data",
+    "overflow",
 ]
+
+type SheetLayoutMode = Literal["auto", "grid"]
 
 
 class CellCoordinate(TypedDict):
@@ -316,6 +319,22 @@ class FreezePanesDict(TypedDict):
     col: int
 
 
+class AutoSheetLayoutSpecDict(TypedDict):
+    """Automatic per-column width arbitration layout specification dictionary."""
+
+    kind: Literal["auto"]
+
+
+class GridSheetLayoutSpecDict(TypedDict):
+    """Uniform column grid layout specification dictionary."""
+
+    kind: Literal["grid"]
+    col_width: NotRequired[float]
+
+
+type SheetLayoutSpecDict = AutoSheetLayoutSpecDict | GridSheetLayoutSpecDict
+
+
 class SheetSpecDict(TypedDict, total=False):
     """Worksheet manifest specification dictionary."""
 
@@ -323,6 +342,7 @@ class SheetSpecDict(TypedDict, total=False):
     tab_color: str
     freeze_panes: FreezePanesDict
     show_gridlines: bool
+    layout: SheetLayoutSpecDict
     tables: list[str]
 
 

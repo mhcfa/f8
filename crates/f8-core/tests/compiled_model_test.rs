@@ -705,6 +705,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("SimpleTbl")],
             },
             SheetSpec {
@@ -712,6 +713,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("CashTbl")],
             },
             SheetSpec {
@@ -719,6 +721,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("QuoteTbl")],
             },
         ],
@@ -793,6 +796,7 @@ fn test_scenario_15_coordinate_parsing_strictness_and_special_key_roundtrip() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T1")],
         }],
     };
@@ -891,6 +895,7 @@ fn build_parity_workbook() -> CompiledModel {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("IncomeStatement"),
                     TableId::from("PureMeasures"),
@@ -901,6 +906,7 @@ fn build_parity_workbook() -> CompiledModel {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("Comps")],
             },
             SheetSpec {
@@ -908,6 +914,7 @@ fn build_parity_workbook() -> CompiledModel {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![],
             },
         ],
@@ -1378,6 +1385,7 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Summary")],
         }],
     };
@@ -1404,6 +1412,7 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("GutterCols")],
         }],
     };
@@ -1438,6 +1447,7 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("WhitespaceDesc")],
         }],
     };
@@ -1499,6 +1509,7 @@ fn test_bold_style_inspection_and_markdown_rendering() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Summary")],
         }],
     };
@@ -1578,6 +1589,7 @@ fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("T1"),
                 TableId::from("T2"),
@@ -1654,6 +1666,7 @@ fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("Left1"),
                 TableId::from("Right"),
@@ -1712,4 +1725,144 @@ fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
             _ => unreachable!(),
         }
     }
+}
+
+#[test]
+fn test_grid_layout_scenario_10_inspect_sheet_overflow_and_physical_spans() {
+    use f8_core::SheetLayoutSpec;
+    use f8_core::compiler::compiled::SheetCellKind;
+    use f8_core::model::table::PlacementSpec;
+
+    let mut left = TableSpec::new("Left", "Left Panel");
+    left.columns
+        .push(ColumnSpec::descriptor("item", "Line Item"));
+    left.columns.push(ColumnSpec::gutter());
+    left.columns
+        .push(ColumnSpec::new("v1").with_header("2024E"));
+    left.rows.push(RowSpec::section_header("Operating Section"));
+    left.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Operating Expenses (Excl DA)") // 28+1=29 -> span 3 (B..D)
+            .with_cell("v1", 100.0),
+    );
+    left.rows.push(RowSpec::gutter());
+    left.rows.push(
+        RowSpec::new("r2")
+            .with_cell("item", "Total")
+            .with_cell("v1", 100.0),
+    );
+
+    // Side-by-side table to also verify unowned inter-table gap is strictly SheetCellKind::Empty
+    let mut right =
+        TableSpec::new("Right", "Right Panel").with_placement(PlacementSpec::right_of("Left"));
+    right.columns.push(ColumnSpec::new("k").with_header("KPI"));
+    right.rows.push(RowSpec::new("m1").with_cell("k", 2.5));
+
+    let manifest = ProjectManifest {
+        model_name: "InspectGrid".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Dash".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("Left"), TableId::from("Right")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[left, right]).unwrap();
+    let sheet = compiled.inspect_sheet(&SheetId::from("Dash")).unwrap();
+
+    // Left: item=(1..=3), gutter=(4..=4), v1=(5..=5); inter-table gap=(6); Right: k=(7..=7)
+    assert_eq!(sheet.min_col, 1);
+    assert_eq!(sheet.max_col, 7);
+    assert_eq!(sheet.col_widths.get(&0), Some(&3.0));
+    assert_eq!(sheet.col_widths.get(&1), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&2), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&3), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&4), Some(&3.0)); // intra-table gutter
+    assert_eq!(sheet.col_widths.get(&5), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&6), Some(&3.0)); // inter-table gap
+    assert_eq!(sheet.col_widths.get(&7), Some(&12.0));
+
+    let row_at = |excel_row: u32| {
+        sheet
+            .rows
+            .iter()
+            .find(|r| r.excel_row == excel_row)
+            .unwrap()
+    };
+
+    // Row 4: ColumnHeader across B4..D4 (anchor text at B4, empty ColumnHeader at C4..D4), Gutter at E4, ColumnHeader at F4, Empty at G4, ColumnHeader at H4
+    let hdr = row_at(4);
+    assert_eq!(hdr.cells[0].kind, SheetCellKind::ColumnHeader);
+    assert_eq!(hdr.cells[0].formatted_value.as_deref(), Some("Line Item"));
+    assert_eq!(
+        hdr.cells[0].col_id.as_ref().map(ColId::as_str),
+        Some("item")
+    );
+    for idx in [1_usize, 2] {
+        assert_eq!(hdr.cells[idx].kind, SheetCellKind::ColumnHeader);
+        assert_eq!(hdr.cells[idx].value, CellValue::Empty);
+        assert_eq!(hdr.cells[idx].formatted_value, None);
+        assert_eq!(
+            hdr.cells[idx].col_id.as_ref().map(ColId::as_str),
+            Some("item")
+        );
+    }
+    assert_eq!(hdr.cells[3].kind, SheetCellKind::Gutter);
+    assert_eq!(hdr.cells[4].kind, SheetCellKind::ColumnHeader);
+    assert_eq!(hdr.cells[5].kind, SheetCellKind::Empty);
+    assert_eq!(hdr.cells[5].table_id, None);
+    assert_eq!(hdr.cells[5].row_id, None);
+    assert_eq!(hdr.cells[5].col_id, None);
+    assert!(!hdr.cells[5].is_descriptor);
+
+    // Row 5: SectionHeader spans all physical cols of Left (B5..F5), Empty at G5, Right Data at H5
+    let sec = row_at(5);
+    assert_eq!(sec.cells[0].kind, SheetCellKind::SectionHeader);
+    assert_eq!(
+        sec.cells[0].formatted_value.as_deref(),
+        Some("Operating Section")
+    );
+    for cell in &sec.cells[1..=4] {
+        assert_eq!(cell.kind, SheetCellKind::SectionHeader);
+        assert_eq!(cell.value, CellValue::Empty);
+    }
+    assert_eq!(sec.cells[5].kind, SheetCellKind::Empty);
+
+    // Row 6: Data row r1 -> B6 is Data (descriptor), C6 & D6 are Overflow, E6 is Gutter, F6 is Data (measure), G6 is Empty
+    let r1 = row_at(6);
+    assert_eq!(r1.cells[0].kind, SheetCellKind::Data);
+    assert!(r1.cells[0].is_descriptor);
+    assert_eq!(r1.cells[0].physical_a1, "B6");
+    for (idx, expected_a1) in [(1_usize, "C6"), (2_usize, "D6")] {
+        let cell = &r1.cells[idx];
+        assert_eq!(cell.physical_a1, expected_a1);
+        assert_eq!(cell.kind, SheetCellKind::Overflow);
+        assert_eq!(serde_json::to_string(&cell.kind).unwrap(), r#""overflow""#);
+        assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left"));
+        assert_eq!(cell.row_id.as_ref().map(RowId::as_str), Some("r1"));
+        assert_eq!(cell.col_id.as_ref().map(ColId::as_str), Some("item"));
+        assert!(cell.is_descriptor);
+        assert_eq!(cell.value, CellValue::Empty);
+        assert_eq!(cell.formatted_value, None);
+        assert_eq!(cell.formula_expr, None);
+        assert_eq!(cell.excel_formula, None);
+    }
+    assert_eq!(r1.cells[3].kind, SheetCellKind::Gutter);
+    assert_eq!(r1.cells[4].kind, SheetCellKind::Data);
+    assert_eq!(r1.cells[4].physical_a1, "F6");
+    assert_eq!(r1.cells[5].kind, SheetCellKind::Empty);
+    assert_eq!(r1.cells[5].table_id, None);
+    assert!(!r1.cells[5].is_descriptor);
+
+    // Row 7: RowSpec::Gutter spans all physical cols of Left (B7..F7)
+    let gutter_row = row_at(7);
+    for cell in &gutter_row.cells[0..=4] {
+        assert_eq!(cell.kind, SheetCellKind::Gutter);
+        assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left"));
+    }
+    assert_eq!(gutter_row.cells[5].kind, SheetCellKind::Empty);
 }

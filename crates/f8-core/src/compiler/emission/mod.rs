@@ -8,6 +8,6 @@ pub mod workbook;
 
 pub use error::EmissionError;
 pub use format::{
-    CellFormatKey, FormatCache, parse_fill_color, parse_hex_color, translate_border_style,
+    CellFormatKey, FormatCache, SpanEdge, parse_fill_color, parse_hex_color, translate_border_style,
 };
 pub use workbook::{EmissionOptions, WorkbookEmitter};

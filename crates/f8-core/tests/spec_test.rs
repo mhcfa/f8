@@ -63,6 +63,7 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("a")],
             },
             SheetSpec {
@@ -70,6 +71,7 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("b")],
             },
         ],
@@ -948,6 +950,7 @@ fn test_manifest_sheet_name_and_option_invariants_rejected() {
         tab_color: None,
         freeze_panes: None,
         show_gridlines: true,
+        layout: Default::default(),
         tables: vec![TableId::from("T1")],
     };
 
@@ -1153,6 +1156,7 @@ fn test_table_id_and_finite_cell_number_invariants_rejected() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T1")],
         }],
     };
@@ -1279,4 +1283,104 @@ fn test_detailed_cell_explicit_null_value_serde_and_validation() {
     // 7. Non-literal value payload still fails deserialization
     assert!(serde_json::from_str::<DetailedCellInput>(r#"{ "value": [1, 2] }"#).is_err());
     assert!(serde_json::from_str::<DetailedCellInput>(r#"{ "value": { "a": 1 } }"#).is_err());
+}
+
+#[test]
+fn test_sheet_layout_spec_serde_roundtrip_and_pass1_validation() {
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic};
+    use f8_core::model::SheetLayoutSpec;
+
+    // 1. Omitted layout defaults to Auto and is omitted during serialization (Scenario 1)
+    let default_json = r#"{
+        "model_name": "DefaultLayout",
+        "sheets": [
+            { "name": "Summary", "tables": ["T1"] }
+        ]
+    }"#;
+    let default_manifest: ProjectManifest = serde_json::from_str(default_json).unwrap();
+    assert_eq!(default_manifest.sheets[0].layout, SheetLayoutSpec::Auto);
+    assert!(default_manifest.sheets[0].layout.is_default());
+    assert!(default_manifest.validate().is_ok());
+
+    let serialized_default = serde_json::to_string(&default_manifest.sheets[0]).unwrap();
+    assert!(
+        !serialized_default.contains("layout"),
+        "Auto layout must be omitted when serialized: {serialized_default}"
+    );
+
+    // 2. Grid without col_width and Grid with explicit col_width round-trip cleanly
+    let grid_json = r#"{
+        "model_name": "GridLayout",
+        "sheets": [
+            { "name": "DefaultGrid", "layout": { "kind": "grid" }, "tables": ["T1"] },
+            { "name": "SizedGrid", "layout": { "kind": "grid", "col_width": 14.5 }, "tables": ["T2"] },
+            { "name": "MinBound", "layout": { "kind": "grid", "col_width": 1.0 }, "tables": ["T3"] },
+            { "name": "MaxBound", "layout": { "kind": "grid", "col_width": 255.0 }, "tables": ["T4"] }
+        ]
+    }"#;
+    let grid_manifest: ProjectManifest = serde_json::from_str(grid_json).unwrap();
+    assert_eq!(grid_manifest.sheets[0].layout, SheetLayoutSpec::grid());
+    assert_eq!(
+        grid_manifest.sheets[1].layout,
+        SheetLayoutSpec::grid_with_col_width(14.5)
+    );
+    assert_eq!(
+        grid_manifest.sheets[2].layout,
+        SheetLayoutSpec::grid_with_col_width(1.0)
+    );
+    assert_eq!(
+        grid_manifest.sheets[3].layout,
+        SheetLayoutSpec::grid_with_col_width(255.0)
+    );
+    assert!(grid_manifest.validate().is_ok());
+
+    let grid_default_str = serde_json::to_string(&grid_manifest.sheets[0].layout).unwrap();
+    assert_eq!(grid_default_str, r#"{"kind":"grid"}"#);
+    let grid_sized_str = serde_json::to_string(&grid_manifest.sheets[1].layout).unwrap();
+    assert_eq!(grid_sized_str, r#"{"kind":"grid","col_width":14.5}"#);
+
+    // 3. Unknown fields on SheetLayoutSpec fail deserialization (#[serde(deny_unknown_fields)])
+    assert!(
+        serde_json::from_str::<SheetLayoutSpec>(r#"{"kind":"auto","col_width":12.0}"#).is_err()
+    );
+    assert!(serde_json::from_str::<SheetLayoutSpec>(r#"{"kind":"auto","extra":true}"#).is_err());
+    assert!(serde_json::from_str::<SheetLayoutSpec>(r#"{"kind":"grid","extra":1}"#).is_err());
+    assert!(serde_json::from_str::<SheetLayoutSpec>(r#"{"kind":"unknown"}"#).is_err());
+
+    // 4. Pass 1 rejects out-of-bounds and non-finite col_width (Scenario 7)
+    for bad_width in [
+        0.0,
+        0.5,
+        -5.0,
+        f64::NAN,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        256.0,
+    ] {
+        let bad_manifest = ProjectManifest {
+            model_name: "BadWidth".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Dashboard".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(bad_width),
+                tables: vec![TableId::from("T1")],
+            }],
+        };
+        let err = bad_manifest.validate().unwrap_err();
+        assert!(
+            matches!(err, ModelError::InvalidSheetColWidth { ref sheet, .. } if sheet == "Dashboard"),
+            "Expected InvalidSheetColWidth for {bad_width:?}, got {err:?}"
+        );
+        let diag = CompilerError::Model(err).diagnostic();
+        assert!(
+            matches!(
+                diag,
+                ErrorDiagnostic::SpecificationError { table: None, .. }
+            ),
+            "Expected SpecificationError diagnostic with table: None, got {diag:?}"
+        );
+    }
 }

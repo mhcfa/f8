@@ -19,7 +19,9 @@ pub use compiled::{
     SheetRowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
     apply_unit_suffix, parse_coordinate_tokens,
 };
-pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
+pub use emission::{
+    CellFormatKey, EmissionError, EmissionOptions, FormatCache, SpanEdge, WorkbookEmitter,
+};
 pub use error::{CompilerError, ErrorDiagnostic};
 pub use eval::{EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{

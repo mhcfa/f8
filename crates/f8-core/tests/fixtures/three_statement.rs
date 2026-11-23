@@ -314,6 +314,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
             tab_color: Some("#1B365D".to_string()),
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("Assumptions"),
                 TableId::from("IncomeStatement"),

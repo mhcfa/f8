@@ -288,6 +288,8 @@ pub enum SheetCellKind {
     Gutter,
     /// Calculable data or literal input cell.
     Data,
+    /// Physical overflow runway cell owned by a spanned descriptor column.
+    Overflow,
 }
 
 /// Inspection record for a discrete physical cell on a worksheet.

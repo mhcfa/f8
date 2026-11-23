@@ -101,6 +101,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("CapTable"), TableId::from("Valuation")],
         }],
     };

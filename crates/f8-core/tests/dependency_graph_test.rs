@@ -258,6 +258,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("Assumptions")],
             },
             SheetSpec {
@@ -265,6 +266,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("Forecast")],
             },
         ],

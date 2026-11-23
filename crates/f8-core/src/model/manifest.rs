@@ -11,6 +11,12 @@ pub const MAX_EXCEL_COLUMNS: u32 = 16_384;
 /// Maximum row count supported by OpenXML / Excel (rows 0..=1,048,575, i.e. 1..1,048,576).
 pub const MAX_EXCEL_ROWS: u32 = 1_048_576;
 
+/// Minimum allowed uniform column width on a `grid` worksheet (Excel character units).
+pub const MIN_GRID_COL_WIDTH: f64 = 1.0;
+
+/// Maximum allowed uniform column width on a `grid` worksheet (Excel 255-char limit).
+pub const MAX_GRID_COL_WIDTH: f64 = 255.0;
+
 fn validate_sheet_name(name: &str) -> Result<(), ModelError> {
     if name.is_empty() {
         return Err(ModelError::InvalidSheetName {
@@ -90,6 +96,17 @@ impl ProjectManifest {
                     max_cols: MAX_EXCEL_COLUMNS,
                 });
             }
+            match sheet.layout {
+                SheetLayoutSpec::Auto | SheetLayoutSpec::Grid { col_width: None } => {}
+                SheetLayoutSpec::Grid { col_width: Some(w) } => {
+                    if !w.is_finite() || !(MIN_GRID_COL_WIDTH..=MAX_GRID_COL_WIDTH).contains(&w) {
+                        return Err(ModelError::InvalidSheetColWidth {
+                            sheet: sheet.name.clone(),
+                            col_width: w,
+                        });
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -125,8 +142,73 @@ pub struct FreezePanes {
     pub col: u32,
 }
 
+/// Worksheet column layout strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SheetLayoutSpec {
+    #[default]
+    Auto,
+    Grid {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        col_width: Option<f64>,
+    },
+}
+
+impl<'de> Deserialize<'de> for SheetLayoutSpec {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Serde ignores unknown fields on internally-tagged unit variants even with
+        // `deny_unknown_fields`; deserialize via an empty struct variant `Auto {}`
+        // so `{"kind": "auto", "col_width": ...}` and other unknown keys fail strictly.
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+        enum SheetLayoutSpecDe {
+            Auto {},
+            Grid {
+                #[serde(default)]
+                col_width: Option<f64>,
+            },
+        }
+
+        match SheetLayoutSpecDe::deserialize(deserializer)? {
+            SheetLayoutSpecDe::Auto {} => Ok(Self::Auto),
+            SheetLayoutSpecDe::Grid { col_width } => Ok(Self::Grid { col_width }),
+        }
+    }
+}
+
+impl SheetLayoutSpec {
+    /// Creates an automatic per-column arbitration sheet layout.
+    #[must_use]
+    pub const fn auto() -> Self {
+        Self::Auto
+    }
+
+    /// Creates a uniform grid sheet layout using the theme's `min_col_width` as base column width.
+    #[must_use]
+    pub const fn grid() -> Self {
+        Self::Grid { col_width: None }
+    }
+
+    /// Creates a uniform grid sheet layout with an explicit base column width.
+    #[must_use]
+    pub const fn grid_with_col_width(col_width: f64) -> Self {
+        Self::Grid {
+            col_width: Some(col_width),
+        }
+    }
+
+    /// Returns true if this layout is the default `Auto` mode.
+    #[must_use]
+    pub const fn is_default(&self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}
+
 /// Worksheet container metadata and contained table identifiers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SheetSpec {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,5 +217,7 @@ pub struct SheetSpec {
     pub freeze_panes: Option<FreezePanes>,
     #[serde(default)]
     pub show_gridlines: bool,
+    #[serde(default, skip_serializing_if = "SheetLayoutSpec::is_default")]
+    pub layout: SheetLayoutSpec,
     pub tables: Vec<TableId>,
 }

@@ -54,6 +54,7 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("SimpleTable")],
         }],
     };
@@ -104,6 +105,7 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("IncomeStatement")],
         }],
     };
@@ -180,6 +182,7 @@ fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("Assumptions")],
             },
             SheetSpec {
@@ -187,6 +190,7 @@ fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("SubOnly")],
             },
         ],
@@ -255,6 +259,7 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("TimelineTable")],
         }],
     };
@@ -305,6 +310,7 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("HierarchyTable")],
         }],
     };
@@ -380,6 +386,7 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Table1"), TableId::from("Table2")],
         }],
     };
@@ -448,6 +455,7 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Table1"), TableId::from("Table2")],
         }],
     };
@@ -495,6 +503,7 @@ fn test_scenario_7_full_style_role_propagation_to_physical_coordinates() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("SummaryTable")],
         }],
     };
@@ -574,6 +583,7 @@ fn test_scenario_9_multi_tier_column_header_row_range_allocation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("MultiTierTable")],
         }],
     };
@@ -607,6 +617,7 @@ fn test_scenario_10_rejection_of_unassigned_tables() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("AssignedTable")],
         }],
     };
@@ -647,6 +658,7 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
             tab_color: Some("#1B365D".to_string()),
             freeze_panes: Some(FreezePanes { row: 2, col: 2 }),
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("FacadeTable")],
         }],
     };
@@ -697,6 +709,7 @@ fn test_scenario_12_descriptor_indentation_tiers() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("NestedHierarchyTable")],
         }],
     };
@@ -800,6 +813,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("GutterTable")],
         }],
     };
@@ -929,6 +943,7 @@ fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration()
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("LboTimeline")],
         }],
     };
@@ -986,6 +1001,7 @@ fn test_scenario_15_horizontal_side_by_side_placement_and_formula_lowering() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T1"), TableId::from("T2")],
         }],
     };
@@ -1074,6 +1090,7 @@ fn test_scenario_16_asymmetric_dashboard_placement_and_sheet_inspection() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("T1"),
                 TableId::from("T2"),
@@ -1165,6 +1182,7 @@ fn test_scenario_17_custom_gap_overrides() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("T1"),
                 TableId::from("T2"),
@@ -1233,6 +1251,7 @@ fn test_scenario_18_2d_column_width_arbitration() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("T1"),
                 TableId::from("T2"),
@@ -1284,6 +1303,7 @@ fn test_scenario_19_invalid_placement_target_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("T1")],
             }],
         };
@@ -1309,6 +1329,7 @@ fn test_scenario_19_invalid_placement_target_rejected() {
                     tab_color: None,
                     freeze_panes: None,
                     show_gridlines: true,
+                    layout: Default::default(),
                     tables: vec![TableId::from("T1")],
                 },
                 SheetSpec {
@@ -1316,6 +1337,7 @@ fn test_scenario_19_invalid_placement_target_rejected() {
                     tab_color: None,
                     freeze_panes: None,
                     show_gridlines: true,
+                    layout: Default::default(),
                     tables: vec![TableId::from("T2")],
                 },
             ],
@@ -1347,6 +1369,7 @@ fn test_scenario_19_invalid_placement_target_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("T1"), TableId::from("T2")],
             }],
         };
@@ -1376,6 +1399,7 @@ fn test_scenario_19_invalid_placement_target_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("T1")],
             }],
         };
@@ -1415,6 +1439,7 @@ fn test_scenario_20_overlapping_table_bounding_boxes_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("T1"),
                     TableId::from("T2"),
@@ -1472,6 +1497,7 @@ fn test_scenario_20_overlapping_table_bounding_boxes_rejected() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("T1"),
                     TableId::from("T2"),
@@ -1547,6 +1573,7 @@ fn test_scenario_21_column_width_clamping_and_multiline_wrap_text() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("WrapTable")],
         }],
     };
@@ -1642,6 +1669,7 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("NewlineTable")],
         }],
     };
@@ -1762,6 +1790,7 @@ fn test_scenario_23_trailing_alignment_space_width_arbitration() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("AlignWidthTable")],
         }],
     };
@@ -1871,6 +1900,7 @@ fn single_sheet_manifest(model_name: &str, tables: &[TableSpec]) -> ProjectManif
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: tables.iter().map(|t| t.id.clone()).collect(),
         }],
     }
@@ -1910,6 +1940,7 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("NarrowTop"),
                     TableId::from("WideMid"),
@@ -1921,6 +1952,7 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("OtherWide")],
             },
         ],
@@ -2250,4 +2282,1209 @@ fn test_aligned_title_banners_scenario_8_untitled_right_neighbor_blocks_left_ban
     assert_eq!((p_right.start_col, p_right.end_col), (4, 6));
     assert_eq!(p_right.title_row, None);
     assert_eq!(p_right.title_end_col, None);
+}
+
+#[test]
+fn test_grid_layout_scenario_1_auto_preserves_one_to_one_col_spans_and_wrap_text() {
+    let mut table = TableSpec::new("AutoTable", "Auto Table");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("item", "Line Item"));
+    table
+        .columns
+        .push(ColumnSpec::new("v1").with_header("2024E"));
+    table.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Line 1\nLine 2")
+            .with_cell("v1", 100.0),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "AutoParity".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "AutoSheet".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::Auto,
+            tables: vec![TableId::from("AutoTable")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    let placement = compiled
+        .layout_map
+        .get_table(&TableId::from("AutoTable"))
+        .unwrap();
+    assert_eq!(placement.col_spans, vec![(1, 1), (2, 2)]);
+    assert_eq!((placement.start_col, placement.end_col), (1, 2));
+
+    let item_coord = compiled
+        .layout_map
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "AutoTable",
+            "r1",
+            "item",
+        ))
+        .unwrap();
+    assert!(item_coord.wrap_text);
+}
+
+#[test]
+fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() {
+    // 28-char label: (28 + 1) = 29 -> ceil(29 / 12) = 3 -> cols B..D (1..=3)
+    let label_28 = "Operating Expenses (Excl DA)";
+    assert_eq!(label_28.chars().count(), 28);
+
+    let mut table = TableSpec::new("Summary", "Summary Table");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("item", "Line Item"));
+    table
+        .columns
+        .push(ColumnSpec::new("y1").with_header("2024E"));
+    table
+        .columns
+        .push(ColumnSpec::new("y2").with_header("2025E"));
+    table
+        .columns
+        .push(ColumnSpec::new("y3").with_header("2026E"));
+    table.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", label_28)
+            .with_cell("y1", 10.0)
+            .with_cell("y2", 20.0)
+            .with_cell("y3", 30.0),
+    );
+    // Indented shorter label still stays within span 3 (10 + 1 + 2*2 = 15 -> span 2 <= 3)
+    table.rows.push(
+        RowSpec::new("r2")
+            .with_cell(
+                "item",
+                CellInput::Detailed(DetailedCellInput {
+                    value: Some(ValueLiteral::String("Sub-item X".to_string())),
+                    indent: Some(2),
+                    ..Default::default()
+                }),
+            )
+            .with_cell("y1", 1.0)
+            .with_cell("y2", 2.0)
+            .with_cell("y3", 3.0),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "GridScenario2".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "GridSheet".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid(),
+                tables: vec![TableId::from("Summary")],
+            },
+            SheetSpec {
+                name: "EmptyGrid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid(),
+                tables: vec![],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    let placement = compiled
+        .layout_map
+        .get_table(&TableId::from("Summary"))
+        .unwrap();
+    assert_eq!(placement.col_spans, vec![(1, 3), (4, 4), (5, 5), (6, 6)]);
+    assert_eq!((placement.start_col, placement.end_col), (1, 6));
+
+    let item_coord = compiled
+        .layout_map
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "Summary", "r1", "item",
+        ))
+        .unwrap();
+    assert_eq!(item_coord.col, 1);
+    assert_eq!(item_coord.a1, "B5");
+
+    let y1_coord = compiled
+        .layout_map
+        .get_cell(&f8_core::compiler::ir::id::CellId::new(
+            "Summary", "r1", "y1",
+        ))
+        .unwrap();
+    assert_eq!(y1_coord.col, 4);
+    assert_eq!(y1_coord.a1, "E5");
+
+    // All cells on a grid sheet have wrap_text == false unconditionally
+    assert!(
+        compiled
+            .layout_map
+            .cells
+            .values()
+            .all(|coord| !coord.wrap_text)
+    );
+
+    let sheet_layout = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("GridSheet"))
+        .unwrap();
+    assert_eq!(sheet_layout.col_widths.get(&0), Some(&3.0));
+    for c in 1..=6_u32 {
+        assert_eq!(sheet_layout.col_widths.get(&c), Some(&12.0));
+    }
+
+    // Empty grid sheet emits { 0: gutter_col_width } with zero errors
+    let empty_layout = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("EmptyGrid"))
+        .unwrap();
+    assert_eq!(empty_layout.col_widths.len(), 1);
+    assert_eq!(empty_layout.col_widths.get(&0), Some(&3.0));
+}
+
+#[test]
+fn test_grid_layout_scenario_3_dashboard_right_of_alignment_without_measure_blowout() {
+    // SourcesUses: Stack, 20-char labels (raw span = ceil(21/12) = 2), 2 measures
+    let label_20 = "Senior Secured Notes";
+    assert_eq!(label_20.chars().count(), 20);
+    let mut su = TableSpec::new("SourcesUses", "Sources & Uses");
+    su.columns.push(ColumnSpec::descriptor("item", "Source"));
+    su.columns.push(ColumnSpec::new("amt").with_header("$M"));
+    su.columns.push(ColumnSpec::new("pct").with_header("%"));
+    su.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", label_20)
+            .with_cell("amt", 500.0)
+            .with_cell("pct", 0.5),
+    );
+
+    // Returns: right_of SourcesUses (gap=1), 30-char labels (raw span = ceil(31/12) = 3), 1 measure
+    let label_30 = "Sponsor Gross Multiple of Cost";
+    assert_eq!(label_30.chars().count(), 30);
+    let mut ret = TableSpec::new("Returns", "Sponsor Returns")
+        .with_placement(PlacementSpec::right_of_with_gap("SourcesUses", 1));
+    ret.columns.push(ColumnSpec::descriptor("metric", "Metric"));
+    ret.columns
+        .push(ColumnSpec::new("val").with_header("Value"));
+    ret.rows.push(
+        RowSpec::new("r1")
+            .with_cell("metric", label_30)
+            .with_cell("val", 2.8),
+    );
+
+    // Financials: Stack, 32-char labels (raw span = ceil(33/12) = 3), 7 measures
+    let label_32 = "Consolidated Adjusted EBITDA ($)";
+    assert_eq!(label_32.chars().count(), 32);
+    let mut fin = TableSpec::new("Financials", "Financial Projections");
+    fin.columns
+        .push(ColumnSpec::descriptor("item", "Line Item"));
+    for y in 1..=7 {
+        fin.columns
+            .push(ColumnSpec::new(format!("y{y}")).with_header(format!("Y{y}")));
+    }
+    let mut fin_row = RowSpec::new("ebitda").with_cell("item", label_32);
+    for y in 1..=7 {
+        fin_row = fin_row.with_cell(format!("y{y}"), 100.0 * y as f64);
+    }
+    fin.rows.push(fin_row);
+
+    let manifest = ProjectManifest {
+        model_name: "DashboardGrid".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dashboard".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![
+                TableId::from("SourcesUses"),
+                TableId::from("Returns"),
+                TableId::from("Financials"),
+            ],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[su, ret, fin]).unwrap();
+    let p_su = compiled
+        .layout_map
+        .get_table(&TableId::from("SourcesUses"))
+        .unwrap();
+    let p_ret = compiled
+        .layout_map
+        .get_table(&TableId::from("Returns"))
+        .unwrap();
+    let p_fin = compiled
+        .layout_map
+        .get_table(&TableId::from("Financials"))
+        .unwrap();
+
+    // SourcesUses aligns leading descriptor to span 3 (B..D) to match Financials
+    assert_eq!(p_su.col_spans, vec![(1, 3), (4, 4), (5, 5)]);
+    assert_eq!((p_su.start_col, p_su.end_col), (1, 5));
+
+    // Financials descriptor B..D (1..=3), 7 measures E..K (4..=10)
+    assert_eq!(p_fin.col_spans[0], (1, 3));
+    assert_eq!(p_fin.col_spans[1], (4, 4));
+    assert_eq!(p_fin.col_spans[7], (10, 10));
+    assert_eq!((p_fin.start_col, p_fin.end_col), (1, 10));
+
+    // Returns starts at H (col 7), descriptor H..J (7..=9), value at K (col 10) — flush with Financials!
+    assert_eq!(p_ret.col_spans, vec![(7, 9), (10, 10)]);
+    assert_eq!((p_ret.start_col, p_ret.end_col), (7, 10));
+
+    // Every physical column 1..=10 remains uniform width 12.0 (zero measure blowout)
+    let sheet_layout = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("Dashboard"))
+        .unwrap();
+    assert_eq!(sheet_layout.col_widths.get(&0), Some(&3.0));
+    for c in 1..=10_u32 {
+        assert_eq!(sheet_layout.col_widths.get(&c), Some(&12.0));
+    }
+}
+
+#[test]
+fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cleanly() {
+    use f8_core::model::format::{CurrencyCode, FormatPreset};
+    use f8_core::model::theme::ThemeSpec;
+
+    // Case A: Formatted measure number ($1,234,567.8) = 14 chars widens W from 12.0 -> 14.0
+    // 27-char descriptor: (27 + 1) = 28 -> against W=14.0, span = 2 (instead of 3 against 12.0)
+    let label_27 = "Total Consolidated Revenues";
+    assert_eq!(label_27.chars().count(), 27);
+    let mut t_measure = TableSpec::new("MeasureFloor", "Measure Floor");
+    t_measure
+        .columns
+        .push(ColumnSpec::descriptor("item", "Item"));
+    t_measure.columns.push(
+        ColumnSpec::new("val")
+            .with_header("Val")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1))
+            .with_currency(Some(CurrencyCode::Usd)),
+    );
+    t_measure.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", label_27)
+            .with_cell("val", -1_234_567.8),
+    );
+    let manifest_a = ProjectManifest {
+        model_name: "MeasureFloorModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "SheetA".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("MeasureFloor")],
+        }],
+    };
+    let compiled_a = Compiler::compile(&manifest_a, &[t_measure]).unwrap();
+    let p_a = compiled_a
+        .layout_map
+        .get_table(&TableId::from("MeasureFloor"))
+        .unwrap();
+    assert_eq!(p_a.col_spans, vec![(1, 2), (3, 3)]);
+    let sl_a = compiled_a
+        .layout_map
+        .get_sheet(&SheetId::from("SheetA"))
+        .unwrap();
+    for c in 1..=3_u32 {
+        assert_eq!(sl_a.col_widths.get(&c), Some(&14.0));
+    }
+
+    // Case B: Indented Date descriptor cell widens W to 15.0 (yyyy-mm-dd = 10 + 1 trailing + 2*2 indent = 15)
+    // and numeric descriptor cell widens W to 14.0 (e.g. 12345678901234 -> 14 chars, no trailing pad)
+    let mut t_desc_num = TableSpec::new("DescNumFloor", "Desc Num Floor");
+    t_desc_num
+        .columns
+        .push(ColumnSpec::descriptor("code", "Code"));
+    t_desc_num
+        .columns
+        .push(ColumnSpec::new("val").with_header("Val"));
+    t_desc_num.rows.push(
+        RowSpec::new("r1")
+            .with_cell(
+                "code",
+                CellInput::Detailed(DetailedCellInput {
+                    value: Some(ValueLiteral::Number(45_292.0)),
+                    format: Some(FormatPreset::Date),
+                    indent: Some(2), // 10 + 1 + 4 = 15
+                    ..Default::default()
+                }),
+            )
+            .with_cell("val", 10.0),
+    );
+    let manifest_b = ProjectManifest {
+        model_name: "DescNumFloorModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "SheetB".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("DescNumFloor")],
+        }],
+    };
+    let compiled_b = Compiler::compile(&manifest_b, &[t_desc_num]).unwrap();
+    let sl_b = compiled_b
+        .layout_map
+        .get_sheet(&SheetId::from("SheetB"))
+        .unwrap();
+    assert_eq!(sl_b.col_widths.get(&1), Some(&15.0));
+    assert_eq!(sl_b.col_widths.get(&2), Some(&15.0));
+
+    // Case C: Custom theme with col_padding > W on empty headers/strings/nulls/descriptors does not widen W or exceed span 1
+    let mut pad_theme = Theme::corporate_navy();
+    pad_theme.metrics.col_padding = 15.0;
+    let mut t_empty = TableSpec::new("EmptyDemand", "Empty Demand");
+    t_empty.columns.push(ColumnSpec::descriptor("item", ""));
+    t_empty.columns.push(ColumnSpec::new("val").with_header(""));
+    t_empty.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "")
+            .with_cell("val", ""),
+    );
+    t_empty.rows.push(
+        RowSpec::new("r2")
+            .with_cell("item", CellInput::Literal(ValueLiteral::Null))
+            .with_cell("val", CellInput::Literal(ValueLiteral::Null)),
+    );
+    let manifest_c = ProjectManifest {
+        model_name: "PaddingShortCircuit".to_string(),
+        theme: ThemeSpec::Custom(Box::new(pad_theme)),
+        sheets: vec![SheetSpec {
+            name: "SheetC".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("EmptyDemand")],
+        }],
+    };
+    let compiled_c = Compiler::compile(&manifest_c, &[t_empty]).unwrap();
+    let p_c = compiled_c
+        .layout_map
+        .get_table(&TableId::from("EmptyDemand"))
+        .unwrap();
+    assert_eq!(p_c.col_spans, vec![(1, 1), (2, 2)]);
+    let sl_c = compiled_c
+        .layout_map
+        .get_sheet(&SheetId::from("SheetC"))
+        .unwrap();
+    assert_eq!(sl_c.col_widths.get(&1), Some(&12.0));
+    assert_eq!(sl_c.col_widths.get(&2), Some(&12.0));
+}
+
+#[test]
+fn test_grid_layout_scenario_5_static_base_w_measure_header_rejection() {
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic};
+
+    let make_table = |headers: Vec<&str>| {
+        let mut t = TableSpec::new("Valuation", "Valuation");
+        t.columns.push(ColumnSpec::descriptor("item", "Metric"));
+        t.columns.push(ColumnSpec::new("ev").with_headers(headers));
+        t.columns.push(ColumnSpec::new("wide").with_header("Wide"));
+        // Another measure cell has 17 chars (+1 pad = 18.0) which would widen W to 18.0,
+        // proving measure header validation checks strictly against static base_w = 12.0
+        t.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", "Case")
+                .with_cell("ev", 100.0)
+                .with_cell("wide", "12345678901234567"),
+        );
+        t
+    };
+
+    // 1. "Enterprise Value" = 16 + 1 = 17.0 > base_w 12.0 -> rejected even though W would widen to 18.0
+    let manifest_12 = ProjectManifest {
+        model_name: "StaticHeaderCheck".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("Valuation")],
+        }],
+    };
+    let err = Compiler::compile(&manifest_12, &[make_table(vec!["Enterprise Value"])]).unwrap_err();
+    let CompilerError::Layout(LayoutError::GridMeasureHeaderTooWide {
+        sheet,
+        table,
+        col,
+        header,
+        required_width,
+        grid_col_width,
+    }) = &err
+    else {
+        panic!("Expected GridMeasureHeaderTooWide, got {err:?}");
+    };
+    assert_eq!(sheet.as_str(), "Summary");
+    assert_eq!(table.as_str(), "Valuation");
+    assert_eq!(col.as_str(), "ev");
+    assert_eq!(header, "Enterprise Value");
+    assert_eq!(*required_width, 17.0);
+    assert_eq!(*grid_col_width, 12.0);
+    let diag = err.diagnostic();
+    assert!(matches!(
+        diag,
+        ErrorDiagnostic::SpecificationError {
+            table: Some(ref tbl),
+            ..
+        } if tbl == "Valuation"
+    ));
+
+    // 2. Splitting into multi-tier ["Enterprise", "Value"] (11.0, 6.0 <= 12.0) compiles cleanly
+    let ok_split =
+        Compiler::compile(&manifest_12, &[make_table(vec!["Enterprise", "Value"])]).unwrap();
+    assert_eq!(
+        ok_split
+            .layout_map
+            .get_sheet(&SheetId::from("Summary"))
+            .unwrap()
+            .col_widths
+            .get(&2),
+        Some(&18.0)
+    );
+
+    // 3. Raising col_width to 17.0 compiles cleanly
+    let manifest_17 = ProjectManifest {
+        model_name: "StaticHeaderCheck17".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(17.0),
+            tables: vec![TableId::from("Valuation")],
+        }],
+    };
+    assert!(Compiler::compile(&manifest_17, &[make_table(vec!["Enterprise Value"])]).is_ok());
+}
+
+#[test]
+fn test_grid_layout_scenario_6_strict_newline_rejection() {
+    use f8_core::compiler::CompilerError;
+
+    // 1. Literal cell with \n and \r
+    for bad_text in ["Line 1\nLine 2", "Line 1\rLine 2"] {
+        let mut t = TableSpec::new("LitNewline", "Lit");
+        t.columns.push(ColumnSpec::descriptor("item", "Item"));
+        t.columns.push(ColumnSpec::new("v").with_header("Val"));
+        t.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", bad_text)
+                .with_cell("v", 1.0),
+        );
+        let manifest = ProjectManifest {
+            model_name: "NL".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Grid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid(),
+                tables: vec![TableId::from("LitNewline")],
+            }],
+        };
+        let err = Compiler::compile(&manifest, &[t]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CompilerError::Layout(LayoutError::GridMultilineCell {
+                    ref sheet,
+                    ref table,
+                    ref row,
+                    ref col,
+                }) if sheet.as_str() == "Grid"
+                    && table.as_str() == "LitNewline"
+                    && row.as_str() == "r1"
+                    && col.as_str() == "item"
+            ),
+            "Expected GridMultilineCell for {bad_text:?}, got {err:?}"
+        );
+    }
+
+    // 2. Formula-evaluated data cell (referencing multiline text on an auto sheet)
+    let mut auto_tbl = TableSpec::new("SrcAuto", "Source");
+    auto_tbl.columns.push(ColumnSpec::descriptor("txt", "Text"));
+    auto_tbl
+        .rows
+        .push(RowSpec::new("r1").with_cell("txt", "Eval Line 1\nEval Line 2"));
+
+    let mut grid_tbl = TableSpec::new("DstGrid", "Dest");
+    grid_tbl
+        .columns
+        .push(ColumnSpec::new("val").with_header("Val"));
+    grid_tbl
+        .rows
+        .push(RowSpec::new("r1").with_expr(r#"SrcAuto["r1", "txt"]"#));
+
+    let formula_manifest = ProjectManifest {
+        model_name: "FormulaNL".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "AutoSrc".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::Auto,
+                tables: vec![TableId::from("SrcAuto")],
+            },
+            SheetSpec {
+                name: "GridDst".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid(),
+                tables: vec![TableId::from("DstGrid")],
+            },
+        ],
+    };
+    let err = Compiler::compile(&formula_manifest, &[auto_tbl, grid_tbl]).unwrap_err();
+    assert!(matches!(
+        err,
+        CompilerError::Layout(LayoutError::GridMultilineCell {
+            ref sheet,
+            ref table,
+            ref row,
+            ref col,
+        }) if sheet.as_str() == "GridDst"
+            && table.as_str() == "DstGrid"
+            && row.as_str() == "r1"
+            && col.as_str() == "val"
+    ));
+
+    // 3. Multiline column header (including long measure header so GridMultilineHeader takes precedence)
+    for bad_hdr in ["Long Measure Header\nSecond Line", "Bad\rHeader"] {
+        let mut t = TableSpec::new("HdrNL", "Hdr");
+        t.columns.push(ColumnSpec::new("m").with_header(bad_hdr));
+        t.rows.push(RowSpec::new("r1").with_cell("m", 1.0));
+        let manifest = ProjectManifest {
+            model_name: "HdrNL".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Grid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("HdrNL")],
+            }],
+        };
+        let err = Compiler::compile(&manifest, &[t]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CompilerError::Layout(LayoutError::GridMultilineHeader {
+                    ref table,
+                    ref col,
+                    ..
+                }) if table.as_str() == "HdrNL" && col.as_str() == "m"
+            ),
+            "Expected GridMultilineHeader for {bad_hdr:?}, got {err:?}"
+        );
+    }
+
+    // 4. Multiline group banner
+    for bad_group in ["Forecast\nYears", "Forecast\rYears"] {
+        let mut t = TableSpec::new("GrpNL", "Grp");
+        t.columns
+            .push(ColumnSpec::new("m").with_group(bad_group).with_header("Y1"));
+        t.rows.push(RowSpec::new("r1").with_cell("m", 1.0));
+        let manifest = ProjectManifest {
+            model_name: "GrpNL".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Grid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid(),
+                tables: vec![TableId::from("GrpNL")],
+            }],
+        };
+        let err = Compiler::compile(&manifest, &[t]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                CompilerError::Layout(LayoutError::GridMultilineHeader {
+                    ref table,
+                    ref col,
+                    ..
+                }) if table.as_str() == "GrpNL" && col.as_str() == "m"
+            ),
+            "Expected GridMultilineHeader for group {bad_group:?}, got {err:?}"
+        );
+    }
+}
+
+#[test]
+fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
+    use f8_core::compiler::{CompilerError, ErrorDiagnostic};
+    use f8_core::model::theme::ThemeSpec;
+
+    // 1. Custom theme with min_col_width < 1.0 -> LayoutError::GridColWidthOutOfBounds
+    let mut narrow_theme = Theme::corporate_navy();
+    narrow_theme.metrics.min_col_width = 0.5;
+    let mut t1 = TableSpec::new("T1", "T1");
+    t1.columns.push(ColumnSpec::new("c1").with_header("C"));
+    t1.rows.push(RowSpec::new("r1").with_cell("c1", 1.0));
+    let m1 = ProjectManifest {
+        model_name: "NarrowTheme".to_string(),
+        theme: ThemeSpec::Custom(Box::new(narrow_theme)),
+        sheets: vec![SheetSpec {
+            name: "Grid".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid(),
+            tables: vec![TableId::from("T1")],
+        }],
+    };
+    let err1 = Compiler::compile(&m1, &[t1]).unwrap_err();
+    assert!(matches!(
+        err1,
+        CompilerError::Layout(LayoutError::GridColWidthOutOfBounds {
+            width,
+            min,
+            max,
+            ..
+        }) if (width - 0.5).abs() < 1e-9 && min == 1.0 && max == 255.0
+    ));
+    assert!(matches!(
+        err1.diagnostic(),
+        ErrorDiagnostic::SpecificationError { table: None, .. }
+    ));
+
+    // 2. Data-widened W > 255.0 -> LayoutError::GridColWidthOutOfBounds
+    let mut t2 = TableSpec::new("T2", "T2");
+    t2.columns.push(ColumnSpec::new("c1").with_header("C"));
+    t2.rows
+        .push(RowSpec::new("r1").with_cell("c1", "X".repeat(260)));
+    let m2 = ProjectManifest {
+        model_name: "TooWideData".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Grid".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("T2")],
+        }],
+    };
+    let err2 = Compiler::compile(&m2, &[t2]).unwrap_err();
+    assert!(matches!(
+        err2,
+        CompilerError::Layout(LayoutError::GridColWidthOutOfBounds {
+            width,
+            min,
+            max,
+            ..
+        }) if width > 255.0 && min == 1.0 && max == 255.0
+    ));
+
+    // 3. Descriptor span exceeding MAX_EXCEL_COLUMNS -> LayoutError::GridLimitExceeded
+    let mut t3 = TableSpec::new("T3", "T3");
+    t3.columns.push(ColumnSpec::descriptor("item", "Item"));
+    t3.rows
+        .push(RowSpec::new("r1").with_cell("item", "A".repeat(20_000)));
+    let m3 = ProjectManifest {
+        model_name: "OverflowCols".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Grid".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(1.0),
+            tables: vec![TableId::from("T3")],
+        }],
+    };
+    let err3 = Compiler::compile(&m3, &[t3]).unwrap_err();
+    assert!(matches!(
+        err3,
+        CompilerError::Layout(LayoutError::GridLimitExceeded {
+            dimension: "columns",
+            max: MAX_EXCEL_COLUMNS,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_and_2x2_lanes() {
+    // TL: Stack, [ticker (span=1), company (span=2), y1, y2] -> descriptor prefix = 3, end_col = 5
+    let mut tl = TableSpec::new("TL", "Top Left");
+    tl.columns.push(ColumnSpec::descriptor("ticker", "Tkr"));
+    tl.columns
+        .push(ColumnSpec::descriptor("company", "Company"));
+    tl.columns.push(ColumnSpec::new("y1").with_header("Y1"));
+    tl.columns.push(ColumnSpec::new("y2").with_header("Y2"));
+    tl.rows.push(
+        RowSpec::new("r1")
+            .with_cell("ticker", "AAPL") // 4+1=5 -> span 1
+            .with_cell("company", "Apple Incorporated") // 18+1=19 -> span 2
+            .with_cell("y1", 100.0)
+            .with_cell("y2", 120.0),
+    );
+
+    // BL: Stack, [item (raw span=1), Gutter, y2] -> descriptor prefix = 1 (trailing Gutter excluded);
+    // aligns to group max 3 by extending item to span=3 (1..=3), Gutter skips y1 at 4..=4,
+    // and BL.y2 aligns directly under TL.y2 at 5..=5 (end_col = 5).
+    let mut bl = TableSpec::new("BL", "Bottom Left");
+    bl.columns.push(ColumnSpec::descriptor("item", "Item"));
+    bl.columns.push(ColumnSpec::gutter());
+    bl.columns.push(ColumnSpec::new("y2").with_header("Y2"));
+    bl.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Short") // 5+1=6 -> raw span 1
+            .with_cell("y2", 200.0),
+    );
+
+    // TR: right_of TL (gap=1 -> start_col = 7), short descriptor (raw span=1)
+    let mut tr = TableSpec::new("TR", "Top Right").with_placement(PlacementSpec::right_of("TL"));
+    tr.columns.push(ColumnSpec::descriptor("k", "Key"));
+    tr.columns.push(ColumnSpec::new("v").with_header("Val"));
+    tr.rows.push(
+        RowSpec::new("r1")
+            .with_cell("k", "IRR") // raw span 1
+            .with_cell("v", 0.25),
+    );
+
+    // BR: right_of BL (gap=1 -> start_col = 7), longer descriptor (20+1=21 -> raw span=2)
+    // Shares (depth=1, start_col=7) with TR -> both TR and BR align descriptor to span=2!
+    let mut br = TableSpec::new("BR", "Bottom Right").with_placement(PlacementSpec::right_of("BL"));
+    br.columns.push(ColumnSpec::descriptor("k", "Key"));
+    br.columns.push(ColumnSpec::new("v").with_header("Val"));
+    br.rows.push(
+        RowSpec::new("r1")
+            .with_cell("k", "Sponsor Equity Value") // 20+1=21 -> span 2
+            .with_cell("v", 500.0),
+    );
+
+    // Notes: Stack, descriptor-only [key (span=1), note (span=5)] — must NOT inflate depth-0 prefix!
+    let mut notes = TableSpec::new("Notes", "Footnotes");
+    notes.columns.push(ColumnSpec::descriptor("key", "Ref"));
+    notes.columns.push(ColumnSpec::descriptor("note", "Note"));
+    notes.rows.push(
+        RowSpec::new("r1")
+            .with_cell("key", "[1]") // raw span 1
+            .with_cell("note", "Adjusted for non-recurring restructuring charges."), // 49+1=50 -> ceil(50/12)=5
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "Lanes2x2".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dash".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![
+                TableId::from("TL"),
+                TableId::from("BL"),
+                TableId::from("TR"),
+                TableId::from("BR"),
+                TableId::from("Notes"),
+            ],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[tl, bl, tr, br, notes]).unwrap();
+    let p_tl = compiled.layout_map.get_table(&TableId::from("TL")).unwrap();
+    let p_bl = compiled.layout_map.get_table(&TableId::from("BL")).unwrap();
+    let p_tr = compiled.layout_map.get_table(&TableId::from("TR")).unwrap();
+    let p_br = compiled.layout_map.get_table(&TableId::from("BR")).unwrap();
+    let p_notes = compiled
+        .layout_map
+        .get_table(&TableId::from("Notes"))
+        .unwrap();
+
+    // Depth-0 lane: TL and BL align descriptor blocks to 1..=3; BL's trailing Gutter skips TL.y1
+    // at col 4 so BL.y2 lands under TL.y2 at col 5 (F).
+    assert_eq!(p_tl.col_spans, vec![(1, 1), (2, 3), (4, 4), (5, 5)]);
+    assert_eq!(p_bl.col_spans, vec![(1, 3), (4, 4), (5, 5)]);
+
+    // Depth-1 lane at start_col=7: TR and BR both align descriptor to (7, 8), val at (9, 9)
+    assert_eq!(p_tr.col_spans, vec![(7, 8), (9, 9)]);
+    assert_eq!(p_br.col_spans, vec![(7, 8), (9, 9)]);
+
+    // Descriptor-only Notes keeps raw spans [1, 5] without inflating TL/BL
+    assert_eq!(p_notes.col_spans, vec![(1, 1), (2, 6)]);
+
+    // Pairwise TableOverlap in declaration order on grid sheet
+    let mut o1 = TableSpec::new("Base", "Base");
+    o1.columns.push(ColumnSpec::new("c").with_header("C"));
+    o1.rows.push(RowSpec::new("r1").with_cell("c", 1.0));
+    let mut o2 =
+        TableSpec::new("FirstRight", "First").with_placement(PlacementSpec::right_of("Base"));
+    o2.columns.push(ColumnSpec::new("c").with_header("C"));
+    o2.rows.push(RowSpec::new("r1").with_cell("c", 2.0));
+    let mut o3 =
+        TableSpec::new("SecondRight", "Second").with_placement(PlacementSpec::right_of("Base"));
+    o3.columns.push(ColumnSpec::new("c").with_header("C"));
+    o3.rows.push(RowSpec::new("r1").with_cell("c", 3.0));
+    let overlap_manifest = ProjectManifest {
+        model_name: "GridOverlap".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Grid".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid(),
+            tables: vec![
+                TableId::from("Base"),
+                TableId::from("FirstRight"),
+                TableId::from("SecondRight"),
+            ],
+        }],
+    };
+    let overlap_err = Compiler::compile(&overlap_manifest, &[o1, o2, o3]).unwrap_err();
+    assert!(matches!(
+        overlap_err,
+        f8_core::compiler::CompilerError::Layout(LayoutError::TableOverlap {
+            ref first_table,
+            ref second_table,
+            ..
+        }) if first_table.as_str() == "FirstRight" && second_table.as_str() == "SecondRight"
+    ));
+}
+
+#[test]
+fn test_grid_layout_leading_gutter_period_spacer_alignment() {
+    // Case A: Historical + Forecast (IS) stacked with Forecast-only (CapexFcast) using two
+    // trailing gutters after its descriptor to skip 23A and 24A so 25E aligns under 25E.
+    let mut is_tbl = TableSpec::new("IS", "Income Statement");
+    is_tbl
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Line Item"));
+    for col in ["23A", "24A", "25E", "26E"] {
+        is_tbl.columns.push(ColumnSpec::new(col).with_header(col));
+    }
+    // 28 chars + 1 = 29 -> ceil(29/12) = span 3 (B..D)
+    is_tbl.rows.push(
+        RowSpec::new("rev")
+            .with_cell("desc", "Total Consolidated Revenues!")
+            .with_cell("23A", 100.0)
+            .with_cell("24A", 110.0)
+            .with_cell("25E", 125.0)
+            .with_cell("26E", 140.0),
+    );
+
+    // Shorter descriptor (18 chars + 1 = 19 -> raw span 2), followed by two gutters skipping 23A/24A
+    let mut capex = TableSpec::new("CapexFcast", "Capex Forecast");
+    capex
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Line Item"));
+    capex.columns.push(ColumnSpec::gutter());
+    capex.columns.push(ColumnSpec::gutter());
+    capex
+        .columns
+        .push(ColumnSpec::new("25E").with_header("25E"));
+    capex
+        .columns
+        .push(ColumnSpec::new("26E").with_header("26E"));
+    capex.rows.push(
+        RowSpec::new("capex")
+            .with_cell("desc", "Maintenance Capex!")
+            .with_cell("25E", 15.0)
+            .with_cell("26E", 18.0),
+    );
+
+    // Case B: Forecast-only table has a LONGER descriptor (40 chars + 1 = 41 -> raw span 4)
+    // than Historical+Forecast table (raw span 3) — both descriptors align to span 4,
+    // IS measures start at col 5 (F), and 25E aligns under 25E at col 7 (H).
+    let mut is_b = TableSpec::new("IS_B", "IS B");
+    is_b.columns.push(ColumnSpec::descriptor("desc", "Item"));
+    for col in ["23A", "24A", "25E", "26E"] {
+        is_b.columns.push(ColumnSpec::new(col).with_header(col));
+    }
+    is_b.rows.push(
+        RowSpec::new("rev")
+            .with_cell("desc", "Total Consolidated Revenues!")
+            .with_cell("23A", 100.0)
+            .with_cell("24A", 110.0)
+            .with_cell("25E", 125.0)
+            .with_cell("26E", 140.0),
+    );
+
+    let mut capex_wide = TableSpec::new("CapexWide", "Capex Wide");
+    capex_wide
+        .columns
+        .push(ColumnSpec::descriptor("desc", "Item"));
+    capex_wide.columns.push(ColumnSpec::gutter());
+    capex_wide.columns.push(ColumnSpec::gutter());
+    capex_wide
+        .columns
+        .push(ColumnSpec::new("25E").with_header("25E"));
+    capex_wide
+        .columns
+        .push(ColumnSpec::new("26E").with_header("26E"));
+    capex_wide.rows.push(
+        RowSpec::new("capex")
+            .with_cell("desc", "Growth & Expansion Capital Expenditures!") // 40+1=41 -> span 4
+            .with_cell("25E", 20.0)
+            .with_cell("26E", 24.0),
+    );
+
+    // Case C: Gutter BETWEEN leading descriptors is included in descriptor prefix, while
+    // shared visual divider gutter AFTER last leading descriptor stays excluded (width = 3.0).
+    let mut t_div1 = TableSpec::new("Div1", "Divider 1");
+    t_div1.columns.push(ColumnSpec::descriptor("tkr", "Tkr"));
+    t_div1.columns.push(ColumnSpec::gutter());
+    t_div1.columns.push(ColumnSpec::descriptor("co", "Company"));
+    t_div1.columns.push(ColumnSpec::gutter());
+    t_div1
+        .columns
+        .push(ColumnSpec::new("23A").with_header("23A"));
+    t_div1.rows.push(
+        RowSpec::new("r1")
+            .with_cell("tkr", "AAPL") // span 1
+            .with_cell("co", "Apple Incorporated") // 18+1=19 -> span 2; prefix = 1+1+2 = 4
+            .with_cell("23A", 100.0),
+    );
+
+    let mut t_div2 = TableSpec::new("Div2", "Divider 2");
+    t_div2.columns.push(ColumnSpec::descriptor("item", "Item"));
+    t_div2.columns.push(ColumnSpec::gutter());
+    t_div2
+        .columns
+        .push(ColumnSpec::new("23A").with_header("23A"));
+    t_div2.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Short") // raw span 1 -> extends to 4
+            .with_cell("23A", 200.0),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "PeriodSpacerGrid".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "CaseA".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("IS"), TableId::from("CapexFcast")],
+            },
+            SheetSpec {
+                name: "CaseB".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("IS_B"), TableId::from("CapexWide")],
+            },
+            SheetSpec {
+                name: "CaseC".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("Div1"), TableId::from("Div2")],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[is_tbl, capex, is_b, capex_wide, t_div1, t_div2],
+    )
+    .unwrap();
+
+    // Case A assertions: IS.Desc stays (1, 3), CapexFcast.Desc aligns to (1, 3),
+    // gutters occupy cols 4 and 5 (width 12.0 from IS 23A/24A), and 25E/26E align at cols 6 and 7.
+    let p_is = compiled.layout_map.get_table(&TableId::from("IS")).unwrap();
+    let p_capex = compiled
+        .layout_map
+        .get_table(&TableId::from("CapexFcast"))
+        .unwrap();
+    assert_eq!(p_is.col_spans, vec![(1, 3), (4, 4), (5, 5), (6, 6), (7, 7)]);
+    assert_eq!(
+        p_capex.col_spans,
+        vec![(1, 3), (4, 4), (5, 5), (6, 6), (7, 7)]
+    );
+    let sl_a = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("CaseA"))
+        .unwrap();
+    for c in 1..=7_u32 {
+        assert_eq!(sl_a.col_widths.get(&c), Some(&12.0));
+    }
+
+    // Case B assertions: Both descriptors align to (1, 4), 25E aligns at col 7, 26E at col 8.
+    let p_is_b = compiled
+        .layout_map
+        .get_table(&TableId::from("IS_B"))
+        .unwrap();
+    let p_capex_wide = compiled
+        .layout_map
+        .get_table(&TableId::from("CapexWide"))
+        .unwrap();
+    assert_eq!(
+        p_is_b.col_spans,
+        vec![(1, 4), (5, 5), (6, 6), (7, 7), (8, 8)]
+    );
+    assert_eq!(
+        p_capex_wide.col_spans,
+        vec![(1, 4), (5, 5), (6, 6), (7, 7), (8, 8)]
+    );
+
+    // Case C assertions: Inter-descriptor gutter stays in prefix (span 4), trailing divider
+    // gutters align at col 5 with gutter_col_width = 3.0, and 23A aligns at col 6.
+    let p_div1 = compiled
+        .layout_map
+        .get_table(&TableId::from("Div1"))
+        .unwrap();
+    let p_div2 = compiled
+        .layout_map
+        .get_table(&TableId::from("Div2"))
+        .unwrap();
+    assert_eq!(
+        p_div1.col_spans,
+        vec![(1, 1), (2, 2), (3, 4), (5, 5), (6, 6)]
+    );
+    assert_eq!(p_div2.col_spans, vec![(1, 4), (5, 5), (6, 6)]);
+    let sl_c = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("CaseC"))
+        .unwrap();
+    assert_eq!(sl_c.col_widths.get(&5), Some(&3.0));
+    assert_eq!(sl_c.col_widths.get(&6), Some(&12.0));
+}
+
+#[test]
+fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
+    use f8_core::model::format::{CurrencyCode, FormatPreset};
+
+    let theme = create_test_theme();
+
+    // 1. Unevaluated path (evaluated: None):
+    // - literal currency measure (-1_234_567.8 -> "($1,234,567.8)", 14 chars) widens W from 12.0 -> 14.0
+    // - literal text measure ("MeasureTextVal", 14 + 1 = 15 chars) widens W to 15.0
+    // - indented literal descriptor ("Sub-Account Revenue Total", 25 + 1 + 2*2 = 30 -> span 2 at W=15.0)
+    // - unevaluated formula cell contributes 0.0 (does not widen W even though evaluated result would be huge)
+    // - Null and empty string literals contribute 0.0
+    let mut t = TableSpec::new("UnevalGrid", "Unevaluated Grid");
+    t.columns.push(ColumnSpec::descriptor("item", "Line Item"));
+    t.columns.push(
+        ColumnSpec::new("amt")
+            .with_header("Amount")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1))
+            .with_currency(Some(CurrencyCode::Usd)),
+    );
+    t.columns.push(ColumnSpec::new("note").with_header("Note"));
+    t.rows.push(
+        RowSpec::new("r_lit")
+            .with_cell(
+                "item",
+                CellInput::Detailed(DetailedCellInput {
+                    value: Some(ValueLiteral::String(
+                        "Sub-Account Revenue Total".to_string(),
+                    )),
+                    indent: Some(2),
+                    ..Default::default()
+                }),
+            )
+            .with_cell("amt", -1_234_567.8)
+            .with_cell("note", "MeasureTextVal"),
+    );
+    t.rows.push(
+        RowSpec::new("r_formula")
+            .with_cell("item", "")
+            .with_cell(
+                "amt",
+                CellInput::formula(r#"UnevalGrid["r_lit", "amt"] * 1000000"#),
+            )
+            .with_cell("note", CellInput::null()),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "UnevalGridModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Grid".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("UnevalGrid")],
+        }],
+    };
+
+    let (_sym, grid) = ir::expand_workbook(&manifest, std::slice::from_ref(&t)).unwrap();
+    let layout =
+        LayoutPlanner::plan(&manifest, std::slice::from_ref(&t), &grid, &theme, None).unwrap();
+
+    let sheet_layout = layout.get_sheet(&SheetId::from("Grid")).unwrap();
+    assert_eq!(sheet_layout.col_widths.get(&0), Some(&3.0));
+    // W = 15.0 from literal measure text "MeasureTextVal" (14 + 1), NOT widened by unevaluated formula
+    for c in 1..=4_u32 {
+        assert_eq!(sheet_layout.col_widths.get(&c), Some(&15.0));
+    }
+    let placement = layout.get_table(&TableId::from("UnevalGrid")).unwrap();
+    assert_eq!(placement.col_spans, vec![(1, 2), (3, 3), (4, 4)]);
+
+    // 2. Unevaluated path rejects \n and \r in literal descriptor and measure strings
+    for (col_target, bad_text) in [("item", "Line 1\nLine 2"), ("note", "Measure\rBreak")] {
+        let mut bad_t = TableSpec::new("UnevalNL", "Uneval NL");
+        bad_t.columns.push(ColumnSpec::descriptor("item", "Item"));
+        bad_t
+            .columns
+            .push(ColumnSpec::new("note").with_header("Note"));
+        bad_t.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", if col_target == "item" { bad_text } else { "OK" })
+                .with_cell("note", if col_target == "note" { bad_text } else { "OK" }),
+        );
+        let bad_manifest = ProjectManifest {
+            model_name: "UnevalNL".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Grid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: f8_core::SheetLayoutSpec::grid(),
+                tables: vec![TableId::from("UnevalNL")],
+            }],
+        };
+        let (_sym, bad_grid) =
+            ir::expand_workbook(&bad_manifest, std::slice::from_ref(&bad_t)).unwrap();
+        let err =
+            LayoutPlanner::plan(&bad_manifest, &[bad_t], &bad_grid, &theme, None).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                LayoutError::GridMultilineCell {
+                    ref table,
+                    ref row,
+                    ref col,
+                    ..
+                } if table.as_str() == "UnevalNL" && row.as_str() == "r1" && col.as_str() == col_target
+            ),
+            "Expected GridMultilineCell on unevaluated '{col_target}', got {err:?}"
+        );
+    }
 }

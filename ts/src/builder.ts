@@ -25,6 +25,8 @@ import type {
   SectionHeaderRowSpecInput,
   SemanticStyle,
   Shade,
+  SheetLayoutMode,
+  SheetLayoutSpecInput,
   SheetOptions,
   SheetSpecInput,
   TableOptions,
@@ -709,6 +711,8 @@ export class Sheet {
   readonly tabColor: string | null
   readonly showGridlines: boolean
   readonly freezePanes: FreezePanesInput | null
+  readonly layout: SheetLayoutMode
+  readonly colWidth: number | null
 
   readonly #model: Model | null
   readonly #tables: Table[] = []
@@ -729,6 +733,29 @@ export class Sheet {
       }
     }
 
+    const layout: SheetLayoutMode = options?.layout ?? "auto"
+    if (layout !== "auto" && layout !== "grid") {
+      throw new Error(
+        `Invalid sheet layout '${String(layout)}'. Expected 'auto' or 'grid'.`
+      )
+    }
+
+    if (options?.colWidth !== undefined) {
+      if (layout === "auto") {
+        throw new Error("colWidth can only be specified when layout is 'grid'")
+      }
+      if (
+        typeof options.colWidth !== "number" ||
+        !Number.isFinite(options.colWidth) ||
+        options.colWidth < 1 ||
+        options.colWidth > 255
+      ) {
+        throw new Error(
+          `colWidth must be a finite number in [1, 255], got ${String(options.colWidth)}`
+        )
+      }
+    }
+
     this.name = name
     this.tabColor = options?.tabColor ?? null
     this.showGridlines = options?.showGridlines ?? false
@@ -736,6 +763,8 @@ export class Sheet {
       options?.freezePanes !== undefined
         ? { row: options.freezePanes.row, col: options.freezePanes.col }
         : null
+    this.layout = layout
+    this.colWidth = options?.colWidth ?? null
     this.#model = options?.model ?? null
   }
 
@@ -774,6 +803,13 @@ export class Sheet {
   }
 
   toSpec(): SheetSpecInput {
+    const layoutSpec: SheetLayoutSpecInput | undefined =
+      this.layout === "grid"
+        ? {
+            kind: "grid",
+            ...(this.colWidth !== null ? { colWidth: this.colWidth } : {}),
+          }
+        : undefined
     return {
       name: this.name,
       showGridlines: this.showGridlines,
@@ -787,6 +823,7 @@ export class Sheet {
             },
           }
         : {}),
+      ...(layoutSpec !== undefined ? { layout: layoutSpec } : {}),
     }
   }
 }

@@ -75,6 +75,22 @@ export type SheetCellKind =
   | "section_header"
   | "gutter"
   | "data"
+  | "overflow"
+
+export type SheetLayoutMode = "auto" | "grid"
+
+export interface AutoSheetLayoutSpecInput {
+  readonly kind: "auto"
+}
+
+export interface GridSheetLayoutSpecInput {
+  readonly kind: "grid"
+  readonly colWidth?: number
+}
+
+export type SheetLayoutSpecInput =
+  | AutoSheetLayoutSpecInput
+  | GridSheetLayoutSpecInput
 
 export interface CellCoordinate {
   readonly table: string
@@ -307,6 +323,7 @@ export interface SheetSpecInput {
   readonly tabColor?: string
   readonly freezePanes?: FreezePanesInput
   readonly showGridlines?: boolean
+  readonly layout?: SheetLayoutSpecInput
 }
 
 export interface ProjectManifestInput {
@@ -423,6 +440,8 @@ export interface SheetOptions {
   readonly tabColor?: string
   readonly showGridlines?: boolean
   readonly freezePanes?: FreezePanesInput
+  readonly layout?: SheetLayoutMode
+  readonly colWidth?: number
   readonly model?: Model
 }
 

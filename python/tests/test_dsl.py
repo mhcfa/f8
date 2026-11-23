@@ -19,6 +19,7 @@ from f8 import (
     Model,
     Shade,
     Sheet,
+    SheetLayoutMode,
     SpecificationError,
     Table,
 )
@@ -1406,3 +1407,202 @@ def test_sheet_gridlines_default_false_and_opt_in_true() -> None:
     with zipfile.ZipFile(io.BytesIO(raw_compiled.emit_workbook()), "r") as zf:
         raw_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert 'showGridLines="0"' in raw_xml
+
+
+def test_sheet_grid_layout_validation_and_diagnostics() -> None:
+    # Public export check
+    assert "SheetLayoutMode" in f8.__all__
+    mode: SheetLayoutMode = "grid"
+    assert mode == "grid"
+
+    # Default Sheet layout is "auto" and omits "layout" in serialized spec
+    default_sheet = Sheet("AutoDefault")
+    assert default_sheet.layout == "auto"
+    assert default_sheet.col_width is None
+    assert "layout" not in default_sheet.__f8_spec__()
+
+    # Valid grid sheets with and without col_width
+    grid_default = Sheet("GridDefault", layout="grid")
+    assert grid_default.__f8_spec__().get("layout") == {"kind": "grid"}
+    grid_sized = Sheet("GridSized", layout="grid", col_width=14)
+    assert grid_sized.col_width == 14.0
+    assert grid_sized.__f8_spec__().get("layout") == {"kind": "grid", "col_width": 14.0}
+
+    # Scenario 7: SDK constructor validation
+    with pytest.raises(ValueError, match="Invalid sheet layout"):
+        Sheet("BadLayout", layout=cast(SheetLayoutMode, "fixed"))
+    with pytest.raises(ValueError, match="col_width can only be specified when layout='grid'"):
+        Sheet("AutoWithWidth", layout="auto", col_width=12.0)
+    with pytest.raises(TypeError, match="col_width must be a finite number"):
+        Sheet("BoolWidth", layout="grid", col_width=True)
+    with pytest.raises(TypeError, match="col_width must be a finite number"):
+        Sheet("BoolWidthAuto", layout="auto", col_width=False)
+    for bad_w in (
+        0.0,
+        0.5,
+        -5.0,
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        256.0,
+        10**400,
+        -(10**400),
+    ):
+        with pytest.raises(ValueError, match="col_width must be a finite number in"):
+            Sheet("BadWidth", layout="grid", col_width=bad_w)
+
+    # Scenario 7: Raw compile rejects unknown fields on layout and out-of-bounds Pass 1 col_width
+    minimal_table = {
+        "id": "T1",
+        "title": "T1",
+        "columns": [{"kind": "data", "id": "c1", "headers": ["C1"]}],
+        "rows": [{"kind": "data", "id": "r1", "cells": {"c1": 1.0}}],
+    }
+    for bad_layout in (
+        {"kind": "grid", "col_width": 14.0, "extra": 1},
+        {"kind": "auto", "col_width": 12.0},
+        {"kind": "grid", "col_width": 0.5},
+        {"kind": "grid", "col_width": 256.0},
+    ):
+        with pytest.raises(SpecificationError):
+            f8.compile(
+                {
+                    "model_name": "BadRawLayout",
+                    "theme": "corporate_navy",
+                    "sheets": [{"name": "S1", "layout": bad_layout, "tables": ["T1"]}],
+                },
+                [minimal_table],
+            )
+
+    # Scenario 5: Static base_w measure header rejection raises SpecificationError
+    hdr_model = Model(name="WideHeader")
+    hdr_sheet = hdr_model.add_sheet("Dash", layout="grid", col_width=12.0)
+    hdr_t = hdr_sheet.add_table("Val", title="Valuation")
+    hdr_t.add_column("item", role="descriptor", header="Item")
+    hdr_t.add_column("ev", header="Enterprise Value")
+    hdr_t.add_row("r1", cells={"item": "Base", "ev": 100.0})
+    with pytest.raises(SpecificationError, match="Enterprise Value") as hdr_exc:
+        hdr_model.compile()
+    assert hdr_exc.value.table == "Val"
+
+    # Scenario 6: Newline in data cell, header, and group banner raises SpecificationError
+    nl_cell_model = Model(name="NewlineCell")
+    nl_sheet = nl_cell_model.add_sheet("Dash", layout="grid")
+    nl_t = nl_sheet.add_table("T1", title="T1")
+    nl_t.add_column("item", role="descriptor", header="Item")
+    nl_t.add_row("r1", cells={"item": "Line 1\nLine 2"})
+    with pytest.raises(SpecificationError, match="multiline cell") as cell_exc:
+        nl_cell_model.compile()
+    assert cell_exc.value.table == "T1"
+
+    nl_hdr_model = Model(name="NewlineHdr")
+    nl_h_sheet = nl_hdr_model.add_sheet("Dash", layout="grid")
+    nl_ht = nl_h_sheet.add_table("T2", title="T2")
+    nl_ht.add_column("m", header="Line 1\nLine 2")
+    nl_ht.add_row("r1", cells={"m": 1.0})
+    with pytest.raises(SpecificationError, match="multiline column header") as h_exc:
+        nl_hdr_model.compile()
+    assert h_exc.value.table == "T2"
+
+    nl_grp_model = Model(name="NewlineGrp")
+    nl_g_sheet = nl_grp_model.add_sheet("Dash", layout="grid")
+    nl_gt = nl_g_sheet.add_table("T3", title="T3")
+    nl_gt.add_column("m", group="Forecast\rYears", header="Y1")
+    nl_gt.add_row("r1", cells={"m": 1.0})
+    with pytest.raises(SpecificationError, match="multiline column header") as g_exc:
+        nl_grp_model.compile()
+    assert g_exc.value.table == "T3"
+
+
+def test_sheet_grid_layout_scenario_10_and_12_e2e_parity() -> None:
+    model = Model(name="CrossSdkGridParity")
+    dash = model.add_sheet("Dashboard", layout="grid", col_width=14.0)
+
+    summary = dash.add_table("Summary", title="Executive Summary")
+    summary.add_column("item", role="descriptor", header="Line Item")
+    summary.add_column("y1", header="2024E", format="currency", decimals=1)
+    summary.add_column("y2", header="2025E", format="currency", decimals=1)
+    summary.add_row(
+        "rev",
+        cells={
+            "item": "Total Consolidated Operating Revenue",  # 36+1=37 -> span 3 at W=14
+            "y1": 100.0,
+            "y2": 120.0,
+        },
+    )
+    summary.add_row(
+        "ebitda",
+        style="total",
+        cells={"item": "Adjusted EBITDA"},
+        expr='Summary["rev", @col] * 0.25',
+    )
+
+    kpis = dash.add_table("KPIs", title="Key Metrics", right_of=summary)
+    kpis.add_column("metric", role="descriptor", header="Metric")
+    kpis.add_column("val", header="Value", format="percentage", decimals=1)
+    kpis.add_row(
+        "margin",
+        cells={"metric": "2025E Consolidated Margin"},  # 25+1=26 -> span 2 at W=14
+        expr='Summary["ebitda", "y2"] / Summary["rev", "y2"]',
+    )
+
+    notes_sheet = model.add_sheet("Notes")
+    notes = notes_sheet.add_table("Commentary", title="Notes")
+    notes.add_column("topic", role="descriptor", header="Topic")
+    notes.add_column("detail", role="descriptor", header="Detail")
+    notes.add_row("n1", cells={"topic": "Basis", "detail": "Line 1\nLine 2"})
+
+    manifest, _ = model.__f8_spec__()
+    assert manifest["sheets"][0].get("layout") == {"kind": "grid", "col_width": 14.0}
+    assert "layout" not in manifest["sheets"][1]
+
+    compiled = model.compile()
+    assert compiled.table("Summary").address("rev", "item") == "B5"
+    assert compiled.table("Summary").address("rev", "y1") == "E5"
+    assert compiled.table("Summary").address("rev", "y2") == "F5"
+    assert compiled.table("Summary").address("ebitda", "y2") == "F6"
+    assert compiled.table("KPIs").address("margin", "metric") == "H5"
+    assert compiled.table("KPIs").address("margin", "val") == "J5"
+    assert compiled.num("KPIs", "margin", "val") == pytest.approx(0.25)
+
+    insp = compiled.inspect_sheet("Dashboard")
+    assert insp["min_col"] == 1
+    assert insp["max_col"] == 9
+    assert insp["col_widths"] == {
+        0: 3.0,
+        1: 14.0,
+        2: 14.0,
+        3: 14.0,
+        4: 14.0,
+        5: 14.0,
+        6: 3.0,
+        7: 14.0,
+        8: 14.0,
+        9: 14.0,
+    }
+
+    row5 = next(r for r in insp["rows"] if r["excel_row"] == 5)
+    assert [
+        (c["physical_a1"], c["kind"], c["table_id"], c["is_descriptor"]) for c in row5["cells"]
+    ] == [
+        ("B5", "data", "Summary", True),
+        ("C5", "overflow", "Summary", True),
+        ("D5", "overflow", "Summary", True),
+        ("E5", "data", "Summary", False),
+        ("F5", "data", "Summary", False),
+        ("G5", "empty", None, False),
+        ("H5", "data", "KPIs", True),
+        ("I5", "overflow", "KPIs", True),
+        ("J5", "data", "KPIs", False),
+    ]
+    c5 = row5["cells"][1]
+    assert c5["row_id"] == "rev"
+    assert c5["col_id"] == "item"
+    assert c5["value"] == "Empty"
+    assert c5["formatted_value"] is None
+
+    xlsx = compiled.emit_workbook()
+    assert xlsx.startswith(b"PK\x03\x04")
+    with zipfile.ZipFile(io.BytesIO(xlsx), "r") as zf:
+        dash_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert "<mergeCells" not in dash_xml

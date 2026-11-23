@@ -231,6 +231,7 @@ impl CompilerError {
                     | ModelError::InvalidSheetName { .. }
                     | ModelError::InvalidSheetTabColor { .. }
                     | ModelError::InvalidFreezePanes { .. }
+                    | ModelError::InvalidSheetColWidth { .. }
                     | ModelError::ThemeNotFound { .. }
                     | ModelError::InvalidThemeColor { .. }
                     | ModelError::InvalidThemeMetric { .. }
@@ -311,11 +312,15 @@ impl CompilerError {
                 let table = match layout_err {
                     LayoutError::UnassignedTable { table }
                     | LayoutError::UnknownTable { table, .. }
-                    | LayoutError::InvalidPlacementTarget { table, .. } => Some(table.to_string()),
+                    | LayoutError::InvalidPlacementTarget { table, .. }
+                    | LayoutError::GridMeasureHeaderTooWide { table, .. }
+                    | LayoutError::GridMultilineCell { table, .. }
+                    | LayoutError::GridMultilineHeader { table, .. } => Some(table.to_string()),
                     LayoutError::TableOverlap { second_table, .. } => {
                         Some(second_table.to_string())
                     }
-                    LayoutError::GridLimitExceeded { .. } => None,
+                    LayoutError::GridLimitExceeded { .. }
+                    | LayoutError::GridColWidthOutOfBounds { .. } => None,
                 };
                 ErrorDiagnostic::SpecificationError {
                     message: message.clone(),

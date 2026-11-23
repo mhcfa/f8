@@ -101,6 +101,7 @@ fn test_compiler_facade_error_propagation() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![],
             },
             SheetSpec {
@@ -108,6 +109,7 @@ fn test_compiler_facade_error_propagation() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![],
             },
         ],
@@ -129,6 +131,7 @@ fn test_compiler_facade_error_propagation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("non_existent")],
         }],
     };
@@ -163,6 +166,7 @@ fn test_compiler_facade_error_propagation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("CyclicTable")],
         }],
     };
@@ -201,6 +205,7 @@ fn test_compiler_facade_error_propagation() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("SumTable")],
         }],
     };

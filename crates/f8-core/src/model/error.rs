@@ -122,6 +122,11 @@ pub enum ModelError {
     },
 
     #[error(
+        "Sheet '{sheet}': invalid grid col_width ({col_width}); expected finite value in 1.0..=255.0"
+    )]
+    InvalidSheetColWidth { sheet: String, col_width: f64 },
+
+    #[error(
         "Table '{table}': table id must be a valid f8 identifier ([A-Za-z0-9_]+ with at least one letter or '_', excluding 'TRUE', 'FALSE', '_', and scientific notation)"
     )]
     InvalidTableId { table: TableId },
