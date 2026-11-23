@@ -300,7 +300,7 @@ Default `corporate_navy` Excel masks reserve a uniform trailing alignment space 
 
 ### Semantic Styles (`SemanticStyle`)
 
-Structural summary and typographic emphasis roles for rows, columns, and 0D cell overrides. Use `"bold"` when you only want bold typography (e.g. KPI/ratio rows, primary scenario columns, or descriptor labels); reserve `"subtotal"` and `"total"` strictly for true accounting summary rows and summary/aggregation columns (`Total`, `Cumulative`, `LTM`):
+Structural summary and typographic emphasis roles for rows, columns, and 0D cell overrides. Use `"bold"` when you only want bold typography (e.g. KPI/ratio rows, `LTM` or primary scenario columns, or descriptor labels); reserve `"subtotal"` and `"total"` strictly for true accounting summary rows and terminal summary/aggregation columns (`Total`, `Cumulative`):
 
 - `"data"` (default): Standard body typography and borders.
 - `"bold"`: Bold typography only; no borders and standard fill/text color precedence (`highlight` > `shade` > `data`, preserving blue `input_text`).
