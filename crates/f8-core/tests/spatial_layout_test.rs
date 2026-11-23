@@ -944,11 +944,13 @@ fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration()
     assert_eq!(placement.body_row_range, (6, 6));
 
     let sheet = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
-    // Physical col 3 (mrq_1): group banner (44 chars) is excluded from single-column width arbitration;
-    // max_header_chars is "2012-06-30" (10 chars) -> width = 10 * 1.0 + 0.0 = 10.0
-    assert_eq!(sheet.col_widths.get(&3), Some(&10.0));
-    // Physical col 4 (standalone): upper line "Standalone Financial" (20 chars) is included -> width = 20 * 1.0 + 0.0 = 20.0
-    assert_eq!(sheet.col_widths.get(&4), Some(&20.0));
+    // Physical col 1 (label, descriptor): "($ in millions)" (15 chars) remains unpadded -> 15.0
+    assert_eq!(sheet.col_widths.get(&1), Some(&15.0));
+    // Physical col 3 (mrq_1, measure): group banner (44 chars) is excluded from single-column width arbitration;
+    // max_header_chars is "2012-06-30" (10 chars) + 1 trailing alignment pad -> width = 11 * 1.0 + 0.0 = 11.0
+    assert_eq!(sheet.col_widths.get(&3), Some(&11.0));
+    // Physical col 4 (standalone, measure): upper line "Standalone Financial" (20 chars) + 1 trailing pad -> 21.0
+    assert_eq!(sheet.col_widths.get(&4), Some(&21.0));
 }
 
 #[test]
@@ -1671,4 +1673,171 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
         ))
         .unwrap();
     assert!(mixed_cell.wrap_text);
+}
+
+#[test]
+fn test_scenario_23_trailing_alignment_space_width_arbitration() {
+    use f8_core::model::format::FormatPreset;
+    use f8_core::model::id::RowId;
+    use f8_core::model::theme::ThemeSpec;
+
+    let mut table = TableSpec::new("AlignWidthTable", "Alignment Width Arbitration");
+    // Col 1 (B): Unformatted descriptor driven by header ("DescriptorHeader", 16 chars) -> 16.0 (unpadded)
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc_hdr", "DescriptorHeader"));
+    // Col 2 (C): Unformatted descriptor driven by text cell ("UnformattedDescCell", 19 chars) -> 19.0 (unpadded)
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc_txt", "Desc"));
+    // Col 3 (D): Unformatted descriptor driven by number cell (123456789 -> "123,456,789", 11 chars) -> 11.0 (unpadded)
+    table
+        .columns
+        .push(ColumnSpec::descriptor("desc_num", "Num"));
+    // Col 4 (E): Multi-tier measure header (upper "Upper Measure Hdr", 17 chars) -> 17 + 1 = 18.0
+    table
+        .columns
+        .push(ColumnSpec::new("meas_hdr").with_headers(["Upper Measure Hdr", "Short"]));
+    // Col 5 (F): Empty-header measure column with null value -> min_col_width (0.5, no +1 pad on empty header)
+    table.columns.push(ColumnSpec::new("meas_empty"));
+    // Col 6 (G): Empty-header measure column with empty string "" -> min_col_width (0.5, no +1 pad on empty header or empty segment)
+    table.columns.push(ColumnSpec::new("meas_empty_str"));
+    // Col 7 (H): Date measure column (45657 -> "2024-12-31", 10 chars) -> 10 + 1 = 11.0
+    table.columns.push(
+        ColumnSpec::new("meas_date")
+            .with_header("Date")
+            .with_format(Some(FormatPreset::Date)),
+    );
+    // Col 8 (I): Date measure column with text cell ("LongDateTextNote", 16 chars) -> 16.0 (no +1 pad for text under Date)
+    table.columns.push(
+        ColumnSpec::new("meas_date_txt")
+            .with_header("Date")
+            .with_format(Some(FormatPreset::Date)),
+    );
+    // Col 9 (J): Unformatted measure column with positive number (12345678 -> "12,345,678", 10 chars) -> 10 + 1 = 11.0
+    table
+        .columns
+        .push(ColumnSpec::new("meas_raw_pos").with_header("Val"));
+    // Col 10 (K): Unformatted measure column with negative number (-12345678 -> "(12,345,678)", 12 chars, ends in ')') -> 12.0
+    table
+        .columns
+        .push(ColumnSpec::new("meas_raw_neg").with_header("Val"));
+    // Col 11 (L): Unformatted measure column with text ("MeasureTextLabel", 16 chars) -> 16 + 1 = 17.0
+    table
+        .columns
+        .push(ColumnSpec::new("meas_raw_txt").with_header("Val"));
+    // Col 12 (M): Currency-formatted measure column holding text ("NotApplicableText", 17 chars) -> 17 + 1 = 18.0
+    table.columns.push(
+        ColumnSpec::new("meas_curr_txt")
+            .with_header("Rev")
+            .with_format(Some(FormatPreset::Currency)),
+    );
+
+    table.rows.push(
+        RowSpec::new("r1")
+            .with_cell("desc_hdr", CellInput::string("Short"))
+            .with_cell("desc_txt", CellInput::string("UnformattedDescCell"))
+            .with_cell("desc_num", CellInput::number(123_456_789.0))
+            .with_cell("meas_hdr", CellInput::number(1.0))
+            .with_cell("meas_empty", CellInput::null())
+            .with_cell("meas_empty_str", CellInput::string(""))
+            .with_cell("meas_date", CellInput::number(45_657.0))
+            .with_cell("meas_date_txt", CellInput::string("LongDateTextNote"))
+            .with_cell("meas_raw_pos", CellInput::number(12_345_678.0))
+            .with_cell("meas_raw_neg", CellInput::number(-12_345_678.0))
+            .with_cell("meas_raw_txt", CellInput::string("MeasureTextLabel"))
+            .with_cell("meas_curr_txt", CellInput::string("NotApplicableText")),
+    );
+
+    let mut theme = create_test_theme();
+    theme.metrics.min_col_width = 0.5;
+    theme.metrics.char_width_multiplier = 1.0;
+    theme.metrics.col_padding = 0.0;
+
+    let manifest = ProjectManifest {
+        model_name: "AlignWidthModel".to_string(),
+        theme: ThemeSpec::Custom(Box::new(theme.clone())),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("AlignWidthTable")],
+        }],
+    };
+
+    let assert_widths = |sheet: &f8_core::compiler::layout::SheetLayout, label: &str| {
+        let expected: &[(u32, f64, &str)] = &[
+            (1, 16.0, "descriptor header unpadded"),
+            (2, 19.0, "unformatted descriptor text unpadded"),
+            (3, 11.0, "unformatted descriptor number unpadded"),
+            (4, 18.0, "multi-tier measure header +1"),
+            (5, 0.5, "empty-header measure column stays at min_col_width"),
+            (6, 0.5, "empty-string measure column stays at min_col_width"),
+            (7, 11.0, "date measure value +1"),
+            (8, 16.0, "text in date column unpadded"),
+            (9, 11.0, "unformatted measure positive number +1"),
+            (
+                10,
+                12.0,
+                "unformatted measure negative number already ends with ')'",
+            ),
+            (11, 17.0, "unformatted measure text +1"),
+            (12, 18.0, "numeric-formatted measure text +1"),
+        ];
+        for &(col_idx, width, desc) in expected {
+            assert_eq!(
+                sheet.col_widths.get(&col_idx),
+                Some(&width),
+                "[{label}] col {col_idx} ({desc})"
+            );
+        }
+    };
+
+    // 1. Unevaluated path (measure_literal_value)
+    let (_sym, grid) = ir::expand_workbook(&manifest, std::slice::from_ref(&table)).unwrap();
+    let uneval_layout =
+        LayoutPlanner::plan(&manifest, std::slice::from_ref(&table), &grid, &theme, None).unwrap();
+    assert_widths(
+        uneval_layout.get_sheet(&SheetId::from("Sheet1")).unwrap(),
+        "unevaluated",
+    );
+
+    // 2. Full compiled / evaluated path (measure_cell_value)
+    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    assert_widths(
+        compiled
+            .layout_map
+            .get_sheet(&SheetId::from("Sheet1"))
+            .unwrap(),
+        "evaluated",
+    );
+
+    // 3. In-memory formatted values remain free of Excel _) spacing tokens
+    let tbl_id = TableId::from("AlignWidthTable");
+    let row_id = RowId::from("r1");
+    assert_eq!(
+        compiled
+            .cell_formatted(&tbl_id, &row_id, &ColId::from("meas_date"))
+            .unwrap(),
+        "2024-12-31"
+    );
+    assert_eq!(
+        compiled
+            .cell_formatted(&tbl_id, &row_id, &ColId::from("meas_raw_pos"))
+            .unwrap(),
+        "12,345,678"
+    );
+    assert_eq!(
+        compiled
+            .cell_formatted(&tbl_id, &row_id, &ColId::from("meas_raw_neg"))
+            .unwrap(),
+        "(12,345,678)"
+    );
+    assert_eq!(
+        compiled
+            .cell_formatted(&tbl_id, &row_id, &ColId::from("meas_raw_txt"))
+            .unwrap(),
+        "MeasureTextLabel"
+    );
 }

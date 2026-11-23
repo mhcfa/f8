@@ -17,7 +17,7 @@ use crate::compiler::ir::id::CellId;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, ProjectManifest};
-use crate::model::table::{ColumnSpec, PlacementSpec, RowSpec, TableSpec, ValueLiteral};
+use crate::model::table::{AxisRole, ColumnSpec, PlacementSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::{MetricsConfig, Theme};
 use crate::value::{CellValue, format_accounting_number};
 
@@ -594,7 +594,11 @@ impl ColumnArbitrationContext<'_> {
 
                 // 1. Column header text length (max across all stacked per-column header lines; excludes spanning group)
                 let header_len = data_col.max_header_chars();
-                table_max_chars = table_max_chars.max(header_len);
+                let header_trailing_pad = match data_col.role {
+                    AxisRole::Measure if header_len > 0 => 1,
+                    AxisRole::Measure | AxisRole::Descriptor => 0,
+                };
+                table_max_chars = table_max_chars.max(header_len + header_trailing_pad);
 
                 // 2. Row cells text length and multi-line wrapping
                 for row in &table.rows {
@@ -615,6 +619,7 @@ impl ColumnArbitrationContext<'_> {
                         match (self.evaluated.and_then(|e| e.get_cell(&cell_id)), cell_node) {
                             (Some(val), _) => measure_cell_value(
                                 val,
+                                data_col.role,
                                 format,
                                 decimals,
                                 currency,
@@ -624,6 +629,7 @@ impl ColumnArbitrationContext<'_> {
                             (None, Some(node)) => match &node.payload {
                                 CellPayload::Literal(lit) => measure_literal_value(
                                     lit,
+                                    data_col.role,
                                     format,
                                     decimals,
                                     currency,
@@ -665,18 +671,38 @@ impl ColumnArbitrationContext<'_> {
 
 fn measure_text_segments(
     s: &str,
+    role: AxisRole,
     format: Option<FormatPreset>,
     indent: u8,
     metrics: &MetricsConfig,
 ) -> (usize, usize) {
-    let trailing_pad = usize::from(format == Some(FormatPreset::Text));
+    let trailing_pad = usize::from(match format {
+        Some(
+            FormatPreset::Text
+            | FormatPreset::Currency
+            | FormatPreset::Number
+            | FormatPreset::Percentage
+            | FormatPreset::Multiple
+            | FormatPreset::BasisPoints
+            | FormatPreset::Integer,
+        ) => true,
+        Some(FormatPreset::Date) => false,
+        None => match role {
+            AxisRole::Measure => true,
+            AxisRole::Descriptor => false,
+        },
+    });
     let indent_chars = usize::from(indent) * 2;
     let mut max_chars = 0;
     let mut total_lines = 0;
 
     for raw_segment in s.split('\n') {
         let segment = raw_segment.strip_suffix('\r').unwrap_or(raw_segment);
-        let seg_chars = segment.chars().count() + trailing_pad + indent_chars;
+        let seg_chars = if segment.is_empty() {
+            indent_chars
+        } else {
+            segment.chars().count() + trailing_pad + indent_chars
+        };
         max_chars = max_chars.max(seg_chars);
         let seg_lines = if seg_chars == 0 {
             1
@@ -693,6 +719,7 @@ fn measure_text_segments(
 
 fn measure_literal_value(
     lit: &ValueLiteral,
+    role: AxisRole,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
@@ -701,9 +728,9 @@ fn measure_literal_value(
 ) -> (usize, usize) {
     let indent_chars = usize::from(indent) * 2;
     match lit {
-        ValueLiteral::String(s) => measure_text_segments(s, format, indent, metrics),
+        ValueLiteral::String(s) => measure_text_segments(s, role, format, indent, metrics),
         ValueLiteral::Number(n) => (
-            formatted_number_estimate(*n, format, decimals, currency) + indent_chars,
+            formatted_number_estimate(*n, role, format, decimals, currency) + indent_chars,
             1,
         ),
         ValueLiteral::Boolean(b) => ((if *b { 4 } else { 5 }) + indent_chars, 1),
@@ -714,6 +741,7 @@ fn measure_literal_value(
 /// Computes the horizontal character demand and wrapped line count of an evaluated `CellValue`.
 fn measure_cell_value(
     val: &CellValue,
+    role: AxisRole,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
@@ -722,9 +750,9 @@ fn measure_cell_value(
 ) -> (usize, usize) {
     let indent_chars = usize::from(indent) * 2;
     match val {
-        CellValue::Text(s) => measure_text_segments(s, format, indent, metrics),
+        CellValue::Text(s) => measure_text_segments(s, role, format, indent, metrics),
         CellValue::Number(n) => (
-            formatted_number_estimate(*n, format, decimals, currency) + indent_chars,
+            formatted_number_estimate(*n, role, format, decimals, currency) + indent_chars,
             1,
         ),
         CellValue::Boolean(b) => ((if *b { 4 } else { 5 }) + indent_chars, 1),
@@ -736,6 +764,7 @@ fn measure_cell_value(
 /// Provides an institutional width estimate for formatted numbers using accounting typography and trailing alignment space.
 fn formatted_number_estimate(
     n: f64,
+    role: AxisRole,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
@@ -744,19 +773,22 @@ fn formatted_number_estimate(
         return 4; // NaN, Inf
     }
     let formatted = format_accounting_number(n, format, decimals, currency);
-    let trailing_pad = usize::from(
-        !formatted.ends_with(')')
-            && matches!(
-                format,
-                Some(
-                    FormatPreset::Currency
-                        | FormatPreset::Number
-                        | FormatPreset::Percentage
-                        | FormatPreset::Multiple
-                        | FormatPreset::BasisPoints
-                        | FormatPreset::Integer
-                )
-            ),
-    );
+    let has_trailing_space = match format {
+        Some(
+            FormatPreset::Currency
+            | FormatPreset::Number
+            | FormatPreset::Percentage
+            | FormatPreset::Multiple
+            | FormatPreset::BasisPoints
+            | FormatPreset::Integer
+            | FormatPreset::Date,
+        ) => true,
+        Some(FormatPreset::Text) => false,
+        None => match role {
+            AxisRole::Measure => true,
+            AxisRole::Descriptor => false,
+        },
+    };
+    let trailing_pad = usize::from(!formatted.ends_with(')') && has_trailing_space);
     formatted.chars().count() + trailing_pad
 }

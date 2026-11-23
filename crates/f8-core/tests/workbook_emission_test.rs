@@ -1942,3 +1942,309 @@ fn test_detailed_null_cell_with_note_and_metadata_emission() {
         );
     }
 }
+
+// ----------------------------------------------------------------------------
+// Scenario 20: Uniform Trailing Alignment Space OpenXML Emission
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_20_uniform_trailing_alignment_space_openxml_emission() {
+    use std::collections::BTreeMap;
+
+    use f8_core::model::format::FormatPreset;
+    use f8_core::model::theme::ThemeSpec;
+
+    let build_table = || {
+        let mut table = TableSpec::new("AlignTable", "Uniform Alignment Showcase");
+        // Col B: Descriptor (multi-tier headers, format: None)
+        table.columns.push(
+            ColumnSpec::descriptor("item", "Line Item").with_headers(["Category", "Line Item"]),
+        );
+        // Col C: Currency (grouped, multi-tier headers)
+        table.columns.push(
+            ColumnSpec::new("curr")
+                .with_group("Forecast")
+                .with_headers(["FY25", "Currency"])
+                .with_format(Some(FormatPreset::Currency)),
+        );
+        // Col D: Number (grouped, multi-tier headers)
+        table.columns.push(
+            ColumnSpec::new("num")
+                .with_group("Forecast")
+                .with_headers(["FY25", "Number"])
+                .with_format(Some(FormatPreset::Number)),
+        );
+        // Col E: Percentage
+        table.columns.push(
+            ColumnSpec::new("pct")
+                .with_headers(["Margin"])
+                .with_format(Some(FormatPreset::Percentage)),
+        );
+        // Col F: Multiple
+        table.columns.push(
+            ColumnSpec::new("mult")
+                .with_headers(["Multiple"])
+                .with_format(Some(FormatPreset::Multiple)),
+        );
+        // Col G: BasisPoints
+        table.columns.push(
+            ColumnSpec::new("bps")
+                .with_headers(["Spread"])
+                .with_format(Some(FormatPreset::BasisPoints)),
+        );
+        // Col H: Integer
+        table.columns.push(
+            ColumnSpec::new("int_col")
+                .with_headers(["Year"])
+                .with_format(Some(FormatPreset::Integer)),
+        );
+        // Col I: Date (multi-tier headers)
+        table.columns.push(
+            ColumnSpec::new("dt")
+                .with_headers(["Close", "Date"])
+                .with_format(Some(FormatPreset::Date)),
+        );
+        // Col J: Text
+        table.columns.push(
+            ColumnSpec::new("txt")
+                .with_headers(["Status"])
+                .with_format(Some(FormatPreset::Text)),
+        );
+        // Col K: Unformatted measure (format: None)
+        table
+            .columns
+            .push(ColumnSpec::new("raw").with_headers(["Unformatted"]));
+
+        // Layout: Title=2, TitleGutter=3, Header Tier 0=4, Tier 1=5, Tier 2=6, Body r1=7, r2=8
+        table.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", "Revenue")
+                .with_cell("curr", 1000.0)
+                .with_cell("num", 500.0)
+                .with_cell("pct", 0.25)
+                .with_cell("mult", 8.5)
+                .with_cell("bps", 0.005)
+                .with_cell("int_col", 2025.0)
+                .with_cell("dt", 45657.0)
+                .with_cell("txt", "Audited")
+                .with_cell("raw", 1234.5),
+        );
+        table.rows.push(
+            RowSpec::new("r2")
+                .with_cell("item", "Memo Row")
+                .with_cell("curr", "N/A")
+                .with_cell("num", -50.0)
+                .with_cell("pct", 0.0)
+                .with_cell("mult", 0.0)
+                .with_cell("bps", 0.0)
+                .with_cell("int_col", -42.0)
+                .with_cell("dt", 45658.0)
+                .with_cell("txt", "Final")
+                .with_cell("raw", "Memo"),
+        );
+        table
+    };
+
+    let parse_attr = |tag: &str, attr: &str| -> Option<String> {
+        let needle = format!("{attr}=\"");
+        let start = tag.find(&needle)? + needle.len();
+        let end = tag[start..].find('"')? + start;
+        Some(tag[start..end].to_string())
+    };
+
+    let parse_num_fmts = |styles_xml: &str| -> BTreeMap<usize, String> {
+        let mut map = BTreeMap::new();
+        for part in styles_xml.split("<numFmt ").skip(1) {
+            let end = part.find("/>").unwrap_or(part.len());
+            let tag = &part[..end];
+            if let (Some(id_str), Some(code)) =
+                (parse_attr(tag, "numFmtId"), parse_attr(tag, "formatCode"))
+            {
+                let id = id_str.parse::<usize>().unwrap();
+                map.insert(id, code.replace("&quot;", "\""));
+            }
+        }
+        map
+    };
+
+    let parse_cell_xf_num_fmt_ids = |styles_xml: &str| -> Vec<usize> {
+        let cell_xfs_start = styles_xml.find("<cellXfs").expect("<cellXfs> not found");
+        let cell_xfs_end =
+            styles_xml[cell_xfs_start..].find("</cellXfs>").unwrap() + cell_xfs_start;
+        let cell_xfs_xml = &styles_xml[cell_xfs_start..cell_xfs_end];
+
+        cell_xfs_xml
+            .split("<xf ")
+            .skip(1)
+            .map(|xf| {
+                let end = xf.find('>').unwrap_or(xf.len());
+                parse_attr(&xf[..end], "numFmtId").map_or(0, |s| s.parse::<usize>().unwrap())
+            })
+            .collect()
+    };
+
+    let cell_num_fmt = |sheet_xml: &str,
+                        xf_num_fmt_ids: &[usize],
+                        num_fmts: &BTreeMap<usize, String>,
+                        cell_ref: &str|
+     -> (usize, Option<String>) {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = sheet_xml
+            .find(&needle)
+            .unwrap_or_else(|| panic!("Cell {cell_ref} not found in sheet1.xml"));
+        let tag_start = sheet_xml[..start].rfind("<c ").unwrap();
+        let tag_end = sheet_xml[start..].find('>').unwrap() + start + 1;
+        let tag = &sheet_xml[tag_start..tag_end];
+        let style_idx = parse_attr(tag, "s")
+            .unwrap_or_else(|| panic!("Cell {cell_ref} missing s attribute: {tag}"))
+            .parse::<usize>()
+            .unwrap();
+        let num_fmt_id = xf_num_fmt_ids[style_idx];
+        (num_fmt_id, num_fmts.get(&num_fmt_id).cloned())
+    };
+
+    // Part 1: Default corporate_navy theme
+    let manifest = ProjectManifest {
+        model_name: "AlignEmissionModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("AlignTable")],
+        }],
+    };
+    let table = build_table();
+    let buffer = Compiler::emit_workbook(
+        &manifest,
+        std::slice::from_ref(&table),
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+    let buffer2 = Compiler::emit_workbook(
+        &manifest,
+        std::slice::from_ref(&table),
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        buffer, buffer2,
+        "OpenXML emission must be bit-for-bit deterministic"
+    );
+
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let num_fmts = parse_num_fmts(&styles_xml);
+    let xf_num_fmt_ids = parse_cell_xf_num_fmt_ids(&styles_xml);
+
+    // Super-header ("Forecast" at C4, D4) -> native numFmtId="0"
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "C4"),
+        (0, None)
+    );
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "D4"),
+        (0, None)
+    );
+
+    // Descriptor column headers (B5 "Category", B6 "Line Item") and unformatted descriptor cells (B7, B8) -> numFmtId="0"
+    for desc_ref in ["B5", "B6", "B7", "B8"] {
+        assert_eq!(
+            cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, desc_ref),
+            (0, None),
+            "Descriptor cell/header {desc_ref} must use native numFmtId=0"
+        );
+    }
+
+    // Measure column headers across upper and bottom tiers -> "@_)"
+    for hdr_ref in [
+        "C5", "C6", "D5", "D6", "E6", "F6", "G6", "H6", "I5", "I6", "J6", "K6",
+    ] {
+        let (fmt_id, code) = cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, hdr_ref);
+        assert_ne!(
+            fmt_id, 0,
+            "Measure header {hdr_ref} must reference custom numFmt"
+        );
+        assert_eq!(
+            code.as_deref(),
+            Some("@_)"),
+            "Measure header {hdr_ref} must use @_)"
+        );
+    }
+
+    // All 6 numeric presets carry 4-section masks ending in ";@_)" (including text value in currency col C8)
+    let expected_numeric_cells = [
+        ("C7", "$#,##0_);($#,##0);\"-\"_);@_)"),
+        ("C8", "$#,##0_);($#,##0);\"-\"_);@_)"),
+        ("D7", "#,##0_);(#,##0);\"-\"_);@_)"),
+        ("E7", "0.0%_);(0.0%);\"-\"_);@_)"),
+        ("F7", "0.0\"x\"_);(0.0\"x\");\"-\"_);@_)"),
+        ("G7", "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_);@_)"),
+        ("H7", "0_);(-0);\"-\"_);@_)"),
+    ];
+    for (cell_ref, expected_code) in expected_numeric_cells {
+        let (_, code) = cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, cell_ref);
+        assert_eq!(
+            code.as_deref(),
+            Some(expected_code),
+            "Cell {cell_ref} must use 4-section numeric mask"
+        );
+        assert!(expected_code.ends_with(";@_)"));
+    }
+
+    // Date cell -> "yyyy-mm-dd_)"
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "I7")
+            .1
+            .as_deref(),
+        Some("yyyy-mm-dd_)")
+    );
+
+    // Text measure cell -> "@_)"
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "J7")
+            .1
+            .as_deref(),
+        Some("@_)")
+    );
+
+    // Unformatted measure cells (numeric K7 and text K8) -> "General_);(General);0_);@_)"
+    for raw_ref in ["K7", "K8"] {
+        assert_eq!(
+            cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, raw_ref)
+                .1
+                .as_deref(),
+            Some("General_);(General);0_);@_)"),
+            "Unformatted measure cell {raw_ref} must use default general alignment mask"
+        );
+    }
+
+    // Part 2: Custom theme opting out via general = "General" and text = "General"
+    let mut opt_out_theme = Theme::corporate_navy();
+    opt_out_theme.number_formats.general = "General".to_string();
+    opt_out_theme.number_formats.text = "General".to_string();
+    let opt_out_manifest = ProjectManifest {
+        model_name: "AlignOptOutModel".to_string(),
+        theme: ThemeSpec::Custom(Box::new(opt_out_theme)),
+        sheets: manifest.sheets,
+    };
+    let opt_out_buf =
+        Compiler::emit_workbook(&opt_out_manifest, &[table], &EmissionOptions::default()).unwrap();
+    let opt_out_styles = read_zip_entry(&opt_out_buf, "xl/styles.xml");
+    let opt_out_sheet = read_zip_entry(&opt_out_buf, "xl/worksheets/sheet1.xml");
+    let opt_out_num_fmts = parse_num_fmts(&opt_out_styles);
+    let opt_out_xf_ids = parse_cell_xf_num_fmt_ids(&opt_out_styles);
+
+    for opt_out_ref in ["C5", "C6", "I5", "I6", "J6", "J7", "J8", "K6", "K7", "K8"] {
+        assert_eq!(
+            cell_num_fmt(
+                &opt_out_sheet,
+                &opt_out_xf_ids,
+                &opt_out_num_fmts,
+                opt_out_ref
+            ),
+            (0, None),
+            "Opt-out theme cell/header {opt_out_ref} must use native numFmtId=0"
+        );
+    }
+}

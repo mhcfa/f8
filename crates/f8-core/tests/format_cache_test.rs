@@ -90,7 +90,7 @@ fn test_scenario_1_dynamic_number_format_mask_synthesis() {
     let debug = format!("{format:?}");
 
     assert!(
-        debug.contains(r#"num_format: "$#,##0.00_);($#,##0.00);\"-\"_)""#),
+        debug.contains(r#"num_format: "$#,##0.00_);($#,##0.00);\"-\"_);@_)""#),
         "Expected currency number format mask in: {debug}"
     );
 }
@@ -442,7 +442,8 @@ fn test_scenario_8_unformatted_general_preset_handling() {
     let theme = Theme::corporate_navy();
     let mut cache = FormatCache::new(&theme).expect("valid theme");
 
-    let key = CellFormatKey::new(
+    // Unformatted measure cell uses theme.number_formats.general
+    let measure_key = CellFormatKey::new(
         StyleRole::data(),
         None, // preset is None
         None,
@@ -451,17 +452,31 @@ fn test_scenario_8_unformatted_general_preset_handling() {
         false,
         0,
     );
-
-    let format = cache.get_cell_format(&key).expect("ok");
-    let debug = format!("{format:?}");
-
-    // Number format should be default/empty ("" or not set)
+    let measure_format = cache.get_cell_format(&measure_key).expect("ok");
+    let measure_debug = format!("{measure_format:?}");
     assert!(
-        debug.contains(r#"num_format: """#),
-        "Unformatted preset must not set custom num_format: {debug}"
+        measure_debug.contains(r#"num_format: "General_);(General);0_);@_)""#),
+        "Unformatted measure cell must use default general alignment mask: {measure_debug}"
     );
-    assert!(debug.contains(r#"name: "Aptos""#));
-    assert!(debug.contains(r#"size: "10""#));
+    assert!(measure_debug.contains(r#"name: "Aptos""#));
+    assert!(measure_debug.contains(r#"size: "10""#));
+
+    // Unformatted descriptor cell emits no custom num_format
+    let desc_key = CellFormatKey::new(
+        StyleRole::data(),
+        None, // preset is None
+        None,
+        None,
+        false,
+        true,
+        0,
+    );
+    let desc_format = cache.get_cell_format(&desc_key).expect("ok");
+    let desc_debug = format!("{desc_format:?}");
+    assert!(
+        desc_debug.contains(r#"num_format: """#),
+        "Unformatted descriptor cell must not set custom num_format: {desc_debug}"
+    );
 }
 
 #[test]
@@ -1134,4 +1149,134 @@ fn test_scenario_16_vertical_center_alignment_and_text_wrap() {
     );
 
     assert_eq!(cache.len(), 2);
+}
+
+#[test]
+fn test_scenario_17_measure_vs_descriptor_column_header_number_formats() {
+    let theme = Theme::corporate_navy();
+    let cache = FormatCache::new(&theme).expect("valid theme");
+
+    // Measure column headers (both bottom and upper tiers) inherit theme.number_formats.text ("@_)")
+    let measure_bottom = format!("{:?}", cache.col_header_format(false));
+    let measure_upper = format!("{:?}", cache.col_header_upper_format(false));
+    assert!(
+        measure_bottom.contains(r#"num_format: "@_)""#),
+        "Bottom measure header must carry @_): {measure_bottom}"
+    );
+    assert!(
+        measure_upper.contains(r#"num_format: "@_)""#),
+        "Upper measure header must carry @_): {measure_upper}"
+    );
+
+    // Descriptor column headers (both tiers), super-headers, title, subtitle, and section headers carry no custom num_format
+    let desc_bottom = format!("{:?}", cache.col_header_format(true));
+    let desc_upper = format!("{:?}", cache.col_header_upper_format(true));
+    let super_hdr = format!("{:?}", cache.super_header_format());
+    let title = format!("{:?}", cache.title_format());
+    let subtitle = format!("{:?}", cache.subtitle_format());
+    let section = format!("{:?}", cache.section_header_format(None));
+
+    for (label, debug) in [
+        ("descriptor bottom header", desc_bottom),
+        ("descriptor upper header", desc_upper),
+        ("super-header", super_hdr),
+        ("title", title),
+        ("subtitle", subtitle),
+        ("section header", section),
+    ] {
+        assert!(
+            debug.contains(r#"num_format: """#),
+            "{label} must carry empty num_format: {debug}"
+        );
+    }
+}
+
+#[test]
+fn test_scenario_18_unformatted_general_format_and_theme_opt_out() {
+    // 1. Default theme: measure unformatted gets general mask; descriptor unformatted stays ""
+    let default_theme = Theme::corporate_navy();
+    let mut default_cache = FormatCache::new(&default_theme).expect("valid theme");
+
+    let measure_key = CellFormatKey::new(StyleRole::data(), None, None, None, false, false, 0);
+    let desc_key = CellFormatKey::new(StyleRole::data(), None, None, None, false, true, 0);
+    let text_key = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Text),
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+
+    let measure_debug = format!("{:?}", default_cache.get_cell_format(&measure_key).unwrap());
+    let desc_debug = format!("{:?}", default_cache.get_cell_format(&desc_key).unwrap());
+    assert!(
+        measure_debug.contains(r#"num_format: "General_);(General);0_);@_)""#),
+        "Default unformatted measure cell must use general alignment mask: {measure_debug}"
+    );
+    assert!(
+        desc_debug.contains(r#"num_format: """#),
+        "Default unformatted descriptor cell must stay empty: {desc_debug}"
+    );
+
+    // 2. Opt-out custom themes: "General" (any ASCII case) and "" emit native General ("")
+    for (general_val, text_val) in [
+        ("General", "General"),
+        ("general", "general"),
+        ("GENERAL", "GENERAL"),
+        ("", ""),
+    ] {
+        let mut opt_out_theme = Theme::corporate_navy();
+        opt_out_theme.number_formats.general = general_val.to_string();
+        opt_out_theme.number_formats.text = text_val.to_string();
+
+        let mut cache = FormatCache::new(&opt_out_theme).expect("valid opt-out theme");
+        let m_cell = format!("{:?}", cache.get_cell_format(&measure_key).unwrap());
+        let d_cell = format!("{:?}", cache.get_cell_format(&desc_key).unwrap());
+        let t_cell = format!("{:?}", cache.get_cell_format(&text_key).unwrap());
+        let m_hdr = format!("{:?}", cache.col_header_format(false));
+        let m_upper = format!("{:?}", cache.col_header_upper_format(false));
+
+        assert!(
+            m_cell.contains(r#"num_format: """#),
+            "Opt-out general={general_val:?} must leave measure cell num_format empty: {m_cell}"
+        );
+        assert!(
+            d_cell.contains(r#"num_format: """#),
+            "Descriptor cell num_format must stay empty: {d_cell}"
+        );
+        assert!(
+            t_cell.contains(r#"num_format: """#),
+            "Opt-out text={text_val:?} must leave FormatPreset::Text cell num_format empty: {t_cell}"
+        );
+        assert!(
+            m_hdr.contains(r#"num_format: """#),
+            "Opt-out text={text_val:?} must leave measure header num_format empty: {m_hdr}"
+        );
+        assert!(
+            m_upper.contains(r#"num_format: """#),
+            "Opt-out text={text_val:?} must leave upper measure header num_format empty: {m_upper}"
+        );
+    }
+
+    // 3. Custom non-General templates propagate cleanly to measure headers, text cells, and unformatted measure cells
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.number_formats.general = "0.00_)".to_string();
+    custom_theme.number_formats.text = "@_ ".to_string();
+    let mut custom_cache = FormatCache::new(&custom_theme).expect("valid custom theme");
+
+    let custom_measure_cell = format!("{:?}", custom_cache.get_cell_format(&measure_key).unwrap());
+    let custom_desc_cell = format!("{:?}", custom_cache.get_cell_format(&desc_key).unwrap());
+    let custom_text_cell = format!("{:?}", custom_cache.get_cell_format(&text_key).unwrap());
+    let custom_measure_hdr = format!("{:?}", custom_cache.col_header_format(false));
+    let custom_measure_upper = format!("{:?}", custom_cache.col_header_upper_format(false));
+    let custom_desc_hdr = format!("{:?}", custom_cache.col_header_format(true));
+
+    assert!(custom_measure_cell.contains(r#"num_format: "0.00_)""#));
+    assert!(custom_desc_cell.contains(r#"num_format: """#));
+    assert!(custom_text_cell.contains(r#"num_format: "@_ ""#));
+    assert!(custom_measure_hdr.contains(r#"num_format: "@_ ""#));
+    assert!(custom_measure_upper.contains(r#"num_format: "@_ ""#));
+    assert!(custom_desc_hdr.contains(r#"num_format: """#));
 }

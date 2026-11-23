@@ -213,7 +213,11 @@ impl Default for BordersConfig {
 }
 
 fn default_integer_format() -> String {
-    "0_);(-0);\"-\"_)".to_string()
+    "0_);(-0);\"-\"_);@_)".to_string()
+}
+
+fn default_general_format() -> String {
+    "General_);(General);0_);@_)".to_string()
 }
 
 /// Number format templates and default precisions across all semantic presets.
@@ -229,20 +233,23 @@ pub struct NumberFormatsConfig {
     pub text: String,
     #[serde(default = "default_integer_format")]
     pub integer: String,
+    #[serde(default = "default_general_format")]
+    pub general: String,
     pub defaults: FormatDefaults,
 }
 
 impl Default for NumberFormatsConfig {
     fn default() -> Self {
         Self {
-            currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)".to_string(),
-            number: "#,##0{dec}_);(#,##0{dec});\"-\"_)".to_string(),
-            percentage: "0{dec}%_);(0{dec}%);\"-\"_)".to_string(),
-            multiple: "0{dec}\"x\"_);(0{dec}\"x\");\"-\"_)".to_string(),
-            basis_points: "#,##0{dec}\" bps\"_);(#,##0{dec}\" bps\");\"-\"_)".to_string(),
-            date: "yyyy-mm-dd".to_string(),
+            currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_);@_)".to_string(),
+            number: "#,##0{dec}_);(#,##0{dec});\"-\"_);@_)".to_string(),
+            percentage: "0{dec}%_);(0{dec}%);\"-\"_);@_)".to_string(),
+            multiple: "0{dec}\"x\"_);(0{dec}\"x\");\"-\"_);@_)".to_string(),
+            basis_points: "#,##0{dec}\" bps\"_);(#,##0{dec}\" bps\");\"-\"_);@_)".to_string(),
+            date: "yyyy-mm-dd_)".to_string(),
             text: "@_)".to_string(),
             integer: default_integer_format(),
+            general: default_general_format(),
             defaults: FormatDefaults::default(),
         }
     }

@@ -60,6 +60,12 @@ pub fn parse_fill_color(field: &str, s: &str) -> Result<Option<Color>, EmissionE
     }
 }
 
+/// Returns true when a theme number format template should emit a custom OpenXML `<numFmt>`
+/// instead of falling back to native General (`numFmtId="0"`).
+fn is_custom_num_format(mask: &str) -> bool {
+    !mask.is_empty() && !mask.eq_ignore_ascii_case("General")
+}
+
 /// Translates f8 model border style into `rust_xlsxwriter::FormatBorder`.
 #[must_use]
 pub const fn translate_border_style(style: BorderStyle) -> FormatBorder {
@@ -277,6 +283,10 @@ impl FormatCache {
             .set_bold()
             .set_font_color(palette.col_header_text)
             .set_align(FormatAlign::Right);
+        if is_custom_num_format(&theme.number_formats.text) {
+            col_header_upper_measure_format =
+                col_header_upper_measure_format.set_num_format(&theme.number_formats.text);
+        }
         if let Some(fill) = palette.col_header_fill {
             col_header_upper_measure_format =
                 col_header_upper_measure_format.set_background_color(fill);
@@ -457,7 +467,11 @@ impl FormatCache {
             let mask = self
                 .theme
                 .resolve_number_format(preset, key.decimals, key.currency)?;
-            format = format.set_num_format(&mask);
+            if is_custom_num_format(&mask) {
+                format = format.set_num_format(&mask);
+            }
+        } else if !key.is_descriptor && is_custom_num_format(&self.theme.number_formats.general) {
+            format = format.set_num_format(&self.theme.number_formats.general);
         }
 
         // 7. Cache insertion
