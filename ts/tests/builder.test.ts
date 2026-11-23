@@ -24,6 +24,43 @@ import {
   Table,
 } from "../src/index.js"
 
+function readZipEntryUtf8(bytes: Uint8Array, entryName: string): string {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const decoder = new TextDecoder()
+  let eocdOffset = -1
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i
+      break
+    }
+  }
+  expect(eocdOffset).toBeGreaterThanOrEqual(0)
+  const totalEntries = view.getUint16(eocdOffset + 10, true)
+  let cdOffset = view.getUint32(eocdOffset + 16, true)
+  for (let i = 0; i < totalEntries; i++) {
+    const compressionMethod = view.getUint16(cdOffset + 10, true)
+    const compressedSize = view.getUint32(cdOffset + 20, true)
+    const fileNameLen = view.getUint16(cdOffset + 28, true)
+    const extraLen = view.getUint16(cdOffset + 30, true)
+    const commentLen = view.getUint16(cdOffset + 32, true)
+    const localHeaderOffset = view.getUint32(cdOffset + 42, true)
+    const fileName = decoder.decode(
+      bytes.subarray(cdOffset + 46, cdOffset + 46 + fileNameLen)
+    )
+    if (fileName === entryName) {
+      const localNameLen = view.getUint16(localHeaderOffset + 26, true)
+      const localExtraLen = view.getUint16(localHeaderOffset + 28, true)
+      const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen
+      const rawSlice = bytes.subarray(dataStart, dataStart + compressedSize)
+      const inflated =
+        compressionMethod === 8 ? inflateRawSync(rawSlice) : rawSlice
+      return decoder.decode(inflated)
+    }
+    cdOffset += 46 + fileNameLen + extraLen + commentLen
+  }
+  throw new Error(`Missing zip entry ${entryName}`)
+}
+
 describe("TypeScript Fluent Builder DSL", () => {
   it("Scenario 1: end-to-end model construction, compilation, and .xlsx save", () => {
     const model = new Model({ name: "ThreeStatement", theme: "corporate_navy" })
@@ -420,7 +457,7 @@ describe("TypeScript Fluent Builder DSL", () => {
       sheets: [
         {
           name: "Sheet1",
-          showGridlines: true,
+          showGridlines: false,
           tabColor: "#1B365D",
           freezePanes: { row: 4, col: 2 },
           tables: ["T1"],
@@ -1354,52 +1391,6 @@ describe("TypeScript Fluent Builder DSL", () => {
   })
 
   it("Scenario 9: aligned table title banners parity across inspectSheet and emitWorkbook", () => {
-    const readZipEntryUtf8 = (bytes: Uint8Array, entryName: string): string => {
-      const view = new DataView(
-        bytes.buffer,
-        bytes.byteOffset,
-        bytes.byteLength
-      )
-      const decoder = new TextDecoder()
-      let eocdOffset = -1
-      for (
-        let i = bytes.length - 22;
-        i >= Math.max(0, bytes.length - 65557);
-        i--
-      ) {
-        if (view.getUint32(i, true) === 0x06054b50) {
-          eocdOffset = i
-          break
-        }
-      }
-      expect(eocdOffset).toBeGreaterThanOrEqual(0)
-      const totalEntries = view.getUint16(eocdOffset + 10, true)
-      let cdOffset = view.getUint32(eocdOffset + 16, true)
-      for (let i = 0; i < totalEntries; i++) {
-        const compressionMethod = view.getUint16(cdOffset + 10, true)
-        const compressedSize = view.getUint32(cdOffset + 20, true)
-        const fileNameLen = view.getUint16(cdOffset + 28, true)
-        const extraLen = view.getUint16(cdOffset + 30, true)
-        const commentLen = view.getUint16(cdOffset + 32, true)
-        const localHeaderOffset = view.getUint32(cdOffset + 42, true)
-        const fileName = decoder.decode(
-          bytes.subarray(cdOffset + 46, cdOffset + 46 + fileNameLen)
-        )
-        if (fileName === entryName) {
-          const localNameLen = view.getUint16(localHeaderOffset + 26, true)
-          const localExtraLen = view.getUint16(localHeaderOffset + 28, true)
-          const dataStart =
-            localHeaderOffset + 30 + localNameLen + localExtraLen
-          const rawSlice = bytes.subarray(dataStart, dataStart + compressedSize)
-          const inflated =
-            compressionMethod === 8 ? inflateRawSync(rawSlice) : rawSlice
-          return decoder.decode(inflated)
-        }
-        cdOffset += 46 + fileNameLen + extraLen + commentLen
-      }
-      throw new Error(`Missing zip entry ${entryName}`)
-    }
-
     const model = new Model({ name: "AlignedBannerParity" })
     const sheet = model.addSheet("Summary")
 
@@ -1499,5 +1490,62 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(sheetXml).not.toContain('<c r="E4"')
     expect(sheetXml).not.toContain('<c r="D5"')
     expect(sheetXml).not.toContain('<c r="E5"')
+  })
+
+  it("sheet showGridlines defaults to false across builder, raw compile, and .xlsx emission", () => {
+    expect(new Sheet("Direct").showGridlines).toBe(false)
+    expect(
+      new Sheet("DirectVisible", { showGridlines: true }).showGridlines
+    ).toBe(true)
+
+    const model = new Model({ name: "GridlineDefaults" })
+    const hiddenSheet = model.addSheet("DefaultHidden")
+    const visibleSheet = model.addSheet("ExplicitVisible", {
+      showGridlines: true,
+    })
+
+    expect(hiddenSheet.showGridlines).toBe(false)
+    expect(visibleSheet.showGridlines).toBe(true)
+
+    for (const [sheet, id] of [
+      [hiddenSheet, "T1"],
+      [visibleSheet, "T2"],
+    ] as const) {
+      const tbl = sheet.addTable(id, id)
+      tbl.addColumn("c1", { header: "C1" })
+      tbl.addRow("r1", { cells: { c1: 1.0 } })
+    }
+
+    const { manifest } = model.toSpec()
+    expect(manifest.sheets[0]?.showGridlines).toBe(false)
+    expect(manifest.sheets[1]?.showGridlines).toBe(true)
+
+    const xlsxBytes = model.compile().emitWorkbook()
+    const hiddenXml = readZipEntryUtf8(xlsxBytes, "xl/worksheets/sheet1.xml")
+    const visibleXml = readZipEntryUtf8(xlsxBytes, "xl/worksheets/sheet2.xml")
+    expect(hiddenXml).toContain('showGridLines="0"')
+    expect(visibleXml).not.toContain('showGridLines="0"')
+
+    // Raw compile() with omitted showGridlines also defaults to false
+    const rawCompiled = compile(
+      {
+        modelName: "RawDefaults",
+        theme: "corporate_navy",
+        sheets: [{ name: "RawSheet", tables: ["T1"] }],
+      },
+      [
+        {
+          id: "T1",
+          title: "T1",
+          columns: [{ kind: "data", id: "c1", headers: ["C1"] }],
+          rows: [{ kind: "data", id: "r1", cells: { c1: 1.0 } }],
+        },
+      ]
+    )
+    const rawXml = readZipEntryUtf8(
+      rawCompiled.emitWorkbook(),
+      "xl/worksheets/sheet1.xml"
+    )
+    expect(rawXml).toContain('showGridLines="0"')
   })
 })

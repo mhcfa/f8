@@ -2679,3 +2679,36 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
     assert!(cell_style_idx(&gap0_xml, "E2").is_some());
     assert!(!gap0_xml.contains(r#"<c r="F2""#));
 }
+
+#[test]
+fn test_sheet_gridlines_default_false_and_opt_in_true() {
+    let manifest_json = r#"{
+        "model_name": "GridlineDefaults",
+        "sheets": [
+            { "name": "DefaultHidden", "tables": ["T1"] },
+            { "name": "ExplicitVisible", "show_gridlines": true, "tables": ["T2"] }
+        ]
+    }"#;
+    let manifest: ProjectManifest = serde_json::from_str(manifest_json).unwrap();
+    assert!(!manifest.sheets[0].show_gridlines);
+    assert!(manifest.sheets[1].show_gridlines);
+
+    let make_table = |id: &str| {
+        let mut t = TableSpec::new(id, id);
+        t.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t.rows.push(RowSpec::new("r1").with_cell("c1", 1.0));
+        t
+    };
+
+    let buffer = Compiler::emit_workbook(
+        &manifest,
+        &[make_table("T1"), make_table("T2")],
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+
+    let hidden_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let visible_xml = read_zip_entry(&buffer, "xl/worksheets/sheet2.xml");
+    assert!(hidden_xml.contains(r#"showGridLines="0""#));
+    assert!(!visible_xml.contains(r#"showGridLines="0""#));
+}

@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 from typing import cast
 
+import f8
 import pytest
 from f8 import (
     AxisSelector,
@@ -380,7 +381,7 @@ def test_scenario_10_worksheet_freeze_panes_split_coordinates() -> None:
         "sheets": [
             {
                 "name": "Sheet1",
-                "show_gridlines": True,
+                "show_gridlines": False,
                 "freeze_panes": {"row": 4, "col": 2},
                 "tables": ["T1"],
             }
@@ -1346,3 +1347,62 @@ def test_aligned_title_banners_cross_sdk_parity() -> None:
     assert '<c r="E4"' not in sheet_xml
     assert '<c r="D5"' not in sheet_xml
     assert '<c r="E5"' not in sheet_xml
+
+
+def test_sheet_gridlines_default_false_and_opt_in_true() -> None:
+    assert Sheet("Direct").show_gridlines is False
+    assert Sheet("DirectVisible", show_gridlines=True).show_gridlines is True
+
+    model = Model(name="GridlineDefaults")
+    hidden_sheet = model.add_sheet("DefaultHidden")
+    visible_sheet = model.add_sheet("ExplicitVisible", show_gridlines=True)
+
+    assert hidden_sheet.show_gridlines is False
+    assert visible_sheet.show_gridlines is True
+
+    for sheet, table_id in ((hidden_sheet, "T1"), (visible_sheet, "T2")):
+        tbl = sheet.add_table(table_id, title=table_id)
+        tbl.add_column("c1", header="C1")
+        tbl.add_row("r1", cells={"c1": 1.0})
+
+    manifest, _ = model.__f8_spec__()
+    assert manifest["sheets"] == [
+        {
+            "name": "DefaultHidden",
+            "show_gridlines": False,
+            "tables": ["T1"],
+        },
+        {
+            "name": "ExplicitVisible",
+            "show_gridlines": True,
+            "tables": ["T2"],
+        },
+    ]
+
+    xlsx_bytes = model.compile().emit_workbook()
+    with zipfile.ZipFile(io.BytesIO(xlsx_bytes), "r") as zf:
+        hidden_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        visible_xml = zf.read("xl/worksheets/sheet2.xml").decode("utf-8")
+
+    assert 'showGridLines="0"' in hidden_xml
+    assert 'showGridLines="0"' not in visible_xml
+
+    # Raw f8.compile() with omitted show_gridlines also defaults to False
+    raw_compiled = f8.compile(
+        {
+            "model_name": "RawDefaults",
+            "theme": "corporate_navy",
+            "sheets": [{"name": "RawSheet", "tables": ["T1"]}],
+        },
+        [
+            {
+                "id": "T1",
+                "title": "T1",
+                "columns": [{"kind": "data", "id": "c1", "headers": ["C1"]}],
+                "rows": [{"kind": "data", "id": "r1", "cells": {"c1": 1.0}}],
+            }
+        ],
+    )
+    with zipfile.ZipFile(io.BytesIO(raw_compiled.emit_workbook()), "r") as zf:
+        raw_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert 'showGridLines="0"' in raw_xml

@@ -125,10 +125,6 @@ pub struct FreezePanes {
     pub col: u32,
 }
 
-const fn default_true() -> bool {
-    true
-}
-
 /// Worksheet container metadata and contained table identifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SheetSpec {
@@ -137,7 +133,7 @@ pub struct SheetSpec {
     pub tab_color: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub freeze_panes: Option<FreezePanes>,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub show_gridlines: bool,
     pub tables: Vec<TableId>,
 }

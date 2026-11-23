@@ -761,7 +761,7 @@ class Sheet:
         self,
         name: str,
         tab_color: str | None = None,
-        show_gridlines: bool = True,
+        show_gridlines: bool = False,
         freeze_panes: tuple[int, int] | None = None,
         model: Model | None = None,
     ) -> None:
@@ -873,7 +873,7 @@ class Model:
         self,
         name: str,
         tab_color: str | None = None,
-        show_gridlines: bool = True,
+        show_gridlines: bool = False,
         freeze_panes: tuple[int, int] | None = None,
     ) -> Sheet:
         """Creates and appends a new `Sheet` to the model."""

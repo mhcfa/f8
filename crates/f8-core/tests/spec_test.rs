@@ -39,7 +39,8 @@ fn test_scenario_1_deserialize_valid_manifest() {
         manifest.sheets[0].tables,
         vec![TableId::from("Assumptions")]
     );
-    assert!(manifest.sheets[0].show_gridlines);
+    assert!(!manifest.sheets[0].show_gridlines);
+    assert!(manifest.sheets[1].show_gridlines);
     assert_eq!(
         manifest.sheets[1].freeze_panes,
         Some(FreezePanes { row: 2, col: 1 })

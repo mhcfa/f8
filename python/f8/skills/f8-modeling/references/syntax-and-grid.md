@@ -62,7 +62,7 @@ model = f8.Model(
 sheet = model.add_sheet(
     name: str,
     tab_color: str | None = None,
-    show_gridlines: bool = True,
+    show_gridlines: bool = False,
     freeze_panes: tuple[int, int] | None = None,
 ) -> Sheet
 

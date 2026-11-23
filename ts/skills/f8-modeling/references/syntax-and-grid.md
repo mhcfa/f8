@@ -65,7 +65,7 @@ const sheet: Sheet = model.addSheet(
   name: string,
   options?: {
     tabColor?: string;
-    showGridlines?: boolean; // default true
+    showGridlines?: boolean; // default false
     freezePanes?: FreezePanesInput; // { row: number, col: number }
   },
 );

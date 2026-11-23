@@ -731,7 +731,7 @@ export class Sheet {
 
     this.name = name
     this.tabColor = options?.tabColor ?? null
-    this.showGridlines = options?.showGridlines ?? true
+    this.showGridlines = options?.showGridlines ?? false
     this.freezePanes =
       options?.freezePanes !== undefined
         ? { row: options.freezePanes.row, col: options.freezePanes.col }
