@@ -1,6 +1,7 @@
 import { TableAuditor } from "./audit.js"
 import { EmissionError, F8Error, toF8Error } from "./errors.js"
 import type {
+  CellError,
   CellInspection,
   CellNeighborInspection,
   CellScalarValue,
@@ -11,8 +12,11 @@ import type {
   DependencyTraceOptions,
   DependencyTree,
   EmissionOptions,
+  ExcelErrorCode,
   FormatPreset,
   FormattedOptions,
+  ModelMarkdownDetail,
+  ModelMarkdownOptions,
   ModelSummary,
   RowInspection,
   SemanticStyle,
@@ -31,6 +35,8 @@ export interface WasmCompiledModelBinding {
   free(): void
   emitWorkbook(options?: unknown): Uint8Array
   summary(): unknown
+  errors(): unknown
+  toMarkdown(options?: unknown): string
   value(target: string, row?: string, col?: string): unknown
   num(target: string, row?: string, col?: string): number
   formatted(target: string, row?: string, col?: string, unit?: string): string
@@ -55,6 +61,15 @@ interface RawCoordinate {
   readonly table: string
   readonly row: string
   readonly col: string
+}
+
+interface RawCellError {
+  readonly coordinate: RawCoordinate
+  readonly sheet: string
+  readonly physical_address: string
+  readonly error: ExcelErrorCode
+  readonly formula_expr: string | null
+  readonly excel_formula: string | null
 }
 
 interface RawTableSummary {
@@ -234,6 +249,21 @@ function mapModelSummary(raw: RawModelSummary): ModelSummary {
     totalCells: raw.total_cells,
     totalDrivers: raw.total_drivers,
     totalFormulas: raw.total_formulas,
+  }
+}
+
+function mapCellError(raw: RawCellError): CellError {
+  return {
+    coordinate: {
+      table: raw.coordinate.table,
+      row: raw.coordinate.row,
+      col: raw.coordinate.col,
+    },
+    sheet: raw.sheet,
+    physicalAddress: raw.physical_address,
+    error: raw.error,
+    formulaExpr: raw.formula_expr ?? null,
+    excelFormula: raw.excel_formula ?? null,
   }
 }
 
@@ -489,6 +519,61 @@ export class CompiledModel {
     try {
       const raw = this.#wasm.summary() as RawModelSummary
       return mapModelSummary(raw)
+    } catch (err) {
+      throw toF8Error(err)
+    }
+  }
+
+  errors(): CellError[] {
+    this.#ensureNotDisposed()
+    try {
+      const raw = this.#wasm.errors() as readonly RawCellError[]
+      return (raw ?? []).map(mapCellError)
+    } catch (err) {
+      throw toF8Error(err)
+    }
+  }
+
+  toMarkdown(options?: ModelMarkdownOptions): string
+  toMarkdown(
+    detail: ModelMarkdownDetail,
+    options?: Omit<ModelMarkdownOptions, "detail">
+  ): string
+  toMarkdown(
+    arg1?: ModelMarkdownDetail | ModelMarkdownOptions,
+    arg2?: Omit<ModelMarkdownOptions, "detail">
+  ): string {
+    this.#ensureNotDisposed()
+
+    let detail: ModelMarkdownDetail
+    let opts: Omit<ModelMarkdownOptions, "detail"> | undefined
+
+    if (typeof arg1 === "string") {
+      detail = arg1
+      opts = arg2
+    } else {
+      opts = arg1
+      detail = arg1?.detail ?? "values"
+    }
+
+    if (detail !== "values" && detail !== "index") {
+      throw new Error(
+        `Invalid detail mode '${String(detail)}'. Expected one of 'values', 'index'.`
+      )
+    }
+
+    try {
+      const rawOptions: Record<string, unknown> = {
+        detail,
+        show_ids: opts?.showIds ?? true,
+      }
+      if (opts?.sheets !== undefined) {
+        rawOptions.sheets = [...opts.sheets]
+      }
+      if (opts?.tables !== undefined) {
+        rawOptions.tables = [...opts.tables]
+      }
+      return this.#wasm.toMarkdown(rawOptions)
     } catch (err) {
       throw toF8Error(err)
     }

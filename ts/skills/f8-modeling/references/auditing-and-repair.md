@@ -12,21 +12,23 @@ const compiled = model.compile()
 
 ### Methods
 
-| Method                                                                       | Return type       | Behavior                                                                                                     |
-| :--------------------------------------------------------------------------- | :---------------- | :----------------------------------------------------------------------------------------------------------- |
-| `compiled.summary()`                                                         | `ModelSummary`    | Counts for sheets, tables, cells, literal drivers, formulas, and per-sheet/per-table breakdowns              |
-| `compiled.table(table)`                                                      | `TableAuditor`    | High-level 2D table wrapper for coordinate lookup, row extraction, and Markdown/object export                |
-| `compiled.value(coordinate)` / `compiled.value(table, row, col)`             | `CellScalarValue` | Unboxed scalar (`number`, `string`, `boolean`, `null`, or Excel error string `"#DIV/0!"`, `"#VALUE!"`, etc.) |
-| `compiled.num(coordinate)` / `compiled.num(table, row, col)`                 | `number`          | Evaluated numeric `number` (throws `TypeError` if cell is text, `boolean`, `null`, or error)                 |
-| `compiled.formatted(coordinate, opts?)` / `compiled.formatted(t, r, c, o?)`  | `string`          | Formatted display string with optional `opts?.unit` spliced inside trailing `)` (e.g. `"($115.0M)"`)         |
-| `compiled.inspectCell(coordinate)` / `compiled.inspectCell(table, row, col)` | `CellInspection`  | Full cell record including evaluated/formatted values, formulas, formatting, and direct neighbors            |
-| `compiled.inspectTable(table)`                                               | `TableInspection` | Raw 2D table inspection object                                                                               |
-| `compiled.inspectSheet(sheet)`                                               | `SheetInspection` | Physical worksheet bounding box, column character widths, and row/cell layout records                        |
-| `compiled.precedentsOf(coord, opts?)` / `compiled.precedentsOf(t, r, c, o?)` | `DependencyTree`  | Upstream precedent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)   |
-| `compiled.dependentsOf(coord, opts?)` / `compiled.dependentsOf(t, r, c, o?)` | `DependencyTree`  | Downstream dependent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`) |
-| `compiled.save(path, options?)`                                              | `void`            | Emits `.xlsx` workbook to `path` via `node:fs` (creates parent directories automatically)                    |
-| `compiled.emitWorkbook(options?)`                                            | `Uint8Array`      | Emits `.xlsx` workbook as an in-memory `Uint8Array` byte buffer                                              |
-| `compiled.dispose()` / `compiled[Symbol.dispose]()`                          | `void`            | Deterministically frees WASM linear memory (idempotent; subsequent method calls throw `F8Error`)             |
+| Method                                                                       | Return type       | Behavior                                                                                                       |
+| :--------------------------------------------------------------------------- | :---------------- | :------------------------------------------------------------------------------------------------------------- |
+| `compiled.summary()`                                                         | `ModelSummary`    | Counts for sheets, tables, cells, literal drivers, formulas, and per-sheet/per-table breakdowns                |
+| `compiled.errors()`                                                          | `CellError[]`     | Deterministic workbook-wide audit of runtime `CellValue::Error` cells in declaration order                     |
+| `compiled.toMarkdown(options?)` / `compiled.toMarkdown(detail, options?)`    | `string`          | Compact whole-workbook Markdown (`"values"` GFM tables or `"index"` coordinate map) with scoped runtime errors |
+| `compiled.table(table)`                                                      | `TableAuditor`    | High-level 2D table wrapper for coordinate lookup, row extraction, and Markdown/object export                  |
+| `compiled.value(coordinate)` / `compiled.value(table, row, col)`             | `CellScalarValue` | Unboxed scalar (`number`, `string`, `boolean`, `null`, or Excel error string `"#DIV/0!"`, `"#VALUE!"`, etc.)   |
+| `compiled.num(coordinate)` / `compiled.num(table, row, col)`                 | `number`          | Evaluated numeric `number` (throws `TypeError` if cell is text, `boolean`, `null`, or error)                   |
+| `compiled.formatted(coordinate, opts?)` / `compiled.formatted(t, r, c, o?)`  | `string`          | Formatted display string with optional `opts?.unit` spliced inside trailing `)` (e.g. `"($115.0M)"`)           |
+| `compiled.inspectCell(coordinate)` / `compiled.inspectCell(table, row, col)` | `CellInspection`  | Full cell record including evaluated/formatted values, formulas, formatting, and direct neighbors              |
+| `compiled.inspectTable(table)`                                               | `TableInspection` | Raw 2D table inspection object                                                                                 |
+| `compiled.inspectSheet(sheet)`                                               | `SheetInspection` | Physical worksheet bounding box, column character widths, and row/cell layout records                          |
+| `compiled.precedentsOf(coord, opts?)` / `compiled.precedentsOf(t, r, c, o?)` | `DependencyTree`  | Upstream precedent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)     |
+| `compiled.dependentsOf(coord, opts?)` / `compiled.dependentsOf(t, r, c, o?)` | `DependencyTree`  | Downstream dependent tree (1-hop when `opts?.recursive` is `false`/omitted, full transitive DAG when `true`)   |
+| `compiled.save(path, options?)`                                              | `void`            | Emits `.xlsx` workbook to `path` via `node:fs` (creates parent directories automatically)                      |
+| `compiled.emitWorkbook(options?)`                                            | `Uint8Array`      | Emits `.xlsx` workbook as an in-memory `Uint8Array` byte buffer                                                |
+| `compiled.dispose()` / `compiled[Symbol.dispose]()`                          | `void`            | Deterministically frees WASM linear memory (idempotent; subsequent method calls throw `F8Error`)               |
 
 ### Coordinate Addressing in `CompiledModel`
 
@@ -36,6 +38,31 @@ Cell methods (`value`, `num`, `formatted`, `inspectCell`, `precedentsOf`, `depen
 const v1 = compiled.num('Operations["revenue", "2024E"]')
 const v2 = compiled.num("Operations", "revenue", "2024E")
 ```
+
+### Whole-Workbook Markdown (`compiled.toMarkdown`)
+
+```ts
+export interface ModelMarkdownOptions {
+  readonly detail?: ModelMarkdownDetail; // "values" | "index"
+  readonly sheets?: readonly string[];
+  readonly tables?: readonly string[];
+  readonly showIds?: boolean;
+}
+
+const md: string = compiled.toMarkdown(options?: ModelMarkdownOptions);
+const indexMd: string = compiled.toMarkdown(
+  detail: ModelMarkdownDetail,
+  options?: Omit<ModelMarkdownOptions, "detail">,
+);
+```
+
+- `detail` modes (`ModelMarkdownDetail`; invalid string throws plain `Error`):
+  - `"values"` (default): Emits compact unpadded GFM tables (`| a | b |`, `| :--- | ---: |`) with pre-formatted values, bolded `subtotal`/`total` rows, row-max descriptor indentation, and `"—"` for empty measure cells.
+  - `"index"`: Emits a compact coordinate catalog per table (`Columns:` with IDs, display headers, and `descriptor` roles; `Rows:` with section headers, nested row IDs, descriptor labels joined by `" | "`, and `(subtotal)`/`(total)` tags) with zero evaluated measure values (`showIds` is ignored).
+- Filtering and annotations:
+  - `sheets` / `tables`: Strict union allowlist (unknown sheet or table throws `InspectionError`); preserves canonical sheet/table declaration order without duplicates. Explicit empty allowlists (`sheets: []` with `tables` omitted, or vice versa, or both empty) emit only the model header; empty selected sheets emit `_(no tables)_`.
+  - `showIds: true` (default): Appends `[colId]` / `[rowId]` when display text differs case-insensitively from IDs, prepends a left-aligned `Row` column on descriptor-less tables, and annotates `[rowId]` only on the first descriptor column of multi-descriptor tables.
+  - Header & errors: Line 2 reports full-model counts including total `Errors: N`; `## Runtime Errors` lists errors belonging to selected tables (omitted when selected scope has 0 errors).
 
 ### Workbook Emission Options (`EmissionOptions`)
 
@@ -94,6 +121,7 @@ export interface TableMarkdownOptions {
   readonly cols?: readonly string[];
   readonly includeSectionHeaders?: boolean;
   readonly showIds?: boolean;
+  readonly compact?: boolean;
 }
 
 const md: string = auditor.toMarkdown(options?: TableMarkdownOptions);
@@ -112,6 +140,7 @@ const mdView: string = auditor.toMarkdown(
   - `cols`: Any `descriptor` columns not explicitly listed in `cols` are automatically prepended in declaration order ahead of the requested `cols` (which preserve the caller's array order; unknown ID throws `Error`). `descriptor` columns are left-aligned (`:---`); `measure` columns are right-aligned (`---:`).
   - `rows`: Renders only requested `rows` (unknown ID throws `Error`). `includeSectionHeaders` defaults to `true` when `rows` is omitted and `false` when `rows` is specified; when `rows` is specified with `includeSectionHeaders: true`, only section headers with at least one matching child row in `rows` are emitted.
   - `showIds: true`: Appends `[{colId}]` to column headers and `[{rowId}]` to descriptor labels when display text differs (case-insensitively) from the ID.
+  - `compact: true`: Emits unpadded GFM rows (`| a | b |`) and minimal alignment dividers (`| :--- | ---: |`), avoiding wide padding on `"formulas"` / `"expr"` views (default `false` preserves column-width padding).
   - Rows with `style: "subtotal"` or `style: "total"` wrap non-empty cell text in `**...**`. Line breaks (`\r\n`, `\r`, `\n`) are normalized to spaces and `|` delimiters are escaped as `\|`.
 
 ### Object and Record Export (`auditor.toDict`)
@@ -134,6 +163,9 @@ const data = auditor.toDict(orient: TableOrient = "records");
 - `ModelSummary`: `modelName: string`, `themeName: string`, `sheets: readonly SheetSummary[]`, `totalSheets: number`, `totalTables: number`, `totalCells: number`, `totalDrivers: number`, `totalFormulas: number`.
   - `SheetSummary`: `name: string`, `tables: readonly TableSummary[]`, `totalCells: number`.
   - `TableSummary`: `id: string`, `title: string`, `rowCount: number` (includes section headers and row gutters), `colCount: number` (includes column gutters), `cellCount: number` (`dataRows * dataCols`), `driverCount: number`, `formulaCount: number`.
+- `CellError`: `coordinate: CellCoordinate`, `sheet: string`, `physicalAddress: string` (`"'Sheet'!C14"`), `error: ExcelErrorCode` (`"#DIV/0!" | "#VALUE!" | "#REF!" | "#NUM!" | "#N/A" | "#NAME?"`), `formulaExpr: string | null`, `excelFormula: string | null`.
+- `ModelMarkdownDetail`: `"values" | "index"`.
+- `ModelMarkdownOptions`: `detail?: ModelMarkdownDetail`, `sheets?: readonly string[]`, `tables?: readonly string[]`, `showIds?: boolean`.
 - `CellInspection`: `coordinate: CellCoordinate` (`{ table: string, row: string, col: string }`), `sheet: string`, `physicalAddress: string` (`"'Sheet'!C14"`), `evaluatedValue: CellValueDict`, `formattedValue: string | null`, `format: FormatPreset | null`, `decimals: number | null`, `currency: CurrencyCode | null`, `isHighlight: boolean`, `shade: Shade | null`, `indent: number`, `isFormula: boolean`, `formulaExpr: string | null`, `excelFormula: string | null`, `note: string | null`, `precedents: readonly CellNeighborInspection[]`, `dependents: readonly CellNeighborInspection[]`.
   - `CellNeighborInspection`: `cellId: CellCoordinate`, `sheetAddress: string`, `value: CellValueDict | null`, `formattedValue: string | null`.
 - `DependencyTree`: `root: CellCoordinate`, `directCount: number`, `transitiveCount: number`, `nodes: readonly DependencyNode[]`.

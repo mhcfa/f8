@@ -12,6 +12,10 @@ if TYPE_CHECKING:
 
 type CellValueDict = dict[str, object] | str
 
+type ExcelErrorCode = Literal["#DIV/0!", "#VALUE!", "#REF!", "#NUM!", "#N/A", "#NAME?"]
+
+type ModelMarkdownDetail = Literal["values", "index"]
+
 type SheetCellKind = Literal[
     "empty",
     "table_title",
@@ -29,6 +33,17 @@ class CellCoordinate(TypedDict):
     table: str
     row: str
     col: str
+
+
+class CellError(TypedDict):
+    """Runtime Excel error record discovered during workbook evaluation."""
+
+    coordinate: CellCoordinate
+    sheet: str
+    physical_address: str
+    error: ExcelErrorCode
+    formula_expr: str | None
+    excel_formula: str | None
 
 
 class TableSummary(TypedDict):

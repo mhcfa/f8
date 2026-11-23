@@ -22,7 +22,7 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 
 1. Define: Construct `Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)` -> `table.add_column(...)` / `table.add_row(...)`.
 2. Compile: Call `compiled = model.compile()` (or `f8.compile(manifest, tables)`) to validate schema, expand grid, check cycles, evaluate cells, plan layout, and lower formulas.
-3. Inspect: Query values, formulas, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspect_cell(...)`, `compiled.precedents_of(...)`, and `compiled.dependents_of(...)`.
+3. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook structure/values via `compiled.to_markdown("index")` / `compiled.to_markdown(...)`, and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspect_cell(...)`, `compiled.precedents_of(...)`, and `compiled.dependents_of(...)`.
 4. Diagnose: Catch typed `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect structured attributes.
 5. Emit: Write `.xlsx` to disk via `compiled.save(path, options=...)` or in-memory bytes via `compiled.emit_workbook(options=...)`.
 
@@ -56,7 +56,7 @@ CLI commands (`f8` or `python -m f8`):
 - Decompose in the grid, not in code strings: Local variables or helper functions that assemble and interpolate `expr` subexpressions (`y_half = ...`, `pv_tv = ...`) only tidy Python—they inline and duplicate every piece into one unreadable Excel cell. Promote intermediate steps and repeated subexpressions into explicit helper rows, columns, or supporting tables instead.
 - Prefer range primitives over unrolled loops: Avoid generating `a + b + c + ...` chains across periods or items via string joins (e.g. `" + ".join(...)`). Use range functions (`SUM`, `SUMPRODUCT`, `NPV`, `XNPV`) and `@row`/`@col` vector rules; when elements need per-period transforms (such as custom discount factors or conditional weights), compute them in a helper row, column, or matrix and aggregate with `SUM` or `SUMPRODUCT`.
 - Factor sensitivities without Data Tables: In 1D/2D sensitivity grids, move terms that vary along only one axis (or neither axis) into 1D helper rows/columns or a helper table so output cells remain concise. For multi-step, path-dependent sensitivities, build explicit scenario schedules rather than inlining a model into one cell.
-- Inspect lowered formulas during audit: Numeric checks pass even when formulas are bloated—spot-check complex and sensitivity tables with `to_markdown(view="formulas")`.
+- Inspect lowered formulas during audit: Numeric checks pass even when formulas are bloated—spot-check complex and sensitivity tables with `to_markdown(view="formulas", compact=True)`.
 
 ## Reference Index
 

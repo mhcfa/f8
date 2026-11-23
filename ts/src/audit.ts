@@ -90,6 +90,10 @@ function escapeMarkdownCell(text: string): string {
   return text.replace(/\r\n|\r|\n/g, " ").replace(/\|/g, "\\|")
 }
 
+function formatCompactMarkdownRow(cells: readonly string[]): string {
+  return `|${cells.map((cell) => (cell ? ` ${cell} ` : " ")).join("|")}|`
+}
+
 interface RenderColumn {
   readonly id: string | null
   readonly header: string
@@ -374,6 +378,7 @@ export class TableAuditor {
     const cols = opts?.cols
     const includeSectionHeaders = opts?.includeSectionHeaders
     const showIds = opts?.showIds ?? false
+    const compact = opts?.compact ?? false
 
     const nonGutterCols: ColumnInspection[] = (this.#raw.columns ?? []).filter(
       (c) => !c.isGutter
@@ -562,6 +567,37 @@ export class TableAuditor {
       return escapedText
     }
 
+    const outLines: string[] = []
+
+    if (compact) {
+      outLines.push(
+        formatCompactMarkdownRow(renderCols.map((col) => col.header))
+      )
+      outLines.push(
+        formatCompactMarkdownRow(
+          renderCols.map((col) => (col.isDescriptor ? ":---" : "---:"))
+        )
+      )
+      for (const r of selectedRows) {
+        if (r.isSectionHeader) {
+          const title = escapeMarkdownCell(r.sectionTitle ?? "")
+          const emptyCols = " |".repeat(renderCols.length - 1)
+          outLines.push(`| **${title}** |${emptyCols}`)
+          continue
+        }
+        const rowId = r.id
+        if (!rowId) {
+          continue
+        }
+        outLines.push(
+          formatCompactMarkdownRow(
+            renderCols.map((col) => getCellText(rowId, col))
+          )
+        )
+      }
+      return `${outLines.join("\n")}\n`
+    }
+
     const colWidths: number[] = renderCols.map((col) =>
       Math.max(col.header.length, 4)
     )
@@ -586,8 +622,6 @@ export class TableAuditor {
         }
       }
     }
-
-    const outLines: string[] = []
 
     const headerCells: string[] = []
     for (let colIdx = 0; colIdx < renderCols.length; colIdx++) {

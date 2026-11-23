@@ -97,6 +97,8 @@ In-memory artifact consolidating all pass outputs for inspection without re-runn
 - Core inspection API:
   - `emit_workbook(options)`: Generates `.xlsx` byte buffer (`Vec<u8>`).
   - `summary()`: Model-, sheet-, and table-level cell, driver, and formula counts (`ModelSummary`).
+  - `errors()`: Deterministic workbook-wide audit of runtime `CellValue::Error` cells (`Vec<CellError>`, with canonical Excel error strings and sheet-qualified `physical_address`).
+  - `to_markdown(options)`: Pure in-memory whole-workbook compact GFM summary (`ModelMarkdownOptions`) supporting `ModelMarkdownDetail::{Values, Index}`, strict union `sheets`/`tables` allowlist filtering, scoped `## Runtime Errors`, and inline `[id]` annotations (`show_ids`).
   - `cell_value(table, row, col)`: Fast `O(1)` runtime scalar lookup.
   - `cell_formatted(table, row, col)`: Fast `O(1)` formatted display string lookup.
   - `inspect_cell(table, row, col)`: Detailed cell card (values, styles, AST, Excel formula, A1 coordinate, precedents, dependents).
@@ -134,15 +136,15 @@ Strict decoupling of semantic identity, visual presentation, and physical grid l
 - Python adapter / tooling layer (`python/f8` + `crates/f8-python`):
   - Bridge between human/agent workflows and the core compiler.
   - Handles operating system and filesystem I/O (`save()`).
-  - Releases Python GIL (`py.allow_threads`) during compilation and emission.
+  - Releases Python GIL (`py.allow_threads`) during compilation, emission, and full-model error/Markdown scans.
   - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell`).
-  - Table auditor (`TableAuditor`): dictionary conversions (`to_dict(orient="records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`to_markdown()`), Jupyter display protocol (`_repr_markdown_`).
+  - Table auditor (`TableAuditor`): dictionary conversions (`to_dict(orient="records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`to_markdown(..., compact=False)`), Jupyter display protocol (`_repr_markdown_`).
 - TypeScript / WebAssembly adapter layer (`ts/` + `crates/f8-wasm`):
   - Compiles `f8-core` to `wasm32-unknown-unknown` via `wasm-bindgen` and `serde-wasm-bindgen` with zero filesystem I/O in WASM.
   - Synchronous WASM initialization in server/CLI runtimes (Node.js, Bun, Deno) and async `init()` for browser main threads.
   - Fluent builder DSL (`Model`, `Sheet`, `Table`, `Cell` in `ts/src/builder.ts`).
-  - Table auditor (`TableAuditor` in `ts/src/audit.ts`): dictionary conversions (`toDict("records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`toMarkdown()`), and scalar/vector coordinate accessors.
-  - Idiomatic `camelCase` `CompiledModel` inspection API, `Uint8Array` workbook emission (`emitWorkbook()`), `node:fs` disk persistence (`save()`), and structured `F8Error` hierarchy (`ts/src/errors.ts`).
+  - Table auditor (`TableAuditor` in `ts/src/audit.ts`): dictionary conversions (`toDict("records" | "dict" | "index" | "split")`), rich GitHub-Flavored Markdown tables (`toMarkdown({ compact })`), and scalar/vector coordinate accessors.
+  - Idiomatic `camelCase` `CompiledModel` inspection API (`summary()`, `errors()`, `toMarkdown()`, cell/table/sheet inspection, dependency tracing), `Uint8Array` workbook emission (`emitWorkbook()`), `node:fs` disk persistence (`save()`), and structured `F8Error` hierarchy (`ts/src/errors.ts`).
   - CLI runner (`ts/src/cli.ts`) and bundled TypeScript modeling skill (`ts/skills/f8-modeling/`): `f8 guide`, `f8 agent init`, and `f8 theme init`.
 
 ## 5. Technology Stack

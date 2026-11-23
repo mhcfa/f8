@@ -1,6 +1,7 @@
 //! Pass 1–6a unified compilation artifact and in-memory inspection facade.
 
 pub mod error;
+pub mod markdown;
 pub mod model;
 
 use std::collections::HashSet;
@@ -9,9 +10,10 @@ use indexmap::IndexMap;
 
 pub use error::InspectionError;
 pub use model::{
-    CellInspection, CellNeighborInspection, ColumnInspection, DependencyNode, DependencyTree,
-    ModelSummary, RowInspection, SheetCellInspection, SheetCellKind, SheetInspection,
-    SheetRowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
+    CellError, CellInspection, CellNeighborInspection, ColumnInspection, DependencyNode,
+    DependencyTree, ModelMarkdownDetail, ModelMarkdownOptions, ModelSummary, RowInspection,
+    SheetCellInspection, SheetCellKind, SheetInspection, SheetRowInspection, SheetSummary,
+    TableCellInfo, TableInspection, TableSummary,
 };
 
 use crate::compiler::emission::{EmissionOptions, WorkbookEmitter};
@@ -147,6 +149,73 @@ impl CompiledModel {
             total_drivers,
             total_formulas,
         }
+    }
+
+    /// Returns all runtime Excel domain errors discovered across the workbook in deterministic
+    /// manifest sheet -> sheet table -> table row -> table column declaration order.
+    #[must_use]
+    pub fn errors(&self) -> Vec<CellError> {
+        let mut results = Vec::new();
+
+        for sheet_spec in &self.manifest.sheets {
+            let sheet_id = SheetId::from(sheet_spec.name.as_str());
+            for table_id in &sheet_spec.tables {
+                let Some(table_spec) = self.tables.get(table_id) else {
+                    continue;
+                };
+                for row in &table_spec.rows {
+                    let data_row = match row {
+                        RowSpec::Data(d) => d,
+                        RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
+                    };
+                    for col in &table_spec.columns {
+                        let data_col = match col {
+                            ColumnSpec::Data(d) => d,
+                            ColumnSpec::Gutter => continue,
+                        };
+                        let cell_id = CellId::new(
+                            table_spec.id.clone(),
+                            data_row.id.clone(),
+                            data_col.id.clone(),
+                        );
+                        let error = match self.evaluated.get_cell(&cell_id) {
+                            Some(CellValue::Error(err)) => *err,
+                            Some(
+                                CellValue::Number(_)
+                                | CellValue::Text(_)
+                                | CellValue::Boolean(_)
+                                | CellValue::Empty,
+                            )
+                            | None => continue,
+                        };
+                        let physical_address = self
+                            .layout_map
+                            .get_cell(&cell_id)
+                            .map(|coord| format_sheet_address(&coord.sheet, &coord.a1))
+                            .unwrap_or_default();
+                        let formula_expr =
+                            self.grid
+                                .get(&cell_id)
+                                .and_then(|node| match &node.payload {
+                                    CellPayload::Formula(expr) => Some(expr.to_string()),
+                                    CellPayload::Literal(_) => None,
+                                });
+                        let excel_formula = self.lowered_map.get(&cell_id).map(ToString::to_string);
+
+                        results.push(CellError {
+                            coordinate: cell_id,
+                            sheet: sheet_id.clone(),
+                            physical_address,
+                            error,
+                            formula_expr,
+                            excel_formula,
+                        });
+                    }
+                }
+            }
+        }
+
+        results
     }
 
     /// Returns the topologically evaluated runtime value for an individual cell.
@@ -335,16 +404,7 @@ impl CompiledModel {
             .iter()
             .map(|row| match row {
                 crate::model::table::RowSpec::Data(d) => {
-                    let indent = table_spec
-                        .columns
-                        .iter()
-                        .filter_map(|col| col.id())
-                        .filter_map(|col_id| {
-                            let cell_id = CellId::new(table.clone(), d.id.clone(), col_id.clone());
-                            self.grid.get(&cell_id).map(|cell| cell.indent)
-                        })
-                        .max()
-                        .unwrap_or(0);
+                    let indent = self.row_max_indent(table_spec, &d.id);
                     RowInspection {
                         id: Some(d.id.clone()),
                         section_title: None,
@@ -1052,7 +1112,20 @@ impl CompiledModel {
         })
     }
 
-    fn format_value(
+    pub(super) fn row_max_indent(&self, table: &TableSpec, row_id: &RowId) -> u8 {
+        table
+            .columns
+            .iter()
+            .filter_map(ColumnSpec::id)
+            .filter_map(|col_id| {
+                let cell_id = CellId::new(table.id.clone(), row_id.clone(), col_id.clone());
+                self.grid.get(&cell_id).map(|cell| cell.indent)
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub(super) fn format_value(
         &self,
         value: &CellValue,
         format: Option<FormatPreset>,

@@ -5,11 +5,13 @@ from pathlib import Path
 
 from f8.audit import TableAuditor
 from f8.types import (
+    CellError,
     CellInspection,
     CellScalarValue,
     DependencyTree,
     EmissionOptions,
     ManifestInput,
+    ModelMarkdownDetail,
     ModelSummary,
     SheetInspection,
     TableInput,
@@ -38,6 +40,19 @@ class CompiledModel:
 
     def summary(self) -> ModelSummary:
         """Returns high-level structural and cell classification statistics for the model."""
+
+    def errors(self) -> list[CellError]:
+        """Returns all runtime Excel domain errors discovered during workbook evaluation."""
+
+    def to_markdown(
+        self,
+        detail: ModelMarkdownDetail = "values",
+        *,
+        sheets: Sequence[str] | None = None,
+        tables: Sequence[str] | None = None,
+        show_ids: bool = True,
+    ) -> str:
+        """Renders a compact whole-workbook GitHub-Flavored Markdown summary."""
 
     def value(
         self,

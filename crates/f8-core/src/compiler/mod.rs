@@ -13,10 +13,11 @@ pub mod layout;
 pub mod lowering;
 
 pub use compiled::{
-    CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel, DependencyNode,
-    DependencyTree, InspectionError, ModelSummary, RowInspection, SheetCellInspection,
-    SheetCellKind, SheetInspection, SheetRowInspection, SheetSummary, TableCellInfo,
-    TableInspection, TableSummary, apply_unit_suffix, parse_coordinate_tokens,
+    CellError, CellInspection, CellNeighborInspection, ColumnInspection, CompiledModel,
+    DependencyNode, DependencyTree, InspectionError, ModelMarkdownDetail, ModelMarkdownOptions,
+    ModelSummary, RowInspection, SheetCellInspection, SheetCellKind, SheetInspection,
+    SheetRowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
+    apply_unit_suffix, parse_coordinate_tokens,
 };
 pub use emission::{CellFormatKey, EmissionError, EmissionOptions, FormatCache, WorkbookEmitter};
 pub use error::{CompilerError, ErrorDiagnostic};

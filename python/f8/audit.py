@@ -76,6 +76,11 @@ def _escape_markdown_cell(text: str) -> str:
     return text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("|", r"\|")
 
 
+def _format_compact_markdown_row(cells: Sequence[str]) -> str:
+    """Formats a compact unpadded GitHub-Flavored Markdown table row."""
+    return "|" + "|".join(f" {cell} " if cell else " " for cell in cells) + "|"
+
+
 class MarkdownTable(str):
     """GitHub-Flavored Markdown table string with IPython and Quarto display integration."""
 
@@ -350,8 +355,9 @@ class TableAuditor:
         cols: Sequence[str] | None = None,
         include_section_headers: bool | None = None,
         show_ids: bool = False,
+        compact: bool = False,
     ) -> MarkdownTable:
-        """Renders an aligned GitHub-Flavored Markdown table representation.
+        """Renders a GitHub-Flavored Markdown table representation.
 
         Args:
             view: One of 'values' (pre-formatted accounting typography), 'formulas'
@@ -365,6 +371,8 @@ class TableAuditor:
                 Defaults to True when rows is None, and False when rows is specified.
             show_ids: When True, appends [col_id] and [row_id] suffixes when display labels
                 differ from coordinate IDs. Defaults to False.
+            compact: When True, emits unpadded `| a | b |` rows and `| :--- | ---: |`
+                alignment dividers without column-width padding. Defaults to False.
         """
         valid_views = ("values", "formulas", "expr", "addresses")
         if view not in valid_views:
@@ -510,6 +518,31 @@ class TableAuditor:
                 return f"**{escaped_text}**"
             return escaped_text
 
+        out_lines: list[str] = []
+
+        if compact:
+            out_lines.append(_format_compact_markdown_row([col.header for col in render_cols]))
+            out_lines.append(
+                _format_compact_markdown_row(
+                    [":---" if col.is_descriptor else "---:" for col in render_cols]
+                )
+            )
+            for r in selected_rows:
+                if r.get("is_section_header"):
+                    title = _escape_markdown_cell(r.get("section_title") or "")
+                    empty_cols = " |" * (len(render_cols) - 1)
+                    out_lines.append(f"| **{title}** |{empty_cols}")
+                    continue
+                row_id = r.get("id")
+                if not row_id:
+                    continue
+                out_lines.append(
+                    _format_compact_markdown_row(
+                        [get_cell_text(row_id, col) for col in render_cols]
+                    )
+                )
+            return MarkdownTable("\n".join(out_lines) + "\n")
+
         col_widths: list[int] = [max(len(col.header), 4) for col in render_cols]
 
         for r in selected_rows:
@@ -522,8 +555,6 @@ class TableAuditor:
                 text = get_cell_text(row_id, col)
                 if len(text) > col_widths[col_idx]:
                     col_widths[col_idx] = len(text)
-
-        out_lines: list[str] = []
 
         # Single flattened GFM header row
         header_cells: list[str] = []

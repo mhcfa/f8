@@ -23,7 +23,7 @@ Financial modeling compiler, evaluator, and TypeScript DSL bridging programmatic
 1. Initialize (browsers only): Server runtimes (Node.js, Bun, Deno) auto-initialize WASM synchronously on module import; browser main threads call `await init()` once before compilation.
 2. Define: Construct `new Model({ name, theme })` -> `model.addSheet(...)` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)`.
 3. Compile: Call `const compiled = model.compile()` (or `compile(manifest, tables)`) to validate schema, expand grid, check cycles, evaluate cells, plan layout, and lower formulas.
-4. Inspect: Query values, formulas, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)`.
+4. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook structure/values via `compiled.toMarkdown("index")` / `compiled.toMarkdown(...)`, and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)`.
 5. Diagnose: Catch typed `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect structured properties.
 6. Emit: Write `.xlsx` to disk via `compiled.save(path, options)` or in-memory bytes (`Uint8Array`) via `compiled.emitWorkbook(options)`.
 
@@ -57,7 +57,7 @@ CLI commands (`f8` or `npx f8`):
 - Decompose in the grid, not in code strings: Local variables or helper functions that assemble and interpolate `expr` subexpressions (`yHalf = ...`, `pvTv = ...`) only tidy TypeScript—they inline and duplicate every piece into one unreadable Excel cell. Promote intermediate steps and repeated subexpressions into explicit helper rows, columns, or supporting tables instead.
 - Prefer range primitives over unrolled loops: Avoid generating `a + b + c + ...` chains across periods or items via string joins (e.g. `.join(" + ")`). Use range functions (`SUM`, `SUMPRODUCT`, `NPV`, `XNPV`) and `@row`/`@col` vector rules; when elements need per-period transforms (such as custom discount factors or conditional weights), compute them in a helper row, column, or matrix and aggregate with `SUM` or `SUMPRODUCT`.
 - Factor sensitivities without Data Tables: In 1D/2D sensitivity grids, move terms that vary along only one axis (or neither axis) into 1D helper rows/columns or a helper table so output cells remain concise. For multi-step, path-dependent sensitivities, build explicit scenario schedules rather than inlining a model into one cell.
-- Inspect lowered formulas during audit: Numeric checks pass even when formulas are bloated—spot-check complex and sensitivity tables with `toMarkdown("formulas")`.
+- Inspect lowered formulas during audit: Numeric checks pass even when formulas are bloated—spot-check complex and sensitivity tables with `toMarkdown("formulas", { compact: true })`.
 
 ## Reference Index
 

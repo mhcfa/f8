@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::error::CompilerError;
-use f8_core::compiler::{CompiledModel, apply_unit_suffix};
+use f8_core::compiler::{
+    CompiledModel, ModelMarkdownDetail, ModelMarkdownOptions, apply_unit_suffix,
+};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::value::CellValue;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -112,6 +114,43 @@ impl PyCompiledModel {
     pub fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let res = self.inner.summary();
         pythonize::pythonize(py, &res).map_err(|e| map_pythonize_error(py, e))
+    }
+
+    /// Returns all runtime Excel domain errors discovered during workbook evaluation.
+    pub fn errors<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let res = py.allow_threads(|| self.inner.errors());
+        pythonize::pythonize(py, &res).map_err(|e| map_pythonize_error(py, e))
+    }
+
+    /// Renders a compact whole-workbook GitHub-Flavored Markdown summary.
+    #[pyo3(signature = (detail = "values", *, sheets = None, tables = None, show_ids = true))]
+    pub fn to_markdown(
+        &self,
+        py: Python<'_>,
+        detail: &str,
+        sheets: Option<Vec<String>>,
+        tables: Option<Vec<String>>,
+        show_ids: bool,
+    ) -> PyResult<String> {
+        let detail_mode = match detail {
+            "values" => ModelMarkdownDetail::Values,
+            "index" => ModelMarkdownDetail::Index,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid detail mode '{other}'. Expected one of 'values', 'index'."
+                )));
+            }
+        };
+
+        let options = ModelMarkdownOptions {
+            detail: detail_mode,
+            sheets: sheets.map(|items| items.into_iter().map(SheetId::from).collect()),
+            tables: tables.map(|items| items.into_iter().map(TableId::from).collect()),
+            show_ids,
+        };
+
+        py.allow_threads(|| self.inner.to_markdown(&options))
+            .map_err(|e| map_inspection_error(py, &e))
     }
 
     /// Returns the unboxed scalar value (`float | str | bool | None`) for a cell coordinate.

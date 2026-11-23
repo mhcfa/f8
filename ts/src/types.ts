@@ -9,6 +9,16 @@ export type CellValueDict =
   | "Empty"
   | { readonly Error: string }
 
+export type ExcelErrorCode =
+  | "#DIV/0!"
+  | "#VALUE!"
+  | "#REF!"
+  | "#NUM!"
+  | "#N/A"
+  | "#NAME?"
+
+export type ModelMarkdownDetail = "values" | "index"
+
 export type FormatPreset =
   | "currency"
   | "number"
@@ -70,6 +80,22 @@ export interface CellCoordinate {
   readonly table: string
   readonly row: string
   readonly col: string
+}
+
+export interface CellError {
+  readonly coordinate: CellCoordinate
+  readonly sheet: string
+  readonly physicalAddress: string
+  readonly error: ExcelErrorCode
+  readonly formulaExpr: string | null
+  readonly excelFormula: string | null
+}
+
+export interface ModelMarkdownOptions {
+  readonly detail?: ModelMarkdownDetail
+  readonly sheets?: readonly string[]
+  readonly tables?: readonly string[]
+  readonly showIds?: boolean
 }
 
 export interface TableSummary {
@@ -250,6 +276,7 @@ export interface TableMarkdownOptions {
   readonly cols?: readonly string[]
   readonly includeSectionHeaders?: boolean
   readonly showIds?: boolean
+  readonly compact?: boolean
 }
 
 export type CellValueLiteral = number | string | boolean | null

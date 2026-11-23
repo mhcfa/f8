@@ -3,10 +3,12 @@
 use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::ir::id::CellId;
 use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
-use f8_core::model::id::{ColId, RowId, TableId};
+use f8_core::model::id::{ColId, RowId, SheetId, TableId};
 use f8_core::model::theme::{Theme, ThemeSpec};
-use f8_core::value::CellValue;
-use f8_core::{Compiler, InspectionError};
+use f8_core::value::{CellValue, ExcelError};
+use f8_core::{
+    CellError, CompiledModel, Compiler, InspectionError, ModelMarkdownDetail, ModelMarkdownOptions,
+};
 
 mod fixtures;
 
@@ -870,4 +872,583 @@ fn test_scenario_15_coordinate_parsing_strictness_and_special_key_roundtrip() {
             .unwrap_err(),
         InspectionError::InvalidCoordinate(_)
     ));
+}
+
+fn build_parity_workbook() -> CompiledModel {
+    use f8_core::model::{
+        CellInput, ColumnSpec, DetailedCellInput, ProjectManifest, RowSpec, SheetSpec, TableSpec,
+        ValueLiteral,
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "ParityModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Financials".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![
+                    TableId::from("IncomeStatement"),
+                    TableId::from("PureMeasures"),
+                ],
+            },
+            SheetSpec {
+                name: "Valuation".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![TableId::from("Comps")],
+            },
+            SheetSpec {
+                name: "Notes".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: true,
+                tables: vec![],
+            },
+        ],
+    };
+
+    let mut is_tbl = TableSpec::new("IncomeStatement", "Income Statement")
+        .with_subtitles(["($ in Millions)", "Fiscal Year"])
+        .with_currency(Some(CurrencyCode::Usd));
+    is_tbl.columns = vec![
+        ColumnSpec::descriptor("line_item", "Line Item"),
+        ColumnSpec::new("y2023a")
+            .with_group("Historical")
+            .with_header("2023A")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+        ColumnSpec::gutter(),
+        ColumnSpec::new("2024E")
+            .with_header("2024E")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+    ];
+    is_tbl.rows = vec![
+        RowSpec::section_header("Revenue & Margin"),
+        RowSpec::new("revenue")
+            .with_cell("line_item", "Revenue")
+            .with_cell("y2023a", 100.0)
+            .with_cell(
+                "2024E",
+                CellInput::formula(r#"IncomeStatement["revenue", col.prev] * 1.15"#),
+            ),
+        RowSpec::new("cogs")
+            .with_cell(
+                "line_item",
+                DetailedCellInput {
+                    value: Some(ValueLiteral::String("Cost | Goods\nSold".to_string())),
+                    indent: Some(1),
+                    ..Default::default()
+                },
+            )
+            .with_cell("y2023a", 40.0)
+            .with_cell("2024E", 44.0),
+        RowSpec::new("sparse")
+            .with_cell("line_item", "Memo")
+            .with_cell("y2023a", 5.0)
+            .with_cell("2024E", CellInput::null()),
+        RowSpec::gutter(),
+        RowSpec::new("gross_profit")
+            .with_style(Some(SemanticStyle::Subtotal))
+            .with_cell("line_item", "Gross Profit")
+            .with_expr(r#"IncomeStatement["revenue", @col] - IncomeStatement["cogs", @col]"#),
+        RowSpec::section_header("Checks | Errors"),
+        RowSpec::new("div_err")
+            .with_style(Some(SemanticStyle::Total))
+            .with_cell("line_item", "Net | Check")
+            .with_cell("y2023a", 10.0)
+            .with_cell("2024E", CellInput::formula("1 / 0")),
+    ];
+
+    let mut pure_tbl = TableSpec::new("PureMeasures", "PureMeasures");
+    pure_tbl.columns = vec![
+        ColumnSpec::new("c1").with_header("c1"),
+        ColumnSpec::new("c2").with_header("Col Two"),
+    ];
+    pure_tbl.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("c1", 1.0)
+            .with_cell("c2", CellInput::formula("NA()")),
+        RowSpec::new("r2")
+            .with_style(Some(SemanticStyle::Total))
+            .with_cell("c1", 2.0)
+            .with_cell("c2", 3.0),
+    ];
+
+    let mut comps_tbl =
+        TableSpec::new("Comps", "Trading Comps").with_currency(Some(CurrencyCode::Usd));
+    comps_tbl.columns = vec![
+        ColumnSpec::descriptor("ticker", "Ticker"),
+        ColumnSpec::descriptor("company", "Company Name"),
+        ColumnSpec::new("ev")
+            .with_header("EV")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+    ];
+    comps_tbl.rows = vec![
+        RowSpec::new("aapl")
+            .with_cell("ticker", "AAPL")
+            .with_cell("company", "Apple Inc.")
+            .with_cell("ev", 3000.0),
+        RowSpec::new("msft_row")
+            .with_cell("ticker", "MSFT")
+            .with_cell("company", "Microsoft")
+            .with_cell("ev", CellInput::formula("LN(-1)")),
+    ];
+
+    Compiler::compile(&manifest, &[is_tbl, pure_tbl, comps_tbl])
+        .expect("Parity workbook compilation must succeed")
+}
+
+#[test]
+fn test_cell_error_serde_roundtrip_all_variants() {
+    let variants = [
+        (ExcelError::Div0, "#DIV/0!"),
+        (ExcelError::Value, "#VALUE!"),
+        (ExcelError::Ref, "#REF!"),
+        (ExcelError::Num, "#NUM!"),
+        (ExcelError::Na, "#N/A"),
+        (ExcelError::Name, "#NAME?"),
+    ];
+
+    for (variant, expected_code) in variants {
+        let record = CellError {
+            coordinate: CellId::new("T", "r1", "c1"),
+            sheet: SheetId::from("Financials"),
+            physical_address: "'Financials'!C14".to_string(),
+            error: variant,
+            formula_expr: Some("1 / 0".to_string()),
+            excel_formula: Some("=1/0".to_string()),
+        };
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["error"], expected_code);
+        assert_eq!(json["physical_address"], "'Financials'!C14");
+
+        let roundtripped: CellError = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtripped, record);
+    }
+
+    let invalid = serde_json::json!({
+        "coordinate": { "table": "T", "row": "r1", "col": "c1" },
+        "sheet": "Financials",
+        "physical_address": "'Financials'!C14",
+        "error": "#BOGUS!",
+        "formula_expr": null,
+        "excel_formula": null
+    });
+    assert!(serde_json::from_value::<CellError>(invalid).is_err());
+
+    // ModelMarkdownOptions serde defaults and deny_unknown_fields enforcement
+    let opts_default: ModelMarkdownOptions = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert_eq!(opts_default, ModelMarkdownOptions::default());
+    assert_eq!(opts_default.detail, ModelMarkdownDetail::Values);
+    assert_eq!(opts_default.sheets, None);
+    assert_eq!(opts_default.tables, None);
+    assert!(opts_default.show_ids);
+
+    let opts_unknown = serde_json::json!({ "unknown_field": true });
+    assert!(serde_json::from_value::<ModelMarkdownOptions>(opts_unknown).is_err());
+}
+
+#[test]
+fn test_errors_clean_model_and_multi_sheet_ordering() {
+    // Scenario 1: Clean workbook returns empty list
+    let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
+    let clean = Compiler::compile(&manifest, &tables).unwrap();
+    assert!(clean.errors().is_empty());
+
+    // Scenario 2: Multi-sheet errors returned in deterministic sheet -> table -> row -> col order
+    let compiled = build_parity_workbook();
+    let errors = compiled.errors();
+    assert_eq!(errors.len(), 3);
+
+    assert_eq!(
+        errors[0],
+        CellError {
+            coordinate: CellId::new("IncomeStatement", "div_err", "2024E"),
+            sheet: SheetId::from("Financials"),
+            physical_address: "'Financials'!E15".to_string(),
+            error: ExcelError::Div0,
+            formula_expr: Some("1 / 0".to_string()),
+            excel_formula: Some("=1/0".to_string()),
+        }
+    );
+    assert_eq!(
+        errors[1],
+        CellError {
+            coordinate: CellId::new("PureMeasures", "r1", "c2"),
+            sheet: SheetId::from("Financials"),
+            physical_address: "'Financials'!C21".to_string(),
+            error: ExcelError::Na,
+            formula_expr: Some("NA()".to_string()),
+            excel_formula: Some("=NA()".to_string()),
+        }
+    );
+    assert_eq!(
+        errors[2],
+        CellError {
+            coordinate: CellId::new("Comps", "msft_row", "ev"),
+            sheet: SheetId::from("Valuation"),
+            physical_address: "'Valuation'!D6".to_string(),
+            error: ExcelError::Num,
+            formula_expr: Some("LN(-1)".to_string()),
+            excel_formula: Some("=LN(-1)".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_to_markdown_default_values_index_and_parity() {
+    let compiled = build_parity_workbook();
+
+    // Scenario 3, 5, 6, 10: Default values mode with show_ids=true
+    let md_values = compiled
+        .to_markdown(&ModelMarkdownOptions::default())
+        .unwrap();
+    let expected_values = "\
+# ParityModel
+Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3
+
+## Runtime Errors
+
+- `IncomeStatement[\"div_err\", \"2024E\"]` (`'Financials'!E15`): `#DIV/0!` (`=1/0`)
+- `PureMeasures[\"r1\", \"c2\"]` (`'Financials'!C21`): `#N/A` (`=NA()`)
+- `Comps[\"msft_row\", \"ev\"]` (`'Valuation'!D6`): `#NUM!` (`=LN(-1)`)
+
+## Sheet: Financials
+
+### `IncomeStatement` — Income Statement
+_($ in Millions)_
+_Fiscal Year_
+
+| Line Item [line_item] | Historical: 2023A [y2023a] | 2024E |
+| :--- | ---: | ---: |
+| **Revenue & Margin** | | |
+| Revenue | $100.0 | $115.0 |
+|   Cost \\| Goods Sold [cogs] | $40.0 | $44.0 |
+| Memo [sparse] | $5.0 | — |
+| **Gross Profit [gross_profit]** | **$60.0** | **$71.0** |
+| **Checks \\| Errors** | | |
+| **Net \\| Check [div_err]** | **$10.0** | **#DIV/0!** |
+
+### `PureMeasures`
+
+| Row | c1 | Col Two [c2] |
+| :--- | ---: | ---: |
+| r1 | 1 | #N/A |
+| **r2** | **2** | **3** |
+
+## Sheet: Valuation
+
+### `Comps` — Trading Comps
+
+| Ticker | Company Name [company] | EV |
+| :--- | :--- | ---: |
+| AAPL | Apple Inc. | $3,000.0 |
+| MSFT [msft_row] | Microsoft | #NUM! |
+
+## Sheet: Notes
+
+_(no tables)_
+";
+    assert_eq!(md_values, expected_values);
+    // Determinism check
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions::default())
+            .unwrap(),
+        expected_values
+    );
+
+    // Scenario 5: show_ids=false omits synthetic Row column and [row_id]/[col_id] annotations
+    let md_no_ids = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(!md_no_ids.contains("| Row |"));
+    assert!(!md_no_ids.contains("[line_item]"));
+    assert!(!md_no_ids.contains("[y2023a]"));
+    assert!(!md_no_ids.contains("[gross_profit]"));
+    assert!(!md_no_ids.contains("[msft_row]"));
+    assert!(md_no_ids.contains("| c1 | Col Two |"));
+    assert!(md_no_ids.contains("| MSFT | Microsoft | #NUM! |"));
+
+    // Scenario 4: Index mode (ignores show_ids=false)
+    let md_index = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    let expected_index = "\
+# ParityModel
+Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3
+
+## Runtime Errors
+
+- `IncomeStatement[\"div_err\", \"2024E\"]` (`'Financials'!E15`): `#DIV/0!` (`=1/0`)
+- `PureMeasures[\"r1\", \"c2\"]` (`'Financials'!C21`): `#N/A` (`=NA()`)
+- `Comps[\"msft_row\", \"ev\"]` (`'Valuation'!D6`): `#NUM!` (`=LN(-1)`)
+
+## Sheet: Financials
+
+### `IncomeStatement` — Income Statement
+_($ in Millions)_
+_Fiscal Year_
+
+Columns: `line_item` (Line Item, descriptor), `y2023a` (Historical: 2023A), `2024E`
+Rows:
+- **Revenue & Margin**
+  - `revenue`
+  - `cogs`: Cost | Goods Sold
+  - `sparse`: Memo
+  - **`gross_profit`**: Gross Profit (subtotal)
+- **Checks | Errors**
+  - **`div_err`**: Net | Check (total)
+
+### `PureMeasures`
+
+Columns: `c1`, `c2` (Col Two)
+Rows:
+- `r1`
+- **`r2`** (total)
+
+## Sheet: Valuation
+
+### `Comps` — Trading Comps
+
+Columns: `ticker` (descriptor), `company` (Company Name, descriptor), `ev`
+Rows:
+- `aapl`: AAPL | Apple Inc.
+- `msft_row`: MSFT | Microsoft
+
+## Sheet: Notes
+
+_(no tables)_
+";
+    assert_eq!(md_index, expected_index);
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                detail: ModelMarkdownDetail::Index,
+                show_ids: true,
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_index
+    );
+}
+
+#[test]
+fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
+    use f8_core::model::{ColumnSpec, ProjectManifest, RowSpec, SheetSpec, TableSpec};
+
+    let compiled = build_parity_workbook();
+
+    // Scenario 6: Filtered to Valuation shows total Errors: 3 in header but only Comps error in Runtime Errors
+    let md_val = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: Some(vec![SheetId::from("Valuation")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_val.contains("| Errors: 3\n"));
+    assert!(md_val.contains("## Runtime Errors"));
+    assert!(md_val.contains(r#"Comps["msft_row", "ev"]"#));
+    assert!(!md_val.contains("IncomeStatement"));
+    assert!(!md_val.contains("PureMeasures"));
+
+    // Filtered to Notes (empty sheet): 0 errors in scope -> omits ## Runtime Errors, emits _(no tables)_
+    let md_notes = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: Some(vec![SheetId::from("Notes")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_notes.contains("| Errors: 3\n"));
+    assert!(!md_notes.contains("## Runtime Errors"));
+    assert!(md_notes.contains("## Sheet: Notes\n\n_(no tables)_\n"));
+
+    // Standalone non-empty tables-only filter (sheets: None, tables: Some(...))
+    let md_tables_only = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: None,
+            tables: Some(vec![TableId::from("PureMeasures")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_tables_only.contains("| Errors: 3\n"));
+    assert!(md_tables_only.contains("## Runtime Errors"));
+    assert!(md_tables_only.contains(r#"PureMeasures["r1", "c2"]"#));
+    assert!(!md_tables_only.contains("IncomeStatement"));
+    assert!(!md_tables_only.contains("Comps"));
+    assert!(md_tables_only.contains("## Sheet: Financials"));
+    assert!(!md_tables_only.contains("## Sheet: Valuation"));
+    assert!(!md_tables_only.contains("## Sheet: Notes"));
+
+    // Scenario 7: Union of sheets + tables with overlap and duplicates preserves declaration order
+    let md_union = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: Some(vec![SheetId::from("Valuation"), SheetId::from("Valuation")]),
+            tables: Some(vec![
+                TableId::from("Comps"),
+                TableId::from("PureMeasures"),
+                TableId::from("PureMeasures"),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(md_union.matches("### `Comps`").count(), 1);
+    assert_eq!(md_union.matches("### `PureMeasures`").count(), 1);
+    assert!(!md_union.contains("### `IncomeStatement`"));
+    // Financials precedes Valuation in manifest order even though Valuation was listed first in filter
+    let pos_fin = md_union.find("## Sheet: Financials").unwrap();
+    let pos_val = md_union.find("## Sheet: Valuation").unwrap();
+    assert!(pos_fin < pos_val);
+
+    // Explicit empty allowlists emit only the model header
+    let expected_header_only =
+        "# ParityModel\nSheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n";
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: Some(vec![]),
+                tables: None,
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_header_only
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: None,
+                tables: Some(vec![]),
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_header_only
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: Some(vec![]),
+                tables: Some(vec![]),
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_header_only
+    );
+
+    // Unknown sheet / unknown table fail strictly with InspectionError
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: Some(vec![SheetId::from("MissingSheet")]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        InspectionError::SheetNotFound(SheetId::from("MissingSheet"))
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                tables: Some(vec![TableId::from("MissingTable")]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        InspectionError::TableNotFound(TableId::from("MissingTable"))
+    );
+
+    // Clean model with blank model_name falls back to "# Model" and omits ## Runtime Errors
+    let manifest = ProjectManifest {
+        model_name: "  \r\n  ".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("Summary")],
+        }],
+    };
+    let mut tbl = TableSpec::new("Summary", "");
+    tbl.columns = vec![ColumnSpec::new("v")];
+    tbl.rows = vec![RowSpec::new("x").with_cell("v", 42.0)];
+    let clean = Compiler::compile(&manifest, &[tbl]).unwrap();
+    let clean_md = clean.to_markdown(&ModelMarkdownOptions::default()).unwrap();
+    assert!(clean_md.starts_with(
+        "# Model\nSheets: 1 | Tables: 1 | Cells: 1 (1 drivers, 0 formulas) | Errors: 0\n"
+    ));
+    assert!(!clean_md.contains("## Runtime Errors"));
+    assert!(clean_md.contains("### `Summary`\n"));
+
+    // Degenerate gutter-only-columns table emits "Columns:" without trailing space in Index mode
+    let mut gutter_tbl = TableSpec::new("GutterCols", "Gutter Cols");
+    gutter_tbl.columns = vec![ColumnSpec::gutter()];
+    gutter_tbl.rows = vec![RowSpec::section_header("Only Section")];
+    let gutter_manifest = ProjectManifest {
+        model_name: "GutterModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("GutterCols")],
+        }],
+    };
+    let gutter_compiled = Compiler::compile(&gutter_manifest, &[gutter_tbl]).unwrap();
+    let gutter_index_md = gutter_compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(gutter_index_md.contains("\nColumns:\nRows:\n- **Only Section**\n"));
+    assert!(!gutter_index_md.contains("Columns: \n"));
+
+    // Whitespace-only descriptor cells are treated as empty symmetrically across Values and Index
+    let mut ws_tbl = TableSpec::new("WhitespaceDesc", "WhitespaceDesc");
+    ws_tbl.columns = vec![
+        ColumnSpec::descriptor("d1", "D1"),
+        ColumnSpec::descriptor("d2", "D2"),
+        ColumnSpec::new("val").with_header("Val"),
+    ];
+    ws_tbl.rows = vec![
+        RowSpec::new("r_blank")
+            .with_cell("d1", "  \n  ")
+            .with_cell("d2", " \r\n ")
+            .with_cell("val", 7.0),
+    ];
+    let ws_manifest = ProjectManifest {
+        model_name: "WsModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            tables: vec![TableId::from("WhitespaceDesc")],
+        }],
+    };
+    let ws_compiled = Compiler::compile(&ws_manifest, &[ws_tbl]).unwrap();
+    let ws_values_md = ws_compiled
+        .to_markdown(&ModelMarkdownOptions::default())
+        .unwrap();
+    assert!(ws_values_md.contains("| r_blank | | 7 |\n"));
+    let ws_index_md = ws_compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(ws_index_md.contains("Rows:\n- `r_blank`\n"));
 }
