@@ -263,7 +263,7 @@ table.addColumnGutter(): this;
 ```
 
 - `addSectionHeader`: Consumes 1 physical row, writes `title` at `table.start_col` with `section_header_format(indent)` and optional Excel note, and allocates zero calculation cells.
-- `addRowGutter` / `addColumnGutter`: Consumes 1 blank physical row or column (`gutter_col_width` = `3.0` chars by default) with zero calculation cells; row formatting continues across column gutters and column formatting continues across row gutters. Skipped by vector formulas, `prev`/`next` offsets, and `Table.setCells(...)` `AxisSlice` selectors; formula `start..end` range slices cannot span gutters or section headers (`ReferenceResolutionError`).
+- `addRowGutter` / `addColumnGutter`: Consumes 1 blank physical row or column (`gutter_col_width` = `3.0` chars by default) with zero calculation cells; row formatting continues across column gutters while row gutters remain blank. Skipped by vector formulas, `prev`/`next` offsets, and `Table.setCells(...)` `AxisSlice` selectors; formula `start..end` range slices cannot span gutters or section headers (`ReferenceResolutionError`).
 
 ### Table Placement (`stack`, `below`, `rightOf`, `gap`)
 

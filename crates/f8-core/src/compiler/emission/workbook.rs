@@ -18,7 +18,7 @@ use crate::model::format::SemanticStyle;
 use crate::model::id::SheetId;
 use crate::model::manifest::ProjectManifest;
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
-use crate::model::theme::{BorderStyle, Theme};
+use crate::model::theme::Theme;
 use crate::value::{CellValue, normalize_zero};
 
 /// Configuration options for OpenXML workbook emission.
@@ -327,45 +327,7 @@ impl WorkbookEmitter {
 
                     match row_spec {
                         RowSpec::Gutter => {
-                            // Gutter row: continue column formatting (vertical borders, shade, highlight, descriptor border)
-                            let has_descriptor_border =
-                                format_cache.theme().borders.descriptor_border_right
-                                    != BorderStyle::None;
-                            for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                                let col_data = match col_spec {
-                                    ColumnSpec::Data(d) => d,
-                                    ColumnSpec::Gutter => continue,
-                                };
-                                let is_descriptor = col_data.role.is_descriptor();
-                                let role = StyleRole {
-                                    horizontal: SemanticStyle::Data,
-                                    vertical: col_data.style.unwrap_or(SemanticStyle::Data),
-                                    is_highlight: col_data.highlight.unwrap_or(false),
-                                    shade: col_data.shade.filter(|s| !s.is_none()),
-                                };
-
-                                if role != StyleRole::data()
-                                    || (is_descriptor && has_descriptor_border)
-                                {
-                                    let format_key = CellFormatKey::new(
-                                        role,
-                                        None,
-                                        None,
-                                        None,
-                                        false,
-                                        is_descriptor,
-                                        0,
-                                    );
-                                    let cell_format = format_cache.get_cell_format(&format_key)?;
-                                    let phys_col =
-                                        excel_col_u16(placement.start_col + c_idx as u32)?;
-                                    worksheet.write_blank(
-                                        current_phys_row,
-                                        phys_col,
-                                        &cell_format,
-                                    )?;
-                                }
-                            }
+                            // Gutter row: cells remain blank without borders
                         }
                         RowSpec::SectionHeader(sh) => {
                             let start_col_u16 = excel_col_u16(placement.start_col)?;

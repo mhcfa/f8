@@ -1296,10 +1296,10 @@ fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() 
 }
 
 // ----------------------------------------------------------------------------
-// Scenario 15b: Row Gutter Column Formatting Continuity
+// Scenario 15b: Row Gutters Remain Blank Across Styled Columns
 // ----------------------------------------------------------------------------
 #[test]
-fn test_scenario_15b_row_gutter_column_formatting_continuity() {
+fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
     use f8_core::model::theme::{BorderStyle, ThemeSpec};
 
     let extract_cell_element = |xml: &str, cell_ref: &str| -> Option<String> {
@@ -1315,72 +1315,8 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
         }
     };
 
-    let get_attr_usize = |tag: &str, attr: &str| -> Option<usize> {
-        let needle = format!("{attr}=\"");
-        let idx = tag.find(&needle)?;
-        let rest = &tag[idx + needle.len()..];
-        let end = rest.find('"')?;
-        rest[..end].parse::<usize>().ok()
-    };
-
-    let get_xf_xml = |styles_xml: &str, style_idx: usize| -> String {
-        let start = styles_xml.find("<cellXfs").expect("<cellXfs> not found");
-        let end = styles_xml[start..].find("</cellXfs>").unwrap() + start;
-        styles_xml[start..end]
-            .split("<xf ")
-            .skip(1)
-            .nth(style_idx)
-            .unwrap_or_else(|| panic!("xf index {style_idx} out of bounds"))
-            .to_string()
-    };
-
-    let get_border_xml = |styles_xml: &str, border_idx: usize| -> String {
-        let start = styles_xml.find("<borders").expect("<borders> not found");
-        let end = styles_xml[start..].find("</borders>").unwrap() + start;
-        let inner = &styles_xml[start..end];
-        let mut cursor = 0;
-        let mut borders = Vec::new();
-        while let Some(rel) = inner[cursor..].find("<border") {
-            let pos = cursor + rel;
-            let after = inner.as_bytes().get(pos + 7).copied();
-            if matches!(after, Some(b'>' | b' ' | b'/')) {
-                let close = inner[pos..].find("</border>").map(|c| pos + c + 9);
-                let self_close = inner[pos..].find("/>").map(|c| pos + c + 2);
-                let tag_end = match (close, self_close) {
-                    (Some(_), Some(sc))
-                        if sc < inner[pos..].find('>').map_or(usize::MAX, |g| pos + g + 1) =>
-                    {
-                        sc
-                    }
-                    (Some(c), _) => c,
-                    (None, Some(sc)) => sc,
-                    (None, None) => break,
-                };
-                borders.push(inner[pos..tag_end].to_string());
-                cursor = tag_end;
-            } else {
-                cursor = pos + 7;
-            }
-        }
-        borders
-            .into_iter()
-            .nth(border_idx)
-            .unwrap_or_else(|| panic!("border index {border_idx} out of bounds"))
-    };
-
-    let get_fill_xml = |styles_xml: &str, fill_idx: usize| -> String {
-        let start = styles_xml.find("<fills").expect("<fills> not found");
-        let end = styles_xml[start..].find("</fills>").unwrap() + start;
-        styles_xml[start..end]
-            .split("<fill>")
-            .skip(1)
-            .nth(fill_idx)
-            .unwrap_or_else(|| panic!("fill index {fill_idx} out of bounds"))
-            .to_string()
-    };
-
     let build_table = || {
-        let mut table = TableSpec::new("RowGutterFormatting", "Row Gutter Test");
+        let mut table = TableSpec::new("RowGutterBlank", "Row Gutter Test");
         // Col B: Descriptor
         table
             .columns
@@ -1389,7 +1325,7 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
         table
             .columns
             .push(ColumnSpec::new("c_data").with_header("Data"));
-        // Col D: Column gutter (intersection with row gutter must stay omitted)
+        // Col D: Column gutter
         table.columns.push(ColumnSpec::gutter());
         // Col E: Subtotal column (thin left border)
         table.columns.push(
@@ -1403,19 +1339,19 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
                 .with_header("Total")
                 .with_style(Some(SemanticStyle::Total)),
         );
-        // Col G: Muted shade column (#FAFAFA)
+        // Col G: Muted shade column
         table.columns.push(
             ColumnSpec::new("c_shade")
                 .with_header("Forecast")
                 .with_shade(Some(Shade::Muted)),
         );
-        // Col H: Highlight column (#FEF3C7)
+        // Col H: Highlight column
         table.columns.push(
             ColumnSpec::new("c_hl")
                 .with_header("Key")
                 .with_highlight(Some(true)),
         );
-        // Col I: Explicit default/none styling (must stay omitted)
+        // Col I: Explicit default/none styling
         table.columns.push(
             ColumnSpec::new("c_none")
                 .with_header("None")
@@ -1432,8 +1368,26 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
         table
     };
 
+    let assert_gutter_row_blank = |sheet_xml: &str| {
+        for populated in ["B5", "E5", "F5", "G5", "H5", "B7", "E7", "F7", "G7", "H7"] {
+            assert!(
+                extract_cell_element(sheet_xml, populated).is_some(),
+                "{populated} on adjacent data row must be emitted"
+            );
+        }
+        assert!(
+            !sheet_xml.contains("<row r=\"6\""),
+            "Row gutter (row 6) must not be emitted in worksheet XML"
+        );
+        for cell in ["B6", "C6", "D6", "E6", "F6", "G6", "H6", "I6"] {
+            assert!(
+                extract_cell_element(sheet_xml, cell).is_none(),
+                "{cell} on row gutter must remain blank without column formatting"
+            );
+        }
+    };
+
     // Part 1: Default corporate_navy theme
-    let table = build_table();
     let manifest = ProjectManifest {
         model_name: "RowGutterDefaultTheme".to_string(),
         theme: ThemeSpec::default(),
@@ -1442,71 +1396,17 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![TableId::from("RowGutterFormatting")],
+            tables: vec![TableId::from("RowGutterBlank")],
         }],
     };
-
-    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[build_table()], &EmissionOptions::default()).unwrap();
     let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
-    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
-
-    // Unstyled columns and column-gutter intersection on row 6 must be omitted
-    for omitted in ["B6", "C6", "D6", "I6"] {
-        assert!(
-            extract_cell_element(&sheet_xml, omitted).is_none(),
-            "{omitted} on unstyled/gutter column must not be emitted"
-        );
-    }
-
-    // E6: Subtotal column -> blank with thin left border
-    let e6 = extract_cell_element(&sheet_xml, "E6")
-        .expect("E6 (row gutter on Subtotal column) must be emitted");
-    assert!(!e6.contains("<v>") && !e6.contains("<f>") && !e6.contains("t=\"s\""));
-    let e6_xf = get_xf_xml(&styles_xml, get_attr_usize(&e6, "s").unwrap());
-    let e6_border = get_border_xml(&styles_xml, get_attr_usize(&e6_xf, "borderId").unwrap());
-    assert!(
-        e6_border.contains("<left style=\"thin\">"),
-        "E6 must preserve col_subtotal_border_left: {e6_border}"
-    );
-
-    // F6: Total column -> blank with thin left + double right border
-    let f6 = extract_cell_element(&sheet_xml, "F6")
-        .expect("F6 (row gutter on Total column) must be emitted");
-    assert!(!f6.contains("<v>") && !f6.contains("<f>") && !f6.contains("t=\"s\""));
-    let f6_xf = get_xf_xml(&styles_xml, get_attr_usize(&f6, "s").unwrap());
-    let f6_border = get_border_xml(&styles_xml, get_attr_usize(&f6_xf, "borderId").unwrap());
-    assert!(
-        f6_border.contains("<left style=\"thin\">")
-            && f6_border.contains("<right style=\"double\">"),
-        "F6 must preserve col_total left/right borders: {f6_border}"
-    );
-
-    // G6: Shaded column -> blank with shade_muted_fill (#FAFAFA)
-    let g6 = extract_cell_element(&sheet_xml, "G6")
-        .expect("G6 (row gutter on Muted shade column) must be emitted");
-    assert!(!g6.contains("<v>") && !g6.contains("<f>") && !g6.contains("t=\"s\""));
-    let g6_xf = get_xf_xml(&styles_xml, get_attr_usize(&g6, "s").unwrap());
-    let g6_fill = get_fill_xml(&styles_xml, get_attr_usize(&g6_xf, "fillId").unwrap());
-    assert!(
-        g6_fill.contains("FAFAFA"),
-        "G6 must preserve shade_muted_fill: {g6_fill}"
-    );
-
-    // H6: Highlighted column -> blank with highlight_fill (#FEF3C7)
-    let h6 = extract_cell_element(&sheet_xml, "H6")
-        .expect("H6 (row gutter on highlighted column) must be emitted");
-    assert!(!h6.contains("<v>") && !h6.contains("<f>") && !h6.contains("t=\"s\""));
-    let h6_xf = get_xf_xml(&styles_xml, get_attr_usize(&h6, "s").unwrap());
-    let h6_fill = get_fill_xml(&styles_xml, get_attr_usize(&h6_xf, "fillId").unwrap());
-    assert!(
-        h6_fill.contains("FEF3C7"),
-        "H6 must preserve highlight_fill: {h6_fill}"
-    );
+    assert_gutter_row_blank(&sheet_xml);
 
     // Part 2: Custom theme with descriptor_border_right enabled
     let mut custom_theme = Theme::corporate_navy();
     custom_theme.borders.descriptor_border_right = BorderStyle::Thin;
-    let custom_table = build_table();
     let custom_manifest = ProjectManifest {
         model_name: "RowGutterDescriptorBorderTheme".to_string(),
         theme: ThemeSpec::Custom(Box::new(custom_theme)),
@@ -1515,37 +1415,17 @@ fn test_scenario_15b_row_gutter_column_formatting_continuity() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
-            tables: vec![TableId::from("RowGutterFormatting")],
+            tables: vec![TableId::from("RowGutterBlank")],
         }],
     };
-
     let custom_buf = Compiler::emit_workbook(
         &custom_manifest,
-        &[custom_table],
+        &[build_table()],
         &EmissionOptions::default(),
     )
     .unwrap();
     let custom_sheet_xml = read_zip_entry(&custom_buf, "xl/worksheets/sheet1.xml");
-    let custom_styles_xml = read_zip_entry(&custom_buf, "xl/styles.xml");
-
-    // B6 (descriptor) must now emit blank with thin right border; C6 stays omitted
-    let b6 = extract_cell_element(&custom_sheet_xml, "B6").expect(
-        "B6 (row gutter on descriptor column with descriptor_border_right) must be emitted",
-    );
-    assert!(!b6.contains("<v>") && !b6.contains("<f>") && !b6.contains("t=\"s\""));
-    let b6_xf = get_xf_xml(&custom_styles_xml, get_attr_usize(&b6, "s").unwrap());
-    let b6_border = get_border_xml(
-        &custom_styles_xml,
-        get_attr_usize(&b6_xf, "borderId").unwrap(),
-    );
-    assert!(
-        b6_border.contains("<right style=\"thin\">"),
-        "B6 must preserve descriptor_border_right: {b6_border}"
-    );
-    assert!(
-        extract_cell_element(&custom_sheet_xml, "C6").is_none(),
-        "C6 (unstyled measure column) must remain omitted"
-    );
+    assert_gutter_row_blank(&custom_sheet_xml);
 }
 
 // ----------------------------------------------------------------------------
