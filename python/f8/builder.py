@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from f8.types import (
     DataRowSpecDict,
     DetailedCellDict,
     FormatPreset,
+    GridSheetLayoutSpecDict,
     GutterColumnSpecDict,
     GutterRowSpecDict,
     ProjectManifestDict,
@@ -28,6 +30,7 @@ from f8.types import (
     SectionHeaderRowSpecDict,
     SemanticStyle,
     Shade,
+    SheetLayoutMode,
     SheetSpecDict,
     StackPlacementSpecDict,
     TableSpecDict,
@@ -754,6 +757,37 @@ class Table:
         return table_spec
 
 
+def _validate_sheet_layout(
+    layout: object,
+    col_width: object,
+) -> tuple[SheetLayoutMode, float | None]:
+    if layout == "auto":
+        validated_layout: SheetLayoutMode = "auto"
+    elif layout == "grid":
+        validated_layout = "grid"
+    else:
+        msg = f"Invalid sheet layout '{layout}'. Expected 'auto' or 'grid'."
+        raise ValueError(msg)
+
+    if col_width is None:
+        return validated_layout, None
+
+    if isinstance(col_width, bool) or not isinstance(col_width, (int, float)):
+        msg = f"col_width must be a finite number, got {type(col_width).__name__}"
+        raise TypeError(msg)
+    if validated_layout == "auto":
+        msg = "col_width can only be specified when layout='grid'"
+        raise ValueError(msg)
+    if (
+        (isinstance(col_width, float) and not math.isfinite(col_width))
+        or col_width < 1.0
+        or col_width > 255.0
+    ):
+        msg = f"col_width must be a finite number in [1.0, 255.0], got {col_width!r}"
+        raise ValueError(msg)
+    return validated_layout, float(col_width)
+
+
 class Sheet:
     """Fluent container for worksheets containing financial tables."""
 
@@ -761,9 +795,12 @@ class Sheet:
         self,
         name: str,
         tab_color: str | None = None,
-        show_gridlines: bool = True,
+        show_gridlines: bool = False,
         freeze_panes: tuple[int, int] | None = None,
         model: Model | None = None,
+        *,
+        layout: SheetLayoutMode = "auto",
+        col_width: float | None = None,
     ) -> None:
         if freeze_panes is not None:
             r, c = freeze_panes
@@ -774,10 +811,14 @@ class Sheet:
                 )
                 raise ValueError(msg)
 
+        validated_layout, validated_col_width = _validate_sheet_layout(layout, col_width)
+
         self.name = name
         self.tab_color = tab_color
         self.show_gridlines = show_gridlines
         self.freeze_panes = freeze_panes
+        self.layout: SheetLayoutMode = validated_layout
+        self.col_width: float | None = validated_col_width
         self._model = model
         self._tables: list[Table] = []
         self._table_ids: set[str] = set()
@@ -846,6 +887,11 @@ class Sheet:
                 "row": self.freeze_panes[0],
                 "col": self.freeze_panes[1],
             }
+        if self.layout == "grid":
+            layout_spec: GridSheetLayoutSpecDict = {"kind": "grid"}
+            if self.col_width is not None:
+                layout_spec["col_width"] = self.col_width
+            spec["layout"] = layout_spec
         return spec
 
 
@@ -873,8 +919,11 @@ class Model:
         self,
         name: str,
         tab_color: str | None = None,
-        show_gridlines: bool = True,
+        show_gridlines: bool = False,
         freeze_panes: tuple[int, int] | None = None,
+        *,
+        layout: SheetLayoutMode = "auto",
+        col_width: float | None = None,
     ) -> Sheet:
         """Creates and appends a new `Sheet` to the model."""
         if name in self._sheet_names:
@@ -886,6 +935,8 @@ class Model:
             show_gridlines=show_gridlines,
             freeze_panes=freeze_panes,
             model=self,
+            layout=layout,
+            col_width=col_width,
         )
         self._sheets.append(sheet)
         self._sheet_names.add(name)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from f8 import (
     Cell,
+    CellError,
     CompiledModel,
     InspectionError,
     MarkdownTable,
@@ -553,3 +554,533 @@ def test_scenario_11_row_col_ids_with_comma_quote_and_markdown_pipe_newline_esca
             info["excel_formula"] = None
     missing_formula_md = str(TableAuditor(raw_insp).to_markdown("formulas"))
     assert "42" not in missing_formula_md.splitlines()[-1]
+
+
+def _build_parity_model() -> CompiledModel:
+    """Builds the shared cross-language parity workbook."""
+    model = Model(name="ParityModel", theme="corporate_navy")
+
+    fin = model.add_sheet("Financials")
+    inc = fin.add_table(
+        "IncomeStatement",
+        title="Income Statement",
+        subtitle=["($ in Millions)", "Fiscal Year"],
+        currency="USD",
+    )
+    inc.add_column("line_item", role="descriptor", header="Line Item")
+    inc.add_column(
+        "y2023a",
+        role="measure",
+        group="Historical",
+        header="2023A",
+        format="currency",
+        decimals=1,
+    )
+    inc.add_column_gutter()
+    inc.add_column("2024E", role="measure", header="2024E", format="currency", decimals=1)
+
+    inc.add_section_header("Revenue & Margin")
+    inc.add_row(
+        "revenue",
+        cells={
+            "line_item": "Revenue",
+            "y2023a": 100.0,
+            "2024E": Cell(expr='IncomeStatement["revenue", col.prev] * 1.15'),
+        },
+    )
+    inc.add_row(
+        "cogs",
+        cells={
+            "line_item": Cell("Cost | Goods\nSold", indent=1),
+            "y2023a": 40.0,
+            "2024E": 44.0,
+        },
+    )
+    inc.add_row("sparse", cells={"line_item": "Memo", "y2023a": 5.0, "2024E": None})
+    inc.add_row_gutter()
+    inc.add_row(
+        "gross_profit",
+        style="subtotal",
+        cells={"line_item": "Gross Profit"},
+        expr='IncomeStatement["revenue", @col] - IncomeStatement["cogs", @col]',
+    )
+    inc.add_section_header("Checks | Errors")
+    inc.add_row(
+        "div_err",
+        style="total",
+        cells={
+            "line_item": "Net | Check",
+            "y2023a": 10.0,
+            "2024E": Cell(expr="1 / 0"),
+        },
+    )
+
+    pure = fin.add_table("PureMeasures", title="PureMeasures")
+    pure.add_column("c1", role="measure", header="c1")
+    pure.add_column("c2", role="measure", header="Col Two")
+    pure.add_row("r1", cells={"c1": 1.0, "c2": Cell(expr="NA()")})
+    pure.add_row("r2", style="total", cells={"c1": 2.0, "c2": 3.0})
+
+    val = model.add_sheet("Valuation")
+    comps = val.add_table("Comps", title="Trading Comps", currency="USD")
+    comps.add_column("ticker", role="descriptor", header="Ticker")
+    comps.add_column("company", role="descriptor", header="Company Name")
+    comps.add_column("ev", role="measure", header="EV", format="currency", decimals=1)
+    comps.add_row("aapl", cells={"ticker": "AAPL", "company": "Apple Inc.", "ev": 3000.0})
+    comps.add_row(
+        "msft_row",
+        cells={"ticker": "MSFT", "company": "Microsoft", "ev": Cell(expr="LN(-1)")},
+    )
+
+    model.add_sheet("Notes")
+    return model.compile()
+
+
+EXPECTED_PARITY_VALUES_MD = (
+    "# ParityModel\n"
+    "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n"
+    "\n"
+    "## Runtime Errors\n"
+    "\n"
+    '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)\n'
+    '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)\n'
+    '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)\n'
+    "\n"
+    "## Sheet: Financials\n"
+    "\n"
+    "### `IncomeStatement` — Income Statement\n"
+    "_($ in Millions)_\n"
+    "_Fiscal Year_\n"
+    "\n"
+    "| Line Item [line_item] | Historical: 2023A [y2023a] | 2024E |\n"
+    "| :--- | ---: | ---: |\n"
+    "| **Revenue & Margin** | | |\n"
+    "| Revenue | $100.0 | $115.0 |\n"
+    r"|   Cost \| Goods Sold [cogs] | $40.0 | $44.0 |"
+    "\n"
+    "| Memo [sparse] | $5.0 | — |\n"
+    "| **Gross Profit [gross_profit]** | **$60.0** | **$71.0** |\n"
+    r"| **Checks \| Errors** | | |"
+    "\n"
+    r"| **Net \| Check [div_err]** | **$10.0** | **#DIV/0!** |"
+    "\n"
+    "\n"
+    "### `PureMeasures`\n"
+    "\n"
+    "| Row | c1 | Col Two [c2] |\n"
+    "| :--- | ---: | ---: |\n"
+    "| r1 | 1 | #N/A |\n"
+    "| **r2** | **2** | **3** |\n"
+    "\n"
+    "## Sheet: Valuation\n"
+    "\n"
+    "### `Comps` — Trading Comps\n"
+    "\n"
+    "| Ticker | Company Name [company] | EV |\n"
+    "| :--- | :--- | ---: |\n"
+    "| AAPL | Apple Inc. | $3,000.0 |\n"
+    "| MSFT [msft_row] | Microsoft | #NUM! |\n"
+    "\n"
+    "## Sheet: Notes\n"
+    "\n"
+    "_(no tables)_\n"
+)
+
+EXPECTED_PARITY_INDEX_MD = (
+    "# ParityModel\n"
+    "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n"
+    "\n"
+    "## Runtime Errors\n"
+    "\n"
+    '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)\n'
+    '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)\n'
+    '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)\n'
+    "\n"
+    "## Sheet: Financials\n"
+    "\n"
+    "### `IncomeStatement` — Income Statement\n"
+    "_($ in Millions)_\n"
+    "_Fiscal Year_\n"
+    "\n"
+    "Columns: `line_item` (Line Item, descriptor), `y2023a` (Historical: 2023A), `2024E`\n"
+    "Rows:\n"
+    "- **Revenue & Margin**\n"
+    "  - `revenue`\n"
+    "  - `cogs`: Cost | Goods Sold\n"
+    "  - `sparse`: Memo\n"
+    "  - **`gross_profit`**: Gross Profit (subtotal)\n"
+    "- **Checks | Errors**\n"
+    "  - **`div_err`**: Net | Check (total)\n"
+    "\n"
+    "### `PureMeasures`\n"
+    "\n"
+    "Columns: `c1`, `c2` (Col Two)\n"
+    "Rows:\n"
+    "- `r1`\n"
+    "- **`r2`** (total)\n"
+    "\n"
+    "## Sheet: Valuation\n"
+    "\n"
+    "### `Comps` — Trading Comps\n"
+    "\n"
+    "Columns: `ticker` (descriptor), `company` (Company Name, descriptor), `ev`\n"
+    "Rows:\n"
+    "- `aapl`: AAPL | Apple Inc.\n"
+    "- `msft_row`: MSFT | Microsoft\n"
+    "\n"
+    "## Sheet: Notes\n"
+    "\n"
+    "_(no tables)_\n"
+)
+
+
+EXPECTED_PARITY_LAYOUT_MD = (
+    "# ParityModel\n"
+    "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n"
+    "\n"
+    "## Runtime Errors\n"
+    "\n"
+    '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)\n'
+    '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)\n'
+    '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)\n'
+    "\n"
+    "## Sheet: Financials\n"
+    "Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)\n"
+    "Columns: A:3, B:14, C:12, D:3, E:12\n"
+    "\n"
+    "- Band 1 (R2:R15, 14r x cols B..E, w:41):\n"
+    "  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack"
+    " | sub:2 hdr:R6:R7(grouped) body:R8:R15"
+    " | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1\n"
+    "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):\n"
+    "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack"
+    " | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)\n"
+    "\n"
+    "## Sheet: Valuation\n"
+    "Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)\n"
+    "Columns: A:3, B..D:12\n"
+    "\n"
+    "- Band 1 (R2:R6, 5r x cols B..D, w:36):\n"
+    "  - `Comps` [B2:D6] 5r x 3c (w:36) | stack"
+    " | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)\n"
+    "\n"
+    "## Sheet: Notes\n"
+    "\n"
+    "_(no tables)_\n"
+)
+
+
+def test_compiled_model_errors_and_workbook_markdown() -> None:
+    # Scenario 1: Clean workbook returns []
+    clean_model = Model(name="CleanModel")
+    clean_sheet = clean_model.add_sheet("Summary")
+    clean_tbl = clean_sheet.add_table("KPIs", title="KPIs")
+    clean_tbl.add_column("metric", role="descriptor", header="Metric")
+    clean_tbl.add_column("val", role="measure", header="Value")
+    clean_tbl.add_row("rev", cells={"metric": "Revenue", "val": 100.0})
+    clean = clean_model.compile()
+    assert clean.errors() == []
+    clean_md = clean.to_markdown()
+    assert type(clean_md) is str
+    assert "| Errors: 0\n" in clean_md
+    assert "## Runtime Errors" not in clean_md
+
+    # Scenario 2: Deterministic error list across sheets/tables
+    compiled = _build_parity_model()
+    errs: list[CellError] = compiled.errors()
+    assert errs == [
+        {
+            "coordinate": {"table": "IncomeStatement", "row": "div_err", "col": "2024E"},
+            "sheet": "Financials",
+            "physical_address": "'Financials'!E15",
+            "error": "#DIV/0!",
+            "formula_expr": "1 / 0",
+            "excel_formula": "=1/0",
+        },
+        {
+            "coordinate": {"table": "PureMeasures", "row": "r1", "col": "c2"},
+            "sheet": "Financials",
+            "physical_address": "'Financials'!C21",
+            "error": "#N/A",
+            "formula_expr": "NA()",
+            "excel_formula": "=NA()",
+        },
+        {
+            "coordinate": {"table": "Comps", "row": "msft_row", "col": "ev"},
+            "sheet": "Valuation",
+            "physical_address": "'Valuation'!D6",
+            "error": "#NUM!",
+            "formula_expr": "LN(-1)",
+            "excel_formula": "=LN(-1)",
+        },
+    ]
+
+    # Scenarios 3, 4, 5, 10: Byte-identical cross-language parity in values and index modes
+    md_values = compiled.to_markdown()
+    assert type(md_values) is str
+    assert md_values == EXPECTED_PARITY_VALUES_MD
+    assert compiled.to_markdown("values", show_ids=True) == EXPECTED_PARITY_VALUES_MD
+
+    md_index = compiled.to_markdown("index")
+    assert md_index == EXPECTED_PARITY_INDEX_MD
+    assert compiled.to_markdown("index", show_ids=False) == EXPECTED_PARITY_INDEX_MD
+
+    md_layout = compiled.to_markdown("layout")
+    assert md_layout == EXPECTED_PARITY_LAYOUT_MD
+    assert compiled.to_markdown("layout", show_ids=False) == EXPECTED_PARITY_LAYOUT_MD
+    assert compiled.to_markdown("layout", show_ids=True) == EXPECTED_PARITY_LAYOUT_MD
+
+    # Scenario 5: show_ids=False omits synthetic Row column & inline ID annotations
+    md_no_ids = compiled.to_markdown("values", show_ids=False)
+    assert "| Row |" not in md_no_ids
+    assert "| c1 | Col Two |" in md_no_ids
+    assert "[msft_row]" not in md_no_ids
+    assert "| MSFT | Microsoft | #NUM! |" in md_no_ids
+
+    # Scenarios 6 & 7: Filtering, union, deduplication, empty allowlists, empty sheet, strict errors
+    md_val_only = compiled.to_markdown(sheets=("Valuation",))
+    assert "| Errors: 3\n" in md_val_only
+    assert "## Runtime Errors" in md_val_only
+    assert 'Comps["msft_row", "ev"]' in md_val_only
+    assert "IncomeStatement" not in md_val_only
+
+    md_notes_only = compiled.to_markdown(sheets=["Notes"])
+    assert "| Errors: 3\n" in md_notes_only
+    assert "## Runtime Errors" not in md_notes_only
+    assert "## Sheet: Notes\n\n_(no tables)_\n" in md_notes_only
+
+    md_union = compiled.to_markdown(
+        sheets=["Valuation", "Valuation"],
+        tables=["Comps", "PureMeasures", "PureMeasures"],
+    )
+    assert md_union.count("### `Comps`") == 1
+    assert md_union.count("### `PureMeasures`") == 1
+    assert "### `IncomeStatement`" not in md_union
+    assert md_union.index("## Sheet: Financials") < md_union.index("## Sheet: Valuation")
+
+    expected_header_only = (
+        "# ParityModel\nSheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n"
+    )
+    assert compiled.to_markdown(sheets=[]) == expected_header_only
+    assert compiled.to_markdown(tables=[]) == expected_header_only
+    assert compiled.to_markdown(sheets=[], tables=[]) == expected_header_only
+    assert compiled.to_markdown("layout", sheets=[]) == expected_header_only
+    assert compiled.to_markdown("layout", tables=[]) == expected_header_only
+
+    with pytest.raises(InspectionError):
+        compiled.to_markdown(sheets=["UnknownSheet"])
+    with pytest.raises(InspectionError):
+        compiled.to_markdown(tables=["UnknownTable"])
+    with pytest.raises(InspectionError):
+        compiled.to_markdown("layout", sheets=["UnknownSheet"])
+    with pytest.raises(InspectionError):
+        compiled.to_markdown("layout", tables=["UnknownTable"])
+
+    # Scenario 8: Invalid detail raises ValueError (not F8Error)
+    from collections.abc import Callable
+    from typing import cast
+
+    untyped_to_markdown = cast(Callable[[str], str], compiled.to_markdown)
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid detail mode 'summary'\. Expected one of 'values', 'index', 'layout'\.",
+    ):
+        untyped_to_markdown("summary")
+
+
+def test_compiled_model_layout_markdown_scenarios() -> None:
+    # Partial tables filter in layout mode tags unselected siblings as (context) and scopes errors
+    parity = _build_parity_model()
+    md_partial = parity.to_markdown("layout", tables=["PureMeasures"])
+    assert "## Sheet: Financials\n" in md_partial
+    assert "## Sheet: Valuation" not in md_partial
+    assert "## Sheet: Notes" not in md_partial
+    assert "  - `IncomeStatement` (context) [B2:E15]" in md_partial
+    assert "  - `PureMeasures` [B18:C22]" in md_partial
+    assert "  - `PureMeasures` (context)" not in md_partial
+    assert 'PureMeasures["r1", "c2"]' in md_partial
+    assert 'IncomeStatement["div_err", "2024E"]' not in md_partial
+
+    # Grid layout with multi-lane geometry, uniform width inflation, and auto chrome metadata
+    model = Model("LayoutEndToEnd")
+    dash = model.add_sheet("Dashboard", layout="grid", col_width=12.0)
+
+    t1 = dash.add_table("T1", "Top Left")
+    t1.add_column("item", role="descriptor", header="Item")
+    t1.add_column("v1", header="V1", format="currency", decimals=1)
+    t1.add_row("r1", cells={"item": "Revenue", "v1": 123_456_789.0})
+
+    t2 = dash.add_table("T2", "Bottom Left", below=t1)
+    t2.add_column("item", role="descriptor", header="Item")
+    t2.add_column("v1", header="V1", format="currency", decimals=1)
+    t2.add_row("r1", cells={"item": "Cost", "v1": 50.0})
+
+    t3 = dash.add_table("T3", "Right Tall", right_of=t1)
+    t3.add_column("item", role="descriptor", header="Item")
+    t3.add_column("v1", header="V1")
+    for idx in range(1, 12):
+        t3.add_row(f"r{idx}", cells={"item": f"Row {idx}", "v1": float(idx)})
+
+    auto_sheet = model.add_sheet(
+        "Detail",
+        freeze_panes=(6, 2),
+        show_gridlines=True,
+        tab_color="#1F4E79",
+    )
+    tbl = auto_sheet.add_table(
+        "Notes",
+        "Notes Table",
+        subtitle=["Line 1", "Line 2"],
+        collapsible=True,
+    )
+    tbl.add_column("item", role="descriptor", header="Item")
+    tbl.add_column("val", group="Grp", header="Val")
+    tbl.add_row("r1", cells={"item": "Multi\nLine", "val": 10.0})
+
+    one_row = auto_sheet.add_table("Single", "", collapsible=True)
+    one_row.add_column("v")
+    one_row.add_row("r1", cells={"v": 1.0})
+
+    md = model.compile().to_markdown("layout")
+    assert "Layout: grid (W=15, base=12)" in md
+    assert "- Band 1 (" in md
+    assert "  - Lane B..C (" in md
+    assert "empty_below:" in md
+    assert "    - `T1` " in md
+    assert "    - `T2` " in md
+    assert "    - `T3` " in md
+    assert "Layout: auto |" in md
+    assert "| Freeze: C7 (R1:R6, A..B) | Gridlines: on | Tab: #1F4E79\n" in md
+    assert "sub:2 hdr:" in md
+    assert "(grouped)" in md
+    assert "collapsible | cols:" in md
+    assert "| wrap:1\n" in md
+    assert "`Single`" in md
+    assert "untitled hdr:none body:" in md
+    single_line = next(line for line in md.splitlines() if "`Single`" in line)
+    assert "collapsible" not in single_line
+
+    # Subtitle overflow indicator & grid descriptor req:W (cliff spill + lane-coupling victim)
+    diag_model = Model("LayoutDiag")
+    grid_sheet = diag_model.add_sheet("Grid", layout="grid", col_width=12.0)
+
+    culprit = grid_sheet.add_table(
+        "Culprit",
+        "Culprit Table",
+        subtitle="A long single-line subtitle that clearly overflows the narrow panel width",
+    )
+    culprit.add_column("item", role="descriptor", header="Item")
+    culprit.add_column("val", header="Val")
+    culprit.add_row("r1", cells={"item": "A" * 24, "val": 1.0})  # 24+1=25 -> 3c
+
+    victim = grid_sheet.add_table("Victim", "Victim Table", subtitle="($ in M)")
+    victim.add_column("item", role="descriptor", header="Item")
+    victim.add_column("val", header="Val")
+    victim.add_row("r1", cells={"item": "Revenue", "val": 2.0})  # 7+1=8, stretched to 3c
+
+    diag_md = diag_model.compile().to_markdown("layout")
+    culprit_line = next(line for line in diag_md.splitlines() if "`Culprit`" in line)
+    victim_line = next(line for line in diag_md.splitlines() if "`Victim`" in line)
+    assert "sub:1(73ch>w)" in culprit_line
+    assert "cols: desc B..D(3c, req:25), measure E(1c)" in culprit_line
+    assert "sub:1 hdr:" in victim_line
+    assert "ch>w" not in victim_line
+    assert "cols: desc B..D(3c, req:8), measure E(1c)" in victim_line
+
+
+def test_table_auditor_to_markdown_compact_mode() -> None:
+    # Scenario 9: compact=False preserves padded output; compact=True emits unpadded GFM
+    compiled = _build_parity_model()
+    inc = compiled.table("IncomeStatement")
+
+    for view in ("values", "formulas", "expr", "addresses"):
+        padded = inc.to_markdown(view)
+        compact = inc.to_markdown(view, compact=True)
+        assert isinstance(compact, MarkdownTable)
+        assert padded == inc.to_markdown(view, compact=False)
+        assert len(compact) < len(padded)
+
+        compact_lines = compact.splitlines()
+        assert compact_lines[1] == "| :--- | ---: | ---: |"
+        assert padded.splitlines()[1] != compact_lines[1]
+
+    compact_values = str(inc.to_markdown("values", show_ids=True, compact=True))
+    assert compact_values == (
+        "| Line Item [line_item] | Historical: 2023A [y2023a] | 2024E |\n"
+        "| :--- | ---: | ---: |\n"
+        "| **Revenue & Margin** | | |\n"
+        "| Revenue | $100.0 | $115.0 |\n"
+        r"|   Cost \| Goods Sold [cogs] | $40.0 | $44.0 |"
+        "\n"
+        "| Memo [sparse] | $5.0 | — |\n"
+        "| **Gross Profit [gross_profit]** | **$60.0** | **$71.0** |\n"
+        r"| **Checks \| Errors** | | |"
+        "\n"
+        r"| **Net \| Check [div_err]** | **$10.0** | **#DIV/0!** |"
+        "\n"
+    )
+
+    compact_formulas = str(inc.to_markdown("formulas", compact=True))
+    assert "| Revenue | $100.0 | =C9*1.15 |" in compact_formulas
+    assert "| Memo | $5.0 | |" in compact_formulas
+
+
+def test_bold_style_values_index_and_table_auditor_markdown() -> None:
+    model = Model("BoldModel")
+    sheet = model.add_sheet("Summary")
+    tbl = sheet.add_table("KPIs", "Key Metrics", currency="USD")
+    tbl.add_column("item", role="descriptor", header="Metric")
+    tbl.add_column("base", header="Base Case", style="bold")
+    tbl.add_column("upside", header="Upside")
+
+    tbl.add_row(
+        "rev",
+        format="currency",
+        cells={"item": "Revenue", "base": Cell(100.0, style="bold"), "upside": 120.0},
+    )
+    tbl.add_row(
+        "margin",
+        style="bold",
+        format="percentage",
+        cells={"item": "EBITDA Margin", "base": 0.25, "upside": 0.28},
+    )
+    tbl.add_row(
+        "ebitda",
+        style="subtotal",
+        format="currency",
+        cells={"item": "EBITDA", "base": 25.0, "upside": 34.0},
+    )
+    tbl.add_row(
+        "net_income",
+        style="total",
+        format="currency",
+        cells={"item": "Net Income", "base": 18.0, "upside": 24.0},
+    )
+
+    compiled = model.compile()
+    inspected = compiled.inspect_table("KPIs")
+    assert inspected["columns"][1]["style"] == "bold"
+    assert inspected["rows"][1]["style"] == "bold"
+
+    # Whole-workbook Markdown: bold row bolded in values (plain in index); bold col unbolded
+    md_values = compiled.to_markdown("values", show_ids=False)
+    assert "| Revenue | $100 | $120 |\n" in md_values
+    assert "| **EBITDA Margin** | **25.0%** | **28.0%** |\n" in md_values
+    assert "| **EBITDA** | **$25** | **$34** |\n" in md_values
+    assert "| **Net Income** | **$18** | **$24** |\n" in md_values
+
+    md_index = compiled.to_markdown("index")
+    assert "- `margin`: EBITDA Margin\n" in md_index
+    assert "(bold)" not in md_index
+    assert "**`margin`**" not in md_index
+    assert "- **`ebitda`** (subtotal)\n" in md_index
+    assert "- **`net_income`**: Net Income (total)\n" in md_index
+
+    # TableAuditor Markdown matches whole-workbook values behavior
+    auditor_compact = str(compiled.table("KPIs").to_markdown("values", compact=True))
+    assert "| Revenue | $100 | $120 |\n" in auditor_compact
+    assert "| **EBITDA Margin** | **25.0%** | **28.0%** |\n" in auditor_compact
+
+    # Workbook emission succeeds cleanly
+    xlsx = compiled.emit_workbook()
+    assert xlsx[:2] == b"PK"

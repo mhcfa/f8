@@ -214,6 +214,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("IncomeStatement"),
                     TableId::from("CapTable"),
@@ -227,6 +228,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("Assumptions")],
             },
         ],
@@ -1013,6 +1015,7 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T")],
         }],
     };
@@ -1280,6 +1283,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("History")],
             },
             SheetSpec {
@@ -1287,6 +1291,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("Detail"),
                     TableId::from("Schedule"),
@@ -1790,5 +1795,113 @@ fn test_ln_exp_mod_native_lowering() {
             !lowered.contains("_xlfn."),
             "native Excel 97+ math function must not emit _xlfn. prefix: {lowered}"
         );
+    }
+}
+
+#[test]
+fn test_grid_layout_scenario_8_formula_lowering_and_vertical_descriptor_lookup_parity() {
+    use f8_core::SheetLayoutSpec;
+    use f8_core::compiler::Compiler;
+    use f8_core::value::CellValue;
+
+    let build_model = |layout: SheetLayoutSpec| {
+        let mut t = TableSpec::new("T", "Grid Parity");
+        t.columns.push(ColumnSpec::descriptor("item", "Line Item"));
+        t.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t.columns.push(ColumnSpec::new("c2").with_header("C2"));
+        t.columns.push(ColumnSpec::new("c3").with_header("C3"));
+        t.columns.push(ColumnSpec::new("val").with_header("Total"));
+
+        // 28-char descriptor -> span 3 (B..D) on grid sheet (col_width=12.0)
+        t.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", "Operating Expenses (Excl DA)")
+                .with_cell("c1", 10.0)
+                .with_cell("c2", 20.0)
+                .with_cell("c3", 30.0)
+                .with_cell("val", CellInput::formula(r#"SUM(T["r1", "c1".."c3"])"#)),
+        );
+        t.rows.push(
+            RowSpec::new("r2")
+                .with_cell("item", "Target")
+                .with_cell("c1", 100.0)
+                .with_cell("c2", 200.0)
+                .with_cell("c3", 300.0)
+                .with_cell("val", CellInput::formula(r#"SUM(T["r2", "c1".."c3"])"#)),
+        );
+        t.rows.push(
+            RowSpec::new("r3")
+                .with_cell("item", "Other")
+                .with_cell("c1", 5.0)
+                .with_cell("c2", 15.0)
+                .with_cell("c3", 25.0)
+                .with_cell("val", CellInput::formula(r#"SUM(T["r3", "c1".."c3"])"#)),
+        );
+        t.rows.push(
+            RowSpec::new("lookup_row")
+                .with_cell("item", "Lookup Result")
+                .with_cell("c1", 0.0)
+                .with_cell("c2", 0.0)
+                .with_cell("c3", 0.0)
+                .with_cell(
+                    "val",
+                    CellInput::formula(
+                        r#"XLOOKUP("Target", T["r1".."r3", "item"], T["r1".."r3", "val"])"#,
+                    ),
+                ),
+        );
+
+        let manifest = ProjectManifest {
+            model_name: "GridLoweringParity".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Model".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout,
+                tables: vec![TableId::from("T")],
+            }],
+        };
+
+        Compiler::compile(&manifest, &[t]).unwrap()
+    };
+
+    let auto_compiled = build_model(SheetLayoutSpec::Auto);
+    let grid_compiled = build_model(SheetLayoutSpec::grid_with_col_width(12.0));
+
+    // Title=row2 (idx1), gutter=row3 (idx2), header=row4 (idx3), r1=row5, r2=row6, r3=row7, lookup_row=row8
+    // On grid sheet: item spans B..D (1..=3), c1=E(4), c2=F(5), c3=G(6), val=H(7)
+    let r1_val = grid_compiled
+        .inspect_cell(&TableId::from("T"), &RowId::from("r1"), &ColId::from("val"))
+        .unwrap();
+    assert_eq!(r1_val.physical_address, "'Model'!H5");
+    assert_eq!(r1_val.excel_formula.as_deref(), Some("=SUM($E$5:$G$5)"));
+
+    let lookup_val = grid_compiled
+        .inspect_cell(
+            &TableId::from("T"),
+            &RowId::from("lookup_row"),
+            &ColId::from("val"),
+        )
+        .unwrap();
+    assert_eq!(lookup_val.physical_address, "'Model'!H8");
+    assert_eq!(
+        lookup_val.excel_formula.as_deref(),
+        Some(r#"=XLOOKUP("Target",$B$5:$B$7,$H$5:$H$7)"#)
+    );
+    assert_eq!(lookup_val.evaluated_value, CellValue::Number(600.0));
+
+    // Evaluated values match auto mode identically for every cell
+    for row in ["r1", "r2", "r3", "lookup_row"] {
+        for col in ["item", "c1", "c2", "c3", "val"] {
+            let auto_v = auto_compiled
+                .cell_value(&TableId::from("T"), &RowId::from(row), &ColId::from(col))
+                .unwrap();
+            let grid_v = grid_compiled
+                .cell_value(&TableId::from("T"), &RowId::from(row), &ColId::from(col))
+                .unwrap();
+            assert_eq!(grid_v, auto_v, "Value mismatch at ({row}, {col})");
+        }
     }
 }

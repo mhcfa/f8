@@ -90,7 +90,7 @@ fn test_scenario_1_dynamic_number_format_mask_synthesis() {
     let debug = format!("{format:?}");
 
     assert!(
-        debug.contains(r#"num_format: "$#,##0.00_);($#,##0.00);\"-\"_)""#),
+        debug.contains(r#"num_format: "$#,##0.00_);($#,##0.00);\"-\"_);@_)""#),
         "Expected currency number format mask in: {debug}"
     );
 }
@@ -442,7 +442,8 @@ fn test_scenario_8_unformatted_general_preset_handling() {
     let theme = Theme::corporate_navy();
     let mut cache = FormatCache::new(&theme).expect("valid theme");
 
-    let key = CellFormatKey::new(
+    // Unformatted measure cell uses theme.number_formats.general
+    let measure_key = CellFormatKey::new(
         StyleRole::data(),
         None, // preset is None
         None,
@@ -451,17 +452,31 @@ fn test_scenario_8_unformatted_general_preset_handling() {
         false,
         0,
     );
-
-    let format = cache.get_cell_format(&key).expect("ok");
-    let debug = format!("{format:?}");
-
-    // Number format should be default/empty ("" or not set)
+    let measure_format = cache.get_cell_format(&measure_key).expect("ok");
+    let measure_debug = format!("{measure_format:?}");
     assert!(
-        debug.contains(r#"num_format: """#),
-        "Unformatted preset must not set custom num_format: {debug}"
+        measure_debug.contains(r#"num_format: "General_);(General);0_);@_)""#),
+        "Unformatted measure cell must use default general alignment mask: {measure_debug}"
     );
-    assert!(debug.contains(r#"name: "Aptos""#));
-    assert!(debug.contains(r#"size: "10""#));
+    assert!(measure_debug.contains(r#"name: "Aptos""#));
+    assert!(measure_debug.contains(r#"size: "10""#));
+
+    // Unformatted descriptor cell emits no custom num_format
+    let desc_key = CellFormatKey::new(
+        StyleRole::data(),
+        None, // preset is None
+        None,
+        None,
+        false,
+        true,
+        0,
+    );
+    let desc_format = cache.get_cell_format(&desc_key).expect("ok");
+    let desc_debug = format!("{desc_format:?}");
+    assert!(
+        desc_debug.contains(r#"num_format: """#),
+        "Unformatted descriptor cell must not set custom num_format: {desc_debug}"
+    );
 }
 
 #[test]
@@ -511,11 +526,18 @@ fn test_orthogonal_2d_total_box_borders() {
     assert!(debug.contains("top_style: Thin"));
     assert!(debug.contains("bottom_style: Double"));
     assert!(debug.contains("left_style: Thin"));
-    assert!(debug.contains("right_style: Double"));
+    assert!(debug.contains("right_style: None"));
     assert!(debug.contains(&format!("top_color: {total_border_color}")));
     assert!(debug.contains(&format!("bottom_color: {total_border_color}")));
     assert!(debug.contains(&format!("left_color: {total_border_color}")));
-    assert!(debug.contains(&format!("right_color: {total_border_color}")));
+
+    // Custom theme opting into col_total_border_right emits right border in total_border_color
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.borders.col_total_border_right = BorderStyle::Double;
+    let mut custom_cache = FormatCache::new(&custom_theme).expect("valid theme");
+    let custom_debug = format!("{:?}", custom_cache.get_cell_format(&key).expect("ok"));
+    assert!(custom_debug.contains("right_style: Double"));
+    assert!(custom_debug.contains(&format!("right_color: {total_border_color}")));
 }
 
 #[test]
@@ -1134,4 +1156,423 @@ fn test_scenario_16_vertical_center_alignment_and_text_wrap() {
     );
 
     assert_eq!(cache.len(), 2);
+}
+
+#[test]
+fn test_scenario_17_measure_vs_descriptor_column_header_number_formats() {
+    let theme = Theme::corporate_navy();
+    let cache = FormatCache::new(&theme).expect("valid theme");
+
+    // Measure column headers (both bottom and upper tiers) inherit theme.number_formats.text ("@_)")
+    let measure_bottom = format!("{:?}", cache.col_header_format(false));
+    let measure_upper = format!("{:?}", cache.col_header_upper_format(false));
+    assert!(
+        measure_bottom.contains(r#"num_format: "@_)""#),
+        "Bottom measure header must carry @_): {measure_bottom}"
+    );
+    assert!(
+        measure_upper.contains(r#"num_format: "@_)""#),
+        "Upper measure header must carry @_): {measure_upper}"
+    );
+
+    // Descriptor column headers (both tiers), super-headers, title, subtitle, and section headers carry no custom num_format
+    let desc_bottom = format!("{:?}", cache.col_header_format(true));
+    let desc_upper = format!("{:?}", cache.col_header_upper_format(true));
+    let super_hdr = format!("{:?}", cache.super_header_format());
+    let title = format!("{:?}", cache.title_format());
+    let subtitle = format!("{:?}", cache.subtitle_format());
+    let section = format!("{:?}", cache.section_header_format(None));
+
+    for (label, debug) in [
+        ("descriptor bottom header", desc_bottom),
+        ("descriptor upper header", desc_upper),
+        ("super-header", super_hdr),
+        ("title", title),
+        ("subtitle", subtitle),
+        ("section header", section),
+    ] {
+        assert!(
+            debug.contains(r#"num_format: """#),
+            "{label} must carry empty num_format: {debug}"
+        );
+    }
+}
+
+#[test]
+fn test_scenario_18_unformatted_general_format_and_theme_opt_out() {
+    // 1. Default theme: measure unformatted gets general mask; descriptor unformatted stays ""
+    let default_theme = Theme::corporate_navy();
+    let mut default_cache = FormatCache::new(&default_theme).expect("valid theme");
+
+    let measure_key = CellFormatKey::new(StyleRole::data(), None, None, None, false, false, 0);
+    let desc_key = CellFormatKey::new(StyleRole::data(), None, None, None, false, true, 0);
+    let text_key = CellFormatKey::new(
+        StyleRole::data(),
+        Some(FormatPreset::Text),
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+
+    let measure_debug = format!("{:?}", default_cache.get_cell_format(&measure_key).unwrap());
+    let desc_debug = format!("{:?}", default_cache.get_cell_format(&desc_key).unwrap());
+    assert!(
+        measure_debug.contains(r#"num_format: "General_);(General);0_);@_)""#),
+        "Default unformatted measure cell must use general alignment mask: {measure_debug}"
+    );
+    assert!(
+        desc_debug.contains(r#"num_format: """#),
+        "Default unformatted descriptor cell must stay empty: {desc_debug}"
+    );
+
+    // 2. Opt-out custom themes: "General" (any ASCII case) and "" emit native General ("")
+    for (general_val, text_val) in [
+        ("General", "General"),
+        ("general", "general"),
+        ("GENERAL", "GENERAL"),
+        ("", ""),
+    ] {
+        let mut opt_out_theme = Theme::corporate_navy();
+        opt_out_theme.number_formats.general = general_val.to_string();
+        opt_out_theme.number_formats.text = text_val.to_string();
+
+        let mut cache = FormatCache::new(&opt_out_theme).expect("valid opt-out theme");
+        let m_cell = format!("{:?}", cache.get_cell_format(&measure_key).unwrap());
+        let d_cell = format!("{:?}", cache.get_cell_format(&desc_key).unwrap());
+        let t_cell = format!("{:?}", cache.get_cell_format(&text_key).unwrap());
+        let m_hdr = format!("{:?}", cache.col_header_format(false));
+        let m_upper = format!("{:?}", cache.col_header_upper_format(false));
+
+        assert!(
+            m_cell.contains(r#"num_format: """#),
+            "Opt-out general={general_val:?} must leave measure cell num_format empty: {m_cell}"
+        );
+        assert!(
+            d_cell.contains(r#"num_format: """#),
+            "Descriptor cell num_format must stay empty: {d_cell}"
+        );
+        assert!(
+            t_cell.contains(r#"num_format: """#),
+            "Opt-out text={text_val:?} must leave FormatPreset::Text cell num_format empty: {t_cell}"
+        );
+        assert!(
+            m_hdr.contains(r#"num_format: """#),
+            "Opt-out text={text_val:?} must leave measure header num_format empty: {m_hdr}"
+        );
+        assert!(
+            m_upper.contains(r#"num_format: """#),
+            "Opt-out text={text_val:?} must leave upper measure header num_format empty: {m_upper}"
+        );
+    }
+
+    // 3. Custom non-General templates propagate cleanly to measure headers, text cells, and unformatted measure cells
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.number_formats.general = "0.00_)".to_string();
+    custom_theme.number_formats.text = "@_ ".to_string();
+    let mut custom_cache = FormatCache::new(&custom_theme).expect("valid custom theme");
+
+    let custom_measure_cell = format!("{:?}", custom_cache.get_cell_format(&measure_key).unwrap());
+    let custom_desc_cell = format!("{:?}", custom_cache.get_cell_format(&desc_key).unwrap());
+    let custom_text_cell = format!("{:?}", custom_cache.get_cell_format(&text_key).unwrap());
+    let custom_measure_hdr = format!("{:?}", custom_cache.col_header_format(false));
+    let custom_measure_upper = format!("{:?}", custom_cache.col_header_upper_format(false));
+    let custom_desc_hdr = format!("{:?}", custom_cache.col_header_format(true));
+
+    assert!(custom_measure_cell.contains(r#"num_format: "0.00_)""#));
+    assert!(custom_desc_cell.contains(r#"num_format: """#));
+    assert!(custom_text_cell.contains(r#"num_format: "@_ ""#));
+    assert!(custom_measure_hdr.contains(r#"num_format: "@_ ""#));
+    assert!(custom_measure_upper.contains(r#"num_format: "@_ ""#));
+    assert!(custom_desc_hdr.contains(r#"num_format: """#));
+}
+
+#[test]
+fn test_bold_style_sets_bold_without_borders_or_summary_colors() {
+    let mut theme = Theme::corporate_navy();
+    // Use distinct subtotal/total fills and text colors to prove Bold ignores them
+    theme.palette.subtotal_fill = "#DDEEFF".to_string();
+    theme.palette.subtotal_text = "#112233".to_string();
+    theme.palette.total_fill = "#CCDDEE".to_string();
+    theme.palette.total_text = "#445566".to_string();
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    let formula_color = format!(
+        "{:?}",
+        parse_hex_color("formula_text", &theme.palette.formula_text).unwrap()
+    );
+    let input_color = format!(
+        "{:?}",
+        parse_hex_color("input_text", &theme.palette.input_text).unwrap()
+    );
+    let subtotal_fill_color = format!(
+        "{:?}",
+        parse_hex_color("subtotal_fill", &theme.palette.subtotal_fill).unwrap()
+    );
+    let total_fill_color = format!(
+        "{:?}",
+        parse_hex_color("total_fill", &theme.palette.total_fill).unwrap()
+    );
+    let shade_muted_color = format!(
+        "{:?}",
+        parse_hex_color("shade_muted_fill", &theme.palette.shade_muted_fill).unwrap()
+    );
+
+    // 1. Row-bold and Col-bold: bold=true, zero borders, standard formula/input colors, no summary fill
+    for role in [
+        StyleRole {
+            horizontal: SemanticStyle::Bold,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+            shade: None,
+        },
+        StyleRole {
+            horizontal: SemanticStyle::Data,
+            vertical: SemanticStyle::Bold,
+            is_highlight: false,
+            shade: None,
+        },
+    ] {
+        let formula_key = CellFormatKey::new(
+            role,
+            Some(FormatPreset::Percentage),
+            Some(1),
+            None,
+            false,
+            false,
+            0,
+        );
+        let debug = format!("{:?}", cache.get_cell_format(&formula_key).unwrap());
+        assert!(
+            debug.contains("bold: true"),
+            "Bold style must set bold: {debug}"
+        );
+        assert!(
+            debug.contains("top_style: None"),
+            "Bold must have no top border: {debug}"
+        );
+        assert!(
+            debug.contains("bottom_style: None"),
+            "Bold must have no bottom border: {debug}"
+        );
+        assert!(
+            debug.contains("left_style: None"),
+            "Bold must have no left border: {debug}"
+        );
+        assert!(
+            debug.contains("right_style: None"),
+            "Bold must have no right border: {debug}"
+        );
+        assert!(
+            debug.contains(&format!("color: {formula_color}")),
+            "Bold formula must use formula_text color: {debug}"
+        );
+        assert!(
+            !debug.contains(&subtotal_fill_color),
+            "Bold must not inherit subtotal_fill: {debug}"
+        );
+        assert!(
+            !debug.contains(&total_fill_color),
+            "Bold must not inherit total_fill: {debug}"
+        );
+
+        let input_key = CellFormatKey::new(
+            role,
+            Some(FormatPreset::Currency),
+            Some(0),
+            Some(CurrencyCode::Usd),
+            true,
+            false,
+            0,
+        );
+        let input_debug = format!("{:?}", cache.get_cell_format(&input_key).unwrap());
+        assert!(input_debug.contains("bold: true"));
+        assert!(
+            input_debug.contains(&format!("color: {input_color}")),
+            "Bold measure literal must preserve input_text blue: {input_debug}"
+        );
+    }
+
+    // 2. Bold + Shade applies shade fill with bold text and no borders
+    let shaded_bold_key = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Bold,
+            vertical: SemanticStyle::Data,
+            is_highlight: false,
+            shade: Some(Shade::Muted),
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let shaded_debug = format!("{:?}", cache.get_cell_format(&shaded_bold_key).unwrap());
+    assert!(shaded_debug.contains("bold: true"));
+    assert!(shaded_debug.contains(&format!("background_color: {shade_muted_color}")));
+    assert!(shaded_debug.contains("top_style: None"));
+    assert!(shaded_debug.contains("left_style: None"));
+
+    // 3. Orthogonal composition: Total row x Bold col has top/bottom borders only (no left/right)
+    let total_x_bold = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            vertical: SemanticStyle::Bold,
+            is_highlight: false,
+            shade: None,
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let tb_debug = format!("{:?}", cache.get_cell_format(&total_x_bold).unwrap());
+    assert!(tb_debug.contains("bold: true"));
+    assert!(tb_debug.contains("top_style: Thin"));
+    assert!(tb_debug.contains("bottom_style: Double"));
+    assert!(tb_debug.contains("left_style: None"));
+    assert!(tb_debug.contains("right_style: None"));
+
+    // 4. Orthogonal composition: Bold row x Subtotal col has left border only (no top/bottom)
+    let bold_x_sub = CellFormatKey::new(
+        StyleRole {
+            horizontal: SemanticStyle::Bold,
+            vertical: SemanticStyle::Subtotal,
+            is_highlight: false,
+            shade: None,
+        },
+        None,
+        None,
+        None,
+        false,
+        false,
+        0,
+    );
+    let bs_debug = format!("{:?}", cache.get_cell_format(&bold_x_sub).unwrap());
+    assert!(bs_debug.contains("bold: true"));
+    assert!(bs_debug.contains("top_style: None"));
+    assert!(bs_debug.contains("bottom_style: None"));
+    assert!(bs_debug.contains("left_style: Dashed"));
+    assert!(bs_debug.contains("right_style: None"));
+}
+
+#[test]
+fn test_span_edge_vertical_border_gating_and_runway_visibility() {
+    use f8_core::compiler::emission::SpanEdge;
+
+    let mut theme = Theme::corporate_navy();
+    theme.borders.descriptor_border_right = BorderStyle::Thin;
+    let mut cache = FormatCache::new(&theme).expect("valid theme");
+
+    // 1. Descriptor column with vertical Subtotal (dashed left) + theme descriptor_border_right=Thin
+    let desc_sub_role = StyleRole {
+        horizontal: SemanticStyle::Data,
+        vertical: SemanticStyle::Subtotal,
+        is_highlight: false,
+        shade: None,
+    };
+    let check_borders = |cache: &mut FormatCache, role: StyleRole, edge: SpanEdge| {
+        let key = CellFormatKey::new(role, None, None, None, false, true, 0).with_span_edge(edge);
+        format!("{:?}", cache.get_cell_format(&key).unwrap())
+    };
+
+    let single = check_borders(&mut cache, desc_sub_role, SpanEdge::Single);
+    assert!(single.contains("left_style: Dashed"));
+    assert!(single.contains("right_style: Thin"));
+
+    let start = check_borders(&mut cache, desc_sub_role, SpanEdge::Start);
+    assert!(start.contains("left_style: Dashed"));
+    assert!(start.contains("right_style: None"));
+
+    let middle = check_borders(&mut cache, desc_sub_role, SpanEdge::Middle);
+    assert!(middle.contains("left_style: None"));
+    assert!(middle.contains("right_style: None"));
+
+    let end = check_borders(&mut cache, desc_sub_role, SpanEdge::End);
+    assert!(end.contains("left_style: None"));
+    assert!(end.contains("right_style: Thin"));
+
+    // 2. Descriptor column with vertical Total (default col_total_border_right=None falls through to descriptor_border_right=Thin)
+    let desc_total_role = StyleRole {
+        horizontal: SemanticStyle::Data,
+        vertical: SemanticStyle::Total,
+        is_highlight: false,
+        shade: None,
+    };
+    let tot_start = check_borders(&mut cache, desc_total_role, SpanEdge::Start);
+    assert!(tot_start.contains("left_style: Thin"));
+    assert!(tot_start.contains("right_style: None"));
+
+    let tot_middle = check_borders(&mut cache, desc_total_role, SpanEdge::Middle);
+    assert!(tot_middle.contains("left_style: None"));
+    assert!(tot_middle.contains("right_style: None"));
+
+    let tot_end = check_borders(&mut cache, desc_total_role, SpanEdge::End);
+    assert!(tot_end.contains("left_style: None"));
+    assert!(tot_end.contains("right_style: Thin"));
+    assert!(cache.has_visible_runway_style(desc_total_role, SpanEdge::End));
+
+    // Custom col_total_border_right=Double overrides descriptor_border_right=Thin on End
+    let mut double_right_theme = theme.clone();
+    double_right_theme.borders.col_total_border_right = BorderStyle::Double;
+    let mut double_right_cache = FormatCache::new(&double_right_theme).expect("valid theme");
+    let custom_tot_end = check_borders(&mut double_right_cache, desc_total_role, SpanEdge::End);
+    assert!(custom_tot_end.contains("left_style: None"));
+    assert!(custom_tot_end.contains("right_style: Double"));
+    assert!(double_right_cache.has_visible_runway_style(desc_total_role, SpanEdge::End));
+
+    // 3. has_visible_runway_style on default theme (descriptor_border_right=None, col_total_border_right=None, data_fill=none, subtotal_fill=none)
+    let default_cache = FormatCache::new(&Theme::corporate_navy()).unwrap();
+    assert!(!default_cache.has_visible_runway_style(StyleRole::data(), SpanEdge::Middle));
+    assert!(!default_cache.has_visible_runway_style(StyleRole::data(), SpanEdge::End));
+    assert!(!default_cache.has_visible_runway_style(desc_sub_role, SpanEdge::Middle));
+    assert!(!default_cache.has_visible_runway_style(desc_sub_role, SpanEdge::End));
+    assert!(default_cache.has_visible_runway_style(
+        StyleRole {
+            horizontal: SemanticStyle::Total,
+            ..StyleRole::data()
+        },
+        SpanEdge::Middle
+    ));
+    assert!(default_cache.has_visible_runway_style(
+        StyleRole {
+            shade: Some(Shade::Muted),
+            ..StyleRole::data()
+        },
+        SpanEdge::Middle
+    ));
+    assert!(default_cache.has_visible_runway_style(
+        StyleRole {
+            is_highlight: true,
+            ..StyleRole::data()
+        },
+        SpanEdge::Middle
+    ));
+    // Vertical Total in corporate_navy has total_fill="none" and col_total_border_right=None:
+    // both Middle and End have no visible runway fill or right border
+    assert!(!default_cache.has_visible_runway_style(desc_total_role, SpanEdge::Middle));
+    assert!(!default_cache.has_visible_runway_style(desc_total_role, SpanEdge::End));
+
+    // Custom col_total_border_right=Double makes End runway visible even with descriptor_border_right=None
+    let mut right_only_theme = Theme::corporate_navy();
+    right_only_theme.borders.col_total_border_right = BorderStyle::Double;
+    let right_only_cache = FormatCache::new(&right_only_theme).unwrap();
+    assert!(!right_only_cache.has_visible_runway_style(desc_total_role, SpanEdge::Middle));
+    assert!(right_only_cache.has_visible_runway_style(desc_total_role, SpanEdge::End));
+
+    // When theme configures total_fill / subtotal_fill, Middle runway also becomes visible
+    let mut filled_theme = Theme::corporate_navy();
+    filled_theme.palette.total_fill = "#D9E1F2".to_string();
+    filled_theme.palette.subtotal_fill = "#EDF2F8".to_string();
+    let filled_cache = FormatCache::new(&filled_theme).unwrap();
+    assert!(filled_cache.has_visible_runway_style(desc_total_role, SpanEdge::Middle));
+    assert!(filled_cache.has_visible_runway_style(desc_sub_role, SpanEdge::Middle));
+
+    // With descriptor_border_right=Thin: plain data row skips Middle, emits End
+    assert!(!cache.has_visible_runway_style(StyleRole::data(), SpanEdge::Middle));
+    assert!(cache.has_visible_runway_style(StyleRole::data(), SpanEdge::End));
 }

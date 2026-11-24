@@ -18,9 +18,9 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert!(theme.typography.title_size > theme.typography.data_size);
     assert!(theme.typography.section_header_underline);
     assert_eq!(theme.palette.section_header_fill, "none");
-    assert_eq!(theme.palette.table_subtitle_text, "#45556C");
-    assert_eq!(theme.palette.super_header_fill, "#E2E8F0");
-    assert_eq!(theme.palette.gridline_color, "#E2E8F0");
+    assert_eq!(theme.palette.table_subtitle_text, "#525252");
+    assert_eq!(theme.palette.super_header_fill, "#E5E5E5");
+    assert_eq!(theme.palette.gridline_color, "#E5E5E5");
 
     // Verify metrics
     assert!(theme.metrics.gutter_col_width > 0.0);
@@ -29,8 +29,12 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert_eq!(theme.metrics.max_col_width, 75.0);
 
     // Verify borders
+    assert_eq!(theme.borders.subtotal_border_top, BorderStyle::Thin);
+    assert_eq!(theme.borders.total_border_top, BorderStyle::Thin);
     assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
-    assert_eq!(theme.borders.col_total_border_right, BorderStyle::Double);
+    assert_eq!(theme.borders.col_subtotal_border_left, BorderStyle::Dashed);
+    assert_eq!(theme.borders.col_total_border_left, BorderStyle::Thin);
+    assert_eq!(theme.borders.col_total_border_right, BorderStyle::None);
 
     // Verify removed preset themes are rejected when resolved
     let removed_themes = ["classic_green", "modern_slate", "minimal_monochrome"];
@@ -51,31 +55,31 @@ fn test_scenario_2_dynamic_dec_and_sym_expansion_zero_decimals() {
     let curr_mask = theme
         .resolve_number_format(FormatPreset::Currency, Some(0), None)
         .expect("currency format resolution failed");
-    assert_eq!(curr_mask, "$#,##0_);($#,##0);\"-\"_)");
+    assert_eq!(curr_mask, "$#,##0_);($#,##0);\"-\"_);@_)");
 
     // Number with zero decimals
     let num_mask = theme
         .resolve_number_format(FormatPreset::Number, Some(0), None)
         .expect("number format resolution failed");
-    assert_eq!(num_mask, "#,##0_);(#,##0);\"-\"_)");
+    assert_eq!(num_mask, "#,##0_);(#,##0);\"-\"_);@_)");
 
     // Percentage with zero decimals
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, Some(0), None)
         .expect("percentage format resolution failed");
-    assert_eq!(pct_mask, "0%_);(0%);\"-\"_)");
+    assert_eq!(pct_mask, "0%_);(0%);\"-\"_);@_)");
 
     // Multiple with zero decimals
     let mult_mask = theme
         .resolve_number_format(FormatPreset::Multiple, Some(0), None)
         .expect("multiple format resolution failed");
-    assert_eq!(mult_mask, "0\"x\"_);(0\"x\");\"-\"_)");
+    assert_eq!(mult_mask, "0\"x\"_);(0\"x\");\"-\"_);@_)");
 
     // BasisPoints with zero decimals
     let bps_mask = theme
         .resolve_number_format(FormatPreset::BasisPoints, Some(0), None)
         .expect("basis points format resolution failed");
-    assert_eq!(bps_mask, "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_)");
+    assert_eq!(bps_mask, "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_);@_)");
 }
 
 #[test]
@@ -86,25 +90,25 @@ fn test_scenario_3_dynamic_dec_and_sym_expansion_positive_decimals_and_currency(
     let eur_mask = theme
         .resolve_number_format(FormatPreset::Currency, Some(2), Some(CurrencyCode::Eur))
         .expect("eur currency resolution failed");
-    assert_eq!(eur_mask, "€#,##0.00_);(€#,##0.00);\"-\"_)");
+    assert_eq!(eur_mask, "€#,##0.00_);(€#,##0.00);\"-\"_);@_)");
 
     // Currency: 2 decimals, CHF (quoted symbol)
     let chf_mask = theme
         .resolve_number_format(FormatPreset::Currency, Some(2), Some(CurrencyCode::Chf))
         .expect("chf currency resolution failed");
-    assert_eq!(chf_mask, "\"CHF\"#,##0.00_);(\"CHF\"#,##0.00);\"-\"_)");
+    assert_eq!(chf_mask, "\"CHF\"#,##0.00_);(\"CHF\"#,##0.00);\"-\"_);@_)");
 
     // Percentage: 1 decimal
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, Some(1), None)
         .expect("percentage resolution failed");
-    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_)");
+    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_);@_)");
 
     // Number: 4 decimals
     let num_mask = theme
         .resolve_number_format(FormatPreset::Number, Some(4), None)
         .expect("number resolution failed");
-    assert_eq!(num_mask, "#,##0.0000_);(#,##0.0000);\"-\"_)");
+    assert_eq!(num_mask, "#,##0.0000_);(#,##0.0000);\"-\"_);@_)");
 }
 
 #[test]
@@ -115,31 +119,31 @@ fn test_scenario_4_fallback_to_theme_defaults() {
     let curr_mask = theme
         .resolve_number_format(FormatPreset::Currency, None, None)
         .expect("default currency resolution failed");
-    assert_eq!(curr_mask, "$#,##0_);($#,##0);\"-\"_)");
+    assert_eq!(curr_mask, "$#,##0_);($#,##0);\"-\"_);@_)");
 
     // Percentage default: 1 decimal
     let pct_mask = theme
         .resolve_number_format(FormatPreset::Percentage, None, None)
         .expect("default percentage resolution failed");
-    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_)");
+    assert_eq!(pct_mask, "0.0%_);(0.0%);\"-\"_);@_)");
 
     // Multiple default: 1 decimal
     let mult_mask = theme
         .resolve_number_format(FormatPreset::Multiple, None, None)
         .expect("default multiple resolution failed");
-    assert_eq!(mult_mask, "0.0\"x\"_);(0.0\"x\");\"-\"_)");
+    assert_eq!(mult_mask, "0.0\"x\"_);(0.0\"x\");\"-\"_);@_)");
 
     // Number default: 0 decimals
     let num_mask = theme
         .resolve_number_format(FormatPreset::Number, None, None)
         .expect("default number resolution failed");
-    assert_eq!(num_mask, "#,##0_);(#,##0);\"-\"_)");
+    assert_eq!(num_mask, "#,##0_);(#,##0);\"-\"_);@_)");
 
     // BasisPoints default: 0 decimals
     let bps_mask = theme
         .resolve_number_format(FormatPreset::BasisPoints, None, None)
         .expect("default basis points resolution failed");
-    assert_eq!(bps_mask, "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_)");
+    assert_eq!(bps_mask, "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_);@_)");
 }
 
 #[test]
@@ -149,7 +153,7 @@ fn test_scenario_5_non_numeric_presets_ignore_decimals_and_currency() {
     let date_mask = theme
         .resolve_number_format(FormatPreset::Date, Some(2), Some(CurrencyCode::Eur))
         .expect("date format resolution failed");
-    assert_eq!(date_mask, "yyyy-mm-dd");
+    assert_eq!(date_mask, "yyyy-mm-dd_)");
 
     let text_mask = theme
         .resolve_number_format(FormatPreset::Text, Some(2), Some(CurrencyCode::Eur))
@@ -159,7 +163,7 @@ fn test_scenario_5_non_numeric_presets_ignore_decimals_and_currency() {
     let int_mask = theme
         .resolve_number_format(FormatPreset::Integer, Some(2), Some(CurrencyCode::Eur))
         .expect("integer format resolution failed");
-    assert_eq!(int_mask, "0_);(-0);\"-\"_)");
+    assert_eq!(int_mask, "0_);(-0);\"-\"_);@_)");
 }
 
 #[test]
@@ -245,6 +249,7 @@ fn test_scenario_6_custom_theme_json_parsing_and_validation() {
     assert_eq!(loaded.typography.font_family, "Calibri");
     assert!(loaded.typography.section_header_underline);
     assert_eq!(loaded.number_formats.defaults.currency_decimals, 2);
+    assert_eq!(loaded.number_formats.general, "General_);(General);0_);@_)");
 
     // Also test inline custom theme inside ProjectManifest via ThemeSpec
     let manifest_json = format!(
@@ -516,8 +521,8 @@ fn test_scenario_11_section_header_underline_serde_and_corporate_navy() {
 #[test]
 fn test_scenario_12_shade_palette_defaults_and_validation() {
     let theme = Theme::corporate_navy();
-    assert_eq!(theme.palette.shade_muted_fill, "#F8FAFC");
-    assert_eq!(theme.palette.shade_alt_fill, "#F1F5F9");
+    assert_eq!(theme.palette.shade_muted_fill, "#FAFAFA");
+    assert_eq!(theme.palette.shade_alt_fill, "#F5F5F5");
 
     for field_name in ["shade_muted_fill", "shade_alt_fill"] {
         let mut bad_theme = Theme::corporate_navy();
@@ -600,4 +605,76 @@ fn test_scenario_14_rejection_of_removed_shade_accent() {
             .to_string()
             .contains("unknown field `title_row_height`")
     );
+}
+
+#[test]
+fn test_scenario_15_uniform_trailing_alignment_defaults_and_general_serde() {
+    let theme = Theme::corporate_navy();
+    theme.validate().expect("corporate_navy must validate");
+
+    // All 6 numeric presets end with ";@_)"
+    for preset in [
+        FormatPreset::Currency,
+        FormatPreset::Number,
+        FormatPreset::Percentage,
+        FormatPreset::Multiple,
+        FormatPreset::BasisPoints,
+        FormatPreset::Integer,
+    ] {
+        let resolved = theme
+            .resolve_number_format(preset, None, None)
+            .expect("numeric preset resolution failed");
+        assert!(
+            resolved.ends_with(";@_)"),
+            "Preset {preset:?} must include 4th text alignment section ;@_): {resolved}"
+        );
+    }
+
+    assert_eq!(
+        theme.number_formats.currency,
+        "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_);@_)"
+    );
+    assert_eq!(
+        theme.number_formats.number,
+        "#,##0{dec}_);(#,##0{dec});\"-\"_);@_)"
+    );
+    assert_eq!(
+        theme.number_formats.percentage,
+        "0{dec}%_);(0{dec}%);\"-\"_);@_)"
+    );
+    assert_eq!(
+        theme.number_formats.multiple,
+        "0{dec}\"x\"_);(0{dec}\"x\");\"-\"_);@_)"
+    );
+    assert_eq!(
+        theme.number_formats.basis_points,
+        "#,##0{dec}\" bps\"_);(#,##0{dec}\" bps\");\"-\"_);@_)"
+    );
+    assert_eq!(theme.number_formats.date, "yyyy-mm-dd_)");
+    assert_eq!(theme.number_formats.text, "@_)");
+    assert_eq!(theme.number_formats.integer, "0_);(-0);\"-\"_);@_)");
+    assert_eq!(theme.number_formats.general, "General_);(General);0_);@_)");
+
+    // Backward-compatible deserialization when theme.json omits number_formats.general
+    let mut theme_val = serde_json::to_value(&theme).unwrap();
+    theme_val["number_formats"]
+        .as_object_mut()
+        .unwrap()
+        .remove("general");
+    let deserialized: Theme =
+        serde_json::from_value(theme_val).expect("theme JSON omitting general must deserialize");
+    deserialized.validate().expect("deserialized theme valid");
+    assert_eq!(
+        deserialized.number_formats.general,
+        "General_);(General);0_);@_)"
+    );
+
+    // Explicit opt-out values ("General" and "") deserialize and validate cleanly
+    for opt_out in ["General", ""] {
+        let mut opt_out_val = serde_json::to_value(&theme).unwrap();
+        opt_out_val["number_formats"]["general"] = serde_json::Value::String(opt_out.to_string());
+        let parsed: Theme = serde_json::from_value(opt_out_val).expect("opt-out theme valid");
+        parsed.validate().expect("opt-out theme validates");
+        assert_eq!(parsed.number_formats.general, opt_out);
+    }
 }

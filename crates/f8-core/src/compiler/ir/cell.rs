@@ -138,9 +138,9 @@ impl CellNode {
         self
     }
 
-    /// Returns true if this cell renders with bold typography according to total style composition.
-    pub fn is_bold(&self) -> bool {
-        self.horizontal.is_total() || self.vertical.is_total()
+    /// Returns true if this cell renders with bold typography (`Bold`, `Subtotal`, or `Total` on either axis).
+    pub const fn is_bold(&self) -> bool {
+        self.horizontal.uses_bold_font() || self.vertical.uses_bold_font()
     }
 
     /// Builder method attaching an audit note.

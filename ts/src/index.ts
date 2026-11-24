@@ -147,6 +147,25 @@ function normalizeManifest(
     if (sheet.showGridlines !== undefined) {
       normSheet.show_gridlines = sheet.showGridlines
     }
+    if (sheet.layout !== undefined) {
+      if (
+        typeof sheet.layout === "object" &&
+        sheet.layout !== null &&
+        !Array.isArray(sheet.layout)
+      ) {
+        const layoutObj = { ...sheet.layout } as Record<string, unknown>
+        if ("colWidth" in layoutObj && !("col_width" in layoutObj)) {
+          const colWidth = layoutObj.colWidth
+          delete layoutObj.colWidth
+          if (colWidth !== undefined) {
+            layoutObj.col_width = colWidth
+          }
+        }
+        normSheet.layout = layoutObj
+      } else {
+        normSheet.layout = sheet.layout
+      }
+    }
     return normSheet
   })
 

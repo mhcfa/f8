@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/f8-core", "crates/f8-python", "crates/f8-wasm"]
 
 [workspace.package]
-version = "0.6.3"
+version = "0.7.0"
 edition = "2024"
 description = "Financial modeling engine with compiler verification and live Excel formulas"
 authors = ["Michael (Chencheng) Hu, CFA"]

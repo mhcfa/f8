@@ -5,7 +5,7 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, FormatUnderline}
 
 use super::error::EmissionError;
 use crate::compiler::layout::StyleRole;
-use crate::model::format::{CurrencyCode, FormatPreset, Shade};
+use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::theme::{BorderStyle, PaletteConfig, Theme};
 
 /// Parses a hexadecimal color string (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`) into a `rust_xlsxwriter::Color`.
@@ -58,6 +58,12 @@ pub fn parse_fill_color(field: &str, s: &str) -> Result<Option<Color>, EmissionE
     } else {
         parse_hex_color(field, s).map(Some)
     }
+}
+
+/// Returns true when a theme number format template should emit a custom OpenXML `<numFmt>`
+/// instead of falling back to native General (`numFmtId="0"`).
+fn is_custom_num_format(mask: &str) -> bool {
+    !mask.is_empty() && !mask.eq_ignore_ascii_case("General")
 }
 
 /// Translates f8 model border style into `rust_xlsxwriter::FormatBorder`.
@@ -134,6 +140,37 @@ impl ParsedPalette {
     }
 }
 
+/// Horizontal position of a physical cell within a spanned column's range,
+/// gating vertical left/right borders so they do not slice across overflowing text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SpanEdge {
+    #[default]
+    Single,
+    Start,
+    Middle,
+    End,
+}
+
+impl SpanEdge {
+    /// Returns true if vertical left borders should emit on this span edge.
+    #[must_use]
+    pub const fn emits_left_border(self) -> bool {
+        match self {
+            Self::Single | Self::Start => true,
+            Self::Middle | Self::End => false,
+        }
+    }
+
+    /// Returns true if vertical right borders should emit on this span edge.
+    #[must_use]
+    pub const fn emits_right_border(self) -> bool {
+        match self {
+            Self::Single | Self::End => true,
+            Self::Start | Self::Middle => false,
+        }
+    }
+}
+
 /// Semantic attributes defining a cell's presentation and style signature.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CellFormatKey {
@@ -153,6 +190,8 @@ pub struct CellFormatKey {
     pub indent: u8,
     /// Whether the cell requires multi-line text wrapping.
     pub wrap_text: bool,
+    /// Horizontal span edge position controlling vertical left/right border gating.
+    pub span_edge: SpanEdge,
 }
 
 impl CellFormatKey {
@@ -176,6 +215,7 @@ impl CellFormatKey {
             is_descriptor,
             indent,
             wrap_text: false,
+            span_edge: SpanEdge::Single,
         }
     }
 
@@ -183,6 +223,13 @@ impl CellFormatKey {
     #[must_use]
     pub const fn with_wrap_text(mut self, wrap_text: bool) -> Self {
         self.wrap_text = wrap_text;
+        self
+    }
+
+    /// Builder method configuring the horizontal span edge position for vertical border gating.
+    #[must_use]
+    pub const fn with_span_edge(mut self, span_edge: SpanEdge) -> Self {
+        self.span_edge = span_edge;
         self
     }
 }
@@ -277,6 +324,10 @@ impl FormatCache {
             .set_bold()
             .set_font_color(palette.col_header_text)
             .set_align(FormatAlign::Right);
+        if is_custom_num_format(&theme.number_formats.text) {
+            col_header_upper_measure_format =
+                col_header_upper_measure_format.set_num_format(&theme.number_formats.text);
+        }
         if let Some(fill) = palette.col_header_fill {
             col_header_upper_measure_format =
                 col_header_upper_measure_format.set_background_color(fill);
@@ -327,12 +378,8 @@ impl FormatCache {
             .set_font_name(&self.theme.typography.font_family)
             .set_font_size(self.theme.typography.data_size);
 
-        // 1. Bolding (Total and Subtotal are bold)
-        let is_summary = key.role.horizontal.is_total()
-            || key.role.vertical.is_total()
-            || key.role.horizontal.is_subtotal()
-            || key.role.vertical.is_subtotal();
-        if is_summary {
+        // 1. Bolding (Bold, Subtotal, and Total are bold)
+        if key.role.horizontal.uses_bold_font() || key.role.vertical.uses_bold_font() {
             format = format.set_bold();
         }
 
@@ -390,60 +437,77 @@ impl FormatCache {
         };
 
         // 5. Accounting Borders
-        // Horizontal: Subtotal -> Thin top border; Total -> Thin top + Double bottom
-        if key.role.horizontal.is_subtotal() {
-            if self.theme.borders.subtotal_border_top != BorderStyle::None {
-                format = format
-                    .set_border_top(translate_border_style(
-                        self.theme.borders.subtotal_border_top,
-                    ))
-                    .set_border_top_color(self.palette.border_color);
+        // Horizontal: Subtotal -> Thin top border; Total -> Thin top + Double bottom; Data/Bold -> none
+        match key.role.horizontal {
+            SemanticStyle::Data | SemanticStyle::Bold => {}
+            SemanticStyle::Subtotal => {
+                if self.theme.borders.subtotal_border_top != BorderStyle::None {
+                    format = format
+                        .set_border_top(translate_border_style(
+                            self.theme.borders.subtotal_border_top,
+                        ))
+                        .set_border_top_color(self.palette.border_color);
+                }
             }
-        } else if key.role.horizontal.is_total() {
-            if self.theme.borders.total_border_top != BorderStyle::None {
-                format = format
-                    .set_border_top(translate_border_style(self.theme.borders.total_border_top))
-                    .set_border_top_color(self.palette.total_border_color);
-            }
-            if self.theme.borders.total_border_bottom != BorderStyle::None {
-                format = format
-                    .set_border_bottom(translate_border_style(
-                        self.theme.borders.total_border_bottom,
-                    ))
-                    .set_border_bottom_color(self.palette.total_border_color);
-            }
-        }
-
-        // Vertical: Subtotal -> Left border; Total -> Left + Right borders
-        if key.role.vertical.is_subtotal() {
-            if self.theme.borders.col_subtotal_border_left != BorderStyle::None {
-                format = format
-                    .set_border_left(translate_border_style(
-                        self.theme.borders.col_subtotal_border_left,
-                    ))
-                    .set_border_left_color(self.palette.border_color);
-            }
-        } else if key.role.vertical.is_total() {
-            if self.theme.borders.col_total_border_left != BorderStyle::None {
-                format = format
-                    .set_border_left(translate_border_style(
-                        self.theme.borders.col_total_border_left,
-                    ))
-                    .set_border_left_color(self.palette.total_border_color);
-            }
-            if self.theme.borders.col_total_border_right != BorderStyle::None {
-                format = format
-                    .set_border_right(translate_border_style(
-                        self.theme.borders.col_total_border_right,
-                    ))
-                    .set_border_right_color(self.palette.total_border_color);
+            SemanticStyle::Total => {
+                if self.theme.borders.total_border_top != BorderStyle::None {
+                    format = format
+                        .set_border_top(translate_border_style(self.theme.borders.total_border_top))
+                        .set_border_top_color(self.palette.total_border_color);
+                }
+                if self.theme.borders.total_border_bottom != BorderStyle::None {
+                    format = format
+                        .set_border_bottom(translate_border_style(
+                            self.theme.borders.total_border_bottom,
+                        ))
+                        .set_border_bottom_color(self.palette.total_border_color);
+                }
             }
         }
 
-        // Descriptor right border (if configured in theme)
+        // Vertical: Subtotal -> Left border; Total -> Left (+ optional Right) border; Data/Bold -> none
+        let mut emitted_col_total_right = false;
+        match key.role.vertical {
+            SemanticStyle::Data | SemanticStyle::Bold => {}
+            SemanticStyle::Subtotal => {
+                if key.span_edge.emits_left_border()
+                    && self.theme.borders.col_subtotal_border_left != BorderStyle::None
+                {
+                    format = format
+                        .set_border_left(translate_border_style(
+                            self.theme.borders.col_subtotal_border_left,
+                        ))
+                        .set_border_left_color(self.palette.border_color);
+                }
+            }
+            SemanticStyle::Total => {
+                if key.span_edge.emits_left_border()
+                    && self.theme.borders.col_total_border_left != BorderStyle::None
+                {
+                    format = format
+                        .set_border_left(translate_border_style(
+                            self.theme.borders.col_total_border_left,
+                        ))
+                        .set_border_left_color(self.palette.total_border_color);
+                }
+                if key.span_edge.emits_right_border()
+                    && self.theme.borders.col_total_border_right != BorderStyle::None
+                {
+                    format = format
+                        .set_border_right(translate_border_style(
+                            self.theme.borders.col_total_border_right,
+                        ))
+                        .set_border_right_color(self.palette.total_border_color);
+                    emitted_col_total_right = true;
+                }
+            }
+        }
+
+        // Descriptor right border (if configured in theme and not overridden by col_total_border_right)
         if key.is_descriptor
+            && key.span_edge.emits_right_border()
             && self.theme.borders.descriptor_border_right != BorderStyle::None
-            && !key.role.vertical.is_total()
+            && !emitted_col_total_right
         {
             format = format
                 .set_border_right(translate_border_style(
@@ -457,7 +521,11 @@ impl FormatCache {
             let mask = self
                 .theme
                 .resolve_number_format(preset, key.decimals, key.currency)?;
-            format = format.set_num_format(&mask);
+            if is_custom_num_format(&mask) {
+                format = format.set_num_format(&mask);
+            }
+        } else if !key.is_descriptor && is_custom_num_format(&self.theme.number_formats.general) {
+            format = format.set_num_format(&self.theme.number_formats.general);
         }
 
         // 7. Cache insertion
@@ -519,6 +587,32 @@ impl FormatCache {
             fmt = fmt.set_indent(indent);
         }
         fmt
+    }
+
+    /// Returns true if a descriptor overflow runway cell carries visible fill or border styling.
+    #[must_use]
+    pub fn has_visible_runway_style(&self, role: StyleRole, span_edge: SpanEdge) -> bool {
+        let has_horizontal_summary = match role.horizontal {
+            SemanticStyle::Subtotal | SemanticStyle::Total => true,
+            SemanticStyle::Data | SemanticStyle::Bold => false,
+        };
+        let has_vertical_fill = match role.vertical {
+            SemanticStyle::Subtotal => self.palette.subtotal_fill.is_some(),
+            SemanticStyle::Total => self.palette.total_fill.is_some(),
+            SemanticStyle::Data | SemanticStyle::Bold => false,
+        };
+        let has_shade = role.shade.is_some_and(|s| !s.is_none());
+        let has_right_border = span_edge.emits_right_border()
+            && ((role.vertical.is_total()
+                && self.theme.borders.col_total_border_right != BorderStyle::None)
+                || self.theme.borders.descriptor_border_right != BorderStyle::None);
+
+        has_horizontal_summary
+            || role.is_highlight
+            || has_shade
+            || has_vertical_fill
+            || self.palette.data_fill.is_some()
+            || has_right_border
     }
 
     /// Returns true if the theme defines a background fill for section headers.

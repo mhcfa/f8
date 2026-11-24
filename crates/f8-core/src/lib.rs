@@ -5,9 +5,10 @@ pub mod model;
 pub mod value;
 
 pub use compiler::{
-    CellInspection, CellNeighborInspection, CompiledModel, Compiler, CompilerError, DependencyNode,
-    DependencyTree, InspectionError, ModelSummary, SheetCellInspection, SheetCellKind,
-    SheetInspection, SheetRowInspection, TableCellInfo, TableInspection, col_to_excel_col,
+    CellError, CellInspection, CellNeighborInspection, CompiledModel, Compiler, CompilerError,
+    DependencyNode, DependencyTree, InspectionError, ModelMarkdownDetail, ModelMarkdownOptions,
+    ModelSummary, SheetCellInspection, SheetCellKind, SheetInspection, SheetRowInspection,
+    TableCellInfo, TableInspection, col_to_excel_col,
 };
-pub use model::PlacementSpec;
+pub use model::{PlacementSpec, SheetLayoutSpec};
 pub use value::{format_accounting_number, format_cell_value};

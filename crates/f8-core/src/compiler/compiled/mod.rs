@@ -1,6 +1,7 @@
 //! Pass 1–6a unified compilation artifact and in-memory inspection facade.
 
 pub mod error;
+pub mod markdown;
 pub mod model;
 
 use std::collections::HashSet;
@@ -9,9 +10,10 @@ use indexmap::IndexMap;
 
 pub use error::InspectionError;
 pub use model::{
-    CellInspection, CellNeighborInspection, ColumnInspection, DependencyNode, DependencyTree,
-    ModelSummary, RowInspection, SheetCellInspection, SheetCellKind, SheetInspection,
-    SheetRowInspection, SheetSummary, TableCellInfo, TableInspection, TableSummary,
+    CellError, CellInspection, CellNeighborInspection, ColumnInspection, DependencyNode,
+    DependencyTree, ModelMarkdownDetail, ModelMarkdownOptions, ModelSummary, RowInspection,
+    SheetCellInspection, SheetCellKind, SheetInspection, SheetRowInspection, SheetSummary,
+    TableCellInfo, TableInspection, TableSummary,
 };
 
 use crate::compiler::emission::{EmissionOptions, WorkbookEmitter};
@@ -147,6 +149,73 @@ impl CompiledModel {
             total_drivers,
             total_formulas,
         }
+    }
+
+    /// Returns all runtime Excel domain errors discovered across the workbook in deterministic
+    /// manifest sheet -> sheet table -> table row -> table column declaration order.
+    #[must_use]
+    pub fn errors(&self) -> Vec<CellError> {
+        let mut results = Vec::new();
+
+        for sheet_spec in &self.manifest.sheets {
+            let sheet_id = SheetId::from(sheet_spec.name.as_str());
+            for table_id in &sheet_spec.tables {
+                let Some(table_spec) = self.tables.get(table_id) else {
+                    continue;
+                };
+                for row in &table_spec.rows {
+                    let data_row = match row {
+                        RowSpec::Data(d) => d,
+                        RowSpec::SectionHeader(_) | RowSpec::Gutter => continue,
+                    };
+                    for col in &table_spec.columns {
+                        let data_col = match col {
+                            ColumnSpec::Data(d) => d,
+                            ColumnSpec::Gutter => continue,
+                        };
+                        let cell_id = CellId::new(
+                            table_spec.id.clone(),
+                            data_row.id.clone(),
+                            data_col.id.clone(),
+                        );
+                        let error = match self.evaluated.get_cell(&cell_id) {
+                            Some(CellValue::Error(err)) => *err,
+                            Some(
+                                CellValue::Number(_)
+                                | CellValue::Text(_)
+                                | CellValue::Boolean(_)
+                                | CellValue::Empty,
+                            )
+                            | None => continue,
+                        };
+                        let physical_address = self
+                            .layout_map
+                            .get_cell(&cell_id)
+                            .map(|coord| format_sheet_address(&coord.sheet, &coord.a1))
+                            .unwrap_or_default();
+                        let formula_expr =
+                            self.grid
+                                .get(&cell_id)
+                                .and_then(|node| match &node.payload {
+                                    CellPayload::Formula(expr) => Some(expr.to_string()),
+                                    CellPayload::Literal(_) => None,
+                                });
+                        let excel_formula = self.lowered_map.get(&cell_id).map(ToString::to_string);
+
+                        results.push(CellError {
+                            coordinate: cell_id,
+                            sheet: sheet_id.clone(),
+                            physical_address,
+                            error,
+                            formula_expr,
+                            excel_formula,
+                        });
+                    }
+                }
+            }
+        }
+
+        results
     }
 
     /// Returns the topologically evaluated runtime value for an individual cell.
@@ -335,16 +404,7 @@ impl CompiledModel {
             .iter()
             .map(|row| match row {
                 crate::model::table::RowSpec::Data(d) => {
-                    let indent = table_spec
-                        .columns
-                        .iter()
-                        .filter_map(|col| col.id())
-                        .filter_map(|col_id| {
-                            let cell_id = CellId::new(table.clone(), d.id.clone(), col_id.clone());
-                            self.grid.get(&cell_id).map(|cell| cell.indent)
-                        })
-                        .max()
-                        .unwrap_or(0);
+                    let indent = self.row_max_indent(table_spec, &d.id);
                     RowInspection {
                         id: Some(d.id.clone()),
                         section_title: None,
@@ -509,10 +569,11 @@ impl CompiledModel {
             };
 
             // 1. Title Banner
-            if let Some(title_row) = placement.title_row
+            if let (Some(title_row), Some(title_end_col)) =
+                (placement.title_row, placement.title_end_col)
                 && !table.title.trim().is_empty()
             {
-                for col in placement.start_col..=placement.end_col {
+                for col in placement.start_col..=title_end_col {
                     let physical_a1 = coordinate_to_a1(col, title_row)
                         .unwrap_or_else(|_| format!("R{title_row}C{col}"));
                     if col == placement.start_col {
@@ -630,27 +691,31 @@ impl CompiledModel {
                     let tier_row = header_start + t as u32;
                     let is_bottom_tier = t == total_tiers - 1;
                     for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                        let physical_col = placement.start_col + c_idx as u32;
-                        let physical_a1 = coordinate_to_a1(physical_col, tier_row)
-                            .unwrap_or_else(|_| format!("R{tier_row}C{physical_col}"));
+                        let Some(&(phys_start, phys_end)) = placement.col_spans.get(c_idx) else {
+                            continue;
+                        };
                         match col_spec {
                             ColumnSpec::Gutter => {
-                                cells_map.insert(
-                                    (tier_row, physical_col),
-                                    SheetCellInspection {
-                                        physical_col,
-                                        physical_a1,
-                                        table_id: Some(table.id.clone()),
-                                        row_id: None,
-                                        col_id: None,
-                                        kind: SheetCellKind::Gutter,
-                                        is_descriptor: false,
-                                        value: CellValue::Empty,
-                                        formatted_value: None,
-                                        formula_expr: None,
-                                        excel_formula: None,
-                                    },
-                                );
+                                for physical_col in phys_start..=phys_end {
+                                    let physical_a1 = coordinate_to_a1(physical_col, tier_row)
+                                        .unwrap_or_else(|_| format!("R{tier_row}C{physical_col}"));
+                                    cells_map.insert(
+                                        (tier_row, physical_col),
+                                        SheetCellInspection {
+                                            physical_col,
+                                            physical_a1,
+                                            table_id: Some(table.id.clone()),
+                                            row_id: None,
+                                            col_id: None,
+                                            kind: SheetCellKind::Gutter,
+                                            is_descriptor: false,
+                                            value: CellValue::Empty,
+                                            formatted_value: None,
+                                            formula_expr: None,
+                                            excel_formula: None,
+                                        },
+                                    );
+                                }
                             }
                             ColumnSpec::Data(d) => {
                                 let k_len = d.headers.len();
@@ -665,11 +730,13 @@ impl CompiledModel {
                                 if is_bottom_tier && header_text.is_none() {
                                     header_text = Some(d.id.to_string());
                                 }
+                                let start_a1 = coordinate_to_a1(phys_start, tier_row)
+                                    .unwrap_or_else(|_| format!("R{tier_row}C{phys_start}"));
                                 cells_map.insert(
-                                    (tier_row, physical_col),
+                                    (tier_row, phys_start),
                                     SheetCellInspection {
-                                        physical_col,
-                                        physical_a1,
+                                        physical_col: phys_start,
+                                        physical_a1: start_a1,
                                         table_id: Some(table.id.clone()),
                                         row_id: None,
                                         col_id: Some(d.id.clone()),
@@ -685,6 +752,26 @@ impl CompiledModel {
                                         excel_formula: None,
                                     },
                                 );
+                                for physical_col in (phys_start + 1)..=phys_end {
+                                    let physical_a1 = coordinate_to_a1(physical_col, tier_row)
+                                        .unwrap_or_else(|_| format!("R{tier_row}C{physical_col}"));
+                                    cells_map.insert(
+                                        (tier_row, physical_col),
+                                        SheetCellInspection {
+                                            physical_col,
+                                            physical_a1,
+                                            table_id: Some(table.id.clone()),
+                                            row_id: None,
+                                            col_id: Some(d.id.clone()),
+                                            kind: SheetCellKind::ColumnHeader,
+                                            is_descriptor: false,
+                                            value: CellValue::Empty,
+                                            formatted_value: None,
+                                            formula_expr: None,
+                                            excel_formula: None,
+                                        },
+                                    );
+                                }
                             }
                         }
                     }
@@ -696,8 +783,7 @@ impl CompiledModel {
             for row_spec in &table.rows {
                 match row_spec {
                     RowSpec::Gutter => {
-                        for (c_idx, _) in table.columns.iter().enumerate() {
-                            let physical_col = placement.start_col + c_idx as u32;
+                        for physical_col in placement.start_col..=placement.end_col {
                             let physical_a1 = coordinate_to_a1(physical_col, current_row)
                                 .unwrap_or_else(|_| format!("R{current_row}C{physical_col}"));
                             cells_map.insert(
@@ -720,11 +806,10 @@ impl CompiledModel {
                         current_row += 1;
                     }
                     RowSpec::SectionHeader(s) => {
-                        for (c_idx, _) in table.columns.iter().enumerate() {
-                            let physical_col = placement.start_col + c_idx as u32;
+                        for physical_col in placement.start_col..=placement.end_col {
                             let physical_a1 = coordinate_to_a1(physical_col, current_row)
                                 .unwrap_or_else(|_| format!("R{current_row}C{physical_col}"));
-                            if c_idx == 0 {
+                            if physical_col == placement.start_col {
                                 cells_map.insert(
                                     (current_row, physical_col),
                                     SheetCellInspection {
@@ -764,27 +849,35 @@ impl CompiledModel {
                     }
                     RowSpec::Data(data_row) => {
                         for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                            let physical_col = placement.start_col + c_idx as u32;
-                            let physical_a1 = coordinate_to_a1(physical_col, current_row)
-                                .unwrap_or_else(|_| format!("R{current_row}C{physical_col}"));
+                            let Some(&(phys_start, phys_end)) = placement.col_spans.get(c_idx)
+                            else {
+                                continue;
+                            };
                             match col_spec {
                                 ColumnSpec::Gutter => {
-                                    cells_map.insert(
-                                        (current_row, physical_col),
-                                        SheetCellInspection {
-                                            physical_col,
-                                            physical_a1,
-                                            table_id: Some(table.id.clone()),
-                                            row_id: Some(data_row.id.clone()),
-                                            col_id: None,
-                                            kind: SheetCellKind::Gutter,
-                                            is_descriptor: false,
-                                            value: CellValue::Empty,
-                                            formatted_value: None,
-                                            formula_expr: None,
-                                            excel_formula: None,
-                                        },
-                                    );
+                                    for physical_col in phys_start..=phys_end {
+                                        let physical_a1 =
+                                            coordinate_to_a1(physical_col, current_row)
+                                                .unwrap_or_else(|_| {
+                                                    format!("R{current_row}C{physical_col}")
+                                                });
+                                        cells_map.insert(
+                                            (current_row, physical_col),
+                                            SheetCellInspection {
+                                                physical_col,
+                                                physical_a1,
+                                                table_id: Some(table.id.clone()),
+                                                row_id: Some(data_row.id.clone()),
+                                                col_id: None,
+                                                kind: SheetCellKind::Gutter,
+                                                is_descriptor: false,
+                                                value: CellValue::Empty,
+                                                formatted_value: None,
+                                                formula_expr: None,
+                                                excel_formula: None,
+                                            },
+                                        );
+                                    }
                                 }
                                 ColumnSpec::Data(data_col) => {
                                     let cell_id = CellId::new(
@@ -813,11 +906,13 @@ impl CompiledModel {
                                         ),
                                         Some(CellPayload::Literal(_)) | None => (None, None),
                                     };
+                                    let start_a1 = coordinate_to_a1(phys_start, current_row)
+                                        .unwrap_or_else(|_| format!("R{current_row}C{phys_start}"));
                                     cells_map.insert(
-                                        (current_row, physical_col),
+                                        (current_row, phys_start),
                                         SheetCellInspection {
-                                            physical_col,
-                                            physical_a1,
+                                            physical_col: phys_start,
+                                            physical_a1: start_a1,
                                             table_id: Some(table.id.clone()),
                                             row_id: Some(data_row.id.clone()),
                                             col_id: Some(data_col.id.clone()),
@@ -829,6 +924,29 @@ impl CompiledModel {
                                             excel_formula,
                                         },
                                     );
+                                    for physical_col in (phys_start + 1)..=phys_end {
+                                        let physical_a1 =
+                                            coordinate_to_a1(physical_col, current_row)
+                                                .unwrap_or_else(|_| {
+                                                    format!("R{current_row}C{physical_col}")
+                                                });
+                                        cells_map.insert(
+                                            (current_row, physical_col),
+                                            SheetCellInspection {
+                                                physical_col,
+                                                physical_a1,
+                                                table_id: Some(table.id.clone()),
+                                                row_id: Some(data_row.id.clone()),
+                                                col_id: Some(data_col.id.clone()),
+                                                kind: SheetCellKind::Overflow,
+                                                is_descriptor: data_col.role.is_descriptor(),
+                                                value: CellValue::Empty,
+                                                formatted_value: None,
+                                                formula_expr: None,
+                                                excel_formula: None,
+                                            },
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1052,7 +1170,20 @@ impl CompiledModel {
         })
     }
 
-    fn format_value(
+    pub(super) fn row_max_indent(&self, table: &TableSpec, row_id: &RowId) -> u8 {
+        table
+            .columns
+            .iter()
+            .filter_map(ColumnSpec::id)
+            .filter_map(|col_id| {
+                let cell_id = CellId::new(table.id.clone(), row_id.clone(), col_id.clone());
+                self.grid.get(&cell_id).map(|cell| cell.indent)
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub(super) fn format_value(
         &self,
         value: &CellValue,
         format: Option<FormatPreset>,

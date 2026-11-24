@@ -3,10 +3,14 @@
 use f8_core::compiler::emission::EmissionOptions;
 use f8_core::compiler::ir::id::CellId;
 use f8_core::model::format::{CurrencyCode, FormatPreset, SemanticStyle};
-use f8_core::model::id::{ColId, RowId, TableId};
+use f8_core::model::id::{ColId, RowId, SheetId, TableId};
+use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
 use f8_core::model::theme::{Theme, ThemeSpec};
-use f8_core::value::CellValue;
-use f8_core::{Compiler, InspectionError};
+use f8_core::value::{CellValue, ExcelError};
+use f8_core::{
+    CellError, CompiledModel, Compiler, InspectionError, ModelMarkdownDetail, ModelMarkdownOptions,
+};
 
 mod fixtures;
 
@@ -701,6 +705,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("SimpleTbl")],
             },
             SheetSpec {
@@ -708,6 +713,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("CashTbl")],
             },
             SheetSpec {
@@ -715,6 +721,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("QuoteTbl")],
             },
         ],
@@ -789,6 +796,7 @@ fn test_scenario_15_coordinate_parsing_strictness_and_special_key_roundtrip() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T1")],
         }],
     };
@@ -870,4 +878,2042 @@ fn test_scenario_15_coordinate_parsing_strictness_and_special_key_roundtrip() {
             .unwrap_err(),
         InspectionError::InvalidCoordinate(_)
     ));
+}
+
+fn build_parity_workbook() -> CompiledModel {
+    use f8_core::model::{
+        CellInput, ColumnSpec, DetailedCellInput, ProjectManifest, RowSpec, SheetSpec, TableSpec,
+        ValueLiteral,
+    };
+
+    let manifest = ProjectManifest {
+        model_name: "ParityModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Financials".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![
+                    TableId::from("IncomeStatement"),
+                    TableId::from("PureMeasures"),
+                ],
+            },
+            SheetSpec {
+                name: "Valuation".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![TableId::from("Comps")],
+            },
+            SheetSpec {
+                name: "Notes".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![],
+            },
+        ],
+    };
+
+    let mut is_tbl = TableSpec::new("IncomeStatement", "Income Statement")
+        .with_subtitles(["($ in Millions)", "Fiscal Year"])
+        .with_currency(Some(CurrencyCode::Usd));
+    is_tbl.columns = vec![
+        ColumnSpec::descriptor("line_item", "Line Item"),
+        ColumnSpec::new("y2023a")
+            .with_group("Historical")
+            .with_header("2023A")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+        ColumnSpec::gutter(),
+        ColumnSpec::new("2024E")
+            .with_header("2024E")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+    ];
+    is_tbl.rows = vec![
+        RowSpec::section_header("Revenue & Margin"),
+        RowSpec::new("revenue")
+            .with_cell("line_item", "Revenue")
+            .with_cell("y2023a", 100.0)
+            .with_cell(
+                "2024E",
+                CellInput::formula(r#"IncomeStatement["revenue", col.prev] * 1.15"#),
+            ),
+        RowSpec::new("cogs")
+            .with_cell(
+                "line_item",
+                DetailedCellInput {
+                    value: Some(ValueLiteral::String("Cost | Goods\nSold".to_string())),
+                    indent: Some(1),
+                    ..Default::default()
+                },
+            )
+            .with_cell("y2023a", 40.0)
+            .with_cell("2024E", 44.0),
+        RowSpec::new("sparse")
+            .with_cell("line_item", "Memo")
+            .with_cell("y2023a", 5.0)
+            .with_cell("2024E", CellInput::null()),
+        RowSpec::gutter(),
+        RowSpec::new("gross_profit")
+            .with_style(Some(SemanticStyle::Subtotal))
+            .with_cell("line_item", "Gross Profit")
+            .with_expr(r#"IncomeStatement["revenue", @col] - IncomeStatement["cogs", @col]"#),
+        RowSpec::section_header("Checks | Errors"),
+        RowSpec::new("div_err")
+            .with_style(Some(SemanticStyle::Total))
+            .with_cell("line_item", "Net | Check")
+            .with_cell("y2023a", 10.0)
+            .with_cell("2024E", CellInput::formula("1 / 0")),
+    ];
+
+    let mut pure_tbl = TableSpec::new("PureMeasures", "PureMeasures");
+    pure_tbl.columns = vec![
+        ColumnSpec::new("c1").with_header("c1"),
+        ColumnSpec::new("c2").with_header("Col Two"),
+    ];
+    pure_tbl.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("c1", 1.0)
+            .with_cell("c2", CellInput::formula("NA()")),
+        RowSpec::new("r2")
+            .with_style(Some(SemanticStyle::Total))
+            .with_cell("c1", 2.0)
+            .with_cell("c2", 3.0),
+    ];
+
+    let mut comps_tbl =
+        TableSpec::new("Comps", "Trading Comps").with_currency(Some(CurrencyCode::Usd));
+    comps_tbl.columns = vec![
+        ColumnSpec::descriptor("ticker", "Ticker"),
+        ColumnSpec::descriptor("company", "Company Name"),
+        ColumnSpec::new("ev")
+            .with_header("EV")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+    ];
+    comps_tbl.rows = vec![
+        RowSpec::new("aapl")
+            .with_cell("ticker", "AAPL")
+            .with_cell("company", "Apple Inc.")
+            .with_cell("ev", 3000.0),
+        RowSpec::new("msft_row")
+            .with_cell("ticker", "MSFT")
+            .with_cell("company", "Microsoft")
+            .with_cell("ev", CellInput::formula("LN(-1)")),
+    ];
+
+    Compiler::compile(&manifest, &[is_tbl, pure_tbl, comps_tbl])
+        .expect("Parity workbook compilation must succeed")
+}
+
+#[test]
+fn test_cell_error_serde_roundtrip_all_variants() {
+    let variants = [
+        (ExcelError::Div0, "#DIV/0!"),
+        (ExcelError::Value, "#VALUE!"),
+        (ExcelError::Ref, "#REF!"),
+        (ExcelError::Num, "#NUM!"),
+        (ExcelError::Na, "#N/A"),
+        (ExcelError::Name, "#NAME?"),
+    ];
+
+    for (variant, expected_code) in variants {
+        let record = CellError {
+            coordinate: CellId::new("T", "r1", "c1"),
+            sheet: SheetId::from("Financials"),
+            physical_address: "'Financials'!C14".to_string(),
+            error: variant,
+            formula_expr: Some("1 / 0".to_string()),
+            excel_formula: Some("=1/0".to_string()),
+        };
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["error"], expected_code);
+        assert_eq!(json["physical_address"], "'Financials'!C14");
+
+        let roundtripped: CellError = serde_json::from_value(json).unwrap();
+        assert_eq!(roundtripped, record);
+    }
+
+    let invalid = serde_json::json!({
+        "coordinate": { "table": "T", "row": "r1", "col": "c1" },
+        "sheet": "Financials",
+        "physical_address": "'Financials'!C14",
+        "error": "#BOGUS!",
+        "formula_expr": null,
+        "excel_formula": null
+    });
+    assert!(serde_json::from_value::<CellError>(invalid).is_err());
+
+    // ModelMarkdownOptions serde defaults and deny_unknown_fields enforcement
+    let opts_default: ModelMarkdownOptions = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert_eq!(opts_default, ModelMarkdownOptions::default());
+    assert_eq!(opts_default.detail, ModelMarkdownDetail::Values);
+    assert_eq!(opts_default.sheets, None);
+    assert_eq!(opts_default.tables, None);
+    assert!(opts_default.show_ids);
+
+    let opts_layout: ModelMarkdownOptions =
+        serde_json::from_value(serde_json::json!({ "detail": "layout" })).unwrap();
+    assert_eq!(opts_layout.detail, ModelMarkdownDetail::Layout);
+
+    let opts_unknown = serde_json::json!({ "unknown_field": true });
+    assert!(serde_json::from_value::<ModelMarkdownOptions>(opts_unknown).is_err());
+}
+
+#[test]
+fn test_errors_clean_model_and_multi_sheet_ordering() {
+    // Scenario 1: Clean workbook returns empty list
+    let (manifest, tables) = fixtures::three_statement::build_three_statement_model();
+    let clean = Compiler::compile(&manifest, &tables).unwrap();
+    assert!(clean.errors().is_empty());
+
+    // Scenario 2: Multi-sheet errors returned in deterministic sheet -> table -> row -> col order
+    let compiled = build_parity_workbook();
+    let errors = compiled.errors();
+    assert_eq!(errors.len(), 3);
+
+    assert_eq!(
+        errors[0],
+        CellError {
+            coordinate: CellId::new("IncomeStatement", "div_err", "2024E"),
+            sheet: SheetId::from("Financials"),
+            physical_address: "'Financials'!E15".to_string(),
+            error: ExcelError::Div0,
+            formula_expr: Some("1 / 0".to_string()),
+            excel_formula: Some("=1/0".to_string()),
+        }
+    );
+    assert_eq!(
+        errors[1],
+        CellError {
+            coordinate: CellId::new("PureMeasures", "r1", "c2"),
+            sheet: SheetId::from("Financials"),
+            physical_address: "'Financials'!C21".to_string(),
+            error: ExcelError::Na,
+            formula_expr: Some("NA()".to_string()),
+            excel_formula: Some("=NA()".to_string()),
+        }
+    );
+    assert_eq!(
+        errors[2],
+        CellError {
+            coordinate: CellId::new("Comps", "msft_row", "ev"),
+            sheet: SheetId::from("Valuation"),
+            physical_address: "'Valuation'!D6".to_string(),
+            error: ExcelError::Num,
+            formula_expr: Some("LN(-1)".to_string()),
+            excel_formula: Some("=LN(-1)".to_string()),
+        }
+    );
+}
+
+#[test]
+fn test_to_markdown_default_values_index_and_parity() {
+    let compiled = build_parity_workbook();
+
+    // Scenario 3, 5, 6, 10: Default values mode with show_ids=true
+    let md_values = compiled
+        .to_markdown(&ModelMarkdownOptions::default())
+        .unwrap();
+    let expected_values = "\
+# ParityModel
+Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3
+
+## Runtime Errors
+
+- `IncomeStatement[\"div_err\", \"2024E\"]` (`'Financials'!E15`): `#DIV/0!` (`=1/0`)
+- `PureMeasures[\"r1\", \"c2\"]` (`'Financials'!C21`): `#N/A` (`=NA()`)
+- `Comps[\"msft_row\", \"ev\"]` (`'Valuation'!D6`): `#NUM!` (`=LN(-1)`)
+
+## Sheet: Financials
+
+### `IncomeStatement` — Income Statement
+_($ in Millions)_
+_Fiscal Year_
+
+| Line Item [line_item] | Historical: 2023A [y2023a] | 2024E |
+| :--- | ---: | ---: |
+| **Revenue & Margin** | | |
+| Revenue | $100.0 | $115.0 |
+|   Cost \\| Goods Sold [cogs] | $40.0 | $44.0 |
+| Memo [sparse] | $5.0 | — |
+| **Gross Profit [gross_profit]** | **$60.0** | **$71.0** |
+| **Checks \\| Errors** | | |
+| **Net \\| Check [div_err]** | **$10.0** | **#DIV/0!** |
+
+### `PureMeasures`
+
+| Row | c1 | Col Two [c2] |
+| :--- | ---: | ---: |
+| r1 | 1 | #N/A |
+| **r2** | **2** | **3** |
+
+## Sheet: Valuation
+
+### `Comps` — Trading Comps
+
+| Ticker | Company Name [company] | EV |
+| :--- | :--- | ---: |
+| AAPL | Apple Inc. | $3,000.0 |
+| MSFT [msft_row] | Microsoft | #NUM! |
+
+## Sheet: Notes
+
+_(no tables)_
+";
+    assert_eq!(md_values, expected_values);
+    // Determinism check
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions::default())
+            .unwrap(),
+        expected_values
+    );
+
+    // Scenario 5: show_ids=false omits synthetic Row column and [row_id]/[col_id] annotations
+    let md_no_ids = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(!md_no_ids.contains("| Row |"));
+    assert!(!md_no_ids.contains("[line_item]"));
+    assert!(!md_no_ids.contains("[y2023a]"));
+    assert!(!md_no_ids.contains("[gross_profit]"));
+    assert!(!md_no_ids.contains("[msft_row]"));
+    assert!(md_no_ids.contains("| c1 | Col Two |"));
+    assert!(md_no_ids.contains("| MSFT | Microsoft | #NUM! |"));
+
+    // Scenario 4: Index mode (ignores show_ids=false)
+    let md_index = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    let expected_index = "\
+# ParityModel
+Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3
+
+## Runtime Errors
+
+- `IncomeStatement[\"div_err\", \"2024E\"]` (`'Financials'!E15`): `#DIV/0!` (`=1/0`)
+- `PureMeasures[\"r1\", \"c2\"]` (`'Financials'!C21`): `#N/A` (`=NA()`)
+- `Comps[\"msft_row\", \"ev\"]` (`'Valuation'!D6`): `#NUM!` (`=LN(-1)`)
+
+## Sheet: Financials
+
+### `IncomeStatement` — Income Statement
+_($ in Millions)_
+_Fiscal Year_
+
+Columns: `line_item` (Line Item, descriptor), `y2023a` (Historical: 2023A), `2024E`
+Rows:
+- **Revenue & Margin**
+  - `revenue`
+  - `cogs`: Cost | Goods Sold
+  - `sparse`: Memo
+  - **`gross_profit`**: Gross Profit (subtotal)
+- **Checks | Errors**
+  - **`div_err`**: Net | Check (total)
+
+### `PureMeasures`
+
+Columns: `c1`, `c2` (Col Two)
+Rows:
+- `r1`
+- **`r2`** (total)
+
+## Sheet: Valuation
+
+### `Comps` — Trading Comps
+
+Columns: `ticker` (descriptor), `company` (Company Name, descriptor), `ev`
+Rows:
+- `aapl`: AAPL | Apple Inc.
+- `msft_row`: MSFT | Microsoft
+
+## Sheet: Notes
+
+_(no tables)_
+";
+    assert_eq!(md_index, expected_index);
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                detail: ModelMarkdownDetail::Index,
+                show_ids: true,
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_index
+    );
+
+    // Layout mode: Scenario 5 cross-language byte-identical parity & determinism (ignores show_ids)
+    let md_layout = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    let expected_layout = "\
+# ParityModel
+Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3
+
+## Runtime Errors
+
+- `IncomeStatement[\"div_err\", \"2024E\"]` (`'Financials'!E15`): `#DIV/0!` (`=1/0`)
+- `PureMeasures[\"r1\", \"c2\"]` (`'Financials'!C21`): `#N/A` (`=NA()`)
+- `Comps[\"msft_row\", \"ev\"]` (`'Valuation'!D6`): `#NUM!` (`=LN(-1)`)
+
+## Sheet: Financials
+Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)
+Columns: A:3, B:14, C:12, D:3, E:12
+
+- Band 1 (R2:R15, 14r x cols B..E, w:41):
+  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1
+- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):
+  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)
+
+## Sheet: Valuation
+Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)
+Columns: A:3, B..D:12
+
+- Band 1 (R2:R6, 5r x cols B..D, w:36):
+  - `Comps` [B2:D6] 5r x 3c (w:36) | stack | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)
+
+## Sheet: Notes
+
+_(no tables)_
+";
+    assert_eq!(md_layout, expected_layout);
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                detail: ModelMarkdownDetail::Layout,
+                show_ids: true,
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_layout
+    );
+}
+
+#[test]
+fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
+    use f8_core::model::{ColumnSpec, ProjectManifest, RowSpec, SheetSpec, TableSpec};
+
+    let compiled = build_parity_workbook();
+
+    // Scenario 6: Filtered to Valuation shows total Errors: 3 in header but only Comps error in Runtime Errors
+    let md_val = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: Some(vec![SheetId::from("Valuation")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_val.contains("| Errors: 3\n"));
+    assert!(md_val.contains("## Runtime Errors"));
+    assert!(md_val.contains(r#"Comps["msft_row", "ev"]"#));
+    assert!(!md_val.contains("IncomeStatement"));
+    assert!(!md_val.contains("PureMeasures"));
+
+    // Filtered to Notes (empty sheet): 0 errors in scope -> omits ## Runtime Errors, emits _(no tables)_
+    let md_notes = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: Some(vec![SheetId::from("Notes")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_notes.contains("| Errors: 3\n"));
+    assert!(!md_notes.contains("## Runtime Errors"));
+    assert!(md_notes.contains("## Sheet: Notes\n\n_(no tables)_\n"));
+
+    // Standalone non-empty tables-only filter (sheets: None, tables: Some(...))
+    let md_tables_only = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: None,
+            tables: Some(vec![TableId::from("PureMeasures")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_tables_only.contains("| Errors: 3\n"));
+    assert!(md_tables_only.contains("## Runtime Errors"));
+    assert!(md_tables_only.contains(r#"PureMeasures["r1", "c2"]"#));
+    assert!(!md_tables_only.contains("IncomeStatement"));
+    assert!(!md_tables_only.contains("Comps"));
+    assert!(md_tables_only.contains("## Sheet: Financials"));
+    assert!(!md_tables_only.contains("## Sheet: Valuation"));
+    assert!(!md_tables_only.contains("## Sheet: Notes"));
+
+    // Scenario 7: Union of sheets + tables with overlap and duplicates preserves declaration order
+    let md_union = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            sheets: Some(vec![SheetId::from("Valuation"), SheetId::from("Valuation")]),
+            tables: Some(vec![
+                TableId::from("Comps"),
+                TableId::from("PureMeasures"),
+                TableId::from("PureMeasures"),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(md_union.matches("### `Comps`").count(), 1);
+    assert_eq!(md_union.matches("### `PureMeasures`").count(), 1);
+    assert!(!md_union.contains("### `IncomeStatement`"));
+    // Financials precedes Valuation in manifest order even though Valuation was listed first in filter
+    let pos_fin = md_union.find("## Sheet: Financials").unwrap();
+    let pos_val = md_union.find("## Sheet: Valuation").unwrap();
+    assert!(pos_fin < pos_val);
+
+    // Explicit empty allowlists emit only the model header
+    let expected_header_only =
+        "# ParityModel\nSheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n";
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: Some(vec![]),
+                tables: None,
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_header_only
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: None,
+                tables: Some(vec![]),
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_header_only
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: Some(vec![]),
+                tables: Some(vec![]),
+                ..Default::default()
+            })
+            .unwrap(),
+        expected_header_only
+    );
+
+    // Unknown sheet / unknown table fail strictly with InspectionError
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                sheets: Some(vec![SheetId::from("MissingSheet")]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        InspectionError::SheetNotFound(SheetId::from("MissingSheet"))
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                tables: Some(vec![TableId::from("MissingTable")]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        InspectionError::TableNotFound(TableId::from("MissingTable"))
+    );
+
+    // Clean model with blank model_name falls back to "# Model" and omits ## Runtime Errors
+    let manifest = ProjectManifest {
+        model_name: "  \r\n  ".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("Summary")],
+        }],
+    };
+    let mut tbl = TableSpec::new("Summary", "");
+    tbl.columns = vec![ColumnSpec::new("v")];
+    tbl.rows = vec![RowSpec::new("x").with_cell("v", 42.0)];
+    let clean = Compiler::compile(&manifest, &[tbl]).unwrap();
+    let clean_md = clean.to_markdown(&ModelMarkdownOptions::default()).unwrap();
+    assert!(clean_md.starts_with(
+        "# Model\nSheets: 1 | Tables: 1 | Cells: 1 (1 drivers, 0 formulas) | Errors: 0\n"
+    ));
+    assert!(!clean_md.contains("## Runtime Errors"));
+    assert!(clean_md.contains("### `Summary`\n"));
+
+    // Degenerate gutter-only-columns table emits "Columns:" without trailing space in Index mode
+    let mut gutter_tbl = TableSpec::new("GutterCols", "Gutter Cols");
+    gutter_tbl.columns = vec![ColumnSpec::gutter()];
+    gutter_tbl.rows = vec![RowSpec::section_header("Only Section")];
+    let gutter_manifest = ProjectManifest {
+        model_name: "GutterModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("GutterCols")],
+        }],
+    };
+    let gutter_compiled = Compiler::compile(&gutter_manifest, &[gutter_tbl]).unwrap();
+    let gutter_index_md = gutter_compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(gutter_index_md.contains("\nColumns:\nRows:\n- **Only Section**\n"));
+    assert!(!gutter_index_md.contains("Columns: \n"));
+
+    // Whitespace-only descriptor cells are treated as empty symmetrically across Values and Index
+    let mut ws_tbl = TableSpec::new("WhitespaceDesc", "WhitespaceDesc");
+    ws_tbl.columns = vec![
+        ColumnSpec::descriptor("d1", "D1"),
+        ColumnSpec::descriptor("d2", "D2"),
+        ColumnSpec::new("val").with_header("Val"),
+    ];
+    ws_tbl.rows = vec![
+        RowSpec::new("r_blank")
+            .with_cell("d1", "  \n  ")
+            .with_cell("d2", " \r\n ")
+            .with_cell("val", 7.0),
+    ];
+    let ws_manifest = ProjectManifest {
+        model_name: "WsModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("WhitespaceDesc")],
+        }],
+    };
+    let ws_compiled = Compiler::compile(&ws_manifest, &[ws_tbl]).unwrap();
+    let ws_values_md = ws_compiled
+        .to_markdown(&ModelMarkdownOptions::default())
+        .unwrap();
+    assert!(ws_values_md.contains("| r_blank | | 7 |\n"));
+    let ws_index_md = ws_compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(ws_index_md.contains("Rows:\n- `r_blank`\n"));
+}
+
+#[test]
+fn test_bold_style_inspection_and_markdown_rendering() {
+    let mut tbl = TableSpec::new("Summary", "Summary");
+    tbl.columns = vec![
+        ColumnSpec::descriptor("item", "Metric"),
+        ColumnSpec::new("base")
+            .with_header("Base Case")
+            .with_style(Some(SemanticStyle::Bold)),
+        ColumnSpec::new("upside").with_header("Upside"),
+    ];
+    tbl.rows = vec![
+        RowSpec::new("rev")
+            .with_format(Some(FormatPreset::Currency))
+            .with_cell("item", "Revenue")
+            .with_cell("base", 100.0)
+            .with_cell("upside", 120.0),
+        RowSpec::new("ebitda_margin")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_format(Some(FormatPreset::Percentage))
+            .with_cell("item", "EBITDA Margin")
+            .with_cell("base", 0.25)
+            .with_cell("upside", 0.28),
+        RowSpec::new("ebitda")
+            .with_style(Some(SemanticStyle::Subtotal))
+            .with_format(Some(FormatPreset::Currency))
+            .with_cell("item", "EBITDA")
+            .with_cell("base", 25.0)
+            .with_cell("upside", 33.6),
+        RowSpec::new("net_income")
+            .with_style(Some(SemanticStyle::Total))
+            .with_format(Some(FormatPreset::Currency))
+            .with_cell("item", "Net Income")
+            .with_cell("base", 18.0)
+            .with_cell("upside", 24.0),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "BoldMdModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("Summary")],
+        }],
+    };
+    let compiled = Compiler::compile(&manifest, &[tbl]).unwrap();
+
+    // Inspect table exposes SemanticStyle::Bold on both column and row
+    let inspected = compiled.inspect_table(&TableId::from("Summary")).unwrap();
+    assert_eq!(inspected.columns[1].style, Some(SemanticStyle::Bold));
+    assert_eq!(inspected.rows[1].style, Some(SemanticStyle::Bold));
+
+    // Values Markdown: bolds bold/subtotal/total rows; keeps bold-column cells on data rows unbolded
+    let md_values = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            show_ids: false,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_values.contains("| Revenue | $100 | $120 |\n"));
+    assert!(md_values.contains("| **EBITDA Margin** | **25.0%** | **28.0%** |\n"));
+    assert!(md_values.contains("| **EBITDA** | **$25** | **$34** |\n"));
+    assert!(md_values.contains("| **Net Income** | **$18** | **$24** |\n"));
+
+    // Index Markdown: keeps bolding and style tags strictly for subtotal/total summaries
+    let md_index = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Index,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_index.contains("- `rev`: Revenue\n"));
+    assert!(md_index.contains("- `ebitda_margin`: EBITDA Margin\n"));
+    assert!(!md_index.contains("(bold)"));
+    assert!(!md_index.contains("**`ebitda_margin`**"));
+    assert!(md_index.contains("- **`ebitda`** (subtotal)\n"));
+    assert!(md_index.contains("- **`net_income`**: Net Income (total)\n"));
+}
+
+#[test]
+fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
+    use f8_core::compiler::compiled::SheetCellKind;
+    use f8_core::model::table::{CellInput, PlacementSpec};
+
+    let make_table = |id: &str, title: &str, cols: usize, rows: usize, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, title).with_placement(placement);
+        t.columns.push(ColumnSpec::descriptor("item", "Item"));
+        for c in 1..cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        for r in 1..=rows {
+            let mut row = RowSpec::new(format!("r{r}")).with_cell("item", format!("Row {r}"));
+            for c in 1..cols {
+                row = row.with_cell(format!("c{c}"), CellInput::number((r * 10 + c) as f64));
+            }
+            t.rows.push(row);
+        }
+        t
+    };
+
+    // Part 1: Stacked tables (2, 5, 3 cols via stack and below)
+    let stacked_tables = vec![
+        make_table("T1", "Top Narrow Table", 2, 1, PlacementSpec::stack()),
+        make_table("T2", "Middle Wide Table", 5, 1, PlacementSpec::stack()),
+        make_table(
+            "T3",
+            "Bottom Medium Table",
+            3,
+            1,
+            PlacementSpec::below("T2"),
+        ),
+    ];
+    let stacked_manifest = ProjectManifest {
+        model_name: "InspectStackedBanners".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+            ],
+        }],
+    };
+    let compiled = Compiler::compile(&stacked_manifest, &stacked_tables).unwrap();
+    let sheet = compiled.inspect_sheet(&SheetId::from("Main")).unwrap();
+
+    assert_eq!(sheet.min_col, 1);
+    assert_eq!(sheet.max_col, 5);
+
+    for (id, expected_title, end_col) in [
+        ("T1", "Top Narrow Table", 2_u32),
+        ("T2", "Middle Wide Table", 5_u32),
+        ("T3", "Bottom Medium Table", 3_u32),
+    ] {
+        let p = compiled.layout_map.get_table(&TableId::from(id)).unwrap();
+        let title_row_idx = (p.title_row.unwrap() - sheet.min_row) as usize;
+        let title_row = &sheet.rows[title_row_idx];
+        assert_eq!(title_row.cells.len(), 5);
+        for (idx, cell) in title_row.cells.iter().enumerate() {
+            let expected_col = 1 + idx as u32;
+            assert_eq!(cell.physical_col, expected_col);
+            assert_eq!(cell.kind, SheetCellKind::TableTitle);
+            assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some(id));
+            if expected_col == 1 {
+                assert_eq!(cell.value, CellValue::Text(expected_title.to_string()));
+                assert_eq!(cell.formatted_value.as_deref(), Some(expected_title));
+            } else {
+                assert_eq!(cell.value, CellValue::Empty);
+                assert_eq!(cell.formatted_value, None);
+            }
+        }
+
+        // Header and body rows remain strictly within 1..=end_col
+        let hdr_row_idx = (p.header_row_range.unwrap().0 - sheet.min_row) as usize;
+        let data_row_idx = (p.body_row_range.0 - sheet.min_row) as usize;
+        for col in 1..=5_u32 {
+            let hdr_cell = &sheet.rows[hdr_row_idx].cells[(col - 1) as usize];
+            let data_cell = &sheet.rows[data_row_idx].cells[(col - 1) as usize];
+            if col <= end_col {
+                assert_eq!(hdr_cell.kind, SheetCellKind::ColumnHeader);
+                assert_eq!(hdr_cell.table_id.as_ref().map(TableId::as_str), Some(id));
+                assert_eq!(data_cell.kind, SheetCellKind::Data);
+                assert_eq!(data_cell.table_id.as_ref().map(TableId::as_str), Some(id));
+            } else {
+                assert_eq!(hdr_cell.kind, SheetCellKind::Empty);
+                assert_eq!(hdr_cell.table_id, None);
+                assert_eq!(data_cell.kind, SheetCellKind::Empty);
+                assert_eq!(data_cell.table_id, None);
+            }
+        }
+    }
+
+    // Part 2: Obstructed left-lane alignment (Scenario 5: Left1 1..=2, Left2 1..=3 beside Right 5..=7)
+    let lane_tables = vec![
+        make_table("Left1", "Left Card 1", 2, 2, PlacementSpec::stack()),
+        make_table(
+            "Right",
+            "Right Panel",
+            3,
+            12,
+            PlacementSpec::right_of_with_gap("Left1", 2),
+        ),
+        make_table("Left2", "Left Card 2", 3, 2, PlacementSpec::below("Left1")),
+    ];
+    let lane_manifest = ProjectManifest {
+        model_name: "InspectLeftLane".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Dash".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![
+                TableId::from("Left1"),
+                TableId::from("Right"),
+                TableId::from("Left2"),
+            ],
+        }],
+    };
+    let lane_compiled = Compiler::compile(&lane_manifest, &lane_tables).unwrap();
+    let dash = lane_compiled.inspect_sheet(&SheetId::from("Dash")).unwrap();
+
+    assert_eq!(dash.min_col, 1);
+    assert_eq!(dash.max_col, 7);
+
+    // Row 0 (physical row 1): Left1 TableTitle across cols 1..=3, Empty at col 4, Right TableTitle across cols 5..=7
+    let row0 = &dash.rows[0];
+    for col in 1..=7_u32 {
+        let cell = &row0.cells[(col - 1) as usize];
+        match col {
+            1..=3 => {
+                assert_eq!(cell.kind, SheetCellKind::TableTitle);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left1"));
+            }
+            4 => {
+                assert_eq!(cell.kind, SheetCellKind::Empty);
+                assert_eq!(cell.table_id, None);
+            }
+            5..=7 => {
+                assert_eq!(cell.kind, SheetCellKind::TableTitle);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Right"));
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    // Left2's title row: Left2 TableTitle across cols 1..=3, Empty at col 4, Right Data across cols 5..=7
+    let p_l2 = lane_compiled
+        .layout_map
+        .get_table(&TableId::from("Left2"))
+        .unwrap();
+    let l2_title_row = &dash.rows[(p_l2.title_row.unwrap() - dash.min_row) as usize];
+    for col in 1..=7_u32 {
+        let cell = &l2_title_row.cells[(col - 1) as usize];
+        match col {
+            1..=3 => {
+                assert_eq!(cell.kind, SheetCellKind::TableTitle);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left2"));
+            }
+            4 => {
+                assert_eq!(cell.kind, SheetCellKind::Empty);
+                assert_eq!(cell.table_id, None);
+            }
+            5..=7 => {
+                assert_eq!(cell.kind, SheetCellKind::Data);
+                assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Right"));
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
+fn test_grid_layout_scenario_10_inspect_sheet_overflow_and_physical_spans() {
+    use f8_core::SheetLayoutSpec;
+    use f8_core::compiler::compiled::SheetCellKind;
+    use f8_core::model::table::PlacementSpec;
+
+    let mut left = TableSpec::new("Left", "Left Panel");
+    left.columns
+        .push(ColumnSpec::descriptor("item", "Line Item"));
+    left.columns.push(ColumnSpec::gutter());
+    left.columns
+        .push(ColumnSpec::new("v1").with_header("2024E"));
+    left.rows.push(RowSpec::section_header("Operating Section"));
+    left.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Operating Expenses (Excl DA)") // 28+1=29 -> span 3 (B..D)
+            .with_cell("v1", 100.0),
+    );
+    left.rows.push(RowSpec::gutter());
+    left.rows.push(
+        RowSpec::new("r2")
+            .with_cell("item", "Total")
+            .with_cell("v1", 100.0),
+    );
+
+    // Side-by-side table to also verify unowned inter-table gap is strictly SheetCellKind::Empty
+    let mut right =
+        TableSpec::new("Right", "Right Panel").with_placement(PlacementSpec::right_of("Left"));
+    right.columns.push(ColumnSpec::new("k").with_header("KPI"));
+    right.rows.push(RowSpec::new("m1").with_cell("k", 2.5));
+
+    let manifest = ProjectManifest {
+        model_name: "InspectGrid".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Dash".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("Left"), TableId::from("Right")],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[left, right]).unwrap();
+    let sheet = compiled.inspect_sheet(&SheetId::from("Dash")).unwrap();
+
+    // Left: item=(1..=3), gutter=(4..=4), v1=(5..=5); inter-table gap=(6); Right: k=(7..=7)
+    assert_eq!(sheet.min_col, 1);
+    assert_eq!(sheet.max_col, 7);
+    assert_eq!(sheet.col_widths.get(&0), Some(&3.0));
+    assert_eq!(sheet.col_widths.get(&1), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&2), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&3), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&4), Some(&3.0)); // intra-table gutter
+    assert_eq!(sheet.col_widths.get(&5), Some(&12.0));
+    assert_eq!(sheet.col_widths.get(&6), Some(&3.0)); // inter-table gap
+    assert_eq!(sheet.col_widths.get(&7), Some(&12.0));
+
+    let row_at = |excel_row: u32| {
+        sheet
+            .rows
+            .iter()
+            .find(|r| r.excel_row == excel_row)
+            .unwrap()
+    };
+
+    // Row 4: ColumnHeader across B4..D4 (anchor text at B4, empty ColumnHeader at C4..D4), Gutter at E4, ColumnHeader at F4, Empty at G4, ColumnHeader at H4
+    let hdr = row_at(4);
+    assert_eq!(hdr.cells[0].kind, SheetCellKind::ColumnHeader);
+    assert_eq!(hdr.cells[0].formatted_value.as_deref(), Some("Line Item"));
+    assert_eq!(
+        hdr.cells[0].col_id.as_ref().map(ColId::as_str),
+        Some("item")
+    );
+    for idx in [1_usize, 2] {
+        assert_eq!(hdr.cells[idx].kind, SheetCellKind::ColumnHeader);
+        assert_eq!(hdr.cells[idx].value, CellValue::Empty);
+        assert_eq!(hdr.cells[idx].formatted_value, None);
+        assert_eq!(
+            hdr.cells[idx].col_id.as_ref().map(ColId::as_str),
+            Some("item")
+        );
+    }
+    assert_eq!(hdr.cells[3].kind, SheetCellKind::Gutter);
+    assert_eq!(hdr.cells[4].kind, SheetCellKind::ColumnHeader);
+    assert_eq!(hdr.cells[5].kind, SheetCellKind::Empty);
+    assert_eq!(hdr.cells[5].table_id, None);
+    assert_eq!(hdr.cells[5].row_id, None);
+    assert_eq!(hdr.cells[5].col_id, None);
+    assert!(!hdr.cells[5].is_descriptor);
+
+    // Row 5: SectionHeader spans all physical cols of Left (B5..F5), Empty at G5, Right Data at H5
+    let sec = row_at(5);
+    assert_eq!(sec.cells[0].kind, SheetCellKind::SectionHeader);
+    assert_eq!(
+        sec.cells[0].formatted_value.as_deref(),
+        Some("Operating Section")
+    );
+    for cell in &sec.cells[1..=4] {
+        assert_eq!(cell.kind, SheetCellKind::SectionHeader);
+        assert_eq!(cell.value, CellValue::Empty);
+    }
+    assert_eq!(sec.cells[5].kind, SheetCellKind::Empty);
+
+    // Row 6: Data row r1 -> B6 is Data (descriptor), C6 & D6 are Overflow, E6 is Gutter, F6 is Data (measure), G6 is Empty
+    let r1 = row_at(6);
+    assert_eq!(r1.cells[0].kind, SheetCellKind::Data);
+    assert!(r1.cells[0].is_descriptor);
+    assert_eq!(r1.cells[0].physical_a1, "B6");
+    for (idx, expected_a1) in [(1_usize, "C6"), (2_usize, "D6")] {
+        let cell = &r1.cells[idx];
+        assert_eq!(cell.physical_a1, expected_a1);
+        assert_eq!(cell.kind, SheetCellKind::Overflow);
+        assert_eq!(serde_json::to_string(&cell.kind).unwrap(), r#""overflow""#);
+        assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left"));
+        assert_eq!(cell.row_id.as_ref().map(RowId::as_str), Some("r1"));
+        assert_eq!(cell.col_id.as_ref().map(ColId::as_str), Some("item"));
+        assert!(cell.is_descriptor);
+        assert_eq!(cell.value, CellValue::Empty);
+        assert_eq!(cell.formatted_value, None);
+        assert_eq!(cell.formula_expr, None);
+        assert_eq!(cell.excel_formula, None);
+    }
+    assert_eq!(r1.cells[3].kind, SheetCellKind::Gutter);
+    assert_eq!(r1.cells[4].kind, SheetCellKind::Data);
+    assert_eq!(r1.cells[4].physical_a1, "F6");
+    assert_eq!(r1.cells[5].kind, SheetCellKind::Empty);
+    assert_eq!(r1.cells[5].table_id, None);
+    assert!(!r1.cells[5].is_descriptor);
+
+    // Row 7: RowSpec::Gutter spans all physical cols of Left (B7..F7)
+    let gutter_row = row_at(7);
+    for cell in &gutter_row.cells[0..=4] {
+        assert_eq!(cell.kind, SheetCellKind::Gutter);
+        assert_eq!(cell.table_id.as_ref().map(TableId::as_str), Some("Left"));
+    }
+    assert_eq!(gutter_row.cells[5].kind, SheetCellKind::Empty);
+}
+
+#[test]
+fn test_to_markdown_layout_scenario_1_grid_dashboard() {
+    use f8_core::model::manifest::SheetLayoutSpec;
+    use f8_core::model::table::{CellInput, PlacementSpec};
+
+    let build_grid_table = |id: &str,
+                            title: &str,
+                            placement: PlacementSpec,
+                            measure_cols: usize,
+                            gutter_after: Option<usize>,
+                            rows: usize,
+                            subtitle: Option<&str>,
+                            grouped: bool| {
+        let mut t = TableSpec::new(id, title).with_placement(placement);
+        if let Some(sub) = subtitle {
+            t = t.with_subtitle(sub);
+        }
+        t.columns.push(ColumnSpec::descriptor("item", "Line Item"));
+        for c in 1..=measure_cols {
+            let mut col = ColumnSpec::new(format!("m{c}")).with_header(format!("M{c}"));
+            if grouped && c == 1 {
+                col = col.with_group("Period");
+            }
+            t.columns.push(col);
+            if gutter_after == Some(c) {
+                t.columns.push(ColumnSpec::gutter());
+            }
+        }
+        for r in 1..=rows {
+            // 18-char descriptor triggers 2-column span at W=12 (19 > 12, ceil(19/12) = 2)
+            let label = if r == 1 {
+                "Eighteen Char Desc".to_string()
+            } else {
+                format!("Row {r}")
+            };
+            let mut row = RowSpec::new(format!("r{r}")).with_cell("item", label);
+            for c in 1..=measure_cols {
+                row = row.with_cell(format!("m{c}"), CellInput::number((r + c) as f64));
+            }
+            t.rows.push(row);
+        }
+        t
+    };
+
+    let top_left = build_grid_table(
+        "TopLeft",
+        "Top Left",
+        PlacementSpec::stack(),
+        4,
+        None,
+        6,
+        None,
+        false,
+    );
+    let top_right = build_grid_table(
+        "TopRight",
+        "Top Right",
+        PlacementSpec::right_of("TopLeft"),
+        3,
+        None,
+        23,
+        Some("($ in millions)"),
+        false,
+    );
+    let middle = build_grid_table(
+        "Middle",
+        "Middle",
+        PlacementSpec::stack(),
+        8,
+        Some(6),
+        25,
+        None,
+        false,
+    );
+    let bottom = build_grid_table(
+        "Bottom",
+        "Bottom",
+        PlacementSpec::stack(),
+        15,
+        None,
+        8,
+        None,
+        true,
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "Dashboard".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![
+                TableId::from("TopLeft"),
+                TableId::from("TopRight"),
+                TableId::from("Middle"),
+                TableId::from("Bottom"),
+            ],
+        }],
+    };
+
+    let compiled = Compiler::compile(&manifest, &[top_left, top_right, middle, bottom]).unwrap();
+    let md = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Sheet metadata & RLE column compression
+    assert!(md.contains(
+        "## Sheet: Summary\nLayout: grid (W=12) | Bounds: B2:R72 (71r x 17c, w:204)\nColumns: A:3, B..R:12\n\n"
+    ));
+
+    // Band 1: side-by-side unbalanced lanes with right_empty, empty_below, and widened gap H
+    assert!(
+        md.contains("- Band 1 (R2:R28, 27r x cols B..M, w:144, right_empty:N..R (5c, w:60)):\n")
+    );
+    assert!(md.contains("  - Lane B..G (6c, w:72, R2:R10 = 9r, empty_below:R11:R28 (18r)):\n"));
+    assert!(md.contains(
+        "    - `TopLeft` [B2:G10] 9r x 6c (w:72) | stack | hdr:R4 body:R5:R10 | cols: desc B..C(2c, req:19), measure D..G(4c)\n"
+    ));
+    assert!(md.contains("  - Lane I..M (5c, w:60, gap:1c (H, w:12), R2:R28 = 27r):\n"));
+    assert!(md.contains(
+        "    - `TopRight` [I2:M28] 27r x 5c (w:60) | right_of `TopLeft` | title->R (+5 empty) sub:1 hdr:R5 body:R6:R28 | cols: desc I..J(2c, req:19), measure K..M(3c)\n"
+    ));
+
+    // Band 2: single-lane band (no Lane nesting), title overhang, and widened overlapped gutter J
+    assert!(md.contains(
+        "- Band 2 (R31:R58, 28r x cols B..L, w:132, gap:2r, right_empty:M..R (6c, w:72)):\n"
+    ));
+    assert!(md.contains(
+        "  - `Middle` [B31:L58] 28r x 11c (w:132) | stack | title->R (+6 empty) hdr:R33 body:R34:R58 | cols: desc B..C(2c, req:19), measure D..I(6c), gutter J(1c, w:12), measure K..L(2c)\n"
+    ));
+
+    // Band 3: full-width single-lane band with grouped headers and no right_empty or title overhang
+    assert!(md.contains("- Band 3 (R61:R72, 12r x cols B..R, w:204, gap:2r):\n"));
+    assert!(md.contains(
+        "  - `Bottom` [B61:R72] 12r x 17c (w:204) | stack | hdr:R63:R64(grouped) body:R65:R72 | cols: desc B..C(2c, req:19), measure D..R(15c)\n"
+    ));
+    assert_eq!(md.matches("  - Lane ").count(), 2);
+}
+
+#[test]
+fn test_to_markdown_layout_scenario_2_multi_table_lane_width_inflation_and_empty_margins() {
+    use f8_core::model::manifest::SheetLayoutSpec;
+    use f8_core::model::table::{CellInput, PlacementSpec};
+
+    // Sheet 1: T2 below T1, T3 right_of T1 spanning both, wide measure value inflates W above base 12
+    let mut t1 = TableSpec::new("T1", "Top Left");
+    t1.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("v")
+            .with_header("Val")
+            .with_format(Some(FormatPreset::Currency))
+            .with_decimals(Some(1)),
+    ];
+    t1.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "Revenue")
+            .with_cell("v", 123_456_789.0), // "$123,456,789.0" -> 14 chars + 1 pad = 15
+    ];
+
+    let mut t2 = TableSpec::new("T2", "Bottom Left").with_placement(PlacementSpec::below("T1"));
+    t2.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("v").with_header("Val"),
+    ];
+    t2.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "A")
+            .with_cell("v", 1.0),
+        RowSpec::new("r2")
+            .with_cell("item", "B")
+            .with_cell("v", 2.0),
+    ];
+
+    let mut t3 = TableSpec::new("T3", "Right Tall").with_placement(PlacementSpec::right_of("T1"));
+    t3.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("v").with_header("Val"),
+    ];
+    for r in 1..=12 {
+        t3.rows.push(
+            RowSpec::new(format!("r{r}"))
+                .with_cell("item", format!("Row {r}"))
+                .with_cell("v", CellInput::number(r as f64)),
+        );
+    }
+
+    // Sheet 2: exercises empty_above (lane starting below band.min_row) and left_empty (band shifted right)
+    let make_simple = |id: &str, rows: usize, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, id).with_placement(placement);
+        t.columns = vec![ColumnSpec::new("v").with_header("V")];
+        for r in 1..=rows {
+            t.rows
+                .push(RowSpec::new(format!("r{r}")).with_cell("v", CellInput::number(r as f64)));
+        }
+        t
+    };
+    // TallLeft: B2:B15 (14r), TopMid: D2:D5 (4r), BotMid: D8:D12 (5r), OffsetRight: F8:F13 (6r), LowerRight: F18:F21 (4r)
+    let tall_left = make_simple("TallLeft", 11, PlacementSpec::stack());
+    let top_mid = make_simple("TopMid", 1, PlacementSpec::right_of("TallLeft"));
+    let bot_mid = make_simple("BotMid", 2, PlacementSpec::below("TopMid"));
+    let offset_right = make_simple("OffsetRight", 3, PlacementSpec::right_of("BotMid"));
+    let lower_right = make_simple(
+        "LowerRight",
+        1,
+        PlacementSpec::below_with_gap("OffsetRight", 4),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "BalancedLanes".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Inflated".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![
+                    TableId::from("T1"),
+                    TableId::from("T2"),
+                    TableId::from("T3"),
+                ],
+            },
+            SheetSpec {
+                name: "Margins".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![
+                    TableId::from("TallLeft"),
+                    TableId::from("TopMid"),
+                    TableId::from("BotMid"),
+                    TableId::from("OffsetRight"),
+                    TableId::from("LowerRight"),
+                ],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[
+            t1,
+            t2,
+            t3,
+            tall_left,
+            top_mid,
+            bot_mid,
+            offset_right,
+            lower_right,
+        ],
+    )
+    .unwrap();
+
+    let md_inflated = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("Inflated")]),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Uniform width inflated to 15 with base=12 reported explicitly
+    assert!(
+        md_inflated.contains("Layout: grid (W=15, base=12) | Bounds: B2:F16 (15r x 5c, w:63)\n")
+    );
+    assert!(md_inflated.contains("Columns: A:3, B..C:15, D:3, E..F:15\n"));
+    // Single Band 1 with two Lanes: Lane 1 holds T1 (R2:R5) + T2 (R8:R12) -> empty_below R13:R16 (4r)
+    assert_eq!(md_inflated.matches("- Band ").count(), 1);
+    assert!(
+        md_inflated.contains("  - Lane B..C (2c, w:30, R2:R12 = 11r, empty_below:R13:R16 (4r)):\n")
+    );
+    assert!(md_inflated.contains("    - `T1` [B2:C5]"));
+    assert!(md_inflated.contains("    - `T2` [B8:C12] 5r x 2c (w:30) | below `T1` |"));
+    assert!(md_inflated.contains("  - Lane E..F (2c, w:30, gap:1c (D, w:3), R2:R16 = 15r):\n"));
+    assert!(md_inflated.contains("    - `T3` [E2:F16]"));
+
+    let md_margins = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("Margins")]),
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Lane F in Band 1 starts at R8 while Band 1 starts at R2 and ends at R15 -> both empty_above and empty_below
+    assert!(md_margins.contains(
+        "  - Lane F (1c, w:12, gap:1c (E, w:3), R8:R13 = 6r, empty_above:R2:R7 (6r), empty_below:R14:R15 (2r)):\n"
+    ));
+    // Band 2 starts at col F while sheet min_col is B -> left_empty:B..E (4c, w:30) [B:12, C:3, D:12, E:3]
+    assert!(
+        md_margins.contains(
+            "- Band 2 (R18:R21, 4r x cols F, w:12, gap:2r, left_empty:B..E (4c, w:30)):\n"
+        )
+    );
+    assert!(md_margins.contains("below `OffsetRight` (gap:4r)"));
+}
+
+#[test]
+fn test_to_markdown_layout_scenario_3_auto_metadata_chrome_wrap_and_collapsible() {
+    use std::io::Read;
+
+    use f8_core::compiler::emission::EmissionOptions;
+    use f8_core::model::manifest::FreezePanes;
+    use f8_core::model::table::PlacementSpec;
+
+    // Sheet 1: full auto chrome, freeze (6, 2), wrap_text, sub:2, grouped header, collapsible vs 1-row collapsible
+    let mut main_tbl = TableSpec::new("SummaryTbl", "Summary Table")
+        .with_subtitles(["($ in millions)", "Unaudited"])
+        .with_collapsible(true);
+    main_tbl.columns = vec![
+        ColumnSpec::descriptor("item", "Line Item"),
+        ColumnSpec::new("y1").with_group("FY2025").with_header("Q1"),
+    ];
+    main_tbl.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "Line One\nLine Two")
+            .with_cell("y1", 10.0),
+    ];
+
+    let mut one_row_tbl = TableSpec::new("OneRow", "")
+        .with_collapsible(true)
+        .with_placement(PlacementSpec::stack_with_gap(4));
+    one_row_tbl.columns = vec![ColumnSpec::new("v")];
+    one_row_tbl.rows = vec![RowSpec::new("r1").with_cell("v", 99.0)];
+
+    // Auxiliary sheets exercising row-only, col-only, and (0, 0) freeze splits + custom right_of gap
+    let make_tiny = |id: &str, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, id).with_placement(placement);
+        t.columns = vec![ColumnSpec::new("v").with_header("V")];
+        t.rows = vec![RowSpec::new("r1").with_cell("v", 1.0)];
+        t
+    };
+    let fr_row = make_tiny("FrRow", PlacementSpec::stack());
+    let fr_col = make_tiny("FrCol", PlacementSpec::stack());
+    let fr_col_r = make_tiny("FrColR", PlacementSpec::right_of_with_gap("FrCol", 2));
+    let fr_zero = make_tiny("FrZero", PlacementSpec::stack());
+
+    let manifest = ProjectManifest {
+        model_name: "AutoChrome".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Main".to_string(),
+                tab_color: Some("#1F4E79".to_string()),
+                freeze_panes: Some(FreezePanes { row: 6, col: 2 }),
+                show_gridlines: true,
+                layout: Default::default(),
+                tables: vec![TableId::from("SummaryTbl"), TableId::from("OneRow")],
+            },
+            SheetSpec {
+                name: "FreezeRow".to_string(),
+                tab_color: None,
+                freeze_panes: Some(FreezePanes { row: 4, col: 0 }),
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![TableId::from("FrRow")],
+            },
+            SheetSpec {
+                name: "FreezeCol".to_string(),
+                tab_color: None,
+                freeze_panes: Some(FreezePanes { row: 0, col: 3 }),
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![TableId::from("FrCol"), TableId::from("FrColR")],
+            },
+            SheetSpec {
+                name: "FreezeNone".to_string(),
+                tab_color: None,
+                freeze_panes: Some(FreezePanes { row: 0, col: 0 }),
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![TableId::from("FrZero")],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[main_tbl, one_row_tbl, fr_row, fr_col, fr_col_r, fr_zero],
+    )
+    .unwrap();
+    let md = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    // Auto mode with Freeze, Gridlines, Tab
+    assert!(md.contains(
+        "## Sheet: Main\nLayout: auto | Bounds: B2:C13 (12r x 2c, w:24) | Freeze: C7 (R1:R6, A..B) | Gridlines: on | Tab: #1F4E79\n"
+    ));
+    // Single-lane bands on Main omit Lane nesting
+    let main_section = md.split("## Sheet: FreezeRow").next().unwrap();
+    assert!(!main_section.contains("  - Lane "));
+    // Multi-row table emits sub:2, grouped header, collapsible, and wrap:1
+    assert!(main_section.contains(
+        "  - `SummaryTbl` [B2:C8] 7r x 2c (w:24) | stack | sub:2 hdr:R6:R7(grouped) body:R8 collapsible | cols: desc B(1c), measure C(1c) | wrap:1\n"
+    ));
+    // 1-row untitled headerless table emits stack (gap:4r), untitled hdr:none, and omits collapsible
+    assert!(main_section.contains(
+        "  - `OneRow` [B13:B13] 1r x 1c (w:12) | stack (gap:4r) | untitled hdr:none body:R13 | cols: measure B(1c)\n"
+    ));
+    let one_row_line = main_section
+        .lines()
+        .find(|line| line.contains("`OneRow`"))
+        .unwrap();
+    assert!(!one_row_line.contains("collapsible"));
+
+    // Verify Pass 6b OpenXML parity for 1-row collapsible: SummaryTbl rows (R3..R8) get outlineLevel="1", OneRow (R13) does not
+    let xlsx_bytes = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(xlsx_bytes)).unwrap();
+    let mut sheet1_xml = String::new();
+    archive
+        .by_name("xl/worksheets/sheet1.xml")
+        .unwrap()
+        .read_to_string(&mut sheet1_xml)
+        .unwrap();
+    for row_num in 3..=8 {
+        let marker = format!(r#"<row r="{row_num}""#);
+        let row_start = sheet1_xml.find(&marker).unwrap();
+        let row_tag_end = row_start + sheet1_xml[row_start..].find('>').unwrap();
+        assert!(
+            sheet1_xml[row_start..row_tag_end].contains(r#"outlineLevel="1""#),
+            "expected outlineLevel=\"1\" on row {row_num}, got: {}",
+            &sheet1_xml[row_start..row_tag_end]
+        );
+    }
+    let row13_start = sheet1_xml.find(r#"<row r="13""#).unwrap();
+    let row13_tag_end = row13_start + sheet1_xml[row13_start..].find('>').unwrap();
+    assert!(!sheet1_xml[row13_start..row13_tag_end].contains("outlineLevel"));
+
+    // Freeze split variants and custom right_of gap
+    assert!(md.contains("| Freeze: A5 (R1:R4)\n"));
+    assert!(md.contains("| Freeze: D1 (A..C)\n"));
+    assert!(md.contains("right_of `FrCol` (gap:2c)"));
+    assert!(md.contains("| Freeze: A1 (no split)\n"));
+}
+
+#[test]
+fn test_to_markdown_layout_scenario_4_filters_context_empty_and_errors() {
+    let compiled = build_parity_workbook();
+
+    // Partial tables filter on Financials: renders full sheet 2D layout, tags unselected sibling (context), scopes Runtime Errors
+    let md_partial = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: None,
+            tables: Some(vec![TableId::from("PureMeasures")]),
+            show_ids: true,
+        })
+        .unwrap();
+    assert!(md_partial.contains("| Errors: 3\n"));
+    assert!(md_partial.contains("## Runtime Errors"));
+    assert!(md_partial.contains(r#"PureMeasures["r1", "c2"]"#));
+    assert!(!md_partial.contains(r#"IncomeStatement["div_err", "2024E"]"#));
+    assert!(!md_partial.contains(r#"Comps["msft_row", "ev"]"#));
+    assert!(md_partial.contains("## Sheet: Financials\n"));
+    assert!(!md_partial.contains("## Sheet: Valuation"));
+    assert!(!md_partial.contains("## Sheet: Notes"));
+    // Full sheet bounds preserved (B2:E22), IncomeStatement tagged (context), PureMeasures untagged
+    assert!(md_partial.contains("Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)\n"));
+    assert!(md_partial.contains("  - `IncomeStatement` (context) [B2:E15]"));
+    assert!(md_partial.contains("  - `PureMeasures` [B18:C22]"));
+    assert!(!md_partial.contains("`PureMeasures` (context)"));
+
+    // Union including entire Financials sheet: no table tagged (context)
+    let md_full_sheet = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("Financials")]),
+            tables: Some(vec![TableId::from("PureMeasures")]),
+            show_ids: true,
+        })
+        .unwrap();
+    assert!(!md_full_sheet.contains("(context)"));
+
+    // Selected empty sheet emits _(no tables)_ and omits Runtime Errors
+    let md_empty_sheet = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("Notes")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(!md_empty_sheet.contains("## Runtime Errors"));
+    assert!(md_empty_sheet.contains("## Sheet: Notes\n\n_(no tables)_\n"));
+
+    // Explicit empty allowlists emit only the 2-line model header
+    let expected_header_only =
+        "# ParityModel\nSheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n";
+    for (sheets, tables) in [
+        (Some(vec![]), None),
+        (None, Some(vec![])),
+        (Some(vec![]), Some(vec![])),
+    ] {
+        assert_eq!(
+            compiled
+                .to_markdown(&ModelMarkdownOptions {
+                    detail: ModelMarkdownDetail::Layout,
+                    sheets,
+                    tables,
+                    show_ids: true,
+                })
+                .unwrap(),
+            expected_header_only
+        );
+    }
+
+    // Unknown sheet / table fail with InspectionError
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                detail: ModelMarkdownDetail::Layout,
+                sheets: Some(vec![SheetId::from("NoSuchSheet")]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        InspectionError::SheetNotFound(SheetId::from("NoSuchSheet"))
+    );
+    assert_eq!(
+        compiled
+            .to_markdown(&ModelMarkdownOptions {
+                detail: ModelMarkdownDetail::Layout,
+                tables: Some(vec![TableId::from("NoSuchTable")]),
+                ..Default::default()
+            })
+            .unwrap_err(),
+        InspectionError::TableNotFound(TableId::from("NoSuchTable"))
+    );
+}
+
+#[test]
+fn test_to_markdown_layout_edge_cases() {
+    use f8_core::model::manifest::SheetLayoutSpec;
+    use f8_core::model::table::{CellInput, PlacementSpec};
+
+    let make_rect = |id: &str, cols: usize, rows: usize, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, id).with_placement(placement);
+        for c in 1..=cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        for r in 1..=rows {
+            let mut row = RowSpec::new(format!("r{r}"));
+            for c in 1..=cols {
+                row = row.with_cell(format!("c{c}"), CellInput::number((r + c) as f64));
+            }
+            t.rows.push(row);
+        }
+        t
+    };
+
+    // Edge case 1: L-shaped lane ordering -> sorted (start_row, start_col, decl_index) top-to-bottom, left-to-right
+    // WideTop: B2:F5 (5c, 1 row). TallAnchor right_of WideTop: H2:H21 keeps all tables in Band 1.
+    // MidLeft below WideTop: B8:C11. BotLeft below MidLeft: B14:C17. MidRight right_of MidLeft: E8:F11.
+    // Horizontal sweep sees col-1 tables (WideTop, MidLeft, BotLeft) before col-4 (MidRight);
+    // lane re-sort must output WideTop -> MidLeft -> MidRight -> BotLeft.
+    let wide_top = make_rect("WideTop", 5, 1, PlacementSpec::stack());
+    let tall_anchor = make_rect("TallAnchor", 1, 17, PlacementSpec::right_of("WideTop"));
+    let mid_left = make_rect("MidLeft", 2, 1, PlacementSpec::below("WideTop"));
+    let bot_left = make_rect("BotLeft", 2, 1, PlacementSpec::below("MidLeft"));
+    let mid_right = make_rect("MidRight", 2, 1, PlacementSpec::right_of("MidLeft"));
+
+    // Edge case 2: gap=0 Band splitting (gap:0r) and gap=0 Lane splitting (gap:0c)
+    let g_left = make_rect("GLeft", 1, 1, PlacementSpec::stack());
+    let g_right = make_rect("GRight", 1, 1, PlacementSpec::right_of_with_gap("GLeft", 0));
+    let g_below = make_rect("GBelow", 2, 1, PlacementSpec::stack_with_gap(0));
+
+    // Edge case 3: Gutter-only grid sheet actual_w fallback to base_w
+    let mut gutter_only = TableSpec::new("GutterOnly", "Gutter Only");
+    gutter_only.columns = vec![ColumnSpec::gutter()];
+    gutter_only.rows = vec![RowSpec::section_header("Spacer")];
+
+    let manifest = ProjectManifest {
+        model_name: "LayoutEdgeCases".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "LShape".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![
+                    TableId::from("WideTop"),
+                    TableId::from("TallAnchor"),
+                    TableId::from("MidLeft"),
+                    TableId::from("BotLeft"),
+                    TableId::from("MidRight"),
+                ],
+            },
+            SheetSpec {
+                name: "ZeroGaps".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                tables: vec![
+                    TableId::from("GLeft"),
+                    TableId::from("GRight"),
+                    TableId::from("GBelow"),
+                ],
+            },
+            SheetSpec {
+                name: "GutterGrid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(14.5),
+                tables: vec![TableId::from("GutterOnly")],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[
+            wide_top,
+            tall_anchor,
+            mid_left,
+            bot_left,
+            mid_right,
+            g_left,
+            g_right,
+            g_below,
+            gutter_only,
+        ],
+    )
+    .unwrap();
+
+    // Check L-shaped lane ordering
+    let md_lshape = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("LShape")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(md_lshape.matches("- Band ").count(), 1);
+    assert!(md_lshape.contains("  - Lane B..F (5c,"));
+    let p_top = md_lshape.find("    - `WideTop`").unwrap();
+    let p_ml = md_lshape.find("    - `MidLeft`").unwrap();
+    let p_mr = md_lshape.find("    - `MidRight`").unwrap();
+    let p_bl = md_lshape.find("    - `BotLeft`").unwrap();
+    assert!(p_top < p_ml && p_ml < p_mr && p_mr < p_bl);
+
+    // Check gap=0 Band and Lane splitting
+    let md_zero = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("ZeroGaps")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!(md_zero.matches("- Band ").count(), 2);
+    assert!(md_zero.contains("  - Lane B (1c, w:12, R2:R5 = 4r):\n"));
+    assert!(md_zero.contains("  - Lane C (1c, w:12, gap:0c, R2:R5 = 4r):\n"));
+    assert!(md_zero.contains("right_of `GLeft` (gap:0c)"));
+    assert!(md_zero.contains("- Band 2 (R6:R9, 4r x cols B..C, w:24, gap:0r):\n"));
+    assert!(md_zero.contains("stack (gap:0r)"));
+
+    // Check gutter-only grid sheet actual_w fallback to base_w=14.5
+    let md_gutter = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![SheetId::from("GutterGrid")]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(md_gutter.contains("Layout: grid (W=14.5) | Bounds: B2:B4 (3r x 1c, w:3)\n"));
+    assert!(!md_gutter.contains("base="));
+    assert!(md_gutter.contains("Columns: A..B:3\n"));
+    assert!(md_gutter.contains("| hdr:none body:R4 | cols: gutter B(1c)\n"));
+}
+
+#[test]
+fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
+    use f8_core::model::manifest::SheetLayoutSpec;
+    use f8_core::model::table::{CellInput, DetailedCellInput, PlacementSpec, ValueLiteral};
+    use f8_core::model::theme::Theme;
+
+    // Sheet 1 (auto): subtitle boundary fit vs overflow (single & multi-line); auto descriptors omit req:
+    let make_auto_sub = |id: &str, subs: &[&str], desc_label: &str| {
+        let mut t = TableSpec::new(id, id).with_subtitles(subs.iter().copied());
+        t.columns = vec![
+            ColumnSpec::descriptor("item", "Item"),
+            ColumnSpec::new("v").with_header("Val"),
+        ];
+        t.rows = vec![
+            RowSpec::new("r1")
+                .with_cell("item", desc_label)
+                .with_cell("v", 1.0),
+        ];
+        t
+    };
+    // B=12, C=12 -> table w=24
+    let auto_exact = make_auto_sub("AutoExact", &["x".repeat(24).as_str()], "Short");
+    let auto_over = make_auto_sub("AutoOver", &["x".repeat(25).as_str()], "Short");
+    let auto_multi_fit = make_auto_sub(
+        "AutoMultiFit",
+        &["($ in M)", "x".repeat(24).as_str()],
+        "Short",
+    );
+    let auto_multi_over = make_auto_sub(
+        "AutoMultiOver",
+        &["($ in M)", "x".repeat(30).as_str()],
+        "Short",
+    );
+
+    // Sheet 2 (auto wide descriptor): verifies auto descriptors never emit req:
+    let mut auto_wide_desc = TableSpec::new("AutoWideDesc", "Auto Wide");
+    auto_wide_desc.columns = vec![
+        ColumnSpec::descriptor("item", "Line Item"),
+        ColumnSpec::new("v").with_header("Val"),
+    ];
+    auto_wide_desc.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "A".repeat(30))
+            .with_cell("v", 1.0),
+    ];
+
+    // Sheet 3 (grid W=12): cliff spills, indent demand, header demand, lane-coupling victim/culprit,
+    // empty-descriptor victim, adjacent 1c merge vs spanned split, and side-by-side subtitle overflow.
+    let mut culprit = TableSpec::new("Culprit", "Culprit");
+    culprit.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("m1").with_header("M1"),
+        ColumnSpec::descriptor("notes", "Notes"),
+    ];
+    culprit.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "A".repeat(36)) // 36+1=37 -> 4c (B..E)
+            .with_cell("m1", 10.0)
+            .with_cell("notes", "N".repeat(24)), // 24+1=25 -> 3c (G..I), 1 char past 2c cliff
+    ];
+
+    let mut victim = TableSpec::new("Victim", "Victim");
+    victim.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("m1").with_header("M1"),
+        ColumnSpec::descriptor("notes", "Notes"),
+    ];
+    victim.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "ShortItem") // 9+1=10 -> raw 1c, stretched to 4c by Culprit
+            .with_cell("m1", 20.0)
+            .with_cell("notes", "N".repeat(23)), // 23+1=24 -> exact 2c cliff (G..H)
+    ];
+
+    let mut empty_victim = TableSpec::new("EmptyVictim", "Empty Victim");
+    empty_victim.columns = vec![
+        ColumnSpec::descriptor("item", ""),
+        ColumnSpec::new("m1").with_header("M1"),
+    ];
+    empty_victim.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", CellInput::Literal(ValueLiteral::Null)) // req:0, stretched to 4c
+            .with_cell("m1", 30.0),
+    ];
+
+    let mut indent_and_hdr = TableSpec::new("IndentAndHdr", "Indent And Header");
+    indent_and_hdr.columns = vec![
+        ColumnSpec::descriptor("ticker", "Tkr"),
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("m1").with_header("M1"),
+        ColumnSpec::descriptor("hdr_col", "H".repeat(24)), // header 24+1=25 -> 3c
+    ];
+    indent_and_hdr.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("ticker", "AAPL") // 1c
+            .with_cell(
+                "item",
+                DetailedCellInput {
+                    value: Some(ValueLiteral::String("I".repeat(20))), // 20+1+2*2=25 -> 3c
+                    indent: Some(2),
+                    ..Default::default()
+                },
+            )
+            .with_cell("m1", 40.0)
+            .with_cell("hdr_col", "OK"),
+    ];
+
+    // Right-of Victim (depth=1 lane): two adjacent 1c descriptors merge; 40ch subtitle overflows w:36
+    let mut adj_single = TableSpec::new("AdjSingle", "Adj Single")
+        .with_subtitle("S".repeat(40))
+        .with_placement(PlacementSpec::right_of("Victim"));
+    adj_single.columns = vec![
+        ColumnSpec::descriptor("d1", "D1"),
+        ColumnSpec::descriptor("d2", "D2"),
+        ColumnSpec::new("m1").with_header("M1"),
+    ];
+    adj_single.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("d1", "AA")
+            .with_cell("d2", "BB")
+            .with_cell("m1", 5.0),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "SubAndReq".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "AutoSubs".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                tables: vec![
+                    TableId::from("AutoExact"),
+                    TableId::from("AutoOver"),
+                    TableId::from("AutoMultiFit"),
+                    TableId::from("AutoMultiOver"),
+                ],
+            },
+            SheetSpec {
+                name: "AutoWide".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                tables: vec![TableId::from("AutoWideDesc")],
+            },
+            SheetSpec {
+                name: "GridReq".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![
+                    TableId::from("Culprit"),
+                    TableId::from("Victim"),
+                    TableId::from("EmptyVictim"),
+                    TableId::from("IndentAndHdr"),
+                    TableId::from("AdjSingle"),
+                ],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[
+            auto_exact,
+            auto_over,
+            auto_multi_fit,
+            auto_multi_over,
+            auto_wide_desc,
+            culprit,
+            victim,
+            empty_victim,
+            indent_and_hdr,
+            adj_single,
+        ],
+    )
+    .unwrap();
+
+    let md = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let line_for = |id: &str| {
+        md.lines()
+            .find(|line| line.contains(&format!("`{id}`")))
+            .unwrap_or_else(|| panic!("missing line for `{id}` in:\n{md}"))
+    };
+
+    // Auto subtitle exact boundary vs overflow
+    assert!(line_for("AutoExact").contains("| sub:1 hdr:"));
+    assert!(!line_for("AutoExact").contains("ch>w"));
+    assert!(line_for("AutoOver").contains("| sub:1(25ch>w) hdr:"));
+    assert!(line_for("AutoMultiFit").contains("| sub:2 hdr:"));
+    assert!(!line_for("AutoMultiFit").contains("ch>w"));
+    assert!(line_for("AutoMultiOver").contains("| sub:2(30ch>w) hdr:"));
+
+    // Auto wide descriptor never emits req:
+    assert!(line_for("AutoWideDesc").contains("| cols: desc B(1c), measure C(1c)"));
+    assert!(!line_for("AutoWideDesc").contains("req:"));
+
+    // Grid cliff spills, lane-coupling culprit vs victim, empty victim, indent/header, adjacent split/merge
+    assert!(
+        line_for("Culprit")
+            .contains("| cols: desc B..E(4c, req:37), measure F(1c), desc G..I(3c, req:25)")
+    );
+    assert!(
+        line_for("Victim")
+            .contains("| cols: desc B..E(4c, req:10), measure F(1c), desc G..H(2c, req:24)")
+    );
+    assert!(line_for("EmptyVictim").contains("| cols: desc B..E(4c, req:0), measure F(1c)"));
+    assert!(line_for("IndentAndHdr").contains(
+        "| cols: desc B(1c), desc C..E(3c, req:25), measure F(1c), desc G..I(3c, req:25)"
+    ));
+    assert!(line_for("AdjSingle").contains("sub:1(40ch>w) hdr:"));
+    assert!(line_for("AdjSingle").contains("| cols: desc J..K(2c), measure L(1c)"));
+    assert!(!line_for("AdjSingle").contains("req:"));
+
+    // Custom theme: char_width_multiplier=1.2, col_padding=0.5 -> fractional req:, formula-evaluated text,
+    // adjacent spanned descriptors stay split, and subtitle overflow respects char_width_multiplier
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.metrics.char_width_multiplier = 1.2;
+    custom_theme.metrics.col_padding = 0.5;
+
+    let mut custom_sub_fit = TableSpec::new("SubFit", "Sub Fit").with_subtitle("S".repeat(20)); // 20*1.2=24 <= 24
+    custom_sub_fit.columns = vec![
+        ColumnSpec::new("a").with_header("A"),
+        ColumnSpec::new("b").with_header("B"),
+    ];
+    custom_sub_fit.rows = vec![RowSpec::new("r1").with_cell("a", 1.0).with_cell("b", 2.0)];
+
+    let mut custom_sub_over = TableSpec::new("SubOver", "Sub Over").with_subtitle("S".repeat(21)); // 21*1.2=25.2 > 24
+    custom_sub_over.columns = vec![
+        ColumnSpec::new("a").with_header("A"),
+        ColumnSpec::new("b").with_header("B"),
+    ];
+    custom_sub_over.rows = vec![RowSpec::new("r1").with_cell("a", 1.0).with_cell("b", 2.0)];
+
+    let mut formula_desc = TableSpec::new("FormulaDesc", "Formula Desc");
+    formula_desc.columns = vec![
+        ColumnSpec::descriptor("d1", "D1"),
+        ColumnSpec::descriptor("d2", "D2"),
+        ColumnSpec::new("m1").with_header("M1"),
+    ];
+    formula_desc.rows = vec![
+        RowSpec::new("r1")
+            // 20-char evaluated formula text -> (20+1)*1.2 + 0.5 = 25.7 -> 3c (B..D)
+            .with_cell(
+                "d1",
+                CellInput::formula(r#"IF(TRUE, "Twenty Chars Formula", "X")"#),
+            )
+            // 16-char literal -> (16+1)*1.2 + 0.5 = 20.9 -> 2c (E..F)
+            .with_cell("d2", "Sixteen Char Txt")
+            .with_cell("m1", 1.0),
+    ];
+
+    let custom_manifest = ProjectManifest {
+        model_name: "CustomMetrics".to_string(),
+        theme: ThemeSpec::Custom(Box::new(custom_theme)),
+        sheets: vec![
+            SheetSpec {
+                name: "SubCheck".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("SubFit"), TableId::from("SubOver")],
+            },
+            SheetSpec {
+                name: "FormulaGrid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("FormulaDesc")],
+            },
+        ],
+    };
+
+    let custom_compiled = Compiler::compile(
+        &custom_manifest,
+        &[custom_sub_fit, custom_sub_over, formula_desc],
+    )
+    .unwrap();
+    let custom_md = custom_compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let custom_line = |id: &str| {
+        custom_md
+            .lines()
+            .find(|line| line.contains(&format!("`{id}`")))
+            .unwrap_or_else(|| panic!("missing line for `{id}` in:\n{custom_md}"))
+    };
+
+    assert!(custom_line("SubFit").contains("| sub:1 hdr:"));
+    assert!(!custom_line("SubFit").contains("ch>w"));
+    assert!(custom_line("SubOver").contains("| sub:1(21ch>w) hdr:"));
+    assert!(
+        custom_line("FormulaDesc")
+            .contains("| cols: desc B..D(3c, req:25.7), desc E..F(2c, req:20.9), measure G(1c)")
+    );
 }

@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest"
 import { formatWithUnit } from "../src/audit.js"
 import {
   Cell,
+  type CellError,
   type CompiledModel,
+  F8Error,
   InspectionError,
   Model,
   type SplitDict,
   TableAuditor,
+  type TableViewMode,
   unboxCellValue,
 } from "../src/index.js"
 
@@ -589,5 +592,629 @@ describe("TypeScript TableAuditor & Tabular Export", () => {
     expect(() => untypedAuditor.toMarkdown("invalid")).toThrow(
       /Invalid view mode/
     )
+  })
+})
+
+function buildParityModel(): CompiledModel {
+  const model = new Model({ name: "ParityModel", theme: "corporate_navy" })
+
+  const fin = model.addSheet("Financials")
+  const inc = fin.addTable("IncomeStatement", "Income Statement", {
+    subtitle: ["($ in Millions)", "Fiscal Year"],
+    currency: "USD",
+  })
+  inc.addColumn("line_item", { role: "descriptor", header: "Line Item" })
+  inc.addColumn("y2023a", {
+    role: "measure",
+    group: "Historical",
+    header: "2023A",
+    format: "currency",
+    decimals: 1,
+  })
+  inc.addColumnGutter()
+  inc.addColumn("2024E", {
+    role: "measure",
+    header: "2024E",
+    format: "currency",
+    decimals: 1,
+  })
+
+  inc.addSectionHeader("Revenue & Margin")
+  inc.addRow("revenue", {
+    cells: {
+      line_item: "Revenue",
+      y2023a: 100.0,
+      "2024E": new Cell({
+        expr: 'IncomeStatement["revenue", col.prev] * 1.15',
+      }),
+    },
+  })
+  inc.addRow("cogs", {
+    cells: {
+      line_item: new Cell({ value: "Cost | Goods\nSold", indent: 1 }),
+      y2023a: 40.0,
+      "2024E": 44.0,
+    },
+  })
+  inc.addRow("sparse", {
+    cells: { line_item: "Memo", y2023a: 5.0, "2024E": null },
+  })
+  inc.addRowGutter()
+  inc.addRow("gross_profit", {
+    style: "subtotal",
+    cells: { line_item: "Gross Profit" },
+    expr: 'IncomeStatement["revenue", @col] - IncomeStatement["cogs", @col]',
+  })
+  inc.addSectionHeader("Checks | Errors")
+  inc.addRow("div_err", {
+    style: "total",
+    cells: {
+      line_item: "Net | Check",
+      y2023a: 10.0,
+      "2024E": new Cell({ expr: "1 / 0" }),
+    },
+  })
+
+  const pure = fin.addTable("PureMeasures", "PureMeasures")
+  pure.addColumn("c1", { role: "measure", header: "c1" })
+  pure.addColumn("c2", { role: "measure", header: "Col Two" })
+  pure.addRow("r1", { cells: { c1: 1.0, c2: new Cell({ expr: "NA()" }) } })
+  pure.addRow("r2", { style: "total", cells: { c1: 2.0, c2: 3.0 } })
+
+  const val = model.addSheet("Valuation")
+  const comps = val.addTable("Comps", "Trading Comps", { currency: "USD" })
+  comps.addColumn("ticker", { role: "descriptor", header: "Ticker" })
+  comps.addColumn("company", { role: "descriptor", header: "Company Name" })
+  comps.addColumn("ev", {
+    role: "measure",
+    header: "EV",
+    format: "currency",
+    decimals: 1,
+  })
+  comps.addRow("aapl", {
+    cells: { ticker: "AAPL", company: "Apple Inc.", ev: 3000.0 },
+  })
+  comps.addRow("msft_row", {
+    cells: {
+      ticker: "MSFT",
+      company: "Microsoft",
+      ev: new Cell({ expr: "LN(-1)" }),
+    },
+  })
+
+  model.addSheet("Notes")
+  return model.compile()
+}
+
+const EXPECTED_PARITY_VALUES_MD = [
+  "# ParityModel",
+  "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3",
+  "",
+  "## Runtime Errors",
+  "",
+  '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)',
+  '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)',
+  '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)',
+  "",
+  "## Sheet: Financials",
+  "",
+  "### `IncomeStatement` — Income Statement",
+  "_($ in Millions)_",
+  "_Fiscal Year_",
+  "",
+  "| Line Item [line_item] | Historical: 2023A [y2023a] | 2024E |",
+  "| :--- | ---: | ---: |",
+  "| **Revenue & Margin** | | |",
+  "| Revenue | $100.0 | $115.0 |",
+  "|   Cost \\| Goods Sold [cogs] | $40.0 | $44.0 |",
+  "| Memo [sparse] | $5.0 | — |",
+  "| **Gross Profit [gross_profit]** | **$60.0** | **$71.0** |",
+  "| **Checks \\| Errors** | | |",
+  "| **Net \\| Check [div_err]** | **$10.0** | **#DIV/0!** |",
+  "",
+  "### `PureMeasures`",
+  "",
+  "| Row | c1 | Col Two [c2] |",
+  "| :--- | ---: | ---: |",
+  "| r1 | 1 | #N/A |",
+  "| **r2** | **2** | **3** |",
+  "",
+  "## Sheet: Valuation",
+  "",
+  "### `Comps` — Trading Comps",
+  "",
+  "| Ticker | Company Name [company] | EV |",
+  "| :--- | :--- | ---: |",
+  "| AAPL | Apple Inc. | $3,000.0 |",
+  "| MSFT [msft_row] | Microsoft | #NUM! |",
+  "",
+  "## Sheet: Notes",
+  "",
+  "_(no tables)_",
+  "",
+].join("\n")
+
+const EXPECTED_PARITY_INDEX_MD = [
+  "# ParityModel",
+  "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3",
+  "",
+  "## Runtime Errors",
+  "",
+  '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)',
+  '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)',
+  '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)',
+  "",
+  "## Sheet: Financials",
+  "",
+  "### `IncomeStatement` — Income Statement",
+  "_($ in Millions)_",
+  "_Fiscal Year_",
+  "",
+  "Columns: `line_item` (Line Item, descriptor), `y2023a` (Historical: 2023A), `2024E`",
+  "Rows:",
+  "- **Revenue & Margin**",
+  "  - `revenue`",
+  "  - `cogs`: Cost | Goods Sold",
+  "  - `sparse`: Memo",
+  "  - **`gross_profit`**: Gross Profit (subtotal)",
+  "- **Checks | Errors**",
+  "  - **`div_err`**: Net | Check (total)",
+  "",
+  "### `PureMeasures`",
+  "",
+  "Columns: `c1`, `c2` (Col Two)",
+  "Rows:",
+  "- `r1`",
+  "- **`r2`** (total)",
+  "",
+  "## Sheet: Valuation",
+  "",
+  "### `Comps` — Trading Comps",
+  "",
+  "Columns: `ticker` (descriptor), `company` (Company Name, descriptor), `ev`",
+  "Rows:",
+  "- `aapl`: AAPL | Apple Inc.",
+  "- `msft_row`: MSFT | Microsoft",
+  "",
+  "## Sheet: Notes",
+  "",
+  "_(no tables)_",
+  "",
+].join("\n")
+
+const EXPECTED_PARITY_LAYOUT_MD = [
+  "# ParityModel",
+  "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3",
+  "",
+  "## Runtime Errors",
+  "",
+  '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)',
+  '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)',
+  '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)',
+  "",
+  "## Sheet: Financials",
+  "Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)",
+  "Columns: A:3, B:14, C:12, D:3, E:12",
+  "",
+  "- Band 1 (R2:R15, 14r x cols B..E, w:41):",
+  "  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1",
+  "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):",
+  "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)",
+  "",
+  "## Sheet: Valuation",
+  "Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)",
+  "Columns: A:3, B..D:12",
+  "",
+  "- Band 1 (R2:R6, 5r x cols B..D, w:36):",
+  "  - `Comps` [B2:D6] 5r x 3c (w:36) | stack | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)",
+  "",
+  "## Sheet: Notes",
+  "",
+  "_(no tables)_",
+  "",
+].join("\n")
+
+describe("CompiledModel runtime error audit & workbook Markdown", () => {
+  it("Scenarios 1-2: errors() on clean and multi-sheet errored workbooks", () => {
+    const cleanModel = new Model({ name: "CleanModel" })
+    const cleanSheet = cleanModel.addSheet("Summary")
+    const cleanTbl = cleanSheet.addTable("KPIs", "KPIs")
+    cleanTbl.addColumn("metric", { role: "descriptor", header: "Metric" })
+    cleanTbl.addColumn("val", { role: "measure", header: "Value" })
+    cleanTbl.addRow("rev", { cells: { metric: "Revenue", val: 100.0 } })
+    const clean = cleanModel.compile()
+    expect(clean.errors()).toEqual([])
+    const cleanMd = clean.toMarkdown()
+    expect(cleanMd).toContain("| Errors: 0\n")
+    expect(cleanMd).not.toContain("## Runtime Errors")
+
+    const compiled = buildParityModel()
+    const errs: CellError[] = compiled.errors()
+    expect(errs).toEqual([
+      {
+        coordinate: {
+          table: "IncomeStatement",
+          row: "div_err",
+          col: "2024E",
+        },
+        sheet: "Financials",
+        physicalAddress: "'Financials'!E15",
+        error: "#DIV/0!",
+        formulaExpr: "1 / 0",
+        excelFormula: "=1/0",
+      },
+      {
+        coordinate: { table: "PureMeasures", row: "r1", col: "c2" },
+        sheet: "Financials",
+        physicalAddress: "'Financials'!C21",
+        error: "#N/A",
+        formulaExpr: "NA()",
+        excelFormula: "=NA()",
+      },
+      {
+        coordinate: { table: "Comps", row: "msft_row", col: "ev" },
+        sheet: "Valuation",
+        physicalAddress: "'Valuation'!D6",
+        error: "#NUM!",
+        formulaExpr: "LN(-1)",
+        excelFormula: "=LN(-1)",
+      },
+    ])
+  })
+
+  it("Scenarios 3-8 & 10: toMarkdown values, index, filters, validation, and cross-language parity", () => {
+    const compiled = buildParityModel()
+
+    // Default values mode and overload parity
+    expect(compiled.toMarkdown()).toBe(EXPECTED_PARITY_VALUES_MD)
+    expect(compiled.toMarkdown({ detail: "values", showIds: true })).toBe(
+      EXPECTED_PARITY_VALUES_MD
+    )
+    expect(compiled.toMarkdown("values", { showIds: true })).toBe(
+      EXPECTED_PARITY_VALUES_MD
+    )
+
+    // Index mode (ignores showIds)
+    expect(compiled.toMarkdown("index")).toBe(EXPECTED_PARITY_INDEX_MD)
+    expect(compiled.toMarkdown({ detail: "index", showIds: false })).toBe(
+      EXPECTED_PARITY_INDEX_MD
+    )
+
+    // Layout mode: cross-language byte-identical parity & determinism (ignores showIds)
+    expect(compiled.toMarkdown("layout")).toBe(EXPECTED_PARITY_LAYOUT_MD)
+    expect(compiled.toMarkdown({ detail: "layout", showIds: false })).toBe(
+      EXPECTED_PARITY_LAYOUT_MD
+    )
+    expect(compiled.toMarkdown("layout", { showIds: false })).toBe(
+      EXPECTED_PARITY_LAYOUT_MD
+    )
+
+    // Partial tables filter in layout mode tags unselected siblings (context) and scopes errors
+    const mdLayoutPartial = compiled.toMarkdown("layout", {
+      tables: ["PureMeasures"],
+    })
+    expect(mdLayoutPartial).toContain("## Sheet: Financials\n")
+    expect(mdLayoutPartial).not.toContain("## Sheet: Valuation")
+    expect(mdLayoutPartial).not.toContain("## Sheet: Notes")
+    expect(mdLayoutPartial).toContain(
+      "  - `IncomeStatement` (context) [B2:E15]"
+    )
+    expect(mdLayoutPartial).toContain("  - `PureMeasures` [B18:C22]")
+    expect(mdLayoutPartial).not.toContain("`PureMeasures` (context)")
+    expect(mdLayoutPartial).toContain('PureMeasures["r1", "c2"]')
+    expect(mdLayoutPartial).not.toContain('IncomeStatement["div_err", "2024E"]')
+
+    // showIds: false omits synthetic Row column and inline IDs
+    const mdNoIds = compiled.toMarkdown("values", { showIds: false })
+    expect(mdNoIds).not.toContain("| Row |")
+    expect(mdNoIds).toContain("| c1 | Col Two |")
+    expect(mdNoIds).not.toContain("[msft_row]")
+    expect(mdNoIds).toContain("| MSFT | Microsoft | #NUM! |")
+
+    // Filtered runtime errors & empty sheet
+    const mdValOnly = compiled.toMarkdown({ sheets: ["Valuation"] })
+    expect(mdValOnly).toContain("| Errors: 3\n")
+    expect(mdValOnly).toContain("## Runtime Errors")
+    expect(mdValOnly).toContain('Comps["msft_row", "ev"]')
+    expect(mdValOnly).not.toContain("IncomeStatement")
+
+    const mdNotesOnly = compiled.toMarkdown({ sheets: ["Notes"] })
+    expect(mdNotesOnly).toContain("| Errors: 3\n")
+    expect(mdNotesOnly).not.toContain("## Runtime Errors")
+    expect(mdNotesOnly).toContain("## Sheet: Notes\n\n_(no tables)_\n")
+
+    // Union + dedup + canonical declaration order
+    const mdUnion = compiled.toMarkdown({
+      sheets: ["Valuation", "Valuation"],
+      tables: ["Comps", "PureMeasures", "PureMeasures"],
+    })
+    expect(mdUnion.split("### `Comps`").length - 1).toBe(1)
+    expect(mdUnion.split("### `PureMeasures`").length - 1).toBe(1)
+    expect(mdUnion).not.toContain("### `IncomeStatement`")
+    expect(mdUnion.indexOf("## Sheet: Financials")).toBeLessThan(
+      mdUnion.indexOf("## Sheet: Valuation")
+    )
+
+    // Empty allowlists emit only the model header
+    const expectedHeaderOnly =
+      "# ParityModel\nSheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n"
+    expect(compiled.toMarkdown({ sheets: [] })).toBe(expectedHeaderOnly)
+    expect(compiled.toMarkdown({ tables: [] })).toBe(expectedHeaderOnly)
+    expect(compiled.toMarkdown({ sheets: [], tables: [] })).toBe(
+      expectedHeaderOnly
+    )
+    expect(compiled.toMarkdown("layout", { sheets: [] })).toBe(
+      expectedHeaderOnly
+    )
+    expect(compiled.toMarkdown("layout", { tables: [] })).toBe(
+      expectedHeaderOnly
+    )
+
+    // Strict sheet/table not-found errors
+    expect(() => compiled.toMarkdown({ sheets: ["UnknownSheet"] })).toThrow(
+      InspectionError
+    )
+    expect(() => compiled.toMarkdown({ tables: ["UnknownTable"] })).toThrow(
+      InspectionError
+    )
+    expect(() =>
+      compiled.toMarkdown("layout", { sheets: ["UnknownSheet"] })
+    ).toThrow(InspectionError)
+    expect(() =>
+      compiled.toMarkdown("layout", { tables: ["UnknownTable"] })
+    ).toThrow(InspectionError)
+
+    // Scenario 8: Invalid detail throws plain Error (NOT F8Error)
+    const untypedModel: {
+      toMarkdown(arg: string | { detail: string }): string
+    } = compiled
+    for (const badArg of ["summary", { detail: "unknown" }]) {
+      let caught: unknown = null
+      try {
+        untypedModel.toMarkdown(badArg)
+      } catch (err: unknown) {
+        caught = err
+      }
+      expect(caught).toBeInstanceOf(Error)
+      expect(caught).not.toBeInstanceOf(F8Error)
+      const expectedDetail = typeof badArg === "string" ? badArg : badArg.detail
+      if (caught instanceof Error) {
+        expect(caught.message).toBe(
+          `Invalid detail mode '${expectedDetail}'. Expected one of 'values', 'index', 'layout'.`
+        )
+      }
+    }
+
+    // Disposed model throws F8Error before detail validation
+    compiled.dispose()
+    expect(() => compiled.errors()).toThrow(F8Error)
+    expect(() => untypedModel.toMarkdown("summary")).toThrow(F8Error)
+  })
+
+  it('toMarkdown("layout") grid lanes, width inflation, and auto chrome metadata', () => {
+    const model = new Model({ name: "LayoutEndToEnd" })
+    const dash = model.addSheet("Dashboard", {
+      layout: "grid",
+      colWidth: 12.0,
+    })
+
+    const t1 = dash.addTable("T1", "Top Left")
+    t1.addColumn("item", { role: "descriptor", header: "Item" })
+    t1.addColumn("v1", { header: "V1", format: "currency", decimals: 1 })
+    t1.addRow("r1", { cells: { item: "Revenue", v1: 123_456_789.0 } })
+
+    const t2 = dash.addTable("T2", "Bottom Left", { below: t1 })
+    t2.addColumn("item", { role: "descriptor", header: "Item" })
+    t2.addColumn("v1", { header: "V1", format: "currency", decimals: 1 })
+    t2.addRow("r1", { cells: { item: "Cost", v1: 50.0 } })
+
+    const t3 = dash.addTable("T3", "Right Tall", { rightOf: t1 })
+    t3.addColumn("item", { role: "descriptor", header: "Item" })
+    t3.addColumn("v1", { header: "V1" })
+    for (let idx = 1; idx <= 11; idx++) {
+      t3.addRow(`r${idx}`, { cells: { item: `Row ${idx}`, v1: idx } })
+    }
+
+    const autoSheet = model.addSheet("Detail", {
+      freezePanes: { row: 6, col: 2 },
+      showGridlines: true,
+      tabColor: "#1F4E79",
+    })
+    const tbl = autoSheet.addTable("Notes", "Notes Table", {
+      subtitle: ["Line 1", "Line 2"],
+      collapsible: true,
+    })
+    tbl.addColumn("item", { role: "descriptor", header: "Item" })
+    tbl.addColumn("val", { group: "Grp", header: "Val" })
+    tbl.addRow("r1", { cells: { item: "Multi\nLine", val: 10.0 } })
+
+    const oneRow = autoSheet.addTable("Single", "", { collapsible: true })
+    oneRow.addColumn("v")
+    oneRow.addRow("r1", { cells: { v: 1.0 } })
+
+    const compiled = model.compile()
+    try {
+      const md = compiled.toMarkdown("layout")
+      expect(md).toContain("Layout: grid (W=15, base=12)")
+      expect(md).toContain("  - Lane B..C (")
+      expect(md).toContain("empty_below:")
+      expect(md).toContain("    - `T1` ")
+      expect(md).toContain("    - `T2` ")
+      expect(md).toContain("    - `T3` ")
+      expect(md).toContain(
+        "| Freeze: C7 (R1:R6, A..B) | Gridlines: on | Tab: #1F4E79\n"
+      )
+      expect(md).toContain("sub:2 hdr:")
+      expect(md).toContain("(grouped)")
+      expect(md).toContain("collapsible | cols:")
+      expect(md).toContain("| wrap:1\n")
+      const singleLine = md
+        .split("\n")
+        .find((line) => line.includes("`Single`"))
+      expect(singleLine).toBeDefined()
+      expect(singleLine).toContain("untitled hdr:none body:")
+      expect(singleLine).not.toContain("collapsible")
+    } finally {
+      compiled.dispose()
+    }
+
+    // Subtitle overflow indicator & grid descriptor req:W (cliff spill + lane-coupling victim)
+    const diagModel = new Model({ name: "LayoutDiag" })
+    const gridSheet = diagModel.addSheet("Grid", {
+      layout: "grid",
+      colWidth: 12.0,
+    })
+
+    const culprit = gridSheet.addTable("Culprit", "Culprit Table", {
+      subtitle:
+        "A long single-line subtitle that clearly overflows the narrow panel width",
+    })
+    culprit.addColumn("item", { role: "descriptor", header: "Item" })
+    culprit.addColumn("val", { header: "Val" })
+    culprit.addRow("r1", { cells: { item: "A".repeat(24), val: 1.0 } })
+
+    const victim = gridSheet.addTable("Victim", "Victim Table", {
+      subtitle: "($ in M)",
+    })
+    victim.addColumn("item", { role: "descriptor", header: "Item" })
+    victim.addColumn("val", { header: "Val" })
+    victim.addRow("r1", { cells: { item: "Revenue", val: 2.0 } })
+
+    const diagCompiled = diagModel.compile()
+    try {
+      const diagMd = diagCompiled.toMarkdown("layout")
+      const culpritLine = diagMd
+        .split("\n")
+        .find((line) => line.includes("`Culprit`"))
+      const victimLine = diagMd
+        .split("\n")
+        .find((line) => line.includes("`Victim`"))
+      expect(culpritLine).toContain("sub:1(73ch>w)")
+      expect(culpritLine).toContain(
+        "cols: desc B..D(3c, req:25), measure E(1c)"
+      )
+      expect(victimLine).toContain("sub:1 hdr:")
+      expect(victimLine).not.toContain("ch>w")
+      expect(victimLine).toContain("cols: desc B..D(3c, req:8), measure E(1c)")
+    } finally {
+      diagCompiled.dispose()
+    }
+  })
+
+  it("Scenario 9: TableAuditor.toMarkdown compact mode and backward compatibility", () => {
+    const compiled = buildParityModel()
+    const inc = compiled.table("IncomeStatement")
+
+    const views: readonly TableViewMode[] = [
+      "values",
+      "formulas",
+      "expr",
+      "addresses",
+    ]
+    for (const view of views) {
+      const padded = inc.toMarkdown(view)
+      const compact = inc.toMarkdown(view, { compact: true })
+      expect(padded).toBe(inc.toMarkdown(view, { compact: false }))
+      expect(compact.length).toBeLessThan(padded.length)
+
+      const compactLines = compact.split("\n")
+      expect(compactLines[1]).toBe("| :--- | ---: | ---: |")
+      expect(padded.split("\n")[1]).not.toBe(compactLines[1])
+    }
+
+    const compactValues = inc.toMarkdown("values", {
+      showIds: true,
+      compact: true,
+    })
+    expect(compactValues).toBe(
+      [
+        "| Line Item [line_item] | Historical: 2023A [y2023a] | 2024E |",
+        "| :--- | ---: | ---: |",
+        "| **Revenue & Margin** | | |",
+        "| Revenue | $100.0 | $115.0 |",
+        "|   Cost \\| Goods Sold [cogs] | $40.0 | $44.0 |",
+        "| Memo [sparse] | $5.0 | — |",
+        "| **Gross Profit [gross_profit]** | **$60.0** | **$71.0** |",
+        "| **Checks \\| Errors** | | |",
+        "| **Net \\| Check [div_err]** | **$10.0** | **#DIV/0!** |",
+        "",
+      ].join("\n")
+    )
+
+    const compactFormulas = inc.toMarkdown("formulas", { compact: true })
+    expect(compactFormulas).toContain("| Revenue | $100.0 | =C9*1.15 |")
+    expect(compactFormulas).toContain("| Memo | $5.0 | |")
+  })
+
+  it('supports style: "bold" across rows, columns, cells, and Markdown rendering', () => {
+    const model = new Model({ name: "BoldModel" })
+    const sheet = model.addSheet("Summary")
+    const tbl = sheet.addTable("KPIs", "Key Metrics", { currency: "USD" })
+    tbl.addColumn("item", { role: "descriptor", header: "Metric" })
+    tbl.addColumn("base", {
+      header: "Base Case",
+      style: "bold",
+    })
+    tbl.addColumn("upside", { header: "Upside" })
+
+    tbl.addRow("rev", {
+      format: "currency",
+      cells: {
+        item: "Revenue",
+        base: new Cell({ value: 100.0, style: "bold" }),
+        upside: 120.0,
+      },
+    })
+    tbl.addRow("margin", {
+      style: "bold",
+      format: "percentage",
+      cells: { item: "EBITDA Margin", base: 0.25, upside: 0.28 },
+    })
+    tbl.addRow("ebitda", {
+      style: "subtotal",
+      format: "currency",
+      cells: { item: "EBITDA", base: 25.0, upside: 34.0 },
+    })
+    tbl.addRow("net_income", {
+      style: "total",
+      format: "currency",
+      cells: { item: "Net Income", base: 18.0, upside: 24.0 },
+    })
+
+    const compiled = model.compile()
+    try {
+      const inspected = compiled.inspectTable("KPIs")
+      expect(inspected.columns[1]?.style).toBe("bold")
+      expect(inspected.rows[1]?.style).toBe("bold")
+
+      const mdValues = compiled.toMarkdown("values", { showIds: false })
+      expect(mdValues).toContain("| Revenue | $100 | $120 |\n")
+      expect(mdValues).toContain(
+        "| **EBITDA Margin** | **25.0%** | **28.0%** |\n"
+      )
+      expect(mdValues).toContain("| **EBITDA** | **$25** | **$34** |\n")
+      expect(mdValues).toContain("| **Net Income** | **$18** | **$24** |\n")
+
+      const mdIndex = compiled.toMarkdown("index")
+      expect(mdIndex).toContain("- `margin`: EBITDA Margin\n")
+      expect(mdIndex).not.toContain("(bold)")
+      expect(mdIndex).not.toContain("**`margin`**")
+      expect(mdIndex).toContain("- **`ebitda`** (subtotal)\n")
+      expect(mdIndex).toContain("- **`net_income`**: Net Income (total)\n")
+
+      const auditorCompact = compiled
+        .table("KPIs")
+        .toMarkdown("values", { compact: true })
+      expect(auditorCompact).toContain("| Revenue | $100 | $120 |\n")
+      expect(auditorCompact).toContain(
+        "| **EBITDA Margin** | **25.0%** | **28.0%** |\n"
+      )
+
+      const xlsx = compiled.emitWorkbook()
+      expect(xlsx[0]).toBe(0x50)
+      expect(xlsx[1]).toBe(0x4b)
+    } finally {
+      compiled.dispose()
+    }
   })
 })

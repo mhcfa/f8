@@ -21,8 +21,8 @@ description: >-
 
 ### 1. Explore & align (Lead Orchestrator)
 
-- Ground designs in existing modules, schemas, AST/IR types, and reference docs listed in `AGENTS.md`.
-- Default to the simplest unified extension of existing types and passes; surface alternative approaches with explicit trade-offs when genuine design tensions exist.
+- Ground designs in existing modules, schemas, AST/IR types, and reference docs listed in `AGENTS.md`; inspect git history when changing established ownership or layering so prior rationale is a known constraint, not a guess.
+- Default to the simplest unified extension of existing types and passes. When existing boundaries resist a clean fit (per `AGENTS.md` `Architectural tension`), include a preparatory reshape alongside scoped options; when genuine design tensions exist, surface structurally distinct shapes (not minor tweaks inside one shape) with explicit trade-offs.
 
 ### 2. Specify (Lead Orchestrator)
 

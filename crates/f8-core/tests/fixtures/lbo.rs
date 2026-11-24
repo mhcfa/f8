@@ -677,6 +677,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: Some("#1B365D".to_string()),
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("Scenarios"),
                     TableId::from("DealAssumptions"),
@@ -689,6 +690,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 tab_color: Some("#003366".to_string()),
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![
                     TableId::from("Timeline"),
                     TableId::from("Operations"),

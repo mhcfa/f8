@@ -12,14 +12,132 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::compiler::eval::EvaluatedModel;
-use crate::compiler::ir::cell::{CellGrid, CellPayload};
+use crate::compiler::ir::cell::{CellGrid, CellNode, CellPayload};
 use crate::compiler::ir::id::CellId;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{SheetId, TableId};
-use crate::model::manifest::{FreezePanes, ProjectManifest};
-use crate::model::table::{ColumnSpec, PlacementSpec, RowSpec, TableSpec, ValueLiteral};
+use crate::model::manifest::{
+    FreezePanes, MAX_GRID_COL_WIDTH, MIN_GRID_COL_WIDTH, ProjectManifest, SheetLayoutSpec,
+};
+use crate::model::table::{
+    AxisRole, ColumnSpec, DataColumnSpec, DataRowSpec, PlacementSpec, RowSpec, TableSpec,
+    ValueLiteral,
+};
 use crate::model::theme::{MetricsConfig, Theme};
 use crate::value::{CellValue, format_accounting_number};
+
+const GRID_WIDTH_EPS: f64 = 1e-9;
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+fn grid_descriptor_header_chars(header: &str) -> usize {
+    if header.is_empty() {
+        0
+    } else {
+        header.chars().count() + 1
+    }
+}
+
+fn grid_descriptor_text_chars(text: &str, indent: u8) -> usize {
+    if text.is_empty() {
+        0
+    } else {
+        text.chars().count() + 1 + usize::from(indent) * 2
+    }
+}
+
+fn grid_descriptor_req_width_from_chars(max_desc_chars: usize, metrics: &MetricsConfig) -> f64 {
+    if max_desc_chars == 0 {
+        0.0
+    } else {
+        round2(max_desc_chars as f64 * metrics.char_width_multiplier + metrics.col_padding)
+    }
+}
+
+/// Computes Pass 5's required visual width (`req_w`) for each column of a table on a `grid` sheet
+/// (1:1 with `table.columns`; non-descriptor columns and empty descriptors yield `0.0`).
+pub(crate) fn grid_table_descriptor_req_widths(
+    table: &TableSpec,
+    grid: &CellGrid,
+    evaluated: &EvaluatedModel,
+    theme: &Theme,
+) -> Vec<f64> {
+    let mut col_desc_chars = vec![0usize; table.columns.len()];
+
+    for (c_idx, col_spec) in table.columns.iter().enumerate() {
+        let ColumnSpec::Data(data_col) = col_spec else {
+            continue;
+        };
+        if !data_col.role.is_descriptor() {
+            continue;
+        }
+        for h in &data_col.headers {
+            if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                *slot = (*slot).max(grid_descriptor_header_chars(h));
+            }
+        }
+    }
+
+    for row_spec in &table.rows {
+        let RowSpec::Data(data_row) = row_spec else {
+            continue;
+        };
+        for (c_idx, col_spec) in table.columns.iter().enumerate() {
+            let ColumnSpec::Data(data_col) = col_spec else {
+                continue;
+            };
+            if !data_col.role.is_descriptor() {
+                continue;
+            }
+            let cell_id = CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
+            if let Some(val) = evaluated.get_cell(&cell_id) {
+                match val {
+                    CellValue::Text(s) => {
+                        let indent = grid.get(&cell_id).map_or(0, |n| n.indent);
+                        if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                            *slot = (*slot).max(grid_descriptor_text_chars(s, indent));
+                        }
+                    }
+                    CellValue::Number(_)
+                    | CellValue::Boolean(_)
+                    | CellValue::Error(_)
+                    | CellValue::Empty => {}
+                }
+            }
+        }
+    }
+
+    col_desc_chars
+        .into_iter()
+        .map(|chars| grid_descriptor_req_width_from_chars(chars, &theme.metrics))
+        .collect()
+}
+
+fn contains_line_break(s: &str) -> bool {
+    s.contains('\n') || s.contains('\r')
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CellFormatMeta {
+    format: Option<FormatPreset>,
+    decimals: Option<u32>,
+    currency: Option<CurrencyCode>,
+}
+
+fn resolve_cell_format_meta(cell_node: Option<&CellNode>, theme: &Theme) -> CellFormatMeta {
+    let format = cell_node.and_then(|n| n.format);
+    let decimals = cell_node
+        .and_then(|n| n.decimals)
+        .or_else(|| format.and_then(|f| theme.number_formats.default_decimals(f)));
+    let currency = cell_node.and_then(|n| n.currency);
+    CellFormatMeta {
+        format,
+        decimals,
+        currency,
+    }
+}
 
 /// Semantic styling role assigned to a physical coordinate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -90,6 +208,9 @@ pub struct TablePlacement {
     pub end_row: u32,
     /// Physical row index of the table title banner if present.
     pub title_row: Option<u32>,
+    /// 0-indexed physical ending column of the table title banner (inclusive),
+    /// aligned across stacked tables when unobstructed; `None` when `title_row` is `None`.
+    pub title_end_col: Option<u32>,
     /// Inclusive physical row range of table subtitle banners, or None if the table has zero subtitles.
     pub subtitle_row_range: Option<(u32, u32)>,
     /// Physical row index of the blank buffer gutter below title/subtitle if present.
@@ -98,6 +219,8 @@ pub struct TablePlacement {
     pub header_row_range: Option<(u32, u32)>,
     /// Inclusive physical row range of table body rows (data, section headers, gutters): `(start_row, end_row)`.
     pub body_row_range: (u32, u32),
+    /// Inclusive physical column range `(phys_start, phys_end)` for each column in `table.columns` (1:1).
+    pub col_spans: Vec<(u32, u32)>,
 }
 
 /// Sheet-level physical layout metrics and column widths.
@@ -203,287 +326,25 @@ impl LayoutPlanner {
             col_widths.insert(0, theme.metrics.gutter_col_width);
 
             let mut sheet_placements: IndexMap<TableId, TablePlacement> = IndexMap::new();
-            let mut sheet_max_end_row: Option<u32> = None;
-            let mut sheet_max_end_col: u32 = 0;
-
-            for (table_idx, table) in sheet_tables.iter().enumerate() {
-                let (start_col, table_start_row) = match &table.placement {
-                    PlacementSpec::Stack { gap } => {
-                        if let Some(max_end_row) = sheet_max_end_row {
-                            let start_row = max_end_row.saturating_add(1).saturating_add(*gap);
-                            if start_row >= MAX_EXCEL_ROWS {
-                                return Err(LayoutError::GridLimitExceeded {
-                                    dimension: "rows",
-                                    max: MAX_EXCEL_ROWS,
-                                    actual: start_row,
-                                });
-                            }
-                            (1, start_row)
-                        } else {
-                            (1, 1)
-                        }
-                    }
-                    PlacementSpec::Below { target, gap } => {
-                        let target_placement = resolve_placement_target(
-                            &table.id,
-                            target,
-                            &sheet_id,
-                            table_idx,
-                            &sheet_spec.tables,
-                            &sheet_placements,
-                            tables,
-                        )?;
-                        let start_row = target_placement
-                            .end_row
-                            .saturating_add(1)
-                            .saturating_add(*gap);
-                        if start_row >= MAX_EXCEL_ROWS {
-                            return Err(LayoutError::GridLimitExceeded {
-                                dimension: "rows",
-                                max: MAX_EXCEL_ROWS,
-                                actual: start_row,
-                            });
-                        }
-                        (target_placement.start_col, start_row)
-                    }
-                    PlacementSpec::RightOf { target, gap } => {
-                        let target_placement = resolve_placement_target(
-                            &table.id,
-                            target,
-                            &sheet_id,
-                            table_idx,
-                            &sheet_spec.tables,
-                            &sheet_placements,
-                            tables,
-                        )?;
-                        let start_col = target_placement
-                            .end_col
-                            .saturating_add(1)
-                            .saturating_add(*gap);
-                        (start_col, target_placement.start_row)
-                    }
-                };
-
-                let num_cols = table.columns.len() as u32;
-                if num_cols == 0 {
-                    continue;
-                }
-                let end_col = start_col.saturating_add(num_cols - 1);
-
-                if end_col >= MAX_EXCEL_COLUMNS {
-                    return Err(LayoutError::GridLimitExceeded {
-                        dimension: "columns",
-                        max: MAX_EXCEL_COLUMNS,
-                        actual: end_col,
-                    });
-                }
-
-                let mut current_row = table_start_row;
-
-                // Table Title Row
-                let title_row = if !table.title.trim().is_empty() {
-                    let r = current_row;
-                    if r >= MAX_EXCEL_ROWS {
-                        return Err(LayoutError::GridLimitExceeded {
-                            dimension: "rows",
-                            max: MAX_EXCEL_ROWS,
-                            actual: r,
-                        });
-                    }
-                    current_row += 1;
-                    Some(r)
-                } else {
-                    None
-                };
-
-                // Table Subtitle Rows
-                let subtitle_row_range = if !table.subtitles.is_empty() {
-                    let subtitle_start = current_row;
-                    for _ in &table.subtitles {
-                        if current_row >= MAX_EXCEL_ROWS {
-                            return Err(LayoutError::GridLimitExceeded {
-                                dimension: "rows",
-                                max: MAX_EXCEL_ROWS,
-                                actual: current_row,
-                            });
-                        }
-                        current_row += 1;
-                    }
-                    let subtitle_end = current_row - 1;
-                    Some((subtitle_start, subtitle_end))
-                } else {
-                    None
-                };
-
-                // Title Buffer Gutter
-                let title_gutter_row = if title_row.is_some() || subtitle_row_range.is_some() {
-                    let r = current_row;
-                    if r >= MAX_EXCEL_ROWS {
-                        return Err(LayoutError::GridLimitExceeded {
-                            dimension: "rows",
-                            max: MAX_EXCEL_ROWS,
-                            actual: r,
-                        });
-                    }
-                    current_row += 1;
-                    Some(r)
-                } else {
-                    None
-                };
-
-                // Multi-tier Column Header Rows
-                let max_header_levels = table
-                    .columns
-                    .iter()
-                    .filter_map(|col| match col {
-                        ColumnSpec::Data(d) => Some(d.header_depth()),
-                        ColumnSpec::Gutter => None,
-                    })
-                    .max()
-                    .unwrap_or(0);
-
-                let header_row_range = if max_header_levels > 0 {
-                    let header_start = current_row;
-                    for _ in 0..max_header_levels {
-                        if current_row >= MAX_EXCEL_ROWS {
-                            return Err(LayoutError::GridLimitExceeded {
-                                dimension: "rows",
-                                max: MAX_EXCEL_ROWS,
-                                actual: current_row,
-                            });
-                        }
-                        current_row += 1;
-                    }
-                    let header_end = current_row - 1;
-                    Some((header_start, header_end))
-                } else {
-                    None
-                };
-
-                let body_start_row = current_row;
-
-                for row_spec in &table.rows {
-                    if current_row >= MAX_EXCEL_ROWS {
-                        return Err(LayoutError::GridLimitExceeded {
-                            dimension: "rows",
-                            max: MAX_EXCEL_ROWS,
-                            actual: current_row,
-                        });
-                    }
-
-                    match row_spec {
-                        RowSpec::Gutter | RowSpec::SectionHeader(_) => {
-                            current_row += 1;
-                        }
-                        RowSpec::Data(data_row) => {
-                            for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                                let physical_col = start_col + (c_idx as u32);
-                                let ColumnSpec::Data(data_col) = col_spec else {
-                                    continue;
-                                };
-
-                                let cell_id = CellId::new(
-                                    table.id.clone(),
-                                    data_row.id.clone(),
-                                    data_col.id.clone(),
-                                );
-                                let a1 = coordinate_to_a1(physical_col, current_row)?;
-
-                                let (style_role, indent) = if let Some(node) = grid.get(&cell_id) {
-                                    (
-                                        StyleRole {
-                                            horizontal: node.horizontal,
-                                            vertical: node.vertical,
-                                            is_highlight: node.is_highlight,
-                                            shade: node.shade,
-                                        },
-                                        node.indent,
-                                    )
-                                } else {
-                                    let shade = data_row
-                                        .shade
-                                        .filter(|s| !s.is_none())
-                                        .or_else(|| data_col.shade.filter(|s| !s.is_none()));
-                                    (
-                                        StyleRole {
-                                            horizontal: data_row
-                                                .style
-                                                .unwrap_or(SemanticStyle::Data),
-                                            vertical: data_col.style.unwrap_or(SemanticStyle::Data),
-                                            is_highlight: data_row.highlight.unwrap_or(false)
-                                                || data_col.highlight.unwrap_or(false),
-                                            shade,
-                                        },
-                                        0,
-                                    )
-                                };
-
-                                layout_cells.insert(
-                                    cell_id,
-                                    PhysicalCoordinate {
-                                        sheet: sheet_id.clone(),
-                                        col: physical_col,
-                                        row: current_row,
-                                        a1,
-                                        style_role,
-                                        indent,
-                                        wrap_text: false,
-                                    },
-                                );
-                            }
-
-                            current_row += 1;
-                        }
-                    }
-                }
-
-                let body_end_row = current_row.saturating_sub(1);
-                let table_end_row = body_end_row;
-
-                for (first_id, first_placement) in &sheet_placements {
-                    if first_placement.start_col <= end_col
-                        && start_col <= first_placement.end_col
-                        && first_placement.start_row <= table_end_row
-                        && table_start_row <= first_placement.end_row
-                    {
-                        return Err(LayoutError::TableOverlap {
-                            sheet: sheet_id,
-                            first_table: first_id.clone(),
-                            second_table: table.id.clone(),
-                        });
-                    }
-                }
-
-                let placement = TablePlacement {
-                    sheet: sheet_id.clone(),
-                    start_col,
-                    start_row: table_start_row,
-                    end_col,
-                    end_row: table_end_row,
-                    title_row,
-                    subtitle_row_range,
-                    title_gutter_row,
-                    header_row_range,
-                    body_row_range: (body_start_row, body_end_row),
-                };
-
-                sheet_max_end_row =
-                    Some(sheet_max_end_row.map_or(table_end_row, |m| m.max(table_end_row)));
-                sheet_max_end_col = sheet_max_end_col.max(end_col);
-                sheet_placements.insert(table.id.clone(), placement.clone());
-                layout_tables.insert(table.id.clone(), placement);
-            }
-
-            // 3. Sheet-wide column width arbitration across 2D placed tables
-            ColumnArbitrationContext {
-                tables: &sheet_tables,
-                placements: &sheet_placements,
+            let mut ctx = SheetPlanContext {
+                sheet_id: &sheet_id,
+                sheet_table_ids: &sheet_spec.tables,
+                sheet_tables: &sheet_tables,
+                all_tables: tables,
                 grid,
-                layout_cells: &mut layout_cells,
                 theme,
                 evaluated,
+                sheet_placements: &mut sheet_placements,
+                layout_cells: &mut layout_cells,
+                col_widths: &mut col_widths,
+            };
+
+            match sheet_spec.layout {
+                SheetLayoutSpec::Auto => ctx.plan_auto()?,
+                SheetLayoutSpec::Grid { col_width } => ctx.plan_grid(col_width)?,
             }
-            .arbitrate(sheet_max_end_col, &mut col_widths);
+
+            layout_tables.extend(sheet_placements);
 
             layout_sheets.insert(
                 sheet_id.clone(),
@@ -505,15 +366,1013 @@ impl LayoutPlanner {
     }
 }
 
-fn resolve_placement_target<'a>(
+/// Vertical structural row offsets computed for a placed table.
+#[derive(Debug, Clone, Copy)]
+struct VerticalRows {
+    start_row: u32,
+    end_row: u32,
+    title_row: Option<u32>,
+    subtitle_row_range: Option<(u32, u32)>,
+    title_gutter_row: Option<u32>,
+    header_row_range: Option<(u32, u32)>,
+    body_row_range: (u32, u32),
+}
+
+fn plan_table_vertical_rows(
+    table: &TableSpec,
+    table_start_row: u32,
+) -> Result<VerticalRows, LayoutError> {
+    let mut current_row = table_start_row;
+
+    // Table Title Row
+    let title_row = if !table.title.trim().is_empty() {
+        let r = current_row;
+        if r >= MAX_EXCEL_ROWS {
+            return Err(LayoutError::GridLimitExceeded {
+                dimension: "rows",
+                max: MAX_EXCEL_ROWS,
+                actual: r,
+            });
+        }
+        current_row += 1;
+        Some(r)
+    } else {
+        None
+    };
+
+    // Table Subtitle Rows
+    let subtitle_row_range = if !table.subtitles.is_empty() {
+        let subtitle_start = current_row;
+        for _ in &table.subtitles {
+            if current_row >= MAX_EXCEL_ROWS {
+                return Err(LayoutError::GridLimitExceeded {
+                    dimension: "rows",
+                    max: MAX_EXCEL_ROWS,
+                    actual: current_row,
+                });
+            }
+            current_row += 1;
+        }
+        let subtitle_end = current_row - 1;
+        Some((subtitle_start, subtitle_end))
+    } else {
+        None
+    };
+
+    // Title Buffer Gutter
+    let title_gutter_row = if title_row.is_some() || subtitle_row_range.is_some() {
+        let r = current_row;
+        if r >= MAX_EXCEL_ROWS {
+            return Err(LayoutError::GridLimitExceeded {
+                dimension: "rows",
+                max: MAX_EXCEL_ROWS,
+                actual: r,
+            });
+        }
+        current_row += 1;
+        Some(r)
+    } else {
+        None
+    };
+
+    // Multi-tier Column Header Rows
+    let max_header_levels = table
+        .columns
+        .iter()
+        .filter_map(|col| match col {
+            ColumnSpec::Data(d) => Some(d.header_depth()),
+            ColumnSpec::Gutter => None,
+        })
+        .max()
+        .unwrap_or(0);
+
+    let header_row_range = if max_header_levels > 0 {
+        let header_start = current_row;
+        for _ in 0..max_header_levels {
+            if current_row >= MAX_EXCEL_ROWS {
+                return Err(LayoutError::GridLimitExceeded {
+                    dimension: "rows",
+                    max: MAX_EXCEL_ROWS,
+                    actual: current_row,
+                });
+            }
+            current_row += 1;
+        }
+        let header_end = current_row - 1;
+        Some((header_start, header_end))
+    } else {
+        None
+    };
+
+    let body_start_row = current_row;
+
+    for _ in &table.rows {
+        if current_row >= MAX_EXCEL_ROWS {
+            return Err(LayoutError::GridLimitExceeded {
+                dimension: "rows",
+                max: MAX_EXCEL_ROWS,
+                actual: current_row,
+            });
+        }
+        current_row += 1;
+    }
+
+    let body_end_row = current_row.saturating_sub(1);
+
+    Ok(VerticalRows {
+        start_row: table_start_row,
+        end_row: body_end_row,
+        title_row,
+        subtitle_row_range,
+        title_gutter_row,
+        header_row_range,
+        body_row_range: (body_start_row, body_end_row),
+    })
+}
+
+fn resolve_cell_style_and_indent(
+    cell_id: &CellId,
+    data_row: &DataRowSpec,
+    data_col: &DataColumnSpec,
+    grid: &CellGrid,
+) -> (StyleRole, u8) {
+    if let Some(node) = grid.get(cell_id) {
+        (
+            StyleRole {
+                horizontal: node.horizontal,
+                vertical: node.vertical,
+                is_highlight: node.is_highlight,
+                shade: node.shade,
+            },
+            node.indent,
+        )
+    } else {
+        let shade = data_row
+            .shade
+            .filter(|s| !s.is_none())
+            .or_else(|| data_col.shade.filter(|s| !s.is_none()));
+        (
+            StyleRole {
+                horizontal: data_row.style.unwrap_or(SemanticStyle::Data),
+                vertical: data_col.style.unwrap_or(SemanticStyle::Data),
+                is_highlight: data_row.highlight.unwrap_or(false)
+                    || data_col.highlight.unwrap_or(false),
+                shade,
+            },
+            0,
+        )
+    }
+}
+
+fn populate_table_layout_cells(
+    sheet_id: &SheetId,
+    table: &TableSpec,
+    body_start_row: u32,
+    col_spans: &[(u32, u32)],
+    grid: &CellGrid,
+    layout_cells: &mut IndexMap<CellId, PhysicalCoordinate>,
+) -> Result<(), LayoutError> {
+    let mut current_row = body_start_row;
+    for row_spec in &table.rows {
+        match row_spec {
+            RowSpec::Gutter | RowSpec::SectionHeader(_) => {
+                current_row += 1;
+            }
+            RowSpec::Data(data_row) => {
+                for (col_spec, &(physical_col, _)) in table.columns.iter().zip(col_spans) {
+                    let ColumnSpec::Data(data_col) = col_spec else {
+                        continue;
+                    };
+
+                    let cell_id =
+                        CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
+                    let a1 = coordinate_to_a1(physical_col, current_row)?;
+                    let (style_role, indent) =
+                        resolve_cell_style_and_indent(&cell_id, data_row, data_col, grid);
+
+                    layout_cells.insert(
+                        cell_id,
+                        PhysicalCoordinate {
+                            sheet: sheet_id.clone(),
+                            col: physical_col,
+                            row: current_row,
+                            a1,
+                            style_role,
+                            indent,
+                            wrap_text: false,
+                        },
+                    );
+                }
+                current_row += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_table_overlap(
+    sheet_id: &SheetId,
+    table_id: &TableId,
+    start_col: u32,
+    end_col: u32,
+    start_row: u32,
+    end_row: u32,
+    placed: &IndexMap<TableId, TablePlacement>,
+) -> Result<(), LayoutError> {
+    for (first_id, first_placement) in placed {
+        if first_placement.start_col <= end_col
+            && start_col <= first_placement.end_col
+            && first_placement.start_row <= end_row
+            && start_row <= first_placement.end_row
+        {
+            return Err(LayoutError::TableOverlap {
+                sheet: sheet_id.clone(),
+                first_table: first_id.clone(),
+                second_table: table_id.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Per-worksheet planning context shared across `auto` and `grid` layout strategies.
+struct SheetPlanContext<'a> {
+    sheet_id: &'a SheetId,
+    sheet_table_ids: &'a [TableId],
+    sheet_tables: &'a [&'a TableSpec],
+    all_tables: &'a [TableSpec],
+    grid: &'a CellGrid,
+    theme: &'a Theme,
+    evaluated: Option<&'a EvaluatedModel>,
+    sheet_placements: &'a mut IndexMap<TableId, TablePlacement>,
+    layout_cells: &'a mut IndexMap<CellId, PhysicalCoordinate>,
+    col_widths: &'a mut IndexMap<u32, f64>,
+}
+
+impl<'a> SheetPlanContext<'a> {
+    fn plan_auto(&mut self) -> Result<(), LayoutError> {
+        let mut sheet_max_end_row: Option<u32> = None;
+        let mut sheet_max_end_col: u32 = 0;
+
+        for (table_idx, table) in self.sheet_tables.iter().enumerate() {
+            let (start_col, table_start_row) = match &table.placement {
+                PlacementSpec::Stack { gap } => {
+                    if let Some(max_end_row) = sheet_max_end_row {
+                        let start_row = max_end_row.saturating_add(1).saturating_add(*gap);
+                        if start_row >= MAX_EXCEL_ROWS {
+                            return Err(LayoutError::GridLimitExceeded {
+                                dimension: "rows",
+                                max: MAX_EXCEL_ROWS,
+                                actual: start_row,
+                            });
+                        }
+                        (1, start_row)
+                    } else {
+                        (1, 1)
+                    }
+                }
+                PlacementSpec::Below { target, gap } => {
+                    let (_, target_placement) = resolve_placement_target(
+                        &table.id,
+                        target,
+                        self.sheet_id,
+                        table_idx,
+                        self.sheet_table_ids,
+                        self.sheet_placements,
+                        self.all_tables,
+                    )?;
+                    let start_row = target_placement
+                        .end_row
+                        .saturating_add(1)
+                        .saturating_add(*gap);
+                    if start_row >= MAX_EXCEL_ROWS {
+                        return Err(LayoutError::GridLimitExceeded {
+                            dimension: "rows",
+                            max: MAX_EXCEL_ROWS,
+                            actual: start_row,
+                        });
+                    }
+                    (target_placement.start_col, start_row)
+                }
+                PlacementSpec::RightOf { target, gap } => {
+                    let (_, target_placement) = resolve_placement_target(
+                        &table.id,
+                        target,
+                        self.sheet_id,
+                        table_idx,
+                        self.sheet_table_ids,
+                        self.sheet_placements,
+                        self.all_tables,
+                    )?;
+                    let start_col = target_placement
+                        .end_col
+                        .saturating_add(1)
+                        .saturating_add(*gap);
+                    (start_col, target_placement.start_row)
+                }
+            };
+
+            let num_cols = table.columns.len() as u32;
+            if num_cols == 0 {
+                continue;
+            }
+            let end_col = start_col.saturating_add(num_cols - 1);
+
+            if end_col >= MAX_EXCEL_COLUMNS {
+                return Err(LayoutError::GridLimitExceeded {
+                    dimension: "columns",
+                    max: MAX_EXCEL_COLUMNS,
+                    actual: end_col,
+                });
+            }
+
+            let col_spans: Vec<(u32, u32)> = (0..num_cols)
+                .map(|i| {
+                    let c = start_col + i;
+                    (c, c)
+                })
+                .collect();
+
+            let vertical = plan_table_vertical_rows(table, table_start_row)?;
+
+            populate_table_layout_cells(
+                self.sheet_id,
+                table,
+                vertical.body_row_range.0,
+                &col_spans,
+                self.grid,
+                self.layout_cells,
+            )?;
+
+            check_table_overlap(
+                self.sheet_id,
+                &table.id,
+                start_col,
+                end_col,
+                vertical.start_row,
+                vertical.end_row,
+                self.sheet_placements,
+            )?;
+
+            let placement = TablePlacement {
+                sheet: self.sheet_id.clone(),
+                start_col,
+                start_row: vertical.start_row,
+                end_col,
+                end_row: vertical.end_row,
+                title_row: vertical.title_row,
+                title_end_col: None,
+                subtitle_row_range: vertical.subtitle_row_range,
+                title_gutter_row: vertical.title_gutter_row,
+                header_row_range: vertical.header_row_range,
+                body_row_range: vertical.body_row_range,
+                col_spans,
+            };
+
+            sheet_max_end_row =
+                Some(sheet_max_end_row.map_or(vertical.end_row, |m| m.max(vertical.end_row)));
+            sheet_max_end_col = sheet_max_end_col.max(end_col);
+            self.sheet_placements.insert(table.id.clone(), placement);
+        }
+
+        // Resolve aligned title banner right bounds per worksheet
+        resolve_title_end_cols(self.sheet_placements);
+
+        // Sheet-wide column width arbitration across 2D placed tables
+        ColumnArbitrationContext {
+            tables: self.sheet_tables,
+            placements: self.sheet_placements,
+            grid: self.grid,
+            layout_cells: self.layout_cells,
+            theme: self.theme,
+            evaluated: self.evaluated,
+        }
+        .arbitrate(sheet_max_end_col, self.col_widths);
+
+        Ok(())
+    }
+
+    fn plan_grid(&mut self, col_width: Option<f64>) -> Result<(), LayoutError> {
+        if self.sheet_tables.is_empty() {
+            return Ok(());
+        }
+
+        let base_w = round2(col_width.unwrap_or(self.theme.metrics.min_col_width));
+        if !base_w.is_finite() || !(MIN_GRID_COL_WIDTH..=MAX_GRID_COL_WIDTH).contains(&base_w) {
+            return Err(LayoutError::GridColWidthOutOfBounds {
+                sheet: self.sheet_id.clone(),
+                width: base_w,
+                min: MIN_GRID_COL_WIDTH,
+                max: MAX_GRID_COL_WIDTH,
+            });
+        }
+
+        // 1. Validate headers/cells, compute uniform width W, and record descriptor text demand
+        let (uniform_w, desc_max_chars_per_table) = self.scan_grid_demand(base_w)?;
+
+        // 2. Compute raw column spans against finalized sheet-wide uniform width W
+        let raw_spans_per_table = self.compute_grid_raw_spans(uniform_w, &desc_max_chars_per_table);
+
+        // 3. Declaration-order target validation, vertical layout, and RightOf nesting depth
+        let (mut plans, max_depth) = self.plan_grid_vertical_and_depth(raw_spans_per_table)?;
+
+        // 4. Depth-ordered horizontal placement & (depth, start_col) lane alignment
+        align_grid_lanes(&mut plans, max_depth)?;
+
+        // 5. Declaration-order pairwise TableOverlap check and PhysicalCoordinate emission
+        let mut sheet_max_end_col: u32 = 0;
+        for (table_id, plan) in plans {
+            check_table_overlap(
+                self.sheet_id,
+                &table_id,
+                plan.start_col,
+                plan.end_col,
+                plan.vertical.start_row,
+                plan.vertical.end_row,
+                self.sheet_placements,
+            )?;
+
+            populate_table_layout_cells(
+                self.sheet_id,
+                plan.table,
+                plan.vertical.body_row_range.0,
+                &plan.col_spans,
+                self.grid,
+                self.layout_cells,
+            )?;
+
+            sheet_max_end_col = sheet_max_end_col.max(plan.end_col);
+            self.sheet_placements.insert(
+                table_id,
+                TablePlacement {
+                    sheet: self.sheet_id.clone(),
+                    start_col: plan.start_col,
+                    start_row: plan.vertical.start_row,
+                    end_col: plan.end_col,
+                    end_row: plan.vertical.end_row,
+                    title_row: plan.vertical.title_row,
+                    title_end_col: None,
+                    subtitle_row_range: plan.vertical.subtitle_row_range,
+                    title_gutter_row: plan.vertical.title_gutter_row,
+                    header_row_range: plan.vertical.header_row_range,
+                    body_row_range: plan.vertical.body_row_range,
+                    col_spans: plan.col_spans,
+                },
+            );
+        }
+
+        // 6. Resolve aligned title banner right bounds per worksheet
+        resolve_title_end_cols(self.sheet_placements);
+
+        // 7. Assign uniform width W to every column covered by any data span, gutter width otherwise
+        self.assign_grid_col_widths(sheet_max_end_col, uniform_w);
+
+        Ok(())
+    }
+
+    fn scan_grid_demand(&self, base_w: f64) -> Result<(f64, Vec<Vec<usize>>), LayoutError> {
+        let mut uniform_w = base_w;
+        let mut desc_max_chars_per_table: Vec<Vec<usize>> =
+            Vec::with_capacity(self.sheet_tables.len());
+
+        for table in self.sheet_tables {
+            let mut col_desc_chars = vec![0usize; table.columns.len()];
+
+            if !table.columns.is_empty() {
+                self.scan_grid_table_headers(table, base_w, &mut col_desc_chars)?;
+                self.scan_grid_table_cells(table, &mut uniform_w, &mut col_desc_chars)?;
+            }
+
+            desc_max_chars_per_table.push(col_desc_chars);
+        }
+
+        let uniform_w = round2(uniform_w);
+        if !uniform_w.is_finite() || uniform_w > MAX_GRID_COL_WIDTH {
+            return Err(LayoutError::GridColWidthOutOfBounds {
+                sheet: self.sheet_id.clone(),
+                width: uniform_w,
+                min: MIN_GRID_COL_WIDTH,
+                max: MAX_GRID_COL_WIDTH,
+            });
+        }
+
+        Ok((uniform_w, desc_max_chars_per_table))
+    }
+
+    fn scan_grid_table_headers(
+        &self,
+        table: &TableSpec,
+        base_w: f64,
+        col_desc_chars: &mut [usize],
+    ) -> Result<(), LayoutError> {
+        let mult = self.theme.metrics.char_width_multiplier;
+        let col_padding = self.theme.metrics.col_padding;
+
+        for (c_idx, col_spec) in table.columns.iter().enumerate() {
+            let ColumnSpec::Data(data_col) = col_spec else {
+                continue;
+            };
+
+            if let Some(group) = &data_col.group
+                && contains_line_break(group)
+            {
+                return Err(LayoutError::GridMultilineHeader {
+                    sheet: self.sheet_id.clone(),
+                    table: table.id.clone(),
+                    col: data_col.id.clone(),
+                });
+            }
+
+            for h in &data_col.headers {
+                if contains_line_break(h) {
+                    return Err(LayoutError::GridMultilineHeader {
+                        sheet: self.sheet_id.clone(),
+                        table: table.id.clone(),
+                        col: data_col.id.clone(),
+                    });
+                }
+            }
+
+            match data_col.role {
+                AxisRole::Measure => {
+                    for h in &data_col.headers {
+                        if h.is_empty() {
+                            continue;
+                        }
+                        let required_width =
+                            round2((h.chars().count() + 1) as f64 * mult + col_padding);
+                        if required_width > base_w + GRID_WIDTH_EPS {
+                            return Err(LayoutError::GridMeasureHeaderTooWide {
+                                sheet: self.sheet_id.clone(),
+                                table: table.id.clone(),
+                                col: data_col.id.clone(),
+                                header: h.clone(),
+                                required_width,
+                                grid_col_width: base_w,
+                            });
+                        }
+                    }
+                }
+                AxisRole::Descriptor => {
+                    for h in &data_col.headers {
+                        if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                            *slot = (*slot).max(grid_descriptor_header_chars(h));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn scan_grid_table_cells(
+        &self,
+        table: &TableSpec,
+        uniform_w: &mut f64,
+        col_desc_chars: &mut [usize],
+    ) -> Result<(), LayoutError> {
+        let mult = self.theme.metrics.char_width_multiplier;
+        let col_padding = self.theme.metrics.col_padding;
+
+        for row_spec in &table.rows {
+            let RowSpec::Data(data_row) = row_spec else {
+                continue;
+            };
+            for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                let ColumnSpec::Data(data_col) = col_spec else {
+                    continue;
+                };
+
+                let cell_id =
+                    CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
+                let cell_node = self.grid.get(&cell_id);
+                let fmt = resolve_cell_format_meta(cell_node, self.theme);
+                let indent = cell_node.map_or(0, |n| n.indent);
+
+                let source =
+                    self.classify_grid_cell(&cell_id, cell_node, data_col.role, fmt, indent);
+
+                match source {
+                    GridCellSource::Text(s) => {
+                        if contains_line_break(s) {
+                            return Err(LayoutError::GridMultilineCell {
+                                sheet: self.sheet_id.clone(),
+                                table: table.id.clone(),
+                                row: data_row.id.clone(),
+                                col: data_col.id.clone(),
+                            });
+                        }
+                        if !s.is_empty() {
+                            match data_col.role {
+                                AxisRole::Measure => {
+                                    let (char_len, _) = measure_text_segments(
+                                        s,
+                                        data_col.role,
+                                        fmt.format,
+                                        indent,
+                                        &self.theme.metrics,
+                                    );
+                                    if char_len > 0 {
+                                        *uniform_w = (*uniform_w)
+                                            .max(round2(char_len as f64 * mult + col_padding));
+                                    }
+                                }
+                                AxisRole::Descriptor => {
+                                    if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                                        *slot = (*slot).max(grid_descriptor_text_chars(s, indent));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    GridCellSource::NonTextChars(char_len) => {
+                        if char_len > 0 {
+                            *uniform_w =
+                                (*uniform_w).max(round2(char_len as f64 * mult + col_padding));
+                        }
+                    }
+                    GridCellSource::Empty => {}
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn compute_grid_raw_spans(
+        &self,
+        uniform_w: f64,
+        desc_max_chars_per_table: &[Vec<usize>],
+    ) -> Vec<Vec<u32>> {
+        self.sheet_tables
+            .iter()
+            .zip(desc_max_chars_per_table)
+            .map(|(table, col_desc_chars)| {
+                table
+                    .columns
+                    .iter()
+                    .zip(col_desc_chars)
+                    .map(|(col_spec, &max_desc_chars)| match col_spec {
+                        ColumnSpec::Gutter => 1,
+                        ColumnSpec::Data(d) => match d.role {
+                            AxisRole::Measure => 1,
+                            AxisRole::Descriptor => {
+                                let req_w = grid_descriptor_req_width_from_chars(
+                                    max_desc_chars,
+                                    &self.theme.metrics,
+                                );
+                                if req_w <= uniform_w + GRID_WIDTH_EPS {
+                                    1
+                                } else {
+                                    ((req_w / uniform_w) - GRID_WIDTH_EPS)
+                                        .ceil()
+                                        .max(1.0)
+                                        .min(u32::MAX as f64)
+                                        as u32
+                                }
+                            }
+                        },
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn plan_grid_vertical_and_depth(
+        &self,
+        raw_spans_per_table: Vec<Vec<u32>>,
+    ) -> Result<(IndexMap<TableId, GridTablePlan<'a>>, usize), LayoutError> {
+        let mut plans: IndexMap<TableId, GridTablePlan<'a>> = IndexMap::new();
+        let mut sheet_max_end_row: Option<u32> = None;
+        let mut max_depth: usize = 0;
+
+        for (table_idx, (&table, raw_spans)) in self
+            .sheet_tables
+            .iter()
+            .zip(raw_spans_per_table)
+            .enumerate()
+        {
+            let (table_start_row, depth, anchor) = match &table.placement {
+                PlacementSpec::Stack { gap } => {
+                    if let Some(max_end_row) = sheet_max_end_row {
+                        let start_row = max_end_row.saturating_add(1).saturating_add(*gap);
+                        if start_row >= MAX_EXCEL_ROWS {
+                            return Err(LayoutError::GridLimitExceeded {
+                                dimension: "rows",
+                                max: MAX_EXCEL_ROWS,
+                                actual: start_row,
+                            });
+                        }
+                        (start_row, 0, HorizontalAnchor::Stack)
+                    } else {
+                        (1, 0, HorizontalAnchor::Stack)
+                    }
+                }
+                PlacementSpec::Below { target, gap } => {
+                    let (target_idx, target_plan) = resolve_placement_target(
+                        &table.id,
+                        target,
+                        self.sheet_id,
+                        table_idx,
+                        self.sheet_table_ids,
+                        &plans,
+                        self.all_tables,
+                    )?;
+                    let start_row = target_plan
+                        .vertical
+                        .end_row
+                        .saturating_add(1)
+                        .saturating_add(*gap);
+                    if start_row >= MAX_EXCEL_ROWS {
+                        return Err(LayoutError::GridLimitExceeded {
+                            dimension: "rows",
+                            max: MAX_EXCEL_ROWS,
+                            actual: start_row,
+                        });
+                    }
+                    (
+                        start_row,
+                        target_plan.depth,
+                        HorizontalAnchor::Below { target_idx },
+                    )
+                }
+                PlacementSpec::RightOf { target, gap } => {
+                    let (target_idx, target_plan) = resolve_placement_target(
+                        &table.id,
+                        target,
+                        self.sheet_id,
+                        table_idx,
+                        self.sheet_table_ids,
+                        &plans,
+                        self.all_tables,
+                    )?;
+                    (
+                        target_plan.vertical.start_row,
+                        target_plan.depth + 1,
+                        HorizontalAnchor::RightOf {
+                            target_idx,
+                            gap: *gap,
+                        },
+                    )
+                }
+            };
+
+            if table.columns.is_empty() {
+                continue;
+            }
+
+            let vertical = plan_table_vertical_rows(table, table_start_row)?;
+            sheet_max_end_row =
+                Some(sheet_max_end_row.map_or(vertical.end_row, |m| m.max(vertical.end_row)));
+            max_depth = max_depth.max(depth);
+            let leading_prefix = leading_descriptor_prefix(&table.columns, &raw_spans);
+
+            plans.insert(
+                table.id.clone(),
+                GridTablePlan {
+                    table,
+                    depth,
+                    anchor,
+                    leading_prefix,
+                    raw_spans,
+                    vertical,
+                    start_col: 1,
+                    end_col: 1,
+                    col_spans: Vec::new(),
+                },
+            );
+        }
+
+        Ok((plans, max_depth))
+    }
+
+    fn assign_grid_col_widths(&mut self, sheet_max_end_col: u32, uniform_w: f64) {
+        let mut covered_by_data = vec![false; (sheet_max_end_col as usize).saturating_add(1)];
+        for table in self.sheet_tables {
+            let Some(placement) = self.sheet_placements.get(&table.id) else {
+                continue;
+            };
+            for (col_spec, &(phys_start, phys_end)) in
+                table.columns.iter().zip(&placement.col_spans)
+            {
+                if matches!(col_spec, ColumnSpec::Data(_)) {
+                    for phys_col in phys_start..=phys_end {
+                        if let Some(flag) = covered_by_data.get_mut(phys_col as usize) {
+                            *flag = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        for physical_col in 1..=sheet_max_end_col {
+            let width = if covered_by_data
+                .get(physical_col as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                uniform_w
+            } else {
+                self.theme.metrics.gutter_col_width
+            };
+            self.col_widths.insert(physical_col, width);
+        }
+    }
+    fn classify_grid_cell(
+        &self,
+        cell_id: &CellId,
+        cell_node: Option<&'a CellNode>,
+        role: AxisRole,
+        fmt: CellFormatMeta,
+        indent: u8,
+    ) -> GridCellSource<'a> {
+        let evaluated_val = self.evaluated.and_then(|e| e.get_cell(cell_id));
+        match (evaluated_val, cell_node) {
+            (Some(val), _) => match val {
+                CellValue::Text(s) => GridCellSource::Text(s.as_str()),
+                CellValue::Number(_) | CellValue::Boolean(_) | CellValue::Error(_) => {
+                    let (char_len, _) = measure_cell_value(
+                        val,
+                        role,
+                        fmt.format,
+                        fmt.decimals,
+                        fmt.currency,
+                        indent,
+                        &self.theme.metrics,
+                    );
+                    GridCellSource::NonTextChars(char_len)
+                }
+                CellValue::Empty => GridCellSource::Empty,
+            },
+            (None, Some(node)) => match &node.payload {
+                CellPayload::Literal(lit) => match lit {
+                    ValueLiteral::String(s) => GridCellSource::Text(s.as_str()),
+                    ValueLiteral::Number(_) | ValueLiteral::Boolean(_) => {
+                        let (char_len, _) = measure_literal_value(
+                            lit,
+                            role,
+                            fmt.format,
+                            fmt.decimals,
+                            fmt.currency,
+                            indent,
+                            &self.theme.metrics,
+                        );
+                        GridCellSource::NonTextChars(char_len)
+                    }
+                    ValueLiteral::Null => GridCellSource::Empty,
+                },
+                CellPayload::Formula(_) => GridCellSource::Empty,
+            },
+            (None, None) => GridCellSource::Empty,
+        }
+    }
+}
+
+/// Normalized cell payload category for uniform-grid measurement across evaluated and literal paths.
+enum GridCellSource<'a> {
+    Text(&'a str),
+    NonTextChars(usize),
+    Empty,
+}
+
+/// Resolved horizontal anchor for a table in `plan_grid` after Step 3 target validation.
+#[derive(Debug, Clone, Copy)]
+enum HorizontalAnchor {
+    Stack,
+    Below { target_idx: usize },
+    RightOf { target_idx: usize, gap: u32 },
+}
+
+/// Intermediate per-table planning state for uniform grid worksheets.
+struct GridTablePlan<'a> {
+    table: &'a TableSpec,
+    depth: usize,
+    anchor: HorizontalAnchor,
+    leading_prefix: Option<(usize, u32)>,
+    raw_spans: Vec<u32>,
+    vertical: VerticalRows,
+    start_col: u32,
+    end_col: u32,
+    col_spans: Vec<(u32, u32)>,
+}
+
+fn align_grid_lanes(
+    plans: &mut IndexMap<TableId, GridTablePlan<'_>>,
+    max_depth: usize,
+) -> Result<(), LayoutError> {
+    for depth in 0..=max_depth {
+        let depth_indices: Vec<usize> = plans
+            .values()
+            .enumerate()
+            .filter_map(|(idx, p)| (p.depth == depth).then_some(idx))
+            .collect();
+
+        // 4a. Resolve start_col in declaration order so Below chains inherit target start_col
+        for &idx in &depth_indices {
+            let Some((_, plan)) = plans.get_index(idx) else {
+                continue;
+            };
+            let start_col = match plan.anchor {
+                HorizontalAnchor::Stack => 1,
+                HorizontalAnchor::Below { target_idx } => {
+                    let Some((_, target)) = plans.get_index(target_idx) else {
+                        continue;
+                    };
+                    target.start_col
+                }
+                HorizontalAnchor::RightOf { target_idx, gap } => {
+                    let Some((_, target)) = plans.get_index(target_idx) else {
+                        continue;
+                    };
+                    target.end_col.saturating_add(1).saturating_add(gap)
+                }
+            };
+            if let Some((_, plan)) = plans.get_index_mut(idx) {
+                plan.start_col = start_col;
+            }
+        }
+
+        // 4b. Compute max leading prefix span per (depth, start_col) group
+        let mut group_max_prefix: IndexMap<u32, u32> = IndexMap::new();
+        for &idx in &depth_indices {
+            if let Some((_, plan)) = plans.get_index(idx)
+                && let Some((_, prefix_span)) = plan.leading_prefix
+            {
+                let entry = group_max_prefix.entry(plan.start_col).or_insert(0);
+                *entry = (*entry).max(prefix_span);
+            }
+        }
+
+        // 4c. Extend last leading descriptor to group max prefix and build physical col_spans
+        for &idx in &depth_indices {
+            let Some((_, plan)) = plans.get_index_mut(idx) else {
+                continue;
+            };
+            let mut final_spans = std::mem::take(&mut plan.raw_spans);
+            if let Some((last_desc_idx, prefix_span)) = plan.leading_prefix
+                && let Some(&max_prefix) = group_max_prefix.get(&plan.start_col)
+                && let Some(slot) = final_spans.get_mut(last_desc_idx)
+            {
+                let extra = max_prefix.saturating_sub(prefix_span);
+                *slot = slot.saturating_add(extra);
+            }
+
+            let mut col_spans = Vec::with_capacity(final_spans.len());
+            let mut cur_col = plan.start_col;
+            for &span in &final_spans {
+                let phys_start = cur_col;
+                let phys_end = phys_start.saturating_add(span.saturating_sub(1));
+                if phys_end >= MAX_EXCEL_COLUMNS {
+                    return Err(LayoutError::GridLimitExceeded {
+                        dimension: "columns",
+                        max: MAX_EXCEL_COLUMNS,
+                        actual: phys_end,
+                    });
+                }
+                col_spans.push((phys_start, phys_end));
+                cur_col = phys_end.saturating_add(1);
+            }
+
+            plan.end_col = col_spans.last().map_or(plan.start_col, |&(_, end)| end);
+            plan.col_spans = col_spans;
+        }
+    }
+
+    Ok(())
+}
+
+/// Returns `(last_leading_descriptor_col_idx, prefix_span)` when a table has at least one
+/// `Measure` column and at least one `Descriptor` column before its first `Measure` column.
+///
+/// `prefix_span` sums `raw_spans[0..=last_leading_desc_idx]`, aligning the leading descriptor
+/// block across tables in the same lane while excluding trailing `Gutter` columns placed after
+/// the last leading descriptor (e.g., period spacers skipping earlier periods on stacked tables).
+fn leading_descriptor_prefix(columns: &[ColumnSpec], raw_spans: &[u32]) -> Option<(usize, u32)> {
+    let first_measure_idx = columns
+        .iter()
+        .position(|c| matches!(c, ColumnSpec::Data(d) if d.role.is_measure()))?;
+    let leading_cols = columns.get(..first_measure_idx)?;
+    let last_leading_desc_idx = leading_cols
+        .iter()
+        .rposition(|c| matches!(c, ColumnSpec::Data(d) if d.role.is_descriptor()))?;
+    let prefix_span = raw_spans
+        .get(..=last_leading_desc_idx)?
+        .iter()
+        .copied()
+        .fold(0u32, u32::saturating_add);
+    Some((last_leading_desc_idx, prefix_span))
+}
+
+fn resolve_placement_target<'a, V>(
     table_id: &TableId,
     target_id: &TableId,
     sheet_id: &SheetId,
     table_idx: usize,
     sheet_table_ids: &[TableId],
-    sheet_placements: &'a IndexMap<TableId, TablePlacement>,
+    sheet_placements: &'a IndexMap<TableId, V>,
     all_tables: &[TableSpec],
-) -> Result<&'a TablePlacement, LayoutError> {
+) -> Result<(usize, &'a V), LayoutError> {
     if target_id == table_id {
         return Err(LayoutError::InvalidPlacementTarget {
             table: table_id.clone(),
@@ -523,8 +1382,8 @@ fn resolve_placement_target<'a>(
         });
     }
 
-    if let Some(placement) = sheet_placements.get(target_id) {
-        return Ok(placement);
+    if let Some((idx, _, placement)) = sheet_placements.get_full(target_id) {
+        return Ok((idx, placement));
     }
 
     let reason = if sheet_table_ids
@@ -544,6 +1403,65 @@ fn resolve_placement_target<'a>(
         sheet: sheet_id.clone(),
         reason,
     })
+}
+
+/// Computes aligned title banner right bounds (`title_end_col`) for all tables on a worksheet.
+///
+/// Unobstructed titled tables align their title banner to the sheet's rightmost table column;
+/// obstructed titled tables (those with a vertically overlapping neighbor to their right) align
+/// within their column lane while preserving at least a 1-column gutter before the nearest right
+/// neighbor when one exists. Untitled tables always resolve `title_end_col = None`.
+fn resolve_title_end_cols(sheet_placements: &mut IndexMap<TableId, TablePlacement>) {
+    let Some(sheet_max_end_col) = sheet_placements.values().map(|p| p.end_col).max() else {
+        return;
+    };
+
+    // Step 1: Compute nearest vertically overlapping right neighbor's start_col per table.
+    let blocking_cols: Vec<Option<u32>> = sheet_placements
+        .iter()
+        .map(|(id, p)| {
+            sheet_placements
+                .iter()
+                .filter(|(other_id, other)| {
+                    *other_id != id
+                        && other.start_col > p.end_col
+                        && other.start_row <= p.end_row
+                        && p.start_row <= other.end_row
+                })
+                .map(|(_, other)| other.start_col)
+                .min()
+        })
+        .collect();
+
+    // Step 2 & 3: Resolve title_end_col for each table from sheet max or obstructed lane peers.
+    let resolved: Vec<Option<u32>> = sheet_placements
+        .values()
+        .zip(&blocking_cols)
+        .map(|(t, &blocker)| {
+            t.title_row?;
+            match blocker {
+                None => Some(sheet_max_end_col),
+                Some(right_col) => {
+                    let lane_max = sheet_placements
+                        .values()
+                        .zip(&blocking_cols)
+                        .filter(|(other, other_blocker)| {
+                            other.start_col == t.start_col
+                                && other_blocker.is_some()
+                                && other.end_col.saturating_add(1) < right_col
+                        })
+                        .map(|(other, _)| other.end_col)
+                        .max()
+                        .unwrap_or(t.end_col);
+                    Some(lane_max.max(t.end_col))
+                }
+            }
+        })
+        .collect();
+
+    for (placement, title_end_col) in sheet_placements.values_mut().zip(resolved) {
+        placement.title_end_col = title_end_col;
+    }
 }
 
 /// Context and inputs for arbitrating sheet-wide column widths and cell text wrapping across placed tables.
@@ -594,7 +1512,11 @@ impl ColumnArbitrationContext<'_> {
 
                 // 1. Column header text length (max across all stacked per-column header lines; excludes spanning group)
                 let header_len = data_col.max_header_chars();
-                table_max_chars = table_max_chars.max(header_len);
+                let header_trailing_pad = match data_col.role {
+                    AxisRole::Measure if header_len > 0 => 1,
+                    AxisRole::Measure | AxisRole::Descriptor => 0,
+                };
+                table_max_chars = table_max_chars.max(header_len + header_trailing_pad);
 
                 // 2. Row cells text length and multi-line wrapping
                 for row in &table.rows {
@@ -604,29 +1526,27 @@ impl ColumnArbitrationContext<'_> {
                     let cell_id =
                         CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
                     let cell_node = self.grid.get(&cell_id);
-                    let format = cell_node.and_then(|n| n.format);
-                    let decimals = cell_node.and_then(|n| n.decimals).or_else(|| {
-                        format.and_then(|f| self.theme.number_formats.default_decimals(f))
-                    });
-                    let currency = cell_node.and_then(|n| n.currency);
+                    let fmt = resolve_cell_format_meta(cell_node, self.theme);
                     let indent = self.layout_cells.get(&cell_id).map_or(0, |c| c.indent);
 
                     let (char_len, lines) =
                         match (self.evaluated.and_then(|e| e.get_cell(&cell_id)), cell_node) {
                             (Some(val), _) => measure_cell_value(
                                 val,
-                                format,
-                                decimals,
-                                currency,
+                                data_col.role,
+                                fmt.format,
+                                fmt.decimals,
+                                fmt.currency,
                                 indent,
                                 &self.theme.metrics,
                             ),
                             (None, Some(node)) => match &node.payload {
                                 CellPayload::Literal(lit) => measure_literal_value(
                                     lit,
-                                    format,
-                                    decimals,
-                                    currency,
+                                    data_col.role,
+                                    fmt.format,
+                                    fmt.decimals,
+                                    fmt.currency,
                                     indent,
                                     &self.theme.metrics,
                                 ),
@@ -656,7 +1576,7 @@ impl ColumnArbitrationContext<'_> {
                     self.theme.metrics.max_col_width,
                 );
 
-            let final_width = (computed_width * 100.0).round() / 100.0;
+            let final_width = round2(computed_width);
             let existing = col_widths.get(&physical_col).copied().unwrap_or(0.0);
             col_widths.insert(physical_col, existing.max(final_width));
         }
@@ -665,18 +1585,38 @@ impl ColumnArbitrationContext<'_> {
 
 fn measure_text_segments(
     s: &str,
+    role: AxisRole,
     format: Option<FormatPreset>,
     indent: u8,
     metrics: &MetricsConfig,
 ) -> (usize, usize) {
-    let trailing_pad = usize::from(format == Some(FormatPreset::Text));
+    let trailing_pad = usize::from(match format {
+        Some(
+            FormatPreset::Text
+            | FormatPreset::Currency
+            | FormatPreset::Number
+            | FormatPreset::Percentage
+            | FormatPreset::Multiple
+            | FormatPreset::BasisPoints
+            | FormatPreset::Integer,
+        ) => true,
+        Some(FormatPreset::Date) => false,
+        None => match role {
+            AxisRole::Measure => true,
+            AxisRole::Descriptor => false,
+        },
+    });
     let indent_chars = usize::from(indent) * 2;
     let mut max_chars = 0;
     let mut total_lines = 0;
 
     for raw_segment in s.split('\n') {
         let segment = raw_segment.strip_suffix('\r').unwrap_or(raw_segment);
-        let seg_chars = segment.chars().count() + trailing_pad + indent_chars;
+        let seg_chars = if segment.is_empty() {
+            indent_chars
+        } else {
+            segment.chars().count() + trailing_pad + indent_chars
+        };
         max_chars = max_chars.max(seg_chars);
         let seg_lines = if seg_chars == 0 {
             1
@@ -693,6 +1633,7 @@ fn measure_text_segments(
 
 fn measure_literal_value(
     lit: &ValueLiteral,
+    role: AxisRole,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
@@ -701,9 +1642,9 @@ fn measure_literal_value(
 ) -> (usize, usize) {
     let indent_chars = usize::from(indent) * 2;
     match lit {
-        ValueLiteral::String(s) => measure_text_segments(s, format, indent, metrics),
+        ValueLiteral::String(s) => measure_text_segments(s, role, format, indent, metrics),
         ValueLiteral::Number(n) => (
-            formatted_number_estimate(*n, format, decimals, currency) + indent_chars,
+            formatted_number_estimate(*n, role, format, decimals, currency) + indent_chars,
             1,
         ),
         ValueLiteral::Boolean(b) => ((if *b { 4 } else { 5 }) + indent_chars, 1),
@@ -714,6 +1655,7 @@ fn measure_literal_value(
 /// Computes the horizontal character demand and wrapped line count of an evaluated `CellValue`.
 fn measure_cell_value(
     val: &CellValue,
+    role: AxisRole,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
@@ -722,9 +1664,9 @@ fn measure_cell_value(
 ) -> (usize, usize) {
     let indent_chars = usize::from(indent) * 2;
     match val {
-        CellValue::Text(s) => measure_text_segments(s, format, indent, metrics),
+        CellValue::Text(s) => measure_text_segments(s, role, format, indent, metrics),
         CellValue::Number(n) => (
-            formatted_number_estimate(*n, format, decimals, currency) + indent_chars,
+            formatted_number_estimate(*n, role, format, decimals, currency) + indent_chars,
             1,
         ),
         CellValue::Boolean(b) => ((if *b { 4 } else { 5 }) + indent_chars, 1),
@@ -736,6 +1678,7 @@ fn measure_cell_value(
 /// Provides an institutional width estimate for formatted numbers using accounting typography and trailing alignment space.
 fn formatted_number_estimate(
     n: f64,
+    role: AxisRole,
     format: Option<FormatPreset>,
     decimals: Option<u32>,
     currency: Option<CurrencyCode>,
@@ -744,19 +1687,22 @@ fn formatted_number_estimate(
         return 4; // NaN, Inf
     }
     let formatted = format_accounting_number(n, format, decimals, currency);
-    let trailing_pad = usize::from(
-        !formatted.ends_with(')')
-            && matches!(
-                format,
-                Some(
-                    FormatPreset::Currency
-                        | FormatPreset::Number
-                        | FormatPreset::Percentage
-                        | FormatPreset::Multiple
-                        | FormatPreset::BasisPoints
-                        | FormatPreset::Integer
-                )
-            ),
-    );
+    let has_trailing_space = match format {
+        Some(
+            FormatPreset::Currency
+            | FormatPreset::Number
+            | FormatPreset::Percentage
+            | FormatPreset::Multiple
+            | FormatPreset::BasisPoints
+            | FormatPreset::Integer
+            | FormatPreset::Date,
+        ) => true,
+        Some(FormatPreset::Text) => false,
+        None => match role {
+            AxisRole::Measure => true,
+            AxisRole::Descriptor => false,
+        },
+    };
+    let trailing_pad = usize::from(!formatted.ends_with(')') && has_trailing_space);
     formatted.chars().count() + trailing_pad
 }

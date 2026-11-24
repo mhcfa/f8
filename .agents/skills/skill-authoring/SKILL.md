@@ -14,6 +14,7 @@ description: >-
 - Explain intent: A rule with its reason generalizes to cases the author never listed; a bare command gets applied literally or over-applied.
 - Smallest sufficient text: Every line competes for attention. Cut what the agent would do correctly without being told.
 - Self-consistent: One idea, one place. Duplicated rules drift apart; contradictory rules force the agent to guess.
+- Encode in structure first: When the same correction recurs, prefer a type, lint, test, or script over adding prose. If a structural check enforces the invariant, delete the prose rule—the instruction was the symptom.
 
 ## Content selection
 
@@ -60,5 +61,6 @@ Rules degrade performance when they:
 Before finishing a skill update, confirm:
 
 - Every explicit rule meets a condition in the rules table; everything else reads as a principle with its reason.
+- No new prose rule papers over a recurring invariant better enforced by a type, lint, test, or script.
 - No idea appears twice; no content duplicates `AGENTS.md` or a sibling skill.
 - Cross-references to files, commands, and sibling skills resolve cleanly.

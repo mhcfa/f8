@@ -76,6 +76,11 @@ def _escape_markdown_cell(text: str) -> str:
     return text.replace("\r\n", " ").replace("\r", " ").replace("\n", " ").replace("|", r"\|")
 
 
+def _format_compact_markdown_row(cells: Sequence[str]) -> str:
+    """Formats a compact unpadded GitHub-Flavored Markdown table row."""
+    return "|" + "|".join(f" {cell} " if cell else " " for cell in cells) + "|"
+
+
 class MarkdownTable(str):
     """GitHub-Flavored Markdown table string with IPython and Quarto display integration."""
 
@@ -350,8 +355,9 @@ class TableAuditor:
         cols: Sequence[str] | None = None,
         include_section_headers: bool | None = None,
         show_ids: bool = False,
+        compact: bool = False,
     ) -> MarkdownTable:
-        """Renders an aligned GitHub-Flavored Markdown table representation.
+        """Renders a GitHub-Flavored Markdown table representation.
 
         Args:
             view: One of 'values' (pre-formatted accounting typography), 'formulas'
@@ -365,6 +371,8 @@ class TableAuditor:
                 Defaults to True when rows is None, and False when rows is specified.
             show_ids: When True, appends [col_id] and [row_id] suffixes when display labels
                 differ from coordinate IDs. Defaults to False.
+            compact: When True, emits unpadded `| a | b |` rows and `| :--- | ---: |`
+                alignment dividers without column-width padding. Defaults to False.
         """
         valid_views = ("values", "formulas", "expr", "addresses")
         if view not in valid_views:
@@ -461,8 +469,9 @@ class TableAuditor:
         row_indent_map: dict[str, int] = {
             rid: r.get("indent", 0) for rid, r in row_spec_by_id.items()
         }
-        row_summary_map: dict[str, bool] = {
-            rid: r.get("style") in ("subtotal", "total") for rid, r in row_spec_by_id.items()
+        row_bold_map: dict[str, bool] = {
+            rid: r.get("style") in ("bold", "subtotal", "total")
+            for rid, r in row_spec_by_id.items()
         }
 
         def get_cell_text(row_id: str, col: _RenderColumn) -> str:
@@ -470,7 +479,7 @@ class TableAuditor:
                 return ""
             coord = (row_id, col.id)
             cell_info = self._cell_map.get(coord)
-            is_summary = row_summary_map.get(row_id, False)
+            is_bold = row_bold_map.get(row_id, False)
 
             val_str = (cell_info.get("formatted_value") or "") if cell_info is not None else ""
             if not val_str and cell_info is not None:
@@ -486,7 +495,7 @@ class TableAuditor:
                 else:
                     label = val_str
                 escaped_label = _escape_markdown_cell(label)
-                if is_summary and escaped_label:
+                if is_bold and escaped_label:
                     return f"{'  ' * indent}**{escaped_label}**"
                 return f"{'  ' * indent}{escaped_label}"
 
@@ -506,9 +515,34 @@ class TableAuditor:
                 raw_text = cell_info.get("physical_a1", "") if cell_info is not None else ""
 
             escaped_text = _escape_markdown_cell(raw_text)
-            if is_summary and escaped_text:
+            if is_bold and escaped_text:
                 return f"**{escaped_text}**"
             return escaped_text
+
+        out_lines: list[str] = []
+
+        if compact:
+            out_lines.append(_format_compact_markdown_row([col.header for col in render_cols]))
+            out_lines.append(
+                _format_compact_markdown_row(
+                    [":---" if col.is_descriptor else "---:" for col in render_cols]
+                )
+            )
+            for r in selected_rows:
+                if r.get("is_section_header"):
+                    title = _escape_markdown_cell(r.get("section_title") or "")
+                    empty_cols = " |" * (len(render_cols) - 1)
+                    out_lines.append(f"| **{title}** |{empty_cols}")
+                    continue
+                row_id = r.get("id")
+                if not row_id:
+                    continue
+                out_lines.append(
+                    _format_compact_markdown_row(
+                        [get_cell_text(row_id, col) for col in render_cols]
+                    )
+                )
+            return MarkdownTable("\n".join(out_lines) + "\n")
 
         col_widths: list[int] = [max(len(col.header), 4) for col in render_cols]
 
@@ -522,8 +556,6 @@ class TableAuditor:
                 text = get_cell_text(row_id, col)
                 if len(text) > col_widths[col_idx]:
                     col_widths[col_idx] = len(text)
-
-        out_lines: list[str] = []
 
         # Single flattened GFM header row
         header_cells: list[str] = []

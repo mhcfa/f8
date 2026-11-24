@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from f8.builder import AxisSelector as AxisSelector
     from f8.builder import CellInputValue as CellInputValue
 
 type CellValueDict = dict[str, object] | str
+
+type ExcelErrorCode = Literal["#DIV/0!", "#VALUE!", "#REF!", "#NUM!", "#N/A", "#NAME?"]
+
+type ModelMarkdownDetail = Literal["values", "index", "layout"]
 
 type SheetCellKind = Literal[
     "empty",
@@ -20,7 +24,10 @@ type SheetCellKind = Literal[
     "section_header",
     "gutter",
     "data",
+    "overflow",
 ]
+
+type SheetLayoutMode = Literal["auto", "grid"]
 
 
 class CellCoordinate(TypedDict):
@@ -29,6 +36,17 @@ class CellCoordinate(TypedDict):
     table: str
     row: str
     col: str
+
+
+class CellError(TypedDict):
+    """Runtime Excel error record discovered during workbook evaluation."""
+
+    coordinate: CellCoordinate
+    sheet: str
+    physical_address: str
+    error: ExcelErrorCode
+    formula_expr: str | None
+    excel_formula: str | None
 
 
 class TableSummary(TypedDict):
@@ -228,7 +246,7 @@ type FormatPreset = Literal[
     "integer",
 ]
 
-type SemanticStyle = Literal["data", "subtotal", "total"]
+type SemanticStyle = Literal["data", "bold", "subtotal", "total"]
 
 type Shade = Literal["none", "muted", "alt"]
 
@@ -301,6 +319,22 @@ class FreezePanesDict(TypedDict):
     col: int
 
 
+class AutoSheetLayoutSpecDict(TypedDict):
+    """Automatic per-column width arbitration layout specification dictionary."""
+
+    kind: Literal["auto"]
+
+
+class GridSheetLayoutSpecDict(TypedDict):
+    """Uniform column grid layout specification dictionary."""
+
+    kind: Literal["grid"]
+    col_width: NotRequired[float]
+
+
+type SheetLayoutSpecDict = AutoSheetLayoutSpecDict | GridSheetLayoutSpecDict
+
+
 class SheetSpecDict(TypedDict, total=False):
     """Worksheet manifest specification dictionary."""
 
@@ -308,6 +342,7 @@ class SheetSpecDict(TypedDict, total=False):
     tab_color: str
     freeze_panes: FreezePanesDict
     show_gridlines: bool
+    layout: SheetLayoutSpecDict
     tables: list[str]
 
 

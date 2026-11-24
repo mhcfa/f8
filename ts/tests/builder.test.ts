@@ -8,6 +8,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
+import { inflateRawSync } from "node:zlib"
 import { describe, expect, it } from "vitest"
 import {
   type AxisSelector,
@@ -19,9 +20,47 @@ import {
   Model,
   type Shade,
   Sheet,
+  type SheetLayoutMode,
   SpecificationError,
   Table,
 } from "../src/index.js"
+
+function readZipEntryUtf8(bytes: Uint8Array, entryName: string): string {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const decoder = new TextDecoder()
+  let eocdOffset = -1
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      eocdOffset = i
+      break
+    }
+  }
+  expect(eocdOffset).toBeGreaterThanOrEqual(0)
+  const totalEntries = view.getUint16(eocdOffset + 10, true)
+  let cdOffset = view.getUint32(eocdOffset + 16, true)
+  for (let i = 0; i < totalEntries; i++) {
+    const compressionMethod = view.getUint16(cdOffset + 10, true)
+    const compressedSize = view.getUint32(cdOffset + 20, true)
+    const fileNameLen = view.getUint16(cdOffset + 28, true)
+    const extraLen = view.getUint16(cdOffset + 30, true)
+    const commentLen = view.getUint16(cdOffset + 32, true)
+    const localHeaderOffset = view.getUint32(cdOffset + 42, true)
+    const fileName = decoder.decode(
+      bytes.subarray(cdOffset + 46, cdOffset + 46 + fileNameLen)
+    )
+    if (fileName === entryName) {
+      const localNameLen = view.getUint16(localHeaderOffset + 26, true)
+      const localExtraLen = view.getUint16(localHeaderOffset + 28, true)
+      const dataStart = localHeaderOffset + 30 + localNameLen + localExtraLen
+      const rawSlice = bytes.subarray(dataStart, dataStart + compressedSize)
+      const inflated =
+        compressionMethod === 8 ? inflateRawSync(rawSlice) : rawSlice
+      return decoder.decode(inflated)
+    }
+    cdOffset += 46 + fileNameLen + extraLen + commentLen
+  }
+  throw new Error(`Missing zip entry ${entryName}`)
+}
 
 describe("TypeScript Fluent Builder DSL", () => {
   it("Scenario 1: end-to-end model construction, compilation, and .xlsx save", () => {
@@ -419,7 +458,7 @@ describe("TypeScript Fluent Builder DSL", () => {
       sheets: [
         {
           name: "Sheet1",
-          showGridlines: true,
+          showGridlines: false,
           tabColor: "#1B365D",
           freezePanes: { row: 4, col: 2 },
           tables: ["T1"],
@@ -1350,5 +1389,412 @@ describe("TypeScript Fluent Builder DSL", () => {
       expect(() => emptyModel.compile()).toThrow(SpecificationError)
       expect(() => emptyModel.compile()).toThrow("neither 'value' nor 'expr'")
     }
+  })
+
+  it("Scenario 9: aligned table title banners parity across inspectSheet and emitWorkbook", () => {
+    const model = new Model({ name: "AlignedBannerParity" })
+    const sheet = model.addSheet("Summary")
+
+    const top = sheet.addTable("TopTable", "Top Table Summary Banner")
+    top.addColumn("item", { role: "descriptor", header: "Item" })
+    top.addColumn("v1", { header: "Val 1" })
+    top.addRow("r1", { cells: { item: "Metric A", v1: 100.0 } })
+
+    const bottom = sheet.addTable("WideTable", "Wide Forecast Table")
+    bottom.addColumn("item", { role: "descriptor", header: "Item" })
+    bottom.addColumn("y1", { header: "2024E" })
+    bottom.addColumn("y2", { header: "2025E" })
+    bottom.addColumn("y3", { header: "2026E" })
+    bottom.addRow("r1", {
+      cells: { item: "Revenue", y1: 10.0, y2: 20.0, y3: 30.0 },
+    })
+
+    const compiled = model.compile()
+    const sheetInsp = compiled.inspectSheet("Summary")
+
+    expect(sheetInsp.minCol).toBe(1)
+    expect(sheetInsp.maxCol).toBe(4)
+    expect(sheetInsp.minRow).toBe(1)
+
+    // Row 0 (physicalRow 1, excelRow 2): TopTable title spans all 4 columns (B2..E2)
+    const topTitleRow = sheetInsp.rows[0]
+    expect(topTitleRow?.physicalRow).toBe(1)
+    expect(topTitleRow?.excelRow).toBe(2)
+    expect(
+      topTitleRow?.cells.map((c) => [
+        c.physicalCol,
+        c.physicalA1,
+        c.kind,
+        c.tableId,
+      ])
+    ).toEqual([
+      [1, "B2", "table_title", "TopTable"],
+      [2, "C2", "table_title", "TopTable"],
+      [3, "D2", "table_title", "TopTable"],
+      [4, "E2", "table_title", "TopTable"],
+    ])
+    expect(topTitleRow?.cells.map((c) => c.formattedValue)).toEqual([
+      "Top Table Summary Banner",
+      null,
+      null,
+      null,
+    ])
+
+    // TopTable header row (B4..C4) and data row (B5..C5) remain strictly on 2 columns
+    const topHeaderRow = sheetInsp.rows[2]
+    expect(
+      topHeaderRow?.cells.map((c) => [c.physicalA1, c.kind, c.tableId])
+    ).toEqual([
+      ["B4", "column_header", "TopTable"],
+      ["C4", "column_header", "TopTable"],
+      ["D4", "empty", null],
+      ["E4", "empty", null],
+    ])
+    const topDataRow = sheetInsp.rows[3]
+    expect(
+      topDataRow?.cells.map((c) => [c.physicalA1, c.kind, c.tableId])
+    ).toEqual([
+      ["B5", "data", "TopTable"],
+      ["C5", "data", "TopTable"],
+      ["D5", "empty", null],
+      ["E5", "empty", null],
+    ])
+
+    // Cell A1 addresses and colWidths remain unchanged
+    expect(compiled.inspectCell("TopTable", "r1", "item").physicalAddress).toBe(
+      "'Summary'!B5"
+    )
+    expect(compiled.inspectCell("TopTable", "r1", "v1").physicalAddress).toBe(
+      "'Summary'!C5"
+    )
+    expect(compiled.inspectCell("WideTable", "r1", "y3").physicalAddress).toBe(
+      "'Summary'!E11"
+    )
+    expect(sheetInsp.colWidths[1]).toBeCloseTo(12.0)
+    expect(sheetInsp.colWidths[2]).toBeCloseTo(12.0)
+    expect(sheetInsp.colWidths[3]).toBeCloseTo(12.0)
+    expect(sheetInsp.colWidths[4]).toBeCloseTo(12.0)
+
+    // OpenXML workbook emits styled title cells across B2..E2 while keeping TopTable headers/data on B..C
+    const xlsxBytes = compiled.emitWorkbook()
+    expect(xlsxBytes[0]).toBe(0x50)
+    expect(xlsxBytes[1]).toBe(0x4b)
+    const sheetXml = readZipEntryUtf8(xlsxBytes, "xl/worksheets/sheet1.xml")
+
+    const titleStyles = ["B2", "C2", "D2", "E2"].map((ref) => {
+      const match = new RegExp(`<c r="${ref}"[^>]*\\bs="(\\d+)"`).exec(sheetXml)
+      expect(match).not.toBeNull()
+      return match?.[1]
+    })
+    expect(new Set(titleStyles).size).toBe(1)
+    expect(sheetXml).not.toContain('<c r="D4"')
+    expect(sheetXml).not.toContain('<c r="E4"')
+    expect(sheetXml).not.toContain('<c r="D5"')
+    expect(sheetXml).not.toContain('<c r="E5"')
+  })
+
+  it("sheet showGridlines defaults to false across builder, raw compile, and .xlsx emission", () => {
+    expect(new Sheet("Direct").showGridlines).toBe(false)
+    expect(
+      new Sheet("DirectVisible", { showGridlines: true }).showGridlines
+    ).toBe(true)
+
+    const model = new Model({ name: "GridlineDefaults" })
+    const hiddenSheet = model.addSheet("DefaultHidden")
+    const visibleSheet = model.addSheet("ExplicitVisible", {
+      showGridlines: true,
+    })
+
+    expect(hiddenSheet.showGridlines).toBe(false)
+    expect(visibleSheet.showGridlines).toBe(true)
+
+    for (const [sheet, id] of [
+      [hiddenSheet, "T1"],
+      [visibleSheet, "T2"],
+    ] as const) {
+      const tbl = sheet.addTable(id, id)
+      tbl.addColumn("c1", { header: "C1" })
+      tbl.addRow("r1", { cells: { c1: 1.0 } })
+    }
+
+    const { manifest } = model.toSpec()
+    expect(manifest.sheets[0]?.showGridlines).toBe(false)
+    expect(manifest.sheets[1]?.showGridlines).toBe(true)
+
+    const xlsxBytes = model.compile().emitWorkbook()
+    const hiddenXml = readZipEntryUtf8(xlsxBytes, "xl/worksheets/sheet1.xml")
+    const visibleXml = readZipEntryUtf8(xlsxBytes, "xl/worksheets/sheet2.xml")
+    expect(hiddenXml).toContain('showGridLines="0"')
+    expect(visibleXml).not.toContain('showGridLines="0"')
+
+    // Raw compile() with omitted showGridlines also defaults to false
+    const rawCompiled = compile(
+      {
+        modelName: "RawDefaults",
+        theme: "corporate_navy",
+        sheets: [{ name: "RawSheet", tables: ["T1"] }],
+      },
+      [
+        {
+          id: "T1",
+          title: "T1",
+          columns: [{ kind: "data", id: "c1", headers: ["C1"] }],
+          rows: [{ kind: "data", id: "r1", cells: { c1: 1.0 } }],
+        },
+      ]
+    )
+    const rawXml = readZipEntryUtf8(
+      rawCompiled.emitWorkbook(),
+      "xl/worksheets/sheet1.xml"
+    )
+    expect(rawXml).toContain('showGridLines="0"')
+  })
+
+  it("sheet grid layout validation, diagnostics, and unknown-field rejection (Scenarios 5, 6, 7)", () => {
+    const mode: SheetLayoutMode = "grid"
+    expect(mode).toBe("grid")
+
+    // Default Sheet layout is "auto" and omits layout from toSpec()
+    const defaultSheet = new Sheet("AutoDefault")
+    expect(defaultSheet.layout).toBe("auto")
+    expect(defaultSheet.colWidth).toBeNull()
+    expect("layout" in defaultSheet.toSpec()).toBe(false)
+
+    // Valid grid sheets with and without colWidth
+    const gridDefault = new Sheet("GridDefault", { layout: "grid" })
+    expect(gridDefault.toSpec().layout).toEqual({ kind: "grid" })
+    const gridSized = new Sheet("GridSized", { layout: "grid", colWidth: 14 })
+    expect(gridSized.colWidth).toBe(14)
+    expect(gridSized.toSpec().layout).toEqual({ kind: "grid", colWidth: 14 })
+
+    // Scenario 7: SDK constructor validation
+    expect(
+      () =>
+        new Sheet("BadLayout", {
+          layout: "fixed" as unknown as SheetLayoutMode,
+        })
+    ).toThrow("Invalid sheet layout")
+    expect(
+      () => new Sheet("AutoWithWidth", { layout: "auto", colWidth: 12 })
+    ).toThrow("colWidth can only be specified when layout is 'grid'")
+    for (const badWidth of [
+      0,
+      0.5,
+      -5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      256,
+    ]) {
+      expect(
+        () => new Sheet("BadWidth", { layout: "grid", colWidth: badWidth })
+      ).toThrow("colWidth must be a finite number in [1, 255]")
+    }
+
+    // Scenario 7: Raw compile() preserves unknown keys on layout so Rust deny_unknown_fields rejects them
+    const minimalTable = {
+      id: "T1",
+      title: "T1",
+      columns: [{ kind: "data" as const, id: "c1", headers: ["C1"] }],
+      rows: [{ kind: "data" as const, id: "r1", cells: { c1: 1.0 } }],
+    }
+    const badLayouts = [
+      { kind: "grid", colWidth: 14, bogus: 1 },
+      { kind: "auto", colWidth: 12 },
+      { kind: "auto", extra: true },
+      { kind: "grid", colWidth: 0.5 },
+      { kind: "grid", colWidth: 256 },
+    ]
+    for (const badLayout of badLayouts) {
+      expect(() =>
+        compile(
+          {
+            modelName: "BadRawLayout",
+            theme: "corporate_navy",
+            sheets: [
+              {
+                name: "S1",
+                tables: ["T1"],
+                layout: badLayout as unknown as { readonly kind: "grid" },
+              },
+            ],
+          },
+          [minimalTable]
+        )
+      ).toThrow(SpecificationError)
+    }
+
+    // Scenario 5: Static base_w measure header rejection raises SpecificationError
+    const hdrModel = new Model({ name: "WideHeader" })
+    const hdrSheet = hdrModel.addSheet("Dash", {
+      layout: "grid",
+      colWidth: 12,
+    })
+    const hdrT = hdrSheet.addTable("Val", "Valuation")
+    hdrT.addColumn("item", { role: "descriptor", header: "Item" })
+    hdrT.addColumn("ev", { header: "Enterprise Value" })
+    hdrT.addRow("r1", { cells: { item: "Base", ev: 100.0 } })
+    try {
+      hdrModel.compile()
+      expect.unreachable("Should have thrown SpecificationError")
+    } catch (err) {
+      expect(err).toBeInstanceOf(SpecificationError)
+      expect((err as SpecificationError).table).toBe("Val")
+      expect((err as SpecificationError).message).toContain("Enterprise Value")
+    }
+
+    // Scenario 6: Multiline cell, column header, and group banner raise SpecificationError
+    const nlCellModel = new Model({ name: "NewlineCell" })
+    const nlT = nlCellModel
+      .addSheet("Dash", { layout: "grid" })
+      .addTable("T1", "T1")
+    nlT.addColumn("item", { role: "descriptor", header: "Item" })
+    nlT.addRow("r1", { cells: { item: "Line 1\nLine 2" } })
+    try {
+      nlCellModel.compile()
+      expect.unreachable("Should have thrown SpecificationError")
+    } catch (err) {
+      expect(err).toBeInstanceOf(SpecificationError)
+      expect((err as SpecificationError).table).toBe("T1")
+      expect((err as SpecificationError).message).toContain("multiline cell")
+    }
+
+    const nlHdrModel = new Model({ name: "NewlineHdr" })
+    const nlHt = nlHdrModel
+      .addSheet("Dash", { layout: "grid" })
+      .addTable("T2", "T2")
+    nlHt.addColumn("m", { header: "Line 1\nLine 2" })
+    nlHt.addRow("r1", { cells: { m: 1.0 } })
+    try {
+      nlHdrModel.compile()
+      expect.unreachable("Should have thrown SpecificationError")
+    } catch (err) {
+      expect(err).toBeInstanceOf(SpecificationError)
+      expect((err as SpecificationError).table).toBe("T2")
+      expect((err as SpecificationError).message).toContain(
+        "multiline column header"
+      )
+    }
+
+    const nlGrpModel = new Model({ name: "NewlineGrp" })
+    const nlGt = nlGrpModel
+      .addSheet("Dash", { layout: "grid" })
+      .addTable("T3", "T3")
+    nlGt.addColumn("m", { group: "Forecast\rYears", header: "Y1" })
+    nlGt.addRow("r1", { cells: { m: 1.0 } })
+    try {
+      nlGrpModel.compile()
+      expect.unreachable("Should have thrown SpecificationError")
+    } catch (err) {
+      expect(err).toBeInstanceOf(SpecificationError)
+      expect((err as SpecificationError).table).toBe("T3")
+      expect((err as SpecificationError).message).toContain(
+        "multiline column header"
+      )
+    }
+  })
+
+  it("sheet grid layout e2e parity with Python SDK (Scenarios 10 & 12)", () => {
+    const model = new Model({ name: "CrossSdkGridParity" })
+    const dash = model.addSheet("Dashboard", { layout: "grid", colWidth: 14 })
+
+    const summary = dash.addTable("Summary", "Executive Summary")
+    summary.addColumn("item", { role: "descriptor", header: "Line Item" })
+    summary.addColumn("y1", {
+      header: "2024E",
+      format: "currency",
+      decimals: 1,
+    })
+    summary.addColumn("y2", {
+      header: "2025E",
+      format: "currency",
+      decimals: 1,
+    })
+    summary.addRow("rev", {
+      cells: {
+        item: "Total Consolidated Operating Revenue",
+        y1: 100.0,
+        y2: 120.0,
+      },
+    })
+    summary.addRow("ebitda", {
+      style: "total",
+      cells: { item: "Adjusted EBITDA" },
+      expr: 'Summary["rev", @col] * 0.25',
+    })
+
+    const kpis = dash.addTable("KPIs", "Key Metrics", { rightOf: summary })
+    kpis.addColumn("metric", { role: "descriptor", header: "Metric" })
+    kpis.addColumn("val", {
+      header: "Value",
+      format: "percentage",
+      decimals: 1,
+    })
+    kpis.addRow("margin", {
+      cells: { metric: "2025E Consolidated Margin" },
+      expr: 'Summary["ebitda", "y2"] / Summary["rev", "y2"]',
+    })
+
+    const notesSheet = model.addSheet("Notes")
+    const notes = notesSheet.addTable("Commentary", "Notes")
+    notes.addColumn("topic", { role: "descriptor", header: "Topic" })
+    notes.addColumn("detail", { role: "descriptor", header: "Detail" })
+    notes.addRow("n1", { cells: { topic: "Basis", detail: "Line 1\nLine 2" } })
+
+    const { manifest } = model.toSpec()
+    expect(manifest.sheets[0]?.layout).toEqual({ kind: "grid", colWidth: 14 })
+    expect(manifest.sheets[1]?.layout).toBeUndefined()
+
+    const compiled = model.compile()
+    expect(compiled.table("Summary").address("rev", "item")).toBe("B5")
+    expect(compiled.table("Summary").address("rev", "y1")).toBe("E5")
+    expect(compiled.table("Summary").address("rev", "y2")).toBe("F5")
+    expect(compiled.table("Summary").address("ebitda", "y2")).toBe("F6")
+    expect(compiled.table("KPIs").address("margin", "metric")).toBe("H5")
+    expect(compiled.table("KPIs").address("margin", "val")).toBe("J5")
+    expect(compiled.num("KPIs", "margin", "val")).toBeCloseTo(0.25)
+
+    const insp = compiled.inspectSheet("Dashboard")
+    expect(insp.minCol).toBe(1)
+    expect(insp.maxCol).toBe(9)
+    expect(insp.colWidths).toEqual({
+      0: 3.0,
+      1: 14.0,
+      2: 14.0,
+      3: 14.0,
+      4: 14.0,
+      5: 14.0,
+      6: 3.0,
+      7: 14.0,
+      8: 14.0,
+      9: 14.0,
+    })
+
+    const row5 = insp.rows.find((r) => r.excelRow === 5)
+    expect(row5).toBeDefined()
+    expect(
+      row5?.cells.map((c) => [c.physicalA1, c.kind, c.tableId, c.isDescriptor])
+    ).toEqual([
+      ["B5", "data", "Summary", true],
+      ["C5", "overflow", "Summary", true],
+      ["D5", "overflow", "Summary", true],
+      ["E5", "data", "Summary", false],
+      ["F5", "data", "Summary", false],
+      ["G5", "empty", null, false],
+      ["H5", "data", "KPIs", true],
+      ["I5", "overflow", "KPIs", true],
+      ["J5", "data", "KPIs", false],
+    ])
+    const c5 = row5?.cells[1]
+    expect(c5?.rowId).toBe("rev")
+    expect(c5?.colId).toBe("item")
+    expect(c5?.value).toBe("Empty")
+    expect(c5?.formattedValue).toBeNull()
+
+    const xlsx = compiled.emitWorkbook()
+    expect(xlsx[0]).toBe(0x50)
+    expect(xlsx[1]).toBe(0x4b)
+    const dashXml = readZipEntryUtf8(xlsx, "xl/worksheets/sheet1.xml")
+    expect(dashXml).not.toContain("<mergeCells")
   })
 })

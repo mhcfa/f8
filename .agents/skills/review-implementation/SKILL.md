@@ -12,7 +12,7 @@ description: >-
 
 - Report-only: Read, run, probe. Never edit tracked files, `docs/specs/drafts/`, or git state.
 - Review target: The draft spec in `docs/specs/drafts/` when one exists; otherwise the user request that prompted the change.
-- Evidence-bound: Every finding cites `<file:line>`, concrete evidence (code, test output, or probe result), and a concrete fix.
+- Evidence-bound: Every finding cites `<file:line>`, concrete proof, and a concrete fix. Rank behavioral claims by proof strength: asserted (insufficient) < `file:line` trace < executed probe/test against real code < live artifact reproduction. Drop speculative "could break if..." findings not backed by code proof or a run.
 - One finding per defect: Report each defect under the single most specific checklist item.
 - Severity & Verdicts:
   - `Blocker` (blocks approval): Soundness defect, hard-rule breach (`AGENTS.md`), contract/phase invariant breach, unmet or untested acceptance criterion, scope creep, or verification gate failure.
@@ -29,8 +29,9 @@ description: >-
    - Map every acceptance criterion to its implementing code and covering test (or `met (inspection)` for documentation, template prose, and skill criteria). Missing tests for executable code, weak assertions (tests that pass even if logic breaks), or unspecified scope are `Blocker`.
 3. Checklist Audit:
    - Audit all changed files against the applicable sections of the checklist below, plus `references/repo-checks.md` when present in this skill directory.
-4. Targeted Probes (when warranted):
-   - When the diff introduces complex edge cases not covered by tests, run a temporary script outside the worktree (e.g., agent's scratch directory). Never leave scratch files in the repository.
+4. Blast Radius & Targeted Probes (when warranted):
+   - Look past direct symbol callers for non-grep breakage: serialized JSON/wire/schema shapes, cross-language boundaries (Rust/PyO3/Python stubs, TypeScript/Zod contracts), ordering or lifecycle assumptions, and implicit downstream consumers.
+   - When the diff introduces complex edge cases or unverified safety claims ("X already handles Y"), run a temporary probe script outside the worktree (e.g., agent's scratch directory) importing the real code rather than trusting a prose trace. Never leave scratch files in the repository. If a check passes unexpectedly easily, confirm the test or probe actually exercised the changed path.
 
 ## Review Checklist
 
@@ -45,6 +46,7 @@ description: >-
 - [ ] Root-cause correctness (`Blocker`): Defects fixed at origin (parser, ingest, IR, schema, solver); no downstream workarounds, symptom patches (special-casing specific inputs or tests), masking fallbacks (`.get()`, `or default`, lossy `.ok()`), bypass flags (`skip_validation`, `force`), or single-use callsite patches.
 - [ ] Deterministic output (`Blocker`): No wall-clock time, randomness, or hash-order dependence in evaluation, layout, emitted artifacts, or bytes; `IndexMap` / `IndexSet` (or deterministic ordering) wherever order matters.
 - [ ] Repository-specific invariants (`Blocker`): Satisfies all domain invariants in `AGENTS.md` and `references/repo-checks.md` (when present).
+- [ ] Structural fit (`Flag`): Change conforms to the request or spec but relies on awkward adapters, parallel state, or cross-layer seams; name the deeper structural mismatch for Lead Orchestrator or user consideration.
 
 ### 2. Hard Rules & Hygiene
 

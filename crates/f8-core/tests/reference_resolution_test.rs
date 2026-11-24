@@ -571,6 +571,7 @@ fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Debt")],
         }],
     };
@@ -745,6 +746,7 @@ fn test_active_table_selector_model_compilation_and_inspection() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("IncomeStatement")],
             },
             SheetSpec {
@@ -752,6 +754,7 @@ fn test_active_table_selector_model_compilation_and_inspection() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("IncomeStatementExplicit")],
             },
         ],
@@ -895,6 +898,7 @@ fn test_contiguous_data_row_and_measure_col_ranges_with_surrounding_dividers() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T")],
         }],
     };
@@ -972,6 +976,7 @@ fn test_vertical_range_on_single_descriptor_column_succeeds() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T")],
         }],
     };
@@ -1059,6 +1064,7 @@ fn test_row_range_spanning_gutter_rejected() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("T")],
         }],
     };
@@ -1106,6 +1112,7 @@ fn test_row_range_spanning_section_header_rejected_including_untaken_branch() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("T")],
             }],
         };
@@ -1471,6 +1478,7 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("History"), TableId::from("Forecast")],
         }],
     };
@@ -1631,6 +1639,7 @@ fn test_cross_table_col_offset_steps_along_target_measure_columns() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Detail"), TableId::from("Summary")],
         }],
     };
@@ -1763,6 +1772,7 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Schedule"), TableId::from("DriverTable")],
         }],
     };
@@ -1952,6 +1962,7 @@ fn test_cross_table_offset_active_mismatch_rejected() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Assumptions"), TableId::from("Forecast")],
         }],
     };
@@ -2269,6 +2280,7 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![
                 TableId::from("HistoryA"),
                 TableId::from("Target"),

@@ -38,6 +38,20 @@ impl ExcelError {
             Self::Name => "#NAME?",
         }
     }
+
+    /// Parses a canonical Excel error string literal (e.g. `"#DIV/0!"`) into an [`ExcelError`].
+    #[must_use]
+    pub fn from_code(code: &str) -> Option<Self> {
+        match code {
+            "#DIV/0!" => Some(Self::Div0),
+            "#VALUE!" => Some(Self::Value),
+            "#REF!" => Some(Self::Ref),
+            "#NUM!" => Some(Self::Num),
+            "#N/A" => Some(Self::Na),
+            "#NAME?" => Some(Self::Name),
+            _ => None,
+        }
+    }
 }
 
 /// Non-error runtime value categories for static and dynamic type diagnostics.
@@ -151,12 +165,21 @@ mod tests {
 
     #[test]
     fn test_excel_error_display() {
-        assert_eq!(ExcelError::Div0.to_string(), "#DIV/0!");
-        assert_eq!(ExcelError::Value.to_string(), "#VALUE!");
-        assert_eq!(ExcelError::Ref.to_string(), "#REF!");
-        assert_eq!(ExcelError::Num.to_string(), "#NUM!");
-        assert_eq!(ExcelError::Na.to_string(), "#N/A");
-        assert_eq!(ExcelError::Name.to_string(), "#NAME?");
+        let all_variants = [
+            (ExcelError::Div0, "#DIV/0!"),
+            (ExcelError::Value, "#VALUE!"),
+            (ExcelError::Ref, "#REF!"),
+            (ExcelError::Num, "#NUM!"),
+            (ExcelError::Na, "#N/A"),
+            (ExcelError::Name, "#NAME?"),
+        ];
+        for (variant, code) in all_variants {
+            assert_eq!(variant.to_string(), code);
+            assert_eq!(variant.as_str(), code);
+            assert_eq!(ExcelError::from_code(code), Some(variant));
+        }
+        assert_eq!(ExcelError::from_code("#BOGUS!"), None);
+        assert_eq!(ExcelError::from_code("Div0"), None);
     }
 
     #[test]

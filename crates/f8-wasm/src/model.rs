@@ -1,5 +1,5 @@
 use f8_core::compiler::emission::EmissionOptions;
-use f8_core::compiler::{CompiledModel, apply_unit_suffix};
+use f8_core::compiler::{CompiledModel, ModelMarkdownOptions, apply_unit_suffix};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::value::CellValue;
 use serde::Serialize;
@@ -62,6 +62,26 @@ impl WasmCompiledModel {
     pub fn summary(&self) -> Result<JsValue, JsValue> {
         let res = self.inner.summary();
         serialize_json_compatible(&res)
+    }
+
+    /// Returns all runtime Excel domain errors discovered during workbook evaluation.
+    pub fn errors(&self) -> Result<JsValue, JsValue> {
+        let res = self.inner.errors();
+        serialize_json_compatible(&res)
+    }
+
+    /// Renders a compact whole-workbook GitHub-Flavored Markdown summary.
+    #[wasm_bindgen(js_name = "toMarkdown")]
+    pub fn to_markdown(&self, options: JsValue) -> Result<String, JsValue> {
+        let opts: ModelMarkdownOptions = if options.is_undefined() || options.is_null() {
+            ModelMarkdownOptions::default()
+        } else {
+            serde_wasm_bindgen::from_value(options).map_err(map_serde_error)?
+        };
+
+        self.inner
+            .to_markdown(&opts)
+            .map_err(|e| map_inspection_error(&e))
     }
 
     /// Returns the unboxed scalar value (`number | string | boolean | null`) for a cell coordinate.

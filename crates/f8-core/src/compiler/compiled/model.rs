@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::compiler::ir::id::CellId;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{ColId, RowId, SheetId, TableId};
-use crate::value::CellValue;
+use crate::value::{CellValue, ExcelError};
 
 /// High-level model summary and hierarchical statistics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -288,6 +288,8 @@ pub enum SheetCellKind {
     Gutter,
     /// Calculable data or literal input cell.
     Data,
+    /// Physical overflow runway cell owned by a spanned descriptor column.
+    Overflow,
 }
 
 /// Inspection record for a discrete physical cell on a worksheet.
@@ -349,4 +351,87 @@ pub struct SheetInspection {
     pub col_widths: IndexMap<u32, f64>,
     /// Physical row records spanning active rows.
     pub rows: Vec<SheetRowInspection>,
+}
+
+fn serialize_excel_error_code<S>(err: &ExcelError, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(err.as_str())
+}
+
+fn deserialize_excel_error_code<'de, D>(deserializer: D) -> Result<ExcelError, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let code = String::deserialize(deserializer)?;
+    ExcelError::from_code(&code)
+        .ok_or_else(|| serde::de::Error::custom(format!("Unknown Excel error code '{code}'")))
+}
+
+/// Runtime Excel error record discovered during workbook evaluation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CellError {
+    /// Coordinate identifier `(TableId, RowId, ColId)`.
+    pub coordinate: CellId,
+    /// Parent worksheet identifier.
+    pub sheet: SheetId,
+    /// Canonical sheet-qualified Excel cell address (e.g. `"'Financials'!C14"`).
+    pub physical_address: String,
+    /// Evaluated Excel domain error code.
+    #[serde(
+        serialize_with = "serialize_excel_error_code",
+        deserialize_with = "deserialize_excel_error_code"
+    )]
+    pub error: ExcelError,
+    /// Source DSL formula expression string if this is a formula cell.
+    pub formula_expr: Option<String>,
+    /// Lowered concrete Excel formula string (prefixed with `=`) if applicable.
+    pub excel_formula: Option<String>,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+/// Detail granularity for whole-workbook Markdown rendering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelMarkdownDetail {
+    /// Render full compact GitHub-Flavored Markdown value tables for every included table.
+    #[default]
+    Values,
+    /// Render compact coordinate-index catalog (`Columns:` and `Rows:`) with zero evaluated measure values.
+    Index,
+    /// Render compact 2D worksheet layout map showing geometry, column widths, bands, lanes, and table bounds.
+    Layout,
+}
+
+/// Configuration options for [`CompiledModel::to_markdown`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelMarkdownOptions {
+    /// Detail granularity (`values`, `index`, or `layout`).
+    #[serde(default)]
+    pub detail: ModelMarkdownDetail,
+    /// Optional sheet allowlist (union with `tables` when both are provided).
+    #[serde(default)]
+    pub sheets: Option<Vec<SheetId>>,
+    /// Optional table allowlist (union with `sheets` when both are provided).
+    #[serde(default)]
+    pub tables: Option<Vec<TableId>>,
+    /// Whether to annotate inline `[col_id]` / `[row_id]` tags in `values` mode (ignored in `index` and `layout` modes).
+    #[serde(default = "default_true")]
+    pub show_ids: bool,
+}
+
+impl Default for ModelMarkdownOptions {
+    fn default() -> Self {
+        Self {
+            detail: ModelMarkdownDetail::Values,
+            sheets: None,
+            tables: None,
+            show_ids: true,
+        }
+    }
 }

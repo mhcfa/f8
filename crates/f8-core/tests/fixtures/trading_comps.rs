@@ -361,6 +361,7 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Comps"), TableId::from("TargetValuation")],
         }],
     };

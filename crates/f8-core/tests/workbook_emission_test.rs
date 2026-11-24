@@ -11,8 +11,8 @@ use f8_core::model::format::{SemanticStyle, Shade};
 use f8_core::model::id::{SheetId, TableId};
 use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
 use f8_core::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
-    ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, PlacementSpec, RowSpec, SectionHeaderRowSpec,
+    TableSpec, ValueLiteral,
 };
 use f8_core::model::theme::Theme;
 
@@ -75,6 +75,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("IncomeStatement")],
             },
             SheetSpec {
@@ -82,6 +83,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 tab_color: None,
                 freeze_panes: None,
                 show_gridlines: true,
+                layout: Default::default(),
                 tables: vec![TableId::from("SummaryTable")],
             },
         ],
@@ -133,6 +135,7 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
             tab_color: Some("#1B365D".to_string()),
             freeze_panes: Some(FreezePanes { row: 3, col: 2 }),
             show_gridlines: false,
+            layout: Default::default(),
             tables: vec![TableId::from("LayoutTable")],
         }],
     };
@@ -197,6 +200,7 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("HeaderTable")],
         }],
     };
@@ -256,6 +260,7 @@ fn test_scenario_3b_multi_row_subtitles_emission_and_inspection() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("Assumptions")],
         }],
     };
@@ -349,6 +354,7 @@ fn test_scenario_4_single_cell_super_header_safety() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("SingleGroupTable")],
         }],
     };
@@ -397,6 +403,7 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("FormulaTable")],
         }],
     };
@@ -447,6 +454,7 @@ fn test_scenario_6_values_only_freezing_mode() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("FreezeTable")],
         }],
     };
@@ -572,6 +580,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("OutlineTable")],
         }],
     };
@@ -626,6 +635,7 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("DiskTable")],
         }],
     };
@@ -674,6 +684,7 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("DiagTable")],
         }],
     };
@@ -838,6 +849,75 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
         emit_res7,
         Err(EmissionError::MissingEvaluatedCell { cell }) if cell == removed_cell_id
     ));
+
+    // 6. Cleared or truncated placement.col_spans fails fast with MissingTable instead of silently skipping columns
+    let mut cleared_spans_layout =
+        LayoutPlanner::plan(&manifest, std::slice::from_ref(&table), &grid, &theme, None).unwrap();
+    cleared_spans_layout
+        .tables
+        .get_mut(&TableId::from("DiagTable"))
+        .unwrap()
+        .col_spans
+        .clear();
+    let emit_res8 = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        std::slice::from_ref(&table),
+        &grid,
+        &cleared_spans_layout,
+        &lowered_formulas,
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    );
+    assert!(matches!(
+        emit_res8,
+        Err(EmissionError::MissingTable { table }) if table == TableId::from("DiagTable")
+    ));
+
+    let mut two_col_table = TableSpec::new("DiagTable", "Diagnostics");
+    two_col_table
+        .columns
+        .push(ColumnSpec::descriptor("item", "Item").with_group("Group"));
+    two_col_table
+        .columns
+        .push(ColumnSpec::new("c1").with_group("Group").with_header("C1"));
+    two_col_table.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Row")
+            .with_cell("c1", 1.0),
+    );
+    let (two_sym, two_grid) =
+        ir::expand_workbook(&manifest, std::slice::from_ref(&two_col_table)).unwrap();
+    let mut truncated_spans_layout = LayoutPlanner::plan(
+        &manifest,
+        std::slice::from_ref(&two_col_table),
+        &two_grid,
+        &theme,
+        None,
+    )
+    .unwrap();
+    let two_lowered =
+        FormulaLowerer::lower_grid(&two_grid, &two_sym, &truncated_spans_layout).unwrap();
+    truncated_spans_layout
+        .tables
+        .get_mut(&TableId::from("DiagTable"))
+        .unwrap()
+        .col_spans
+        .truncate(1);
+    let emit_res9 = WorkbookEmitter::emit_to_buffer(
+        &manifest,
+        std::slice::from_ref(&two_col_table),
+        &two_grid,
+        &truncated_spans_layout,
+        &two_lowered,
+        &theme,
+        None,
+        &EmissionOptions::default(),
+    );
+    assert!(matches!(
+        emit_res9,
+        Err(EmissionError::MissingTable { table }) if table == TableId::from("DiagTable")
+    ));
 }
 
 // ----------------------------------------------------------------------------
@@ -865,6 +945,7 @@ fn test_scenario_11_audit_note_attachment() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("NoteTable")],
         }],
     };
@@ -912,6 +993,7 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("NoteTable")],
         }],
     };
@@ -951,6 +1033,7 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("SectionTable")],
         }],
     };
@@ -1047,6 +1130,7 @@ fn test_scenario_14_lbo_timeline_group_banners_and_stacked_headers_no_center_acr
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("LboSchedule")],
         }],
     };
@@ -1192,6 +1276,7 @@ fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() 
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("GutterFormatting")],
         }],
     };
@@ -1296,6 +1381,141 @@ fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() 
 }
 
 // ----------------------------------------------------------------------------
+// Scenario 15b: Row Gutters Remain Blank Across Styled Columns
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
+    use f8_core::model::theme::{BorderStyle, ThemeSpec};
+
+    let extract_cell_element = |xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = xml.find(&needle)?;
+        let tag_start = xml[..start].rfind("<c ")?;
+        let open_end = xml[tag_start..].find('>')? + tag_start;
+        if xml[..open_end].ends_with('/') {
+            Some(xml[tag_start..=open_end].to_string())
+        } else {
+            let close_end = xml[open_end..].find("</c>")? + open_end + "</c>".len();
+            Some(xml[tag_start..close_end].to_string())
+        }
+    };
+
+    let build_table = || {
+        let mut table = TableSpec::new("RowGutterBlank", "Row Gutter Test");
+        // Col B: Descriptor
+        table
+            .columns
+            .push(ColumnSpec::descriptor("line_item", "Line Item"));
+        // Col C: Plain data measure
+        table
+            .columns
+            .push(ColumnSpec::new("c_data").with_header("Data"));
+        // Col D: Column gutter
+        table.columns.push(ColumnSpec::gutter());
+        // Col E: Subtotal column (dashed left border)
+        table.columns.push(
+            ColumnSpec::new("c_sub")
+                .with_header("Sub")
+                .with_style(Some(SemanticStyle::Subtotal)),
+        );
+        // Col F: Total column (thin left border, no right border)
+        table.columns.push(
+            ColumnSpec::new("c_tot")
+                .with_header("Total")
+                .with_style(Some(SemanticStyle::Total)),
+        );
+        // Col G: Muted shade column
+        table.columns.push(
+            ColumnSpec::new("c_shade")
+                .with_header("Forecast")
+                .with_shade(Some(Shade::Muted)),
+        );
+        // Col H: Highlight column
+        table.columns.push(
+            ColumnSpec::new("c_hl")
+                .with_header("Key")
+                .with_highlight(Some(true)),
+        );
+        // Col I: Explicit default/none styling
+        table.columns.push(
+            ColumnSpec::new("c_none")
+                .with_header("None")
+                .with_style(Some(SemanticStyle::Data))
+                .with_shade(Some(Shade::None))
+                .with_highlight(Some(false)),
+        );
+
+        // Layout: Title=2, TitleGutter=3, Header=4, r1=5, RowGutter=6, r2=7
+        table.rows.push(RowSpec::new("r1"));
+        table.rows.push(RowSpec::gutter());
+        table.rows.push(RowSpec::new("r2"));
+        populate_table_cells(&mut table);
+        table
+    };
+
+    let assert_gutter_row_blank = |sheet_xml: &str| {
+        for populated in ["B5", "E5", "F5", "G5", "H5", "B7", "E7", "F7", "G7", "H7"] {
+            assert!(
+                extract_cell_element(sheet_xml, populated).is_some(),
+                "{populated} on adjacent data row must be emitted"
+            );
+        }
+        assert!(
+            !sheet_xml.contains("<row r=\"6\""),
+            "Row gutter (row 6) must not be emitted in worksheet XML"
+        );
+        for cell in ["B6", "C6", "D6", "E6", "F6", "G6", "H6", "I6"] {
+            assert!(
+                extract_cell_element(sheet_xml, cell).is_none(),
+                "{cell} on row gutter must remain blank without column formatting"
+            );
+        }
+    };
+
+    // Part 1: Default corporate_navy theme
+    let manifest = ProjectManifest {
+        model_name: "RowGutterDefaultTheme".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("RowGutterBlank")],
+        }],
+    };
+    let buffer =
+        Compiler::emit_workbook(&manifest, &[build_table()], &EmissionOptions::default()).unwrap();
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    assert_gutter_row_blank(&sheet_xml);
+
+    // Part 2: Custom theme with descriptor_border_right enabled
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.borders.descriptor_border_right = BorderStyle::Thin;
+    let custom_manifest = ProjectManifest {
+        model_name: "RowGutterDescriptorBorderTheme".to_string(),
+        theme: ThemeSpec::Custom(Box::new(custom_theme)),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("RowGutterBlank")],
+        }],
+    };
+    let custom_buf = Compiler::emit_workbook(
+        &custom_manifest,
+        &[build_table()],
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+    let custom_sheet_xml = read_zip_entry(&custom_buf, "xl/worksheets/sheet1.xml");
+    assert_gutter_row_blank(&custom_sheet_xml);
+}
+
+// ----------------------------------------------------------------------------
 // Scenario 16: OpenXML wrapText and VerticalCenter Emission
 // ----------------------------------------------------------------------------
 #[test]
@@ -1328,6 +1548,7 @@ fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("WrapEmission")],
         }],
     };
@@ -1371,6 +1592,7 @@ fn test_scenario_17_empty_formula_rejected_and_sparse_slice_emission() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("BlankCoercion")],
         }],
     };
@@ -1502,6 +1724,7 @@ fn test_scenario_18_negative_zero_literal_and_evaluated_normalization() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("NegZeroTable")],
         }],
     };
@@ -1580,6 +1803,7 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("TextCacheTable")],
         }],
     };
@@ -1617,6 +1841,7 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("NanTable")],
         }],
     };
@@ -1738,6 +1963,7 @@ fn test_detailed_null_cell_with_note_and_metadata_emission() {
             tab_color: None,
             freeze_panes: None,
             show_gridlines: true,
+            layout: Default::default(),
             tables: vec![TableId::from("PeerComps")],
         }],
     };
@@ -1808,4 +2034,1066 @@ fn test_detailed_null_cell_with_note_and_metadata_emission() {
             "explicit null override must remain blank without <v> or <f>: {orcl_cell_xml}"
         );
     }
+}
+
+// ----------------------------------------------------------------------------
+// Scenario 20: Uniform Trailing Alignment Space OpenXML Emission
+// ----------------------------------------------------------------------------
+#[test]
+fn test_scenario_20_uniform_trailing_alignment_space_openxml_emission() {
+    use std::collections::BTreeMap;
+
+    use f8_core::model::format::FormatPreset;
+    use f8_core::model::theme::ThemeSpec;
+
+    let build_table = || {
+        let mut table = TableSpec::new("AlignTable", "Uniform Alignment Showcase");
+        // Col B: Descriptor (multi-tier headers, format: None)
+        table.columns.push(
+            ColumnSpec::descriptor("item", "Line Item").with_headers(["Category", "Line Item"]),
+        );
+        // Col C: Currency (grouped, multi-tier headers)
+        table.columns.push(
+            ColumnSpec::new("curr")
+                .with_group("Forecast")
+                .with_headers(["FY25", "Currency"])
+                .with_format(Some(FormatPreset::Currency)),
+        );
+        // Col D: Number (grouped, multi-tier headers)
+        table.columns.push(
+            ColumnSpec::new("num")
+                .with_group("Forecast")
+                .with_headers(["FY25", "Number"])
+                .with_format(Some(FormatPreset::Number)),
+        );
+        // Col E: Percentage
+        table.columns.push(
+            ColumnSpec::new("pct")
+                .with_headers(["Margin"])
+                .with_format(Some(FormatPreset::Percentage)),
+        );
+        // Col F: Multiple
+        table.columns.push(
+            ColumnSpec::new("mult")
+                .with_headers(["Multiple"])
+                .with_format(Some(FormatPreset::Multiple)),
+        );
+        // Col G: BasisPoints
+        table.columns.push(
+            ColumnSpec::new("bps")
+                .with_headers(["Spread"])
+                .with_format(Some(FormatPreset::BasisPoints)),
+        );
+        // Col H: Integer
+        table.columns.push(
+            ColumnSpec::new("int_col")
+                .with_headers(["Year"])
+                .with_format(Some(FormatPreset::Integer)),
+        );
+        // Col I: Date (multi-tier headers)
+        table.columns.push(
+            ColumnSpec::new("dt")
+                .with_headers(["Close", "Date"])
+                .with_format(Some(FormatPreset::Date)),
+        );
+        // Col J: Text
+        table.columns.push(
+            ColumnSpec::new("txt")
+                .with_headers(["Status"])
+                .with_format(Some(FormatPreset::Text)),
+        );
+        // Col K: Unformatted measure (format: None)
+        table
+            .columns
+            .push(ColumnSpec::new("raw").with_headers(["Unformatted"]));
+
+        // Layout: Title=2, TitleGutter=3, Header Tier 0=4, Tier 1=5, Tier 2=6, Body r1=7, r2=8
+        table.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", "Revenue")
+                .with_cell("curr", 1000.0)
+                .with_cell("num", 500.0)
+                .with_cell("pct", 0.25)
+                .with_cell("mult", 8.5)
+                .with_cell("bps", 0.005)
+                .with_cell("int_col", 2025.0)
+                .with_cell("dt", 45657.0)
+                .with_cell("txt", "Audited")
+                .with_cell("raw", 1234.5),
+        );
+        table.rows.push(
+            RowSpec::new("r2")
+                .with_cell("item", "Memo Row")
+                .with_cell("curr", "N/A")
+                .with_cell("num", -50.0)
+                .with_cell("pct", 0.0)
+                .with_cell("mult", 0.0)
+                .with_cell("bps", 0.0)
+                .with_cell("int_col", -42.0)
+                .with_cell("dt", 45658.0)
+                .with_cell("txt", "Final")
+                .with_cell("raw", "Memo"),
+        );
+        table
+    };
+
+    let parse_attr = |tag: &str, attr: &str| -> Option<String> {
+        let needle = format!("{attr}=\"");
+        let start = tag.find(&needle)? + needle.len();
+        let end = tag[start..].find('"')? + start;
+        Some(tag[start..end].to_string())
+    };
+
+    let parse_num_fmts = |styles_xml: &str| -> BTreeMap<usize, String> {
+        let mut map = BTreeMap::new();
+        for part in styles_xml.split("<numFmt ").skip(1) {
+            let end = part.find("/>").unwrap_or(part.len());
+            let tag = &part[..end];
+            if let (Some(id_str), Some(code)) =
+                (parse_attr(tag, "numFmtId"), parse_attr(tag, "formatCode"))
+            {
+                let id = id_str.parse::<usize>().unwrap();
+                map.insert(id, code.replace("&quot;", "\""));
+            }
+        }
+        map
+    };
+
+    let parse_cell_xf_num_fmt_ids = |styles_xml: &str| -> Vec<usize> {
+        let cell_xfs_start = styles_xml.find("<cellXfs").expect("<cellXfs> not found");
+        let cell_xfs_end =
+            styles_xml[cell_xfs_start..].find("</cellXfs>").unwrap() + cell_xfs_start;
+        let cell_xfs_xml = &styles_xml[cell_xfs_start..cell_xfs_end];
+
+        cell_xfs_xml
+            .split("<xf ")
+            .skip(1)
+            .map(|xf| {
+                let end = xf.find('>').unwrap_or(xf.len());
+                parse_attr(&xf[..end], "numFmtId").map_or(0, |s| s.parse::<usize>().unwrap())
+            })
+            .collect()
+    };
+
+    let cell_num_fmt = |sheet_xml: &str,
+                        xf_num_fmt_ids: &[usize],
+                        num_fmts: &BTreeMap<usize, String>,
+                        cell_ref: &str|
+     -> (usize, Option<String>) {
+        let needle = format!("r=\"{cell_ref}\"");
+        let start = sheet_xml
+            .find(&needle)
+            .unwrap_or_else(|| panic!("Cell {cell_ref} not found in sheet1.xml"));
+        let tag_start = sheet_xml[..start].rfind("<c ").unwrap();
+        let tag_end = sheet_xml[start..].find('>').unwrap() + start + 1;
+        let tag = &sheet_xml[tag_start..tag_end];
+        let style_idx = parse_attr(tag, "s")
+            .unwrap_or_else(|| panic!("Cell {cell_ref} missing s attribute: {tag}"))
+            .parse::<usize>()
+            .unwrap();
+        let num_fmt_id = xf_num_fmt_ids[style_idx];
+        (num_fmt_id, num_fmts.get(&num_fmt_id).cloned())
+    };
+
+    // Part 1: Default corporate_navy theme
+    let manifest = ProjectManifest {
+        model_name: "AlignEmissionModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "Sheet1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("AlignTable")],
+        }],
+    };
+    let table = build_table();
+    let buffer = Compiler::emit_workbook(
+        &manifest,
+        std::slice::from_ref(&table),
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+    let buffer2 = Compiler::emit_workbook(
+        &manifest,
+        std::slice::from_ref(&table),
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        buffer, buffer2,
+        "OpenXML emission must be bit-for-bit deterministic"
+    );
+
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let num_fmts = parse_num_fmts(&styles_xml);
+    let xf_num_fmt_ids = parse_cell_xf_num_fmt_ids(&styles_xml);
+
+    // Super-header ("Forecast" at C4, D4) -> native numFmtId="0"
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "C4"),
+        (0, None)
+    );
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "D4"),
+        (0, None)
+    );
+
+    // Descriptor column headers (B5 "Category", B6 "Line Item") and unformatted descriptor cells (B7, B8) -> numFmtId="0"
+    for desc_ref in ["B5", "B6", "B7", "B8"] {
+        assert_eq!(
+            cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, desc_ref),
+            (0, None),
+            "Descriptor cell/header {desc_ref} must use native numFmtId=0"
+        );
+    }
+
+    // Measure column headers across upper and bottom tiers -> "@_)"
+    for hdr_ref in [
+        "C5", "C6", "D5", "D6", "E6", "F6", "G6", "H6", "I5", "I6", "J6", "K6",
+    ] {
+        let (fmt_id, code) = cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, hdr_ref);
+        assert_ne!(
+            fmt_id, 0,
+            "Measure header {hdr_ref} must reference custom numFmt"
+        );
+        assert_eq!(
+            code.as_deref(),
+            Some("@_)"),
+            "Measure header {hdr_ref} must use @_)"
+        );
+    }
+
+    // All 6 numeric presets carry 4-section masks ending in ";@_)" (including text value in currency col C8)
+    let expected_numeric_cells = [
+        ("C7", "$#,##0_);($#,##0);\"-\"_);@_)"),
+        ("C8", "$#,##0_);($#,##0);\"-\"_);@_)"),
+        ("D7", "#,##0_);(#,##0);\"-\"_);@_)"),
+        ("E7", "0.0%_);(0.0%);\"-\"_);@_)"),
+        ("F7", "0.0\"x\"_);(0.0\"x\");\"-\"_);@_)"),
+        ("G7", "#,##0\" bps\"_);(#,##0\" bps\");\"-\"_);@_)"),
+        ("H7", "0_);(-0);\"-\"_);@_)"),
+    ];
+    for (cell_ref, expected_code) in expected_numeric_cells {
+        let (_, code) = cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, cell_ref);
+        assert_eq!(
+            code.as_deref(),
+            Some(expected_code),
+            "Cell {cell_ref} must use 4-section numeric mask"
+        );
+        assert!(expected_code.ends_with(";@_)"));
+    }
+
+    // Date cell -> "yyyy-mm-dd_)"
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "I7")
+            .1
+            .as_deref(),
+        Some("yyyy-mm-dd_)")
+    );
+
+    // Text measure cell -> "@_)"
+    assert_eq!(
+        cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, "J7")
+            .1
+            .as_deref(),
+        Some("@_)")
+    );
+
+    // Unformatted measure cells (numeric K7 and text K8) -> "General_);(General);0_);@_)"
+    for raw_ref in ["K7", "K8"] {
+        assert_eq!(
+            cell_num_fmt(&sheet_xml, &xf_num_fmt_ids, &num_fmts, raw_ref)
+                .1
+                .as_deref(),
+            Some("General_);(General);0_);@_)"),
+            "Unformatted measure cell {raw_ref} must use default general alignment mask"
+        );
+    }
+
+    // Part 2: Custom theme opting out via general = "General" and text = "General"
+    let mut opt_out_theme = Theme::corporate_navy();
+    opt_out_theme.number_formats.general = "General".to_string();
+    opt_out_theme.number_formats.text = "General".to_string();
+    let opt_out_manifest = ProjectManifest {
+        model_name: "AlignOptOutModel".to_string(),
+        theme: ThemeSpec::Custom(Box::new(opt_out_theme)),
+        sheets: manifest.sheets,
+    };
+    let opt_out_buf =
+        Compiler::emit_workbook(&opt_out_manifest, &[table], &EmissionOptions::default()).unwrap();
+    let opt_out_styles = read_zip_entry(&opt_out_buf, "xl/styles.xml");
+    let opt_out_sheet = read_zip_entry(&opt_out_buf, "xl/worksheets/sheet1.xml");
+    let opt_out_num_fmts = parse_num_fmts(&opt_out_styles);
+    let opt_out_xf_ids = parse_cell_xf_num_fmt_ids(&opt_out_styles);
+
+    for opt_out_ref in ["C5", "C6", "I5", "I6", "J6", "J7", "J8", "K6", "K7", "K8"] {
+        assert_eq!(
+            cell_num_fmt(
+                &opt_out_sheet,
+                &opt_out_xf_ids,
+                &opt_out_num_fmts,
+                opt_out_ref
+            ),
+            (0, None),
+            "Opt-out theme cell/header {opt_out_ref} must use native numFmtId=0"
+        );
+    }
+}
+
+#[test]
+fn test_bold_style_emits_bold_without_borders_and_skips_gutter_blanks() {
+    let mut table = TableSpec::new("BoldEmit", "Bold Emission");
+    table.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("normal").with_header("Normal"),
+        ColumnSpec::gutter(),
+        ColumnSpec::new("bold_col")
+            .with_header("Bold Col")
+            .with_style(Some(SemanticStyle::Bold)),
+        ColumnSpec::new("sub_col")
+            .with_header("Subtotal Col")
+            .with_style(Some(SemanticStyle::Subtotal)),
+    ];
+    table.rows = vec![
+        RowSpec::new("r_data")
+            .with_cell("item", "Data")
+            .with_cell(
+                "normal",
+                DetailedCellInput {
+                    value: Some(ValueLiteral::Number(10.0)),
+                    style: Some(SemanticStyle::Bold),
+                    ..Default::default()
+                },
+            )
+            .with_cell("bold_col", 20.0)
+            .with_cell("sub_col", 30.0),
+        RowSpec::new("r_bold")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_cell("item", "Bold Row")
+            .with_cell("normal", 11.0)
+            .with_cell("bold_col", 21.0)
+            .with_cell("sub_col", 31.0),
+        RowSpec::new("r_bold_shade")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_shade(Some(Shade::Muted))
+            .with_cell("item", "Bold Shaded")
+            .with_cell("normal", 12.0)
+            .with_cell("bold_col", 22.0)
+            .with_cell("sub_col", 32.0),
+        RowSpec::new("r_sub")
+            .with_style(Some(SemanticStyle::Subtotal))
+            .with_cell("item", "Subtotal Row")
+            .with_cell("normal", 13.0)
+            .with_cell("bold_col", 23.0)
+            .with_cell("sub_col", 33.0),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "BoldEmitModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Main".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("BoldEmit")],
+        }],
+    };
+
+    let buffer = Compiler::emit_workbook(&manifest, &[table], &EmissionOptions::default()).unwrap();
+    let sheet_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let styles_xml = read_zip_entry(&buffer, "xl/styles.xml");
+
+    // Extract <fonts>, <borders>, and <cellXfs> entries from styles.xml
+    let extract_tags = |xml: &str, container: &str, item: &str| -> Vec<String> {
+        let open_container = format!("<{container}");
+        let close_container = format!("</{container}>");
+        let start = xml.find(&open_container).unwrap();
+        let body_start = xml[start..].find('>').unwrap() + start + 1;
+        let end = xml[body_start..].find(&close_container).unwrap() + body_start;
+        let section = &xml[body_start..end];
+        let open_item = format!("<{item}");
+        let close_item = format!("</{item}>");
+        let mut out = Vec::new();
+        let mut rest = section;
+        while let Some(pos) = rest.find(&open_item) {
+            let tail = &rest[pos..];
+            let end_self = tail.find("/>");
+            let end_open = tail.find('>');
+            let end_close = tail.find(&close_item);
+            let len = match (end_self, end_open, end_close) {
+                (Some(s), Some(o), _) if s + 1 == o => s + 2,
+                (_, _, Some(c)) => c + close_item.len(),
+                _ => break,
+            };
+            out.push(tail[..len].to_string());
+            rest = &tail[len..];
+        }
+        out
+    };
+
+    let fonts = extract_tags(&styles_xml, "fonts", "font");
+    let borders = extract_tags(&styles_xml, "borders", "border");
+    let xfs = extract_tags(&styles_xml, "cellXfs", "xf");
+
+    let parse_attr = |tag: &str, attr: &str| -> usize {
+        let needle = format!(r#"{attr}=""#);
+        let start = tag.find(&needle).unwrap() + needle.len();
+        let end = tag[start..].find('"').unwrap() + start;
+        tag[start..end].parse().unwrap()
+    };
+
+    let cell_style_info = |cell_ref: &str| -> (String, String) {
+        let needle = format!(r#"<c r="{cell_ref}""#);
+        let start = sheet_xml
+            .find(&needle)
+            .unwrap_or_else(|| panic!("Missing cell {cell_ref} in {sheet_xml}"));
+        let end = sheet_xml[start..].find('>').unwrap() + start + 1;
+        let c_tag = &sheet_xml[start..end];
+        let xf_idx = parse_attr(c_tag, "s");
+        let xf = &xfs[xf_idx];
+        let font_id = parse_attr(xf, "fontId");
+        let border_id = parse_attr(xf, "borderId");
+        (fonts[font_id].clone(), borders[border_id].clone())
+    };
+
+    // Physical layout:
+    // Title = row 2 (idx 1), title gutter = row 3 (idx 2), header = row 4 (idx 3)
+    // Body rows: r_data = row 5, r_bold = row 6, r_bold_shade = row 7, r_sub = row 8
+    // Columns: item = B, normal = C, gutter = D, bold_col = E, sub_col = F
+
+    // 0D bold cell (C5), bold column cell (E5), and bold row cells (B6, C6, E6) -> bold font, NO borders
+    for bold_no_border_ref in ["C5", "E5", "B6", "C6", "E6"] {
+        let (font, border) = cell_style_info(bold_no_border_ref);
+        assert!(
+            font.contains("<b/>"),
+            "Cell {bold_no_border_ref} must be bold: {font}"
+        );
+        assert!(
+            !border.contains("style="),
+            "Cell {bold_no_border_ref} must have zero borders: {border}"
+        );
+    }
+
+    // Contrast: subtotal column cell (F5) and subtotal row x bold col (E8) carry accounting borders
+    let (f5_font, f5_border) = cell_style_info("F5");
+    assert!(f5_font.contains("<b/>"));
+    assert!(
+        f5_border.contains(r#"<left style="dashed">"#),
+        "Subtotal col cell F5 must have dashed left border: {f5_border}"
+    );
+    assert!(!f5_border.contains("<top style="));
+
+    let (e8_font, e8_border) = cell_style_info("E8");
+    assert!(e8_font.contains("<b/>"));
+    assert!(
+        e8_border.contains(r#"<top style="thin">"#),
+        "Subtotal row x bold col E8 must have thin top border: {e8_border}"
+    );
+    assert!(
+        !e8_border.contains("<left style="),
+        "Subtotal row x bold col E8 must NOT have left border: {e8_border}"
+    );
+
+    // Gutter column D: bold-only row (D6) skips emitting blank cell; bold+shade row (D7) emits shaded blank without border/bold
+    assert!(
+        !sheet_xml.contains(r#"<c r="D6""#),
+        "Bold-only row must not emit blank gutter cell D6"
+    );
+    let (d7_font, d7_border) = cell_style_info("D7");
+    assert!(
+        !d7_font.contains("<b/>"),
+        "Gutter cell D7 should reuse unbolded shade format: {d7_font}"
+    );
+    assert!(
+        !d7_border.contains("style="),
+        "Gutter cell D7 must have no borders: {d7_border}"
+    );
+}
+
+#[test]
+fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
+    let cell_style_idx = |sheet_xml: &str, cell_ref: &str| -> Option<String> {
+        let needle = format!(r#"<c r="{cell_ref}""#);
+        let start = sheet_xml.find(&needle)?;
+        let end = sheet_xml[start..].find('>')? + start + 1;
+        let tag = &sheet_xml[start..end];
+        let s_needle = r#" s=""#;
+        let s_start = tag.find(s_needle)? + s_needle.len();
+        let s_end = tag[s_start..].find('"')? + s_start;
+        Some(tag[s_start..s_end].to_string())
+    };
+
+    // Part 1: Stacked tables (2, 5, 3 cols via stack and below) with subtitles and total rows
+    let make_stacked =
+        |id: &str, title: &str, subtitle: &str, cols: usize, placement: PlacementSpec| {
+            let mut t = TableSpec::new(id, title)
+                .with_subtitle(subtitle)
+                .with_placement(placement);
+            t.columns.push(ColumnSpec::descriptor("item", "Item"));
+            for c in 1..cols {
+                t.columns
+                    .push(ColumnSpec::new(format!("m{c}")).with_header(format!("M{c}")));
+            }
+            t.rows.push(RowSpec::new("r1"));
+            t.rows
+                .push(RowSpec::new("tot").with_style(Some(SemanticStyle::Total)));
+            populate_table_cells(&mut t);
+            t
+        };
+
+    let t1 = make_stacked("T1", "Narrow Top", "Sub 1", 2, PlacementSpec::stack());
+    let t2 = make_stacked("T2", "Wide Middle", "Sub 2", 5, PlacementSpec::stack());
+    let t3 = make_stacked(
+        "T3",
+        "Medium Bottom",
+        "Sub 3",
+        3,
+        PlacementSpec::below("T2"),
+    );
+
+    let stacked_manifest = ProjectManifest {
+        model_name: "AlignedBannersStacked".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Model".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![
+                TableId::from("T1"),
+                TableId::from("T2"),
+                TableId::from("T3"),
+            ],
+        }],
+    };
+    let stacked_tables = vec![t1, t2, t3];
+    let compiled = Compiler::compile(&stacked_manifest, &stacked_tables).unwrap();
+
+    let buf1 = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let buf2 = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    assert_eq!(
+        buf1, buf2,
+        "Aligned banner emission must be bit-for-bit deterministic"
+    );
+
+    let sheet_xml = read_zip_entry(&buf1, "xl/worksheets/sheet1.xml");
+    let shared_strings = read_zip_entry(&buf1, "xl/sharedStrings.xml");
+    assert!(shared_strings.contains("Narrow Top"));
+    assert!(shared_strings.contains("Wide Middle"));
+    assert!(shared_strings.contains("Medium Bottom"));
+
+    // For each table: title banner spans B..F (cols 1..=5) with identical title style index,
+    // while subtitle, header, and total rows remain strictly within start_col..=end_col.
+    let expected_tables = [("T1", 2_u32), ("T2", 5_u32), ("T3", 3_u32)];
+    let mut expected_title_style: Option<String> = None;
+    for (id, end_col) in expected_tables {
+        let p = compiled.layout_map.get_table(&TableId::from(id)).unwrap();
+        assert_eq!(p.end_col, end_col);
+        assert_eq!(p.title_end_col, Some(5));
+
+        let title_excel_row = p.title_row.unwrap() + 1;
+        let b_ref = format!("B{title_excel_row}");
+        let b_style = cell_style_idx(&sheet_xml, &b_ref)
+            .unwrap_or_else(|| panic!("Missing title cell {b_ref}"));
+        if let Some(ref prev) = expected_title_style {
+            assert_eq!(
+                &b_style, prev,
+                "All title banners must reuse identical title style"
+            );
+        } else {
+            expected_title_style = Some(b_style.clone());
+        }
+        // Only B carries shared-string type t="s"; C..F are styled blanks with same style index
+        let b_tag_start = sheet_xml.find(&format!(r#"<c r="{b_ref}""#)).unwrap();
+        let b_tag_end = sheet_xml[b_tag_start..].find('>').unwrap() + b_tag_start + 1;
+        assert!(sheet_xml[b_tag_start..b_tag_end].contains(r#"t="s""#));
+
+        for col_letter in ["C", "D", "E", "F"] {
+            let cell_ref = format!("{col_letter}{title_excel_row}");
+            assert_eq!(
+                cell_style_idx(&sheet_xml, &cell_ref).as_deref(),
+                Some(b_style.as_str()),
+                "{id} title banner cell {cell_ref} must share title style"
+            );
+            let tag_start = sheet_xml.find(&format!(r#"<c r="{cell_ref}""#)).unwrap();
+            let tag_end = sheet_xml[tag_start..].find('>').unwrap() + tag_start + 1;
+            assert!(
+                !sheet_xml[tag_start..tag_end].contains(r#"t="s""#),
+                "{id} continuation title cell {cell_ref} must be styled blank"
+            );
+        }
+
+        // Subtitle, header, and total rows stay strictly within B..=end_col
+        let sub_excel_row = p.subtitle_row_range.unwrap().0 + 1;
+        let hdr_excel_row = p.header_row_range.unwrap().0 + 1;
+        let tot_excel_row = p.body_row_range.1 + 1;
+
+        assert!(cell_style_idx(&sheet_xml, &format!("B{sub_excel_row}")).is_some());
+        for col in (end_col + 1)..=5 {
+            let col_letter = f8_core::compiler::layout::col_to_excel_col(col);
+            assert!(
+                !sheet_xml.contains(&format!(r#"<c r="{col_letter}{sub_excel_row}""#)),
+                "{id} subtitle must not extend to {col_letter}{sub_excel_row}"
+            );
+            assert!(
+                !sheet_xml.contains(&format!(r#"<c r="{col_letter}{hdr_excel_row}""#)),
+                "{id} header must not extend to {col_letter}{hdr_excel_row}"
+            );
+            assert!(
+                !sheet_xml.contains(&format!(r#"<c r="{col_letter}{tot_excel_row}""#)),
+                "{id} total border must not extend to {col_letter}{tot_excel_row}"
+            );
+        }
+    }
+
+    // Part 2: Side-by-side non-collision (Scenario 3: tall L B..C beside R1 E..G, R2 E..F, R3 E..J)
+    let make_plain = |id: &str, title: &str, cols: usize, rows: usize, placement: PlacementSpec| {
+        let mut t = TableSpec::new(id, title).with_placement(placement);
+        for c in 1..=cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        for r in 1..=rows {
+            t.rows.push(RowSpec::new(format!("r{r}")));
+        }
+        populate_table_cells(&mut t);
+        t
+    };
+
+    let side_tables = vec![
+        make_plain("L", "Left Tall", 2, 27, PlacementSpec::stack()),
+        make_plain("R1", "Right 1", 3, 2, PlacementSpec::right_of("L")),
+        make_plain("R2", "Right 2", 2, 2, PlacementSpec::below("R1")),
+        make_plain("R3", "Right 3", 6, 2, PlacementSpec::below("R2")),
+    ];
+    let side_manifest = ProjectManifest {
+        model_name: "AlignedBannersSideBySide".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dashboard".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![
+                TableId::from("L"),
+                TableId::from("R1"),
+                TableId::from("R2"),
+                TableId::from("R3"),
+            ],
+        }],
+    };
+    let side_compiled = Compiler::compile(&side_manifest, &side_tables).unwrap();
+    let side_buf = side_compiled
+        .emit_workbook(&EmissionOptions::default())
+        .unwrap();
+    let side_xml = read_zip_entry(&side_buf, "xl/worksheets/sheet1.xml");
+
+    // Row 2 (physical row 1): L occupies B2..C2, D2 is blank gutter, R1 occupies E2..J2
+    let l_style = cell_style_idx(&side_xml, "B2").expect("B2 title cell");
+    assert_eq!(
+        cell_style_idx(&side_xml, "C2").as_deref(),
+        Some(l_style.as_str())
+    );
+    assert!(
+        !side_xml.contains(r#"<c r="D2""#),
+        "Gutter column D2 between L and R1 must remain blank"
+    );
+    for col_letter in ["E", "F", "G", "H", "I", "J"] {
+        assert_eq!(
+            cell_style_idx(&side_xml, &format!("{col_letter}2")).as_deref(),
+            Some(l_style.as_str()),
+            "R1 title banner cell {col_letter}2 must be emitted with title style"
+        );
+    }
+
+    // R2 and R3 title rows also extend across E..J while leaving gutter col D blank
+    for right_id in ["R2", "R3"] {
+        let pr = side_compiled
+            .layout_map
+            .get_table(&TableId::from(right_id))
+            .unwrap();
+        let row_num = pr.title_row.unwrap() + 1;
+        assert!(
+            !side_xml.contains(&format!(r#"<c r="D{row_num}""#)),
+            "Gutter D{row_num} beside {right_id} title must remain blank"
+        );
+        for col_letter in ["E", "F", "G", "H", "I", "J"] {
+            assert_eq!(
+                cell_style_idx(&side_xml, &format!("{col_letter}{row_num}")).as_deref(),
+                Some(l_style.as_str()),
+                "{right_id} title cell {col_letter}{row_num} must share title style"
+            );
+        }
+    }
+
+    // Part 3: Explicit gap = 0 side-by-side non-collision (T1 B..C, T2 D..E)
+    let gap0_tables = vec![
+        make_plain("T1", "Left Tight", 2, 1, PlacementSpec::stack()),
+        make_plain(
+            "T2",
+            "Right Tight",
+            2,
+            1,
+            PlacementSpec::right_of_with_gap("T1", 0),
+        ),
+    ];
+    let gap0_manifest = ProjectManifest {
+        model_name: "GapZeroEmission".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Tight".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: true,
+            layout: Default::default(),
+            tables: vec![TableId::from("T1"), TableId::from("T2")],
+        }],
+    };
+    let gap0_buf =
+        Compiler::emit_workbook(&gap0_manifest, &gap0_tables, &EmissionOptions::default()).unwrap();
+    let gap0_xml = read_zip_entry(&gap0_buf, "xl/worksheets/sheet1.xml");
+    let gap0_strings = read_zip_entry(&gap0_buf, "xl/sharedStrings.xml");
+    assert!(gap0_strings.contains("Left Tight"));
+    assert!(gap0_strings.contains("Right Tight"));
+    // Both B2 and D2 carry string values t="s" (no overwrite of D2 by T1's banner)
+    for title_start_ref in ["B2", "D2"] {
+        let pos = gap0_xml
+            .find(&format!(r#"<c r="{title_start_ref}""#))
+            .unwrap();
+        let end = gap0_xml[pos..].find('>').unwrap() + pos + 1;
+        assert!(
+            gap0_xml[pos..end].contains(r#"t="s""#),
+            "{title_start_ref} must remain a distinct title string cell"
+        );
+    }
+    assert!(cell_style_idx(&gap0_xml, "C2").is_some());
+    assert!(cell_style_idx(&gap0_xml, "E2").is_some());
+    assert!(!gap0_xml.contains(r#"<c r="F2""#));
+}
+
+#[test]
+fn test_sheet_gridlines_default_false_and_opt_in_true() {
+    let manifest_json = r#"{
+        "model_name": "GridlineDefaults",
+        "sheets": [
+            { "name": "DefaultHidden", "tables": ["T1"] },
+            { "name": "ExplicitVisible", "show_gridlines": true, "tables": ["T2"] }
+        ]
+    }"#;
+    let manifest: ProjectManifest = serde_json::from_str(manifest_json).unwrap();
+    assert!(!manifest.sheets[0].show_gridlines);
+    assert!(manifest.sheets[1].show_gridlines);
+
+    let make_table = |id: &str| {
+        let mut t = TableSpec::new(id, id);
+        t.columns.push(ColumnSpec::new("c1").with_header("C1"));
+        t.rows.push(RowSpec::new("r1").with_cell("c1", 1.0));
+        t
+    };
+
+    let buffer = Compiler::emit_workbook(
+        &manifest,
+        &[make_table("T1"), make_table("T2")],
+        &EmissionOptions::default(),
+    )
+    .unwrap();
+
+    let hidden_xml = read_zip_entry(&buffer, "xl/worksheets/sheet1.xml");
+    let visible_xml = read_zip_entry(&buffer, "xl/worksheets/sheet2.xml");
+    assert!(hidden_xml.contains(r#"showGridLines="0""#));
+    assert!(!visible_xml.contains(r#"showGridLines="0""#));
+}
+
+#[test]
+fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutters_and_determinism()
+{
+    use f8_core::SheetLayoutSpec;
+    use f8_core::model::theme::{BorderStyle, ThemeSpec};
+
+    let extract_tags = |xml: &str, container: &str, item: &str| -> Vec<String> {
+        let open_container = format!("<{container}");
+        let close_container = format!("</{container}>");
+        let start = xml.find(&open_container).unwrap();
+        let body_start = xml[start..].find('>').unwrap() + start + 1;
+        let end = xml[body_start..].find(&close_container).unwrap() + body_start;
+        let section = &xml[body_start..end];
+        let open_item = format!("<{item}");
+        let close_item = format!("</{item}>");
+        let mut out = Vec::new();
+        let mut rest = section;
+        while let Some(pos) = rest.find(&open_item) {
+            let tail = &rest[pos..];
+            let end_self = tail.find("/>");
+            let end_open = tail.find('>');
+            let end_close = tail.find(&close_item);
+            let len = match (end_self, end_open, end_close) {
+                (Some(s), Some(o), _) if s + 1 == o => s + 2,
+                (_, _, Some(c)) => c + close_item.len(),
+                _ => break,
+            };
+            out.push(tail[..len].to_string());
+            rest = &tail[len..];
+        }
+        out
+    };
+
+    let parse_attr = |tag: &str, attr: &str| -> usize {
+        let needle = format!(r#"{attr}=""#);
+        let start = tag.find(&needle).unwrap() + needle.len();
+        let end = tag[start..].find('"').unwrap() + start;
+        tag[start..end].parse().unwrap()
+    };
+
+    let cell_xf_info = |sheet_xml: &str,
+                        xfs: &[String],
+                        borders: &[String],
+                        fills: &[String],
+                        cell_ref: &str|
+     -> (String, String, String) {
+        let needle = format!(r#"<c r="{cell_ref}""#);
+        let start = sheet_xml
+            .find(&needle)
+            .unwrap_or_else(|| panic!("Missing cell {cell_ref} in worksheet XML"));
+        let end = sheet_xml[start..].find('>').unwrap() + start + 1;
+        let c_tag = &sheet_xml[start..end];
+        let xf_idx = parse_attr(c_tag, "s");
+        let xf = &xfs[xf_idx];
+        let border_id = parse_attr(xf, "borderId");
+        let fill_id = parse_attr(xf, "fillId");
+        (
+            xf.clone(),
+            borders[border_id].clone(),
+            fills[fill_id].clone(),
+        )
+    };
+
+    // Part A: Theme with descriptor_border_right: Thin + total_fill + vertical Subtotal & Total descriptors + SuperHeader + Gutter
+    let mut bordered_theme = Theme::corporate_navy();
+    bordered_theme.borders.descriptor_border_right = BorderStyle::Thin;
+    bordered_theme.palette.total_fill = "#D9E1F2".to_string();
+
+    let mut t1 = TableSpec::new("BorderedGrid", "Bordered Grid");
+    // Descriptor col 0 (span 3: B..D, vertical Subtotal) with SuperHeader "Descriptors"
+    t1.columns.push(
+        ColumnSpec::descriptor("item", "Line Item")
+            .with_group("Descriptors")
+            .with_style(Some(SemanticStyle::Subtotal)),
+    );
+    // Intra-table gutter col (E = col 4 -> gutter_col_width 3.0)
+    t1.columns.push(ColumnSpec::gutter());
+    // Descriptor col 2 (span 3: F..H, vertical Total)
+    t1.columns
+        .push(ColumnSpec::descriptor("tot_desc", "Summary").with_style(Some(SemanticStyle::Total)));
+    // Measure col 3 (I = col 8)
+    t1.columns.push(
+        ColumnSpec::new("val")
+            .with_group("Metrics")
+            .with_header("2024E"),
+    );
+
+    let label_28 = "Operating Expenses (Excl DA)";
+    t1.rows.push(
+        RowSpec::new("r_plain")
+            .with_cell("item", label_28)
+            .with_cell("tot_desc", label_28)
+            .with_cell("val", 10.0),
+    );
+    t1.rows.push(
+        RowSpec::new("r_shaded")
+            .with_shade(Some(Shade::Muted))
+            .with_cell("item", "Shaded Row")
+            .with_cell("tot_desc", "Shaded Desc")
+            .with_cell("val", 20.0),
+    );
+    t1.rows.push(
+        RowSpec::new("r_hl")
+            .with_cell(
+                "item",
+                CellInput::Detailed(DetailedCellInput {
+                    value: Some(ValueLiteral::String("Highlighted Item".to_string())),
+                    highlight: Some(true),
+                    ..Default::default()
+                }),
+            )
+            .with_cell("tot_desc", "Normal")
+            .with_cell("val", 30.0),
+    );
+    t1.rows.push(
+        RowSpec::new("r_total")
+            .with_style(Some(SemanticStyle::Total))
+            .with_cell("item", "Total Row")
+            .with_cell("tot_desc", "Grand Total")
+            .with_cell("val", 60.0),
+    );
+
+    let manifest_a = ProjectManifest {
+        model_name: "GridEmissionA".to_string(),
+        theme: ThemeSpec::Custom(Box::new(bordered_theme)),
+        sheets: vec![SheetSpec {
+            name: "GridA".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("BorderedGrid")],
+        }],
+    };
+
+    let buf1 =
+        Compiler::emit_workbook(&manifest_a, &[t1.clone()], &EmissionOptions::default()).unwrap();
+    let buf2 = Compiler::emit_workbook(&manifest_a, &[t1], &EmissionOptions::default()).unwrap();
+    assert_eq!(
+        buf1, buf2,
+        "Grid .xlsx emission must be bit-for-bit deterministic"
+    );
+
+    let sheet_xml = read_zip_entry(&buf1, "xl/worksheets/sheet1.xml");
+    let styles_xml = read_zip_entry(&buf1, "xl/styles.xml");
+
+    assert!(!sheet_xml.contains("<mergeCells"));
+    assert!(!styles_xml.contains(r#"wrapText="1""#));
+
+    let xfs = extract_tags(&styles_xml, "cellXfs", "xf");
+    let borders = extract_tags(&styles_xml, "borders", "border");
+    let fills = extract_tags(&styles_xml, "fills", "fill");
+
+    // Layout rows: Title=2, title_gutter=3, SuperHeader=4, ColHeader=5,
+    // r_plain=6, r_shaded=7, r_hl=8, r_total=9
+    // Columns: item=B..D (1..=3), gutter=E (4), tot_desc=F..H (5..=7), val=I (8)
+
+    // SuperHeader "Descriptors" spans B4..D4 with centerContinuous
+    for ref_addr in ["B4", "C4", "D4"] {
+        let (xf, _, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, ref_addr);
+        assert!(
+            xf.contains(r#"horizontal="centerContinuous""#),
+            "SuperHeader {ref_addr} must carry CenterAcross: {xf}"
+        );
+    }
+
+    // Bottom column header spans B5..D5 and F5..H5 with header bottom border
+    for ref_addr in ["B5", "C5", "D5", "F5", "G5", "H5"] {
+        let (_, border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, ref_addr);
+        assert!(
+            border.contains(r#"<bottom style="thin""#),
+            "Header {ref_addr} must carry bottom border: {border}"
+        );
+    }
+
+    // r_plain (row 6), item (B6..D6, vertical Subtotal + descriptor_border_right=Thin):
+    // B6 (Start): left dashed, no right; C6 (Middle): no-op skipped (no fill/no border); D6 (End): no left, right thin
+    let (_, b6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "B6");
+    assert!(b6_border.contains(r#"<left style="dashed""#));
+    assert!(!b6_border.contains(r#"<right style="#));
+    assert!(!sheet_xml.contains(r#"<c r="C6""#));
+    let (_, d6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "D6");
+    assert!(!d6_border.contains(r#"<left style="#));
+    assert!(d6_border.contains(r#"<right style="thin""#));
+
+    // r_plain (row 6), tot_desc (F6..H6, vertical Total with total_fill + descriptor_border_right=Thin, default col_total_border_right=None):
+    // F6 (Start): left thin, no right; G6 (Middle): no left, no right, has total fill; H6 (End): no left, right thin (from descriptor_border_right)
+    let (_, f6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "F6");
+    assert!(f6_border.contains(r#"<left style="thin""#));
+    assert!(!f6_border.contains(r#"<right style="#));
+    let (_, g6_border, g6_fill) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "G6");
+    assert!(!g6_border.contains(r#"<left style="#));
+    assert!(!g6_border.contains(r#"<right style="#));
+    assert!(g6_fill.contains("patternFill"));
+    let (_, h6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "H6");
+    assert!(!h6_border.contains(r#"<left style="#));
+    assert!(h6_border.contains(r#"<right style="thin""#));
+
+    // r_shaded (row 7): C7 (Middle) carries muted fill with suppressed vertical borders
+    let (_, c7_border, c7_fill) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "C7");
+    assert!(!c7_border.contains(r#"<left style="#));
+    assert!(!c7_border.contains(r#"<right style="#));
+    assert!(
+        c7_fill.contains("F2F2F2") || c7_fill.contains("F7F7F7") || c7_fill.contains("fgColor")
+    );
+
+    // r_hl (row 8): highlighted descriptor anchor B8 + runway C8..D8 carry highlight fill
+    let (_, _, b8_fill) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "B8");
+    let (_, _, c8_fill) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "C8");
+    let (_, _, d8_fill) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "D8");
+    assert_eq!(b8_fill, c8_fill);
+    assert_eq!(b8_fill, d8_fill);
+
+    // r_total (row 9): B9..D9 carry horizontal Total top thin + bottom double borders across entire runway
+    for ref_addr in ["B9", "C9", "D9"] {
+        let (_, border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, ref_addr);
+        assert!(border.contains(r#"<top style="thin""#));
+        assert!(border.contains(r#"<bottom style="double""#));
+    }
+
+    // Gutter-only column E (1-indexed col 5) retains gutter_col_width (3.0 -> ~3.71 in XML), while data cols are wider
+    assert!(
+        sheet_xml.contains(r#"min="5" max="5" width="3."#),
+        "Gutter column E (col 5) must retain gutter_col_width in XML: {sheet_xml}"
+    );
+
+    // Part B: Default corporate_navy theme (descriptor_border_right: None, col_total_border_right: None, data_fill: none)
+    // Bold-only unshaded row skips no-op blank runway <c> elements; column subtotal uses dashed left border,
+    // and column total uses thin left border with no right border.
+    let mut t2 = TableSpec::new("BoldSkip", "Bold Skip");
+    t2.columns.push(ColumnSpec::descriptor("item", "Item"));
+    t2.columns.push(ColumnSpec::new("val").with_header("Val"));
+    t2.columns.push(
+        ColumnSpec::new("sub_col")
+            .with_header("Sub")
+            .with_style(Some(SemanticStyle::Subtotal)),
+    );
+    t2.columns.push(
+        ColumnSpec::new("tot_col")
+            .with_header("Total")
+            .with_style(Some(SemanticStyle::Total)),
+    );
+    t2.rows.push(
+        RowSpec::new("r_bold")
+            .with_style(Some(SemanticStyle::Bold))
+            .with_cell("item", label_28)
+            .with_cell("val", 42.0)
+            .with_cell("sub_col", 42.0)
+            .with_cell("tot_col", 42.0),
+    );
+    let manifest_b = ProjectManifest {
+        model_name: "BoldSkipModel".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![SheetSpec {
+            name: "GridB".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            tables: vec![TableId::from("BoldSkip")],
+        }],
+    };
+    let buf_b = Compiler::emit_workbook(&manifest_b, &[t2], &EmissionOptions::default()).unwrap();
+    let xml_b = read_zip_entry(&buf_b, "xl/worksheets/sheet1.xml");
+    let styles_b = read_zip_entry(&buf_b, "xl/styles.xml");
+    let xfs_b = extract_tags(&styles_b, "cellXfs", "xf");
+    let borders_b = extract_tags(&styles_b, "borders", "border");
+    let fills_b = extract_tags(&styles_b, "fills", "fill");
+    // Title=2, title_gutter=3, header=4, r_bold=5; item=B..D (1..=3), val=E (4), sub_col=F (5), tot_col=G (6)
+    assert!(xml_b.contains(r#"<c r="B5""#));
+    assert!(
+        !xml_b.contains(r#"<c r="C5""#),
+        "Bold-only unshaded runway C5 must be skipped"
+    );
+    assert!(
+        !xml_b.contains(r#"<c r="D5""#),
+        "Bold-only unshaded runway D5 must be skipped"
+    );
+    assert!(xml_b.contains(r#"<c r="E5""#));
+    let (_, f5_border, _) = cell_xf_info(&xml_b, &xfs_b, &borders_b, &fills_b, "F5");
+    assert!(f5_border.contains(r#"<left style="dashed""#));
+    assert!(!f5_border.contains(r#"<right style="#));
+    let (_, g5_border, _) = cell_xf_info(&xml_b, &xfs_b, &borders_b, &fills_b, "G5");
+    assert!(g5_border.contains(r#"<left style="thin""#));
+    assert!(!g5_border.contains(r#"<right style="#));
 }

@@ -90,6 +90,10 @@ function escapeMarkdownCell(text: string): string {
   return text.replace(/\r\n|\r|\n/g, " ").replace(/\|/g, "\\|")
 }
 
+function formatCompactMarkdownRow(cells: readonly string[]): string {
+  return `|${cells.map((cell) => (cell ? ` ${cell} ` : " ")).join("|")}|`
+}
+
 interface RenderColumn {
   readonly id: string | null
   readonly header: string
@@ -374,6 +378,7 @@ export class TableAuditor {
     const cols = opts?.cols
     const includeSectionHeaders = opts?.includeSectionHeaders
     const showIds = opts?.showIds ?? false
+    const compact = opts?.compact ?? false
 
     const nonGutterCols: ColumnInspection[] = (this.#raw.columns ?? []).filter(
       (c) => !c.isGutter
@@ -494,10 +499,13 @@ export class TableAuditor {
     })
 
     const rowIndentMap = new Map<string, number>()
-    const rowSummaryMap = new Map<string, boolean>()
+    const rowBoldMap = new Map<string, boolean>()
     for (const [rid, r] of rowSpecById.entries()) {
       rowIndentMap.set(rid, r.indent ?? 0)
-      rowSummaryMap.set(rid, r.style === "subtotal" || r.style === "total")
+      rowBoldMap.set(
+        rid,
+        r.style === "bold" || r.style === "subtotal" || r.style === "total"
+      )
     }
 
     const getCellText = (rowId: string, col: RenderColumn): string => {
@@ -505,7 +513,7 @@ export class TableAuditor {
         return ""
       }
       const cellInfo = this.#getCell(rowId, col.id)
-      const isSummary = rowSummaryMap.get(rowId) ?? false
+      const isBold = rowBoldMap.get(rowId) ?? false
 
       let valStr = cellInfo !== undefined ? (cellInfo.formattedValue ?? "") : ""
       if (!valStr && cellInfo !== undefined) {
@@ -525,7 +533,7 @@ export class TableAuditor {
         }
         const escapedLabel = escapeMarkdownCell(label)
         const pad = "  ".repeat(indent)
-        if (isSummary && escapedLabel) {
+        if (isBold && escapedLabel) {
           return `${pad}**${escapedLabel}**`
         }
         return `${pad}${escapedLabel}`
@@ -556,10 +564,41 @@ export class TableAuditor {
       }
 
       const escapedText = escapeMarkdownCell(rawText)
-      if (isSummary && escapedText) {
+      if (isBold && escapedText) {
         return `**${escapedText}**`
       }
       return escapedText
+    }
+
+    const outLines: string[] = []
+
+    if (compact) {
+      outLines.push(
+        formatCompactMarkdownRow(renderCols.map((col) => col.header))
+      )
+      outLines.push(
+        formatCompactMarkdownRow(
+          renderCols.map((col) => (col.isDescriptor ? ":---" : "---:"))
+        )
+      )
+      for (const r of selectedRows) {
+        if (r.isSectionHeader) {
+          const title = escapeMarkdownCell(r.sectionTitle ?? "")
+          const emptyCols = " |".repeat(renderCols.length - 1)
+          outLines.push(`| **${title}** |${emptyCols}`)
+          continue
+        }
+        const rowId = r.id
+        if (!rowId) {
+          continue
+        }
+        outLines.push(
+          formatCompactMarkdownRow(
+            renderCols.map((col) => getCellText(rowId, col))
+          )
+        )
+      }
+      return `${outLines.join("\n")}\n`
     }
 
     const colWidths: number[] = renderCols.map((col) =>
@@ -586,8 +625,6 @@ export class TableAuditor {
         }
       }
     }
-
-    const outLines: string[] = []
 
     const headerCells: string[] = []
     for (let colIdx = 0; colIdx < renderCols.length; colIdx++) {

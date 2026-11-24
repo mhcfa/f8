@@ -205,15 +205,19 @@ impl Default for BordersConfig {
             subtotal_border_top: BorderStyle::Thin,
             total_border_top: BorderStyle::Thin,
             total_border_bottom: BorderStyle::Double,
-            col_subtotal_border_left: BorderStyle::Thin,
+            col_subtotal_border_left: BorderStyle::Dashed,
             col_total_border_left: BorderStyle::Thin,
-            col_total_border_right: BorderStyle::Double,
+            col_total_border_right: BorderStyle::None,
         }
     }
 }
 
 fn default_integer_format() -> String {
-    "0_);(-0);\"-\"_)".to_string()
+    "0_);(-0);\"-\"_);@_)".to_string()
+}
+
+fn default_general_format() -> String {
+    "General_);(General);0_);@_)".to_string()
 }
 
 /// Number format templates and default precisions across all semantic presets.
@@ -229,20 +233,23 @@ pub struct NumberFormatsConfig {
     pub text: String,
     #[serde(default = "default_integer_format")]
     pub integer: String,
+    #[serde(default = "default_general_format")]
+    pub general: String,
     pub defaults: FormatDefaults,
 }
 
 impl Default for NumberFormatsConfig {
     fn default() -> Self {
         Self {
-            currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_)".to_string(),
-            number: "#,##0{dec}_);(#,##0{dec});\"-\"_)".to_string(),
-            percentage: "0{dec}%_);(0{dec}%);\"-\"_)".to_string(),
-            multiple: "0{dec}\"x\"_);(0{dec}\"x\");\"-\"_)".to_string(),
-            basis_points: "#,##0{dec}\" bps\"_);(#,##0{dec}\" bps\");\"-\"_)".to_string(),
-            date: "yyyy-mm-dd".to_string(),
+            currency: "{sym}#,##0{dec}_);({sym}#,##0{dec});\"-\"_);@_)".to_string(),
+            number: "#,##0{dec}_);(#,##0{dec});\"-\"_);@_)".to_string(),
+            percentage: "0{dec}%_);(0{dec}%);\"-\"_);@_)".to_string(),
+            multiple: "0{dec}\"x\"_);(0{dec}\"x\");\"-\"_);@_)".to_string(),
+            basis_points: "#,##0{dec}\" bps\"_);(#,##0{dec}\" bps\");\"-\"_);@_)".to_string(),
+            date: "yyyy-mm-dd_)".to_string(),
             text: "@_)".to_string(),
             integer: default_integer_format(),
+            general: default_general_format(),
             defaults: FormatDefaults::default(),
         }
     }
@@ -522,8 +529,8 @@ impl Theme {
             palette: PaletteConfig {
                 table_title_fill: "#00356B".to_string(),
                 table_title_text: "#FFFFFF".to_string(),
-                table_subtitle_text: "#45556C".to_string(),
-                super_header_fill: "#E2E8F0".to_string(),
+                table_subtitle_text: "#525252".to_string(),
+                super_header_fill: "#E5E5E5".to_string(),
                 super_header_text: "#000000".to_string(),
                 col_header_fill: "none".to_string(),
                 col_header_text: "#000000".to_string(),
@@ -537,11 +544,11 @@ impl Theme {
                 total_text: "#000000".to_string(),
                 input_text: "#0000FF".to_string(),
                 formula_text: "#000000".to_string(),
-                shade_muted_fill: "#F8FAFC".to_string(),
-                shade_alt_fill: "#F1F5F9".to_string(),
+                shade_muted_fill: "#FAFAFA".to_string(),
+                shade_alt_fill: "#F5F5F5".to_string(),
                 highlight_fill: "#FEF3C7".to_string(),
                 highlight_text: "#000000".to_string(),
-                gridline_color: "#E2E8F0".to_string(),
+                gridline_color: "#E5E5E5".to_string(),
                 border_color: "#000000".to_string(),
                 total_border_color: "#00356B".to_string(),
             },

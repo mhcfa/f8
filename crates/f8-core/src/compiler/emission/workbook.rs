@@ -8,7 +8,7 @@ use rust_xlsxwriter::{DocProperties, ExcelDateTime, Format, Formula, Workbook, W
 use serde::{Deserialize, Serialize};
 
 use super::error::EmissionError;
-use super::format::{CellFormatKey, FormatCache, parse_hex_color};
+use super::format::{CellFormatKey, FormatCache, SpanEdge, parse_hex_color};
 use crate::compiler::eval::EvaluatedModel;
 use crate::compiler::ir::cell::{CellGrid, CellPayload};
 use crate::compiler::ir::id::CellId;
@@ -184,8 +184,15 @@ impl WorkbookEmitter {
                             table: table.id.clone(),
                         })?;
 
-                // Table Title Banner: Fill entire table width from start_col to end_col
-                if let Some(title_row) = placement.title_row
+                if placement.col_spans.len() != table.columns.len() {
+                    return Err(EmissionError::MissingTable {
+                        table: table.id.clone(),
+                    });
+                }
+
+                // Table Title Banner: Fill aligned banner width from start_col to title_end_col
+                if let (Some(title_row), Some(title_end_col)) =
+                    (placement.title_row, placement.title_end_col)
                     && !table.title.trim().is_empty()
                 {
                     worksheet.write_string_with_format(
@@ -194,7 +201,7 @@ impl WorkbookEmitter {
                         &table.title,
                         &format_cache.title_format(),
                     )?;
-                    for col in (placement.start_col + 1)..=placement.end_col {
+                    for col in (placement.start_col + 1)..=title_end_col {
                         worksheet.write_blank(
                             title_row,
                             excel_col_u16(col)?,
@@ -247,20 +254,28 @@ impl WorkbookEmitter {
                                         }
                                     }
 
-                                    let first_phys_col =
-                                        excel_col_u16(placement.start_col + start_c as u32)?;
+                                    let &(group_start_col, _) = placement
+                                        .col_spans
+                                        .get(start_c)
+                                        .ok_or_else(|| EmissionError::MissingTable {
+                                            table: table.id.clone(),
+                                        })?;
+                                    let &(_, group_end_col) = placement
+                                        .col_spans
+                                        .get(end_c)
+                                        .ok_or_else(|| EmissionError::MissingTable {
+                                            table: table.id.clone(),
+                                        })?;
                                     worksheet.write_string_with_format(
                                         tier_row,
-                                        first_phys_col,
+                                        excel_col_u16(group_start_col)?,
                                         label,
                                         &format_cache.super_header_format(),
                                     )?;
-                                    for c in (start_c + 1)..=end_c {
-                                        let phys_col =
-                                            excel_col_u16(placement.start_col + c as u32)?;
+                                    for phys_col in (group_start_col + 1)..=group_end_col {
                                         worksheet.write_blank(
                                             tier_row,
-                                            phys_col,
+                                            excel_col_u16(phys_col)?,
                                             &format_cache.super_header_format(),
                                         )?;
                                     }
@@ -274,7 +289,13 @@ impl WorkbookEmitter {
 
                         // Step B (Per-column stacked headers across all t in 0..total_tiers)
                         for (c_idx, col_spec) in table.columns.iter().enumerate() {
-                            let col_idx = excel_col_u16(placement.start_col + c_idx as u32)?;
+                            let &(phys_start, phys_end) = placement
+                                .col_spans
+                                .get(c_idx)
+                                .ok_or_else(|| EmissionError::MissingTable {
+                                    table: table.id.clone(),
+                                })?;
+                            let col_idx = excel_col_u16(phys_start)?;
                             match col_spec {
                                 ColumnSpec::Gutter => {
                                     // Gutter column: continue header bottom border and fill across gutter
@@ -284,7 +305,13 @@ impl WorkbookEmitter {
                                         } else {
                                             format_cache.col_header_upper_format(false)
                                         };
-                                        worksheet.write_blank(tier_row, col_idx, &fmt)?;
+                                        for phys_col in phys_start..=phys_end {
+                                            worksheet.write_blank(
+                                                tier_row,
+                                                excel_col_u16(phys_col)?,
+                                                &fmt,
+                                            )?;
+                                        }
                                     }
                                 }
                                 ColumnSpec::Data(d) => {
@@ -308,6 +335,16 @@ impl WorkbookEmitter {
                                         )?;
                                     } else if is_bottom_tier || format_cache.has_col_header_fill() {
                                         worksheet.write_blank(tier_row, col_idx, &fmt)?;
+                                    }
+
+                                    if is_bottom_tier || format_cache.has_col_header_fill() {
+                                        for phys_col in (phys_start + 1)..=phys_end {
+                                            worksheet.write_blank(
+                                                tier_row,
+                                                excel_col_u16(phys_col)?,
+                                                &fmt,
+                                            )?;
+                                        }
                                     }
                                 }
                             }
@@ -359,14 +396,22 @@ impl WorkbookEmitter {
                         }
                         RowSpec::Data(row_data) => {
                             for (c_idx, col_spec) in table.columns.iter().enumerate() {
+                                let &(phys_start, phys_end) = placement
+                                    .col_spans
+                                    .get(c_idx)
+                                    .ok_or_else(|| EmissionError::MissingTable {
+                                        table: table.id.clone(),
+                                    })?;
                                 let col_data = match col_spec {
                                     ColumnSpec::Data(d) => d,
                                     ColumnSpec::Gutter => {
-                                        // Gutter column: continue row formatting (horizontal borders, shade, highlight)
+                                        // Gutter column: continue row visual bands (summary borders, shade, highlight);
+                                        // bold-only typography has no visible effect on blank gutter cells
+                                        let gutter_horizontal = row_data
+                                            .style
+                                            .map_or(SemanticStyle::Data, normalize_blank_style);
                                         let role = StyleRole {
-                                            horizontal: row_data
-                                                .style
-                                                .unwrap_or(SemanticStyle::Data),
+                                            horizontal: gutter_horizontal,
                                             vertical: SemanticStyle::Data,
                                             is_highlight: row_data.highlight.unwrap_or(false),
                                             shade: row_data.shade.filter(|s| !s.is_none()),
@@ -378,13 +423,13 @@ impl WorkbookEmitter {
                                             );
                                             let cell_format =
                                                 format_cache.get_cell_format(&format_key)?;
-                                            let phys_col =
-                                                excel_col_u16(placement.start_col + c_idx as u32)?;
-                                            worksheet.write_blank(
-                                                current_phys_row,
-                                                phys_col,
-                                                &cell_format,
-                                            )?;
+                                            for phys_col in phys_start..=phys_end {
+                                                worksheet.write_blank(
+                                                    current_phys_row,
+                                                    excel_col_u16(phys_col)?,
+                                                    &cell_format,
+                                                )?;
+                                            }
                                         }
                                         continue;
                                     }
@@ -408,6 +453,11 @@ impl WorkbookEmitter {
                                 })?;
                                 let is_input = node.payload.is_literal();
                                 let is_descriptor = col_data.role.is_descriptor();
+                                let anchor_span_edge = if phys_end > phys_start {
+                                    SpanEdge::Start
+                                } else {
+                                    SpanEdge::Single
+                                };
 
                                 let format_key = CellFormatKey::new(
                                     coord.style_role,
@@ -418,7 +468,8 @@ impl WorkbookEmitter {
                                     is_descriptor,
                                     coord.indent,
                                 )
-                                .with_wrap_text(coord.wrap_text);
+                                .with_wrap_text(coord.wrap_text)
+                                .with_span_edge(anchor_span_edge);
                                 let cell_format = format_cache.get_cell_format(&format_key)?;
                                 let coord_col = excel_col_u16(coord.col)?;
 
@@ -550,6 +601,46 @@ impl WorkbookEmitter {
                                         &rust_xlsxwriter::Note::new(note),
                                     )?;
                                 }
+
+                                // Emit styled blank cells across descriptor overflow runway
+                                if phys_end > phys_start {
+                                    let runway_role = StyleRole {
+                                        horizontal: normalize_blank_style(
+                                            coord.style_role.horizontal,
+                                        ),
+                                        vertical: normalize_blank_style(coord.style_role.vertical),
+                                        is_highlight: coord.style_role.is_highlight,
+                                        shade: coord.style_role.shade.filter(|s| !s.is_none()),
+                                    };
+                                    for phys_col in (phys_start + 1)..=phys_end {
+                                        let span_edge = if phys_col == phys_end {
+                                            SpanEdge::End
+                                        } else {
+                                            SpanEdge::Middle
+                                        };
+                                        if format_cache
+                                            .has_visible_runway_style(runway_role, span_edge)
+                                        {
+                                            let runway_key = CellFormatKey::new(
+                                                runway_role,
+                                                None,
+                                                None,
+                                                None,
+                                                false,
+                                                is_descriptor,
+                                                0,
+                                            )
+                                            .with_span_edge(span_edge);
+                                            let runway_format =
+                                                format_cache.get_cell_format(&runway_key)?;
+                                            worksheet.write_blank(
+                                                coord.row,
+                                                excel_col_u16(phys_col)?,
+                                                &runway_format,
+                                            )?;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -558,6 +649,16 @@ impl WorkbookEmitter {
         }
 
         Ok(workbook)
+    }
+}
+
+/// Normalizes `Bold` to `Data` for blank gutter and overflow runway cells,
+/// preserving border/fill-bearing summary styles (`Subtotal` and `Total`).
+const fn normalize_blank_style(style: SemanticStyle) -> SemanticStyle {
+    match style {
+        SemanticStyle::Data | SemanticStyle::Bold => SemanticStyle::Data,
+        SemanticStyle::Subtotal => SemanticStyle::Subtotal,
+        SemanticStyle::Total => SemanticStyle::Total,
     }
 }
 
