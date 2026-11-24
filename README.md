@@ -1,61 +1,53 @@
 # f8
 
-Author, verify, and automate financial models with code and AI agents, compiled into live Excel workbooks.
+**Build, verify, and automate financial models in code with AI, compiled into live Excel.**
+
+I'm a CFA charterholder working in private M&A and project finance. I built `f8` because I believe **code is the best way to leverage AI for financial modeling**. As a bonus, moving your models into code gives you 40 years of software engineering infrastructure (version control, automated tests, reusable modules, and live data pipelines) out of the box.
+
+## The problem
+
+Excel is still the non-negotiable deliverable across finance, but today's ways of bringing AI or code into financial modeling each hit a wall:
+
+- **AI inside Excel (add-ins, Office.js, GUI agents):** Still inherits everything painful about Excel — fragile grid edits, silent copy-paste errors, no version control or diffs, no automated tests, and awkward links to external data. Making AI click cells faster doesn't fix the foundation.
+- **Low-level workbook libraries (`openpyxl`, `xlsxwriter`, `exceljs`):** You're in code, but you (and your AI agent) are still babysitting raw cell addresses (C42:G42) where inserting one row breaks downstream formulas, more importantly, none of these libraries evaluate formulas, so your agent is flying blind.
+- **DataFrames (`pandas`, `polars`):** Great for data pipelines, awkward for row-by-row 2D schedules (3-statement links, corkscrews, debt waterfalls), and they can't give your stakeholders a live, formula-driven .xlsx file.
+
+## How f8 works
+
+`f8` makes code your single source of truth, and turns .xlsx into a compiled output:
+
+- **Semantic 2D modeling:** Write formulas using readable names (`PPE["end_balance", col.prev]`). `f8` handles the grid layout and compiles your logic into native Excel A1 formulas.
+- **Compiler-enforced rigor:** A 6-pass Rust compiler checks types, shapes, grid completeness (no forgotten cells or formula overlaps), and blocks circular references via Tarjan cycle detection.
+- **Closed-loop verification:** Evaluates every formula in memory in milliseconds, so your AI agent knows what went wrong immediately.
+- **Verified Excel parity:** Matches Excel across all 37 supported functions, including error propagation and the 1900 leap-day quirk. Our uncached [parity workbook](https://github.com/mhcfa/f8/releases/latest/download/excel_parity_verification.xlsx) lets Excel recalculate and grade every test case itself when you open it.
 
 ## Who is f8 for
 
-1. **People who want AI to reliably build complex Excel models (financial and beyond)**: Give AI agents a semantic 2D DSL and compile-time verification to produce clean and error-free `.xlsx` workbooks with live formulas.
-2. **People doing financial analysis in pure code (no Excel required)**: Run row-by-row financial statements, corkscrew schedules, and cross-table dependency graphs in Python or TypeScript (where columnar DataFrames fall short), with `compiled.save("model.xlsx")` ready whenever a stakeholder asks for the spreadsheet.
-
-## Why f8
-
-I am a CFA charterholder working in private M&A and project finance, where complex Excel models remain the non-negotiable deliverable despite fragile manual work, silent copy-paste errors, and zero version control.
-
-AI agents struggle to manipulate raw spreadsheets (`openpyxl`, Office.js, or GUI) for two reasons:
-
-- Brittle coordinates: Agents must reason in spatial cell addresses (`C42:G42`) instead of domain semantics; inserting one row shifts every downstream reference.
-- No verification loop: Spreadsheet libraries do not evaluate formulas, leaving agents blind until the `.xlsx` file is opened and inspected.
-
-`f8` turns the `.xlsx` workbook into a compiled artifact rather than a hand-edited canvas:
-
-- Semantic 2D modeling: Author models with readable table, row, and column identifiers; `f8` handles spatial layout and lowers logic into native Excel formulas.
-- Compiler-enforced rigor: A 6-pass Rust compiler verifies grid completeness (zero unassigned cells or formula overlaps) and enforces a strict DAG via Tarjan cycle detection.
-- Closed-loop verification: Evaluates formulas in memory so AI agents and test suites (`pytest`, `vitest`) can audit tables, trace dependencies, and verify accounting checks in milliseconds, without opening Excel.
-- Verified Excel parity: Matches Excel across all 37 supported functions, combining compile-time type and shape verification with exact Excel domain error propagation and the 1900 leap day bug. The [parity workbook](https://github.com/mhcfa/f8/releases/latest/download/excel_parity_verification.xlsx) ships without cached values, so Excel itself recalculates and grades every case on open (`ParityVerification` sheet: exact match for integers, text, dates, and lookups; 1e-9 relative tolerance for floating-point and iterative functions; runtime error check via `ISERROR`; plus a dedicated `ExcelDivergences` sheet documenting intentional runtime domain and solver divergences from legacy Excel quirks).
+- **Anyone who wants AI to build real financial models:** Whether you're doing M&A and LBOs, fundamental equity research, project finance, FP&A, credit, or real estate — give your AI agent a real language and compiler so you get models you can actually diff, test, and hand to a client or IC as a live `.xlsx`.
+- **Quants and code-first analysts:** Keep your financial statements and 2D schedules right next to live data feeds (SEC filings, market APIs, databases) and quant models in Python or TypeScript — with `compiled.save("model.xlsx")` ready whenever someone asks for the spreadsheet.
+- **Complex modeling beyond finance:** Pricing models, operational forecasts, scenario planning — anything where you want software-grade reliability without giving up Excel as the deliverable.
 
 ## Getting started
 
-### Python
-
-Install from PyPI (package name is `f8-engine`, imported as `f8`):
+Install `f8-engine` in Python (imported as `f8`) or TypeScript / JavaScript:
 
 ```bash
-pip install f8-engine
-# or
-uv add f8-engine
+# Python
+pip install f8-engine   # or: uv add f8-engine
+
+# TypeScript / JavaScript
+npm install f8-engine   # or: pnpm add f8-engine
 ```
 
-### TypeScript / JavaScript
-
-Install from npm (package name is `f8-engine`):
-
-```bash
-npm install f8-engine
-# or
-pnpm add f8-engine
-```
-
-If you are working with an AI coding agent, `f8` ships with a bundled modeling skill and CLI reference you can drop straight into your workspace:
+Using an AI coding agent? `f8` ships with a bundled modeling skill and CLI reference you can drop right into your workspace:
 
 ```bash
 f8 agent init    # scaffolds .agents/skills/f8-modeling/
-f8 theme init    # generates a customizable theme.json in the workspace root
+f8 theme init    # generates a customizable theme.json in your workspace root
 f8 guide --all   # streams the full DSL, function, and auditing guide to stdout
 ```
 
 ## Quick look
-
-### Python
 
 ```python
 from f8 import Model
@@ -95,7 +87,8 @@ print(compiled.table("PPE").to_markdown())
 compiled.save("forecast.xlsx")
 ```
 
-### TypeScript
+<details>
+<summary>TypeScript equivalent</summary>
 
 ```typescript
 import { Model } from "f8-engine"
@@ -136,7 +129,9 @@ console.log(compiled.table("PPE").toMarkdown())
 compiled.save("forecast.xlsx")
 ```
 
-Output:
+</details>
+<details>
+<summary>Output</summary>
 
 ```markdown
 | Line Item            |      2025A |      2026E |      2027E |
@@ -146,6 +141,8 @@ Output:
 | Depreciation         |    ($15.0) |    ($18.0) |    ($22.0) |
 | **Ending Balance**   | **$110.0** | **$122.0** | **$135.0** |
 ```
+
+</details>
 
 ## Sample deliverables
 
@@ -170,37 +167,21 @@ Built in a 4-hour, ~$70 autonomous multi-agent run across 50 SEC and macro sourc
 
 ## Trade-offs
 
-`f8` treats code as the single source of truth, and `.xlsx` is just an output. So there are some trade-offs to consider:
+Because `f8` treats code as the source of truth and `.xlsx` as just an output, there are a few trade-offs to keep in mind:
 
-| What you gain                                     | What you lose                                                       |
-| ------------------------------------------------- | ------------------------------------------------------------------- |
-| Clean structure and strict schema                 | Hidden mistakes no one notices                                      |
-| Git and line-by-line diffs                        | `Model_v14_Final_(2).xlsx` and guessing what changed since v13      |
-| Instant DAG and completeness verification in Rust | The opportunity to mess up your model right before a client meeting |
-| Superior AI modeling                              | Being an Excel Ninja                                                |
-| Readable semantic code and logic                  | The joy of hunting down a hidden `#REF!` at 2 AM                    |
-
-Jokes aside, writing models in code gives you 40 years of software infrastructure out of the box, line-by-line `git diff` reviews, automated `pytest` and `vitest` checks, reusable modules, and parametric loops. The only real downsides I can think of are:
-
-1. You can't do whatever you want when it comes to layout in the emitted workbook; everything has to be structured. But you wouldn't want your spreadsheet to be a mess anyway, right?
-2. You have to learn some Python or TypeScript. But that is largely solved by AI now.
-3. Constantly re-compiling just to peek at the Excel workbook can be a bit annoying, so we provide in-memory inspection methods in both SDKs. Once you get used to printing tables in the terminal, you don't need to open the `.xlsx` all the time (or just ask AI to do it).
-4. There are no circular references or iterative solvers (as per FAST Standard Section 2.01). There is a closed-form formula that solves the revolver circularity problem without circular references anyway (and don't worry, AI knows it).
-5. There is no native Excel chart emission yet (on roadmap), and no Pivot Tables. But since you are already in code, your language ecosystem handles data aggregation much better.
-6. It is a one-way flow (`code -> Excel`). Editing the emitted `.xlsx` workbook won't sync back to your code, and re-compiling will overwrite manual changes. This is by design, `.xlsx` is a compiled deliverable, not a source file.
+1. **Structured layout only:** You can't scatter ad-hoc cells wherever you want in the emitted workbook — everything is verified by strict schemas. (You wouldn't want a messy spreadsheet anyway, right?)
+2. **Basic Python or TypeScript:** You'll be working in code, though AI largely takes care of that for you.
+3. **No circular references:** Per FAST Standard Section 2.01. Revolver circularity has a clean closed-form formula anyway (and don't worry, AI knows it).
+4. **No native charts or Pivot Tables:** Charts are on the roadmap, and since you're already in Python or TypeScript, your language ecosystem handles aggregation far better than Pivot Tables.
+5. **One-way flow (`code -> Excel`):** Manual edits to the emitted `.xlsx` won't sync back and will be overwritten on the next compile. By design, `.xlsx` is a build artifact, not a source file.
 
 ## Architecture
 
-Under the hood, `f8` provides Python (`python/f8/`) and TypeScript/WebAssembly (`ts/`, `crates/f8-wasm/`) SDKs backed by a 6-pass Rust compiler (`crates/f8-core/`):
+Under the hood, `f8` pairs Python (`python/f8/`) and TypeScript/WebAssembly (`ts/`, `crates/f8-wasm/`) SDKs with a 6-pass Rust compiler (`crates/f8-core/`):
 
 `Spec -> IR Expansion -> DAG & Cycle Check -> Topological Evaluation -> Spatial Layout -> Formula Lowering -> .xlsx Emission`
 
-- Architecture overview: `docs/architecture.md`
-- Python modeling skill: `python/f8/skills/f8-modeling/SKILL.md`
-- TypeScript modeling skill: `ts/skills/f8-modeling/SKILL.md`
-- Syntax, grid, and formatting reference: `python/f8/skills/f8-modeling/references/syntax-and-grid.md` / `ts/skills/f8-modeling/references/syntax-and-grid.md`
-- Function reference: `python/f8/skills/f8-modeling/references/functions.md` / `ts/skills/f8-modeling/references/functions.md`
-- Auditing and repair reference: `python/f8/skills/f8-modeling/references/auditing-and-repair.md` / `ts/skills/f8-modeling/references/auditing-and-repair.md`
+See `docs/architecture.md` for the full pipeline and invariants.
 
 ## License
 
