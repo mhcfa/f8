@@ -28,6 +28,14 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
     const theme = defaultTheme()
     expect(theme).toBeTypeOf("object")
     expect(theme["name"]).toBe("corporate_navy")
+    expect(theme["borders"]).toMatchObject({
+      subtotal_border_top: "thin",
+      total_border_top: "thin",
+      total_border_bottom: "double",
+      col_subtotal_border_left: "dashed",
+      col_total_border_left: "thin",
+      col_total_border_right: "none",
+    })
   })
 
   it("supports deterministic WASM disposal via dispose() and [Symbol.dispose]()", () => {

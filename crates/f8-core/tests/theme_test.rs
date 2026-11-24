@@ -29,8 +29,12 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert_eq!(theme.metrics.max_col_width, 75.0);
 
     // Verify borders
+    assert_eq!(theme.borders.subtotal_border_top, BorderStyle::Thin);
+    assert_eq!(theme.borders.total_border_top, BorderStyle::Thin);
     assert_eq!(theme.borders.total_border_bottom, BorderStyle::Double);
-    assert_eq!(theme.borders.col_total_border_right, BorderStyle::Double);
+    assert_eq!(theme.borders.col_subtotal_border_left, BorderStyle::Dashed);
+    assert_eq!(theme.borders.col_total_border_left, BorderStyle::Thin);
+    assert_eq!(theme.borders.col_total_border_right, BorderStyle::None);
 
     // Verify removed preset themes are rejected when resolved
     let removed_themes = ["classic_green", "modern_slate", "minimal_monochrome"];

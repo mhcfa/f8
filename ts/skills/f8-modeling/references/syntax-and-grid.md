@@ -307,8 +307,8 @@ Structural summary and typographic emphasis roles for rows, columns, and 0D cell
 
 - `"data"` (default): Standard body typography and borders.
 - `"bold"`: Bold typography only; no borders and standard fill/text color precedence (`highlight` > `shade` > `data`, preserving blue `input_text`).
-- `"subtotal"`: Bold typography; thin top border on rows (`subtotal_border_top`), thin left border on columns (`col_subtotal_border_left`).
-- `"total"`: Bold typography; thin top and double bottom border on rows (`total_border_top`, `total_border_bottom`), thin left and double right border on columns (`col_total_border_left`, `col_total_border_right`).
+- `"subtotal"`: Bold typography; thin top border on rows (`subtotal_border_top`), dashed left border on columns (`col_subtotal_border_left`).
+- `"total"`: Bold typography; thin top and double bottom border on rows (`total_border_top`, `total_border_bottom`), thin left border on columns (`col_total_border_left`; optional `col_total_border_right` defaults to `"none"`).
 
 ### Background Shades (`Shade`)
 

@@ -465,7 +465,8 @@ impl FormatCache {
             }
         }
 
-        // Vertical: Subtotal -> Left border; Total -> Left + Right borders; Data/Bold -> none
+        // Vertical: Subtotal -> Left border; Total -> Left (+ optional Right) border; Data/Bold -> none
+        let mut emitted_col_total_right = false;
         match key.role.vertical {
             SemanticStyle::Data | SemanticStyle::Bold => {}
             SemanticStyle::Subtotal => {
@@ -497,15 +498,16 @@ impl FormatCache {
                             self.theme.borders.col_total_border_right,
                         ))
                         .set_border_right_color(self.palette.total_border_color);
+                    emitted_col_total_right = true;
                 }
             }
         }
 
-        // Descriptor right border (if configured in theme)
+        // Descriptor right border (if configured in theme and not overridden by col_total_border_right)
         if key.is_descriptor
             && key.span_edge.emits_right_border()
             && self.theme.borders.descriptor_border_right != BorderStyle::None
-            && !key.role.vertical.is_total()
+            && !emitted_col_total_right
         {
             format = format
                 .set_border_right(translate_border_style(
@@ -601,11 +603,9 @@ impl FormatCache {
         };
         let has_shade = role.shade.is_some_and(|s| !s.is_none());
         let has_right_border = span_edge.emits_right_border()
-            && if role.vertical.is_total() {
-                self.theme.borders.col_total_border_right != BorderStyle::None
-            } else {
-                self.theme.borders.descriptor_border_right != BorderStyle::None
-            };
+            && ((role.vertical.is_total()
+                && self.theme.borders.col_total_border_right != BorderStyle::None)
+                || self.theme.borders.descriptor_border_right != BorderStyle::None);
 
         has_horizontal_summary
             || role.is_highlight

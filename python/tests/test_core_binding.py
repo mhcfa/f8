@@ -101,7 +101,20 @@ def test_scenario_1_in_memory_compilation_and_emission(
 ) -> None:
     manifest, tables = sample_model
     assert f8.compile is core_compile
-    assert f8.default_theme()["name"] == "corporate_navy"
+    default_theme = f8.default_theme()
+    assert default_theme["name"] == "corporate_navy"
+    assert default_theme["borders"] == {
+        "table_title_border_bottom": "none",
+        "super_header_border_bottom": "none",
+        "header_border_bottom": "thin",
+        "descriptor_border_right": "none",
+        "subtotal_border_top": "thin",
+        "total_border_top": "thin",
+        "total_border_bottom": "double",
+        "col_subtotal_border_left": "dashed",
+        "col_total_border_left": "thin",
+        "col_total_border_right": "none",
+    }
     compiled = f8.compile(manifest, tables)
 
     assert isinstance(compiled, CompiledModel)

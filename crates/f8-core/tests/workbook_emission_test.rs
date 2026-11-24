@@ -1412,13 +1412,13 @@ fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
             .push(ColumnSpec::new("c_data").with_header("Data"));
         // Col D: Column gutter
         table.columns.push(ColumnSpec::gutter());
-        // Col E: Subtotal column (thin left border)
+        // Col E: Subtotal column (dashed left border)
         table.columns.push(
             ColumnSpec::new("c_sub")
                 .with_header("Sub")
                 .with_style(Some(SemanticStyle::Subtotal)),
         );
-        // Col F: Total column (thin left + double right border)
+        // Col F: Total column (thin left border, no right border)
         table.columns.push(
             ColumnSpec::new("c_tot")
                 .with_header("Total")
@@ -2483,8 +2483,8 @@ fn test_bold_style_emits_bold_without_borders_and_skips_gutter_blanks() {
     let (f5_font, f5_border) = cell_style_info("F5");
     assert!(f5_font.contains("<b/>"));
     assert!(
-        f5_border.contains(r#"<left style="thin">"#),
-        "Subtotal col cell F5 must have thin left border: {f5_border}"
+        f5_border.contains(r#"<left style="dashed">"#),
+        "Subtotal col cell F5 must have dashed left border: {f5_border}"
     );
     assert!(!f5_border.contains("<top style="));
 
@@ -2987,17 +2987,17 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
     }
 
     // r_plain (row 6), item (B6..D6, vertical Subtotal + descriptor_border_right=Thin):
-    // B6 (Start): left thin, no right; C6 (Middle): no-op skipped (no fill/no border); D6 (End): no left, right thin
+    // B6 (Start): left dashed, no right; C6 (Middle): no-op skipped (no fill/no border); D6 (End): no left, right thin
     let (_, b6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "B6");
-    assert!(b6_border.contains(r#"<left style="thin""#));
+    assert!(b6_border.contains(r#"<left style="dashed""#));
     assert!(!b6_border.contains(r#"<right style="#));
     assert!(!sheet_xml.contains(r#"<c r="C6""#));
     let (_, d6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "D6");
     assert!(!d6_border.contains(r#"<left style="#));
     assert!(d6_border.contains(r#"<right style="thin""#));
 
-    // r_plain (row 6), tot_desc (F6..H6, vertical Total with total_fill):
-    // F6 (Start): left thin, no right; G6 (Middle): no left, no right, has total fill; H6 (End): no left, right double
+    // r_plain (row 6), tot_desc (F6..H6, vertical Total with total_fill + descriptor_border_right=Thin, default col_total_border_right=None):
+    // F6 (Start): left thin, no right; G6 (Middle): no left, no right, has total fill; H6 (End): no left, right thin (from descriptor_border_right)
     let (_, f6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "F6");
     assert!(f6_border.contains(r#"<left style="thin""#));
     assert!(!f6_border.contains(r#"<right style="#));
@@ -3007,7 +3007,7 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
     assert!(g6_fill.contains("patternFill"));
     let (_, h6_border, _) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "H6");
     assert!(!h6_border.contains(r#"<left style="#));
-    assert!(h6_border.contains(r#"<right style="double""#));
+    assert!(h6_border.contains(r#"<right style="thin""#));
 
     // r_shaded (row 7): C7 (Middle) carries muted fill with suppressed vertical borders
     let (_, c7_border, c7_fill) = cell_xf_info(&sheet_xml, &xfs, &borders, &fills, "C7");
@@ -3037,16 +3037,29 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
         "Gutter column E (col 5) must retain gutter_col_width in XML: {sheet_xml}"
     );
 
-    // Part B: Default corporate_navy theme (descriptor_border_right: None, data_fill: none)
-    // Bold-only unshaded row skips no-op blank runway <c> elements
+    // Part B: Default corporate_navy theme (descriptor_border_right: None, col_total_border_right: None, data_fill: none)
+    // Bold-only unshaded row skips no-op blank runway <c> elements; column subtotal uses dashed left border,
+    // and column total uses thin left border with no right border.
     let mut t2 = TableSpec::new("BoldSkip", "Bold Skip");
     t2.columns.push(ColumnSpec::descriptor("item", "Item"));
     t2.columns.push(ColumnSpec::new("val").with_header("Val"));
+    t2.columns.push(
+        ColumnSpec::new("sub_col")
+            .with_header("Sub")
+            .with_style(Some(SemanticStyle::Subtotal)),
+    );
+    t2.columns.push(
+        ColumnSpec::new("tot_col")
+            .with_header("Total")
+            .with_style(Some(SemanticStyle::Total)),
+    );
     t2.rows.push(
         RowSpec::new("r_bold")
             .with_style(Some(SemanticStyle::Bold))
             .with_cell("item", label_28)
-            .with_cell("val", 42.0),
+            .with_cell("val", 42.0)
+            .with_cell("sub_col", 42.0)
+            .with_cell("tot_col", 42.0),
     );
     let manifest_b = ProjectManifest {
         model_name: "BoldSkipModel".to_string(),
@@ -3062,7 +3075,11 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
     };
     let buf_b = Compiler::emit_workbook(&manifest_b, &[t2], &EmissionOptions::default()).unwrap();
     let xml_b = read_zip_entry(&buf_b, "xl/worksheets/sheet1.xml");
-    // Title=2, title_gutter=3, header=4, r_bold=5; item=B..D (1..=3), val=E (4)
+    let styles_b = read_zip_entry(&buf_b, "xl/styles.xml");
+    let xfs_b = extract_tags(&styles_b, "cellXfs", "xf");
+    let borders_b = extract_tags(&styles_b, "borders", "border");
+    let fills_b = extract_tags(&styles_b, "fills", "fill");
+    // Title=2, title_gutter=3, header=4, r_bold=5; item=B..D (1..=3), val=E (4), sub_col=F (5), tot_col=G (6)
     assert!(xml_b.contains(r#"<c r="B5""#));
     assert!(
         !xml_b.contains(r#"<c r="C5""#),
@@ -3073,4 +3090,10 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
         "Bold-only unshaded runway D5 must be skipped"
     );
     assert!(xml_b.contains(r#"<c r="E5""#));
+    let (_, f5_border, _) = cell_xf_info(&xml_b, &xfs_b, &borders_b, &fills_b, "F5");
+    assert!(f5_border.contains(r#"<left style="dashed""#));
+    assert!(!f5_border.contains(r#"<right style="#));
+    let (_, g5_border, _) = cell_xf_info(&xml_b, &xfs_b, &borders_b, &fills_b, "G5");
+    assert!(g5_border.contains(r#"<left style="thin""#));
+    assert!(!g5_border.contains(r#"<right style="#));
 }

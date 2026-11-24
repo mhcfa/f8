@@ -205,9 +205,9 @@ impl Default for BordersConfig {
             subtotal_border_top: BorderStyle::Thin,
             total_border_top: BorderStyle::Thin,
             total_border_bottom: BorderStyle::Double,
-            col_subtotal_border_left: BorderStyle::Thin,
+            col_subtotal_border_left: BorderStyle::Dashed,
             col_total_border_left: BorderStyle::Thin,
-            col_total_border_right: BorderStyle::Double,
+            col_total_border_right: BorderStyle::None,
         }
     }
 }
