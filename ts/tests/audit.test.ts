@@ -1057,6 +1057,48 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
     } finally {
       compiled.dispose()
     }
+
+    // Subtitle overflow indicator & grid descriptor req:W (cliff spill + lane-coupling victim)
+    const diagModel = new Model({ name: "LayoutDiag" })
+    const gridSheet = diagModel.addSheet("Grid", {
+      layout: "grid",
+      colWidth: 12.0,
+    })
+
+    const culprit = gridSheet.addTable("Culprit", "Culprit Table", {
+      subtitle:
+        "A long single-line subtitle that clearly overflows the narrow panel width",
+    })
+    culprit.addColumn("item", { role: "descriptor", header: "Item" })
+    culprit.addColumn("val", { header: "Val" })
+    culprit.addRow("r1", { cells: { item: "A".repeat(24), val: 1.0 } })
+
+    const victim = gridSheet.addTable("Victim", "Victim Table", {
+      subtitle: "($ in M)",
+    })
+    victim.addColumn("item", { role: "descriptor", header: "Item" })
+    victim.addColumn("val", { header: "Val" })
+    victim.addRow("r1", { cells: { item: "Revenue", val: 2.0 } })
+
+    const diagCompiled = diagModel.compile()
+    try {
+      const diagMd = diagCompiled.toMarkdown("layout")
+      const culpritLine = diagMd
+        .split("\n")
+        .find((line) => line.includes("`Culprit`"))
+      const victimLine = diagMd
+        .split("\n")
+        .find((line) => line.includes("`Victim`"))
+      expect(culpritLine).toContain("sub:1(73ch>w)")
+      expect(culpritLine).toContain(
+        "cols: desc B..D(3c, req:25), measure E(1c)"
+      )
+      expect(victimLine).toContain("sub:1 hdr:")
+      expect(victimLine).not.toContain("ch>w")
+      expect(victimLine).toContain("cols: desc B..D(3c, req:8), measure E(1c)")
+    } finally {
+      diagCompiled.dispose()
+    }
   })
 
   it("Scenario 9: TableAuditor.toMarkdown compact mode and backward compatibility", () => {

@@ -6,7 +6,10 @@ use crate::compiler::compiled::CompiledModel;
 use crate::compiler::compiled::error::InspectionError;
 use crate::compiler::compiled::model::{CellError, ModelMarkdownDetail, ModelMarkdownOptions};
 use crate::compiler::ir::id::CellId;
-use crate::compiler::layout::{SheetLayout, TablePlacement, col_to_excel_col, coordinate_to_a1};
+use crate::compiler::layout::{
+    SheetLayout, TablePlacement, col_to_excel_col, coordinate_to_a1,
+    grid_table_descriptor_req_widths,
+};
 use crate::model::format::SemanticStyle;
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{FreezePanes, SheetLayoutSpec, SheetSpec};
@@ -98,21 +101,25 @@ struct LayoutLane<'a> {
     tables: Vec<PlacedTable<'a>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ColCategory {
-    Desc,
-    Measure,
-    Gutter,
-}
-
-impl ColCategory {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Desc => "desc",
-            Self::Measure => "measure",
-            Self::Gutter => "gutter",
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+enum ColRun {
+    DescSingle {
+        start_col: u32,
+        end_col: u32,
+    },
+    DescSpanned {
+        start_col: u32,
+        end_col: u32,
+        req_w: f64,
+    },
+    Measure {
+        start_col: u32,
+        end_col: u32,
+    },
+    Gutter {
+        start_col: u32,
+        end_col: u32,
+    },
 }
 
 fn decompose_bands<'a>(mut placed: Vec<PlacedTable<'a>>) -> Vec<LayoutBand<'a>> {
@@ -214,7 +221,20 @@ fn format_placement(placement: &PlacementSpec) -> String {
     }
 }
 
-fn format_table_structure(table: &TableSpec, placement: &TablePlacement) -> String {
+fn max_subtitle_chars(subtitles: &[String]) -> usize {
+    subtitles
+        .iter()
+        .map(|s| normalize_inline_text(s).chars().count())
+        .max()
+        .unwrap_or(0)
+}
+
+fn format_table_structure(
+    table: &TableSpec,
+    placement: &TablePlacement,
+    table_w: f64,
+    char_width_multiplier: f64,
+) -> String {
     let mut tokens: Vec<String> = Vec::with_capacity(5);
 
     if placement.title_row.is_none() {
@@ -230,7 +250,14 @@ fn format_table_structure(table: &TableSpec, placement: &TablePlacement) -> Stri
     }
 
     if !table.subtitles.is_empty() {
-        tokens.push(format!("sub:{}", table.subtitles.len()));
+        let count = table.subtitles.len();
+        let max_chars = max_subtitle_chars(&table.subtitles);
+        let sub_w = round2(max_chars as f64 * char_width_multiplier);
+        if sub_w > table_w + WIDTH_EPS {
+            tokens.push(format!("sub:{count}({max_chars}ch>w)"));
+        } else {
+            tokens.push(format!("sub:{count}"));
+        }
     }
 
     let has_group = table.columns.iter().any(|c| c.group().is_some());
@@ -872,48 +899,123 @@ impl CompiledModel {
     fn format_col_runs(
         &self,
         sheet_layout: Option<&SheetLayout>,
+        layout: SheetLayoutSpec,
         table: &TableSpec,
         placement: &TablePlacement,
     ) -> String {
-        let mut runs: Vec<(ColCategory, u32, u32)> = Vec::new();
-        for (col_spec, &(phys_start, phys_end)) in table.columns.iter().zip(&placement.col_spans) {
-            let cat = match col_spec {
+        let desc_req_widths = match layout {
+            SheetLayoutSpec::Auto => None,
+            SheetLayoutSpec::Grid { .. } => {
+                let has_spanned_desc = table.columns.iter().zip(&placement.col_spans).any(
+                    |(col_spec, &(phys_start, phys_end))| {
+                        phys_end > phys_start
+                            && matches!(col_spec, ColumnSpec::Data(d) if d.role.is_descriptor())
+                    },
+                );
+                has_spanned_desc.then(|| {
+                    grid_table_descriptor_req_widths(
+                        table,
+                        &self.grid,
+                        &self.evaluated,
+                        &self.theme,
+                    )
+                })
+            }
+        };
+
+        let mut runs: Vec<ColRun> = Vec::new();
+        for (c_idx, (col_spec, &(phys_start, phys_end))) in
+            table.columns.iter().zip(&placement.col_spans).enumerate()
+        {
+            match col_spec {
                 ColumnSpec::Data(d) => match d.role {
-                    AxisRole::Descriptor => ColCategory::Desc,
-                    AxisRole::Measure => ColCategory::Measure,
+                    AxisRole::Descriptor => {
+                        let spanned_req_w = match layout {
+                            SheetLayoutSpec::Auto => None,
+                            SheetLayoutSpec::Grid { .. } if phys_end > phys_start => Some(
+                                desc_req_widths
+                                    .as_deref()
+                                    .and_then(|widths| widths.get(c_idx).copied())
+                                    .unwrap_or(0.0),
+                            ),
+                            SheetLayoutSpec::Grid { .. } => None,
+                        };
+                        if let Some(req_w) = spanned_req_w {
+                            runs.push(ColRun::DescSpanned {
+                                start_col: phys_start,
+                                end_col: phys_end,
+                                req_w,
+                            });
+                        } else if let Some(ColRun::DescSingle { end_col, .. }) = runs.last_mut() {
+                            *end_col = phys_end;
+                        } else {
+                            runs.push(ColRun::DescSingle {
+                                start_col: phys_start,
+                                end_col: phys_end,
+                            });
+                        }
+                    }
+                    AxisRole::Measure => {
+                        if let Some(ColRun::Measure { end_col, .. }) = runs.last_mut() {
+                            *end_col = phys_end;
+                        } else {
+                            runs.push(ColRun::Measure {
+                                start_col: phys_start,
+                                end_col: phys_end,
+                            });
+                        }
+                    }
                 },
-                ColumnSpec::Gutter => ColCategory::Gutter,
-            };
-            match runs.last_mut() {
-                Some((last_cat, _, last_end)) if *last_cat == cat => {
-                    *last_end = phys_end;
-                }
-                Some(_) | None => {
-                    runs.push((cat, phys_start, phys_end));
+                ColumnSpec::Gutter => {
+                    if let Some(ColRun::Gutter { end_col, .. }) = runs.last_mut() {
+                        *end_col = phys_end;
+                    } else {
+                        runs.push(ColRun::Gutter {
+                            start_col: phys_start,
+                            end_col: phys_end,
+                        });
+                    }
                 }
             }
         }
 
         let default_gutter = self.theme.metrics.gutter_col_width;
         runs.into_iter()
-            .map(|(cat, start_col, end_col)| {
-                let col_range = format_col_range(start_col, end_col);
-                let phys_count = end_col.saturating_sub(start_col).saturating_add(1);
-                match cat {
-                    ColCategory::Desc | ColCategory::Measure => {
-                        format!("{} {col_range}({phys_count}c)", cat.label())
-                    }
-                    ColCategory::Gutter => {
-                        let widened = (start_col..=end_col).any(|c| {
-                            (self.col_width_at(sheet_layout, c) - default_gutter).abs() > WIDTH_EPS
-                        });
-                        if widened {
-                            let gutter_w =
-                                format_width(self.range_width(sheet_layout, start_col, end_col));
-                            format!("gutter {col_range}({phys_count}c, w:{gutter_w})")
-                        } else {
-                            format!("gutter {col_range}({phys_count}c)")
-                        }
+            .map(|run| match run {
+                ColRun::DescSingle { start_col, end_col } => {
+                    let col_range = format_col_range(start_col, end_col);
+                    let phys_count = end_col.saturating_sub(start_col).saturating_add(1);
+                    format!("desc {col_range}({phys_count}c)")
+                }
+                ColRun::DescSpanned {
+                    start_col,
+                    end_col,
+                    req_w,
+                } => {
+                    let col_range = format_col_range(start_col, end_col);
+                    let phys_count = end_col.saturating_sub(start_col).saturating_add(1);
+                    format!(
+                        "desc {col_range}({phys_count}c, req:{})",
+                        format_width(req_w)
+                    )
+                }
+                ColRun::Measure { start_col, end_col } => {
+                    let col_range = format_col_range(start_col, end_col);
+                    let phys_count = end_col.saturating_sub(start_col).saturating_add(1);
+                    format!("measure {col_range}({phys_count}c)")
+                }
+                ColRun::Gutter { start_col, end_col } => {
+                    let col_range = format_col_range(start_col, end_col);
+                    let phys_count = end_col.saturating_sub(start_col).saturating_add(1);
+                    let widened = (start_col..=end_col).any(|c| {
+                        (self.col_width_at(sheet_layout, c) - default_gutter).abs() > WIDTH_EPS
+                    });
+                    if widened {
+                        let gutter_w =
+                            format_width(self.range_width(sheet_layout, start_col, end_col));
+                        format!("gutter {col_range}({phys_count}c, w:{gutter_w})")
+                    } else {
+                        format!("gutter {col_range}({phys_count}c)")
                     }
                 }
             })
@@ -924,6 +1026,7 @@ impl CompiledModel {
     fn format_layout_table_item(
         &self,
         sheet_layout: Option<&SheetLayout>,
+        layout: SheetLayoutSpec,
         pt: PlacedTable<'_>,
         selected_table_ids: &IndexSet<&TableId>,
         wrap_counts: &IndexMap<&TableId, usize>,
@@ -939,10 +1042,16 @@ impl CompiledModel {
         let end_a1 = format_a1(p.end_col, p.end_row);
         let rows = p.end_row.saturating_sub(p.start_row).saturating_add(1);
         let cols = p.end_col.saturating_sub(p.start_col).saturating_add(1);
-        let table_w = format_width(self.range_width(sheet_layout, p.start_col, p.end_col));
+        let table_w_num = self.range_width(sheet_layout, p.start_col, p.end_col);
+        let table_w = format_width(table_w_num);
         let placement_str = format_placement(&table.placement);
-        let structure_str = format_table_structure(table, p);
-        let col_runs = self.format_col_runs(sheet_layout, table, p);
+        let structure_str = format_table_structure(
+            table,
+            p,
+            table_w_num,
+            self.theme.metrics.char_width_multiplier,
+        );
+        let col_runs = self.format_col_runs(sheet_layout, layout, table, p);
 
         let mut line = format!(
             "`{}`{context} [{start_a1}:{end_a1}] {rows}r x {cols}c (w:{table_w}) | {placement_str} | {structure_str} | cols: {col_runs}",
@@ -1088,6 +1197,7 @@ impl CompiledModel {
                             "  - {}",
                             self.format_layout_table_item(
                                 sheet_layout,
+                                sheet_spec.layout,
                                 pt,
                                 selected_table_ids,
                                 wrap_counts,
@@ -1142,6 +1252,7 @@ impl CompiledModel {
                             "    - {}",
                             self.format_layout_table_item(
                                 sheet_layout,
+                                sheet_spec.layout,
                                 pt,
                                 selected_table_ids,
                                 wrap_counts,

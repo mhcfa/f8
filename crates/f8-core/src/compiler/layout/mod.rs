@@ -32,6 +32,89 @@ fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
+fn grid_descriptor_header_chars(header: &str) -> usize {
+    if header.is_empty() {
+        0
+    } else {
+        header.chars().count() + 1
+    }
+}
+
+fn grid_descriptor_text_chars(text: &str, indent: u8) -> usize {
+    if text.is_empty() {
+        0
+    } else {
+        text.chars().count() + 1 + usize::from(indent) * 2
+    }
+}
+
+fn grid_descriptor_req_width_from_chars(max_desc_chars: usize, metrics: &MetricsConfig) -> f64 {
+    if max_desc_chars == 0 {
+        0.0
+    } else {
+        round2(max_desc_chars as f64 * metrics.char_width_multiplier + metrics.col_padding)
+    }
+}
+
+/// Computes Pass 5's required visual width (`req_w`) for each column of a table on a `grid` sheet
+/// (1:1 with `table.columns`; non-descriptor columns and empty descriptors yield `0.0`).
+pub(crate) fn grid_table_descriptor_req_widths(
+    table: &TableSpec,
+    grid: &CellGrid,
+    evaluated: &EvaluatedModel,
+    theme: &Theme,
+) -> Vec<f64> {
+    let mut col_desc_chars = vec![0usize; table.columns.len()];
+
+    for (c_idx, col_spec) in table.columns.iter().enumerate() {
+        let ColumnSpec::Data(data_col) = col_spec else {
+            continue;
+        };
+        if !data_col.role.is_descriptor() {
+            continue;
+        }
+        for h in &data_col.headers {
+            if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                *slot = (*slot).max(grid_descriptor_header_chars(h));
+            }
+        }
+    }
+
+    for row_spec in &table.rows {
+        let RowSpec::Data(data_row) = row_spec else {
+            continue;
+        };
+        for (c_idx, col_spec) in table.columns.iter().enumerate() {
+            let ColumnSpec::Data(data_col) = col_spec else {
+                continue;
+            };
+            if !data_col.role.is_descriptor() {
+                continue;
+            }
+            let cell_id = CellId::new(table.id.clone(), data_row.id.clone(), data_col.id.clone());
+            if let Some(val) = evaluated.get_cell(&cell_id) {
+                match val {
+                    CellValue::Text(s) => {
+                        let indent = grid.get(&cell_id).map_or(0, |n| n.indent);
+                        if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                            *slot = (*slot).max(grid_descriptor_text_chars(s, indent));
+                        }
+                    }
+                    CellValue::Number(_)
+                    | CellValue::Boolean(_)
+                    | CellValue::Error(_)
+                    | CellValue::Empty => {}
+                }
+            }
+        }
+    }
+
+    col_desc_chars
+        .into_iter()
+        .map(|chars| grid_descriptor_req_width_from_chars(chars, &theme.metrics))
+        .collect()
+}
+
 fn contains_line_break(s: &str) -> bool {
     s.contains('\n') || s.contains('\r')
 }
@@ -832,10 +915,8 @@ impl<'a> SheetPlanContext<'a> {
                 }
                 AxisRole::Descriptor => {
                     for h in &data_col.headers {
-                        if !h.is_empty()
-                            && let Some(slot) = col_desc_chars.get_mut(c_idx)
-                        {
-                            *slot = (*slot).max(h.chars().count() + 1);
+                        if let Some(slot) = col_desc_chars.get_mut(c_idx) {
+                            *slot = (*slot).max(grid_descriptor_header_chars(h));
                         }
                     }
                 }
@@ -899,8 +980,7 @@ impl<'a> SheetPlanContext<'a> {
                                 }
                                 AxisRole::Descriptor => {
                                     if let Some(slot) = col_desc_chars.get_mut(c_idx) {
-                                        *slot = (*slot)
-                                            .max(s.chars().count() + 1 + usize::from(indent) * 2);
+                                        *slot = (*slot).max(grid_descriptor_text_chars(s, indent));
                                     }
                                 }
                             }
@@ -925,9 +1005,6 @@ impl<'a> SheetPlanContext<'a> {
         uniform_w: f64,
         desc_max_chars_per_table: &[Vec<usize>],
     ) -> Vec<Vec<u32>> {
-        let mult = self.theme.metrics.char_width_multiplier;
-        let col_padding = self.theme.metrics.col_padding;
-
         self.sheet_tables
             .iter()
             .zip(desc_max_chars_per_table)
@@ -941,19 +1018,18 @@ impl<'a> SheetPlanContext<'a> {
                         ColumnSpec::Data(d) => match d.role {
                             AxisRole::Measure => 1,
                             AxisRole::Descriptor => {
-                                if max_desc_chars == 0 {
+                                let req_w = grid_descriptor_req_width_from_chars(
+                                    max_desc_chars,
+                                    &self.theme.metrics,
+                                );
+                                if req_w <= uniform_w + GRID_WIDTH_EPS {
                                     1
                                 } else {
-                                    let req_w = round2(max_desc_chars as f64 * mult + col_padding);
-                                    if req_w <= uniform_w + GRID_WIDTH_EPS {
-                                        1
-                                    } else {
-                                        ((req_w / uniform_w) - GRID_WIDTH_EPS)
-                                            .ceil()
-                                            .max(1.0)
-                                            .min(u32::MAX as f64)
-                                            as u32
-                                    }
+                                    ((req_w / uniform_w) - GRID_WIDTH_EPS)
+                                        .ceil()
+                                        .max(1.0)
+                                        .min(u32::MAX as f64)
+                                        as u32
                                 }
                             }
                         },

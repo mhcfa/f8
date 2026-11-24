@@ -2043,11 +2043,11 @@ fn test_to_markdown_layout_scenario_1_grid_dashboard() {
     );
     assert!(md.contains("  - Lane B..G (6c, w:72, R2:R10 = 9r, empty_below:R11:R28 (18r)):\n"));
     assert!(md.contains(
-        "    - `TopLeft` [B2:G10] 9r x 6c (w:72) | stack | hdr:R4 body:R5:R10 | cols: desc B..C(2c), measure D..G(4c)\n"
+        "    - `TopLeft` [B2:G10] 9r x 6c (w:72) | stack | hdr:R4 body:R5:R10 | cols: desc B..C(2c, req:19), measure D..G(4c)\n"
     ));
     assert!(md.contains("  - Lane I..M (5c, w:60, gap:1c (H, w:12), R2:R28 = 27r):\n"));
     assert!(md.contains(
-        "    - `TopRight` [I2:M28] 27r x 5c (w:60) | right_of `TopLeft` | title->R (+5 empty) sub:1 hdr:R5 body:R6:R28 | cols: desc I..J(2c), measure K..M(3c)\n"
+        "    - `TopRight` [I2:M28] 27r x 5c (w:60) | right_of `TopLeft` | title->R (+5 empty) sub:1 hdr:R5 body:R6:R28 | cols: desc I..J(2c, req:19), measure K..M(3c)\n"
     ));
 
     // Band 2: single-lane band (no Lane nesting), title overhang, and widened overlapped gutter J
@@ -2055,13 +2055,13 @@ fn test_to_markdown_layout_scenario_1_grid_dashboard() {
         "- Band 2 (R31:R58, 28r x cols B..L, w:132, gap:2r, right_empty:M..R (6c, w:72)):\n"
     ));
     assert!(md.contains(
-        "  - `Middle` [B31:L58] 28r x 11c (w:132) | stack | title->R (+6 empty) hdr:R33 body:R34:R58 | cols: desc B..C(2c), measure D..I(6c), gutter J(1c, w:12), measure K..L(2c)\n"
+        "  - `Middle` [B31:L58] 28r x 11c (w:132) | stack | title->R (+6 empty) hdr:R33 body:R34:R58 | cols: desc B..C(2c, req:19), measure D..I(6c), gutter J(1c, w:12), measure K..L(2c)\n"
     ));
 
     // Band 3: full-width single-lane band with grouped headers and no right_empty or title overhang
     assert!(md.contains("- Band 3 (R61:R72, 12r x cols B..R, w:204, gap:2r):\n"));
     assert!(md.contains(
-        "  - `Bottom` [B61:R72] 12r x 17c (w:204) | stack | hdr:R63:R64(grouped) body:R65:R72 | cols: desc B..C(2c), measure D..R(15c)\n"
+        "  - `Bottom` [B61:R72] 12r x 17c (w:204) | stack | hdr:R63:R64(grouped) body:R65:R72 | cols: desc B..C(2c, req:19), measure D..R(15c)\n"
     ));
     assert_eq!(md.matches("  - Lane ").count(), 2);
 }
@@ -2603,4 +2603,317 @@ fn test_to_markdown_layout_edge_cases() {
     assert!(!md_gutter.contains("base="));
     assert!(md_gutter.contains("Columns: A..B:3\n"));
     assert!(md_gutter.contains("| hdr:none body:R4 | cols: gutter B(1c)\n"));
+}
+
+#[test]
+fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
+    use f8_core::model::manifest::SheetLayoutSpec;
+    use f8_core::model::table::{CellInput, DetailedCellInput, PlacementSpec, ValueLiteral};
+    use f8_core::model::theme::Theme;
+
+    // Sheet 1 (auto): subtitle boundary fit vs overflow (single & multi-line); auto descriptors omit req:
+    let make_auto_sub = |id: &str, subs: &[&str], desc_label: &str| {
+        let mut t = TableSpec::new(id, id).with_subtitles(subs.iter().copied());
+        t.columns = vec![
+            ColumnSpec::descriptor("item", "Item"),
+            ColumnSpec::new("v").with_header("Val"),
+        ];
+        t.rows = vec![
+            RowSpec::new("r1")
+                .with_cell("item", desc_label)
+                .with_cell("v", 1.0),
+        ];
+        t
+    };
+    // B=12, C=12 -> table w=24
+    let auto_exact = make_auto_sub("AutoExact", &["x".repeat(24).as_str()], "Short");
+    let auto_over = make_auto_sub("AutoOver", &["x".repeat(25).as_str()], "Short");
+    let auto_multi_fit = make_auto_sub(
+        "AutoMultiFit",
+        &["($ in M)", "x".repeat(24).as_str()],
+        "Short",
+    );
+    let auto_multi_over = make_auto_sub(
+        "AutoMultiOver",
+        &["($ in M)", "x".repeat(30).as_str()],
+        "Short",
+    );
+
+    // Sheet 2 (auto wide descriptor): verifies auto descriptors never emit req:
+    let mut auto_wide_desc = TableSpec::new("AutoWideDesc", "Auto Wide");
+    auto_wide_desc.columns = vec![
+        ColumnSpec::descriptor("item", "Line Item"),
+        ColumnSpec::new("v").with_header("Val"),
+    ];
+    auto_wide_desc.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "A".repeat(30))
+            .with_cell("v", 1.0),
+    ];
+
+    // Sheet 3 (grid W=12): cliff spills, indent demand, header demand, lane-coupling victim/culprit,
+    // empty-descriptor victim, adjacent 1c merge vs spanned split, and side-by-side subtitle overflow.
+    let mut culprit = TableSpec::new("Culprit", "Culprit");
+    culprit.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("m1").with_header("M1"),
+        ColumnSpec::descriptor("notes", "Notes"),
+    ];
+    culprit.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "A".repeat(36)) // 36+1=37 -> 4c (B..E)
+            .with_cell("m1", 10.0)
+            .with_cell("notes", "N".repeat(24)), // 24+1=25 -> 3c (G..I), 1 char past 2c cliff
+    ];
+
+    let mut victim = TableSpec::new("Victim", "Victim");
+    victim.columns = vec![
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("m1").with_header("M1"),
+        ColumnSpec::descriptor("notes", "Notes"),
+    ];
+    victim.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", "ShortItem") // 9+1=10 -> raw 1c, stretched to 4c by Culprit
+            .with_cell("m1", 20.0)
+            .with_cell("notes", "N".repeat(23)), // 23+1=24 -> exact 2c cliff (G..H)
+    ];
+
+    let mut empty_victim = TableSpec::new("EmptyVictim", "Empty Victim");
+    empty_victim.columns = vec![
+        ColumnSpec::descriptor("item", ""),
+        ColumnSpec::new("m1").with_header("M1"),
+    ];
+    empty_victim.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("item", CellInput::Literal(ValueLiteral::Null)) // req:0, stretched to 4c
+            .with_cell("m1", 30.0),
+    ];
+
+    let mut indent_and_hdr = TableSpec::new("IndentAndHdr", "Indent And Header");
+    indent_and_hdr.columns = vec![
+        ColumnSpec::descriptor("ticker", "Tkr"),
+        ColumnSpec::descriptor("item", "Item"),
+        ColumnSpec::new("m1").with_header("M1"),
+        ColumnSpec::descriptor("hdr_col", "H".repeat(24)), // header 24+1=25 -> 3c
+    ];
+    indent_and_hdr.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("ticker", "AAPL") // 1c
+            .with_cell(
+                "item",
+                DetailedCellInput {
+                    value: Some(ValueLiteral::String("I".repeat(20))), // 20+1+2*2=25 -> 3c
+                    indent: Some(2),
+                    ..Default::default()
+                },
+            )
+            .with_cell("m1", 40.0)
+            .with_cell("hdr_col", "OK"),
+    ];
+
+    // Right-of Victim (depth=1 lane): two adjacent 1c descriptors merge; 40ch subtitle overflows w:36
+    let mut adj_single = TableSpec::new("AdjSingle", "Adj Single")
+        .with_subtitle("S".repeat(40))
+        .with_placement(PlacementSpec::right_of("Victim"));
+    adj_single.columns = vec![
+        ColumnSpec::descriptor("d1", "D1"),
+        ColumnSpec::descriptor("d2", "D2"),
+        ColumnSpec::new("m1").with_header("M1"),
+    ];
+    adj_single.rows = vec![
+        RowSpec::new("r1")
+            .with_cell("d1", "AA")
+            .with_cell("d2", "BB")
+            .with_cell("m1", 5.0),
+    ];
+
+    let manifest = ProjectManifest {
+        model_name: "SubAndReq".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "AutoSubs".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                tables: vec![
+                    TableId::from("AutoExact"),
+                    TableId::from("AutoOver"),
+                    TableId::from("AutoMultiFit"),
+                    TableId::from("AutoMultiOver"),
+                ],
+            },
+            SheetSpec {
+                name: "AutoWide".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                tables: vec![TableId::from("AutoWideDesc")],
+            },
+            SheetSpec {
+                name: "GridReq".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![
+                    TableId::from("Culprit"),
+                    TableId::from("Victim"),
+                    TableId::from("EmptyVictim"),
+                    TableId::from("IndentAndHdr"),
+                    TableId::from("AdjSingle"),
+                ],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[
+            auto_exact,
+            auto_over,
+            auto_multi_fit,
+            auto_multi_over,
+            auto_wide_desc,
+            culprit,
+            victim,
+            empty_victim,
+            indent_and_hdr,
+            adj_single,
+        ],
+    )
+    .unwrap();
+
+    let md = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let line_for = |id: &str| {
+        md.lines()
+            .find(|line| line.contains(&format!("`{id}`")))
+            .unwrap_or_else(|| panic!("missing line for `{id}` in:\n{md}"))
+    };
+
+    // Auto subtitle exact boundary vs overflow
+    assert!(line_for("AutoExact").contains("| sub:1 hdr:"));
+    assert!(!line_for("AutoExact").contains("ch>w"));
+    assert!(line_for("AutoOver").contains("| sub:1(25ch>w) hdr:"));
+    assert!(line_for("AutoMultiFit").contains("| sub:2 hdr:"));
+    assert!(!line_for("AutoMultiFit").contains("ch>w"));
+    assert!(line_for("AutoMultiOver").contains("| sub:2(30ch>w) hdr:"));
+
+    // Auto wide descriptor never emits req:
+    assert!(line_for("AutoWideDesc").contains("| cols: desc B(1c), measure C(1c)"));
+    assert!(!line_for("AutoWideDesc").contains("req:"));
+
+    // Grid cliff spills, lane-coupling culprit vs victim, empty victim, indent/header, adjacent split/merge
+    assert!(
+        line_for("Culprit")
+            .contains("| cols: desc B..E(4c, req:37), measure F(1c), desc G..I(3c, req:25)")
+    );
+    assert!(
+        line_for("Victim")
+            .contains("| cols: desc B..E(4c, req:10), measure F(1c), desc G..H(2c, req:24)")
+    );
+    assert!(line_for("EmptyVictim").contains("| cols: desc B..E(4c, req:0), measure F(1c)"));
+    assert!(line_for("IndentAndHdr").contains(
+        "| cols: desc B(1c), desc C..E(3c, req:25), measure F(1c), desc G..I(3c, req:25)"
+    ));
+    assert!(line_for("AdjSingle").contains("sub:1(40ch>w) hdr:"));
+    assert!(line_for("AdjSingle").contains("| cols: desc J..K(2c), measure L(1c)"));
+    assert!(!line_for("AdjSingle").contains("req:"));
+
+    // Custom theme: char_width_multiplier=1.2, col_padding=0.5 -> fractional req:, formula-evaluated text,
+    // adjacent spanned descriptors stay split, and subtitle overflow respects char_width_multiplier
+    let mut custom_theme = Theme::corporate_navy();
+    custom_theme.metrics.char_width_multiplier = 1.2;
+    custom_theme.metrics.col_padding = 0.5;
+
+    let mut custom_sub_fit = TableSpec::new("SubFit", "Sub Fit").with_subtitle("S".repeat(20)); // 20*1.2=24 <= 24
+    custom_sub_fit.columns = vec![
+        ColumnSpec::new("a").with_header("A"),
+        ColumnSpec::new("b").with_header("B"),
+    ];
+    custom_sub_fit.rows = vec![RowSpec::new("r1").with_cell("a", 1.0).with_cell("b", 2.0)];
+
+    let mut custom_sub_over = TableSpec::new("SubOver", "Sub Over").with_subtitle("S".repeat(21)); // 21*1.2=25.2 > 24
+    custom_sub_over.columns = vec![
+        ColumnSpec::new("a").with_header("A"),
+        ColumnSpec::new("b").with_header("B"),
+    ];
+    custom_sub_over.rows = vec![RowSpec::new("r1").with_cell("a", 1.0).with_cell("b", 2.0)];
+
+    let mut formula_desc = TableSpec::new("FormulaDesc", "Formula Desc");
+    formula_desc.columns = vec![
+        ColumnSpec::descriptor("d1", "D1"),
+        ColumnSpec::descriptor("d2", "D2"),
+        ColumnSpec::new("m1").with_header("M1"),
+    ];
+    formula_desc.rows = vec![
+        RowSpec::new("r1")
+            // 20-char evaluated formula text -> (20+1)*1.2 + 0.5 = 25.7 -> 3c (B..D)
+            .with_cell(
+                "d1",
+                CellInput::formula(r#"IF(TRUE, "Twenty Chars Formula", "X")"#),
+            )
+            // 16-char literal -> (16+1)*1.2 + 0.5 = 20.9 -> 2c (E..F)
+            .with_cell("d2", "Sixteen Char Txt")
+            .with_cell("m1", 1.0),
+    ];
+
+    let custom_manifest = ProjectManifest {
+        model_name: "CustomMetrics".to_string(),
+        theme: ThemeSpec::Custom(Box::new(custom_theme)),
+        sheets: vec![
+            SheetSpec {
+                name: "SubCheck".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("SubFit"), TableId::from("SubOver")],
+            },
+            SheetSpec {
+                name: "FormulaGrid".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                tables: vec![TableId::from("FormulaDesc")],
+            },
+        ],
+    };
+
+    let custom_compiled = Compiler::compile(
+        &custom_manifest,
+        &[custom_sub_fit, custom_sub_over, formula_desc],
+    )
+    .unwrap();
+    let custom_md = custom_compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let custom_line = |id: &str| {
+        custom_md
+            .lines()
+            .find(|line| line.contains(&format!("`{id}`")))
+            .unwrap_or_else(|| panic!("missing line for `{id}` in:\n{custom_md}"))
+    };
+
+    assert!(custom_line("SubFit").contains("| sub:1 hdr:"));
+    assert!(!custom_line("SubFit").contains("ch>w"));
+    assert!(custom_line("SubOver").contains("| sub:1(21ch>w) hdr:"));
+    assert!(
+        custom_line("FormulaDesc")
+            .contains("| cols: desc B..D(3c, req:25.7), desc E..F(2c, req:20.9), measure G(1c)")
+    );
 }

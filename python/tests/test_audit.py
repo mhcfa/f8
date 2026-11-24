@@ -960,6 +960,33 @@ def test_compiled_model_layout_markdown_scenarios() -> None:
     single_line = next(line for line in md.splitlines() if "`Single`" in line)
     assert "collapsible" not in single_line
 
+    # Subtitle overflow indicator & grid descriptor req:W (cliff spill + lane-coupling victim)
+    diag_model = Model("LayoutDiag")
+    grid_sheet = diag_model.add_sheet("Grid", layout="grid", col_width=12.0)
+
+    culprit = grid_sheet.add_table(
+        "Culprit",
+        "Culprit Table",
+        subtitle="A long single-line subtitle that clearly overflows the narrow panel width",
+    )
+    culprit.add_column("item", role="descriptor", header="Item")
+    culprit.add_column("val", header="Val")
+    culprit.add_row("r1", cells={"item": "A" * 24, "val": 1.0})  # 24+1=25 -> 3c
+
+    victim = grid_sheet.add_table("Victim", "Victim Table", subtitle="($ in M)")
+    victim.add_column("item", role="descriptor", header="Item")
+    victim.add_column("val", header="Val")
+    victim.add_row("r1", cells={"item": "Revenue", "val": 2.0})  # 7+1=8, stretched to 3c
+
+    diag_md = diag_model.compile().to_markdown("layout")
+    culprit_line = next(line for line in diag_md.splitlines() if "`Culprit`" in line)
+    victim_line = next(line for line in diag_md.splitlines() if "`Victim`" in line)
+    assert "sub:1(73ch>w)" in culprit_line
+    assert "cols: desc B..D(3c, req:25), measure E(1c)" in culprit_line
+    assert "sub:1 hdr:" in victim_line
+    assert "ch>w" not in victim_line
+    assert "cols: desc B..D(3c, req:8), measure E(1c)" in victim_line
+
 
 def test_table_auditor_to_markdown_compact_mode() -> None:
     # Scenario 9: compact=False preserves padded output; compact=True emits unpadded GFM
