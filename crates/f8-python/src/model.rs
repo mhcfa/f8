@@ -135,9 +135,10 @@ impl PyCompiledModel {
         let detail_mode = match detail {
             "values" => ModelMarkdownDetail::Values,
             "index" => ModelMarkdownDetail::Index,
+            "layout" => ModelMarkdownDetail::Layout,
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "Invalid detail mode '{other}'. Expected one of 'values', 'index'."
+                    "Invalid detail mode '{other}'. Expected one of 'values', 'index', 'layout'."
                 )));
             }
         };

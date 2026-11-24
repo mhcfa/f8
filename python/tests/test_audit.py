@@ -734,6 +734,42 @@ EXPECTED_PARITY_INDEX_MD = (
 )
 
 
+EXPECTED_PARITY_LAYOUT_MD = (
+    "# ParityModel\n"
+    "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3\n"
+    "\n"
+    "## Runtime Errors\n"
+    "\n"
+    '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)\n'
+    '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)\n'
+    '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)\n'
+    "\n"
+    "## Sheet: Financials\n"
+    "Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)\n"
+    "Columns: A:3, B:14, C:12, D:3, E:12\n"
+    "\n"
+    "- Band 1 (R2:R15, 14r x cols B..E, w:41):\n"
+    "  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack"
+    " | sub:2 hdr:R6:R7(grouped) body:R8:R15"
+    " | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1\n"
+    "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):\n"
+    "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack"
+    " | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)\n"
+    "\n"
+    "## Sheet: Valuation\n"
+    "Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)\n"
+    "Columns: A:3, B..D:12\n"
+    "\n"
+    "- Band 1 (R2:R6, 5r x cols B..D, w:36):\n"
+    "  - `Comps` [B2:D6] 5r x 3c (w:36) | stack"
+    " | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)\n"
+    "\n"
+    "## Sheet: Notes\n"
+    "\n"
+    "_(no tables)_\n"
+)
+
+
 def test_compiled_model_errors_and_workbook_markdown() -> None:
     # Scenario 1: Clean workbook returns []
     clean_model = Model(name="CleanModel")
@@ -789,6 +825,11 @@ def test_compiled_model_errors_and_workbook_markdown() -> None:
     assert md_index == EXPECTED_PARITY_INDEX_MD
     assert compiled.to_markdown("index", show_ids=False) == EXPECTED_PARITY_INDEX_MD
 
+    md_layout = compiled.to_markdown("layout")
+    assert md_layout == EXPECTED_PARITY_LAYOUT_MD
+    assert compiled.to_markdown("layout", show_ids=False) == EXPECTED_PARITY_LAYOUT_MD
+    assert compiled.to_markdown("layout", show_ids=True) == EXPECTED_PARITY_LAYOUT_MD
+
     # Scenario 5: show_ids=False omits synthetic Row column & inline ID annotations
     md_no_ids = compiled.to_markdown("values", show_ids=False)
     assert "| Row |" not in md_no_ids
@@ -823,11 +864,17 @@ def test_compiled_model_errors_and_workbook_markdown() -> None:
     assert compiled.to_markdown(sheets=[]) == expected_header_only
     assert compiled.to_markdown(tables=[]) == expected_header_only
     assert compiled.to_markdown(sheets=[], tables=[]) == expected_header_only
+    assert compiled.to_markdown("layout", sheets=[]) == expected_header_only
+    assert compiled.to_markdown("layout", tables=[]) == expected_header_only
 
     with pytest.raises(InspectionError):
         compiled.to_markdown(sheets=["UnknownSheet"])
     with pytest.raises(InspectionError):
         compiled.to_markdown(tables=["UnknownTable"])
+    with pytest.raises(InspectionError):
+        compiled.to_markdown("layout", sheets=["UnknownSheet"])
+    with pytest.raises(InspectionError):
+        compiled.to_markdown("layout", tables=["UnknownTable"])
 
     # Scenario 8: Invalid detail raises ValueError (not F8Error)
     from collections.abc import Callable
@@ -836,9 +883,82 @@ def test_compiled_model_errors_and_workbook_markdown() -> None:
     untyped_to_markdown = cast(Callable[[str], str], compiled.to_markdown)
     with pytest.raises(
         ValueError,
-        match=r"Invalid detail mode 'summary'\. Expected one of 'values', 'index'\.",
+        match=r"Invalid detail mode 'summary'\. Expected one of 'values', 'index', 'layout'\.",
     ):
         untyped_to_markdown("summary")
+
+
+def test_compiled_model_layout_markdown_scenarios() -> None:
+    # Partial tables filter in layout mode tags unselected siblings as (context) and scopes errors
+    parity = _build_parity_model()
+    md_partial = parity.to_markdown("layout", tables=["PureMeasures"])
+    assert "## Sheet: Financials\n" in md_partial
+    assert "## Sheet: Valuation" not in md_partial
+    assert "## Sheet: Notes" not in md_partial
+    assert "  - `IncomeStatement` (context) [B2:E15]" in md_partial
+    assert "  - `PureMeasures` [B18:C22]" in md_partial
+    assert "  - `PureMeasures` (context)" not in md_partial
+    assert 'PureMeasures["r1", "c2"]' in md_partial
+    assert 'IncomeStatement["div_err", "2024E"]' not in md_partial
+
+    # Grid layout with multi-lane geometry, uniform width inflation, and auto chrome metadata
+    model = Model("LayoutEndToEnd")
+    dash = model.add_sheet("Dashboard", layout="grid", col_width=12.0)
+
+    t1 = dash.add_table("T1", "Top Left")
+    t1.add_column("item", role="descriptor", header="Item")
+    t1.add_column("v1", header="V1", format="currency", decimals=1)
+    t1.add_row("r1", cells={"item": "Revenue", "v1": 123_456_789.0})
+
+    t2 = dash.add_table("T2", "Bottom Left", below=t1)
+    t2.add_column("item", role="descriptor", header="Item")
+    t2.add_column("v1", header="V1", format="currency", decimals=1)
+    t2.add_row("r1", cells={"item": "Cost", "v1": 50.0})
+
+    t3 = dash.add_table("T3", "Right Tall", right_of=t1)
+    t3.add_column("item", role="descriptor", header="Item")
+    t3.add_column("v1", header="V1")
+    for idx in range(1, 12):
+        t3.add_row(f"r{idx}", cells={"item": f"Row {idx}", "v1": float(idx)})
+
+    auto_sheet = model.add_sheet(
+        "Detail",
+        freeze_panes=(6, 2),
+        show_gridlines=True,
+        tab_color="#1F4E79",
+    )
+    tbl = auto_sheet.add_table(
+        "Notes",
+        "Notes Table",
+        subtitle=["Line 1", "Line 2"],
+        collapsible=True,
+    )
+    tbl.add_column("item", role="descriptor", header="Item")
+    tbl.add_column("val", group="Grp", header="Val")
+    tbl.add_row("r1", cells={"item": "Multi\nLine", "val": 10.0})
+
+    one_row = auto_sheet.add_table("Single", "", collapsible=True)
+    one_row.add_column("v")
+    one_row.add_row("r1", cells={"v": 1.0})
+
+    md = model.compile().to_markdown("layout")
+    assert "Layout: grid (W=15, base=12)" in md
+    assert "- Band 1 (" in md
+    assert "  - Lane B..C (" in md
+    assert "empty_below:" in md
+    assert "    - `T1` " in md
+    assert "    - `T2` " in md
+    assert "    - `T3` " in md
+    assert "Layout: auto |" in md
+    assert "| Freeze: C7 (R1:R6, A..B) | Gridlines: on | Tab: #1F4E79\n" in md
+    assert "sub:2 hdr:" in md
+    assert "(grouped)" in md
+    assert "collapsible | cols:" in md
+    assert "| wrap:1\n" in md
+    assert "`Single`" in md
+    assert "untitled hdr:none body:" in md
+    single_line = next(line for line in md.splitlines() if "`Single`" in line)
+    assert "collapsible" not in single_line
 
 
 def test_table_auditor_to_markdown_compact_mode() -> None:

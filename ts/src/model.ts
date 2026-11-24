@@ -556,9 +556,9 @@ export class CompiledModel {
       detail = arg1?.detail ?? "values"
     }
 
-    if (detail !== "values" && detail !== "index") {
+    if (detail !== "values" && detail !== "index" && detail !== "layout") {
       throw new Error(
-        `Invalid detail mode '${String(detail)}'. Expected one of 'values', 'index'.`
+        `Invalid detail mode '${String(detail)}'. Expected one of 'values', 'index', 'layout'.`
       )
     }
 

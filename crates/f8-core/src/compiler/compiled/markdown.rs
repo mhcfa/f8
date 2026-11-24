@@ -1,16 +1,262 @@
 //! Pure in-memory whole-workbook GitHub-Flavored Markdown renderer.
 
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::compiler::compiled::CompiledModel;
 use crate::compiler::compiled::error::InspectionError;
 use crate::compiler::compiled::model::{CellError, ModelMarkdownDetail, ModelMarkdownOptions};
 use crate::compiler::ir::id::CellId;
+use crate::compiler::layout::{SheetLayout, TablePlacement, col_to_excel_col, coordinate_to_a1};
 use crate::model::format::SemanticStyle;
-use crate::model::id::TableId;
-use crate::model::manifest::SheetSpec;
-use crate::model::table::{AxisRole, ColumnSpec, DataColumnSpec, RowSpec, TableSpec};
+use crate::model::id::{SheetId, TableId};
+use crate::model::manifest::{FreezePanes, SheetLayoutSpec, SheetSpec};
+use crate::model::table::{
+    AxisRole, ColumnSpec, DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP, DataColumnSpec,
+    PlacementSpec, RowSpec, TableSpec,
+};
 use crate::value::CellValue;
+
+const WIDTH_EPS: f64 = 1e-9;
+
+fn round2(v: f64) -> f64 {
+    let r = (v * 100.0).round() / 100.0;
+    if r == 0.0 { 0.0 } else { r }
+}
+
+fn format_width(v: f64) -> String {
+    let rounded = round2(v);
+    let formatted = format!("{rounded:.2}");
+    if formatted.contains('.') {
+        formatted
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    } else {
+        formatted
+    }
+}
+
+fn format_a1(col: u32, row: u32) -> String {
+    coordinate_to_a1(col, row)
+        .unwrap_or_else(|_| format!("{}{}", col_to_excel_col(col), row.saturating_add(1)))
+}
+
+fn format_row_range(start_row: u32, end_row: u32) -> String {
+    let r1 = start_row.saturating_add(1);
+    let r2 = end_row.saturating_add(1);
+    if start_row == end_row {
+        format!("R{r1}")
+    } else {
+        format!("R{r1}:R{r2}")
+    }
+}
+
+fn format_col_range(start_col: u32, end_col: u32) -> String {
+    let c1 = col_to_excel_col(start_col);
+    if start_col == end_col {
+        c1
+    } else {
+        format!("{c1}..{}", col_to_excel_col(end_col))
+    }
+}
+
+fn format_freeze_panes(fp: FreezePanes) -> String {
+    let a1 = format_a1(fp.col, fp.row);
+    let split_desc = match (fp.row > 0, fp.col > 0) {
+        (true, true) => format!(
+            "{}, {}",
+            format_row_range(0, fp.row - 1),
+            format_col_range(0, fp.col - 1)
+        ),
+        (true, false) => format_row_range(0, fp.row - 1),
+        (false, true) => format_col_range(0, fp.col - 1),
+        (false, false) => "no split".to_string(),
+    };
+    format!(" | Freeze: {a1} ({split_desc})")
+}
+
+#[derive(Clone, Copy)]
+struct PlacedTable<'a> {
+    decl_index: usize,
+    table: &'a TableSpec,
+    placement: &'a TablePlacement,
+}
+
+struct LayoutBand<'a> {
+    min_row: u32,
+    max_row: u32,
+    min_col: u32,
+    max_col: u32,
+    tables: Vec<PlacedTable<'a>>,
+}
+
+struct LayoutLane<'a> {
+    min_col: u32,
+    max_col: u32,
+    min_row: u32,
+    max_row: u32,
+    tables: Vec<PlacedTable<'a>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColCategory {
+    Desc,
+    Measure,
+    Gutter,
+}
+
+impl ColCategory {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Desc => "desc",
+            Self::Measure => "measure",
+            Self::Gutter => "gutter",
+        }
+    }
+}
+
+fn decompose_bands<'a>(mut placed: Vec<PlacedTable<'a>>) -> Vec<LayoutBand<'a>> {
+    placed.sort_by_key(|pt| {
+        (
+            pt.placement.start_row,
+            pt.placement.start_col,
+            pt.decl_index,
+        )
+    });
+    let mut bands: Vec<LayoutBand<'a>> = Vec::new();
+    for pt in placed {
+        let p = pt.placement;
+        match bands.last_mut() {
+            Some(current) if p.start_row <= current.max_row => {
+                current.max_row = current.max_row.max(p.end_row);
+                current.min_col = current.min_col.min(p.start_col);
+                current.max_col = current.max_col.max(p.end_col);
+                current.tables.push(pt);
+            }
+            Some(_) | None => {
+                bands.push(LayoutBand {
+                    min_row: p.start_row,
+                    max_row: p.end_row,
+                    min_col: p.start_col,
+                    max_col: p.end_col,
+                    tables: vec![pt],
+                });
+            }
+        }
+    }
+    bands
+}
+
+fn decompose_lanes<'a>(mut band_tables: Vec<PlacedTable<'a>>) -> Vec<LayoutLane<'a>> {
+    band_tables.sort_by_key(|pt| {
+        (
+            pt.placement.start_col,
+            pt.placement.start_row,
+            pt.decl_index,
+        )
+    });
+    let mut lanes: Vec<LayoutLane<'a>> = Vec::new();
+    for pt in band_tables {
+        let p = pt.placement;
+        match lanes.last_mut() {
+            Some(current) if p.start_col <= current.max_col => {
+                current.max_col = current.max_col.max(p.end_col);
+                current.min_row = current.min_row.min(p.start_row);
+                current.max_row = current.max_row.max(p.end_row);
+                current.tables.push(pt);
+            }
+            Some(_) | None => {
+                lanes.push(LayoutLane {
+                    min_col: p.start_col,
+                    max_col: p.end_col,
+                    min_row: p.start_row,
+                    max_row: p.end_row,
+                    tables: vec![pt],
+                });
+            }
+        }
+    }
+    for lane in &mut lanes {
+        lane.tables.sort_by_key(|pt| {
+            (
+                pt.placement.start_row,
+                pt.placement.start_col,
+                pt.decl_index,
+            )
+        });
+    }
+    lanes
+}
+
+fn format_placement(placement: &PlacementSpec) -> String {
+    match placement {
+        PlacementSpec::Stack { gap } => {
+            if *gap == DEFAULT_VERTICAL_TABLE_GAP {
+                "stack".to_string()
+            } else {
+                format!("stack (gap:{gap}r)")
+            }
+        }
+        PlacementSpec::Below { target, gap } => {
+            if *gap == DEFAULT_VERTICAL_TABLE_GAP {
+                format!("below `{target}`")
+            } else {
+                format!("below `{target}` (gap:{gap}r)")
+            }
+        }
+        PlacementSpec::RightOf { target, gap } => {
+            if *gap == DEFAULT_HORIZONTAL_TABLE_GAP {
+                format!("right_of `{target}`")
+            } else {
+                format!("right_of `{target}` (gap:{gap}c)")
+            }
+        }
+    }
+}
+
+fn format_table_structure(table: &TableSpec, placement: &TablePlacement) -> String {
+    let mut tokens: Vec<String> = Vec::with_capacity(5);
+
+    if placement.title_row.is_none() {
+        tokens.push("untitled".to_string());
+    } else if let Some(title_end_col) = placement.title_end_col
+        && title_end_col > placement.end_col
+    {
+        let extra = title_end_col - placement.end_col;
+        tokens.push(format!(
+            "title->{} (+{extra} empty)",
+            col_to_excel_col(title_end_col)
+        ));
+    }
+
+    if !table.subtitles.is_empty() {
+        tokens.push(format!("sub:{}", table.subtitles.len()));
+    }
+
+    let has_group = table.columns.iter().any(|c| c.group().is_some());
+    match placement.header_row_range {
+        Some((h_start, h_end)) => {
+            let range = format_row_range(h_start, h_end);
+            if has_group {
+                tokens.push(format!("hdr:{range}(grouped)"));
+            } else {
+                tokens.push(format!("hdr:{range}"));
+            }
+        }
+        None => {
+            tokens.push("hdr:none".to_string());
+        }
+    }
+
+    let (b_start, b_end) = placement.body_row_range;
+    tokens.push(format!("body:{}", format_row_range(b_start, b_end)));
+
+    if table.collapsible && placement.end_row > placement.start_row {
+        tokens.push("collapsible".to_string());
+    }
+
+    tokens.join(" ")
+}
 
 fn normalize_inline_text(text: &str) -> String {
     text.replace("\r\n", " ").replace(['\r', '\n'], " ")
@@ -171,6 +417,19 @@ impl CompiledModel {
             .filter(|err| selected_table_ids.contains(&err.coordinate.table))
             .collect();
 
+        let wrap_counts = match options.detail {
+            ModelMarkdownDetail::Layout => {
+                let mut counts: IndexMap<&TableId, usize> = IndexMap::new();
+                for (cell_id, coord) in &self.layout_map.cells {
+                    if coord.wrap_text {
+                        *counts.entry(&cell_id.table).or_insert(0) += 1;
+                    }
+                }
+                counts
+            }
+            ModelMarkdownDetail::Values | ModelMarkdownDetail::Index => IndexMap::new(),
+        };
+
         let mut lines: Vec<String> = Vec::new();
 
         // Line 1: Model title
@@ -212,27 +471,24 @@ impl CompiledModel {
                 normalize_inline_text(&sheet_spec.name)
             ));
 
-            if sheet_tables.is_empty() {
-                lines.push(String::new());
-                lines.push("_(no tables)_".to_string());
-                continue;
-            }
-
-            for table_spec in sheet_tables {
-                lines.push(String::new());
-                lines.push(render_table_heading(table_spec));
-                for subtitle in &table_spec.subtitles {
-                    let norm_sub = normalize_inline_text(subtitle);
-                    lines.push(format!("_{}_", norm_sub.trim()));
+            match options.detail {
+                ModelMarkdownDetail::Values => {
+                    self.push_sheet_tables(&sheet_tables, &mut lines, |table_spec, out| {
+                        self.push_values_table(table_spec, options.show_ids, out);
+                    });
                 }
-
-                match options.detail {
-                    ModelMarkdownDetail::Values => {
-                        self.push_values_table(table_spec, options.show_ids, &mut lines);
-                    }
-                    ModelMarkdownDetail::Index => {
-                        self.push_index_table(table_spec, &mut lines);
-                    }
+                ModelMarkdownDetail::Index => {
+                    self.push_sheet_tables(&sheet_tables, &mut lines, |table_spec, out| {
+                        self.push_index_table(table_spec, out);
+                    });
+                }
+                ModelMarkdownDetail::Layout => {
+                    self.push_layout_sheet(
+                        sheet_spec,
+                        &selected_table_ids,
+                        &wrap_counts,
+                        &mut lines,
+                    );
                 }
             }
         }
@@ -508,6 +764,390 @@ impl CompiledModel {
                         None => String::new(),
                     };
                     lines.push(format!("{prefix}{id_token}{desc_suffix}{style_suffix}"));
+                }
+            }
+        }
+    }
+
+    fn push_sheet_tables<F>(
+        &self,
+        sheet_tables: &[&TableSpec],
+        lines: &mut Vec<String>,
+        render_table: F,
+    ) where
+        F: Fn(&TableSpec, &mut Vec<String>),
+    {
+        if sheet_tables.is_empty() {
+            lines.push(String::new());
+            lines.push("_(no tables)_".to_string());
+            return;
+        }
+
+        for table_spec in sheet_tables {
+            lines.push(String::new());
+            lines.push(render_table_heading(table_spec));
+            for subtitle in &table_spec.subtitles {
+                let norm_sub = normalize_inline_text(subtitle);
+                lines.push(format!("_{}_", norm_sub.trim()));
+            }
+            render_table(table_spec, lines);
+        }
+    }
+
+    fn col_width_at(&self, sheet_layout: Option<&SheetLayout>, col: u32) -> f64 {
+        sheet_layout
+            .and_then(|sl| sl.col_widths.get(&col).copied())
+            .unwrap_or(self.theme.metrics.gutter_col_width)
+    }
+
+    fn range_width(&self, sheet_layout: Option<&SheetLayout>, start_col: u32, end_col: u32) -> f64 {
+        let mut total = 0.0;
+        for col in start_col..=end_col {
+            total += self.col_width_at(sheet_layout, col);
+        }
+        round2(total)
+    }
+
+    fn format_sheet_mode(
+        &self,
+        sheet_spec: &SheetSpec,
+        sheet_layout: Option<&SheetLayout>,
+        placed_tables: &[PlacedTable<'_>],
+    ) -> String {
+        match sheet_spec.layout {
+            SheetLayoutSpec::Auto => "auto".to_string(),
+            SheetLayoutSpec::Grid { col_width } => {
+                let base_w = round2(col_width.unwrap_or(self.theme.metrics.min_col_width));
+                let first_data_col = placed_tables.iter().find_map(|pt| {
+                    pt.table
+                        .columns
+                        .iter()
+                        .zip(&pt.placement.col_spans)
+                        .find_map(|(col_spec, &(phys_start, _))| match col_spec {
+                            ColumnSpec::Data(_) => Some(phys_start),
+                            ColumnSpec::Gutter => None,
+                        })
+                });
+                let actual_w = first_data_col
+                    .and_then(|c| sheet_layout.and_then(|sl| sl.col_widths.get(&c).copied()))
+                    .map_or(base_w, round2);
+                if (actual_w - base_w).abs() > WIDTH_EPS {
+                    format!(
+                        "grid (W={}, base={})",
+                        format_width(actual_w),
+                        format_width(base_w)
+                    )
+                } else {
+                    format!("grid (W={})", format_width(actual_w))
+                }
+            }
+        }
+    }
+
+    fn format_rle_columns(&self, sheet_layout: Option<&SheetLayout>, max_col: u32) -> String {
+        let mut runs: Vec<(u32, u32, f64)> = Vec::new();
+        for col in 0..=max_col {
+            let w = round2(self.col_width_at(sheet_layout, col));
+            match runs.last_mut() {
+                Some((_, run_end, run_w)) if (w - *run_w).abs() <= WIDTH_EPS => {
+                    *run_end = col;
+                }
+                Some(_) | None => {
+                    runs.push((col, col, w));
+                }
+            }
+        }
+        runs.into_iter()
+            .map(|(start_col, end_col, w)| {
+                format!(
+                    "{}:{}",
+                    format_col_range(start_col, end_col),
+                    format_width(w)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn format_col_runs(
+        &self,
+        sheet_layout: Option<&SheetLayout>,
+        table: &TableSpec,
+        placement: &TablePlacement,
+    ) -> String {
+        let mut runs: Vec<(ColCategory, u32, u32)> = Vec::new();
+        for (col_spec, &(phys_start, phys_end)) in table.columns.iter().zip(&placement.col_spans) {
+            let cat = match col_spec {
+                ColumnSpec::Data(d) => match d.role {
+                    AxisRole::Descriptor => ColCategory::Desc,
+                    AxisRole::Measure => ColCategory::Measure,
+                },
+                ColumnSpec::Gutter => ColCategory::Gutter,
+            };
+            match runs.last_mut() {
+                Some((last_cat, _, last_end)) if *last_cat == cat => {
+                    *last_end = phys_end;
+                }
+                Some(_) | None => {
+                    runs.push((cat, phys_start, phys_end));
+                }
+            }
+        }
+
+        let default_gutter = self.theme.metrics.gutter_col_width;
+        runs.into_iter()
+            .map(|(cat, start_col, end_col)| {
+                let col_range = format_col_range(start_col, end_col);
+                let phys_count = end_col.saturating_sub(start_col).saturating_add(1);
+                match cat {
+                    ColCategory::Desc | ColCategory::Measure => {
+                        format!("{} {col_range}({phys_count}c)", cat.label())
+                    }
+                    ColCategory::Gutter => {
+                        let widened = (start_col..=end_col).any(|c| {
+                            (self.col_width_at(sheet_layout, c) - default_gutter).abs() > WIDTH_EPS
+                        });
+                        if widened {
+                            let gutter_w =
+                                format_width(self.range_width(sheet_layout, start_col, end_col));
+                            format!("gutter {col_range}({phys_count}c, w:{gutter_w})")
+                        } else {
+                            format!("gutter {col_range}({phys_count}c)")
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn format_layout_table_item(
+        &self,
+        sheet_layout: Option<&SheetLayout>,
+        pt: PlacedTable<'_>,
+        selected_table_ids: &IndexSet<&TableId>,
+        wrap_counts: &IndexMap<&TableId, usize>,
+    ) -> String {
+        let table = pt.table;
+        let p = pt.placement;
+        let context = if selected_table_ids.contains(&table.id) {
+            ""
+        } else {
+            " (context)"
+        };
+        let start_a1 = format_a1(p.start_col, p.start_row);
+        let end_a1 = format_a1(p.end_col, p.end_row);
+        let rows = p.end_row.saturating_sub(p.start_row).saturating_add(1);
+        let cols = p.end_col.saturating_sub(p.start_col).saturating_add(1);
+        let table_w = format_width(self.range_width(sheet_layout, p.start_col, p.end_col));
+        let placement_str = format_placement(&table.placement);
+        let structure_str = format_table_structure(table, p);
+        let col_runs = self.format_col_runs(sheet_layout, table, p);
+
+        let mut line = format!(
+            "`{}`{context} [{start_a1}:{end_a1}] {rows}r x {cols}c (w:{table_w}) | {placement_str} | {structure_str} | cols: {col_runs}",
+            table.id
+        );
+        if let Some(&wrap_count) = wrap_counts.get(&table.id)
+            && wrap_count > 0
+        {
+            line.push_str(&format!(" | wrap:{wrap_count}"));
+        }
+        line
+    }
+
+    fn push_layout_sheet(
+        &self,
+        sheet_spec: &SheetSpec,
+        selected_table_ids: &IndexSet<&TableId>,
+        wrap_counts: &IndexMap<&TableId, usize>,
+        lines: &mut Vec<String>,
+    ) {
+        let placed_tables: Vec<PlacedTable<'_>> = sheet_spec
+            .tables
+            .iter()
+            .enumerate()
+            .filter_map(|(decl_index, tid)| {
+                let table = self.tables.get(tid)?;
+                let placement = self.layout_map.get_table(tid)?;
+                Some(PlacedTable {
+                    decl_index,
+                    table,
+                    placement,
+                })
+            })
+            .collect();
+
+        if placed_tables.is_empty() {
+            lines.push(String::new());
+            lines.push("_(no tables)_".to_string());
+            return;
+        }
+
+        let sheet_id = SheetId::from(sheet_spec.name.as_str());
+        let sheet_layout = self.layout_map.get_sheet(&sheet_id);
+
+        let (sheet_min_col, sheet_max_col, sheet_min_row, sheet_max_row) = {
+            let mut min_col = u32::MAX;
+            let mut max_col = 0u32;
+            let mut min_row = u32::MAX;
+            let mut max_row = 0u32;
+            for pt in &placed_tables {
+                min_col = min_col.min(pt.placement.start_col);
+                max_col = max_col.max(pt.placement.end_col);
+                min_row = min_row.min(pt.placement.start_row);
+                max_row = max_row.max(pt.placement.end_row);
+            }
+            (min_col, max_col, min_row, max_row)
+        };
+
+        let mode = self.format_sheet_mode(sheet_spec, sheet_layout, &placed_tables);
+        let min_a1 = format_a1(sheet_min_col, sheet_min_row);
+        let max_a1 = format_a1(sheet_max_col, sheet_max_row);
+        let total_rows = sheet_max_row
+            .saturating_sub(sheet_min_row)
+            .saturating_add(1);
+        let total_cols = sheet_max_col
+            .saturating_sub(sheet_min_col)
+            .saturating_add(1);
+        let canvas_w = format_width(self.range_width(sheet_layout, sheet_min_col, sheet_max_col));
+
+        let freeze_panes = sheet_layout.map_or(sheet_spec.freeze_panes, |sl| sl.freeze_panes);
+        let show_gridlines = sheet_layout.map_or(sheet_spec.show_gridlines, |sl| sl.show_gridlines);
+        let tab_color = sheet_layout.map_or(sheet_spec.tab_color.as_deref(), |sl| {
+            sl.tab_color.as_deref()
+        });
+
+        let mut meta_line = format!(
+            "Layout: {mode} | Bounds: {min_a1}:{max_a1} ({total_rows}r x {total_cols}c, w:{canvas_w})"
+        );
+        if let Some(fp) = freeze_panes {
+            meta_line.push_str(&format_freeze_panes(fp));
+        }
+        if show_gridlines {
+            meta_line.push_str(" | Gridlines: on");
+        }
+        if let Some(hex) = tab_color {
+            meta_line.push_str(" | Tab: ");
+            meta_line.push_str(hex);
+        }
+        lines.push(meta_line);
+
+        lines.push(format!(
+            "Columns: {}",
+            self.format_rle_columns(sheet_layout, sheet_max_col)
+        ));
+        lines.push(String::new());
+
+        let bands = decompose_bands(placed_tables);
+        let mut prev_band_max_row: Option<u32> = None;
+
+        for (band_idx, band) in bands.into_iter().enumerate() {
+            let band_num = band_idx + 1;
+            let band_row_range = format_row_range(band.min_row, band.max_row);
+            let band_rows = band.max_row.saturating_sub(band.min_row).saturating_add(1);
+            let band_col_range = format_col_range(band.min_col, band.max_col);
+            let band_w = format_width(self.range_width(sheet_layout, band.min_col, band.max_col));
+
+            let mut band_line = format!(
+                "- Band {band_num} ({band_row_range}, {band_rows}r x cols {band_col_range}, w:{band_w}"
+            );
+            if let Some(prev_max) = prev_band_max_row {
+                let gap = band.min_row.saturating_sub(prev_max.saturating_add(1));
+                band_line.push_str(&format!(", gap:{gap}r"));
+            }
+            if band.min_col > sheet_min_col {
+                let empty_end = band.min_col - 1;
+                let n = band.min_col - sheet_min_col;
+                let range = format_col_range(sheet_min_col, empty_end);
+                let empty_w =
+                    format_width(self.range_width(sheet_layout, sheet_min_col, empty_end));
+                band_line.push_str(&format!(", left_empty:{range} ({n}c, w:{empty_w})"));
+            }
+            if band.max_col < sheet_max_col {
+                let empty_start = band.max_col + 1;
+                let n = sheet_max_col - band.max_col;
+                let range = format_col_range(empty_start, sheet_max_col);
+                let empty_w =
+                    format_width(self.range_width(sheet_layout, empty_start, sheet_max_col));
+                band_line.push_str(&format!(", right_empty:{range} ({n}c, w:{empty_w})"));
+            }
+            band_line.push_str("):");
+            lines.push(band_line);
+
+            prev_band_max_row = Some(band.max_row);
+
+            let band_min_row = band.min_row;
+            let band_max_row = band.max_row;
+            let lanes = decompose_lanes(band.tables);
+
+            if lanes.len() == 1 {
+                if let Some(lane) = lanes.into_iter().next() {
+                    for pt in lane.tables {
+                        lines.push(format!(
+                            "  - {}",
+                            self.format_layout_table_item(
+                                sheet_layout,
+                                pt,
+                                selected_table_ids,
+                                wrap_counts,
+                            )
+                        ));
+                    }
+                }
+            } else {
+                let mut prev_lane_max_col: Option<u32> = None;
+                for lane in lanes {
+                    let lane_col_range = format_col_range(lane.min_col, lane.max_col);
+                    let lane_cols = lane.max_col.saturating_sub(lane.min_col).saturating_add(1);
+                    let lane_w =
+                        format_width(self.range_width(sheet_layout, lane.min_col, lane.max_col));
+                    let used_row_range = format_row_range(lane.min_row, lane.max_row);
+                    let used_rows = lane.max_row.saturating_sub(lane.min_row).saturating_add(1);
+
+                    let mut lane_line =
+                        format!("  - Lane {lane_col_range} ({lane_cols}c, w:{lane_w}");
+                    if let Some(prev_max_col) = prev_lane_max_col {
+                        let gap_cols = lane.min_col.saturating_sub(prev_max_col.saturating_add(1));
+                        if gap_cols > 0 {
+                            let gap_start = prev_max_col + 1;
+                            let gap_end = lane.min_col - 1;
+                            let gap_range = format_col_range(gap_start, gap_end);
+                            let gap_w =
+                                format_width(self.range_width(sheet_layout, gap_start, gap_end));
+                            lane_line
+                                .push_str(&format!(", gap:{gap_cols}c ({gap_range}, w:{gap_w})"));
+                        } else {
+                            lane_line.push_str(", gap:0c");
+                        }
+                    }
+                    lane_line.push_str(&format!(", {used_row_range} = {used_rows}r"));
+                    if lane.min_row > band_min_row {
+                        let n = lane.min_row - band_min_row;
+                        let range = format_row_range(band_min_row, lane.min_row - 1);
+                        lane_line.push_str(&format!(", empty_above:{range} ({n}r)"));
+                    }
+                    if lane.max_row < band_max_row {
+                        let n = band_max_row - lane.max_row;
+                        let range = format_row_range(lane.max_row + 1, band_max_row);
+                        lane_line.push_str(&format!(", empty_below:{range} ({n}r)"));
+                    }
+                    lane_line.push_str("):");
+                    lines.push(lane_line);
+
+                    prev_lane_max_col = Some(lane.max_col);
+
+                    for pt in lane.tables {
+                        lines.push(format!(
+                            "    - {}",
+                            self.format_layout_table_item(
+                                sheet_layout,
+                                pt,
+                                selected_table_ids,
+                                wrap_counts,
+                            )
+                        ));
+                    }
                 }
             }
         }

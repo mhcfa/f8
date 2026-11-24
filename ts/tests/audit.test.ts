@@ -782,6 +782,38 @@ const EXPECTED_PARITY_INDEX_MD = [
   "",
 ].join("\n")
 
+const EXPECTED_PARITY_LAYOUT_MD = [
+  "# ParityModel",
+  "Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3",
+  "",
+  "## Runtime Errors",
+  "",
+  '- `IncomeStatement["div_err", "2024E"]` (`\'Financials\'!E15`): `#DIV/0!` (`=1/0`)',
+  '- `PureMeasures["r1", "c2"]` (`\'Financials\'!C21`): `#N/A` (`=NA()`)',
+  '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)',
+  "",
+  "## Sheet: Financials",
+  "Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)",
+  "Columns: A:3, B:14, C:12, D:3, E:12",
+  "",
+  "- Band 1 (R2:R15, 14r x cols B..E, w:41):",
+  "  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1",
+  "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):",
+  "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)",
+  "",
+  "## Sheet: Valuation",
+  "Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)",
+  "Columns: A:3, B..D:12",
+  "",
+  "- Band 1 (R2:R6, 5r x cols B..D, w:36):",
+  "  - `Comps` [B2:D6] 5r x 3c (w:36) | stack | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)",
+  "",
+  "## Sheet: Notes",
+  "",
+  "_(no tables)_",
+  "",
+].join("\n")
+
 describe("CompiledModel runtime error audit & workbook Markdown", () => {
   it("Scenarios 1-2: errors() on clean and multi-sheet errored workbooks", () => {
     const cleanModel = new Model({ name: "CleanModel" })
@@ -848,6 +880,30 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
       EXPECTED_PARITY_INDEX_MD
     )
 
+    // Layout mode: cross-language byte-identical parity & determinism (ignores showIds)
+    expect(compiled.toMarkdown("layout")).toBe(EXPECTED_PARITY_LAYOUT_MD)
+    expect(compiled.toMarkdown({ detail: "layout", showIds: false })).toBe(
+      EXPECTED_PARITY_LAYOUT_MD
+    )
+    expect(compiled.toMarkdown("layout", { showIds: false })).toBe(
+      EXPECTED_PARITY_LAYOUT_MD
+    )
+
+    // Partial tables filter in layout mode tags unselected siblings (context) and scopes errors
+    const mdLayoutPartial = compiled.toMarkdown("layout", {
+      tables: ["PureMeasures"],
+    })
+    expect(mdLayoutPartial).toContain("## Sheet: Financials\n")
+    expect(mdLayoutPartial).not.toContain("## Sheet: Valuation")
+    expect(mdLayoutPartial).not.toContain("## Sheet: Notes")
+    expect(mdLayoutPartial).toContain(
+      "  - `IncomeStatement` (context) [B2:E15]"
+    )
+    expect(mdLayoutPartial).toContain("  - `PureMeasures` [B18:C22]")
+    expect(mdLayoutPartial).not.toContain("`PureMeasures` (context)")
+    expect(mdLayoutPartial).toContain('PureMeasures["r1", "c2"]')
+    expect(mdLayoutPartial).not.toContain('IncomeStatement["div_err", "2024E"]')
+
     // showIds: false omits synthetic Row column and inline IDs
     const mdNoIds = compiled.toMarkdown("values", { showIds: false })
     expect(mdNoIds).not.toContain("| Row |")
@@ -887,6 +943,12 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
     expect(compiled.toMarkdown({ sheets: [], tables: [] })).toBe(
       expectedHeaderOnly
     )
+    expect(compiled.toMarkdown("layout", { sheets: [] })).toBe(
+      expectedHeaderOnly
+    )
+    expect(compiled.toMarkdown("layout", { tables: [] })).toBe(
+      expectedHeaderOnly
+    )
 
     // Strict sheet/table not-found errors
     expect(() => compiled.toMarkdown({ sheets: ["UnknownSheet"] })).toThrow(
@@ -895,6 +957,12 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
     expect(() => compiled.toMarkdown({ tables: ["UnknownTable"] })).toThrow(
       InspectionError
     )
+    expect(() =>
+      compiled.toMarkdown("layout", { sheets: ["UnknownSheet"] })
+    ).toThrow(InspectionError)
+    expect(() =>
+      compiled.toMarkdown("layout", { tables: ["UnknownTable"] })
+    ).toThrow(InspectionError)
 
     // Scenario 8: Invalid detail throws plain Error (NOT F8Error)
     const untypedModel: {
@@ -912,7 +980,7 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
       const expectedDetail = typeof badArg === "string" ? badArg : badArg.detail
       if (caught instanceof Error) {
         expect(caught.message).toBe(
-          `Invalid detail mode '${expectedDetail}'. Expected one of 'values', 'index'.`
+          `Invalid detail mode '${expectedDetail}'. Expected one of 'values', 'index', 'layout'.`
         )
       }
     }
@@ -921,6 +989,74 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
     compiled.dispose()
     expect(() => compiled.errors()).toThrow(F8Error)
     expect(() => untypedModel.toMarkdown("summary")).toThrow(F8Error)
+  })
+
+  it('toMarkdown("layout") grid lanes, width inflation, and auto chrome metadata', () => {
+    const model = new Model({ name: "LayoutEndToEnd" })
+    const dash = model.addSheet("Dashboard", {
+      layout: "grid",
+      colWidth: 12.0,
+    })
+
+    const t1 = dash.addTable("T1", "Top Left")
+    t1.addColumn("item", { role: "descriptor", header: "Item" })
+    t1.addColumn("v1", { header: "V1", format: "currency", decimals: 1 })
+    t1.addRow("r1", { cells: { item: "Revenue", v1: 123_456_789.0 } })
+
+    const t2 = dash.addTable("T2", "Bottom Left", { below: t1 })
+    t2.addColumn("item", { role: "descriptor", header: "Item" })
+    t2.addColumn("v1", { header: "V1", format: "currency", decimals: 1 })
+    t2.addRow("r1", { cells: { item: "Cost", v1: 50.0 } })
+
+    const t3 = dash.addTable("T3", "Right Tall", { rightOf: t1 })
+    t3.addColumn("item", { role: "descriptor", header: "Item" })
+    t3.addColumn("v1", { header: "V1" })
+    for (let idx = 1; idx <= 11; idx++) {
+      t3.addRow(`r${idx}`, { cells: { item: `Row ${idx}`, v1: idx } })
+    }
+
+    const autoSheet = model.addSheet("Detail", {
+      freezePanes: { row: 6, col: 2 },
+      showGridlines: true,
+      tabColor: "#1F4E79",
+    })
+    const tbl = autoSheet.addTable("Notes", "Notes Table", {
+      subtitle: ["Line 1", "Line 2"],
+      collapsible: true,
+    })
+    tbl.addColumn("item", { role: "descriptor", header: "Item" })
+    tbl.addColumn("val", { group: "Grp", header: "Val" })
+    tbl.addRow("r1", { cells: { item: "Multi\nLine", val: 10.0 } })
+
+    const oneRow = autoSheet.addTable("Single", "", { collapsible: true })
+    oneRow.addColumn("v")
+    oneRow.addRow("r1", { cells: { v: 1.0 } })
+
+    const compiled = model.compile()
+    try {
+      const md = compiled.toMarkdown("layout")
+      expect(md).toContain("Layout: grid (W=15, base=12)")
+      expect(md).toContain("  - Lane B..C (")
+      expect(md).toContain("empty_below:")
+      expect(md).toContain("    - `T1` ")
+      expect(md).toContain("    - `T2` ")
+      expect(md).toContain("    - `T3` ")
+      expect(md).toContain(
+        "| Freeze: C7 (R1:R6, A..B) | Gridlines: on | Tab: #1F4E79\n"
+      )
+      expect(md).toContain("sub:2 hdr:")
+      expect(md).toContain("(grouped)")
+      expect(md).toContain("collapsible | cols:")
+      expect(md).toContain("| wrap:1\n")
+      const singleLine = md
+        .split("\n")
+        .find((line) => line.includes("`Single`"))
+      expect(singleLine).toBeDefined()
+      expect(singleLine).toContain("untitled hdr:none body:")
+      expect(singleLine).not.toContain("collapsible")
+    } finally {
+      compiled.dispose()
+    }
   })
 
   it("Scenario 9: TableAuditor.toMarkdown compact mode and backward compatibility", () => {

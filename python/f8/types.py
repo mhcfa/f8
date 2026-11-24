@@ -14,7 +14,7 @@ type CellValueDict = dict[str, object] | str
 
 type ExcelErrorCode = Literal["#DIV/0!", "#VALUE!", "#REF!", "#NUM!", "#N/A", "#NAME?"]
 
-type ModelMarkdownDetail = Literal["values", "index"]
+type ModelMarkdownDetail = Literal["values", "index", "layout"]
 
 type SheetCellKind = Literal[
     "empty",

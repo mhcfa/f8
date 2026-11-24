@@ -17,7 +17,7 @@ export type ExcelErrorCode =
   | "#N/A"
   | "#NAME?"
 
-export type ModelMarkdownDetail = "values" | "index"
+export type ModelMarkdownDetail = "values" | "index" | "layout"
 
 export type FormatPreset =
   | "currency"

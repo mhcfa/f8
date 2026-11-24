@@ -403,13 +403,15 @@ pub enum ModelMarkdownDetail {
     Values,
     /// Render compact coordinate-index catalog (`Columns:` and `Rows:`) with zero evaluated measure values.
     Index,
+    /// Render compact 2D worksheet layout map showing geometry, column widths, bands, lanes, and table bounds.
+    Layout,
 }
 
 /// Configuration options for [`CompiledModel::to_markdown`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelMarkdownOptions {
-    /// Detail granularity (`values` or `index`).
+    /// Detail granularity (`values`, `index`, or `layout`).
     #[serde(default)]
     pub detail: ModelMarkdownDetail,
     /// Optional sheet allowlist (union with `tables` when both are provided).
@@ -418,7 +420,7 @@ pub struct ModelMarkdownOptions {
     /// Optional table allowlist (union with `sheets` when both are provided).
     #[serde(default)]
     pub tables: Option<Vec<TableId>>,
-    /// Whether to annotate inline `[col_id]` / `[row_id]` tags in `values` mode (ignored in `index` mode).
+    /// Whether to annotate inline `[col_id]` / `[row_id]` tags in `values` mode (ignored in `index` and `layout` modes).
     #[serde(default = "default_true")]
     pub show_ids: bool,
 }
