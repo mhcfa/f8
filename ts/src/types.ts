@@ -324,8 +324,10 @@ export interface LaneInput {
   readonly tableGap?: number
 }
 
+export type LaneInputItem = LaneInput | TableRef
+
 export interface BandInput {
-  readonly lanes: readonly LaneInput[]
+  readonly lanes: readonly LaneInputItem[]
   readonly gap?: number
   readonly laneGap?: number
 }

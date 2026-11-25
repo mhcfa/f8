@@ -870,39 +870,48 @@ export class Sheet {
 
         const normLanes: LaneSpecInput[] = []
         for (const laneObj of item.lanes as readonly unknown[]) {
-          if (
-            laneObj instanceof Table ||
-            !isPlainObject(laneObj) ||
-            !Array.isArray(laneObj.tables)
-          ) {
-            throw new Error(
-              "Band lane item must be a LaneInput object with a 'tables' array"
-            )
-          }
-          if (laneObj.tables.length === 0) {
-            throw new Error("Lane 'tables' cannot be empty")
-          }
-          const tableGap = validateNonNegativeInt(laneObj.tableGap, "tableGap")
-          if (laneObj.tables.length === 1 && tableGap !== undefined) {
-            throw new Error(
-              `Lane with a single table cannot specify 'tableGap' (${tableGap})`
-            )
-          }
-          const laneTables: string[] = []
-          for (const ref of laneObj.tables as readonly unknown[]) {
-            const tid = this.#resolveTableRef(ref)
+          if (typeof laneObj === "string" || laneObj instanceof Table) {
+            const tid = this.#resolveTableRef(laneObj)
             if (seenIds.has(tid)) {
               throw new Error(
                 `Duplicate table '${tid}' in bands for sheet '${this.name}'`
               )
             }
             seenIds.add(tid)
-            laneTables.push(tid)
+            normLanes.push({ tables: [tid] })
+          } else if (isPlainObject(laneObj) && Array.isArray(laneObj.tables)) {
+            if (laneObj.tables.length === 0) {
+              throw new Error("Lane 'tables' cannot be empty")
+            }
+            const tableGap = validateNonNegativeInt(
+              laneObj.tableGap,
+              "tableGap"
+            )
+            if (laneObj.tables.length === 1 && tableGap !== undefined) {
+              throw new Error(
+                `Lane with a single table cannot specify 'tableGap' (${tableGap})`
+              )
+            }
+            const laneTables: string[] = []
+            for (const ref of laneObj.tables as readonly unknown[]) {
+              const tid = this.#resolveTableRef(ref)
+              if (seenIds.has(tid)) {
+                throw new Error(
+                  `Duplicate table '${tid}' in bands for sheet '${this.name}'`
+                )
+              }
+              seenIds.add(tid)
+              laneTables.push(tid)
+            }
+            normLanes.push({
+              tables: laneTables,
+              ...(tableGap !== undefined ? { tableGap } : {}),
+            })
+          } else {
+            throw new Error(
+              "Band lane item must be a LaneInput object with a 'tables' array, Table, or string"
+            )
           }
-          normLanes.push({
-            tables: laneTables,
-            ...(tableGap !== undefined ? { tableGap } : {}),
-          })
         }
 
         normalizedBands.push({

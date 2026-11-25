@@ -87,8 +87,9 @@ export interface LaneInput {
   readonly tables: readonly TableRef[];
   readonly tableGap?: number;
 }
+export type LaneInputItem = LaneInput | TableRef;
 export interface BandInput {
-  readonly lanes: readonly LaneInput[];
+  readonly lanes: readonly LaneInputItem[];
   readonly gap?: number;
   readonly laneGap?: number;
 }
@@ -285,15 +286,15 @@ table.addColumnGutter(): this;
 - Worksheet margins: Physical Row 0 and Column 0 (Column A) are reserved as top and left margins. Band `0` starts at `B2` (`col=1, row=1`).
 - Default vertical stacking: Without `sheet.setBands(...)`, each table on the worksheet is placed in its own 1-lane, 1-table band at Column `B` separated by `2` blank gutter rows in `addTable` order.
 - Explicit 2D band/lane layout via `sheet.setBands(bands: readonly BandInputItem[]): this`:
-  - `BandInput` (`{ lanes: readonly LaneInput[], gap?: number, laneGap?: number }`): Horizontal row of 1 or more vertical lanes. Band `b > 0` starts at `prev_band_max_end_row + 1 + (gap ?? 2)`; Lane `l > 0` starts at `prev_lane_max_end_col + 1 + (laneGap ?? 1)`.
+  - `BandInput` (`{ lanes: readonly LaneInputItem[], gap?: number, laneGap?: number }`): Horizontal row of 1 or more vertical lanes (`LaneInput` or bare `TableRef` 1-table lane shorthand). Band `b > 0` starts at `prev_band_max_end_row + 1 + (gap ?? 2)`; Lane `l > 0` starts at `prev_lane_max_end_col + 1 + (laneGap ?? 1)`.
   - `LaneInput` (`{ tables: readonly TableRef[], tableGap?: number }`): Vertical stack of 1 or more tables (`Table` or `string` ID, normalized to `readonly string[]`). Table `0` starts at `band_start_row`; Table `t > 0` starts at `prev_table_end_row + 1 + (tableGap ?? 2)`.
-  - Bare `TableRef` shorthand: Pass a `Table` or `string` directly inside `setBands([...])` for a 1-lane, 1-table full-width band (`lanes` always requires explicit `LaneInput` objects).
+  - Bare `TableRef` shorthand: Pass a `Table` or `string` directly inside `setBands([...])` for a 1-lane, 1-table full-width band, or directly inside `lanes: [...]` for a 1-table lane (`{ lanes: [left, right] }`, `{ lanes: [{ tables: [tl, bl] }, tr] }`, or `{ lanes: [card], gap: 1 }`). Multi-table vertical lanes still require explicit `{ tables: [...] }` objects (nested `TableRef[]` arrays are rejected).
   - Non-overlap & ordering: Tables cannot overlap by construction (each lane's width is `max(end_col)` across its tables, so a wider lower-left card cleanly shifts Lane 1 right). Compiled outputs (`summary()`, `errors()`, `inspectSheet()`, `toMarkdown()`) follow canonical `bands -> lanes -> tables` order.
-  - Strict validation: Throws `Error` on empty `lanes`/`tables`, negative or non-integer gaps, dead gaps (`gap` on Band `0`, `laneGap` on a 1-lane band, `tableGap` on a 1-table lane), foreign-sheet or duplicate tables, and missing tables (exact partition enforced on `setBands` and re-validated on `toSpec()` if `addTable` is called later). `setBands([])` is valid on an empty sheet; re-calling `setBands` replaces the layout idempotently.
+  - Strict validation: Throws `Error` on empty `lanes`/`tables`, nested arrays or invalid lane items, negative or non-integer gaps, dead gaps (`gap` on Band `0`, `laneGap` on a 1-lane band, `tableGap` on a 1-table lane), foreign-sheet or duplicate tables, and missing tables (exact partition enforced on `setBands` and re-validated on `toSpec()` if `addTable` is called later). `setBands([])` is valid on an empty sheet; re-calling `setBands` replaces the layout idempotently.
 
 ```ts
 sheet.setBands([
-  { lanes: [{ tables: [tl, bl] }, { tables: [tr] }], laneGap: 1 },
+  { lanes: [{ tables: [tl, bl] }, tr], laneGap: 1 }, // bare TableRef shorthand for 1-table lane
   timeline, // bare TableRef shorthand for a 1-table full-width band
 ])
 ```

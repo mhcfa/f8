@@ -78,10 +78,11 @@ table = sheet.add_table(
 ) -> Table
 
 type TableRef = str | Table
+type LaneItem = Lane | TableRef
 type BandItem = Band | TableRef
 
 lane = f8.Lane(tables: Sequence[TableRef], *, table_gap: int | None = None)
-band = f8.Band(lanes: Sequence[Lane], *, gap: int | None = None, lane_gap: int | None = None)
+band = f8.Band(lanes: Sequence[LaneItem], *, gap: int | None = None, lane_gap: int | None = None)
 sheet.set_bands(bands: Sequence[BandItem]) -> Sheet
 ```
 
@@ -287,16 +288,16 @@ table.add_column_gutter() -> Table
 - Worksheet margins: Physical Row 0 and Column 0 (Column A) are reserved as top and left margins. Band `0` starts at `B2` (`col=1, row=1`).
 - Default vertical stacking: Without `sheet.set_bands(...)`, each table on the worksheet is placed in its own 1-lane, 1-table band at Column `B` separated by `2` blank gutter rows in `add_table` order.
 - Explicit 2D band/lane layout via `sheet.set_bands(bands: Sequence[Band | TableRef]) -> Sheet`:
-  - `Band(lanes: Sequence[Lane], *, gap: int | None = None, lane_gap: int | None = None)`: Horizontal row of 1 or more vertical `Lane`s. Band `b > 0` starts at `prev_band_max_end_row + 1 + (gap ?? 2)`; Lane `l > 0` starts at `prev_lane_max_end_col + 1 + (lane_gap ?? 1)`.
+  - `Band(lanes: Sequence[Lane | TableRef], *, gap: int | None = None, lane_gap: int | None = None)`: Horizontal row of 1 or more vertical `Lane`s (or bare `TableRef` 1-table lane shorthands, normalized to `tuple[Lane, ...]`). Band `b > 0` starts at `prev_band_max_end_row + 1 + (gap ?? 2)`; Lane `l > 0` starts at `prev_lane_max_end_col + 1 + (lane_gap ?? 1)`.
   - `Lane(tables: Sequence[TableRef], *, table_gap: int | None = None)`: Vertical stack of 1 or more tables (`Table` or `str` ID, normalized to `tuple[str, ...]`). Table `0` starts at `band_start_row`; Table `t > 0` starts at `prev_table_end_row + 1 + (table_gap ?? 2)`.
-  - Bare `TableRef` shorthand: Pass a `Table` or `str` directly inside `set_bands([...])` for a 1-lane, 1-table full-width band (`Band([...])` always requires explicit `Lane` items).
+  - Bare `TableRef` shorthand: Pass a `Table` or `str` directly inside `set_bands([...])` for a 1-lane, 1-table full-width band, or directly inside `Band([...])` for a 1-table lane (`Band([left, right])`, `Band([Lane([tl, bl]), tr])`, or `Band([card], gap=1)`). Multi-table vertical lanes still require explicit `Lane([...])` objects (nested sequences are rejected).
   - Non-overlap & ordering: Tables cannot overlap by construction (each lane's width is `max(end_col)` across its tables, so a wider lower-left card cleanly shifts Lane 1 right). Compiled outputs (`summary()`, `errors()`, `inspect_sheet()`, `to_markdown()`) follow canonical `bands -> lanes -> tables` order.
-  - Strict validation: Rejects empty `Band`/`Lane`, bare `str`/`Table` passed as `tables` or `bands`, negative/`bool`/non-int gaps, dead gaps (`gap` on Band `0`, `lane_gap` on a 1-lane band, `table_gap` on a 1-table lane), foreign-sheet or duplicate tables, and missing tables (exact partition enforced on `set_bands` and re-validated on `__f8_spec__` if `add_table` is called later). `set_bands([])` is valid on an empty sheet; re-calling `set_bands` replaces the layout idempotently.
+  - Strict validation: Rejects empty `Band`/`Lane`, nested sequences or invalid lane items, bare `str`/`Table` passed as `tables`, `lanes`, or `bands`, negative/`bool`/non-int gaps, dead gaps (`gap` on Band `0`, `lane_gap` on a 1-lane band, `table_gap` on a 1-table lane), foreign-sheet or duplicate tables, and missing tables (exact partition enforced on `set_bands` and re-validated on `__f8_spec__` if `add_table` is called later). `set_bands([])` is valid on an empty sheet; re-calling `set_bands` replaces the layout idempotently.
 
 ```python
 sheet.set_bands(
     [
-        f8.Band([f8.Lane([tl, bl]), f8.Lane([tr])], lane_gap=1),
+        f8.Band([f8.Lane([tl, bl]), tr], lane_gap=1),  # bare TableRef shorthand for 1-table lane
         timeline,  # bare TableRef shorthand for a 1-table full-width band
     ]
 )

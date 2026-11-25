@@ -19,6 +19,7 @@ from f8 import (
     CellInputValue,
     CompiledModel,
     Lane,
+    LaneItem,
     Model,
     Shade,
     Sheet,
@@ -772,9 +773,10 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
 
 def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
     # Public exports
-    for export_name in ("Band", "BandItem", "Lane", "TableRef"):
+    for export_name in ("Band", "BandItem", "Lane", "LaneItem", "TableRef"):
         assert export_name in f8.__all__
     assert BandItem is not None
+    assert LaneItem is not None
     assert TableRef is not None
 
     def make_card(sheet: Sheet, tid: str, title: str, cols: int, rows: int) -> Table:
@@ -998,16 +1000,24 @@ def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
     # Band validation
     with pytest.raises(ValueError, match="cannot be empty"):
         Band([])
-    with pytest.raises(TypeError, match="must be a Lane"):
-        Band(cast(list[Lane], [vt1]))
-    with pytest.raises(TypeError, match="must be a Lane"):
-        Band(cast(list[Lane], ["T1"]))
-    with pytest.raises(TypeError, match="sequence of Lane"):
-        Band(cast(list[Lane], Lane([vt1])))
+    with pytest.raises(TypeError, match="must be a Lane, Table, or str"):
+        Band(cast(list[LaneItem], [[vt1, vt2]]))
+    with pytest.raises(TypeError, match="must be a Lane, Table, or str"):
+        Band(cast(list[LaneItem], [123]))
+    with pytest.raises(TypeError, match="sequence of Lane, Table, or str"):
+        Band(cast(list[LaneItem], Lane([vt1])))
+    with pytest.raises(TypeError, match="sequence of Lane, Table, or str"):
+        Band(cast(list[LaneItem], vt1))
+    with pytest.raises(TypeError, match="sequence of Lane, Table, or str"):
+        Band("T1")
     with pytest.raises(ValueError, match="single lane cannot specify 'lane_gap'"):
         Band([Lane([vt1])], lane_gap=1)
     with pytest.raises(ValueError, match="single lane cannot specify 'lane_gap'"):
+        Band([vt1], lane_gap=1)
+    with pytest.raises(ValueError, match="single lane cannot specify 'lane_gap'"):
         Band([Lane([vt1])], lane_gap=0)
+    with pytest.raises(ValueError, match="single lane cannot specify 'lane_gap'"):
+        Band([vt1], lane_gap=0)
     with pytest.raises(ValueError, match="non-negative"):
         Band([Lane([vt1]), Lane([vt2])], lane_gap=-1)
     with pytest.raises(ValueError, match="non-negative"):
@@ -1027,6 +1037,8 @@ def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
     with pytest.raises(ValueError, match="band 0 cannot specify 'gap'"):
         s_val.set_bands([Band([Lane([vt1])], gap=0), vt2])
     with pytest.raises(ValueError, match="band 0 cannot specify 'gap'"):
+        s_val.set_bands([Band([vt1], gap=0), vt2])
+    with pytest.raises(ValueError, match="band 0 cannot specify 'gap'"):
         s_val.set_bands([Band([Lane([vt1])], gap=2), vt2])
     with pytest.raises(ValueError, match="missing table"):
         s_val.set_bands([vt1])
@@ -1035,9 +1047,13 @@ def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
     with pytest.raises(ValueError, match="Duplicate table"):
         s_val.set_bands([Band([Lane([vt1, vt1]), Lane([vt2])])])
     with pytest.raises(ValueError, match="Duplicate table"):
+        s_val.set_bands([Band([vt1, vt1])])
+    with pytest.raises(ValueError, match="Duplicate table"):
         s_val.set_bands([vt1, vt2, vt1])
     with pytest.raises(ValueError, match="does not belong to sheet"):
         s_val.set_bands([vt1, vt2, "Ghost"])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_val.set_bands([Band([vt1, "Ghost"])])
 
     # Foreign-sheet Table object (both distinct ID and colliding ID on standalone Sheet)
     foreign_sheet = Sheet("Other")
@@ -1049,6 +1065,8 @@ def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
         s_val.set_bands([foreign_same_id, vt2])
     with pytest.raises(ValueError, match="does not belong to sheet"):
         s_val.set_bands([Band([Lane([foreign_same_id])]), vt2])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_val.set_bands([Band([foreign_same_id, vt2])])
 
     # Concurrent value-equal Lanes across standalone sheets preserve per-instance Table ownership
     s_own_a = Sheet("OwnA")
@@ -1069,20 +1087,59 @@ def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
     s_own_a.set_bands([reused_band])
     with pytest.raises(ValueError, match="does not belong to sheet"):
         s_own_b.set_bands([reused_band])
+    reused_shorthand_band = Band([t_own_a])
+    assert reused_shorthand_band == reused_band
+    assert hash(reused_shorthand_band) == hash(reused_band)
+    assert repr(reused_shorthand_band) == repr(Band([Lane(["T"])]))
+    s_own_a.set_bands([reused_shorthand_band])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_own_b.set_bands([reused_shorthand_band])
     assert s_own_a.bands == [Band([Lane(["T"])])]
     s_own_b.set_bands(s_own_a.bands)
     assert s_own_b.bands == [Band([Lane(["T"])])]
 
-    # Normalized sheet.bands parity (Table vs str vs shorthand vs omitted) and idempotency
+    # Normalized sheet.bands parity (Table vs str vs band/lane shorthand vs omitted) and idempotency
     assert Lane([vt1]) == Lane(["T1"])
+    assert Band([vt1, "T2"]) == Band([Lane(["T1"]), Lane(["T2"])])
     assert s_val.bands == [Band([Lane(["T1"])]), Band([Lane(["T2"])])]
     s_val.set_bands([vt1, vt2])
     assert s_val.bands == [Band([Lane(["T1"])]), Band([Lane(["T2"])])]
     s_val.set_bands([Band([Lane(["T1"]), Lane(["T2"])])])
     assert s_val.bands == [Band([Lane(["T1"]), Lane(["T2"])])]
+    s_val.set_bands([Band([vt1, "T2"])])
+    assert s_val.bands == [Band([Lane(["T1"]), Lane(["T2"])])]
     # Idempotent replacement
     s_val.set_bands([Band([Lane([vt2, vt1])])])
     assert s_val.bands == [Band([Lane(["T2", "T1"])])]
+
+    # Bare TableRef lane shorthand end-to-end compilation (pair, mixed lane, custom gap)
+    m_short = Model("LaneShorthand")
+    s_short = m_short.add_sheet("Sensitivities")
+    s_l1 = make_card(s_short, "L1", "Left 1", 2, 1)
+    s_l2 = make_card(s_short, "L2", "Left 2", 2, 1)
+    s_r1 = make_card(s_short, "R1", "Right 1", 2, 1)
+    s_p1 = make_card(s_short, "P1", "Pair Left", 2, 1)
+    make_card(s_short, "P2", "Pair Right", 2, 1)
+    s_foot = make_card(s_short, "Foot", "Footer", 3, 1)
+    s_short.set_bands(
+        [
+            Band([Lane([s_l1, s_l2]), s_r1], lane_gap=1),
+            Band([s_p1, "P2"], gap=1, lane_gap=2),
+            Band([s_foot], gap=0),
+        ]
+    )
+    assert s_short.bands == [
+        Band([Lane(["L1", "L2"]), Lane(["R1"])], lane_gap=1),
+        Band([Lane(["P1"]), Lane(["P2"])], gap=1, lane_gap=2),
+        Band([Lane(["Foot"])], gap=0),
+    ]
+    c_short = m_short.compile()
+    assert c_short.table("L1").address("r1", "c1") == "B5"
+    assert c_short.table("L2").address("r1", "c1") == "B11"
+    assert c_short.table("R1").address("r1", "c1") == "E5"
+    assert c_short.table("P1").address("r1", "c1") == "B16"
+    assert c_short.table("P2").address("r1", "c1") == "F16"
+    assert c_short.table("Foot").address("r1", "c1") == "B20"
 
     # Adding a table after set_bands invalidates partition on __f8_spec__ / compile
     m_late = Model("LateTable")

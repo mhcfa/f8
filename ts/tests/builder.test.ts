@@ -21,6 +21,7 @@ import {
   compile,
   CompiledModel,
   type LaneInput,
+  type LaneInputItem,
   type LaneSpecInput,
   Model,
   type Shade,
@@ -993,7 +994,13 @@ describe("TypeScript Fluent Builder DSL", () => {
     // Invalid Band / Lane shapes and gaps
     expect(() => sVal.setBands([{ lanes: [] }])).toThrow("cannot be empty")
     expect(() =>
-      sVal.setBands([{ lanes: [vt1 as unknown as LaneInput] }])
+      sVal.setBands([{ lanes: [[vt1, vt2] as unknown as LaneInputItem] }])
+    ).toThrow("LaneInput")
+    expect(() =>
+      sVal.setBands([{ lanes: [123 as unknown as LaneInputItem] }])
+    ).toThrow("LaneInput")
+    expect(() =>
+      sVal.setBands([{ lanes: [{} as unknown as LaneInputItem] }])
     ).toThrow("LaneInput")
     expect(() => sVal.setBands([{ lanes: [{ tables: [] }] }])).toThrow(
       "cannot be empty"
@@ -1012,9 +1019,15 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(() =>
       sVal.setBands([{ lanes: [{ tables: [vt1] }], laneGap: 1 }, vt2])
     ).toThrow("single lane and cannot specify 'laneGap'")
+    expect(() => sVal.setBands([{ lanes: [vt1], laneGap: 1 }, vt2])).toThrow(
+      "single lane and cannot specify 'laneGap'"
+    )
     expect(() =>
       sVal.setBands([{ lanes: [{ tables: [vt1] }], laneGap: 0 }, vt2])
     ).toThrow("single lane and cannot specify 'laneGap'")
+    expect(() => sVal.setBands([{ lanes: [vt1], laneGap: 0 }, vt2])).toThrow(
+      "single lane and cannot specify 'laneGap'"
+    )
     expect(() =>
       sVal.setBands([{ lanes: [{ tables: [vt1, vt2], tableGap: -1 }] }])
     ).toThrow("non-negative integer")
@@ -1047,6 +1060,9 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(() =>
       sVal.setBands([{ lanes: [{ tables: [vt1] }], gap: 0 }, vt2])
     ).toThrow("band 0 cannot specify 'gap'")
+    expect(() => sVal.setBands([{ lanes: [vt1], gap: 0 }, vt2])).toThrow(
+      "band 0 cannot specify 'gap'"
+    )
     expect(() =>
       sVal.setBands([{ lanes: [{ tables: [vt1] }], gap: 2 }, vt2])
     ).toThrow("band 0 cannot specify 'gap'")
@@ -1057,8 +1073,14 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(() =>
       sVal.setBands([{ lanes: [{ tables: [vt1, vt1] }, { tables: [vt2] }] }])
     ).toThrow("Duplicate table")
+    expect(() => sVal.setBands([{ lanes: [vt1, vt1] }])).toThrow(
+      "Duplicate table"
+    )
     expect(() => sVal.setBands([vt1, vt2, vt1])).toThrow("Duplicate table")
     expect(() => sVal.setBands([vt1, vt2, "Ghost"])).toThrow(
+      "does not belong to sheet"
+    )
+    expect(() => sVal.setBands([{ lanes: [vt1, "Ghost"] }])).toThrow(
       "does not belong to sheet"
     )
 
@@ -1071,8 +1093,11 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(() => sVal.setBands([foreignSameId, vt2])).toThrow(
       "does not belong to sheet"
     )
+    expect(() => sVal.setBands([{ lanes: [foreignSameId, vt2] }])).toThrow(
+      "does not belong to sheet"
+    )
 
-    // Normalized sheet.bands parity (Table vs string vs shorthand vs omitted) and idempotency
+    // Normalized sheet.bands parity (Table vs string vs band/lane shorthand vs omitted) and idempotency
     const expectedStacked: readonly BandSpecInput[] = [
       { lanes: [{ tables: ["T1"] }] },
       { lanes: [{ tables: ["T2"] }] },
@@ -1085,9 +1110,46 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(sVal.bands).toEqual([
       { lanes: [{ tables: ["T1"] }, { tables: ["T2"] }] },
     ])
+    const lanePairItem: LaneInputItem = vt1
+    sVal.setBands([{ lanes: [lanePairItem, "T2"] }])
+    expect(sVal.bands).toEqual([
+      { lanes: [{ tables: ["T1"] }, { tables: ["T2"] }] },
+    ])
     // Idempotent replacement
     sVal.setBands([{ lanes: [{ tables: [vt2, vt1] }] }])
     expect(sVal.bands).toEqual([{ lanes: [expectedLane] }])
+
+    // Bare TableRef lane shorthand end-to-end compilation (side-by-side pair, mixed lane, custom gap)
+    const mShort = new Model({ name: "LaneShorthand" })
+    const sShort = mShort.addSheet("Sensitivities")
+    const sL1 = makeCard(sShort, "L1", "Left 1", 2, 1)
+    const sL2 = makeCard(sShort, "L2", "Left 2", 2, 1)
+    const sR1 = makeCard(sShort, "R1", "Right 1", 2, 1)
+    const sP1 = makeCard(sShort, "P1", "Pair Left", 2, 1)
+    makeCard(sShort, "P2", "Pair Right", 2, 1)
+    const sFoot = makeCard(sShort, "Foot", "Footer", 3, 1)
+    sShort.setBands([
+      { lanes: [{ tables: [sL1, sL2] }, sR1], laneGap: 1 },
+      { lanes: [sP1, "P2"], gap: 1, laneGap: 2 },
+      { lanes: [sFoot], gap: 0 },
+    ])
+    expect(sShort.bands).toEqual([
+      { lanes: [{ tables: ["L1", "L2"] }, { tables: ["R1"] }], laneGap: 1 },
+      {
+        lanes: [{ tables: ["P1"] }, { tables: ["P2"] }],
+        gap: 1,
+        laneGap: 2,
+      },
+      { lanes: [{ tables: ["Foot"] }], gap: 0 },
+    ])
+    const cShort = mShort.compile()
+    expect(cShort.table("L1").address("r1", "c1")).toBe("B5")
+    expect(cShort.table("L2").address("r1", "c1")).toBe("B11")
+    expect(cShort.table("R1").address("r1", "c1")).toBe("E5")
+    expect(cShort.table("P1").address("r1", "c1")).toBe("B16")
+    expect(cShort.table("P2").address("r1", "c1")).toBe("F16")
+    expect(cShort.table("Foot").address("r1", "c1")).toBe("B20")
+    cShort.dispose()
 
     // Adding a table after setBands invalidates partition on toSpec() / compile()
     const mLate = new Model({ name: "LateTable" })

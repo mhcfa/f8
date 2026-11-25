@@ -723,6 +723,7 @@ class Table:
 
 
 type TableRef = str | Table
+type LaneItem = Lane | TableRef
 type BandItem = Band | TableRef
 
 
@@ -806,7 +807,7 @@ class Band:
 
     def __init__(
         self,
-        lanes: Sequence[Lane],
+        lanes: Sequence[LaneItem],
         *,
         gap: int | None = None,
         lane_gap: int | None = None,
@@ -814,16 +815,19 @@ class Band:
         raw_items = _as_object_tuple(
             lanes,
             forbidden=(str, bytes, Table, Lane),
-            label="Band 'lanes' must be a sequence of Lane",
+            label="Band 'lanes' must be a sequence of Lane, Table, or str",
         )
         if not raw_items:
             raise ValueError("Band 'lanes' cannot be empty")
         validated_lanes: list[Lane] = []
         for item in raw_items:
-            if not isinstance(item, Lane):
-                msg = f"Band lane item must be a Lane, got {type(item).__name__}"
+            if isinstance(item, Lane):
+                validated_lanes.append(item)
+            elif isinstance(item, (Table, str)):
+                validated_lanes.append(Lane([item]))
+            else:
+                msg = f"Band lane item must be a Lane, Table, or str, got {type(item).__name__}"
                 raise TypeError(msg)
-            validated_lanes.append(item)
         lane_tuple = tuple(validated_lanes)
         validated_gap = _validate_non_negative_int(gap, "gap")
         validated_lane_gap = _validate_non_negative_int(lane_gap, "lane_gap")
@@ -1163,6 +1167,7 @@ __all__ = [
     "Cell",
     "CellInputValue",
     "Lane",
+    "LaneItem",
     "Model",
     "Sheet",
     "Table",
