@@ -197,7 +197,7 @@ fn test_models_emit_in_memory() {
         "Expected 3-tier super-header in styling showcase shared strings"
     );
     assert!(
-        sc_sheet1_xml.contains("width=\"3.71") && sc_sheet1_xml.contains("min=\"1\" max=\"1\""),
+        sc_sheet1_xml.contains("width=\"2.71") && sc_sheet1_xml.contains("min=\"1\" max=\"1\""),
         "Expected explicit margin column gutter in styling showcase"
     );
     // Explicit row gutters leave unstyled rows unpopulated in sheetData

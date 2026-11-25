@@ -823,7 +823,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
     let layout = LayoutPlanner::plan(&manifest, &[table], &grid, &theme, None).unwrap();
     let sheet = layout.get_sheet(&SheetId::from("Model")).unwrap();
 
-    // Column 2 is ColumnSpec::Gutter -> width should be gutter_col_width (3.0 chars)
+    // Column 2 is ColumnSpec::Gutter -> width should be gutter_col_width (2.0 chars)
     assert_eq!(
         sheet.col_widths.get(&2),
         Some(&theme.metrics.gutter_col_width)
@@ -2435,7 +2435,7 @@ fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() 
         .layout_map
         .get_sheet(&SheetId::from("GridSheet"))
         .unwrap();
-    assert_eq!(sheet_layout.col_widths.get(&0), Some(&3.0));
+    assert_eq!(sheet_layout.col_widths.get(&0), Some(&2.0));
     for c in 1..=6_u32 {
         assert_eq!(sheet_layout.col_widths.get(&c), Some(&12.0));
     }
@@ -2446,7 +2446,7 @@ fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() 
         .get_sheet(&SheetId::from("EmptyGrid"))
         .unwrap();
     assert_eq!(empty_layout.col_widths.len(), 1);
-    assert_eq!(empty_layout.col_widths.get(&0), Some(&3.0));
+    assert_eq!(empty_layout.col_widths.get(&0), Some(&2.0));
 }
 
 #[test]
@@ -2545,7 +2545,7 @@ fn test_grid_layout_scenario_3_dashboard_right_of_alignment_without_measure_blow
         .layout_map
         .get_sheet(&SheetId::from("Dashboard"))
         .unwrap();
-    assert_eq!(sheet_layout.col_widths.get(&0), Some(&3.0));
+    assert_eq!(sheet_layout.col_widths.get(&0), Some(&2.0));
     for c in 1..=10_u32 {
         assert_eq!(sheet_layout.col_widths.get(&c), Some(&12.0));
     }
@@ -3351,7 +3351,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
     );
 
     // Case C assertions: Inter-descriptor gutter stays in prefix (span 4), trailing divider
-    // gutters align at col 5 with gutter_col_width = 3.0, and 23A aligns at col 6.
+    // gutters align at col 5 with gutter_col_width = 2.0, and 23A aligns at col 6.
     let p_div1 = compiled
         .layout_map
         .get_table(&TableId::from("Div1"))
@@ -3369,7 +3369,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
         .layout_map
         .get_sheet(&SheetId::from("CaseC"))
         .unwrap();
-    assert_eq!(sl_c.col_widths.get(&5), Some(&3.0));
+    assert_eq!(sl_c.col_widths.get(&5), Some(&2.0));
     assert_eq!(sl_c.col_widths.get(&6), Some(&12.0));
 }
 
@@ -3438,7 +3438,7 @@ fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
         LayoutPlanner::plan(&manifest, std::slice::from_ref(&t), &grid, &theme, None).unwrap();
 
     let sheet_layout = layout.get_sheet(&SheetId::from("Grid")).unwrap();
-    assert_eq!(sheet_layout.col_widths.get(&0), Some(&3.0));
+    assert_eq!(sheet_layout.col_widths.get(&0), Some(&2.0));
     // W = 15.0 from literal measure text "MeasureTextVal" (14 + 1), NOT widened by unevaluated formula
     for c in 1..=4_u32 {
         assert_eq!(sheet_layout.col_widths.get(&c), Some(&15.0));

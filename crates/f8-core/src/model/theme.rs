@@ -125,7 +125,7 @@ pub struct MetricsConfig {
 impl Default for MetricsConfig {
     fn default() -> Self {
         Self {
-            gutter_col_width: 3.0,
+            gutter_col_width: 2.0,
             char_width_multiplier: 1.0,
             col_padding: 0.0,
             min_col_width: 12.0,

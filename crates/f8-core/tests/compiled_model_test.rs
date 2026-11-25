@@ -1277,17 +1277,17 @@ Sheets: 3 | Tables: 3 | Cells: 25 (19 drivers, 6 formulas) | Errors: 3
 - `Comps[\"msft_row\", \"ev\"]` (`'Valuation'!D6`): `#NUM!` (`=LN(-1)`)
 
 ## Sheet: Financials
-Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)
-Columns: A:3, B:14, C:12, D:3, E:12
+Layout: auto | Bounds: B2:E22 (21r x 4c, w:40)
+Columns: A:2, B:14, C:12, D:2, E:12
 
-- Band 1 (R2:R15, 14r x cols B..E, w:41):
-  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1
-- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):
+- Band 1 (R2:R15, 14r x cols B..E, w:40):
+  - `IncomeStatement` [B2:E15] 14r x 4c (w:40) | stack | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1
+- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:14)):
   - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)
 
 ## Sheet: Valuation
 Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)
-Columns: A:3, B..D:12
+Columns: A:2, B..D:12
 
 - Band 1 (R2:R6, 5r x cols B..D, w:36):
   - `Comps` [B2:D6] 5r x 3c (w:36) | stack | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)
@@ -1831,13 +1831,13 @@ fn test_grid_layout_scenario_10_inspect_sheet_overflow_and_physical_spans() {
     // Left: item=(1..=3), gutter=(4..=4), v1=(5..=5); inter-table gap=(6); Right: k=(7..=7)
     assert_eq!(sheet.min_col, 1);
     assert_eq!(sheet.max_col, 7);
-    assert_eq!(sheet.col_widths.get(&0), Some(&3.0));
+    assert_eq!(sheet.col_widths.get(&0), Some(&2.0));
     assert_eq!(sheet.col_widths.get(&1), Some(&12.0));
     assert_eq!(sheet.col_widths.get(&2), Some(&12.0));
     assert_eq!(sheet.col_widths.get(&3), Some(&12.0));
-    assert_eq!(sheet.col_widths.get(&4), Some(&3.0)); // intra-table gutter
+    assert_eq!(sheet.col_widths.get(&4), Some(&2.0)); // intra-table gutter
     assert_eq!(sheet.col_widths.get(&5), Some(&12.0));
-    assert_eq!(sheet.col_widths.get(&6), Some(&3.0)); // inter-table gap
+    assert_eq!(sheet.col_widths.get(&6), Some(&2.0)); // inter-table gap
     assert_eq!(sheet.col_widths.get(&7), Some(&12.0));
 
     let row_at = |excel_row: u32| {
@@ -2034,7 +2034,7 @@ fn test_to_markdown_layout_scenario_1_grid_dashboard() {
 
     // Sheet metadata & RLE column compression
     assert!(md.contains(
-        "## Sheet: Summary\nLayout: grid (W=12) | Bounds: B2:R72 (71r x 17c, w:204)\nColumns: A:3, B..R:12\n\n"
+        "## Sheet: Summary\nLayout: grid (W=12) | Bounds: B2:R72 (71r x 17c, w:204)\nColumns: A:2, B..R:12\n\n"
     ));
 
     // Band 1: side-by-side unbalanced lanes with right_empty, empty_below, and widened gap H
@@ -2192,9 +2192,9 @@ fn test_to_markdown_layout_scenario_2_multi_table_lane_width_inflation_and_empty
 
     // Uniform width inflated to 15 with base=12 reported explicitly
     assert!(
-        md_inflated.contains("Layout: grid (W=15, base=12) | Bounds: B2:F16 (15r x 5c, w:63)\n")
+        md_inflated.contains("Layout: grid (W=15, base=12) | Bounds: B2:F16 (15r x 5c, w:62)\n")
     );
-    assert!(md_inflated.contains("Columns: A:3, B..C:15, D:3, E..F:15\n"));
+    assert!(md_inflated.contains("Columns: A:2, B..C:15, D:2, E..F:15\n"));
     // Single Band 1 with two Lanes: Lane 1 holds T1 (R2:R5) + T2 (R8:R12) -> empty_below R13:R16 (4r)
     assert_eq!(md_inflated.matches("- Band ").count(), 1);
     assert!(
@@ -2202,7 +2202,7 @@ fn test_to_markdown_layout_scenario_2_multi_table_lane_width_inflation_and_empty
     );
     assert!(md_inflated.contains("    - `T1` [B2:C5]"));
     assert!(md_inflated.contains("    - `T2` [B8:C12] 5r x 2c (w:30) | below `T1` |"));
-    assert!(md_inflated.contains("  - Lane E..F (2c, w:30, gap:1c (D, w:3), R2:R16 = 15r):\n"));
+    assert!(md_inflated.contains("  - Lane E..F (2c, w:30, gap:1c (D, w:2), R2:R16 = 15r):\n"));
     assert!(md_inflated.contains("    - `T3` [E2:F16]"));
 
     let md_margins = compiled
@@ -2215,12 +2215,12 @@ fn test_to_markdown_layout_scenario_2_multi_table_lane_width_inflation_and_empty
 
     // Lane F in Band 1 starts at R8 while Band 1 starts at R2 and ends at R15 -> both empty_above and empty_below
     assert!(md_margins.contains(
-        "  - Lane F (1c, w:12, gap:1c (E, w:3), R8:R13 = 6r, empty_above:R2:R7 (6r), empty_below:R14:R15 (2r)):\n"
+        "  - Lane F (1c, w:12, gap:1c (E, w:2), R8:R13 = 6r, empty_above:R2:R7 (6r), empty_below:R14:R15 (2r)):\n"
     ));
-    // Band 2 starts at col F while sheet min_col is B -> left_empty:B..E (4c, w:30) [B:12, C:3, D:12, E:3]
+    // Band 2 starts at col F while sheet min_col is B -> left_empty:B..E (4c, w:28) [B:12, C:2, D:12, E:2]
     assert!(
         md_margins.contains(
-            "- Band 2 (R18:R21, 4r x cols F, w:12, gap:2r, left_empty:B..E (4c, w:30)):\n"
+            "- Band 2 (R18:R21, 4r x cols F, w:12, gap:2r, left_empty:B..E (4c, w:28)):\n"
         )
     );
     assert!(md_margins.contains("below `OffsetRight` (gap:4r)"));
@@ -2390,7 +2390,7 @@ fn test_to_markdown_layout_scenario_4_filters_context_empty_and_errors() {
     assert!(!md_partial.contains("## Sheet: Valuation"));
     assert!(!md_partial.contains("## Sheet: Notes"));
     // Full sheet bounds preserved (B2:E22), IncomeStatement tagged (context), PureMeasures untagged
-    assert!(md_partial.contains("Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)\n"));
+    assert!(md_partial.contains("Layout: auto | Bounds: B2:E22 (21r x 4c, w:40)\n"));
     assert!(md_partial.contains("  - `IncomeStatement` (context) [B2:E15]"));
     assert!(md_partial.contains("  - `PureMeasures` [B18:C22]"));
     assert!(!md_partial.contains("`PureMeasures` (context)"));
@@ -2599,9 +2599,9 @@ fn test_to_markdown_layout_edge_cases() {
             ..Default::default()
         })
         .unwrap();
-    assert!(md_gutter.contains("Layout: grid (W=14.5) | Bounds: B2:B4 (3r x 1c, w:3)\n"));
+    assert!(md_gutter.contains("Layout: grid (W=14.5) | Bounds: B2:B4 (3r x 1c, w:2)\n"));
     assert!(!md_gutter.contains("base="));
-    assert!(md_gutter.contains("Columns: A..B:3\n"));
+    assert!(md_gutter.contains("Columns: A..B:2\n"));
     assert!(md_gutter.contains("| hdr:none body:R4 | cols: gutter B(1c)\n"));
 }
 

@@ -833,7 +833,7 @@ def test_scenario_12_table_placement_dsl_and_dashboard_layout() -> None:
     assert sheet_insp["max_col"] == 6
     assert sheet_insp["min_row"] == 1
     assert sheet_insp["max_row"] == 19
-    assert sheet_insp["col_widths"][4] == pytest.approx(3.0)
+    assert sheet_insp["col_widths"][4] == pytest.approx(2.0)
 
     xlsx_bytes = compiled.emit_workbook()
     assert xlsx_bytes.startswith(b"PK\x03\x04")
@@ -1569,13 +1569,13 @@ def test_sheet_grid_layout_scenario_10_and_12_e2e_parity() -> None:
     assert insp["min_col"] == 1
     assert insp["max_col"] == 9
     assert insp["col_widths"] == {
-        0: 3.0,
+        0: 2.0,
         1: 14.0,
         2: 14.0,
         3: 14.0,
         4: 14.0,
         5: 14.0,
-        6: 3.0,
+        6: 2.0,
         7: 14.0,
         8: 14.0,
         9: 14.0,

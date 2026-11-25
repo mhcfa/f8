@@ -839,7 +839,7 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(sheetInsp.maxCol).toBe(6)
     expect(sheetInsp.minRow).toBe(1)
     expect(sheetInsp.maxRow).toBe(19)
-    expect(sheetInsp.colWidths[4]).toBeCloseTo(3.0)
+    expect(sheetInsp.colWidths[4]).toBeCloseTo(2.0)
 
     const xlsxBytes = compiled.emitWorkbook()
     expect(xlsxBytes[0]).toBe(0x50)
@@ -1758,13 +1758,13 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(insp.minCol).toBe(1)
     expect(insp.maxCol).toBe(9)
     expect(insp.colWidths).toEqual({
-      0: 3.0,
+      0: 2.0,
       1: 14.0,
       2: 14.0,
       3: 14.0,
       4: 14.0,
       5: 14.0,
-      6: 3.0,
+      6: 2.0,
       7: 14.0,
       8: 14.0,
       9: 14.0,

@@ -2886,7 +2886,7 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
             .with_group("Descriptors")
             .with_style(Some(SemanticStyle::Subtotal)),
     );
-    // Intra-table gutter col (E = col 4 -> gutter_col_width 3.0)
+    // Intra-table gutter col (E = col 4 -> gutter_col_width 2.0)
     t1.columns.push(ColumnSpec::gutter());
     // Descriptor col 2 (span 3: F..H, vertical Total)
     t1.columns
@@ -3031,9 +3031,9 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
         assert!(border.contains(r#"<bottom style="double""#));
     }
 
-    // Gutter-only column E (1-indexed col 5) retains gutter_col_width (3.0 -> ~3.71 in XML), while data cols are wider
+    // Gutter-only column E (1-indexed col 5) retains gutter_col_width (2.0 -> ~2.71 in XML), while data cols are wider
     assert!(
-        sheet_xml.contains(r#"min="5" max="5" width="3."#),
+        sheet_xml.contains(r#"min="5" max="5" width="2.71"#),
         "Gutter column E (col 5) must retain gutter_col_width in XML: {sheet_xml}"
     );
 
