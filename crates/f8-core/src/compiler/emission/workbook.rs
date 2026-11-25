@@ -195,7 +195,8 @@ impl WorkbookEmitter {
                     (placement.title_row, placement.title_end_col)
                     && !table.title.trim().is_empty()
                 {
-                    worksheet.write_string_with_format(
+                    write_literal_string(
+                        worksheet,
                         title_row,
                         excel_col_u16(placement.start_col)?,
                         &table.title,
@@ -214,7 +215,8 @@ impl WorkbookEmitter {
                 if let Some((subtitle_start_row, _)) = placement.subtitle_row_range {
                     for (idx, subtitle) in table.subtitles.iter().enumerate() {
                         let subtitle_row = subtitle_start_row + idx as u32;
-                        worksheet.write_string_with_format(
+                        write_literal_string(
+                            worksheet,
                             subtitle_row,
                             excel_col_u16(placement.start_col)?,
                             subtitle,
@@ -266,7 +268,8 @@ impl WorkbookEmitter {
                                         .ok_or_else(|| EmissionError::MissingTable {
                                             table: table.id.clone(),
                                         })?;
-                                    worksheet.write_string_with_format(
+                                    write_literal_string(
+                                        worksheet,
                                         tier_row,
                                         excel_col_u16(group_start_col)?,
                                         label,
@@ -330,8 +333,8 @@ impl WorkbookEmitter {
                                     if let Some(label) =
                                         t.checked_sub(first_hdr_tier).and_then(|k| d.headers.get(k))
                                     {
-                                        worksheet.write_string_with_format(
-                                            tier_row, col_idx, label, &fmt,
+                                        write_literal_string(
+                                            worksheet, tier_row, col_idx, label, &fmt,
                                         )?;
                                     } else if is_bottom_tier || format_cache.has_col_header_fill() {
                                         worksheet.write_blank(tier_row, col_idx, &fmt)?;
@@ -368,7 +371,8 @@ impl WorkbookEmitter {
                         }
                         RowSpec::SectionHeader(sh) => {
                             let start_col_u16 = excel_col_u16(placement.start_col)?;
-                            worksheet.write_string_with_format(
+                            write_literal_string(
+                                worksheet,
                                 current_phys_row,
                                 start_col_u16,
                                 &sh.title,
@@ -675,7 +679,7 @@ fn emit_cell_value(
             worksheet.write_number_with_format(row, col, finite_excel_number(*n)?, format)?;
         }
         CellValue::Text(s) => {
-            worksheet.write_string_with_format(row, col, s, format)?;
+            write_literal_string(worksheet, row, col, s, format)?;
         }
         CellValue::Boolean(b) => {
             worksheet.write_boolean_with_format(row, col, *b, format)?;
@@ -703,7 +707,7 @@ fn emit_value_literal(
             worksheet.write_number_with_format(row, col, finite_excel_number(*n)?, format)?;
         }
         ValueLiteral::String(s) => {
-            worksheet.write_string_with_format(row, col, s, format)?;
+            write_literal_string(worksheet, row, col, s, format)?;
         }
         ValueLiteral::Boolean(b) => {
             worksheet.write_boolean_with_format(row, col, *b, format)?;
@@ -711,6 +715,34 @@ fn emit_value_literal(
         ValueLiteral::Null => {
             worksheet.write_blank(row, col, format)?;
         }
+    }
+    Ok(())
+}
+
+/// Returns `true` when a literal text string begins with an Excel formula or
+/// text-prefix trigger character, requiring OpenXML `quotePrefix="1"` on the
+/// cell `<xf>` so Excel and Excel Online preserve it as literal text on open
+/// and edit.
+fn needs_excel_quote_prefix(s: &str) -> bool {
+    s.starts_with('\'')
+        || s.trim_start_matches([' ', '\t', '\r', '\n'])
+            .starts_with(['=', '+', '-', '@'])
+}
+
+/// Writes a literal string cell, setting OpenXML `quotePrefix="1"` when the
+/// string starts with a formula or quote-prefix trigger character.
+fn write_literal_string(
+    worksheet: &mut Worksheet,
+    row: u32,
+    col: u16,
+    text: &str,
+    format: &Format,
+) -> Result<(), EmissionError> {
+    if needs_excel_quote_prefix(text) {
+        let quoted = format.clone().set_quote_prefix();
+        worksheet.write_string_with_format(row, col, text, &quoted)?;
+    } else {
+        worksheet.write_string_with_format(row, col, text, format)?;
     }
     Ok(())
 }

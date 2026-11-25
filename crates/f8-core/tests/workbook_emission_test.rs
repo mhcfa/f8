@@ -3081,3 +3081,296 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
     assert!(g5_border.contains(r#"<left style="thin""#));
     assert!(!g5_border.contains(r#"<right style="#));
 }
+
+// ----------------------------------------------------------------------------
+// Scenario: OpenXML quotePrefix="1" for literal strings starting with Excel
+// formula or text-prefix trigger characters (=, +, -, @ after optional leading
+// ASCII whitespace, or leading ').
+// ----------------------------------------------------------------------------
+#[test]
+fn test_literal_string_quote_prefix_emission() {
+    use f8_core::model::theme::ThemeSpec;
+
+    let mut table =
+        TableSpec::new("IntegrityChecks", "= Integrity Checks").with_subtitle("= Tolerance checks");
+    table
+        .columns
+        .push(ColumnSpec::descriptor("item", "Check").with_group("+ Controls"));
+    table
+        .columns
+        .push(ColumnSpec::descriptor("target", "'26E").with_group("+ Controls"));
+    table
+        .columns
+        .push(ColumnSpec::new("measure_text").with_header("Measure"));
+    table
+        .columns
+        .push(ColumnSpec::new("fy26").with_header("'26E"));
+
+    // Section header starting with '-'
+    table.rows.push(RowSpec::section_header("- Balance Checks"));
+
+    let quoted_cases = [
+        ("eq", "= $0.00"),
+        ("plus", "+ Add: D&A"),
+        ("minus", "- Less: CapEx"),
+        ("at", "@memo"),
+        ("apos", "'26E"),
+        ("ws_eq", "  = $0.00"),
+        ("tab_minus", "\t-100"),
+        ("crlf_eq", "\r\n=1"),
+        ("nl_plus", "\n+1"),
+    ];
+    for (row_id, text) in quoted_cases {
+        table.rows.push(
+            RowSpec::new(row_id)
+                .with_cell("item", text)
+                .with_cell("target", text)
+                .with_cell("measure_text", text)
+                .with_cell("fy26", text),
+        );
+    }
+
+    let plain_cases = [
+        ("plain_dollar", "$0.00"),
+        ("plain_gte", ">= $0.00"),
+        ("plain_unicode_gte", "≥ $0.00"),
+        ("plain_emdash", "—"),
+        ("plain_ws_apos", "  '26E"),
+        ("plain_spaces", "   "),
+    ];
+    for (row_id, text) in plain_cases {
+        table.rows.push(
+            RowSpec::new(row_id)
+                .with_cell("item", text)
+                .with_cell("target", text)
+                .with_cell("measure_text", text)
+                .with_cell("fy26", text),
+        );
+    }
+
+    // Formula returning a string starting with '=' and a runtime error cell
+    table.rows.push(
+        RowSpec::new("formula_eq")
+            .with_cell("item", "Formula Text")
+            .with_cell("target", "Safe")
+            .with_cell(
+                "measure_text",
+                CellInput::formula(r#"IF(TRUE, "= $0.00", "NO")"#),
+            )
+            .with_cell("fy26", 0.0),
+    );
+    table.rows.push(
+        RowSpec::new("formula_err")
+            .with_cell("item", "Div Zero")
+            .with_cell("target", "Safe")
+            .with_cell("measure_text", CellInput::formula("1 / 0"))
+            .with_cell("fy26", 0.0),
+    );
+
+    let mut theme = Theme::corporate_navy();
+    theme.palette.section_header_fill = "#F0F0F0".to_string();
+
+    let manifest = ProjectManifest {
+        model_name: "QuotePrefixModel".to_string(),
+        theme: ThemeSpec::Custom(Box::new(theme)),
+        sheets: vec![SheetSpec {
+            name: "Checks".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: Default::default(),
+            bands: SheetSpec::stacked_bands([TableId::from("IntegrityChecks")]),
+        }],
+    };
+
+    let buf_live_1 =
+        Compiler::emit_workbook(&manifest, &[table.clone()], &EmissionOptions::default()).unwrap();
+    let buf_live_2 =
+        Compiler::emit_workbook(&manifest, &[table.clone()], &EmissionOptions::default()).unwrap();
+    assert_eq!(buf_live_1, buf_live_2, "emission must remain deterministic");
+
+    let buf_frozen = Compiler::emit_workbook(
+        &manifest,
+        &[table],
+        &EmissionOptions::new().with_values_only(true),
+    )
+    .unwrap();
+
+    let extract_tags = |xml: &str, container: &str, item: &str| -> Vec<String> {
+        let open_container = format!("<{container}");
+        let close_container = format!("</{container}>");
+        let start = xml.find(&open_container).unwrap();
+        let body_start = xml[start..].find('>').unwrap() + start + 1;
+        let end = xml[body_start..].find(&close_container).unwrap() + body_start;
+        let section = &xml[body_start..end];
+        let open_item = format!("<{item}");
+        let close_item = format!("</{item}>");
+        let mut out = Vec::new();
+        let mut rest = section;
+        while let Some(pos) = rest.find(&open_item) {
+            let tail = &rest[pos..];
+            let end_self = tail.find("/>");
+            let end_open = tail.find('>');
+            let end_close = tail.find(&close_item);
+            let len = match (end_self, end_open, end_close) {
+                (Some(s), Some(o), _) if s + 1 == o => s + 2,
+                (_, _, Some(c)) => c + close_item.len(),
+                _ => break,
+            };
+            out.push(tail[..len].to_string());
+            rest = &tail[len..];
+        }
+        out
+    };
+
+    let parse_attr = |tag: &str, attr: &str| -> usize {
+        let needle = format!(r#"{attr}=""#);
+        let start = tag.find(&needle).unwrap() + needle.len();
+        let end = tag[start..].find('"').unwrap() + start;
+        tag[start..end].parse().unwrap()
+    };
+
+    let cell_xf_idx = |sheet_xml: &str, cell_ref: &str| -> usize {
+        let needle = format!(r#"<c r="{cell_ref}""#);
+        let start = sheet_xml
+            .find(&needle)
+            .unwrap_or_else(|| panic!("Missing cell {cell_ref} in {sheet_xml}"));
+        let end = sheet_xml[start..].find('>').unwrap() + start + 1;
+        let c_tag = &sheet_xml[start..end];
+        parse_attr(c_tag, "s")
+    };
+
+    let cell_xf = |sheet_xml: &str, xfs: &[String], cell_ref: &str| -> String {
+        xfs[cell_xf_idx(sheet_xml, cell_ref)].clone()
+    };
+
+    let sheet_live = read_zip_entry(&buf_live_1, "xl/worksheets/sheet1.xml");
+    let styles_live = read_zip_entry(&buf_live_1, "xl/styles.xml");
+    let shared_live = read_zip_entry(&buf_live_1, "xl/sharedStrings.xml");
+    let xfs_live = extract_tags(&styles_live, "cellXfs", "xf");
+
+    // Raw text values in sharedStrings.xml must remain unmodified (no literal leading apostrophe injected)
+    assert!(shared_live.contains("<t>= $0.00</t>"));
+    assert!(!shared_live.contains("'= $0.00"));
+    assert!(shared_live.contains("<t>'26E</t>"));
+    assert!(!shared_live.contains("''26E"));
+
+    // Physical rows:
+    // Row 2: Title ("= Integrity Checks" at B2; blank banner cells at C2, D2, E2)
+    // Row 3: Subtitle ("= Tolerance checks" at B3)
+    // Row 4: Title gutter
+    // Row 5: Super-header ("+ Controls" at B5; blank C5)
+    // Row 6: Column headers ("Check" at B6, "'26E" at C6, "Measure" at D6, "'26E" measure at E6)
+    // Row 7: Section header ("- Balance Checks" at B7; blank fill at C7, D7, E7)
+    // Rows 8..=16: quoted_cases (9 rows; rows 15..=16 multiline with \r\n / \n)
+    // Rows 17..=22: plain_cases (6 rows)
+    // Row 23: formula_eq (D23 is formula returning "= $0.00", E23 is numeric literal 0.0)
+    // Row 24: formula_err (D24 is formula returning #DIV/0!, E24 is numeric literal 0.0)
+
+    // Structural anchor cells with trigger prefixes get quotePrefix="1";
+    // non-triggered headers and adjacent blank continuation cells do NOT.
+    for addr in ["B2", "B3", "B5", "C6", "E6", "B7"] {
+        let xf = cell_xf(&sheet_live, &xfs_live, addr);
+        assert!(
+            xf.contains(r#"quotePrefix="1""#),
+            "Structural cell {addr} must carry quotePrefix=\"1\": {xf}"
+        );
+    }
+    // Measure header E6 ("'26E") keeps its custom "@_)" number format alongside quotePrefix="1",
+    // while non-triggered measure header D6 ("Measure") keeps its format without quotePrefix.
+    let d6_xf = cell_xf(&sheet_live, &xfs_live, "D6");
+    let e6_xf = cell_xf(&sheet_live, &xfs_live, "E6");
+    assert!(
+        d6_xf.contains(r#"applyNumberFormat="1""#) && e6_xf.contains(r#"applyNumberFormat="1""#),
+        "Measure headers D6 and E6 must both preserve applyNumberFormat: D6={d6_xf}, E6={e6_xf}"
+    );
+    assert_eq!(
+        parse_attr(&d6_xf, "numFmtId"),
+        parse_attr(&e6_xf, "numFmtId"),
+        "Quoted measure header E6 must share numFmtId with D6: D6={d6_xf}, E6={e6_xf}"
+    );
+
+    for addr in ["C2", "D2", "E2", "C5", "B6", "D6", "C7", "D7", "E7"] {
+        let xf = cell_xf(&sheet_live, &xfs_live, addr);
+        assert!(
+            !xf.contains("quotePrefix"),
+            "Non-triggered/blank structural cell {addr} must omit quotePrefix: {xf}"
+        );
+    }
+
+    // All quoted_cases (rows 8..=16) across descriptor (B, C) and measure (D, E) columns get quotePrefix="1"
+    for row_num in 8..=16 {
+        for col in ['B', 'C', 'D', 'E'] {
+            let addr = format!("{col}{row_num}");
+            let xf = cell_xf(&sheet_live, &xfs_live, &addr);
+            assert!(
+                xf.contains(r#"quotePrefix="1""#),
+                "Literal cell {addr} must carry quotePrefix=\"1\": {xf}"
+            );
+            if row_num >= 15 {
+                assert!(
+                    xf.contains(r#"wrapText="1""#),
+                    "Multiline quoted cell {addr} must also carry wrapText=\"1\": {xf}"
+                );
+            }
+        }
+    }
+
+    // Verify <cellXfs> deduplication across single-line quoted rows (rows 8..=14)
+    let b8_xf_idx = cell_xf_idx(&sheet_live, "B8");
+    let d8_xf_idx = cell_xf_idx(&sheet_live, "D8");
+    for row_num in 9..=14 {
+        assert_eq!(
+            cell_xf_idx(&sheet_live, &format!("B{row_num}")),
+            b8_xf_idx,
+            "Quoted descriptor rows should reuse one deduplicated <xf>"
+        );
+        assert_eq!(
+            cell_xf_idx(&sheet_live, &format!("D{row_num}")),
+            d8_xf_idx,
+            "Quoted measure rows should reuse one deduplicated <xf>"
+        );
+    }
+
+    // All plain_cases (rows 17..=22) omit quotePrefix
+    for row_num in 17..=22 {
+        for col in ['B', 'C', 'D', 'E'] {
+            let addr = format!("{col}{row_num}");
+            let xf = cell_xf(&sheet_live, &xfs_live, &addr);
+            assert!(
+                !xf.contains("quotePrefix"),
+                "Plain literal cell {addr} must omit quotePrefix: {xf}"
+            );
+        }
+    }
+
+    // Live formula cell D23 returning "= $0.00" and numeric literal E23 must NOT carry quotePrefix
+    for addr in ["D23", "E23"] {
+        let xf = cell_xf(&sheet_live, &xfs_live, addr);
+        assert!(
+            !xf.contains("quotePrefix"),
+            "Cell {addr} must omit quotePrefix in live mode: {xf}"
+        );
+    }
+
+    // Frozen values_only mode: D23 becomes literal text "= $0.00" WITH quotePrefix="1";
+    // literal quoted cells (B8, D8) keep quotePrefix="1"; D24 (#DIV/0!) and E23 (0.0) omit it.
+    let sheet_frozen = read_zip_entry(&buf_frozen, "xl/worksheets/sheet1.xml");
+    let styles_frozen = read_zip_entry(&buf_frozen, "xl/styles.xml");
+    let xfs_frozen = extract_tags(&styles_frozen, "cellXfs", "xf");
+
+    for addr in ["B8", "D8", "D23"] {
+        let xf = cell_xf(&sheet_frozen, &xfs_frozen, addr);
+        assert!(
+            xf.contains(r#"quotePrefix="1""#),
+            "values_only text cell {addr} must carry quotePrefix=\"1\": {xf}"
+        );
+    }
+    for addr in ["D24", "E23"] {
+        let xf = cell_xf(&sheet_frozen, &xfs_frozen, addr);
+        assert!(
+            !xf.contains("quotePrefix"),
+            "values_only cell {addr} must omit quotePrefix: {xf}"
+        );
+    }
+}
