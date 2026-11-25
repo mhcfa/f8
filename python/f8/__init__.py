@@ -14,7 +14,18 @@ from f8._core import (
     default_theme,
 )
 from f8.audit import MarkdownTable, TableAuditor, unbox_cell_value
-from f8.builder import AxisSelector, Cell, CellInputValue, Model, Sheet, Table
+from f8.builder import (
+    AxisSelector,
+    Band,
+    BandItem,
+    Cell,
+    CellInputValue,
+    Lane,
+    Model,
+    Sheet,
+    Table,
+    TableRef,
+)
 from f8.types import (
     AxisRole,
     CellCoordinate,
@@ -59,7 +70,11 @@ __all__ = [
     "CompiledModel",
     "Model",
     "Sheet",
+    "Band",
+    "BandItem",
+    "Lane",
     "Table",
+    "TableRef",
     "Cell",
     "MarkdownTable",
     "TableAuditor",

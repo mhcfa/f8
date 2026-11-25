@@ -12,11 +12,8 @@ use crate::compiler::layout::{
 };
 use crate::model::format::SemanticStyle;
 use crate::model::id::{SheetId, TableId};
-use crate::model::manifest::{FreezePanes, SheetLayoutSpec, SheetSpec};
-use crate::model::table::{
-    AxisRole, ColumnSpec, DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP, DataColumnSpec,
-    PlacementSpec, RowSpec, TableSpec,
-};
+use crate::model::manifest::{DEFAULT_VERTICAL_TABLE_GAP, FreezePanes, SheetLayoutSpec, SheetSpec};
+use crate::model::table::{AxisRole, ColumnSpec, DataColumnSpec, RowSpec, TableSpec};
 use crate::value::CellValue;
 
 const WIDTH_EPS: f64 = 1e-9;
@@ -80,25 +77,25 @@ fn format_freeze_panes(fp: FreezePanes) -> String {
 
 #[derive(Clone, Copy)]
 struct PlacedTable<'a> {
-    decl_index: usize,
     table: &'a TableSpec,
     placement: &'a TablePlacement,
 }
 
-struct LayoutBand<'a> {
-    min_row: u32,
-    max_row: u32,
+struct RenderedLane<'a> {
+    table_gap: Option<u32>,
     min_col: u32,
     max_col: u32,
+    min_row: u32,
+    max_row: u32,
     tables: Vec<PlacedTable<'a>>,
 }
 
-struct LayoutLane<'a> {
-    min_col: u32,
-    max_col: u32,
+struct RenderedBand<'a> {
     min_row: u32,
     max_row: u32,
-    tables: Vec<PlacedTable<'a>>,
+    min_col: u32,
+    max_col: u32,
+    lanes: Vec<RenderedLane<'a>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -120,105 +117,6 @@ enum ColRun {
         start_col: u32,
         end_col: u32,
     },
-}
-
-fn decompose_bands<'a>(mut placed: Vec<PlacedTable<'a>>) -> Vec<LayoutBand<'a>> {
-    placed.sort_by_key(|pt| {
-        (
-            pt.placement.start_row,
-            pt.placement.start_col,
-            pt.decl_index,
-        )
-    });
-    let mut bands: Vec<LayoutBand<'a>> = Vec::new();
-    for pt in placed {
-        let p = pt.placement;
-        match bands.last_mut() {
-            Some(current) if p.start_row <= current.max_row => {
-                current.max_row = current.max_row.max(p.end_row);
-                current.min_col = current.min_col.min(p.start_col);
-                current.max_col = current.max_col.max(p.end_col);
-                current.tables.push(pt);
-            }
-            Some(_) | None => {
-                bands.push(LayoutBand {
-                    min_row: p.start_row,
-                    max_row: p.end_row,
-                    min_col: p.start_col,
-                    max_col: p.end_col,
-                    tables: vec![pt],
-                });
-            }
-        }
-    }
-    bands
-}
-
-fn decompose_lanes<'a>(mut band_tables: Vec<PlacedTable<'a>>) -> Vec<LayoutLane<'a>> {
-    band_tables.sort_by_key(|pt| {
-        (
-            pt.placement.start_col,
-            pt.placement.start_row,
-            pt.decl_index,
-        )
-    });
-    let mut lanes: Vec<LayoutLane<'a>> = Vec::new();
-    for pt in band_tables {
-        let p = pt.placement;
-        match lanes.last_mut() {
-            Some(current) if p.start_col <= current.max_col => {
-                current.max_col = current.max_col.max(p.end_col);
-                current.min_row = current.min_row.min(p.start_row);
-                current.max_row = current.max_row.max(p.end_row);
-                current.tables.push(pt);
-            }
-            Some(_) | None => {
-                lanes.push(LayoutLane {
-                    min_col: p.start_col,
-                    max_col: p.end_col,
-                    min_row: p.start_row,
-                    max_row: p.end_row,
-                    tables: vec![pt],
-                });
-            }
-        }
-    }
-    for lane in &mut lanes {
-        lane.tables.sort_by_key(|pt| {
-            (
-                pt.placement.start_row,
-                pt.placement.start_col,
-                pt.decl_index,
-            )
-        });
-    }
-    lanes
-}
-
-fn format_placement(placement: &PlacementSpec) -> String {
-    match placement {
-        PlacementSpec::Stack { gap } => {
-            if *gap == DEFAULT_VERTICAL_TABLE_GAP {
-                "stack".to_string()
-            } else {
-                format!("stack (gap:{gap}r)")
-            }
-        }
-        PlacementSpec::Below { target, gap } => {
-            if *gap == DEFAULT_VERTICAL_TABLE_GAP {
-                format!("below `{target}`")
-            } else {
-                format!("below `{target}` (gap:{gap}r)")
-            }
-        }
-        PlacementSpec::RightOf { target, gap } => {
-            if *gap == DEFAULT_HORIZONTAL_TABLE_GAP {
-                format!("right_of `{target}`")
-            } else {
-                format!("right_of `{target}` (gap:{gap}c)")
-            }
-        }
-    }
 }
 
 fn max_subtitle_chars(subtitles: &[String]) -> usize {
@@ -422,8 +320,7 @@ impl CompiledModel {
             let include_entire_sheet =
                 unfiltered || sheet_filter.contains(sheet_spec.name.as_str());
             let selected_tables: Vec<&TableSpec> = sheet_spec
-                .tables
-                .iter()
+                .table_ids()
                 .filter(|tid| include_entire_sheet || table_filter.contains(*tid))
                 .filter_map(|tid| self.tables.get(tid))
                 .collect();
@@ -1044,7 +941,6 @@ impl CompiledModel {
         let cols = p.end_col.saturating_sub(p.start_col).saturating_add(1);
         let table_w_num = self.range_width(sheet_layout, p.start_col, p.end_col);
         let table_w = format_width(table_w_num);
-        let placement_str = format_placement(&table.placement);
         let structure_str = format_table_structure(
             table,
             p,
@@ -1054,7 +950,7 @@ impl CompiledModel {
         let col_runs = self.format_col_runs(sheet_layout, layout, table, p);
 
         let mut line = format!(
-            "`{}`{context} [{start_a1}:{end_a1}] {rows}r x {cols}c (w:{table_w}) | {placement_str} | {structure_str} | cols: {col_runs}",
+            "`{}`{context} [{start_a1}:{end_a1}] {rows}r x {cols}c (w:{table_w}) | {structure_str} | cols: {col_runs}",
             table.id
         );
         if let Some(&wrap_count) = wrap_counts.get(&table.id)
@@ -1072,20 +968,65 @@ impl CompiledModel {
         wrap_counts: &IndexMap<&TableId, usize>,
         lines: &mut Vec<String>,
     ) {
-        let placed_tables: Vec<PlacedTable<'_>> = sheet_spec
-            .tables
-            .iter()
-            .enumerate()
-            .filter_map(|(decl_index, tid)| {
-                let table = self.tables.get(tid)?;
-                let placement = self.layout_map.get_table(tid)?;
-                Some(PlacedTable {
-                    decl_index,
-                    table,
-                    placement,
-                })
-            })
-            .collect();
+        let mut rendered_bands: Vec<RenderedBand<'_>> = Vec::new();
+        let mut placed_tables: Vec<PlacedTable<'_>> = Vec::new();
+
+        for band_spec in &sheet_spec.bands {
+            let mut rendered_lanes: Vec<RenderedLane<'_>> = Vec::new();
+            for lane_spec in &band_spec.lanes {
+                let mut lane_tables: Vec<PlacedTable<'_>> = Vec::new();
+                for tid in &lane_spec.tables {
+                    if let (Some(table), Some(placement)) =
+                        (self.tables.get(tid), self.layout_map.get_table(tid))
+                    {
+                        let pt = PlacedTable { table, placement };
+                        lane_tables.push(pt);
+                        placed_tables.push(pt);
+                    }
+                }
+                if lane_tables.is_empty() {
+                    continue;
+                }
+                let mut min_col = u32::MAX;
+                let mut max_col = 0u32;
+                let mut min_row = u32::MAX;
+                let mut max_row = 0u32;
+                for pt in &lane_tables {
+                    min_col = min_col.min(pt.placement.start_col);
+                    max_col = max_col.max(pt.placement.end_col);
+                    min_row = min_row.min(pt.placement.start_row);
+                    max_row = max_row.max(pt.placement.end_row);
+                }
+                rendered_lanes.push(RenderedLane {
+                    table_gap: lane_spec.table_gap,
+                    min_col,
+                    max_col,
+                    min_row,
+                    max_row,
+                    tables: lane_tables,
+                });
+            }
+            if rendered_lanes.is_empty() {
+                continue;
+            }
+            let mut min_row = u32::MAX;
+            let mut max_row = 0u32;
+            let mut min_col = u32::MAX;
+            let mut max_col = 0u32;
+            for lane in &rendered_lanes {
+                min_row = min_row.min(lane.min_row);
+                max_row = max_row.max(lane.max_row);
+                min_col = min_col.min(lane.min_col);
+                max_col = max_col.max(lane.max_col);
+            }
+            rendered_bands.push(RenderedBand {
+                min_row,
+                max_row,
+                min_col,
+                max_col,
+                lanes: rendered_lanes,
+            });
+        }
 
         if placed_tables.is_empty() {
             lines.push(String::new());
@@ -1148,10 +1089,9 @@ impl CompiledModel {
         ));
         lines.push(String::new());
 
-        let bands = decompose_bands(placed_tables);
         let mut prev_band_max_row: Option<u32> = None;
 
-        for (band_idx, band) in bands.into_iter().enumerate() {
+        for (band_idx, band) in rendered_bands.into_iter().enumerate() {
             let band_num = band_idx + 1;
             let band_row_range = format_row_range(band.min_row, band.max_row);
             let band_rows = band.max_row.saturating_sub(band.min_row).saturating_add(1);
@@ -1165,14 +1105,6 @@ impl CompiledModel {
                 let gap = band.min_row.saturating_sub(prev_max.saturating_add(1));
                 band_line.push_str(&format!(", gap:{gap}r"));
             }
-            if band.min_col > sheet_min_col {
-                let empty_end = band.min_col - 1;
-                let n = band.min_col - sheet_min_col;
-                let range = format_col_range(sheet_min_col, empty_end);
-                let empty_w =
-                    format_width(self.range_width(sheet_layout, sheet_min_col, empty_end));
-                band_line.push_str(&format!(", left_empty:{range} ({n}c, w:{empty_w})"));
-            }
             if band.max_col < sheet_max_col {
                 let empty_start = band.max_col + 1;
                 let n = sheet_max_col - band.max_col;
@@ -1181,17 +1113,24 @@ impl CompiledModel {
                     format_width(self.range_width(sheet_layout, empty_start, sheet_max_col));
                 band_line.push_str(&format!(", right_empty:{range} ({n}c, w:{empty_w})"));
             }
+            if band.lanes.len() == 1
+                && let Some(only_lane) = band.lanes.first()
+                && only_lane.tables.len() > 1
+            {
+                let effective_gap = only_lane.table_gap.unwrap_or(DEFAULT_VERTICAL_TABLE_GAP);
+                if effective_gap != DEFAULT_VERTICAL_TABLE_GAP {
+                    band_line.push_str(&format!(", table_gap:{effective_gap}r"));
+                }
+            }
             band_line.push_str("):");
             lines.push(band_line);
 
             prev_band_max_row = Some(band.max_row);
 
-            let band_min_row = band.min_row;
             let band_max_row = band.max_row;
-            let lanes = decompose_lanes(band.tables);
 
-            if lanes.len() == 1 {
-                if let Some(lane) = lanes.into_iter().next() {
+            if band.lanes.len() == 1 {
+                if let Some(lane) = band.lanes.into_iter().next() {
                     for pt in lane.tables {
                         lines.push(format!(
                             "  - {}",
@@ -1207,7 +1146,7 @@ impl CompiledModel {
                 }
             } else {
                 let mut prev_lane_max_col: Option<u32> = None;
-                for lane in lanes {
+                for lane in band.lanes {
                     let lane_col_range = format_col_range(lane.min_col, lane.max_col);
                     let lane_cols = lane.max_col.saturating_sub(lane.min_col).saturating_add(1);
                     let lane_w =
@@ -1232,15 +1171,16 @@ impl CompiledModel {
                         }
                     }
                     lane_line.push_str(&format!(", {used_row_range} = {used_rows}r"));
-                    if lane.min_row > band_min_row {
-                        let n = lane.min_row - band_min_row;
-                        let range = format_row_range(band_min_row, lane.min_row - 1);
-                        lane_line.push_str(&format!(", empty_above:{range} ({n}r)"));
-                    }
                     if lane.max_row < band_max_row {
                         let n = band_max_row - lane.max_row;
                         let range = format_row_range(lane.max_row + 1, band_max_row);
                         lane_line.push_str(&format!(", empty_below:{range} ({n}r)"));
+                    }
+                    if lane.tables.len() > 1 {
+                        let effective_gap = lane.table_gap.unwrap_or(DEFAULT_VERTICAL_TABLE_GAP);
+                        if effective_gap != DEFAULT_VERTICAL_TABLE_GAP {
+                            lane_line.push_str(&format!(", table_gap:{effective_gap}r"));
+                        }
                     }
                     lane_line.push_str("):");
                     lines.push(lane_line);

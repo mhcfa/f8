@@ -317,9 +317,35 @@ export interface FreezePanesInput {
   readonly col: number
 }
 
+export type TableRef = string | Table
+
+export interface LaneInput {
+  readonly tables: readonly TableRef[]
+  readonly tableGap?: number
+}
+
+export interface BandInput {
+  readonly lanes: readonly LaneInput[]
+  readonly gap?: number
+  readonly laneGap?: number
+}
+
+export type BandInputItem = BandInput | TableRef
+
+export interface LaneSpecInput {
+  readonly tables: readonly string[]
+  readonly tableGap?: number
+}
+
+export interface BandSpecInput {
+  readonly lanes: readonly LaneSpecInput[]
+  readonly gap?: number
+  readonly laneGap?: number
+}
+
 export interface SheetSpecInput {
   readonly name: string
-  readonly tables: readonly string[]
+  readonly bands: readonly BandSpecInput[]
   readonly tabColor?: string
   readonly freezePanes?: FreezePanesInput
   readonly showGridlines?: boolean
@@ -382,35 +408,12 @@ export type RowSpecInput =
   | SectionHeaderRowSpecInput
   | GutterRowSpecInput
 
-export interface StackPlacementSpecInput {
-  readonly kind: "stack"
-  readonly gap?: number
-}
-
-export interface BelowPlacementSpecInput {
-  readonly kind: "below"
-  readonly target: string
-  readonly gap?: number
-}
-
-export interface RightOfPlacementSpecInput {
-  readonly kind: "right_of" | "rightOf"
-  readonly target: string
-  readonly gap?: number
-}
-
-export type PlacementSpecInput =
-  | StackPlacementSpecInput
-  | BelowPlacementSpecInput
-  | RightOfPlacementSpecInput
-
 export interface TableSpecInput {
   readonly id: string
   readonly title: string
   readonly subtitles?: readonly string[]
   readonly currency?: CurrencyCode
   readonly collapsible?: boolean
-  readonly placement?: PlacementSpecInput
   readonly columns: readonly ColumnSpecInput[]
   readonly rows: readonly RowSpecInput[]
 }
@@ -449,9 +452,6 @@ export interface TableOptions {
   readonly subtitle?: string | readonly string[]
   readonly currency?: CurrencyCode
   readonly collapsible?: boolean
-  readonly rightOf?: string | Table
-  readonly below?: string | Table
-  readonly gap?: number
 }
 
 export interface ColumnOptions {

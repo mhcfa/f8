@@ -20,9 +20,9 @@ Financial modeling compiler, evaluator, and Python DSL bridging programmatic mod
 
 ## Workflow & CLI
 
-1. Define: Construct `Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)` -> `table.add_column(...)` / `table.add_row(...)`.
+1. Define: Construct `Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)` -> `table.add_column(...)` / `table.add_row(...)` (optionally arrange multi-lane dashboards or custom spacing with `sheet.set_bands(...)`).
 2. Compile: Call `compiled = model.compile()` (or `f8.compile(manifest, tables)`) to validate schema, expand grid, check cycles, evaluate cells, plan layout, and lower formulas.
-3. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook coordinates, values, and 2D Excel presentation via `compiled.to_markdown("index")` / `compiled.to_markdown(...)` / `compiled.to_markdown("layout")` (checking side-by-side balance, empty margins, title overhangs, subtitle overflows `sub:N(Xch>w)`, widened gutters, `grid` column-width inflation, multi-column `grid` descriptor `req:W` cliff spills / lane stretching, and wrapped cells), and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspect_cell(...)`, `compiled.precedents_of(...)`, and `compiled.dependents_of(...)`.
+3. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook coordinates, values, and 2D Excel presentation via `compiled.to_markdown("index")` / `compiled.to_markdown(...)` / `compiled.to_markdown("layout")` (checking side-by-side balance, right/bottom slack, title overhangs, subtitle overflows `sub:N(Xch>w)`, widened gutters, `grid` column-width inflation, multi-column `grid` descriptor `req:W` cliff spills / lane stretching, and wrapped cells), and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspect_cell(...)`, `compiled.precedents_of(...)`, and `compiled.dependents_of(...)`.
 4. Diagnose: Catch typed `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect structured attributes.
 5. Emit: Write `.xlsx` to disk via `compiled.save(path, options=...)` or in-memory bytes via `compiled.emit_workbook(options=...)`.
 
@@ -60,6 +60,6 @@ CLI commands (`f8` or `python -m f8`):
 
 ## Reference Index
 
-- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`get_sheet`, `get_table`, `set_cell`, `set_cells`), 2D coordinate grammar, 3-tier resolution rules, layout placement, formatting presets, and themes.
+- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Band`, `Lane`, `Table`, `Cell`), lookup/mutation APIs (`get_sheet`, `get_table`, `set_bands`, `set_cell`, `set_cells`), 2D coordinate grammar, 3-tier resolution rules, band/lane layout, formatting presets, and themes.
 - `references/functions.md`: 37 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, conditional aggregation and debt amortization composition patterns, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, `MarkdownTable` and dictionary/DataFrame exports, `TypedDict` inspection schemas, and `F8Error` exception attributes.

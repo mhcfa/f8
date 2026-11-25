@@ -261,7 +261,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![
                 ColumnSpec::descriptor("line_item", "Line Item"),
                 ColumnSpec::new("2023A"),
@@ -317,7 +316,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![
                 ColumnSpec::descriptor("line_item", "Line Item"),
                 ColumnSpec::new("2024E"),

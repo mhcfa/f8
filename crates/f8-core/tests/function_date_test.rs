@@ -690,7 +690,6 @@ fn test_end_to_end_date_formula_evaluation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),

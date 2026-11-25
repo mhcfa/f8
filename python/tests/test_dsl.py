@@ -13,15 +13,19 @@ import f8
 import pytest
 from f8 import (
     AxisSelector,
+    Band,
+    BandItem,
     Cell,
     CellInputValue,
     CompiledModel,
+    Lane,
     Model,
     Shade,
     Sheet,
     SheetLayoutMode,
     SpecificationError,
     Table,
+    TableRef,
 )
 
 
@@ -384,7 +388,7 @@ def test_scenario_10_worksheet_freeze_panes_split_coordinates() -> None:
                 "name": "Sheet1",
                 "show_gridlines": False,
                 "freeze_panes": {"row": 4, "col": 2},
-                "tables": ["T1"],
+                "bands": [{"lanes": [{"tables": ["T1"]}]}],
             }
         ],
     }
@@ -766,106 +770,337 @@ def test_scenario_11_semantic_background_shade_dsl_and_conflict() -> None:
         bad_model.compile()
 
 
-def test_scenario_12_table_placement_dsl_and_dashboard_layout() -> None:
-    model = Model(name="DashboardLayoutModel")
-    sheet = model.add_sheet("Dashboard")
+def test_scenario_12_band_lane_dsl_validation_and_layout_scenarios() -> None:
+    # Public exports
+    for export_name in ("Band", "BandItem", "Lane", "TableRef"):
+        assert export_name in f8.__all__
+    assert BandItem is not None
+    assert TableRef is not None
 
-    # 1. Authoring validation: mutually exclusive right_of and below, or negative gap
-    with pytest.raises(ValueError, match="Cannot specify both 'right_of' and 'below'"):
-        sheet.add_table("Bad1", title="Bad", right_of="T1", below="T1")
+    def make_card(sheet: Sheet, tid: str, title: str, cols: int, rows: int) -> Table:
+        t = sheet.add_table(tid, title=title)
+        for c in range(1, cols + 1):
+            t.add_column(f"c{c}", header=f"C{c}")
+        for r in range(1, rows + 1):
+            cells: dict[str, CellInputValue] = {
+                f"c{c}": float(r * 10 + c) for c in range(1, cols + 1)
+            }
+            t.add_row(f"r{r}", cells=cells)
+        return t
 
-    with pytest.raises(ValueError, match="Cannot specify both 'right_of' and 'below'"):
-        Table("Bad2", title="Bad", right_of="T1", below="T1")
+    # Scenario 1: Default vertical stacking without set_bands
+    m_default = Model(name="DefaultStack")
+    s_default = m_default.add_sheet("Main")
+    make_card(s_default, "T1", "First", 2, 2)
+    make_card(s_default, "T2", "Second", 2, 1)
+    assert s_default.bands == [Band([Lane(["T1"])]), Band([Lane(["T2"])])]
+    m_def_spec, t_def_spec = m_default.__f8_spec__()
+    assert m_def_spec["sheets"][0].get("bands") == [
+        {"lanes": [{"tables": ["T1"]}]},
+        {"lanes": [{"tables": ["T2"]}]},
+    ]
+    assert "placement" not in t_def_spec[0]
+    c_default = m_default.compile()
+    assert c_default.table("T1").address("r1", "c1") == "B5"
+    assert c_default.table("T2").address("r1", "c1") == "B12"
 
-    with pytest.raises(ValueError, match="Table 'gap' must be non-negative"):
-        sheet.add_table("Bad3", title="Bad", gap=-1)
+    # Scenario 2: Wider lower-left card in multi-lane band (auto mode)
+    m_wide = Model(name="WiderLowerLeft")
+    s_wide = m_wide.add_sheet("Dashboard")
+    tl = make_card(s_wide, "TL", "Top Left", 3, 2)
+    bl = make_card(s_wide, "BL", "Bottom Left", 5, 3)
+    tr = make_card(s_wide, "TR", "Top Right", 2, 1)
+    br = make_card(s_wide, "BR", "Bottom Right", 2, 4)
+    bot = make_card(s_wide, "Bottom", "Band 2", 4, 1)
+    assert s_wide.set_bands([Band([Lane([tl, bl]), Lane([tr, br])]), bot]) is s_wide
+    c_wide = m_wide.compile()
+    # TL occupies B..D, BL occupies B..F, Lane 1 (TR, BR) starts at H (col 7)
+    assert c_wide.table("TL").address("r1", "c1") == "B5"
+    assert c_wide.table("BL").address("r1", "c5") == "F12"
+    assert c_wide.table("TR").address("r1", "c1") == "H5"
+    assert c_wide.table("BR").address("r1", "c1") == "H11"
+    # BL and BR both end at Excel row 14 -> Bottom starts at row 17 (body r1 at 20)
+    assert c_wide.table("Bottom").address("r1", "c1") == "B20"
 
-    with pytest.raises(ValueError, match="Table 'gap' must be non-negative"):
-        Table("Bad4", title="Bad", right_of="T1", gap=-2)
+    # Scenario 3: Custom container gaps (including 0), single-lane multi-table bands, TableRef
+    m_gaps = Model(name="CustomGaps")
+    s_gaps = m_gaps.add_sheet("Gaps")
+    g_a = make_card(s_gaps, "A", "A", 2, 1)
+    g_b = make_card(s_gaps, "B", "B", 1, 1)
+    g_c = make_card(s_gaps, "C", "C", 1, 1)
+    g_d = make_card(s_gaps, "D", "D", 1, 1)
+    g_e = make_card(s_gaps, "E", "E", 1, 1)
+    g_f = make_card(s_gaps, "F", "F", 1, 1)
+    g_g = make_card(s_gaps, "G", "G", 2, 1)
+    s_gaps.set_bands(
+        [
+            Band([Lane([g_a, g_b], table_gap=1), Lane([g_c, g_d], table_gap=4)], lane_gap=0),
+            Band([Lane([g_e, g_f], table_gap=1)], gap=0),
+            "G",
+        ]
+    )
+    assert g_g.id == "G"
+    m_gaps_spec, _ = m_gaps.__f8_spec__()
+    assert m_gaps_spec["sheets"][0].get("bands") == [
+        {
+            "lane_gap": 0,
+            "lanes": [
+                {"table_gap": 1, "tables": ["A", "B"]},
+                {"table_gap": 4, "tables": ["C", "D"]},
+            ],
+        },
+        {"gap": 0, "lanes": [{"table_gap": 1, "tables": ["E", "F"]}]},
+        {"lanes": [{"tables": ["G"]}]},
+    ]
+    c_gaps = m_gaps.compile()
+    assert c_gaps.table("C").address("r1", "c1") == "D5"
+    assert c_gaps.table("B").address("r1", "c1") == "B10"
+    assert c_gaps.table("D").address("r1", "c1") == "D13"
+    assert c_gaps.table("E").address("r1", "c1") == "B17"
+    assert c_gaps.table("F").address("r1", "c1") == "B22"
+    assert c_gaps.table("G").address("r1", "c1") == "B28"
 
-    # 2. Dashboard authoring with Table object and str targets + custom gaps
-    t1 = sheet.add_table("T1", title="Tall Left Table")
-    t1.add_column("item", role="descriptor", header="Item")
-    t1.add_column("c1", header="2023A")
-    t1.add_column("c2", header="2024E")
-    for i in range(1, 10):
-        t1.add_row(f"r{i}", cells={"item": f"Row {i}", "c1": 10.0 * i, "c2": 20.0 * i})
+    # Scenario 4: layout="grid" descriptor-span growth and per-lane descriptor alignment
+    m_grid = Model(name="GridScenario4")
+    s_grid = m_grid.add_sheet("Summary", layout="grid", col_width=12.0)
+    gtl = s_grid.add_table("TL", "Top Left")
+    gtl.add_column("item", role="descriptor", header="Item")
+    gtl.add_column("v1", header="V1")
+    gtl.add_row("r1", cells={"item": "Short", "v1": 10.0})
 
-    # T2 placed right_of T1 (passing Table object)
-    t2 = sheet.add_table("T2", title="Top Right", right_of=t1)
-    t2.add_column("metric", role="descriptor", header="Metric")
-    t2.add_column("val", header="Value")
-    t2.add_row("m1", cells={"metric": "R1 2024E"}, expr='T1["r1", "c2"]')
+    gbl = s_grid.add_table("BL", "Bottom Left")
+    gbl.add_column("item", role="descriptor", header="Item")
+    gbl.add_column("v1", header="V1")
+    gbl.add_column("v2", header="V2")
+    gbl.add_row("r1", cells={"item": "Consolidated Adjusted EBITDA ($)", "v1": 100.0, "v2": 120.0})
 
-    # T3 placed below T2 (passing str ID and custom gap)
-    t3 = sheet.add_table("T3", title="Bottom Right", below="T2", gap=2)
-    t3.add_column("metric", role="descriptor", header="Metric")
-    t3.add_column("val", header="Value")
-    t3.add_row("m2", cells={"metric": "Double M1"}, expr='T2["m1", "val"] * 2')
+    gtr = s_grid.add_table("TR", "Top Right")
+    gtr.add_column("k", role="descriptor", header="Key")
+    gtr.add_column("v", header="Val")
+    gtr.add_row("r1", cells={"k": "IRR", "v": 0.25})
 
-    # T4 stacked at sheet bottom with custom gap=3
-    t4 = sheet.add_table("T4", title="Full Width Bottom", gap=3)
-    t4.add_column("item", role="descriptor", header="Summary")
-    t4.add_column("total", header="Total")
-    t4.add_row("sum_row", cells={"item": "Combined"}, expr='T2["m1", "val"] + T3["m2", "val"]')
+    gbr = s_grid.add_table("BR", "Bottom Right")
+    gbr.add_column("k", role="descriptor", header="Key")
+    gbr.add_column("v", header="Val")
+    gbr.add_row("r1", cells={"k": "Sponsor Gross Multiple", "v": 2.8})
 
-    _manifest, tables_spec = model.__f8_spec__()
-    assert "placement" not in tables_spec[0]
-    assert tables_spec[1].get("placement") == {"kind": "right_of", "target": "T1"}
-    assert tables_spec[2].get("placement") == {"kind": "below", "target": "T2", "gap": 2}
-    assert tables_spec[3].get("placement") == {"kind": "stack", "gap": 3}
+    gtime = s_grid.add_table("Timeline", "Timeline")
+    gtime.add_column("item", role="descriptor", header="Item")
+    gtime.add_column("y1", header="Y1")
+    gtime.add_row("r1", cells={"item": "Revenue", "y1": 50.0})
 
-    compiled = model.compile()
-    assert compiled.num("T2", "m1", "val") == pytest.approx(20.0)
-    assert compiled.num("T3", "m2", "val") == pytest.approx(40.0)
-    assert compiled.num("T4", "sum_row", "total") == pytest.approx(60.0)
+    s_grid.set_bands([Band([Lane([gtl, gbl]), Lane([gtr, gbr])], lane_gap=2), gtime])
+    c_grid = m_grid.compile()
+    # Lane 0 aligns descriptor span to 3 (B..D), so v1/y1 land at E
+    assert c_grid.table("TL").address("r1", "v1") == "E5"
+    assert c_grid.table("BL").address("r1", "v1") == "E11"
+    assert c_grid.table("Timeline").address("r1", "y1") == "E17"
+    # Lane 1 starts at col 8 (I = 5 + 1 + 2), aligns descriptor to 2 (I..J), v lands at K
+    assert c_grid.table("TR").address("r1", "k") == "I5"
+    assert c_grid.table("TR").address("r1", "v") == "K5"
+    assert c_grid.table("BR").address("r1", "k") == "I11"
+    assert c_grid.table("BR").address("r1", "v") == "K11"
 
-    # Verify physical coordinates and lowered formulas
-    assert compiled.table("T2").address("m1", "val") == "G5"
-    assert compiled.table("T2").formula("m1", "val") == "=$D$5"
-    assert compiled.table("T3").address("m2", "val") == "G11"
-    assert compiled.table("T3").formula("m2", "val") == "=$G$5*2"
-    assert compiled.table("T4").address("sum_row", "total") == "C20"
-    assert compiled.table("T4").formula("sum_row", "total") == "=$G$5+$G$11"
+    # Scenario 5: Band/Lane reordering decoupled from declaration order
+    m_order = Model(name="ReorderModel")
+    s_order = m_order.add_sheet("Dash")
+    ot1 = s_order.add_table("T1", "T1")
+    ot2 = s_order.add_table("T2", "T2")
+    ot3 = s_order.add_table("T3", "T3")
+    for ot in (ot1, ot2, ot3):
+        ot.add_column("c1", header="C1")
+        ot.add_row("r1", expr="1 / 0")
+    s_order.set_bands([Band([Lane([ot3, ot1]), Lane([ot2])])])
+    assert [t.id for t in s_order.tables] == ["T1", "T2", "T3"]
+    c_order = m_order.compile()
+    assert [t["id"] for t in c_order.summary()["sheets"][0]["tables"]] == ["T3", "T1", "T2"]
+    assert [e["coordinate"]["table"] for e in c_order.errors()] == ["T3", "T1", "T2"]
+    assert c_order.inspect_sheet("Dash")["tables"] == ["T3", "T1", "T2"]
+    assert c_order.table("T3").address("r1", "c1") == "B5"
+    assert c_order.table("T1").address("r1", "c1") == "B11"
+    assert c_order.table("T2").address("r1", "c1") == "D5"
+    md_order = c_order.to_markdown("layout")
+    assert md_order.index("`T3`") < md_order.index("`T1`") < md_order.index("`T2`")
 
-    sheet_insp = compiled.inspect_sheet("Dashboard")
-    assert sheet_insp["min_col"] == 1
-    assert sheet_insp["max_col"] == 6
-    assert sheet_insp["min_row"] == 1
-    assert sheet_insp["max_row"] == 19
-    assert sheet_insp["col_widths"][4] == pytest.approx(2.0)
+    # Scenario 6: Band/lane-aware title banner alignment
+    m_banner = Model(name="BannerScenario6")
+    s_b1 = m_banner.add_sheet("Dash")
+    btl = make_card(s_b1, "TL", "Top Left", 3, 4)
+    bbl = make_card(s_b1, "BL", "Bottom Left", 4, 7)
+    btr = make_card(s_b1, "TR", "Top Right", 3, 3)
+    bwb = make_card(s_b1, "WideBottom", "Wide Bottom", 10, 2)
+    s_b1.set_bands([Band([Lane([btl, bbl]), Lane([btr])]), bwb])
+    c_banner = m_banner.compile()
+    insp_b1 = c_banner.inspect_sheet("Dash")
+    row2 = next(r for r in insp_b1["rows"] if r["excel_row"] == 2)
+    assert [(c["physical_a1"], c["kind"], c["table_id"]) for c in row2["cells"]] == [
+        ("B2", "table_title", "TL"),
+        ("C2", "table_title", "TL"),
+        ("D2", "table_title", "TL"),
+        ("E2", "table_title", "TL"),
+        ("F2", "empty", None),
+        ("G2", "table_title", "TR"),
+        ("H2", "table_title", "TR"),
+        ("I2", "table_title", "TR"),
+        ("J2", "table_title", "TR"),
+        ("K2", "table_title", "TR"),
+    ]
+    row11 = next(r for r in insp_b1["rows"] if r["excel_row"] == 11)
+    assert [
+        (c["physical_a1"], c["kind"], c["table_id"])
+        for c in row11["cells"]
+        if c["kind"] == "table_title"
+    ] == [
+        ("B11", "table_title", "BL"),
+        ("C11", "table_title", "BL"),
+        ("D11", "table_title", "BL"),
+        ("E11", "table_title", "BL"),
+    ]
 
-    xlsx_bytes = compiled.emit_workbook()
-    assert xlsx_bytes.startswith(b"PK\x03\x04")
+    # Scenario 8: Outer SDK strict validation, empty sheets, idempotency, and sheet.bands parity
+    s_val = Sheet("Val")
+    vt1 = s_val.add_table("T1", "T1")
+    vt2 = s_val.add_table("T2", "T2")
 
-    # 3. Invalid placement target raises SpecificationError with err.table
-    bad_target_model = Model()
-    bs = bad_target_model.add_sheet("S1")
-    bt = bs.add_table("OrphanTable", title="Orphan", right_of="MissingTarget")
-    bt.add_column("c1", header="C1")
-    bt.add_row("r1", cells={"c1": 1.0})
-    with pytest.raises(SpecificationError, match="invalid placement target") as target_exc:
-        bad_target_model.compile()
-    assert target_exc.value.table == "OrphanTable"
+    # Removed placement kwargs on Sheet.add_table and Table raise TypeError
+    from collections.abc import Callable
 
-    # 4. Overlapping tables raise SpecificationError with err.table == second_table.id
-    overlap_model = Model()
-    os_sheet = overlap_model.add_sheet("S1")
-    ot1 = os_sheet.add_table("Base", title="Base")
-    ot1.add_column("c1", header="C1")
-    ot1.add_row("r1", cells={"c1": 1.0})
+    add_table_dyn: Callable[..., object] = cast(Callable[..., object], s_val.add_table)
+    table_cls_dyn: Callable[..., object] = cast(Callable[..., object], Table)
+    bad_right_of: dict[str, object] = {"right_of": "T1"}
+    bad_below: dict[str, object] = {"below": "T1"}
+    bad_gap: dict[str, object] = {"gap": 2}
+    with pytest.raises(TypeError):
+        add_table_dyn("X", "X", **bad_right_of)
+    with pytest.raises(TypeError):
+        table_cls_dyn("X", "X", **bad_below)
+    with pytest.raises(TypeError):
+        table_cls_dyn("X", "X", **bad_gap)
 
-    ot2 = os_sheet.add_table("FirstRight", title="First", right_of=ot1)
-    ot2.add_column("c1", header="C1")
-    ot2.add_row("r1", cells={"c1": 2.0})
+    # Lane validation
+    with pytest.raises(ValueError, match="cannot be empty"):
+        Lane([])
+    with pytest.raises(TypeError, match="sequence of Table or str"):
+        Lane("T1")
+    with pytest.raises(TypeError, match="sequence of Table or str"):
+        Lane(cast(list[TableRef], vt1))
+    with pytest.raises(ValueError, match="single table cannot specify 'table_gap'"):
+        Lane([vt1], table_gap=1)
+    with pytest.raises(ValueError, match="single table cannot specify 'table_gap'"):
+        Lane([vt1], table_gap=0)
+    with pytest.raises(ValueError, match="non-negative"):
+        Lane([vt1, vt2], table_gap=-1)
+    with pytest.raises(TypeError, match="non-negative int"):
+        Lane([vt1, vt2], table_gap=True)
+    with pytest.raises(TypeError, match="non-negative int"):
+        Lane([vt1, vt2], table_gap=cast(int, 1.5))
 
-    ot3 = os_sheet.add_table("CollidingRight", title="Second", right_of=ot1)
-    ot3.add_column("c1", header="C1")
-    ot3.add_row("r1", cells={"c1": 3.0})
+    # Band validation
+    with pytest.raises(ValueError, match="cannot be empty"):
+        Band([])
+    with pytest.raises(TypeError, match="must be a Lane"):
+        Band(cast(list[Lane], [vt1]))
+    with pytest.raises(TypeError, match="must be a Lane"):
+        Band(cast(list[Lane], ["T1"]))
+    with pytest.raises(TypeError, match="sequence of Lane"):
+        Band(cast(list[Lane], Lane([vt1])))
+    with pytest.raises(ValueError, match="single lane cannot specify 'lane_gap'"):
+        Band([Lane([vt1])], lane_gap=1)
+    with pytest.raises(ValueError, match="single lane cannot specify 'lane_gap'"):
+        Band([Lane([vt1])], lane_gap=0)
+    with pytest.raises(ValueError, match="non-negative"):
+        Band([Lane([vt1]), Lane([vt2])], lane_gap=-1)
+    with pytest.raises(ValueError, match="non-negative"):
+        Band([Lane([vt1])], gap=-1)
+    with pytest.raises(TypeError, match="non-negative int"):
+        Band([Lane([vt1]), Lane([vt2])], lane_gap=False)
+    with pytest.raises(TypeError, match="non-negative int"):
+        Band([Lane([vt1])], gap=True)
 
-    with pytest.raises(SpecificationError, match="overlaps with table") as overlap_exc:
-        overlap_model.compile()
-    assert overlap_exc.value.table == "CollidingRight"
+    # Sheet.set_bands validation
+    with pytest.raises(TypeError, match="sequence of Band"):
+        s_val.set_bands(cast(list[BandItem], vt1))
+    with pytest.raises(TypeError, match="sequence of Band"):
+        s_val.set_bands(cast(list[BandItem], "T1"))
+    with pytest.raises(TypeError, match="sequence of Band"):
+        s_val.set_bands(cast(list[BandItem], Band([Lane([vt1])])))
+    with pytest.raises(ValueError, match="band 0 cannot specify 'gap'"):
+        s_val.set_bands([Band([Lane([vt1])], gap=0), vt2])
+    with pytest.raises(ValueError, match="band 0 cannot specify 'gap'"):
+        s_val.set_bands([Band([Lane([vt1])], gap=2), vt2])
+    with pytest.raises(ValueError, match="missing table"):
+        s_val.set_bands([vt1])
+    with pytest.raises(ValueError, match="missing table"):
+        s_val.set_bands([])
+    with pytest.raises(ValueError, match="Duplicate table"):
+        s_val.set_bands([Band([Lane([vt1, vt1]), Lane([vt2])])])
+    with pytest.raises(ValueError, match="Duplicate table"):
+        s_val.set_bands([vt1, vt2, vt1])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_val.set_bands([vt1, vt2, "Ghost"])
+
+    # Foreign-sheet Table object (both distinct ID and colliding ID on standalone Sheet)
+    foreign_sheet = Sheet("Other")
+    foreign_diff = foreign_sheet.add_table("Foreign", "Foreign")
+    foreign_same_id = foreign_sheet.add_table("T1", "Foreign T1")
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_val.set_bands([vt1, foreign_diff])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_val.set_bands([foreign_same_id, vt2])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_val.set_bands([Band([Lane([foreign_same_id])]), vt2])
+
+    # Concurrent value-equal Lanes across standalone sheets preserve per-instance Table ownership
+    s_own_a = Sheet("OwnA")
+    s_own_b = Sheet("OwnB")
+    t_own_a = s_own_a.add_table("T", "T on A")
+    t_own_b = s_own_b.add_table("T", "T on B")
+    lane_a = Lane([t_own_a])
+    lane_b = Lane([t_own_b])
+    assert lane_a == lane_b
+    assert hash(lane_a) == hash(lane_b)
+    assert repr(lane_a) == repr(Lane(["T"]))
+    s_own_a.set_bands([Band([lane_a])])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_own_a.set_bands([Band([lane_b])])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_own_b.set_bands([Band([lane_a])])
+    reused_band = Band([Lane([t_own_a])])
+    s_own_a.set_bands([reused_band])
+    with pytest.raises(ValueError, match="does not belong to sheet"):
+        s_own_b.set_bands([reused_band])
+    assert s_own_a.bands == [Band([Lane(["T"])])]
+    s_own_b.set_bands(s_own_a.bands)
+    assert s_own_b.bands == [Band([Lane(["T"])])]
+
+    # Normalized sheet.bands parity (Table vs str vs shorthand vs omitted) and idempotency
+    assert Lane([vt1]) == Lane(["T1"])
+    assert s_val.bands == [Band([Lane(["T1"])]), Band([Lane(["T2"])])]
+    s_val.set_bands([vt1, vt2])
+    assert s_val.bands == [Band([Lane(["T1"])]), Band([Lane(["T2"])])]
+    s_val.set_bands([Band([Lane(["T1"]), Lane(["T2"])])])
+    assert s_val.bands == [Band([Lane(["T1"]), Lane(["T2"])])]
+    # Idempotent replacement
+    s_val.set_bands([Band([Lane([vt2, vt1])])])
+    assert s_val.bands == [Band([Lane(["T2", "T1"])])]
+
+    # Adding a table after set_bands invalidates partition on __f8_spec__ / compile
+    m_late = Model("LateTable")
+    s_late = m_late.add_sheet("S1")
+    lt1 = make_card(s_late, "T1", "T1", 1, 1)
+    s_late.set_bands([lt1])
+    make_card(s_late, "T2", "T2", 1, 1)
+    with pytest.raises(ValueError, match="missing from bands.*T2"):
+        s_late.__f8_spec__()
+    with pytest.raises(ValueError, match="missing from bands.*T2"):
+        m_late.compile()
+
+    # Empty sheet set_bands([]) succeeds
+    s_empty = Sheet("Empty")
+    assert s_empty.bands == []
+    assert s_empty.set_bands([]) is s_empty
+    assert s_empty.bands == []
+    assert s_empty.__f8_spec__().get("bands") == []
 
 
 def test_axis_selector_runtime_evaluation() -> None:
@@ -1371,12 +1606,12 @@ def test_sheet_gridlines_default_false_and_opt_in_true() -> None:
         {
             "name": "DefaultHidden",
             "show_gridlines": False,
-            "tables": ["T1"],
+            "bands": [{"lanes": [{"tables": ["T1"]}]}],
         },
         {
             "name": "ExplicitVisible",
             "show_gridlines": True,
-            "tables": ["T2"],
+            "bands": [{"lanes": [{"tables": ["T2"]}]}],
         },
     ]
 
@@ -1393,7 +1628,7 @@ def test_sheet_gridlines_default_false_and_opt_in_true() -> None:
         {
             "model_name": "RawDefaults",
             "theme": "corporate_navy",
-            "sheets": [{"name": "RawSheet", "tables": ["T1"]}],
+            "sheets": [{"name": "RawSheet", "bands": [{"lanes": [{"tables": ["T1"]}]}]}],
         },
         [
             {
@@ -1469,7 +1704,13 @@ def test_sheet_grid_layout_validation_and_diagnostics() -> None:
                 {
                     "model_name": "BadRawLayout",
                     "theme": "corporate_navy",
-                    "sheets": [{"name": "S1", "layout": bad_layout, "tables": ["T1"]}],
+                    "sheets": [
+                        {
+                            "name": "S1",
+                            "layout": bad_layout,
+                            "bands": [{"lanes": [{"tables": ["T1"]}]}],
+                        }
+                    ],
                 },
                 [minimal_table],
             )
@@ -1537,7 +1778,7 @@ def test_sheet_grid_layout_scenario_10_and_12_e2e_parity() -> None:
         expr='Summary["rev", @col] * 0.25',
     )
 
-    kpis = dash.add_table("KPIs", title="Key Metrics", right_of=summary)
+    kpis = dash.add_table("KPIs", title="Key Metrics")
     kpis.add_column("metric", role="descriptor", header="Metric")
     kpis.add_column("val", header="Value", format="percentage", decimals=1)
     kpis.add_row(
@@ -1545,6 +1786,7 @@ def test_sheet_grid_layout_scenario_10_and_12_e2e_parity() -> None:
         cells={"metric": "2025E Consolidated Margin"},  # 25+1=26 -> span 2 at W=14
         expr='Summary["ebitda", "y2"] / Summary["rev", "y2"]',
     )
+    dash.set_bands([Band([Lane([summary]), Lane([kpis])])])
 
     notes_sheet = model.add_sheet("Notes")
     notes = notes_sheet.add_table("Commentary", title="Notes")

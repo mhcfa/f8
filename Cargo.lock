@@ -83,6 +83,7 @@ name = "f8-wasm"
 version = "0.7.0"
 dependencies = [
  "f8-core",
+ "js-sys",
  "rust_xlsxwriter",
  "serde",
  "serde-wasm-bindgen",

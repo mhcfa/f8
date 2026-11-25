@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -13,7 +13,7 @@ from f8._core import CompiledModel
 from f8._core import compile as core_compile
 from f8.types import (
     AxisRole,
-    BelowPlacementSpecDict,
+    BandSpecDict,
     CellValueLiteral,
     ColumnSpecDict,
     CurrencyCode,
@@ -24,15 +24,14 @@ from f8.types import (
     GridSheetLayoutSpecDict,
     GutterColumnSpecDict,
     GutterRowSpecDict,
+    LaneSpecDict,
     ProjectManifestDict,
-    RightOfPlacementSpecDict,
     RowSpecDict,
     SectionHeaderRowSpecDict,
     SemanticStyle,
     Shade,
     SheetLayoutMode,
     SheetSpecDict,
-    StackPlacementSpecDict,
     TableSpecDict,
     ThemeInput,
 )
@@ -192,16 +191,7 @@ class Table:
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
         sheet: Sheet | None = None,
-        *,
-        right_of: str | Table | None = None,
-        below: str | Table | None = None,
-        gap: int | None = None,
     ) -> None:
-        if right_of is not None and below is not None:
-            raise ValueError("Cannot specify both 'right_of' and 'below'")
-        if gap is not None and gap < 0:
-            raise ValueError(f"Table 'gap' must be non-negative, got {gap}")
-
         self.id = id
         self.title = title
         if subtitle is None:
@@ -212,9 +202,6 @@ class Table:
             self.subtitles = list(subtitle)
         self.currency = currency
         self.collapsible = collapsible
-        self.right_of: str | None = right_of.id if isinstance(right_of, Table) else right_of
-        self.below: str | None = below.id if isinstance(below, Table) else below
-        self.gap: int | None = gap
         self._sheet = sheet
         self._columns: list[_ColumnItem] = []
         self._col_ids: set[str] = set()
@@ -732,29 +719,120 @@ class Table:
             table_spec["subtitles"] = list(self.subtitles)
         if self.currency is not None:
             table_spec["currency"] = _normalize_currency(self.currency)
-        if self.right_of is not None:
-            right_of_spec: RightOfPlacementSpecDict = {
-                "kind": "right_of",
-                "target": self.right_of,
-            }
-            if self.gap is not None:
-                right_of_spec["gap"] = self.gap
-            table_spec["placement"] = right_of_spec
-        elif self.below is not None:
-            below_spec: BelowPlacementSpecDict = {
-                "kind": "below",
-                "target": self.below,
-            }
-            if self.gap is not None:
-                below_spec["gap"] = self.gap
-            table_spec["placement"] = below_spec
-        elif self.gap is not None:
-            stack_spec: StackPlacementSpecDict = {
-                "kind": "stack",
-                "gap": self.gap,
-            }
-            table_spec["placement"] = stack_spec
         return table_spec
+
+
+type TableRef = str | Table
+type BandItem = Band | TableRef
+
+
+def _validate_non_negative_int(value: object, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        msg = f"'{field_name}' must be a non-negative int, got {type(value).__name__}"
+        raise TypeError(msg)
+    if value < 0:
+        msg = f"'{field_name}' must be non-negative, got {value}"
+        raise ValueError(msg)
+    return value
+
+
+def _as_object_tuple(
+    value: object,
+    *,
+    forbidden: tuple[type, ...],
+    label: str,
+) -> tuple[object, ...]:
+    if isinstance(value, forbidden) or not isinstance(value, Sequence):
+        msg = f"{label}, got {type(value).__name__}"
+        raise TypeError(msg)
+    return tuple(cast(Sequence[object], value))
+
+
+@dataclass(frozen=True, init=False)
+class Lane:
+    """Vertical stack of tables sharing one column lane within a band."""
+
+    tables: tuple[str, ...]
+    table_gap: int | None = None
+    _table_refs: tuple[TableRef, ...] = field(init=False, repr=False, compare=False, hash=False)
+
+    def __init__(
+        self,
+        tables: Sequence[TableRef],
+        *,
+        table_gap: int | None = None,
+    ) -> None:
+        raw_items = _as_object_tuple(
+            tables,
+            forbidden=(str, bytes, Table),
+            label="Lane 'tables' must be a sequence of Table or str",
+        )
+        if not raw_items:
+            raise ValueError("Lane 'tables' cannot be empty")
+        normalized_ids: list[str] = []
+        raw_refs: list[TableRef] = []
+        for item in raw_items:
+            if isinstance(item, Table):
+                normalized_ids.append(item.id)
+                raw_refs.append(item)
+            elif isinstance(item, str):
+                normalized_ids.append(item)
+                raw_refs.append(item)
+            else:
+                msg = f"Lane table item must be a Table or str, got {type(item).__name__}"
+                raise TypeError(msg)
+        validated_gap = _validate_non_negative_int(table_gap, "table_gap")
+        if len(normalized_ids) == 1 and validated_gap is not None:
+            msg = f"Lane with a single table cannot specify 'table_gap' ({validated_gap})"
+            raise ValueError(msg)
+        object.__setattr__(self, "tables", tuple(normalized_ids))
+        object.__setattr__(self, "table_gap", validated_gap)
+        object.__setattr__(self, "_table_refs", tuple(raw_refs))
+
+    def __f8_table_refs__(self) -> tuple[TableRef, ...]:
+        """Returns the original `Table` or `str` references passed at construction time."""
+        return self._table_refs
+
+
+@dataclass(frozen=True, init=False)
+class Band:
+    """Horizontal band of side-by-side column lanes on a worksheet."""
+
+    lanes: tuple[Lane, ...]
+    gap: int | None = None
+    lane_gap: int | None = None
+
+    def __init__(
+        self,
+        lanes: Sequence[Lane],
+        *,
+        gap: int | None = None,
+        lane_gap: int | None = None,
+    ) -> None:
+        raw_items = _as_object_tuple(
+            lanes,
+            forbidden=(str, bytes, Table, Lane),
+            label="Band 'lanes' must be a sequence of Lane",
+        )
+        if not raw_items:
+            raise ValueError("Band 'lanes' cannot be empty")
+        validated_lanes: list[Lane] = []
+        for item in raw_items:
+            if not isinstance(item, Lane):
+                msg = f"Band lane item must be a Lane, got {type(item).__name__}"
+                raise TypeError(msg)
+            validated_lanes.append(item)
+        lane_tuple = tuple(validated_lanes)
+        validated_gap = _validate_non_negative_int(gap, "gap")
+        validated_lane_gap = _validate_non_negative_int(lane_gap, "lane_gap")
+        if len(lane_tuple) == 1 and validated_lane_gap is not None:
+            msg = f"Band with a single lane cannot specify 'lane_gap' ({validated_lane_gap})"
+            raise ValueError(msg)
+        object.__setattr__(self, "lanes", lane_tuple)
+        object.__setattr__(self, "gap", validated_gap)
+        object.__setattr__(self, "lane_gap", validated_lane_gap)
 
 
 def _validate_sheet_layout(
@@ -822,6 +900,8 @@ class Sheet:
         self._model = model
         self._tables: list[Table] = []
         self._table_ids: set[str] = set()
+        self._tables_by_id: dict[str, Table] = {}
+        self._bands: list[Band] | None = None
 
     def add_table(
         self,
@@ -830,10 +910,6 @@ class Sheet:
         subtitle: str | Sequence[str] | None = None,
         currency: CurrencyCode | None = None,
         collapsible: bool = False,
-        *,
-        right_of: str | Table | None = None,
-        below: str | Table | None = None,
-        gap: int | None = None,
     ) -> Table:
         """Creates and appends a new `Table` to this worksheet."""
         if self._model is not None:
@@ -853,13 +929,73 @@ class Sheet:
             currency=currency,
             collapsible=collapsible,
             sheet=self,
-            right_of=right_of,
-            below=below,
-            gap=gap,
         )
         self._tables.append(table)
         self._table_ids.add(id)
+        self._tables_by_id[id] = table
         return table
+
+    def _resolve_table_ref(self, ref: TableRef) -> str:
+        if isinstance(ref, Table):
+            if self._tables_by_id.get(ref.id) is not ref:
+                msg = f"Table '{ref.id}' does not belong to sheet '{self.name}'"
+                raise ValueError(msg)
+            return ref.id
+        if ref not in self._tables_by_id:
+            msg = f"Table '{ref}' does not belong to sheet '{self.name}'"
+            raise ValueError(msg)
+        return ref
+
+    def set_bands(self, bands: Sequence[BandItem]) -> Sheet:
+        """Sets the explicit 2D band/lane layout for all tables currently on this worksheet."""
+        raw_items = _as_object_tuple(
+            bands,
+            forbidden=(str, bytes, Table, Band),
+            label="Sheet.set_bands expects a sequence of Band, Table, or str items",
+        )
+
+        normalized_bands: list[Band] = []
+        seen_ids: set[str] = set()
+
+        for band_idx, item in enumerate(raw_items):
+            if isinstance(item, Band):
+                if band_idx == 0 and item.gap is not None:
+                    msg = (
+                        f"Sheet '{self.name}': band 0 cannot specify 'gap' ({item.gap}) "
+                        "because no preceding band exists"
+                    )
+                    raise ValueError(msg)
+                norm_lanes: list[Lane] = []
+                for lane in item.lanes:
+                    lane_refs = lane.__f8_table_refs__()
+                    lane_ids: list[str] = []
+                    for ref in lane_refs:
+                        tid = self._resolve_table_ref(ref)
+                        if tid in seen_ids:
+                            msg = f"Duplicate table '{tid}' in bands for sheet '{self.name}'"
+                            raise ValueError(msg)
+                        seen_ids.add(tid)
+                        lane_ids.append(tid)
+                    norm_lanes.append(Lane(lane_ids, table_gap=lane.table_gap))
+                normalized_bands.append(Band(norm_lanes, gap=item.gap, lane_gap=item.lane_gap))
+            elif isinstance(item, (Table, str)):
+                tid = self._resolve_table_ref(item)
+                if tid in seen_ids:
+                    msg = f"Duplicate table '{tid}' in bands for sheet '{self.name}'"
+                    raise ValueError(msg)
+                seen_ids.add(tid)
+                normalized_bands.append(Band([Lane([tid])]))
+            else:
+                msg = f"Band item must be a Band, Table, or str, got {type(item).__name__}"
+                raise TypeError(msg)
+
+        missing = [t.id for t in self._tables if t.id not in seen_ids]
+        if missing:
+            msg = f"Sheet '{self.name}': set_bands is missing table(s): {', '.join(missing)}"
+            raise ValueError(msg)
+
+        self._bands = normalized_bands
+        return self
 
     def get_table(self, id: str) -> Table:
         """Looks up a `Table` on this worksheet by its `id`."""
@@ -873,12 +1009,49 @@ class Sheet:
         """Ordered list of tables belonging to this worksheet."""
         return list(self._tables)
 
+    @property
+    def bands(self) -> list[Band]:
+        """Normalized list of bands defining this worksheet's 2D layout."""
+        if self._bands is not None:
+            return list(self._bands)
+        return [Band([Lane([table.id])]) for table in self._tables]
+
     def __f8_spec__(self) -> SheetSpecDict:
         """Serializes the worksheet into a canonical `SheetSpecDict` payload."""
+        if self._bands is not None:
+            band_table_ids = {
+                tid for band in self._bands for lane in band.lanes for tid in lane.tables
+            }
+            missing = [t.id for t in self._tables if t.id not in band_table_ids]
+            if missing:
+                msg = (
+                    f"Sheet '{self.name}': table(s) added after set_bands are missing from "
+                    f"bands: {', '.join(missing)}"
+                )
+                raise ValueError(msg)
+            resolved_bands = self._bands
+        else:
+            resolved_bands = [Band([Lane([table.id])]) for table in self._tables]
+
+        bands_spec: list[BandSpecDict] = []
+        for band in resolved_bands:
+            lanes_spec: list[LaneSpecDict] = []
+            for lane in band.lanes:
+                lane_dict: LaneSpecDict = {"tables": list(lane.tables)}
+                if lane.table_gap is not None:
+                    lane_dict["table_gap"] = lane.table_gap
+                lanes_spec.append(lane_dict)
+            band_dict: BandSpecDict = {"lanes": lanes_spec}
+            if band.gap is not None:
+                band_dict["gap"] = band.gap
+            if band.lane_gap is not None:
+                band_dict["lane_gap"] = band.lane_gap
+            bands_spec.append(band_dict)
+
         spec: SheetSpecDict = {
             "name": self.name,
             "show_gridlines": self.show_gridlines,
-            "tables": [table.id for table in self._tables],
+            "bands": bands_spec,
         }
         if self.tab_color is not None:
             spec["tab_color"] = self.tab_color
@@ -983,4 +1156,15 @@ class Model:
         return core_compile(manifest, tables)
 
 
-__all__ = ["AxisSelector", "Cell", "CellInputValue", "Model", "Sheet", "Table"]
+__all__ = [
+    "AxisSelector",
+    "Band",
+    "BandItem",
+    "Cell",
+    "CellInputValue",
+    "Lane",
+    "Model",
+    "Sheet",
+    "Table",
+    "TableRef",
+]

@@ -169,8 +169,8 @@ impl WorkbookEmitter {
             // Note: Row heights are left automatic so Excel dynamically sizes rows based on
             // font metrics, maintaining natural line height and standard unified row heights.
 
-            // 4. Resolve tables belonging to this worksheet in declared order
-            for table_id in &sheet_spec.tables {
+            // 4. Resolve tables belonging to this worksheet in canonical band -> lane -> table order
+            for table_id in sheet_spec.table_ids() {
                 let table = tables.iter().find(|t| t.id == *table_id).ok_or_else(|| {
                     EmissionError::MissingTable {
                         table: table_id.clone(),

@@ -146,7 +146,6 @@ fn test_scenario_5_symbol_table_table_registration() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),
@@ -207,7 +206,6 @@ fn test_scenario_6_symbol_table_duplicate_table_rejection() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![RowSpec::new("fcf").with_expr("100")],
     };
@@ -259,7 +257,6 @@ fn test_scenario_7_symbol_table_filters_gutters_and_section_headers() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2024E"),
             ColumnSpec::gutter(),
@@ -306,7 +303,6 @@ fn test_scenario_8_symbol_table_empty_table_rejection() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![],
         rows: vec![],
     };

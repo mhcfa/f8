@@ -38,7 +38,6 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["Key Operating Drivers & Macro Parameters".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             build_descriptor_col("line_item", "Parameter"),
             build_measure_col_label("val", "Value"),
@@ -91,7 +90,6 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowBuilder::line_item("revenue", "Revenue")
@@ -159,7 +157,6 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowSpec::section_header("Operating Activities"),
@@ -232,7 +229,6 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols,
         rows: vec![
             // Assets
@@ -315,12 +311,12 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
+            bands: SheetSpec::stacked_bands([
                 TableId::from("Assumptions"),
                 TableId::from("IncomeStatement"),
                 TableId::from("CashFlow"),
                 TableId::from("BalanceSheet"),
-            ],
+            ]),
         }],
     };
 

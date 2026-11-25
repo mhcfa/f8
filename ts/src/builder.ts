@@ -4,6 +4,8 @@ import type {
   AxisRole,
   AxisSelector,
   AxisSlice,
+  BandInputItem,
+  BandSpecInput,
   CellInput,
   CellInputValue,
   CellValueLiteral,
@@ -15,9 +17,9 @@ import type {
   DetailedCellInput,
   FormatPreset,
   FreezePanesInput,
+  LaneSpecInput,
   ModelOptions,
   ModelSpec,
-  PlacementSpecInput,
   ProjectManifestInput,
   RowOptions,
   RowSpecInput,
@@ -199,9 +201,6 @@ export class Table {
   readonly subtitles: readonly string[]
   readonly currency: CurrencyCode | null
   readonly collapsible: boolean
-  readonly rightOf: string | null
-  readonly below: string | null
-  readonly gap: number | null
 
   readonly #columns: ColumnItem[] = []
   readonly #colIds: Set<string> = new Set()
@@ -209,18 +208,6 @@ export class Table {
   readonly #dataRows: Map<string, DataRowItem> = new Map()
 
   constructor(id: string, title: string, options?: TableOptions) {
-    if (options?.rightOf !== undefined && options?.below !== undefined) {
-      throw new Error("Cannot specify both 'rightOf' and 'below'")
-    }
-    if (
-      options?.gap !== undefined &&
-      (options.gap < 0 || !Number.isInteger(options.gap))
-    ) {
-      throw new Error(
-        `Table 'gap' must be non-negative integer, got ${options.gap}`
-      )
-    }
-
     this.id = id
     this.title = title
     if (options?.subtitle === undefined) {
@@ -232,15 +219,6 @@ export class Table {
     }
     this.currency = options?.currency ?? null
     this.collapsible = options?.collapsible ?? false
-    this.rightOf =
-      options?.rightOf instanceof Table
-        ? options.rightOf.id
-        : (options?.rightOf ?? null)
-    this.below =
-      options?.below instanceof Table
-        ? options.below.id
-        : (options?.below ?? null)
-    this.gap = options?.gap ?? null
   }
 
   addColumn(id: string, options?: ColumnOptions): this {
@@ -671,26 +649,6 @@ export class Table {
       }
     })
 
-    let placement: PlacementSpecInput | undefined
-    if (this.rightOf !== null) {
-      placement = {
-        kind: "right_of",
-        target: this.rightOf,
-        ...(this.gap !== null ? { gap: this.gap } : {}),
-      }
-    } else if (this.below !== null) {
-      placement = {
-        kind: "below",
-        target: this.below,
-        ...(this.gap !== null ? { gap: this.gap } : {}),
-      }
-    } else if (this.gap !== null) {
-      placement = {
-        kind: "stack",
-        gap: this.gap,
-      }
-    }
-
     return {
       id: this.id,
       title: this.title,
@@ -701,9 +659,42 @@ export class Table {
       ...(this.currency !== null
         ? { currency: normalizeCurrency(this.currency) }
         : {}),
-      ...(placement !== undefined ? { placement } : {}),
     }
   }
+}
+
+function formatInvalidValue(value: unknown): string {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint" ||
+    typeof value === "symbol" ||
+    value === null ||
+    value === undefined
+  ) {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return typeof value
+  }
+}
+
+function validateNonNegativeInt(
+  value: unknown,
+  field: string
+): number | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(
+      `'${field}' must be a non-negative integer, got ${formatInvalidValue(value)}`
+    )
+  }
+  return value
 }
 
 export class Sheet {
@@ -717,6 +708,8 @@ export class Sheet {
   readonly #model: Model | null
   readonly #tables: Table[] = []
   readonly #tableIds: Set<string> = new Set()
+  readonly #tablesById: Map<string, Table> = new Map()
+  #bands: BandSpecInput[] | null = null
 
   constructor(name: string, options?: SheetOptions) {
     if (options?.freezePanes !== undefined) {
@@ -772,6 +765,22 @@ export class Sheet {
     return [...this.#tables]
   }
 
+  get bands(): readonly BandSpecInput[] {
+    if (this.#bands !== null) {
+      return this.#bands.map((band): BandSpecInput => ({
+        lanes: band.lanes.map((lane): LaneSpecInput => ({
+          tables: [...lane.tables],
+          ...(lane.tableGap !== undefined ? { tableGap: lane.tableGap } : {}),
+        })),
+        ...(band.gap !== undefined ? { gap: band.gap } : {}),
+        ...(band.laneGap !== undefined ? { laneGap: band.laneGap } : {}),
+      }))
+    }
+    return this.#tables.map((t): BandSpecInput => ({
+      lanes: [{ tables: [t.id] }],
+    }))
+  }
+
   addTable(id: string, title: string, options?: TableOptions): Table {
     if (this.#model !== null) {
       for (const s of this.#model.sheets) {
@@ -790,7 +799,135 @@ export class Sheet {
     const table = new Table(id, title, options)
     this.#tables.push(table)
     this.#tableIds.add(id)
+    this.#tablesById.set(id, table)
     return table
+  }
+
+  #resolveTableRef(ref: unknown): string {
+    if (ref instanceof Table) {
+      if (this.#tablesById.get(ref.id) !== ref) {
+        throw new Error(
+          `Table '${ref.id}' does not belong to sheet '${this.name}'`
+        )
+      }
+      return ref.id
+    }
+    if (typeof ref === "string") {
+      if (!this.#tablesById.has(ref)) {
+        throw new Error(
+          `Table '${ref}' does not belong to sheet '${this.name}'`
+        )
+      }
+      return ref
+    }
+    throw new Error(
+      `Table reference must be a Table or string, got ${typeof ref}`
+    )
+  }
+
+  setBands(bands: readonly BandInputItem[]): this {
+    if (!Array.isArray(bands)) {
+      throw new Error(
+        "Sheet.setBands requires an array of BandInput, Table, or string items"
+      )
+    }
+
+    const normalizedBands: BandSpecInput[] = []
+    const seenIds = new Set<string>()
+
+    for (let bandIdx = 0; bandIdx < bands.length; bandIdx++) {
+      const item: unknown = bands[bandIdx]
+      if (typeof item === "string" || item instanceof Table) {
+        const tid = this.#resolveTableRef(item)
+        if (seenIds.has(tid)) {
+          throw new Error(
+            `Duplicate table '${tid}' in bands for sheet '${this.name}'`
+          )
+        }
+        seenIds.add(tid)
+        normalizedBands.push({ lanes: [{ tables: [tid] }] })
+      } else if (isPlainObject(item)) {
+        if (!Array.isArray(item.lanes)) {
+          throw new Error(
+            `Band at index ${bandIdx} must specify a 'lanes' array`
+          )
+        }
+        if (item.lanes.length === 0) {
+          throw new Error(`Band at index ${bandIdx} 'lanes' cannot be empty`)
+        }
+        const gap = validateNonNegativeInt(item.gap, "gap")
+        const laneGap = validateNonNegativeInt(item.laneGap, "laneGap")
+        if (bandIdx === 0 && gap !== undefined) {
+          throw new Error(
+            `Sheet '${this.name}': band 0 cannot specify 'gap' (${gap}) because no preceding band exists`
+          )
+        }
+        if (item.lanes.length === 1 && laneGap !== undefined) {
+          throw new Error(
+            `Band at index ${bandIdx} has a single lane and cannot specify 'laneGap' (${laneGap})`
+          )
+        }
+
+        const normLanes: LaneSpecInput[] = []
+        for (const laneObj of item.lanes as readonly unknown[]) {
+          if (
+            laneObj instanceof Table ||
+            !isPlainObject(laneObj) ||
+            !Array.isArray(laneObj.tables)
+          ) {
+            throw new Error(
+              "Band lane item must be a LaneInput object with a 'tables' array"
+            )
+          }
+          if (laneObj.tables.length === 0) {
+            throw new Error("Lane 'tables' cannot be empty")
+          }
+          const tableGap = validateNonNegativeInt(laneObj.tableGap, "tableGap")
+          if (laneObj.tables.length === 1 && tableGap !== undefined) {
+            throw new Error(
+              `Lane with a single table cannot specify 'tableGap' (${tableGap})`
+            )
+          }
+          const laneTables: string[] = []
+          for (const ref of laneObj.tables as readonly unknown[]) {
+            const tid = this.#resolveTableRef(ref)
+            if (seenIds.has(tid)) {
+              throw new Error(
+                `Duplicate table '${tid}' in bands for sheet '${this.name}'`
+              )
+            }
+            seenIds.add(tid)
+            laneTables.push(tid)
+          }
+          normLanes.push({
+            tables: laneTables,
+            ...(tableGap !== undefined ? { tableGap } : {}),
+          })
+        }
+
+        normalizedBands.push({
+          lanes: normLanes,
+          ...(gap !== undefined ? { gap } : {}),
+          ...(laneGap !== undefined ? { laneGap } : {}),
+        })
+      } else {
+        throw new Error(
+          `Band item at index ${bandIdx} must be a BandInput object, Table, or string`
+        )
+      }
+    }
+
+    const missing = this.#tables
+      .filter((t) => !seenIds.has(t.id))
+      .map((t) => t.id)
+    if (missing.length > 0) {
+      throw new Error(
+        `Sheet '${this.name}': setBands is missing table(s): ${missing.join(", ")}`
+      )
+    }
+
+    this.#bands = normalizedBands
+    return this
   }
 
   getTable(id: string): Table {
@@ -803,6 +940,25 @@ export class Sheet {
   }
 
   toSpec(): SheetSpecInput {
+    if (this.#bands !== null) {
+      const bandTableIds = new Set<string>()
+      for (const band of this.#bands) {
+        for (const lane of band.lanes) {
+          for (const tid of lane.tables) {
+            bandTableIds.add(tid)
+          }
+        }
+      }
+      const missing = this.#tables
+        .filter((t) => !bandTableIds.has(t.id))
+        .map((t) => t.id)
+      if (missing.length > 0) {
+        throw new Error(
+          `Sheet '${this.name}': table(s) added after setBands are missing from bands: ${missing.join(", ")}`
+        )
+      }
+    }
+
     const layoutSpec: SheetLayoutSpecInput | undefined =
       this.layout === "grid"
         ? {
@@ -813,7 +969,7 @@ export class Sheet {
     return {
       name: this.name,
       showGridlines: this.showGridlines,
-      tables: this.#tables.map((t) => t.id),
+      bands: this.bands,
       ...(this.tabColor !== null ? { tabColor: this.tabColor } : {}),
       ...(this.freezePanes !== null
         ? {

@@ -126,6 +126,51 @@ pub enum ModelError {
     )]
     InvalidSheetColWidth { sheet: String, col_width: f64 },
 
+    #[error("Sheet '{sheet}': band {band_index} must contain at least one lane")]
+    EmptyBand { sheet: String, band_index: usize },
+
+    #[error(
+        "Sheet '{sheet}': band {band_index}, lane {lane_index} must contain at least one table"
+    )]
+    EmptyLane {
+        sheet: String,
+        band_index: usize,
+        lane_index: usize,
+    },
+
+    #[error(
+        "Sheet '{sheet}': band 0 cannot specify 'gap' ({gap}) because no preceding band exists"
+    )]
+    InvalidFirstBandGap { sheet: String, gap: u32 },
+
+    #[error(
+        "Sheet '{sheet}': band {band_index} has a single lane and cannot specify 'lane_gap' ({lane_gap})"
+    )]
+    InvalidSingleLaneGap {
+        sheet: String,
+        band_index: usize,
+        lane_gap: u32,
+    },
+
+    #[error(
+        "Sheet '{sheet}': band {band_index}, lane {lane_index} has a single table and cannot specify 'table_gap' ({table_gap})"
+    )]
+    InvalidSingleTableGap {
+        sheet: String,
+        band_index: usize,
+        lane_index: usize,
+        table_gap: u32,
+    },
+
+    #[error(
+        "Table '{table}' is assigned more than once across manifest sheets ('{first_sheet}' and '{second_sheet}')"
+    )]
+    DuplicateSheetTable {
+        table: TableId,
+        first_sheet: String,
+        second_sheet: String,
+    },
+
     #[error(
         "Table '{table}': table id must be a valid f8 identifier ([A-Za-z0-9_]+ with at least one letter or '_', excluding 'TRUE', 'FALSE', '_', and scientific notation)"
     )]

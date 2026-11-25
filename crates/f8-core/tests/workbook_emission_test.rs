@@ -9,10 +9,10 @@ use f8_core::compiler::lowering::FormulaLowerer;
 use f8_core::compiler::{Compiler, ir};
 use f8_core::model::format::{SemanticStyle, Shade};
 use f8_core::model::id::{SheetId, TableId};
-use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
+use f8_core::model::manifest::{BandSpec, FreezePanes, LaneSpec, ProjectManifest, SheetSpec};
 use f8_core::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, PlacementSpec, RowSpec, SectionHeaderRowSpec,
-    TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
+    ValueLiteral,
 };
 use f8_core::model::theme::Theme;
 
@@ -76,7 +76,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("IncomeStatement")],
+                bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
             },
             SheetSpec {
                 name: "Summary".to_string(),
@@ -84,7 +84,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("SummaryTable")],
+                bands: SheetSpec::stacked_bands([TableId::from("SummaryTable")]),
             },
         ],
     };
@@ -136,7 +136,7 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
             freeze_panes: Some(FreezePanes { row: 3, col: 2 }),
             show_gridlines: false,
             layout: Default::default(),
-            tables: vec![TableId::from("LayoutTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("LayoutTable")]),
         }],
     };
 
@@ -201,7 +201,7 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("HeaderTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("HeaderTable")]),
         }],
     };
 
@@ -261,7 +261,7 @@ fn test_scenario_3b_multi_row_subtitles_emission_and_inspection() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Assumptions")],
+            bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
         }],
     };
 
@@ -355,7 +355,7 @@ fn test_scenario_4_single_cell_super_header_safety() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("SingleGroupTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("SingleGroupTable")]),
         }],
     };
 
@@ -404,7 +404,7 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("FormulaTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("FormulaTable")]),
         }],
     };
 
@@ -455,7 +455,7 @@ fn test_scenario_6_values_only_freezing_mode() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("FreezeTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("FreezeTable")]),
         }],
     };
 
@@ -581,7 +581,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("OutlineTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("OutlineTable")]),
         }],
     };
 
@@ -636,7 +636,7 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("DiskTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("DiskTable")]),
         }],
     };
 
@@ -685,7 +685,7 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("DiagTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("DiagTable")]),
         }],
     };
 
@@ -946,7 +946,7 @@ fn test_scenario_11_audit_note_attachment() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("NoteTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("NoteTable")]),
         }],
     };
 
@@ -994,7 +994,7 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("NoteTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("NoteTable")]),
         }],
     };
 
@@ -1034,7 +1034,7 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("SectionTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("SectionTable")]),
         }],
     };
 
@@ -1131,7 +1131,7 @@ fn test_scenario_14_lbo_timeline_group_banners_and_stacked_headers_no_center_acr
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("LboSchedule")],
+            bands: SheetSpec::stacked_bands([TableId::from("LboSchedule")]),
         }],
     };
 
@@ -1277,7 +1277,7 @@ fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() 
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("GutterFormatting")],
+            bands: SheetSpec::stacked_bands([TableId::from("GutterFormatting")]),
         }],
     };
 
@@ -1482,7 +1482,7 @@ fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("RowGutterBlank")],
+            bands: SheetSpec::stacked_bands([TableId::from("RowGutterBlank")]),
         }],
     };
     let buffer =
@@ -1502,7 +1502,7 @@ fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("RowGutterBlank")],
+            bands: SheetSpec::stacked_bands([TableId::from("RowGutterBlank")]),
         }],
     };
     let custom_buf = Compiler::emit_workbook(
@@ -1549,7 +1549,7 @@ fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("WrapEmission")],
+            bands: SheetSpec::stacked_bands([TableId::from("WrapEmission")]),
         }],
     };
 
@@ -1593,7 +1593,7 @@ fn test_scenario_17_empty_formula_rejected_and_sparse_slice_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("BlankCoercion")],
+            bands: SheetSpec::stacked_bands([TableId::from("BlankCoercion")]),
         }],
     };
 
@@ -1725,7 +1725,7 @@ fn test_scenario_18_negative_zero_literal_and_evaluated_normalization() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("NegZeroTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("NegZeroTable")]),
         }],
     };
 
@@ -1804,7 +1804,7 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("TextCacheTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("TextCacheTable")]),
         }],
     };
 
@@ -1842,7 +1842,7 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("NanTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("NanTable")]),
         }],
     };
     let nan_compiled = Compiler::compile(&nan_manifest, std::slice::from_ref(&num_table)).unwrap();
@@ -1964,7 +1964,7 @@ fn test_detailed_null_cell_with_note_and_metadata_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("PeerComps")],
+            bands: SheetSpec::stacked_bands([TableId::from("PeerComps")]),
         }],
     };
 
@@ -2205,7 +2205,7 @@ fn test_scenario_20_uniform_trailing_alignment_space_openxml_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("AlignTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("AlignTable")]),
         }],
     };
     let table = build_table();
@@ -2400,7 +2400,7 @@ fn test_bold_style_emits_bold_without_borders_and_skips_gutter_blanks() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("BoldEmit")],
+            bands: SheetSpec::stacked_bands([TableId::from("BoldEmit")]),
         }],
     };
 
@@ -2528,33 +2528,24 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
         Some(tag[s_start..s_end].to_string())
     };
 
-    // Part 1: Stacked tables (2, 5, 3 cols via stack and below) with subtitles and total rows
-    let make_stacked =
-        |id: &str, title: &str, subtitle: &str, cols: usize, placement: PlacementSpec| {
-            let mut t = TableSpec::new(id, title)
-                .with_subtitle(subtitle)
-                .with_placement(placement);
-            t.columns.push(ColumnSpec::descriptor("item", "Item"));
-            for c in 1..cols {
-                t.columns
-                    .push(ColumnSpec::new(format!("m{c}")).with_header(format!("M{c}")));
-            }
-            t.rows.push(RowSpec::new("r1"));
-            t.rows
-                .push(RowSpec::new("tot").with_style(Some(SemanticStyle::Total)));
-            populate_table_cells(&mut t);
-            t
-        };
+    // Part 1: Stacked tables (2, 5, 3 cols across bands and within a lane) with subtitles and total rows
+    let make_stacked = |id: &str, title: &str, subtitle: &str, cols: usize| {
+        let mut t = TableSpec::new(id, title).with_subtitle(subtitle);
+        t.columns.push(ColumnSpec::descriptor("item", "Item"));
+        for c in 1..cols {
+            t.columns
+                .push(ColumnSpec::new(format!("m{c}")).with_header(format!("M{c}")));
+        }
+        t.rows.push(RowSpec::new("r1"));
+        t.rows
+            .push(RowSpec::new("tot").with_style(Some(SemanticStyle::Total)));
+        populate_table_cells(&mut t);
+        t
+    };
 
-    let t1 = make_stacked("T1", "Narrow Top", "Sub 1", 2, PlacementSpec::stack());
-    let t2 = make_stacked("T2", "Wide Middle", "Sub 2", 5, PlacementSpec::stack());
-    let t3 = make_stacked(
-        "T3",
-        "Medium Bottom",
-        "Sub 3",
-        3,
-        PlacementSpec::below("T2"),
-    );
+    let t1 = make_stacked("T1", "Narrow Top", "Sub 1", 2);
+    let t2 = make_stacked("T2", "Wide Middle", "Sub 2", 5);
+    let t3 = make_stacked("T3", "Medium Bottom", "Sub 3", 3);
 
     let stacked_manifest = ProjectManifest {
         model_name: "AlignedBannersStacked".to_string(),
@@ -2565,10 +2556,9 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
-                TableId::from("T1"),
-                TableId::from("T2"),
-                TableId::from("T3"),
+            bands: vec![
+                BandSpec::single("T1"),
+                BandSpec::new([LaneSpec::new(["T2", "T3"])]),
             ],
         }],
     };
@@ -2652,9 +2642,9 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
         }
     }
 
-    // Part 2: Side-by-side non-collision (Scenario 3: tall L B..C beside R1 E..G, R2 E..F, R3 E..J)
-    let make_plain = |id: &str, title: &str, cols: usize, rows: usize, placement: PlacementSpec| {
-        let mut t = TableSpec::new(id, title).with_placement(placement);
+    // Part 2: Side-by-side non-collision (tall L B..C beside R1 E..G, R2 E..F, R3 E..J)
+    let make_plain = |id: &str, title: &str, cols: usize, rows: usize| {
+        let mut t = TableSpec::new(id, title);
         for c in 1..=cols {
             t.columns
                 .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
@@ -2667,10 +2657,10 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
     };
 
     let side_tables = vec![
-        make_plain("L", "Left Tall", 2, 27, PlacementSpec::stack()),
-        make_plain("R1", "Right 1", 3, 2, PlacementSpec::right_of("L")),
-        make_plain("R2", "Right 2", 2, 2, PlacementSpec::below("R1")),
-        make_plain("R3", "Right 3", 6, 2, PlacementSpec::below("R2")),
+        make_plain("L", "Left Tall", 2, 27),
+        make_plain("R1", "Right 1", 3, 2),
+        make_plain("R2", "Right 2", 2, 2),
+        make_plain("R3", "Right 3", 6, 2),
     ];
     let side_manifest = ProjectManifest {
         model_name: "AlignedBannersSideBySide".to_string(),
@@ -2681,12 +2671,10 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
-                TableId::from("L"),
-                TableId::from("R1"),
-                TableId::from("R2"),
-                TableId::from("R3"),
-            ],
+            bands: vec![BandSpec::new([
+                LaneSpec::new(["L"]),
+                LaneSpec::new(["R1", "R2", "R3"]),
+            ])],
         }],
     };
     let side_compiled = Compiler::compile(&side_manifest, &side_tables).unwrap();
@@ -2733,16 +2721,10 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
         }
     }
 
-    // Part 3: Explicit gap = 0 side-by-side non-collision (T1 B..C, T2 D..E)
+    // Part 3: Explicit lane_gap = 0 side-by-side non-collision (T1 B..C, T2 D..E)
     let gap0_tables = vec![
-        make_plain("T1", "Left Tight", 2, 1, PlacementSpec::stack()),
-        make_plain(
-            "T2",
-            "Right Tight",
-            2,
-            1,
-            PlacementSpec::right_of_with_gap("T1", 0),
-        ),
+        make_plain("T1", "Left Tight", 2, 1),
+        make_plain("T2", "Right Tight", 2, 1),
     ];
     let gap0_manifest = ProjectManifest {
         model_name: "GapZeroEmission".to_string(),
@@ -2753,7 +2735,9 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T1"), TableId::from("T2")],
+            bands: vec![
+                BandSpec::new([LaneSpec::new(["T1"]), LaneSpec::new(["T2"])]).with_lane_gap(0),
+            ],
         }],
     };
     let gap0_buf =
@@ -2783,8 +2767,8 @@ fn test_sheet_gridlines_default_false_and_opt_in_true() {
     let manifest_json = r#"{
         "model_name": "GridlineDefaults",
         "sheets": [
-            { "name": "DefaultHidden", "tables": ["T1"] },
-            { "name": "ExplicitVisible", "show_gridlines": true, "tables": ["T2"] }
+            { "name": "DefaultHidden", "bands": [{ "lanes": [{ "tables": ["T1"] }] }] },
+            { "name": "ExplicitVisible", "show_gridlines": true, "bands": [{ "lanes": [{ "tables": ["T2"] }] }] }
         ]
     }"#;
     let manifest: ProjectManifest = serde_json::from_str(manifest_json).unwrap();
@@ -2942,7 +2926,7 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
             freeze_panes: None,
             show_gridlines: false,
             layout: SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("BorderedGrid")],
+            bands: SheetSpec::stacked_bands([TableId::from("BorderedGrid")]),
         }],
     };
 
@@ -3070,7 +3054,7 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
             freeze_panes: None,
             show_gridlines: false,
             layout: SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("BoldSkip")],
+            bands: SheetSpec::stacked_bands([TableId::from("BoldSkip")]),
         }],
     };
     let buf_b = Compiler::emit_workbook(&manifest_b, &[t2], &EmissionOptions::default()).unwrap();

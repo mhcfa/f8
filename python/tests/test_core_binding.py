@@ -15,6 +15,8 @@ from f8 import (
 )
 from f8._core import compile as core_compile
 from f8.types import (
+    BandSpecDict,
+    LaneSpecDict,
     ProjectManifestDict,
     TableSpecDict,
 )
@@ -30,7 +32,7 @@ def sample_model() -> SampleModelFixture:
         "sheets": [
             {
                 "name": "Operations",
-                "tables": ["OPERATIONS"],
+                "bands": [{"lanes": [{"tables": ["OPERATIONS"]}]}],
             }
         ],
     }
@@ -212,7 +214,7 @@ def test_scenario_6_cyclic_dependency_error() -> None:
     manifest: dict[str, object] = {
         "model_name": "CycleModel",
         "theme": "corporate_navy",
-        "sheets": [{"name": "S", "tables": ["T"]}],
+        "sheets": [{"name": "S", "bands": [{"lanes": [{"tables": ["T"]}]}]}],
     }
     tables: list[dict[str, object]] = [
         {
@@ -256,7 +258,7 @@ def test_scenario_7_reference_resolution_error() -> None:
     manifest: dict[str, object] = {
         "model_name": "RefModel",
         "theme": "corporate_navy",
-        "sheets": [{"name": "S", "tables": ["T"]}],
+        "sheets": [{"name": "S", "bands": [{"lanes": [{"tables": ["T"]}]}]}],
     }
     tables: list[dict[str, object]] = [
         {
@@ -292,7 +294,7 @@ def test_scenario_8_formula_syntax_parse_error() -> None:
     manifest: dict[str, object] = {
         "model_name": "ParseErrorModel",
         "theme": "corporate_navy",
-        "sheets": [{"name": "S", "tables": ["T"]}],
+        "sheets": [{"name": "S", "bands": [{"lanes": [{"tables": ["T"]}]}]}],
     }
     tables: list[dict[str, object]] = [
         {
@@ -332,7 +334,7 @@ def test_scenario_9_specification_error() -> None:
     manifest: dict[str, object] = {
         "model_name": "SpecErrorModel",
         "theme": "corporate_navy",
-        "sheets": [{"name": "S", "tables": ["T"]}],
+        "sheets": [{"name": "S", "bands": [{"lanes": [{"tables": ["T"]}]}]}],
     }
     tables: list[dict[str, object]] = [
         {
@@ -449,13 +451,15 @@ def test_scenario_11_save_workbook_str_and_path(
 
 
 def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
+    lane: LaneSpecDict = {"tables": ["T1"]}
+    band: BandSpecDict = {"lanes": [lane]}
     manifest: ProjectManifestDict = {
         "model_name": "TypedModel",
         "theme": "corporate_navy",
         "sheets": [
             {
                 "name": "Sheet1",
-                "tables": ["T1"],
+                "bands": [band],
                 "show_gridlines": True,
                 "freeze_panes": {"row": 2, "col": 1},
             }
@@ -468,7 +472,6 @@ def test_scenario_12_typeddict_contracts_and_schema_compatibility() -> None:
         "subtitles": ["Subtitle"],
         "currency": "usd",
         "collapsible": False,
-        "placement": {"kind": "stack", "gap": 2},
         "columns": [
             {
                 "kind": "data",
@@ -743,7 +746,7 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
     with pytest.raises(SpecificationError, match="max_col_width"):
         core_compile(inverted_manifest, tables)
 
-    # 6. Rejection of removed shade_accent_fill in theme palette
+    # Rejection of removed shade_accent_fill in theme palette
     accent_palette = {
         **palette_dict,
         "table_title_fill": "#1B365D",
@@ -753,6 +756,177 @@ def test_scenario_14_manifest_theme_resolution_and_validation(
     accent_manifest = {**manifest, "theme": accent_theme}
     with pytest.raises(SpecificationError, match="shade_accent_fill"):
         core_compile(accent_manifest, tables)
+
+
+def test_band_lane_pass1_validation_and_unknown_fields_spec_scenario_7() -> None:
+    def make_table(tid: str) -> dict[str, object]:
+        return {
+            "id": tid,
+            "title": tid,
+            "columns": [{"kind": "data", "id": "c1", "headers": ["C1"]}],
+            "rows": [{"kind": "data", "id": "r1", "cells": {"c1": 1.0}}],
+        }
+
+    t1 = make_table("T1")
+    t2 = make_table("T2")
+
+    # (a) Empty band
+    empty_band_manifest: dict[str, object] = {
+        "model_name": "M",
+        "sheets": [{"name": "S1", "bands": [{"lanes": []}]}],
+    }
+    with pytest.raises(SpecificationError, match="at least one lane") as exc:
+        f8.compile(empty_band_manifest, [t1])
+    assert exc.value.table is None
+
+    # (b) Empty lane
+    empty_lane_manifest: dict[str, object] = {
+        "model_name": "M",
+        "sheets": [{"name": "S1", "bands": [{"lanes": [{"tables": []}]}]}],
+    }
+    with pytest.raises(SpecificationError, match="at least one table") as exc:
+        f8.compile(empty_lane_manifest, [t1])
+    assert exc.value.table is None
+
+    # (c) Band 0 with gap (0 and 2)
+    for bad_gap in (0, 2):
+        with pytest.raises(SpecificationError, match="band 0 cannot specify 'gap'") as exc:
+            f8.compile(
+                {
+                    "model_name": "M",
+                    "sheets": [
+                        {
+                            "name": "S1",
+                            "bands": [{"gap": bad_gap, "lanes": [{"tables": ["T1"]}]}],
+                        }
+                    ],
+                },
+                [t1],
+            )
+        assert exc.value.table is None
+
+    # (d) 1-lane band with lane_gap
+    for bad_lane_gap in (0, 1):
+        with pytest.raises(SpecificationError, match="lane_gap") as exc:
+            f8.compile(
+                {
+                    "model_name": "M",
+                    "sheets": [
+                        {
+                            "name": "S1",
+                            "bands": [{"lane_gap": bad_lane_gap, "lanes": [{"tables": ["T1"]}]}],
+                        }
+                    ],
+                },
+                [t1],
+            )
+        assert exc.value.table is None
+
+    # (e) 1-table lane with table_gap
+    for bad_table_gap in (0, 2):
+        with pytest.raises(SpecificationError, match="table_gap") as exc:
+            f8.compile(
+                {
+                    "model_name": "M",
+                    "sheets": [
+                        {
+                            "name": "S1",
+                            "bands": [{"lanes": [{"tables": ["T1"], "table_gap": bad_table_gap}]}],
+                        }
+                    ],
+                },
+                [t1],
+            )
+        assert exc.value.table is None
+
+    # (f) Duplicate TableId within a sheet and across two sheets
+    with pytest.raises(SpecificationError, match="S1") as exc_same:
+        f8.compile(
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "bands": [
+                            {"lanes": [{"tables": ["T1"]}]},
+                            {"lanes": [{"tables": ["T1"]}]},
+                        ],
+                    }
+                ],
+            },
+            [t1],
+        )
+    assert exc_same.value.table == "T1"
+
+    with pytest.raises(SpecificationError, match="SheetA.*SheetB") as exc_cross:
+        f8.compile(
+            {
+                "model_name": "M",
+                "sheets": [
+                    {"name": "SheetA", "bands": [{"lanes": [{"tables": ["T1"]}]}]},
+                    {"name": "SheetB", "bands": [{"lanes": [{"tables": ["T1"]}]}]},
+                ],
+            },
+            [t1, t2],
+        )
+    assert exc_cross.value.table == "T1"
+
+    # (g) Legacy SheetSpec.tables and TableSpec.placement rejected
+    with pytest.raises(SpecificationError, match="tables"):
+        f8.compile(
+            {"model_name": "M", "sheets": [{"name": "S1", "tables": ["T1"]}]},
+            [t1],
+        )
+    with pytest.raises(SpecificationError, match="placement"):
+        f8.compile(
+            {
+                "model_name": "M",
+                "sheets": [{"name": "S1", "bands": [{"lanes": [{"tables": ["T1"]}]}]}],
+            },
+            [{**t1, "placement": {"kind": "stack", "gap": 2}}],
+        )
+
+    # (h) Unknown fields on SheetSpec, BandSpec, LaneSpec, TableSpec rejected
+    bogus_sheet_manifest: dict[str, object] = {
+        "model_name": "M",
+        "sheets": [{"name": "S1", "bands": [], "bogus_sheet": True}],
+    }
+    with pytest.raises(SpecificationError, match="bogus_sheet"):
+        f8.compile(bogus_sheet_manifest, [])
+    with pytest.raises(SpecificationError, match="bogus_band"):
+        f8.compile(
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "bands": [{"lanes": [{"tables": ["T1"]}], "bogus_band": 1}],
+                    }
+                ],
+            },
+            [t1],
+        )
+    with pytest.raises(SpecificationError, match="bogus_lane"):
+        f8.compile(
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "bands": [{"lanes": [{"tables": ["T1"], "bogus_lane": 1}]}],
+                    }
+                ],
+            },
+            [t1],
+        )
+    with pytest.raises(SpecificationError, match="bogus_table"):
+        f8.compile(
+            {
+                "model_name": "M",
+                "sheets": [{"name": "S1", "bands": [{"lanes": [{"tables": ["T1"]}]}]}],
+            },
+            [{**t1, "bogus_table": True}],
+        )
 
 
 def test_scenario_15_contiguous_and_discontinuous_range_slice_validation() -> None:

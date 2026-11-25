@@ -21,9 +21,9 @@ Financial modeling compiler, evaluator, and TypeScript DSL bridging programmatic
 ## Workflow & CLI
 
 1. Initialize (browsers only): Server runtimes (Node.js, Bun, Deno) auto-initialize WASM synchronously on module import; browser main threads call `await init()` once before compilation.
-2. Define: Construct `new Model({ name, theme })` -> `model.addSheet(...)` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)`.
+2. Define: Construct `new Model({ name, theme })` -> `model.addSheet(...)` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)` (optionally arrange multi-lane dashboards or custom spacing with `sheet.setBands(...)`).
 3. Compile: Call `const compiled = model.compile()` (or `compile(manifest, tables)`) to validate schema, expand grid, check cycles, evaluate cells, plan layout, and lower formulas.
-4. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook coordinates, values, and 2D Excel presentation via `compiled.toMarkdown("index")` / `compiled.toMarkdown(...)` / `compiled.toMarkdown("layout")` (checking side-by-side balance, empty margins, title overhangs, subtitle overflows `sub:N(Xch>w)`, widened gutters, `grid` column-width inflation, multi-column `grid` descriptor `req:W` cliff spills / lane stretching, and wrapped cells), and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)`.
+4. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook coordinates, values, and 2D Excel presentation via `compiled.toMarkdown("index")` / `compiled.toMarkdown(...)` / `compiled.toMarkdown("layout")` (checking side-by-side balance, right/bottom slack, title overhangs, subtitle overflows `sub:N(Xch>w)`, widened gutters, `grid` column-width inflation, multi-column `grid` descriptor `req:W` cliff spills / lane stretching, and wrapped cells), and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)`.
 5. Diagnose: Catch typed `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect structured properties.
 6. Emit: Write `.xlsx` to disk via `compiled.save(path, options)` or in-memory bytes (`Uint8Array`) via `compiled.emitWorkbook(options)`.
 
@@ -61,6 +61,6 @@ CLI commands (`f8` or `npx f8`):
 
 ## Reference Index
 
-- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`getSheet`, `getTable`, `setCell`, `setCells`), 2D coordinate grammar, 3-tier resolution rules, layout placement, formatting presets, and themes.
+- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`getSheet`, `getTable`, `setBands`, `setCell`, `setCells`), 2D coordinate grammar, 3-tier resolution rules, band/lane layout, formatting presets, and themes.
 - `references/functions.md`: 37 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, conditional aggregation and debt amortization composition patterns, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, `toMarkdown` and `toDict` exports, TypeScript inspection interfaces, and `F8Error` exception properties.

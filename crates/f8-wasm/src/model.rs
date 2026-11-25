@@ -6,6 +6,7 @@ use serde::Serialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+use crate::de;
 use crate::error::{
     WasmErrorPayload, diagnostic_to_js_value, map_compiler_error, map_inspection_error,
     map_serde_error,
@@ -50,7 +51,7 @@ impl WasmCompiledModel {
         let opts: EmissionOptions = if options.is_undefined() || options.is_null() {
             EmissionOptions::default()
         } else {
-            serde_wasm_bindgen::from_value(options).map_err(map_serde_error)?
+            de::from_value(options).map_err(map_serde_error)?
         };
 
         self.inner
@@ -76,7 +77,7 @@ impl WasmCompiledModel {
         let opts: ModelMarkdownOptions = if options.is_undefined() || options.is_null() {
             ModelMarkdownOptions::default()
         } else {
-            serde_wasm_bindgen::from_value(options).map_err(map_serde_error)?
+            de::from_value(options).map_err(map_serde_error)?
         };
 
         self.inner

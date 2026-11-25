@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code")]
 
 use f8_core::model::{
-    AxisRole, CellInput, ColId, ColumnSpec, CurrencyCode, DetailedCellInput, FormatPreset,
-    FreezePanes, ModelError, ProjectManifest, RowSpec, SectionHeaderRowSpec, SemanticStyle,
-    SheetSpec, TableId, TableSpec, ThemeSpec, ValueLiteral,
+    AxisRole, BandSpec, CellInput, ColId, ColumnSpec, CurrencyCode, DetailedCellInput,
+    FormatPreset, FreezePanes, LaneSpec, ModelError, ProjectManifest, RowSpec,
+    SectionHeaderRowSpec, SemanticStyle, SheetSpec, TableId, TableSpec, ThemeSpec, ValueLiteral,
 };
 
 #[test]
@@ -15,14 +15,14 @@ fn test_scenario_1_deserialize_valid_manifest() {
             {
                 "name": "Summary",
                 "tab_color": "#00356B",
-                "tables": ["Assumptions"]
+                "bands": [{ "lanes": [{ "tables": ["Assumptions"] }] }]
             },
             {
                 "name": "Model",
                 "tab_color": "#228B22",
                 "freeze_panes": { "row": 2, "col": 1 },
                 "show_gridlines": true,
-                "tables": ["IncomeStatement"]
+                "bands": [{ "lanes": [{ "tables": ["IncomeStatement"] }] }]
             }
         ]
     }"##;
@@ -36,8 +36,12 @@ fn test_scenario_1_deserialize_valid_manifest() {
     assert_eq!(manifest.sheets.len(), 2);
     assert_eq!(manifest.sheets[0].name, "Summary");
     assert_eq!(
-        manifest.sheets[0].tables,
-        vec![TableId::from("Assumptions")]
+        manifest.sheets[0].bands,
+        SheetSpec::stacked_bands([TableId::from("Assumptions")])
+    );
+    assert_eq!(
+        manifest.sheets[0].table_ids().collect::<Vec<_>>(),
+        vec![&TableId::from("Assumptions")]
     );
     assert!(!manifest.sheets[0].show_gridlines);
     assert!(manifest.sheets[1].show_gridlines);
@@ -46,8 +50,8 @@ fn test_scenario_1_deserialize_valid_manifest() {
         Some(FreezePanes { row: 2, col: 1 })
     );
     assert_eq!(
-        manifest.sheets[1].tables,
-        vec![TableId::from("IncomeStatement")]
+        manifest.sheets[1].bands,
+        SheetSpec::stacked_bands([TableId::from("IncomeStatement")])
     );
     assert!(manifest.validate().is_ok());
 }
@@ -64,7 +68,7 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("a")],
+                bands: SheetSpec::stacked_bands([TableId::from("a")]),
             },
             SheetSpec {
                 name: "Model".to_string(),
@@ -72,7 +76,7 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("b")],
+                bands: SheetSpec::stacked_bands([TableId::from("b")]),
             },
         ],
     };
@@ -396,7 +400,6 @@ fn sample_table() -> TableSpec {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("col_1"), ColumnSpec::new("col_2")],
         rows: vec![
             RowSpec::new("row_1")
@@ -858,67 +861,265 @@ fn test_scenario_13_table_collapsible_serde() {
 }
 
 #[test]
-fn test_scenario_14_table_placement_serde() {
-    use f8_core::model::{DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP, PlacementSpec};
+fn test_scenario_14_band_lane_serde_and_pass1_validation() {
+    use f8_core::compiler::{Compiler, CompilerError, ErrorDiagnostic};
+    use f8_core::model::{DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP};
 
-    // 1. Default table has placement == Stack { gap: 2 } and omits "placement" from JSON
-    let table = TableSpec::new("T1", "Table 1");
-    assert_eq!(table.placement, PlacementSpec::stack());
-    assert!(table.placement.is_default());
+    assert_eq!(DEFAULT_VERTICAL_TABLE_GAP, 2);
+    assert_eq!(DEFAULT_HORIZONTAL_TABLE_GAP, 1);
 
-    let serialized = serde_json::to_string(&table).unwrap();
+    // 1. Canonical BandSpec/LaneSpec serde omits None gaps and preserves Some(0) / Some(N)
+    let sheet = SheetSpec {
+        name: "Dashboard".to_string(),
+        tab_color: None,
+        freeze_panes: None,
+        show_gridlines: false,
+        layout: Default::default(),
+        bands: vec![
+            BandSpec::new([
+                LaneSpec::new(["TL", "BL"]).with_table_gap(0),
+                LaneSpec::new(["TR", "BR"]).with_table_gap(3),
+            ])
+            .with_lane_gap(0),
+            BandSpec::new([LaneSpec::new(["M1", "M2"]).with_table_gap(1)]).with_gap(0),
+            BandSpec::single("Footer").with_gap(4),
+        ],
+    };
+    let manifest = ProjectManifest {
+        model_name: "BandSerde".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            sheet,
+            SheetSpec {
+                name: "Empty".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                bands: vec![],
+            },
+        ],
+    };
+    assert!(manifest.validate().is_ok());
+
+    let serialized = serde_json::to_string(&manifest).unwrap();
+    let roundtripped: ProjectManifest = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(roundtripped, manifest);
+
+    // Default None gap fields are omitted during serialization
+    let minimal_band_json = serde_json::to_string(&BandSpec::single("T1")).unwrap();
+    assert_eq!(minimal_band_json, r#"{"lanes":[{"tables":["T1"]}]}"#);
+
+    let make_manifest = |sheets: Vec<SheetSpec>| ProjectManifest {
+        model_name: "Invalid".to_string(),
+        theme: Default::default(),
+        sheets,
+    };
+    let sheet_with_bands = |name: &str, bands: Vec<BandSpec>| SheetSpec {
+        name: name.to_string(),
+        tab_color: None,
+        freeze_panes: None,
+        show_gridlines: false,
+        layout: Default::default(),
+        bands,
+    };
+
+    // 2. (a) Empty band
+    let empty_band_manifest =
+        make_manifest(vec![sheet_with_bands("S1", vec![BandSpec::new(vec![])])]);
+    let err = empty_band_manifest.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::EmptyBand { ref sheet, band_index: 0 } if sheet == "S1"
+    ));
+    assert!(matches!(
+        CompilerError::Model(err).diagnostic(),
+        ErrorDiagnostic::SpecificationError { table: None, .. }
+    ));
+
+    // 3. (b) Empty lane
+    let empty_lane_manifest = make_manifest(vec![sheet_with_bands(
+        "S1",
+        vec![BandSpec::new([
+            LaneSpec::new(["T1"]),
+            LaneSpec::new(Vec::<&str>::new()),
+        ])],
+    )]);
+    let err = empty_lane_manifest.validate().unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::EmptyLane {
+            ref sheet,
+            band_index: 0,
+            lane_index: 1,
+        } if sheet == "S1"
+    ));
+    assert!(matches!(
+        CompilerError::Model(err).diagnostic(),
+        ErrorDiagnostic::SpecificationError { table: None, .. }
+    ));
+
+    // 4. (c) Band 0 with gap (both Some(0) and Some(2))
+    for bad_gap in [0_u32, 2] {
+        let m = make_manifest(vec![sheet_with_bands(
+            "S1",
+            vec![BandSpec::single("T1").with_gap(bad_gap)],
+        )]);
+        let err = m.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            ModelError::InvalidFirstBandGap { ref sheet, gap } if sheet == "S1" && gap == bad_gap
+        ));
+        assert!(matches!(
+            CompilerError::Model(err).diagnostic(),
+            ErrorDiagnostic::SpecificationError { table: None, .. }
+        ));
+    }
+
+    // 5. (d) 1-lane band with lane_gap (Some(0) and Some(1))
+    for bad_lane_gap in [0_u32, 1] {
+        let m = make_manifest(vec![sheet_with_bands(
+            "S1",
+            vec![
+                BandSpec::single("T0"),
+                BandSpec::single("T1").with_lane_gap(bad_lane_gap),
+            ],
+        )]);
+        let err = m.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            ModelError::InvalidSingleLaneGap {
+                ref sheet,
+                band_index: 1,
+                lane_gap,
+            } if sheet == "S1" && lane_gap == bad_lane_gap
+        ));
+        assert!(matches!(
+            CompilerError::Model(err).diagnostic(),
+            ErrorDiagnostic::SpecificationError { table: None, .. }
+        ));
+    }
+
+    // 6. (e) 1-table lane with table_gap (Some(0) and Some(2))
+    for bad_table_gap in [0_u32, 2] {
+        let m = make_manifest(vec![sheet_with_bands(
+            "S1",
+            vec![BandSpec::new([
+                LaneSpec::new(["T1"]),
+                LaneSpec::new(["T2"]).with_table_gap(bad_table_gap),
+            ])],
+        )]);
+        let err = m.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            ModelError::InvalidSingleTableGap {
+                ref sheet,
+                band_index: 0,
+                lane_index: 1,
+                table_gap,
+            } if sheet == "S1" && table_gap == bad_table_gap
+        ));
+        assert!(matches!(
+            CompilerError::Model(err).diagnostic(),
+            ErrorDiagnostic::SpecificationError { table: None, .. }
+        ));
+    }
+
+    // 7. (f) Duplicate TableId: same-sheet (same lane & cross-band) and cross-sheet
+    let dup_same_sheet = make_manifest(vec![sheet_with_bands(
+        "S1",
+        vec![BandSpec::single("Dup"), BandSpec::single("Dup")],
+    )]);
+    let err_same = dup_same_sheet.validate().unwrap_err();
+    assert!(matches!(
+        err_same,
+        ModelError::DuplicateSheetTable {
+            ref table,
+            ref first_sheet,
+            ref second_sheet,
+        } if table.as_str() == "Dup" && first_sheet == "S1" && second_sheet == "S1"
+    ));
+    assert!(matches!(
+        CompilerError::Model(err_same).diagnostic(),
+        ErrorDiagnostic::SpecificationError { table: Some(ref t), .. } if t == "Dup"
+    ));
+
+    let dup_cross_sheet = make_manifest(vec![
+        sheet_with_bands("SheetA", vec![BandSpec::single("Shared")]),
+        sheet_with_bands("SheetB", vec![BandSpec::single("Shared")]),
+    ]);
+    let err_cross = Compiler::compile(&dup_cross_sheet, &[sample_table()]).unwrap_err();
+    assert!(matches!(
+        err_cross,
+        CompilerError::Model(ModelError::DuplicateSheetTable {
+            ref table,
+            ref first_sheet,
+            ref second_sheet,
+        }) if table.as_str() == "Shared" && first_sheet == "SheetA" && second_sheet == "SheetB"
+    ));
+    assert!(matches!(
+        err_cross.diagnostic(),
+        ErrorDiagnostic::SpecificationError { table: Some(ref t), .. } if t == "Shared"
+    ));
+
+    // 8. (g) Legacy SheetSpec.tables and TableSpec.placement rejected via deny_unknown_fields
+    let legacy_sheet_json = r#"{
+        "model_name": "Legacy",
+        "sheets": [{ "name": "S1", "tables": ["T1"] }]
+    }"#;
+    let legacy_sheet_err = serde_json::from_str::<ProjectManifest>(legacy_sheet_json).unwrap_err();
     assert!(
-        !serialized.contains("placement"),
-        "default placement should be skipped during serialization"
+        legacy_sheet_err
+            .to_string()
+            .contains("unknown field `tables`")
     );
 
-    let deserialized: TableSpec = serde_json::from_str(&serialized).unwrap();
-    assert_eq!(deserialized.placement, PlacementSpec::stack());
-
-    // 2. Custom stack gap serializes and deserializes
-    let stack_gap_table = table
-        .clone()
-        .with_placement(PlacementSpec::stack_with_gap(4));
-    assert!(!stack_gap_table.placement.is_default());
-    let stack_json = serde_json::to_string(&stack_gap_table).unwrap();
-    assert!(stack_json.contains(r#""placement":{"kind":"stack","gap":4}"#));
-    let deser_stack: TableSpec = serde_json::from_str(&stack_json).unwrap();
-    assert_eq!(deser_stack.placement, PlacementSpec::stack_with_gap(4));
-
-    // 3. Below placement with default and explicit gap
-    let below_default: PlacementSpec = serde_json::from_str(r#"{"kind":"below","target":"T1"}"#)
-        .expect("deserialize below with default gap");
-    assert_eq!(
-        below_default,
-        PlacementSpec::below_with_gap("T1", DEFAULT_VERTICAL_TABLE_GAP)
-    );
-    assert_eq!(below_default, PlacementSpec::below("T1"));
-
-    let below_custom =
-        TableSpec::new("T2", "Table 2").with_placement(PlacementSpec::below_with_gap("T1", 0));
-    let below_json = serde_json::to_string(&below_custom).unwrap();
-    let deser_below: TableSpec = serde_json::from_str(&below_json).unwrap();
-    assert_eq!(
-        deser_below.placement,
-        PlacementSpec::below_with_gap("T1", 0)
+    let legacy_table_json = r#"{
+        "id": "T1",
+        "title": "T1",
+        "placement": { "kind": "stack", "gap": 2 },
+        "columns": [{ "kind": "data", "id": "c1" }],
+        "rows": [{ "kind": "data", "id": "r1" }]
+    }"#;
+    let legacy_table_err = serde_json::from_str::<TableSpec>(legacy_table_json).unwrap_err();
+    assert!(
+        legacy_table_err
+            .to_string()
+            .contains("unknown field `placement`")
     );
 
-    // 4. RightOf placement with default and explicit gap
-    let right_default: PlacementSpec = serde_json::from_str(r#"{"kind":"right_of","target":"T1"}"#)
-        .expect("deserialize right_of with default gap");
-    assert_eq!(
-        right_default,
-        PlacementSpec::right_of_with_gap("T1", DEFAULT_HORIZONTAL_TABLE_GAP)
+    // 9. (h) Unknown fields rejected on SheetSpec, BandSpec, LaneSpec, and TableSpec
+    assert!(
+        serde_json::from_str::<SheetSpec>(r#"{ "name": "S1", "bands": [], "bogus_sheet": true }"#)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `bogus_sheet`")
     );
-    assert_eq!(right_default, PlacementSpec::right_of("T1"));
-
-    let right_custom =
-        TableSpec::new("T3", "Table 3").with_placement(PlacementSpec::right_of_with_gap("T1", 3));
-    let right_json = serde_json::to_string(&right_custom).unwrap();
-    let deser_right: TableSpec = serde_json::from_str(&right_json).unwrap();
-    assert_eq!(
-        deser_right.placement,
-        PlacementSpec::right_of_with_gap("T1", 3)
+    assert!(
+        serde_json::from_str::<BandSpec>(r#"{ "lanes": [{ "tables": ["T1"] }], "bogus_band": 1 }"#)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `bogus_band`")
+    );
+    assert!(
+        serde_json::from_str::<LaneSpec>(r#"{ "tables": ["T1"], "bogus_lane": 1 }"#)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `bogus_lane`")
+    );
+    assert!(
+        serde_json::from_str::<TableSpec>(
+            r#"{
+                "id": "T1",
+                "title": "T1",
+                "bogus_table": true,
+                "columns": [{ "kind": "data", "id": "c1" }],
+                "rows": [{ "kind": "data", "id": "r1" }]
+            }"#
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field `bogus_table`")
     );
 }
 
@@ -951,7 +1152,7 @@ fn test_manifest_sheet_name_and_option_invariants_rejected() {
         freeze_panes: None,
         show_gridlines: true,
         layout: Default::default(),
-        tables: vec![TableId::from("T1")],
+        bands: SheetSpec::stacked_bands([TableId::from("T1")]),
     };
 
     for invalid_name in [
@@ -1157,7 +1358,7 @@ fn test_table_id_and_finite_cell_number_invariants_rejected() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T1")],
+            bands: SheetSpec::stacked_bands([TableId::from("T1")]),
         }],
     };
     let mut dup_a = make_table("T1");
@@ -1294,7 +1495,7 @@ fn test_sheet_layout_spec_serde_roundtrip_and_pass1_validation() {
     let default_json = r#"{
         "model_name": "DefaultLayout",
         "sheets": [
-            { "name": "Summary", "tables": ["T1"] }
+            { "name": "Summary", "bands": [{ "lanes": [{ "tables": ["T1"] }] }] }
         ]
     }"#;
     let default_manifest: ProjectManifest = serde_json::from_str(default_json).unwrap();
@@ -1312,10 +1513,10 @@ fn test_sheet_layout_spec_serde_roundtrip_and_pass1_validation() {
     let grid_json = r#"{
         "model_name": "GridLayout",
         "sheets": [
-            { "name": "DefaultGrid", "layout": { "kind": "grid" }, "tables": ["T1"] },
-            { "name": "SizedGrid", "layout": { "kind": "grid", "col_width": 14.5 }, "tables": ["T2"] },
-            { "name": "MinBound", "layout": { "kind": "grid", "col_width": 1.0 }, "tables": ["T3"] },
-            { "name": "MaxBound", "layout": { "kind": "grid", "col_width": 255.0 }, "tables": ["T4"] }
+            { "name": "DefaultGrid", "layout": { "kind": "grid" }, "bands": [{ "lanes": [{ "tables": ["T1"] }] }] },
+            { "name": "SizedGrid", "layout": { "kind": "grid", "col_width": 14.5 }, "bands": [{ "lanes": [{ "tables": ["T2"] }] }] },
+            { "name": "MinBound", "layout": { "kind": "grid", "col_width": 1.0 }, "bands": [{ "lanes": [{ "tables": ["T3"] }] }] },
+            { "name": "MaxBound", "layout": { "kind": "grid", "col_width": 255.0 }, "bands": [{ "lanes": [{ "tables": ["T4"] }] }] }
         ]
     }"#;
     let grid_manifest: ProjectManifest = serde_json::from_str(grid_json).unwrap();
@@ -1366,7 +1567,7 @@ fn test_sheet_layout_spec_serde_roundtrip_and_pass1_validation() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(bad_width),
-                tables: vec![TableId::from("T1")],
+                bands: SheetSpec::stacked_bands([TableId::from("T1")]),
             }],
         };
         let err = bad_manifest.validate().unwrap_err();

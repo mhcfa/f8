@@ -51,7 +51,7 @@ All formula cell references require explicit 2D bracket syntax:
 
 ---
 
-## 2. Container Constructors (`Model`, `Sheet`, `Table`)
+## 2. Container Constructors (`Model`, `Sheet`, `Band`, `Lane`, `Table`)
 
 ```python
 model = f8.Model(
@@ -75,11 +75,14 @@ table = sheet.add_table(
     subtitle: str | Sequence[str] | None = None,
     currency: CurrencyCode | None = None,
     collapsible: bool = False,
-    *,
-    right_of: str | Table | None = None,
-    below: str | Table | None = None,
-    gap: int | None = None,
 ) -> Table
+
+type TableRef = str | Table
+type BandItem = Band | TableRef
+
+lane = f8.Lane(tables: Sequence[TableRef], *, table_gap: int | None = None)
+band = f8.Band(lanes: Sequence[Lane], *, gap: int | None = None, lane_gap: int | None = None)
+sheet.set_bands(bands: Sequence[BandItem]) -> Sheet
 ```
 
 ### Container Methods and Properties
@@ -93,10 +96,12 @@ table = sheet.add_table(
 | `Model`   | `model.tables`          | `list[Table]`                                     | Ordered list of all tables across all worksheets                                                                                                                                                            |
 | `Model`   | `model.compile()`       | `CompiledModel`                                   | Validates, expands, evaluates, lays out, and lowers model                                                                                                                                                   |
 | `Model`   | `model.__f8_spec__()`   | `tuple[ProjectManifestDict, list[TableSpecDict]]` | Serializes model into raw manifest and table spec dictionaries                                                                                                                                              |
-| `Sheet`   | `sheet.add_table(...)`  | `Table`                                           | Appends table; duplicate `id` across model, both `right_of` and `below`, or `gap < 0` raises `ValueError`                                                                                                   |
+| `Sheet`   | `sheet.add_table(...)`  | `Table`                                           | Appends table; duplicate `id` across model raises `ValueError`                                                                                                                                              |
+| `Sheet`   | `sheet.set_bands(...)`  | `Sheet`                                           | Replaces worksheet 2D band/lane layout (exact partition of tables on this sheet; accepts `Band` or bare `TableRef` single-table band shorthand; returns `self`)                                             |
+| `Sheet`   | `sheet.bands`           | `list[Band]`                                      | Normalized band layout (`Lane.tables: tuple[str, ...]`); defaults to one 1-table band per table in `add_table` order                                                                                        |
 | `Sheet`   | `sheet.get_table(id)`   | `Table`                                           | Looks up table on this worksheet by `id` (raises `KeyError` if absent)                                                                                                                                      |
-| `Sheet`   | `sheet.tables`          | `list[Table]`                                     | Ordered list of tables on this worksheet                                                                                                                                                                    |
-| `Sheet`   | `sheet.__f8_spec__()`   | `SheetSpecDict`                                   | Serializes worksheet into raw specification dictionary                                                                                                                                                      |
+| `Sheet`   | `sheet.tables`          | `list[Table]`                                     | Tables on this worksheet in `add_table` declaration order (compiled outputs follow canonical `bands -> lanes -> tables` order)                                                                              |
+| `Sheet`   | `sheet.__f8_spec__()`   | `SheetSpecDict`                                   | Serializes worksheet into raw specification dictionary (re-validates exact partition if `add_table` followed `set_bands`)                                                                                   |
 | `Table`   | `table.__f8_spec__()`   | `TableSpecDict`                                   | Serializes table into raw specification dictionary                                                                                                                                                          |
 
 - Low-level compilation: `f8.compile(manifest, tables) -> CompiledModel` compiles raw `ProjectManifestDict` and `Sequence[TableSpecDict]` payloads directly.
@@ -277,19 +282,31 @@ table.add_column_gutter() -> Table
 - `add_section_header`: Consumes 1 physical row, writes `title` at `table.start_col` with `section_header_format(indent)` and optional Excel note, and allocates zero calculation cells.
 - `add_row_gutter` / `add_column_gutter`: Consumes 1 blank physical row or column (`gutter_col_width` = `2.0` chars by default) with zero calculation cells; row formatting continues across column gutters while row gutters remain blank. Skipped by vector formulas, `prev`/`next` offsets, and `Table.set_cells(...)` `slice(...)` selectors; formula `start..end` range slices cannot span gutters or section headers (`ReferenceResolutionError`).
 
-### Table Placement (`stack`, `below`, `right_of`, `gap`)
+### Worksheet Layout (`Band`, `Lane`, `set_bands`)
 
-- Worksheet margins: Physical Row 0 and Column 0 (Column A) are reserved as top and left margins. The first table on a sheet starts at `B2` (`col=1, row=1`).
-- Placement modes on `sheet.add_table(...)`:
-  - Default (`stack`): Places table at `start_col = 1` (Column B) below the lowest `end_row` of all preceding tables on the sheet, separated by `gap=2` gutter rows.
-  - `below="TargetTable"` (or `Table` instance): Aligns `start_col = target.start_col` and places table at `target.end_row + 1 + gap` (default `gap=2`).
-  - `right_of="TargetTable"` (or `Table` instance): Aligns `start_row = target.start_row` and places table at `target.end_col + 1 + gap` (default `gap=1` gutter column).
-  - Placement validation: `right_of` and `below` are mutually exclusive (`ValueError`), and `gap < 0` raises `ValueError`. Target table must be declared earlier on the same worksheet, and table bounding boxes cannot overlap (violations raise `SpecificationError`).
+- Worksheet margins: Physical Row 0 and Column 0 (Column A) are reserved as top and left margins. Band `0` starts at `B2` (`col=1, row=1`).
+- Default vertical stacking: Without `sheet.set_bands(...)`, each table on the worksheet is placed in its own 1-lane, 1-table band at Column `B` separated by `2` blank gutter rows in `add_table` order.
+- Explicit 2D band/lane layout via `sheet.set_bands(bands: Sequence[Band | TableRef]) -> Sheet`:
+  - `Band(lanes: Sequence[Lane], *, gap: int | None = None, lane_gap: int | None = None)`: Horizontal row of 1 or more vertical `Lane`s. Band `b > 0` starts at `prev_band_max_end_row + 1 + (gap ?? 2)`; Lane `l > 0` starts at `prev_lane_max_end_col + 1 + (lane_gap ?? 1)`.
+  - `Lane(tables: Sequence[TableRef], *, table_gap: int | None = None)`: Vertical stack of 1 or more tables (`Table` or `str` ID, normalized to `tuple[str, ...]`). Table `0` starts at `band_start_row`; Table `t > 0` starts at `prev_table_end_row + 1 + (table_gap ?? 2)`.
+  - Bare `TableRef` shorthand: Pass a `Table` or `str` directly inside `set_bands([...])` for a 1-lane, 1-table full-width band (`Band([...])` always requires explicit `Lane` items).
+  - Non-overlap & ordering: Tables cannot overlap by construction (each lane's width is `max(end_col)` across its tables, so a wider lower-left card cleanly shifts Lane 1 right). Compiled outputs (`summary()`, `errors()`, `inspect_sheet()`, `to_markdown()`) follow canonical `bands -> lanes -> tables` order.
+  - Strict validation: Rejects empty `Band`/`Lane`, bare `str`/`Table` passed as `tables` or `bands`, negative/`bool`/non-int gaps, dead gaps (`gap` on Band `0`, `lane_gap` on a 1-lane band, `table_gap` on a 1-table lane), foreign-sheet or duplicate tables, and missing tables (exact partition enforced on `set_bands` and re-validated on `__f8_spec__` if `add_table` is called later). `set_bands([])` is valid on an empty sheet; re-calling `set_bands` replaces the layout idempotently.
+
+```python
+sheet.set_bands(
+    [
+        f8.Band([f8.Lane([tl, bl]), f8.Lane([tr])], lane_gap=1),
+        timeline,  # bare TableRef shorthand for a 1-table full-width band
+    ]
+)
+```
+
 - Table banners and collapsing:
-  - Non-empty `title` emits an aligned title banner row (`start_col..=title_end_col`): unobstructed tables stretch to the widest table on the worksheet, while tables with a vertically overlapping right neighbor align within their side-by-side lane while preserving at least a 1-column blank gutter before that neighbor (subtitles, column headers, section headers, body borders, placement anchors, and `col_widths` stay bounded to `start_col..=end_col`). `subtitle` accepts a single string or a sequence of strings (`subtitle=["($ in Millions)", "Audited FY22–FY24"]`, normalized to `table.subtitles: list[str]`), emitting one subtitle row per line beneath `title` (on narrow 1–2 column tables, split long subtitles into a list of shorter lines so text does not overflow far to the right; passing an empty or whitespace-only line `""` raises `SpecificationError`; use `subtitle=None` or `[]` to omit). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title=""` (with `subtitle=None` or `[]`) omits both banner and buffer gutter so column headers start at `start_row`.
+  - Non-empty `title` emits a band/lane-aware title banner row (`start_col..=title_end_col`): titled tables in the last lane of any band (including single-lane bands) extend to `sheet_max_end_col`, while titled tables in any non-last lane extend to that lane's `lane_max_end_col` (preserving `band.lane_gap` cleanly; subtitles, column headers, section headers, body borders, and `col_widths` stay bounded to `start_col..=end_col`). `subtitle` accepts a single string or a sequence of strings (`subtitle=["($ in Millions)", "Audited FY22–FY24"]`, normalized to `table.subtitles: list[str]`), emitting one subtitle row per line beneath `title` (on narrow 1–2 column tables, split long subtitles into a list of shorter lines so text does not overflow far to the right; passing an empty or whitespace-only line `""` raises `SpecificationError`; use `subtitle=None` or `[]` to omit). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title=""` (with `subtitle=None` or `[]`) omits both banner and buffer gutter so column headers start at `start_row`.
   - `collapsible=True`: Groups physical rows `start_row + 1..=end_row` in Excel outline with summary symbols above (`group_symbols_above(True)`).
 - Column width arbitration & text wrapping (`layout="auto"`, default): Each physical worksheet column takes the maximum width across all tables spanning that column, computed as `round(clamp(max_chars * char_width_multiplier + col_padding, min_col_width, max_col_width), 2)` (default `col_padding=0.0`, `min_col_width=12.0`, `max_col_width=75.0`, where `max_chars` spans per-column header lines—excluding spanning `group`—and `\n`-delimited data cell segments with `indent * 2` plus `+1` alignment-space character on non-empty `measure` headers, `date`/numeric/unformatted `measure` numbers not ending in `)`, and non-empty text cells under trailing-`_)` formats while leaving `descriptor` headers and unformatted `descriptor` cells unpadded; gutter-only columns use `gutter_col_width=2.0`). Cells whose effective width exceeds `max_col_width` or that contain `\n` newlines enable OpenXML `wrapText="1"` (`FormatAlign::VerticalCenter` on all data cells) while leaving `.xlsx` row heights automatic for Excel font auto-fitting.
-- Uniform grid layout & descriptor overflow (`layout="grid"`): Designed for multi-table dashboards and financial statements where `right_of` panels sit above wide timelines without stretching measure columns. Every physical column covered by any `ColumnSpec::Data` span shares uniform width `W = round(max(base_w, max_measure_cell_width, max_non_text_descriptor_cell_width), 2)` (floored at `base_w = round(col_width or theme.metrics.min_col_width, 2)` in `1.0..=255.0`, ignoring `max_col_width` and capped at `255.0`; column `0` and gutter/gap-only columns retain `gutter_col_width=2.0`). `descriptor` columns automatically span `span >= 1` contiguous physical columns (`ceil(req_w / W)` from non-empty descriptor headers/text with `+1` breathing space and `indent * 2`) with zero merged cells—anchor cells stay at `phys_start` (preserving vertical `XLOOKUP`/`XMATCH`/`INDEX` slices and contiguous `measure` ranges) while styled blank runway cells carry continuous shading/borders and move vertical right borders to `phys_end`. Within each `(depth, start_col)` `right_of` nesting lane, tables with a leading `descriptor` before their first `measure` align their leading descriptor block (through the last leading `descriptor`, excluding trailing `add_column_gutter()` spacers after it so forecast-only schedules skipping earlier periods align vertically with stacked timelines) by extending their last leading `descriptor` (descriptor-only tables skip alignment). Strict `grid` rules (violations raise `SpecificationError`): `wrap_text` is always `False`, `\n`/`\r` is forbidden in data cells, column `headers`, and `group` banners, and every non-empty `measure` column header line must fit within static `base_w` (split long headers into multi-tier `headers=[...]`, abbreviate, or raise `col_width`).
+- Uniform grid layout & descriptor overflow (`layout="grid"`): Designed for multi-table dashboards and financial statements where multi-lane card bands sit above wide timelines without stretching measure columns. Every physical column covered by any `ColumnSpec::Data` span shares uniform width `W = round(max(base_w, max_measure_cell_width, max_non_text_descriptor_cell_width), 2)` (floored at `base_w = round(col_width or theme.metrics.min_col_width, 2)` in `1.0..=255.0`, ignoring `max_col_width` and capped at `255.0`; column `0` and gutter/gap-only columns retain `gutter_col_width=2.0`). `descriptor` columns automatically span `span >= 1` contiguous physical columns (`ceil(req_w / W)` from non-empty descriptor headers/text with `+1` breathing space and `indent * 2`) with zero merged cells—anchor cells stay at `phys_start` (preserving vertical `XLOOKUP`/`XMATCH`/`INDEX` slices and contiguous `measure` ranges) while styled blank runway cells carry continuous shading/borders and move vertical right borders to `phys_end`. Finalizing lanes in ascending `lane_idx` (`0..=max_lane_idx`), tables with a leading `descriptor` before their first `measure` align their leading descriptor block (through the last leading `descriptor`, excluding trailing `add_column_gutter()` spacers after it so forecast-only schedules skipping earlier periods align vertically with stacked timelines) within each `(lane_idx, start_col)` group by extending their last leading `descriptor` (descriptor-only tables skip alignment; span growth in Lane `k` automatically shifts Lane `k+1`). Strict `grid` rules (violations raise `SpecificationError`): `wrap_text` is always `False`, `\n`/`\r` is forbidden in data cells, column `headers`, and `group` banners, and every non-empty `measure` column header line must fit within static `base_w` (split long headers into multi-tier `headers=[...]`, abbreviate, or raise `col_width`).
 
 ---
 

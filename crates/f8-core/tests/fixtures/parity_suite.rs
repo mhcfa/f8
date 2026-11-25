@@ -17,7 +17,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test fixture")]
 
 use f8_core::compiler::eval::EvaluatedModel;
-use f8_core::model::PlacementSpec;
 use f8_core::model::id::{ColId, RowId, TableId};
 use f8_core::model::manifest::{ProjectManifest, SheetSpec};
 use f8_core::model::table::{CellInput, TableSpec};
@@ -1571,7 +1570,6 @@ fn build_category_table(group: &ParityGroup) -> TableSpec {
         subtitles: vec![group.subtitle.to_string()],
         currency: None,
         collapsible: false,
-        placement: PlacementSpec::default(),
         columns: cols,
         rows,
     }
@@ -1607,7 +1605,6 @@ fn build_divergence_table() -> TableSpec {
         ],
         currency: None,
         collapsible: false,
-        placement: PlacementSpec::default(),
         columns: cols,
         rows,
     }
@@ -1632,7 +1629,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: sheet_tables,
+                bands: SheetSpec::stacked_bands(sheet_tables),
             },
             SheetSpec {
                 name: "ExcelDivergences".to_string(),
@@ -1640,7 +1637,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("RuntimeDivergences")],
+                bands: SheetSpec::stacked_bands([TableId::from("RuntimeDivergences")]),
             },
         ],
     };
@@ -1741,7 +1738,6 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["Baseline inputs for ranges, lookups, and cash flows".to_string()],
         currency: None,
         collapsible: false,
-        placement: PlacementSpec::default(),
         columns: seed_cols,
         rows: seed_rows,
     };

@@ -797,16 +797,16 @@ const EXPECTED_PARITY_LAYOUT_MD = [
   "Columns: A:2, B:14, C:12, D:2, E:12",
   "",
   "- Band 1 (R2:R15, 14r x cols B..E, w:40):",
-  "  - `IncomeStatement` [B2:E15] 14r x 4c (w:40) | stack | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1",
+  "  - `IncomeStatement` [B2:E15] 14r x 4c (w:40) | sub:2 hdr:R6:R7(grouped) body:R8:R15 | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1",
   "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:14)):",
-  "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)",
+  "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)",
   "",
   "## Sheet: Valuation",
   "Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)",
   "Columns: A:2, B..D:12",
   "",
   "- Band 1 (R2:R6, 5r x cols B..D, w:36):",
-  "  - `Comps` [B2:D6] 5r x 3c (w:36) | stack | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)",
+  "  - `Comps` [B2:D6] 5r x 3c (w:36) | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)",
   "",
   "## Sheet: Notes",
   "",
@@ -1003,17 +1003,18 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
     t1.addColumn("v1", { header: "V1", format: "currency", decimals: 1 })
     t1.addRow("r1", { cells: { item: "Revenue", v1: 123_456_789.0 } })
 
-    const t2 = dash.addTable("T2", "Bottom Left", { below: t1 })
+    const t2 = dash.addTable("T2", "Bottom Left")
     t2.addColumn("item", { role: "descriptor", header: "Item" })
     t2.addColumn("v1", { header: "V1", format: "currency", decimals: 1 })
     t2.addRow("r1", { cells: { item: "Cost", v1: 50.0 } })
 
-    const t3 = dash.addTable("T3", "Right Tall", { rightOf: t1 })
+    const t3 = dash.addTable("T3", "Right Tall")
     t3.addColumn("item", { role: "descriptor", header: "Item" })
     t3.addColumn("v1", { header: "V1" })
     for (let idx = 1; idx <= 11; idx++) {
       t3.addRow(`r${idx}`, { cells: { item: `Row ${idx}`, v1: idx } })
     }
+    dash.setBands([{ lanes: [{ tables: [t1, t2] }, { tables: [t3] }] }])
 
     const autoSheet = model.addSheet("Detail", {
       freezePanes: { row: 6, col: 2 },
@@ -1213,6 +1214,148 @@ describe("CompiledModel runtime error audit & workbook Markdown", () => {
       const xlsx = compiled.emitWorkbook()
       expect(xlsx[0]).toBe(0x50)
       expect(xlsx[1]).toBe(0x4b)
+    } finally {
+      compiled.dispose()
+    }
+  })
+
+  it('Band/Lane toMarkdown("layout") cross-language golden parity (Scenario 9)', () => {
+    const EXPECTED_FULL = [
+      "# BandLaneParity",
+      "Sheets: 3 | Tables: 9 | Cells: 25 (25 drivers, 0 formulas) | Errors: 0",
+      "",
+      "## Sheet: DashAuto",
+      "Layout: auto | Bounds: B2:F26 (25r x 5c, w:60)",
+      "Columns: A:2, B..F:12",
+      "",
+      "- Band 1 (R2:R11, 10r x cols B..F, w:60):",
+      "  - Lane B..D (3c, w:36, R2:R11 = 10r, table_gap:1r):",
+      "    - `TL` [B2:C5] 4r x 2c (w:24) | title->D (+1 empty) hdr:R4 body:R5 | cols: desc B(1c), measure C(1c)",
+      "    - `BL` [B7:D11] 5r x 3c (w:36) | hdr:R9 body:R10:R11 | cols: desc B(1c), measure C..D(2c)",
+      "  - Lane E..F (2c, w:24, gap:0c, R2:R5 = 4r, empty_below:R6:R11 (6r)):",
+      "    - `TR` [E2:F5] 4r x 2c (w:24) | hdr:R4 body:R5 | cols: desc E(1c), measure F(1c)",
+      "- Band 2 (R12:R20, 9r x cols B..C, w:24, gap:0r, right_empty:D..F (3c, w:36), table_gap:1r):",
+      "  - `S1` [B12:C15] 4r x 2c (w:24) | title->F (+3 empty) hdr:R14 body:R15 | cols: desc B(1c), measure C(1c)",
+      "  - `S2` [B17:C20] 4r x 2c (w:24) | title->F (+3 empty) hdr:R19 body:R20 | cols: desc B(1c), measure C(1c)",
+      "- Band 3 (R23:R26, 4r x cols B..E, w:48, gap:2r, right_empty:F (1c, w:12)):",
+      "  - `Footer` [B23:E26] 4r x 4c (w:48) | title->F (+1 empty) hdr:R25 body:R26 | cols: desc B(1c), measure C..E(3c)",
+      "",
+      "## Sheet: DashGrid",
+      "Layout: grid (W=12) | Bounds: B2:G11 (10r x 6c, w:72)",
+      "Columns: A:2, B..G:12",
+      "",
+      "- Band 1 (R2:R5, 4r x cols B..G, w:72):",
+      "  - Lane B..D (3c, w:36, R2:R5 = 4r):",
+      "    - `GL` [B2:D5] 4r x 3c (w:36) | hdr:R4 body:R5 | cols: desc B..C(2c, req:19), measure D(1c)",
+      "  - Lane F..G (2c, w:24, gap:1c (E, w:12), R2:R5 = 4r):",
+      "    - `GR` [F2:G5] 4r x 2c (w:24) | hdr:R4 body:R5 | cols: desc F(1c), measure G(1c)",
+      "- Band 2 (R8:R11, 4r x cols B..E, w:48, gap:2r, right_empty:F..G (2c, w:24)):",
+      "  - `GB` [B8:E11] 4r x 4c (w:48) | title->G (+2 empty) hdr:R10 body:R11 | cols: desc B..C(2c, req:6), measure D..E(2c)",
+      "",
+      "## Sheet: EmptyNotes",
+      "",
+      "_(no tables)_",
+      "",
+    ].join("\n")
+
+    const EXPECTED_PARTIAL = [
+      "# BandLaneParity",
+      "Sheets: 3 | Tables: 9 | Cells: 25 (25 drivers, 0 formulas) | Errors: 0",
+      "",
+      "## Sheet: DashAuto",
+      "Layout: auto | Bounds: B2:F26 (25r x 5c, w:60)",
+      "Columns: A:2, B..F:12",
+      "",
+      "- Band 1 (R2:R11, 10r x cols B..F, w:60):",
+      "  - Lane B..D (3c, w:36, R2:R11 = 10r, table_gap:1r):",
+      "    - `TL` (context) [B2:C5] 4r x 2c (w:24) | title->D (+1 empty) hdr:R4 body:R5 | cols: desc B(1c), measure C(1c)",
+      "    - `BL` [B7:D11] 5r x 3c (w:36) | hdr:R9 body:R10:R11 | cols: desc B(1c), measure C..D(2c)",
+      "  - Lane E..F (2c, w:24, gap:0c, R2:R5 = 4r, empty_below:R6:R11 (6r)):",
+      "    - `TR` (context) [E2:F5] 4r x 2c (w:24) | hdr:R4 body:R5 | cols: desc E(1c), measure F(1c)",
+      "- Band 2 (R12:R20, 9r x cols B..C, w:24, gap:0r, right_empty:D..F (3c, w:36), table_gap:1r):",
+      "  - `S1` (context) [B12:C15] 4r x 2c (w:24) | title->F (+3 empty) hdr:R14 body:R15 | cols: desc B(1c), measure C(1c)",
+      "  - `S2` (context) [B17:C20] 4r x 2c (w:24) | title->F (+3 empty) hdr:R19 body:R20 | cols: desc B(1c), measure C(1c)",
+      "- Band 3 (R23:R26, 4r x cols B..E, w:48, gap:2r, right_empty:F (1c, w:12)):",
+      "  - `Footer` (context) [B23:E26] 4r x 4c (w:48) | title->F (+1 empty) hdr:R25 body:R26 | cols: desc B(1c), measure C..E(3c)",
+      "",
+      "## Sheet: DashGrid",
+      "Layout: grid (W=12) | Bounds: B2:G11 (10r x 6c, w:72)",
+      "Columns: A:2, B..G:12",
+      "",
+      "- Band 1 (R2:R5, 4r x cols B..G, w:72):",
+      "  - Lane B..D (3c, w:36, R2:R5 = 4r):",
+      "    - `GL` (context) [B2:D5] 4r x 3c (w:36) | hdr:R4 body:R5 | cols: desc B..C(2c, req:19), measure D(1c)",
+      "  - Lane F..G (2c, w:24, gap:1c (E, w:12), R2:R5 = 4r):",
+      "    - `GR` [F2:G5] 4r x 2c (w:24) | hdr:R4 body:R5 | cols: desc F(1c), measure G(1c)",
+      "- Band 2 (R8:R11, 4r x cols B..E, w:48, gap:2r, right_empty:F..G (2c, w:24)):",
+      "  - `GB` (context) [B8:E11] 4r x 4c (w:48) | title->G (+2 empty) hdr:R10 body:R11 | cols: desc B..C(2c, req:6), measure D..E(2c)",
+      "",
+    ].join("\n")
+
+    const model = new Model({ name: "BandLaneParity" })
+    const addSample = (
+      sheet: ReturnType<Model["addSheet"]>,
+      tid: string,
+      title: string,
+      descVal: string,
+      measureCols: number,
+      rows: number
+    ) => {
+      const t = sheet.addTable(tid, title)
+      t.addColumn("item", { role: "descriptor", header: "Item" })
+      for (let c = 1; c <= measureCols; c++) {
+        t.addColumn(`m${c}`, { header: `M${c}` })
+      }
+      for (let r = 1; r <= rows; r++) {
+        const cells: Record<string, string | number> = { item: descVal }
+        for (let c = 1; c <= measureCols; c++) {
+          cells[`m${c}`] = r * 10 + c
+        }
+        t.addRow(`r${r}`, { cells })
+      }
+      return t
+    }
+
+    const dashAuto = model.addSheet("DashAuto")
+    const tl = addSample(dashAuto, "TL", "Top Left", "Short", 1, 1)
+    const bl = addSample(dashAuto, "BL", "Bottom Left", "Short", 2, 2)
+    const tr = addSample(dashAuto, "TR", "Top Right", "Short", 1, 1)
+    const s1 = addSample(dashAuto, "S1", "Stack One", "Short", 1, 1)
+    const s2 = addSample(dashAuto, "S2", "Stack Two", "Short", 1, 1)
+    const footer = addSample(dashAuto, "Footer", "Footer", "Short", 3, 1)
+    dashAuto.setBands([
+      {
+        lanes: [{ tables: [tl, bl], tableGap: 1 }, { tables: [tr] }],
+        laneGap: 0,
+      },
+      { lanes: [{ tables: [s1, s2], tableGap: 1 }], gap: 0 },
+      footer,
+    ])
+
+    const dashGrid = model.addSheet("DashGrid", {
+      layout: "grid",
+      colWidth: 12.0,
+    })
+    const gl = addSample(
+      dashGrid,
+      "GL",
+      "Grid Left",
+      "Eighteen Char Desc",
+      1,
+      1
+    )
+    const gr = addSample(dashGrid, "GR", "Grid Right", "Short", 1, 1)
+    const gb = addSample(dashGrid, "GB", "Grid Bottom", "Short", 2, 1)
+    dashGrid.setBands([{ lanes: [{ tables: [gl] }, { tables: [gr] }] }, gb])
+
+    model.addSheet("EmptyNotes")
+
+    const compiled = model.compile()
+    try {
+      expect(compiled.toMarkdown("layout")).toBe(EXPECTED_FULL)
+      expect(compiled.toMarkdown("layout", { tables: ["BL", "GR"] })).toBe(
+        EXPECTED_PARTIAL
+      )
     } finally {
       compiled.dispose()
     }

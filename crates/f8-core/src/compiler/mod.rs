@@ -147,7 +147,14 @@ impl Compiler {
             layout::LayoutPlanner::plan(manifest, tables, &grid, &theme, Some(&evaluated))?;
         let lowered_map = lowering::FormulaLowerer::lower_grid(&grid, &symbol_table, &layout_map)?;
 
-        let tables_map = tables.iter().map(|t| (t.id.clone(), t.clone())).collect();
+        let mut tables_map = indexmap::IndexMap::with_capacity(tables.len());
+        for sheet in &manifest.sheets {
+            for table_id in sheet.table_ids() {
+                if let Some(table) = tables.iter().find(|t| t.id == *table_id) {
+                    tables_map.insert(table.id.clone(), table.clone());
+                }
+            }
+        }
 
         Ok(CompiledModel {
             manifest: manifest.clone(),

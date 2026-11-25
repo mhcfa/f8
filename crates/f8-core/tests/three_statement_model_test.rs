@@ -102,7 +102,7 @@ fn test_compiler_facade_error_propagation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![],
+                bands: vec![],
             },
             SheetSpec {
                 name: "SameSheet".to_string(),
@@ -110,7 +110,7 @@ fn test_compiler_facade_error_propagation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![],
+                bands: vec![],
             },
         ],
     };
@@ -132,7 +132,7 @@ fn test_compiler_facade_error_propagation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("non_existent")],
+            bands: SheetSpec::stacked_bands([TableId::from("non_existent")]),
         }],
     };
 
@@ -150,7 +150,6 @@ fn test_compiler_facade_error_propagation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1")],
         rows: vec![
             RowSpec::new("r1").with_expr("CyclicTable[\"r2\", @col]"),
@@ -167,7 +166,7 @@ fn test_compiler_facade_error_propagation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("CyclicTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("CyclicTable")]),
         }],
     };
 
@@ -185,7 +184,6 @@ fn test_compiler_facade_error_propagation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1")],
         rows: vec![
             RowSpec::new("r1").with_cells({
@@ -206,7 +204,7 @@ fn test_compiler_facade_error_propagation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("SumTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("SumTable")]),
         }],
     };
 

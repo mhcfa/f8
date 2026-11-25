@@ -20,7 +20,6 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::new("2023A"),
@@ -44,7 +43,6 @@ fn build_test_symbols() -> (SymbolTable, TableSpec, TableSpec) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("metric"),
             ColumnSpec::new("rate"),
@@ -97,7 +95,6 @@ fn test_scenario_2_resolving_active_column_reference() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("2024E"),
@@ -507,7 +504,6 @@ fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: cols,
         rows: vec![
             RowSpec::new("sched").with_cells(sched_cells),
@@ -572,7 +568,7 @@ fn test_dynamic_expanding_and_prior_period_ranges_resolution_and_eval() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Debt")],
+            bands: SheetSpec::stacked_bands([TableId::from("Debt")]),
         }],
     };
     let compiled = Compiler::compile(&manifest, &[debt_table]).expect("compile ok");
@@ -691,7 +687,6 @@ fn test_active_table_selector_model_compilation_and_inspection() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("y1"), ColumnSpec::new("y2")],
         rows: vec![
             RowSpec::new("rev")
@@ -714,7 +709,6 @@ fn test_active_table_selector_model_compilation_and_inspection() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("y1"), ColumnSpec::new("y2")],
         rows: vec![
             RowSpec::new("rev")
@@ -747,7 +741,7 @@ fn test_active_table_selector_model_compilation_and_inspection() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("IncomeStatement")],
+                bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
             },
             SheetSpec {
                 name: "ExplicitModel".into(),
@@ -755,7 +749,7 @@ fn test_active_table_selector_model_compilation_and_inspection() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("IncomeStatementExplicit")],
+                bands: SheetSpec::stacked_bands([TableId::from("IncomeStatementExplicit")]),
             },
         ],
     };
@@ -862,7 +856,6 @@ fn test_contiguous_data_row_and_measure_col_ranges_with_surrounding_dividers() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::gutter(),
@@ -899,7 +892,7 @@ fn test_contiguous_data_row_and_measure_col_ranges_with_surrounding_dividers() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T")],
+            bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
 
@@ -941,7 +934,6 @@ fn test_vertical_range_on_single_descriptor_column_succeeds() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::new("2024E"),
@@ -977,7 +969,7 @@ fn test_vertical_range_on_single_descriptor_column_succeeds() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T")],
+            bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
 
@@ -1009,7 +1001,6 @@ fn test_row_range_spanning_gutter_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("r1").with_cell("2024E", 10.0),
@@ -1065,7 +1056,7 @@ fn test_row_range_spanning_gutter_rejected() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T")],
+            bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
     let compile_err = Compiler::compile(&manifest, &[table]).unwrap_err();
@@ -1094,7 +1085,6 @@ fn test_row_range_spanning_section_header_rejected_including_untaken_branch() {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: f8_core::model::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("2024E")],
             rows: vec![
                 RowSpec::new("r1").with_cell("2024E", 10.0),
@@ -1113,7 +1103,7 @@ fn test_row_range_spanning_section_header_rejected_including_untaken_branch() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("T")],
+                bands: SheetSpec::stacked_bands([TableId::from("T")]),
             }],
         };
 
@@ -1149,7 +1139,6 @@ fn test_col_range_spanning_gutter_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2024E"),
             ColumnSpec::gutter(),
@@ -1201,7 +1190,6 @@ fn test_col_range_including_descriptor_endpoint_or_intermediate_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("desc", "Desc"),
             ColumnSpec::new("m1"),
@@ -1293,7 +1281,6 @@ fn test_inverted_range_precedes_discontinuity_and_first_discontinuity_order() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("desc", "Desc"),
             ColumnSpec::new("m1"),
@@ -1383,7 +1370,6 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2022A"),
             ColumnSpec::new("2023A"),
@@ -1403,7 +1389,6 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
         rows: vec![
             RowSpec::new("rev")
@@ -1479,7 +1464,7 @@ fn test_cross_table_col_offset_at_origin_boundary_and_range() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("History"), TableId::from("Forecast")],
+            bands: SheetSpec::stacked_bands([TableId::from("History"), TableId::from("Forecast")]),
         }],
     };
 
@@ -1563,7 +1548,6 @@ fn test_cross_table_col_offset_steps_along_target_measure_columns() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2022A"),
             ColumnSpec::descriptor("notes", "Notes"),
@@ -1586,7 +1570,6 @@ fn test_cross_table_col_offset_steps_along_target_measure_columns() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2022A"), ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("rev")
@@ -1640,7 +1623,7 @@ fn test_cross_table_col_offset_steps_along_target_measure_columns() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Detail"), TableId::from("Summary")],
+            bands: SheetSpec::stacked_bands([TableId::from("Detail"), TableId::from("Summary")]),
         }],
     };
 
@@ -1684,7 +1667,6 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("r0").with_cell("2024E", 10.0),
@@ -1702,7 +1684,6 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("r1").with_expr("Schedule[row.prev, @col]"),
@@ -1773,7 +1754,10 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Schedule"), TableId::from("DriverTable")],
+            bands: SheetSpec::stacked_bands([
+                TableId::from("Schedule"),
+                TableId::from("DriverTable"),
+            ]),
         }],
     };
 
@@ -1831,7 +1815,6 @@ fn test_cross_table_row_offset_steps_along_target_data_rows() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("r1").with_expr("Schedule[row.prev, @col]"),
@@ -1868,7 +1851,6 @@ fn test_cross_table_offset_active_mismatch_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("val")],
         rows: vec![RowSpec::new("tax").with_cell("val", 0.21)],
     };
@@ -1879,7 +1861,6 @@ fn test_cross_table_offset_active_mismatch_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![RowSpec::new("ebitda").with_cell("2024E", 100.0)],
     };
@@ -1963,7 +1944,10 @@ fn test_cross_table_offset_active_mismatch_rejected() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Assumptions"), TableId::from("Forecast")],
+            bands: SheetSpec::stacked_bands([
+                TableId::from("Assumptions"),
+                TableId::from("Forecast"),
+            ]),
         }],
     };
 
@@ -2008,7 +1992,6 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("label", "Label"),
             ColumnSpec::new("2024E"),
@@ -2025,7 +2008,6 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::descriptor("label", "Label"),
@@ -2041,7 +2023,6 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("label"),
@@ -2179,7 +2160,6 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("label"),
@@ -2221,7 +2201,6 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("label", "Label"),
             ColumnSpec::new("2024E"),
@@ -2281,11 +2260,11 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
+            bands: SheetSpec::stacked_bands([
                 TableId::from("HistoryA"),
                 TableId::from("Target"),
                 TableId::from("Origin"),
-            ],
+            ]),
         }],
     };
 
@@ -2309,7 +2288,6 @@ fn test_cross_table_offset_target_bounds_descriptor_anchor_and_inverted_range() 
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: f8_core::model::PlacementSpec::default(),
             columns: vec![
                 ColumnSpec::new("2023A"),
                 ColumnSpec::new("label"),

@@ -628,7 +628,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("2024E")],
             rows: vec![RowSpec::new("rev")],
         };

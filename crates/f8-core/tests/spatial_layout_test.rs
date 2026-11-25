@@ -7,10 +7,10 @@ use f8_core::compiler::layout::{
 use f8_core::compiler::{Compiler, ir};
 use f8_core::model::format::SemanticStyle;
 use f8_core::model::id::{ColId, SheetId, TableId};
-use f8_core::model::manifest::{FreezePanes, ProjectManifest, SheetSpec};
+use f8_core::model::manifest::{BandSpec, FreezePanes, LaneSpec, ProjectManifest, SheetSpec};
 use f8_core::model::table::{
-    CellInput, ColumnSpec, DetailedCellInput, PlacementSpec, RowSpec, SectionHeaderRowSpec,
-    TableSpec, ValueLiteral,
+    CellInput, ColumnSpec, DetailedCellInput, RowSpec, SectionHeaderRowSpec, TableSpec,
+    ValueLiteral,
 };
 use f8_core::model::theme::Theme;
 
@@ -55,7 +55,7 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("SimpleTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("SimpleTable")]),
         }],
     };
 
@@ -106,7 +106,7 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("IncomeStatement")],
+            bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
         }],
     };
 
@@ -183,7 +183,7 @@ fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("Assumptions")],
+                bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
             SheetSpec {
                 name: "Sheet2".to_string(),
@@ -191,7 +191,7 @@ fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("SubOnly")],
+                bands: SheetSpec::stacked_bands([TableId::from("SubOnly")]),
             },
         ],
     };
@@ -260,7 +260,7 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("TimelineTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("TimelineTable")]),
         }],
     };
 
@@ -311,7 +311,7 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("HierarchyTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("HierarchyTable")]),
         }],
     };
 
@@ -387,7 +387,7 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Table1"), TableId::from("Table2")],
+            bands: SheetSpec::stacked_bands([TableId::from("Table1"), TableId::from("Table2")]),
         }],
     };
 
@@ -456,7 +456,7 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Table1"), TableId::from("Table2")],
+            bands: SheetSpec::stacked_bands([TableId::from("Table1"), TableId::from("Table2")]),
         }],
     };
 
@@ -504,7 +504,7 @@ fn test_scenario_7_full_style_role_propagation_to_physical_coordinates() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("SummaryTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("SummaryTable")]),
         }],
     };
 
@@ -584,7 +584,7 @@ fn test_scenario_9_multi_tier_column_header_row_range_allocation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("MultiTierTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("MultiTierTable")]),
         }],
     };
 
@@ -618,7 +618,7 @@ fn test_scenario_10_rejection_of_unassigned_tables() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("AssignedTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("AssignedTable")]),
         }],
     };
 
@@ -659,7 +659,7 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
             freeze_panes: Some(FreezePanes { row: 2, col: 2 }),
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("FacadeTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("FacadeTable")]),
         }],
     };
 
@@ -710,7 +710,7 @@ fn test_scenario_12_descriptor_indentation_tiers() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("NestedHierarchyTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("NestedHierarchyTable")]),
         }],
     };
 
@@ -814,7 +814,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("GutterTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("GutterTable")]),
         }],
     };
 
@@ -944,7 +944,7 @@ fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration()
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("LboTimeline")],
+            bands: SheetSpec::stacked_bands([TableId::from("LboTimeline")]),
         }],
     };
 
@@ -979,7 +979,7 @@ fn test_scenario_15_horizontal_side_by_side_placement_and_formula_lowering() {
     t1.rows.push(RowSpec::new("rev"));
     populate_table_cells(&mut t1);
 
-    let mut t2 = TableSpec::new("T2", "Right Table").with_placement(PlacementSpec::right_of("T1"));
+    let mut t2 = TableSpec::new("T2", "Right Table");
     t2.columns.push(ColumnSpec::descriptor("metric", "Metric"));
     t2.columns.push(ColumnSpec::new("val").with_header("Value"));
     t2.rows.push(
@@ -1002,7 +1002,10 @@ fn test_scenario_15_horizontal_side_by_side_placement_and_formula_lowering() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T1"), TableId::from("T2")],
+            bands: vec![BandSpec::new([
+                LaneSpec::new(["T1"]),
+                LaneSpec::new(["T2"]),
+            ])],
         }],
     };
 
@@ -1059,22 +1062,22 @@ fn test_scenario_16_asymmetric_dashboard_placement_and_sheet_inspection() {
     }
     populate_table_cells(&mut t1);
 
-    // Short T2: right_of("T1"), rows 1..=4 (title + title_gutter + 1 header + 1 data row = 4 rows), cols 5..=6
-    let mut t2 = TableSpec::new("T2", "Top Right").with_placement(PlacementSpec::right_of("T1"));
+    // Short T2: Lane 1 top, rows 1..=4 (title + title_gutter + 1 header + 1 data row = 4 rows), cols 5..=6
+    let mut t2 = TableSpec::new("T2", "Top Right");
     t2.columns.push(ColumnSpec::descriptor("k", "Key"));
     t2.columns.push(ColumnSpec::new("v").with_header("Val"));
     t2.rows.push(RowSpec::new("r1"));
     populate_table_cells(&mut t2);
 
-    // Short T3: below("T2"), rows 7..=10, cols 5..=6
-    let mut t3 = TableSpec::new("T3", "Bottom Right").with_placement(PlacementSpec::below("T2"));
+    // Short T3: Lane 1 below T2, rows 7..=10, cols 5..=6
+    let mut t3 = TableSpec::new("T3", "Bottom Right");
     t3.columns.push(ColumnSpec::descriptor("k", "Key"));
     t3.columns.push(ColumnSpec::new("v").with_header("Val"));
     t3.rows.push(RowSpec::new("r1"));
     populate_table_cells(&mut t3);
 
-    // Full-width T4: stack(), placed at start_col = 1, start_row = 15 (2 gutter rows below max(12, 10) = 12)
-    let mut t4 = TableSpec::new("T4", "Bottom Full Width").with_placement(PlacementSpec::stack());
+    // Full-width T4: Band 1, placed at start_col = 1, start_row = 15 (2 gutter rows below max(12, 10) = 12)
+    let mut t4 = TableSpec::new("T4", "Bottom Full Width");
     for i in 1..=6 {
         t4.columns
             .push(ColumnSpec::new(format!("c{i}")).with_header(format!("C{i}")));
@@ -1091,11 +1094,9 @@ fn test_scenario_16_asymmetric_dashboard_placement_and_sheet_inspection() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
-                TableId::from("T1"),
-                TableId::from("T2"),
-                TableId::from("T3"),
-                TableId::from("T4"),
+            bands: vec![
+                BandSpec::new([LaneSpec::new(["T1"]), LaneSpec::new(["T2", "T3"])]),
+                BandSpec::single("T4"),
             ],
         }],
     };
@@ -1140,39 +1141,35 @@ fn test_scenario_16_asymmetric_dashboard_placement_and_sheet_inspection() {
 
 #[test]
 fn test_scenario_17_custom_gap_overrides() {
-    let mut t1 = TableSpec::new("T1", "Base");
-    t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
-    t1.columns.push(ColumnSpec::new("c2").with_header("C2"));
-    t1.rows.push(RowSpec::new("r1"));
-    populate_table_cells(&mut t1);
+    let make_tbl = |id: &str, title: &str, cols: usize| {
+        let mut t = TableSpec::new(id, title);
+        for c in 1..=cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        t.rows.push(RowSpec::new("r1"));
+        populate_table_cells(&mut t);
+        t
+    };
 
-    // T2: right_of("T1") with gap = 0 -> start_col = 2 + 1 + 0 = 3
-    let mut t2 = TableSpec::new("T2", "Adjacent Right")
-        .with_placement(PlacementSpec::right_of_with_gap("T1", 0));
-    t2.columns.push(ColumnSpec::new("c1").with_header("C1"));
-    t2.rows.push(RowSpec::new("r1"));
-    populate_table_cells(&mut t2);
-
-    // T3: right_of("T2") with gap = 3 -> start_col = 3 + 1 + 3 = 7 (cols 4, 5, 6 are gap columns)
-    let mut t3 =
-        TableSpec::new("T3", "Far Right").with_placement(PlacementSpec::right_of_with_gap("T2", 3));
-    t3.columns.push(ColumnSpec::new("c1").with_header("C1"));
-    t3.rows.push(RowSpec::new("r1"));
-    populate_table_cells(&mut t3);
-
-    // T4: below("T1") with gap = 4 -> T1 ends at row 4, so T4 starts at 4 + 1 + 4 = 9
-    let mut t4 =
-        TableSpec::new("T4", "Below Gap 4").with_placement(PlacementSpec::below_with_gap("T1", 4));
-    t4.columns.push(ColumnSpec::new("c1").with_header("C1"));
-    t4.rows.push(RowSpec::new("r1"));
-    populate_table_cells(&mut t4);
-
-    // T5: stack_with_gap(1) -> T4 ends at row 12, so T5 starts at 12 + 1 + 1 = 14
-    let mut t5 =
-        TableSpec::new("T5", "Stack Gap 1").with_placement(PlacementSpec::stack_with_gap(1));
-    t5.columns.push(ColumnSpec::new("c1").with_header("C1"));
-    t5.rows.push(RowSpec::new("r1"));
-    populate_table_cells(&mut t5);
+    // Band 0 (lane_gap = 0):
+    // - Lane 0 (table_gap = 4): T1 (2 cols, rows 1..=4), T4 (1 col, rows 9..=12)
+    // - Lane 1 (table_gap = 1): T2 (1 col, starts col 3, rows 1..=4), T3 (1 col, rows 6..=9)
+    // Band 1 (gap = 0, single-lane multi-table with table_gap = 1):
+    // - T5 (1 col, rows 13..=16), T6 (1 col, rows 18..=21)
+    // Band 2 (gap = 5, lane_gap = 3):
+    // - Lane 0: T7 (2 cols, rows 27..=30, cols 1..=2)
+    // - Lane 1: T8 (1 col, rows 27..=30, cols 6..=6; gap cols 3..=5)
+    let tables = vec![
+        make_tbl("T1", "Base", 2),
+        make_tbl("T2", "Adjacent Right", 1),
+        make_tbl("T3", "Tight Right Below", 1),
+        make_tbl("T4", "Below Gap 4", 1),
+        make_tbl("T5", "Zero Band Gap Top", 1),
+        make_tbl("T6", "Single Lane Tight", 1),
+        make_tbl("T7", "Wide Gap Left", 2),
+        make_tbl("T8", "Wide Gap Right", 1),
+    ];
 
     let manifest = ProjectManifest {
         model_name: "GapModel".to_string(),
@@ -1183,31 +1180,50 @@ fn test_scenario_17_custom_gap_overrides() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
-                TableId::from("T1"),
-                TableId::from("T2"),
-                TableId::from("T3"),
-                TableId::from("T4"),
-                TableId::from("T5"),
+            bands: vec![
+                BandSpec::new([
+                    LaneSpec::new(["T1", "T4"]).with_table_gap(4),
+                    LaneSpec::new(["T2", "T3"]).with_table_gap(1),
+                ])
+                .with_lane_gap(0),
+                BandSpec::new([LaneSpec::new(["T5", "T6"]).with_table_gap(1)]).with_gap(0),
+                BandSpec::new([LaneSpec::new(["T7"]), LaneSpec::new(["T8"])])
+                    .with_gap(5)
+                    .with_lane_gap(3),
             ],
         }],
     };
 
     let theme = create_test_theme();
-    let tables = vec![t1, t2, t3, t4, t5];
     let (_sym, grid) = ir::expand_workbook(&manifest, &tables).unwrap();
     let layout = LayoutPlanner::plan(&manifest, &tables, &grid, &theme, None).unwrap();
 
-    assert_eq!(layout.get_table(&TableId::from("T2")).unwrap().start_col, 3);
-    assert_eq!(layout.get_table(&TableId::from("T3")).unwrap().start_col, 7);
+    assert_eq!(layout.get_table(&TableId::from("T1")).unwrap().end_row, 4);
     assert_eq!(layout.get_table(&TableId::from("T4")).unwrap().start_row, 9);
+    assert_eq!(layout.get_table(&TableId::from("T2")).unwrap().start_col, 3);
+    assert_eq!(layout.get_table(&TableId::from("T3")).unwrap().start_col, 3);
+    assert_eq!(layout.get_table(&TableId::from("T3")).unwrap().start_row, 6);
     assert_eq!(
         layout.get_table(&TableId::from("T5")).unwrap().start_row,
-        14
+        13
     );
+    assert_eq!(
+        layout.get_table(&TableId::from("T6")).unwrap().start_row,
+        18
+    );
+    assert_eq!(
+        layout.get_table(&TableId::from("T7")).unwrap().start_row,
+        27
+    );
+    assert_eq!(
+        layout.get_table(&TableId::from("T8")).unwrap().start_row,
+        27
+    );
+    assert_eq!(layout.get_table(&TableId::from("T8")).unwrap().start_col, 6);
 
     let sheet_layout = layout.get_sheet(&SheetId::from("Sheet1")).unwrap();
-    for gap_col in 4..=6 {
+    // Col 3 is occupied by T2/T3 in Band 0 (not pure gap); cols 4 and 5 are pure inter-lane gap cols
+    for gap_col in 4..=5 {
         assert_eq!(
             sheet_layout.col_widths.get(&gap_col),
             Some(&theme.metrics.gutter_col_width)
@@ -1226,16 +1242,16 @@ fn test_scenario_18_2d_column_width_arbitration() {
     }
     populate_table_cells(&mut t1);
 
-    // T2 right_of("T1") at cols 4..=5, rows 1..=4 with short text in col 4
-    let mut t2 = TableSpec::new("T2", "Right Top").with_placement(PlacementSpec::right_of("T1"));
+    // T2 in Lane 1 at cols 4..=5, rows 1..=4 with short text in col 4
+    let mut t2 = TableSpec::new("T2", "Right Top");
     t2.columns.push(ColumnSpec::descriptor("desc", "Short"));
     t2.columns.push(ColumnSpec::new("val").with_header("Val"));
     t2.rows
         .push(RowSpec::new("r1").with_cell("desc", CellInput::string("Brief")));
     populate_table_cells(&mut t2);
 
-    // T3 below("T2") at cols 4..=5, rows 7..=10 with much wider text in col 4
-    let mut t3 = TableSpec::new("T3", "Right Bottom").with_placement(PlacementSpec::below("T2"));
+    // T3 below T2 in Lane 1 at cols 4..=5, rows 7..=10 with much wider text in col 4
+    let mut t3 = TableSpec::new("T3", "Right Bottom");
     t3.columns.push(ColumnSpec::descriptor("desc", "Short"));
     t3.columns.push(ColumnSpec::new("val").with_header("Val"));
     let wide_label = "Extremely Wide Descriptor Label In Right Column Four";
@@ -1252,11 +1268,10 @@ fn test_scenario_18_2d_column_width_arbitration() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![
-                TableId::from("T1"),
-                TableId::from("T2"),
-                TableId::from("T3"),
-            ],
+            bands: vec![BandSpec::new([
+                LaneSpec::new(["T1"]),
+                LaneSpec::new(["T2", "T3"]),
+            ])],
         }],
     };
 
@@ -1281,248 +1296,169 @@ fn test_scenario_18_2d_column_width_arbitration() {
 }
 
 #[test]
-fn test_scenario_19_invalid_placement_target_rejected() {
-    let theme = create_test_theme();
-
-    let make_simple_table = |id: &str, placement: PlacementSpec| -> TableSpec {
-        let mut t = TableSpec::new(id, id).with_placement(placement);
-        t.columns.push(ColumnSpec::new("c1").with_header("C1"));
-        t.rows.push(RowSpec::new("r1"));
+fn test_scenario_19_wider_lower_left_card_auto_and_structural_non_overlap() {
+    // Spec Scenario 2: Wider lower-left card in a multi-lane band (auto mode)
+    // Band 0: Lane 0 (TL 3 cols B..D, BL 5 cols B..F), Lane 1 (TR 2 cols, BR 2 cols)
+    // Band 1: Bottom (4 cols)
+    let make_card = |id: &str, title: &str, cols: usize, rows: usize| {
+        let mut t = TableSpec::new(id, title);
+        for c in 1..=cols {
+            t.columns
+                .push(ColumnSpec::new(format!("c{c}")).with_header(format!("C{c}")));
+        }
+        for r in 1..=rows {
+            t.rows.push(RowSpec::new(format!("r{r}")));
+        }
         populate_table_cells(&mut t);
         t
     };
 
-    // 1. Non-existent target
-    {
-        let t1 = make_simple_table("T1", PlacementSpec::right_of("Ghost"));
-        let manifest = ProjectManifest {
-            model_name: "M".to_string(),
-            theme: Default::default(),
-            sheets: vec![SheetSpec {
-                name: "S1".to_string(),
-                tab_color: None,
-                freeze_panes: None,
-                show_gridlines: true,
-                layout: Default::default(),
-                tables: vec![TableId::from("T1")],
-            }],
-        };
-        let err = LayoutPlanner::plan(&manifest, &[t1], &ir::cell::CellGrid::new(), &theme, None)
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
-                if table.as_str() == "T1" && target.as_str() == "Ghost" && sheet.as_str() == "S1"
-        ));
-    }
+    let tl = make_card("TL", "Top Left", 3, 2);
+    let bl = make_card("BL", "Bottom Left Wide", 5, 3);
+    let tr = make_card("TR", "Top Right", 2, 1);
+    let br = make_card("BR", "Bottom Right", 2, 5);
+    let bottom = make_card("Bottom", "Band 2 Summary", 4, 2);
 
-    // 2. Target on a different worksheet
-    {
-        let t1 = make_simple_table("T1", PlacementSpec::stack());
-        let t2 = make_simple_table("T2", PlacementSpec::below("T1"));
-        let manifest = ProjectManifest {
-            model_name: "M".to_string(),
-            theme: Default::default(),
-            sheets: vec![
-                SheetSpec {
-                    name: "S1".to_string(),
-                    tab_color: None,
-                    freeze_panes: None,
-                    show_gridlines: true,
-                    layout: Default::default(),
-                    tables: vec![TableId::from("T1")],
-                },
-                SheetSpec {
-                    name: "S2".to_string(),
-                    tab_color: None,
-                    freeze_panes: None,
-                    show_gridlines: true,
-                    layout: Default::default(),
-                    tables: vec![TableId::from("T2")],
-                },
+    let manifest = ProjectManifest {
+        model_name: "WiderLowerLeft".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dashboard".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: Default::default(),
+            bands: vec![
+                BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR", "BR"])]),
+                BandSpec::single("Bottom"),
             ],
-        };
-        let err = LayoutPlanner::plan(
-            &manifest,
-            &[t1, t2],
-            &ir::cell::CellGrid::new(),
-            &theme,
-            None,
-        )
-        .unwrap_err();
-        assert!(matches!(
-            err,
-            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
-                if table.as_str() == "T2" && target.as_str() == "T1" && sheet.as_str() == "S2"
-        ));
-    }
+        }],
+    };
 
-    // 3. Target declared later on the same worksheet
-    {
-        let t1 = make_simple_table("T1", PlacementSpec::right_of("T2"));
-        let t2 = make_simple_table("T2", PlacementSpec::stack());
-        let manifest = ProjectManifest {
-            model_name: "M".to_string(),
-            theme: Default::default(),
-            sheets: vec![SheetSpec {
-                name: "S1".to_string(),
-                tab_color: None,
-                freeze_panes: None,
-                show_gridlines: true,
-                layout: Default::default(),
-                tables: vec![TableId::from("T1"), TableId::from("T2")],
-            }],
-        };
-        let err = LayoutPlanner::plan(
-            &manifest,
-            &[t1, t2],
-            &ir::cell::CellGrid::new(),
-            &theme,
-            None,
-        )
-        .unwrap_err();
-        assert!(matches!(
-            err,
-            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
-                if table.as_str() == "T1" && target.as_str() == "T2" && sheet.as_str() == "S1"
-        ));
-    }
+    let compiled = Compiler::compile(&manifest, &[tl, bl, tr, br, bottom]).unwrap();
+    let p_tl = compiled.layout_map.get_table(&TableId::from("TL")).unwrap();
+    let p_bl = compiled.layout_map.get_table(&TableId::from("BL")).unwrap();
+    let p_tr = compiled.layout_map.get_table(&TableId::from("TR")).unwrap();
+    let p_br = compiled.layout_map.get_table(&TableId::from("BR")).unwrap();
+    let p_bot = compiled
+        .layout_map
+        .get_table(&TableId::from("Bottom"))
+        .unwrap();
 
-    // 4. Self-reference (target == table.id)
-    {
-        let t1 = make_simple_table("T1", PlacementSpec::below("T1"));
-        let manifest = ProjectManifest {
-            model_name: "M".to_string(),
-            theme: Default::default(),
-            sheets: vec![SheetSpec {
-                name: "S1".to_string(),
-                tab_color: None,
-                freeze_panes: None,
-                show_gridlines: true,
-                layout: Default::default(),
-                tables: vec![TableId::from("T1")],
-            }],
-        };
-        let err = LayoutPlanner::plan(&manifest, &[t1], &ir::cell::CellGrid::new(), &theme, None)
-            .unwrap_err();
-        assert!(matches!(
-            err,
-            LayoutError::InvalidPlacementTarget { ref table, ref target, ref sheet, .. }
-                if table.as_str() == "T1" && target.as_str() == "T1" && sheet.as_str() == "S1"
-        ));
+    // TL occupies B..D (1..=3), BL occupies B..F (1..=5)
+    assert_eq!((p_tl.start_col, p_tl.end_col), (1, 3));
+    assert_eq!((p_bl.start_col, p_bl.end_col), (1, 5));
+    // Lane 1 (TR, BR) starts cleanly at col H (col 7 = 5 + 1 + 1), occupying H..I (7..=8)
+    assert_eq!((p_tr.start_col, p_tr.end_col), (7, 8));
+    assert_eq!((p_br.start_col, p_br.end_col), (7, 8));
+    // Inter-lane gap column G (col 6) receives gutter_col_width
+    let theme = create_test_theme();
+    let sheet_layout = compiled
+        .layout_map
+        .get_sheet(&SheetId::from("Dashboard"))
+        .unwrap();
+    assert_eq!(
+        sheet_layout.col_widths.get(&6),
+        Some(&theme.metrics.gutter_col_width)
+    );
+    // Band 2 starts 2 blank rows below max(BL.end_row, BR.end_row)
+    let band1_max_end_row = p_bl.end_row.max(p_br.end_row);
+    assert_eq!(p_bot.start_row, band1_max_end_row + 3);
+    assert_eq!(p_bot.start_col, 1);
+
+    // Structural non-overlap holds across every pair of placed tables
+    let placements = [
+        ("TL", p_tl),
+        ("BL", p_bl),
+        ("TR", p_tr),
+        ("BR", p_br),
+        ("Bottom", p_bot),
+    ];
+    for (i, (id_a, a)) in placements.iter().enumerate() {
+        for (id_b, b) in &placements[i + 1..] {
+            let overlaps = a.start_row <= b.end_row
+                && b.start_row <= a.end_row
+                && a.start_col <= b.end_col
+                && b.start_col <= a.end_col;
+            assert!(!overlaps, "tables {id_a} and {id_b} must not overlap");
+        }
     }
 }
 
 #[test]
-fn test_scenario_20_overlapping_table_bounding_boxes_rejected() {
+fn test_scenario_20_direct_layout_planner_unknown_table_and_defensive_empty_containers() {
     let theme = create_test_theme();
 
-    // Case 1: Two tables both anchored right_of("T1") with identical gap
-    {
-        let mut t1 = TableSpec::new("T1", "T1");
-        t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
-        t1.rows.push(RowSpec::new("r1"));
+    // 1. Unknown table referenced in SheetSpec.bands fails with LayoutError::UnknownTable
+    let bad_manifest = ProjectManifest {
+        model_name: "UnknownInBand".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "S1".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: Default::default(),
+            bands: vec![BandSpec::single("Ghost")],
+        }],
+    };
+    let err = LayoutPlanner::plan(&bad_manifest, &[], &ir::cell::CellGrid::new(), &theme, None)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        LayoutError::UnknownTable { ref table, ref sheet }
+            if table.as_str() == "Ghost" && sheet.as_str() == "S1"
+    ));
 
-        let mut t2 = TableSpec::new("T2", "T2").with_placement(PlacementSpec::right_of("T1"));
-        t2.columns.push(ColumnSpec::new("c1").with_header("C1"));
-        t2.rows.push(RowSpec::new("r1"));
+    // 2. Direct LayoutPlanner::plan (bypassing manifest.validate) handles empty bands/lanes defensively
+    let mut t1 = TableSpec::new("T1", "T1");
+    t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
+    t1.rows.push(RowSpec::new("r1"));
+    populate_table_cells(&mut t1);
 
-        let mut t3 = TableSpec::new("T3", "T3").with_placement(PlacementSpec::right_of("T1"));
-        t3.columns.push(ColumnSpec::new("c1").with_header("C1"));
-        t3.rows.push(RowSpec::new("r1"));
-
-        let manifest = ProjectManifest {
-            model_name: "OverlapModel".to_string(),
+    for layout_spec in [
+        f8_core::SheetLayoutSpec::Auto,
+        f8_core::SheetLayoutSpec::grid(),
+    ] {
+        let valid_manifest = ProjectManifest {
+            model_name: "DefensiveEmpty".to_string(),
             theme: Default::default(),
             sheets: vec![SheetSpec {
                 name: "S1".to_string(),
                 tab_color: None,
                 freeze_panes: None,
-                show_gridlines: true,
-                layout: Default::default(),
-                tables: vec![
-                    TableId::from("T1"),
-                    TableId::from("T2"),
-                    TableId::from("T3"),
-                ],
+                show_gridlines: false,
+                layout: layout_spec,
+                bands: SheetSpec::stacked_bands(["T1"]),
             }],
         };
-
-        let err = LayoutPlanner::plan(
-            &manifest,
-            &[t1, t2, t3],
-            &ir::cell::CellGrid::new(),
-            &theme,
-            None,
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            LayoutError::TableOverlap {
-                ref sheet,
-                ref first_table,
-                ref second_table,
-            } if sheet.as_str() == "S1" && first_table.as_str() == "T2" && second_table.as_str() == "T3"
-        ));
-    }
-
-    // Case 2: Wide table placed below("T1") colliding with taller T2 to the right of T1
-    {
-        // T1: 1 col, 1 data row (rows 1..=4, col 1..=1)
-        let mut t1 = TableSpec::new("T1", "T1");
-        t1.columns.push(ColumnSpec::new("c1").with_header("C1"));
-        t1.rows.push(RowSpec::new("r1"));
-
-        // T2: right_of("T1"), 1 col, 6 data rows (rows 1..=9, col 3..=3)
-        let mut t2 = TableSpec::new("T2", "T2").with_placement(PlacementSpec::right_of("T1"));
-        t2.columns.push(ColumnSpec::new("c1").with_header("C1"));
-        for i in 1..=6 {
-            t2.rows.push(RowSpec::new(format!("r{i}")));
-        }
-
-        // T3: below("T1"), 4 cols (cols 1..=4, rows 7..=10) -> intersects T2 at col 3, rows 7..=9
-        let mut t3 = TableSpec::new("T3", "T3").with_placement(PlacementSpec::below("T1"));
-        for i in 1..=4 {
-            t3.columns
-                .push(ColumnSpec::new(format!("c{i}")).with_header(format!("C{i}")));
-        }
-        t3.rows.push(RowSpec::new("r1"));
-
-        let manifest = ProjectManifest {
-            model_name: "OverlapModel2".to_string(),
+        let raw_manifest = ProjectManifest {
+            model_name: "DefensiveEmpty".to_string(),
             theme: Default::default(),
             sheets: vec![SheetSpec {
                 name: "S1".to_string(),
                 tab_color: None,
                 freeze_panes: None,
-                show_gridlines: true,
-                layout: Default::default(),
-                tables: vec![
-                    TableId::from("T1"),
-                    TableId::from("T2"),
-                    TableId::from("T3"),
+                show_gridlines: false,
+                layout: layout_spec,
+                bands: vec![
+                    BandSpec::new(Vec::<LaneSpec>::new()),
+                    BandSpec::new([LaneSpec::new(Vec::<&str>::new()), LaneSpec::new(["T1"])]),
                 ],
             }],
         };
-
-        let err = LayoutPlanner::plan(
-            &manifest,
-            &[t1, t2, t3],
-            &ir::cell::CellGrid::new(),
+        let (_sym, grid) = ir::expand_workbook(&valid_manifest, std::slice::from_ref(&t1)).unwrap();
+        let planned = LayoutPlanner::plan(
+            &raw_manifest,
+            std::slice::from_ref(&t1),
+            &grid,
             &theme,
             None,
         )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            LayoutError::TableOverlap {
-                ref sheet,
-                ref first_table,
-                ref second_table,
-            } if sheet.as_str() == "S1" && first_table.as_str() == "T2" && second_table.as_str() == "T3"
-        ));
+        .unwrap();
+        let p = planned.get_table(&TableId::from("T1")).unwrap();
+        assert_eq!(p.start_row, 1);
+        assert_eq!(p.start_col, 1);
     }
 }
 
@@ -1574,7 +1510,7 @@ fn test_scenario_21_column_width_clamping_and_multiline_wrap_text() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("WrapTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("WrapTable")]),
         }],
     };
 
@@ -1670,7 +1606,7 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("NewlineTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("NewlineTable")]),
         }],
     };
 
@@ -1791,7 +1727,7 @@ fn test_scenario_23_trailing_alignment_space_width_arbitration() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("AlignWidthTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("AlignWidthTable")]),
         }],
     };
 
@@ -1871,14 +1807,8 @@ fn test_scenario_23_trailing_alignment_space_width_arbitration() {
     );
 }
 
-fn build_banner_test_table(
-    id: &str,
-    title: &str,
-    num_cols: usize,
-    num_rows: usize,
-    placement: PlacementSpec,
-) -> TableSpec {
-    let mut table = TableSpec::new(id, title).with_placement(placement);
+fn build_banner_test_table(id: &str, title: &str, num_cols: usize, num_rows: usize) -> TableSpec {
+    let mut table = TableSpec::new(id, title);
     for c in 1..=num_cols {
         table
             .columns
@@ -1891,7 +1821,7 @@ fn build_banner_test_table(
     table
 }
 
-fn single_sheet_manifest(model_name: &str, tables: &[TableSpec]) -> ProjectManifest {
+fn single_sheet_manifest(model_name: &str, bands: Vec<BandSpec>) -> ProjectManifest {
     ProjectManifest {
         model_name: model_name.to_string(),
         theme: Default::default(),
@@ -1901,7 +1831,7 @@ fn single_sheet_manifest(model_name: &str, tables: &[TableSpec]) -> ProjectManif
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: tables.iter().map(|t| t.id.clone()).collect(),
+            bands,
         }],
     }
 }
@@ -1913,23 +1843,10 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
         "Very Long Narrow Schedule Banner Title That Must Not Widen Columns",
         2,
         1,
-        PlacementSpec::stack(),
     );
-    let t2 = build_banner_test_table("WideMid", "Wide Middle", 5, 1, PlacementSpec::stack());
-    let t3 = build_banner_test_table(
-        "MedBot",
-        "Medium Bottom",
-        3,
-        1,
-        PlacementSpec::below("WideMid"),
-    );
-    let other_sheet_wide = build_banner_test_table(
-        "OtherWide",
-        "Other Sheet Wide",
-        10,
-        1,
-        PlacementSpec::stack(),
-    );
+    let t2 = build_banner_test_table("WideMid", "Wide Middle", 5, 1);
+    let t3 = build_banner_test_table("MedBot", "Medium Bottom", 3, 1);
+    let other_sheet_wide = build_banner_test_table("OtherWide", "Other Sheet Wide", 10, 1);
 
     let manifest = ProjectManifest {
         model_name: "StackedBanners".to_string(),
@@ -1941,10 +1858,9 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![
-                    TableId::from("NarrowTop"),
-                    TableId::from("WideMid"),
-                    TableId::from("MedBot"),
+                bands: vec![
+                    BandSpec::single("NarrowTop"),
+                    BandSpec::new([LaneSpec::new(["WideMid", "MedBot"])]),
                 ],
             },
             SheetSpec {
@@ -1953,7 +1869,7 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("OtherWide")],
+                bands: SheetSpec::stacked_bands([TableId::from("OtherWide")]),
             },
         ],
     };
@@ -2009,11 +1925,14 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
 
 #[test]
 fn test_aligned_title_banners_scenario_2_untitled_widest_table_sets_sheet_edge() {
-    let narrow = build_banner_test_table("NarrowTitled", "Summary", 2, 1, PlacementSpec::stack());
-    let wide_untitled = build_banner_test_table("WideUntitled", "", 6, 1, PlacementSpec::stack());
+    let narrow = build_banner_test_table("NarrowTitled", "Summary", 2, 1);
+    let wide_untitled = build_banner_test_table("WideUntitled", "", 6, 1);
 
     let tables = vec![narrow, wide_untitled];
-    let manifest = single_sheet_manifest("UntitledWidest", &tables);
+    let manifest = single_sheet_manifest(
+        "UntitledWidest",
+        SheetSpec::stacked_bands(["NarrowTitled", "WideUntitled"]),
+    );
     let compiled = Compiler::compile(&manifest, &tables).unwrap();
 
     let p_narrow = compiled
@@ -2037,14 +1956,20 @@ fn test_aligned_title_banners_scenario_2_untitled_widest_table_sets_sheet_edge()
 #[test]
 fn test_aligned_title_banners_scenario_3_side_by_side_left_lane_and_right_stack() {
     // Tall left table L: B..C (cols 1..=2), rows 1..=30 (title + gutter + header + 27 data rows)
-    let left = build_banner_test_table("L", "Left Lane", 2, 27, PlacementSpec::stack());
-    // Three stacked right-lane tables via right_of(L) and below: E..G (3 cols), E..F (2 cols), E..J (6 cols)
-    let r1 = build_banner_test_table("R1", "Right 1", 3, 2, PlacementSpec::right_of("L"));
-    let r2 = build_banner_test_table("R2", "Right 2", 2, 2, PlacementSpec::below("R1"));
-    let r3 = build_banner_test_table("R3", "Right 3", 6, 2, PlacementSpec::below("R2"));
+    let left = build_banner_test_table("L", "Left Lane", 2, 27);
+    // Three stacked right-lane tables: E..G (3 cols), E..F (2 cols), E..J (6 cols)
+    let r1 = build_banner_test_table("R1", "Right 1", 3, 2);
+    let r2 = build_banner_test_table("R2", "Right 2", 2, 2);
+    let r3 = build_banner_test_table("R3", "Right 3", 6, 2);
 
     let tables = vec![left, r1, r2, r3];
-    let manifest = single_sheet_manifest("SideBySideStack", &tables);
+    let manifest = single_sheet_manifest(
+        "SideBySideStack",
+        vec![BandSpec::new([
+            LaneSpec::new(["L"]),
+            LaneSpec::new(["R1", "R2", "R3"]),
+        ])],
+    );
     let compiled = Compiler::compile(&manifest, &tables).unwrap();
 
     let pl = compiled.layout_map.get_table(&TableId::from("L")).unwrap();
@@ -2068,19 +1993,20 @@ fn test_aligned_title_banners_scenario_3_side_by_side_left_lane_and_right_stack(
 
 #[test]
 fn test_aligned_title_banners_scenario_4_mixed_dashboard() {
-    let top_left = build_banner_test_table("TopLeft", "Top Left", 3, 2, PlacementSpec::stack());
-    let top_right = build_banner_test_table(
-        "TopRight",
-        "Top Right",
-        5,
-        2,
-        PlacementSpec::right_of("TopLeft"),
-    );
-    let bottom_1 = build_banner_test_table("Bottom1", "Bottom 1", 7, 2, PlacementSpec::stack());
-    let bottom_2 = build_banner_test_table("Bottom2", "Bottom 2", 5, 2, PlacementSpec::stack());
+    let top_left = build_banner_test_table("TopLeft", "Top Left", 3, 2);
+    let top_right = build_banner_test_table("TopRight", "Top Right", 5, 2);
+    let bottom_1 = build_banner_test_table("Bottom1", "Bottom 1", 7, 2);
+    let bottom_2 = build_banner_test_table("Bottom2", "Bottom 2", 5, 2);
 
     let tables = vec![top_left, top_right, bottom_1, bottom_2];
-    let manifest = single_sheet_manifest("MixedDashboard", &tables);
+    let manifest = single_sheet_manifest(
+        "MixedDashboard",
+        vec![
+            BandSpec::new([LaneSpec::new(["TopLeft"]), LaneSpec::new(["TopRight"])]),
+            BandSpec::single("Bottom1"),
+            BandSpec::single("Bottom2"),
+        ],
+    );
     let compiled = Compiler::compile(&manifest, &tables).unwrap();
 
     let p_tl = compiled
@@ -2112,158 +2038,169 @@ fn test_aligned_title_banners_scenario_4_mixed_dashboard() {
 }
 
 #[test]
-fn test_aligned_title_banners_scenario_5_stacked_obstructed_left_lane_cards() {
-    let left_1 = build_banner_test_table("Left1", "Left Card 1", 2, 2, PlacementSpec::stack());
-    let right = build_banner_test_table(
-        "Right",
-        "Tall Right Panel",
-        3,
-        12,
-        PlacementSpec::right_of_with_gap("Left1", 2),
+fn test_aligned_title_banners_band_lane_spec_scenario_6() {
+    // Spec Scenario 6:
+    // Sheet 1:
+    //   Band 1: Lane 0 (TL: B..D R2:R8 -> 3 cols, 4 data rows; BL: B..E R11:R20 -> 4 cols, 7 data rows)
+    //           Lane 1 (TR: G..I R2:R7 -> 3 cols, 3 data rows; plus an untitled table U1 below it)
+    //   Band 2: Lane 0 (WideBottom: B..K -> 10 cols, 2 data rows)
+    // Sheet 2 (lane_gap = 3 above wider Band 2 Lane 0):
+    //   Band 1 (lane_gap = 3): Lane 0 (A: B..C, 2 cols), Lane 1 (B: G..H, 2 cols)
+    //   Band 2: Lane 0 (WideBelow: B..F, 5 cols)
+    // Sheet 3 (lane_gap = 0 + untitled left lane):
+    //   Band 1 (lane_gap = 0): Lane 0 (L1: B..C, 2 cols; L2_untitled: B..D, 3 cols), Lane 1 (R1: E..F, 2 cols)
+    let tl = build_banner_test_table("TL", "Top Left", 3, 4); // rows 1..=7 (Excel R2:R8)
+    let bl = build_banner_test_table("BL", "Bottom Left", 4, 7); // rows 10..=19 (Excel R11:R20)
+    let tr = build_banner_test_table("TR", "Top Right", 3, 3); // rows 1..=6 (Excel R2:R7)
+    let wide_bottom = build_banner_test_table("WideBottom", "Wide Bottom", 10, 2); // cols 1..=10 (B..K)
+
+    let a = build_banner_test_table("A", "Top Left Gap3", 2, 1);
+    let b = build_banner_test_table("B", "Top Right Gap3", 2, 1);
+    let wide_below = build_banner_test_table("WideBelow", "Wide Band 2", 5, 1);
+
+    let l1 = build_banner_test_table("L1", "Left Zero Gap", 2, 1);
+    let l2_untitled = build_banner_test_table("L2U", "", 3, 1);
+    let r1 = build_banner_test_table("R1", "Right Zero Gap", 2, 1);
+    let r2_untitled = build_banner_test_table("R2U", "", 2, 1);
+
+    let manifest = ProjectManifest {
+        model_name: "BandLaneTitleBanners".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "ShortRightAboveWide".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                bands: vec![
+                    BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR"])]),
+                    BandSpec::single("WideBottom"),
+                ],
+            },
+            SheetSpec {
+                name: "Gap3AboveWide".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                bands: vec![
+                    BandSpec::new([LaneSpec::new(["A"]), LaneSpec::new(["B"])]).with_lane_gap(3),
+                    BandSpec::single("WideBelow"),
+                ],
+            },
+            SheetSpec {
+                name: "ZeroGapAndUntitled".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                bands: vec![
+                    BandSpec::new([LaneSpec::new(["L1", "L2U"]), LaneSpec::new(["R1", "R2U"])])
+                        .with_lane_gap(0),
+                ],
+            },
+        ],
+    };
+
+    let compiled = Compiler::compile(
+        &manifest,
+        &[
+            tl,
+            bl,
+            tr,
+            wide_bottom,
+            a,
+            b,
+            wide_below,
+            l1,
+            l2_untitled,
+            r1,
+            r2_untitled,
+        ],
+    )
+    .unwrap();
+
+    // Sheet 1 checks
+    let p_tl = compiled.layout_map.get_table(&TableId::from("TL")).unwrap();
+    let p_bl = compiled.layout_map.get_table(&TableId::from("BL")).unwrap();
+    let p_tr = compiled.layout_map.get_table(&TableId::from("TR")).unwrap();
+    let p_wb = compiled
+        .layout_map
+        .get_table(&TableId::from("WideBottom"))
+        .unwrap();
+
+    assert_eq!(
+        (p_tl.start_col, p_tl.end_col, p_tl.start_row, p_tl.end_row),
+        (1, 3, 1, 7)
     );
-    let left_2 =
-        build_banner_test_table("Left2", "Left Card 2", 3, 2, PlacementSpec::below("Left1"));
-
-    let tables = vec![left_1, right, left_2];
-    let manifest = single_sheet_manifest("LeftLaneCards", &tables);
-    let compiled = Compiler::compile(&manifest, &tables).unwrap();
-
-    let p_l1 = compiled
-        .layout_map
-        .get_table(&TableId::from("Left1"))
-        .unwrap();
-    let p_r = compiled
-        .layout_map
-        .get_table(&TableId::from("Right"))
-        .unwrap();
-    let p_l2 = compiled
-        .layout_map
-        .get_table(&TableId::from("Left2"))
-        .unwrap();
-
-    assert_eq!((p_l1.start_col, p_l1.end_col), (1, 2));
-    assert_eq!((p_l2.start_col, p_l2.end_col), (1, 3));
-    assert_eq!((p_r.start_col, p_r.end_col), (5, 7));
-    // Right overlaps both Left1 and Left2 vertically
-    assert!(p_r.start_row <= p_l1.end_row && p_l1.start_row <= p_r.end_row);
-    assert!(p_r.start_row <= p_l2.end_row && p_l2.start_row <= p_r.end_row);
-
-    // Both left-lane cards align to col 3 (D), leaving gutter col 4 (E) blank before Right (col 5)
-    assert_eq!(p_l1.title_end_col, Some(3));
-    assert_eq!(p_l2.title_end_col, Some(3));
-    assert_eq!(p_r.title_end_col, Some(7));
-}
-
-#[test]
-fn test_aligned_title_banners_scenario_6_explicit_gap_zero_and_gap_gte_two() {
-    // Part (a): explicit gap = 0
-    let t1 = build_banner_test_table("T1", "Left Zero Gap", 2, 1, PlacementSpec::stack());
-    let t2 = build_banner_test_table(
-        "T2",
-        "Right Zero Gap",
-        2,
-        1,
-        PlacementSpec::right_of_with_gap("T1", 0),
+    assert_eq!(
+        (p_bl.start_col, p_bl.end_col, p_bl.start_row, p_bl.end_row),
+        (1, 4, 10, 19)
     );
-    let tables_a = vec![t1, t2];
-    let manifest_a = single_sheet_manifest("GapZero", &tables_a);
-    let compiled_a = Compiler::compile(&manifest_a, &tables_a).unwrap();
-
-    let pt1 = compiled_a
-        .layout_map
-        .get_table(&TableId::from("T1"))
-        .unwrap();
-    let pt2 = compiled_a
-        .layout_map
-        .get_table(&TableId::from("T2"))
-        .unwrap();
-    assert_eq!((pt1.start_col, pt1.end_col), (1, 2));
-    assert_eq!((pt2.start_col, pt2.end_col), (3, 4));
-    assert_eq!(pt1.title_end_col, Some(2));
-    assert_eq!(pt2.title_end_col, Some(4));
-
-    // Part (b): explicit gap = 2 above an unobstructed stacked wider table C
-    let a = build_banner_test_table("A", "Top Left", 2, 1, PlacementSpec::stack());
-    let b = build_banner_test_table(
-        "B",
-        "Top Right",
-        3,
-        1,
-        PlacementSpec::right_of_with_gap("A", 2),
+    assert_eq!(
+        (p_tr.start_col, p_tr.end_col, p_tr.start_row, p_tr.end_row),
+        (6, 8, 1, 6)
     );
-    let c = build_banner_test_table("C", "Bottom Stack", 3, 1, PlacementSpec::stack());
-    let tables_b = vec![a, b, c];
-    let manifest_b = single_sheet_manifest("GapTwoPreserved", &tables_b);
-    let compiled_b = Compiler::compile(&manifest_b, &tables_b).unwrap();
+    assert_eq!((p_wb.start_col, p_wb.end_col), (1, 10));
 
-    let pa = compiled_b
+    // Both TL and BL align to Lane 0's lane_max_end_col (col 4 = E), never shooting to col 10 (K)
+    assert_eq!(p_tl.title_end_col, Some(4));
+    assert_eq!(p_bl.title_end_col, Some(4));
+    // TR (last lane of Band 1) extends to sheet_max_end_col (col 10 = K)
+    assert_eq!(p_tr.title_end_col, Some(10));
+    assert_eq!(p_wb.title_end_col, Some(10));
+
+    // Sheet 2 checks (lane_gap = 3 above wider Band 2)
+    let pa = compiled.layout_map.get_table(&TableId::from("A")).unwrap();
+    let pb = compiled.layout_map.get_table(&TableId::from("B")).unwrap();
+    let p_below = compiled
         .layout_map
-        .get_table(&TableId::from("A"))
-        .unwrap();
-    let pb = compiled_b
-        .layout_map
-        .get_table(&TableId::from("B"))
-        .unwrap();
-    let pc = compiled_b
-        .layout_map
-        .get_table(&TableId::from("C"))
+        .get_table(&TableId::from("WideBelow"))
         .unwrap();
     assert_eq!((pa.start_col, pa.end_col), (1, 2));
-    assert_eq!((pb.start_col, pb.end_col), (5, 7));
-    assert_eq!((pc.start_col, pc.end_col), (1, 3));
-    // A preserves both explicit gap columns (3..=4); C is unobstructed and does not pull A right
+    assert_eq!((pb.start_col, pb.end_col), (6, 7));
+    assert_eq!((p_below.start_col, p_below.end_col), (1, 5));
+    // A stays at col 2 (C), never pulled into lane_gap=3 (D..F) by WideBelow
     assert_eq!(pa.title_end_col, Some(2));
     assert_eq!(pb.title_end_col, Some(7));
-    assert_eq!(pc.title_end_col, Some(7));
-}
+    assert_eq!(p_below.title_end_col, Some(7));
 
-#[test]
-fn test_aligned_title_banners_scenario_7_gap_row_vertical_overlap_guard() {
-    // L1: rows 1..=4 (1 data row)
-    let l1 = build_banner_test_table("L1", "Left 1", 2, 1, PlacementSpec::stack());
-    // L2: below(L1), gap=2 -> rows 7..=15 (6 data rows; title_row == 7)
-    let l2 = build_banner_test_table("L2", "Left 2", 2, 6, PlacementSpec::below("L1"));
-    // R1: right_of(L1) -> rows 1..=5 (2 data rows)
-    let r1 = build_banner_test_table("R1", "Right 1", 3, 2, PlacementSpec::right_of("L1"));
-    // R2: below(R1), gap=2 -> rows 8..=15 (5 data rows)
-    let r2 = build_banner_test_table("R2", "Right 2", 3, 5, PlacementSpec::below("R1"));
-
-    let tables = vec![l1, l2, r1, r2];
-    let manifest = single_sheet_manifest("GapRowGuard", &tables);
-    let compiled = Compiler::compile(&manifest, &tables).unwrap();
-
-    let pl1 = compiled.layout_map.get_table(&TableId::from("L1")).unwrap();
-    let pl2 = compiled.layout_map.get_table(&TableId::from("L2")).unwrap();
-    let pr1 = compiled.layout_map.get_table(&TableId::from("R1")).unwrap();
-    let pr2 = compiled.layout_map.get_table(&TableId::from("R2")).unwrap();
-
-    assert_eq!((pl1.start_row, pl1.end_row), (1, 4));
-    assert_eq!((pl2.start_row, pl2.end_row), (7, 15));
-    assert_eq!(pl2.title_row, Some(7));
-    assert_eq!((pr1.start_row, pr1.end_row), (1, 5));
-    assert_eq!((pr2.start_row, pr2.end_row), (8, 15));
-
-    // L2.title_row (7) sits in the blank vertical gap between R1 (end 5) and R2 (start 8),
-    // but L2's vertical band (7..=15) overlaps R2 (8..=15), blocking L2 at its own end_col.
-    assert_eq!(pl1.title_end_col, Some(pl1.end_col));
-    assert_eq!(pl2.title_end_col, Some(pl2.end_col));
-    assert_eq!(pr1.title_end_col, Some(6));
-    assert_eq!(pr2.title_end_col, Some(6));
+    // Sheet 3 checks (lane_gap = 0 and untitled tables)
+    let p_l1 = compiled.layout_map.get_table(&TableId::from("L1")).unwrap();
+    let p_l2u = compiled
+        .layout_map
+        .get_table(&TableId::from("L2U"))
+        .unwrap();
+    let p_r1 = compiled.layout_map.get_table(&TableId::from("R1")).unwrap();
+    let p_r2u = compiled
+        .layout_map
+        .get_table(&TableId::from("R2U"))
+        .unwrap();
+    assert_eq!((p_l1.start_col, p_l1.end_col), (1, 2));
+    assert_eq!((p_l2u.start_col, p_l2u.end_col), (1, 3));
+    assert_eq!((p_r1.start_col, p_r1.end_col), (4, 5));
+    assert_eq!(p_l1.title_end_col, Some(3));
+    assert_eq!(p_l2u.title_row, None);
+    assert_eq!(p_l2u.title_end_col, None);
+    assert_eq!(p_r1.title_end_col, Some(5));
+    assert_eq!(p_r2u.title_row, None);
+    assert_eq!(p_r2u.title_end_col, None);
 }
 
 #[test]
 fn test_aligned_title_banners_scenario_8_untitled_right_neighbor_blocks_left_banner() {
-    let left = build_banner_test_table("LeftTitled", "Left Titled", 2, 1, PlacementSpec::stack());
-    let right = build_banner_test_table(
-        "RightUntitled",
-        "",
-        3,
-        1,
-        PlacementSpec::right_of("LeftTitled"),
-    );
+    let left = build_banner_test_table("LeftTitled", "Left Titled", 2, 1);
+    let right = build_banner_test_table("RightUntitled", "", 3, 1);
 
     let tables = vec![left, right];
-    let manifest = single_sheet_manifest("UntitledBlocker", &tables);
+    let manifest = single_sheet_manifest(
+        "UntitledBlocker",
+        vec![BandSpec::new([
+            LaneSpec::new(["LeftTitled"]),
+            LaneSpec::new(["RightUntitled"]),
+        ])],
+    );
     let compiled = Compiler::compile(&manifest, &tables).unwrap();
 
     let p_left = compiled
@@ -2308,7 +2245,7 @@ fn test_grid_layout_scenario_1_auto_preserves_one_to_one_col_spans_and_wrap_text
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::Auto,
-            tables: vec![TableId::from("AutoTable")],
+            bands: SheetSpec::stacked_bands([TableId::from("AutoTable")]),
         }],
     };
 
@@ -2383,7 +2320,7 @@ fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() 
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
-                tables: vec![TableId::from("Summary")],
+                bands: SheetSpec::stacked_bands([TableId::from("Summary")]),
             },
             SheetSpec {
                 name: "EmptyGrid".to_string(),
@@ -2391,7 +2328,7 @@ fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() 
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
-                tables: vec![],
+                bands: vec![],
             },
         ],
     };
@@ -2465,11 +2402,10 @@ fn test_grid_layout_scenario_3_dashboard_right_of_alignment_without_measure_blow
             .with_cell("pct", 0.5),
     );
 
-    // Returns: right_of SourcesUses (gap=1), 30-char labels (raw span = ceil(31/12) = 3), 1 measure
+    // Returns: Lane 1 (lane_gap=1), 30-char labels (raw span = ceil(31/12) = 3), 1 measure
     let label_30 = "Sponsor Gross Multiple of Cost";
     assert_eq!(label_30.chars().count(), 30);
-    let mut ret = TableSpec::new("Returns", "Sponsor Returns")
-        .with_placement(PlacementSpec::right_of_with_gap("SourcesUses", 1));
+    let mut ret = TableSpec::new("Returns", "Sponsor Returns");
     ret.columns.push(ColumnSpec::descriptor("metric", "Metric"));
     ret.columns
         .push(ColumnSpec::new("val").with_header("Value"));
@@ -2479,7 +2415,7 @@ fn test_grid_layout_scenario_3_dashboard_right_of_alignment_without_measure_blow
             .with_cell("val", 2.8),
     );
 
-    // Financials: Stack, 32-char labels (raw span = ceil(33/12) = 3), 7 measures
+    // Financials: Band 1, 32-char labels (raw span = ceil(33/12) = 3), 7 measures
     let label_32 = "Consolidated Adjusted EBITDA ($)";
     assert_eq!(label_32.chars().count(), 32);
     let mut fin = TableSpec::new("Financials", "Financial Projections");
@@ -2504,10 +2440,9 @@ fn test_grid_layout_scenario_3_dashboard_right_of_alignment_without_measure_blow
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![
-                TableId::from("SourcesUses"),
-                TableId::from("Returns"),
-                TableId::from("Financials"),
+            bands: vec![
+                BandSpec::new([LaneSpec::new(["SourcesUses"]), LaneSpec::new(["Returns"])]),
+                BandSpec::single("Financials"),
             ],
         }],
     };
@@ -2585,7 +2520,7 @@ fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cle
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("MeasureFloor")],
+            bands: SheetSpec::stacked_bands([TableId::from("MeasureFloor")]),
         }],
     };
     let compiled_a = Compiler::compile(&manifest_a, &[t_measure]).unwrap();
@@ -2633,7 +2568,7 @@ fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cle
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("DescNumFloor")],
+            bands: SheetSpec::stacked_bands([TableId::from("DescNumFloor")]),
         }],
     };
     let compiled_b = Compiler::compile(&manifest_b, &[t_desc_num]).unwrap();
@@ -2669,7 +2604,7 @@ fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cle
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("EmptyDemand")],
+            bands: SheetSpec::stacked_bands([TableId::from("EmptyDemand")]),
         }],
     };
     let compiled_c = Compiler::compile(&manifest_c, &[t_empty]).unwrap();
@@ -2716,7 +2651,7 @@ fn test_grid_layout_scenario_5_static_base_w_measure_header_rejection() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("Valuation")],
+            bands: SheetSpec::stacked_bands([TableId::from("Valuation")]),
         }],
     };
     let err = Compiler::compile(&manifest_12, &[make_table(vec!["Enterprise Value"])]).unwrap_err();
@@ -2769,7 +2704,7 @@ fn test_grid_layout_scenario_5_static_base_w_measure_header_rejection() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(17.0),
-            tables: vec![TableId::from("Valuation")],
+            bands: SheetSpec::stacked_bands([TableId::from("Valuation")]),
         }],
     };
     assert!(Compiler::compile(&manifest_17, &[make_table(vec!["Enterprise Value"])]).is_ok());
@@ -2798,7 +2733,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
-                tables: vec![TableId::from("LitNewline")],
+                bands: SheetSpec::stacked_bands([TableId::from("LitNewline")]),
             }],
         };
         let err = Compiler::compile(&manifest, &[t]).unwrap_err();
@@ -2844,7 +2779,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::Auto,
-                tables: vec![TableId::from("SrcAuto")],
+                bands: SheetSpec::stacked_bands([TableId::from("SrcAuto")]),
             },
             SheetSpec {
                 name: "GridDst".to_string(),
@@ -2852,7 +2787,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
-                tables: vec![TableId::from("DstGrid")],
+                bands: SheetSpec::stacked_bands([TableId::from("DstGrid")]),
             },
         ],
     };
@@ -2884,7 +2819,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-                tables: vec![TableId::from("HdrNL")],
+                bands: SheetSpec::stacked_bands([TableId::from("HdrNL")]),
             }],
         };
         let err = Compiler::compile(&manifest, &[t]).unwrap_err();
@@ -2916,7 +2851,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
-                tables: vec![TableId::from("GrpNL")],
+                bands: SheetSpec::stacked_bands([TableId::from("GrpNL")]),
             }],
         };
         let err = Compiler::compile(&manifest, &[t]).unwrap_err();
@@ -2954,7 +2889,7 @@ fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid(),
-            tables: vec![TableId::from("T1")],
+            bands: SheetSpec::stacked_bands([TableId::from("T1")]),
         }],
     };
     let err1 = Compiler::compile(&m1, &[t1]).unwrap_err();
@@ -2986,7 +2921,7 @@ fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("T2")],
+            bands: SheetSpec::stacked_bands([TableId::from("T2")]),
         }],
     };
     let err2 = Compiler::compile(&m2, &[t2]).unwrap_err();
@@ -3014,7 +2949,7 @@ fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(1.0),
-            tables: vec![TableId::from("T3")],
+            bands: SheetSpec::stacked_bands([TableId::from("T3")]),
         }],
     };
     let err3 = Compiler::compile(&m3, &[t3]).unwrap_err();
@@ -3058,8 +2993,8 @@ fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_
             .with_cell("y2", 200.0),
     );
 
-    // TR: right_of TL (gap=1 -> start_col = 7), short descriptor (raw span=1)
-    let mut tr = TableSpec::new("TR", "Top Right").with_placement(PlacementSpec::right_of("TL"));
+    // TR: Band 0, Lane 1 (gap=1 -> start_col = 7), short descriptor (raw span=1)
+    let mut tr = TableSpec::new("TR", "Top Right");
     tr.columns.push(ColumnSpec::descriptor("k", "Key"));
     tr.columns.push(ColumnSpec::new("v").with_header("Val"));
     tr.rows.push(
@@ -3068,9 +3003,9 @@ fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_
             .with_cell("v", 0.25),
     );
 
-    // BR: right_of BL (gap=1 -> start_col = 7), longer descriptor (20+1=21 -> raw span=2)
-    // Shares (depth=1, start_col=7) with TR -> both TR and BR align descriptor to span=2!
-    let mut br = TableSpec::new("BR", "Bottom Right").with_placement(PlacementSpec::right_of("BL"));
+    // BR: Band 0, Lane 1 (gap=1 -> start_col = 7), longer descriptor (20+1=21 -> raw span=2)
+    // Shares (lane_idx=1, start_col=7) with TR -> both TR and BR align descriptor to span=2!
+    let mut br = TableSpec::new("BR", "Bottom Right");
     br.columns.push(ColumnSpec::descriptor("k", "Key"));
     br.columns.push(ColumnSpec::new("v").with_header("Val"));
     br.rows.push(
@@ -3079,7 +3014,7 @@ fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_
             .with_cell("v", 500.0),
     );
 
-    // Notes: Stack, descriptor-only [key (span=1), note (span=5)] — must NOT inflate depth-0 prefix!
+    // Notes: Band 1, descriptor-only [key (span=1), note (span=5)] — must NOT inflate lane-0 prefix!
     let mut notes = TableSpec::new("Notes", "Footnotes");
     notes.columns.push(ColumnSpec::descriptor("key", "Ref"));
     notes.columns.push(ColumnSpec::descriptor("note", "Note"));
@@ -3098,12 +3033,9 @@ fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![
-                TableId::from("TL"),
-                TableId::from("BL"),
-                TableId::from("TR"),
-                TableId::from("BR"),
-                TableId::from("Notes"),
+            bands: vec![
+                BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR", "BR"])]),
+                BandSpec::single("Notes"),
             ],
         }],
     };
@@ -3118,55 +3050,116 @@ fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_
         .get_table(&TableId::from("Notes"))
         .unwrap();
 
-    // Depth-0 lane: TL and BL align descriptor blocks to 1..=3; BL's trailing Gutter skips TL.y1
+    // Lane-0: TL and BL align descriptor blocks to 1..=3; BL's trailing Gutter skips TL.y1
     // at col 4 so BL.y2 lands under TL.y2 at col 5 (F).
     assert_eq!(p_tl.col_spans, vec![(1, 1), (2, 3), (4, 4), (5, 5)]);
     assert_eq!(p_bl.col_spans, vec![(1, 3), (4, 4), (5, 5)]);
 
-    // Depth-1 lane at start_col=7: TR and BR both align descriptor to (7, 8), val at (9, 9)
+    // Lane-1 at start_col=7: TR and BR both align descriptor to (7, 8), val at (9, 9)
     assert_eq!(p_tr.col_spans, vec![(7, 8), (9, 9)]);
     assert_eq!(p_br.col_spans, vec![(7, 8), (9, 9)]);
 
     // Descriptor-only Notes keeps raw spans [1, 5] without inflating TL/BL
     assert_eq!(p_notes.col_spans, vec![(1, 1), (2, 6)]);
+}
 
-    // Pairwise TableOverlap in declaration order on grid sheet
-    let mut o1 = TableSpec::new("Base", "Base");
-    o1.columns.push(ColumnSpec::new("c").with_header("C"));
-    o1.rows.push(RowSpec::new("r1").with_cell("c", 1.0));
-    let mut o2 =
-        TableSpec::new("FirstRight", "First").with_placement(PlacementSpec::right_of("Base"));
-    o2.columns.push(ColumnSpec::new("c").with_header("C"));
-    o2.rows.push(RowSpec::new("r1").with_cell("c", 2.0));
-    let mut o3 =
-        TableSpec::new("SecondRight", "Second").with_placement(PlacementSpec::right_of("Base"));
-    o3.columns.push(ColumnSpec::new("c").with_header("C"));
-    o3.rows.push(RowSpec::new("r1").with_cell("c", 3.0));
-    let overlap_manifest = ProjectManifest {
-        model_name: "GridOverlap".to_string(),
+#[test]
+fn test_grid_layout_spec_scenario_4_descriptor_growth_shifts_lane1() {
+    // Spec Scenario 4: Band 1 (Lane 0: short-label TL + long-label BL; Lane 1: TR + BR)
+    // above Band 2 (Timeline in Lane 0).
+    let mut tl = TableSpec::new("TL", "Top Left");
+    tl.columns.push(ColumnSpec::descriptor("item", "Item"));
+    tl.columns.push(ColumnSpec::new("v1").with_header("V1"));
+    tl.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Short") // raw span 1
+            .with_cell("v1", 10.0),
+    );
+
+    let mut bl = TableSpec::new("BL", "Bottom Left");
+    bl.columns.push(ColumnSpec::descriptor("item", "Item"));
+    bl.columns.push(ColumnSpec::new("v1").with_header("V1"));
+    bl.columns.push(ColumnSpec::new("v2").with_header("V2"));
+    bl.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Consolidated Adjusted EBITDA ($)") // 32+1=33 -> span 3 (cols 1..=3)
+            .with_cell("v1", 100.0)
+            .with_cell("v2", 120.0),
+    );
+
+    let mut tr = TableSpec::new("TR", "Top Right");
+    tr.columns.push(ColumnSpec::descriptor("k", "Key"));
+    tr.columns.push(ColumnSpec::new("v").with_header("Val"));
+    tr.rows.push(
+        RowSpec::new("r1")
+            .with_cell("k", "IRR") // raw span 1
+            .with_cell("v", 0.25),
+    );
+
+    let mut br = TableSpec::new("BR", "Bottom Right");
+    br.columns.push(ColumnSpec::descriptor("k", "Key"));
+    br.columns.push(ColumnSpec::new("v").with_header("Val"));
+    br.rows.push(
+        RowSpec::new("r1")
+            .with_cell("k", "Sponsor Gross Multiple") // 22+1=23 -> span 2
+            .with_cell("v", 2.8),
+    );
+
+    let mut timeline = TableSpec::new("Timeline", "Timeline");
+    timeline
+        .columns
+        .push(ColumnSpec::descriptor("item", "Line Item"));
+    timeline
+        .columns
+        .push(ColumnSpec::new("y1").with_header("Y1"));
+    timeline
+        .columns
+        .push(ColumnSpec::new("y2").with_header("Y2"));
+    timeline.rows.push(
+        RowSpec::new("r1")
+            .with_cell("item", "Revenue") // raw span 1 -> aligns to Lane 0 max 3!
+            .with_cell("y1", 50.0)
+            .with_cell("y2", 60.0),
+    );
+
+    let manifest = ProjectManifest {
+        model_name: "GridScenario4".to_string(),
         theme: Default::default(),
         sheets: vec![SheetSpec {
-            name: "Grid".to_string(),
+            name: "Summary".to_string(),
             tab_color: None,
             freeze_panes: None,
             show_gridlines: false,
-            layout: f8_core::SheetLayoutSpec::grid(),
-            tables: vec![
-                TableId::from("Base"),
-                TableId::from("FirstRight"),
-                TableId::from("SecondRight"),
+            layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            bands: vec![
+                BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR", "BR"])])
+                    .with_lane_gap(2),
+                BandSpec::single("Timeline"),
             ],
         }],
     };
-    let overlap_err = Compiler::compile(&overlap_manifest, &[o1, o2, o3]).unwrap_err();
-    assert!(matches!(
-        overlap_err,
-        f8_core::compiler::CompilerError::Layout(LayoutError::TableOverlap {
-            ref first_table,
-            ref second_table,
-            ..
-        }) if first_table.as_str() == "FirstRight" && second_table.as_str() == "SecondRight"
-    ));
+
+    let compiled = Compiler::compile(&manifest, &[tl, bl, tr, br, timeline]).unwrap();
+    let p_tl = compiled.layout_map.get_table(&TableId::from("TL")).unwrap();
+    let p_bl = compiled.layout_map.get_table(&TableId::from("BL")).unwrap();
+    let p_tr = compiled.layout_map.get_table(&TableId::from("TR")).unwrap();
+    let p_br = compiled.layout_map.get_table(&TableId::from("BR")).unwrap();
+    let p_time = compiled
+        .layout_map
+        .get_table(&TableId::from("Timeline"))
+        .unwrap();
+
+    // Lane 0 leading descriptors align across TL, BL, and Timeline at col 1 (span 3 -> 1..=3)
+    assert_eq!(p_tl.col_spans, vec![(1, 3), (4, 4)]);
+    assert_eq!(p_bl.col_spans, vec![(1, 3), (4, 4), (5, 5)]);
+    assert_eq!(p_time.col_spans, vec![(1, 3), (4, 4), (5, 5)]);
+
+    // Lane 1 starts strictly right of max(TL.end_col=4, BL.end_col=5) + 1 + lane_gap(2) = 8
+    assert_eq!(p_tr.start_col, 8);
+    assert_eq!(p_br.start_col, 8);
+    // TR and BR align their leading descriptors at (lane_idx=1, start_col=8) to span 2 (8..=9)
+    assert_eq!(p_tr.col_spans, vec![(8, 9), (10, 10)]);
+    assert_eq!(p_br.col_spans, vec![(8, 9), (10, 10)]);
 }
 
 #[test]
@@ -3285,7 +3278,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-                tables: vec![TableId::from("IS"), TableId::from("CapexFcast")],
+                bands: SheetSpec::stacked_bands([TableId::from("IS"), TableId::from("CapexFcast")]),
             },
             SheetSpec {
                 name: "CaseB".to_string(),
@@ -3293,7 +3286,10 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-                tables: vec![TableId::from("IS_B"), TableId::from("CapexWide")],
+                bands: SheetSpec::stacked_bands([
+                    TableId::from("IS_B"),
+                    TableId::from("CapexWide"),
+                ]),
             },
             SheetSpec {
                 name: "CaseC".to_string(),
@@ -3301,7 +3297,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-                tables: vec![TableId::from("Div1"), TableId::from("Div2")],
+                bands: SheetSpec::stacked_bands([TableId::from("Div1"), TableId::from("Div2")]),
             },
         ],
     };
@@ -3429,7 +3425,7 @@ fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
-            tables: vec![TableId::from("UnevalGrid")],
+            bands: SheetSpec::stacked_bands([TableId::from("UnevalGrid")]),
         }],
     };
 
@@ -3467,7 +3463,7 @@ fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
-                tables: vec![TableId::from("UnevalNL")],
+                bands: SheetSpec::stacked_bands([TableId::from("UnevalNL")]),
             }],
         };
         let (_sym, bad_grid) =

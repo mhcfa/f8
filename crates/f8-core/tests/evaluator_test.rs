@@ -27,7 +27,6 @@ fn create_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> TableSpec 
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
         rows,
     }
@@ -502,7 +501,7 @@ fn manifest_for_table(table_id: &str) -> ProjectManifest {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from(table_id)],
+            bands: SheetSpec::stacked_bands([TableId::from(table_id)]),
         }],
     }
 }
@@ -1170,7 +1169,6 @@ fn test_scenario_11_positional_omission_end_to_end_evaluation_and_lowering() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::gutter(),
             ColumnSpec::new("c1").with_header("C1"),
@@ -1864,7 +1862,6 @@ fn test_scenario_15_na_dormant_empty_guards_sparse_and_and_domain_errors() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::gutter(),
             ColumnSpec::new("c1").with_header("C1"),
@@ -2514,7 +2511,7 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T")],
+            bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
 
@@ -2535,7 +2532,6 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: f8_core::model::PlacementSpec::default(),
             columns: vec![line_item_col, c1_col],
             rows: vec![
                 make_row("n1", "Rev", CellInput::number(10.0)),
@@ -2758,7 +2754,6 @@ fn test_scenario_18_error_introspection() {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: Default::default(),
             columns: ["num_a", "nulls"]
                 .into_iter()
                 .map(|id| ColumnSpec::new(id).with_header(id))
@@ -2822,7 +2817,7 @@ fn test_power_zero_zero_domain_and_precedence_parity() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T")],
+            bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
 
@@ -2913,7 +2908,6 @@ fn test_power_zero_zero_domain_and_precedence_parity() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: Default::default(),
         columns: vec![ColumnSpec::new("val").with_header("Val")],
         rows,
     };

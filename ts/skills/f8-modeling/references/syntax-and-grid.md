@@ -79,29 +79,42 @@ const table: Table = sheet.addTable(
     subtitle?: string | readonly string[];
     currency?: CurrencyCode;
     collapsible?: boolean; // default false
-    rightOf?: string | Table;
-    below?: string | Table;
-    gap?: number;
   },
 );
+
+export type TableRef = string | Table;
+export interface LaneInput {
+  readonly tables: readonly TableRef[];
+  readonly tableGap?: number;
+}
+export interface BandInput {
+  readonly lanes: readonly LaneInput[];
+  readonly gap?: number;
+  readonly laneGap?: number;
+}
+export type BandInputItem = BandInput | TableRef;
+
+sheet.setBands(bands: readonly BandInputItem[]): Sheet;
 ```
 
 ### Container Methods and Properties
 
-| Container | Member                             | Return type        | Behavior                                                                                                                                               |
-| :-------- | :--------------------------------- | :----------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Model`   | `model.addSheet(name, options?)`   | `Sheet`            | Appends worksheet; duplicate `name`, invalid `freezePanes`, invalid `layout`, `colWidth` with `"auto"`, or `colWidth` outside `1..=255` throws `Error` |
-| `Model`   | `model.getSheet(name)`             | `Sheet`            | Looks up worksheet by `name` (throws `Error` if absent)                                                                                                |
-| `Model`   | `model.getTable(id)`               | `Table`            | Looks up table by `id` across all worksheets (throws `Error` if absent)                                                                                |
-| `Model`   | `model.sheets`                     | `readonly Sheet[]` | Ordered array of worksheets                                                                                                                            |
-| `Model`   | `model.tables`                     | `readonly Table[]` | Ordered array of all tables across all worksheets                                                                                                      |
-| `Model`   | `model.compile()`                  | `CompiledModel`    | Validates, expands, evaluates, lays out, and lowers model                                                                                              |
-| `Model`   | `model.toSpec()`                   | `ModelSpec`        | Serializes model into `{ manifest: ProjectManifestInput, tables: readonly TableSpecInput[] }`                                                          |
-| `Sheet`   | `sheet.addTable(id, title, opts?)` | `Table`            | Appends table; duplicate `id` across model, both `rightOf` and `below`, or `gap < 0` throws `Error`                                                    |
-| `Sheet`   | `sheet.getTable(id)`               | `Table`            | Looks up table on this worksheet by `id` (throws `Error` if absent)                                                                                    |
-| `Sheet`   | `sheet.tables`                     | `readonly Table[]` | Ordered array of tables on this worksheet                                                                                                              |
-| `Sheet`   | `sheet.toSpec()`                   | `SheetSpecInput`   | Serializes worksheet into raw specification object                                                                                                     |
-| `Table`   | `table.toSpec()`                   | `TableSpecInput`   | Serializes table into raw specification object                                                                                                         |
+| Container | Member                             | Return type                | Behavior                                                                                                                                               |
+| :-------- | :--------------------------------- | :------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Model`   | `model.addSheet(name, options?)`   | `Sheet`                    | Appends worksheet; duplicate `name`, invalid `freezePanes`, invalid `layout`, `colWidth` with `"auto"`, or `colWidth` outside `1..=255` throws `Error` |
+| `Model`   | `model.getSheet(name)`             | `Sheet`                    | Looks up worksheet by `name` (throws `Error` if absent)                                                                                                |
+| `Model`   | `model.getTable(id)`               | `Table`                    | Looks up table by `id` across all worksheets (throws `Error` if absent)                                                                                |
+| `Model`   | `model.sheets`                     | `readonly Sheet[]`         | Ordered array of worksheets                                                                                                                            |
+| `Model`   | `model.tables`                     | `readonly Table[]`         | Ordered array of all tables across all worksheets                                                                                                      |
+| `Model`   | `model.compile()`                  | `CompiledModel`            | Validates, expands, evaluates, lays out, and lowers model                                                                                              |
+| `Model`   | `model.toSpec()`                   | `ModelSpec`                | Serializes model into `{ manifest: ProjectManifestInput, tables: readonly TableSpecInput[] }`                                                          |
+| `Sheet`   | `sheet.addTable(id, title, opts?)` | `Table`                    | Appends table; duplicate `id` across model throws `Error`                                                                                              |
+| `Sheet`   | `sheet.setBands(bands)`            | `Sheet`                    | Replaces worksheet 2D band/lane layout (exact partition of tables on this sheet; accepts `BandInput` or bare `TableRef` shorthand; returns `this`)     |
+| `Sheet`   | `sheet.bands`                      | `readonly BandSpecInput[]` | Normalized band layout (`tables: readonly string[]`); defaults to one 1-table band per table in `addTable` order                                       |
+| `Sheet`   | `sheet.getTable(id)`               | `Table`                    | Looks up table on this worksheet by `id` (throws `Error` if absent)                                                                                    |
+| `Sheet`   | `sheet.tables`                     | `readonly Table[]`         | Tables on this worksheet in `addTable` declaration order (compiled outputs follow canonical `bands -> lanes -> tables` order)                          |
+| `Sheet`   | `sheet.toSpec()`                   | `SheetSpecInput`           | Serializes worksheet into raw specification object (re-validates exact partition if `addTable` followed `setBands`)                                    |
+| `Table`   | `table.toSpec()`                   | `TableSpecInput`           | Serializes table into raw specification object                                                                                                         |
 
 - Low-level compilation & WASM lifecycle:
   - `compile(manifest, tables) => CompiledModel` compiles raw `ProjectManifestInput` and `readonly TableSpecInput[]` payloads directly.
@@ -267,19 +280,29 @@ table.addColumnGutter(): this;
 - `addSectionHeader`: Consumes 1 physical row, writes `title` at `table.start_col` with `section_header_format(indent)` and optional Excel note, and allocates zero calculation cells.
 - `addRowGutter` / `addColumnGutter`: Consumes 1 blank physical row or column (`gutter_col_width` = `2.0` chars by default) with zero calculation cells; row formatting continues across column gutters while row gutters remain blank. Skipped by vector formulas, `prev`/`next` offsets, and `Table.setCells(...)` `AxisSlice` selectors; formula `start..end` range slices cannot span gutters or section headers (`ReferenceResolutionError`).
 
-### Table Placement (`stack`, `below`, `rightOf`, `gap`)
+### Worksheet Layout (`BandInput`, `LaneInput`, `setBands`)
 
-- Worksheet margins: Physical Row 0 and Column 0 (Column A) are reserved as top and left margins. The first table on a sheet starts at `B2` (`col=1, row=1`).
-- Placement modes on `sheet.addTable(...)`:
-  - Default (`stack`): Places table at `start_col = 1` (Column B) below the lowest `end_row` of all preceding tables on the sheet, separated by `gap: 2` gutter rows.
-  - `below: "TargetTable"` (or `Table` instance): Aligns `start_col = target.start_col` and places table at `target.end_row + 1 + gap` (default `gap: 2`).
-  - `rightOf: "TargetTable"` (or `Table` instance): Aligns `start_row = target.start_row` and places table at `target.end_col + 1 + gap` (default `gap: 1` gutter column).
-  - Placement validation: `rightOf` and `below` are mutually exclusive (`Error`), and `gap < 0` throws `Error`. Target table must be declared earlier on the same worksheet, and table bounding boxes cannot overlap (violations throw `SpecificationError`).
+- Worksheet margins: Physical Row 0 and Column 0 (Column A) are reserved as top and left margins. Band `0` starts at `B2` (`col=1, row=1`).
+- Default vertical stacking: Without `sheet.setBands(...)`, each table on the worksheet is placed in its own 1-lane, 1-table band at Column `B` separated by `2` blank gutter rows in `addTable` order.
+- Explicit 2D band/lane layout via `sheet.setBands(bands: readonly BandInputItem[]): this`:
+  - `BandInput` (`{ lanes: readonly LaneInput[], gap?: number, laneGap?: number }`): Horizontal row of 1 or more vertical lanes. Band `b > 0` starts at `prev_band_max_end_row + 1 + (gap ?? 2)`; Lane `l > 0` starts at `prev_lane_max_end_col + 1 + (laneGap ?? 1)`.
+  - `LaneInput` (`{ tables: readonly TableRef[], tableGap?: number }`): Vertical stack of 1 or more tables (`Table` or `string` ID, normalized to `readonly string[]`). Table `0` starts at `band_start_row`; Table `t > 0` starts at `prev_table_end_row + 1 + (tableGap ?? 2)`.
+  - Bare `TableRef` shorthand: Pass a `Table` or `string` directly inside `setBands([...])` for a 1-lane, 1-table full-width band (`lanes` always requires explicit `LaneInput` objects).
+  - Non-overlap & ordering: Tables cannot overlap by construction (each lane's width is `max(end_col)` across its tables, so a wider lower-left card cleanly shifts Lane 1 right). Compiled outputs (`summary()`, `errors()`, `inspectSheet()`, `toMarkdown()`) follow canonical `bands -> lanes -> tables` order.
+  - Strict validation: Throws `Error` on empty `lanes`/`tables`, negative or non-integer gaps, dead gaps (`gap` on Band `0`, `laneGap` on a 1-lane band, `tableGap` on a 1-table lane), foreign-sheet or duplicate tables, and missing tables (exact partition enforced on `setBands` and re-validated on `toSpec()` if `addTable` is called later). `setBands([])` is valid on an empty sheet; re-calling `setBands` replaces the layout idempotently.
+
+```ts
+sheet.setBands([
+  { lanes: [{ tables: [tl, bl] }, { tables: [tr] }], laneGap: 1 },
+  timeline, // bare TableRef shorthand for a 1-table full-width band
+])
+```
+
 - Table banners and collapsing:
-  - Non-empty `title` emits an aligned title banner row (`start_col..=title_end_col`): unobstructed tables stretch to the widest table on the worksheet, while tables with a vertically overlapping right neighbor align within their side-by-side lane while preserving at least a 1-column blank gutter before that neighbor (subtitles, column headers, section headers, body borders, placement anchors, and `col_widths` stay bounded to `start_col..=end_col`). `subtitle` accepts a single string or an array of strings (`subtitle: ["($ in Millions)", "Audited FY22–FY24"]`, normalized to `table.subtitles: readonly string[]`), emitting one subtitle row per line beneath `title` (on narrow 1–2 column tables, split long subtitles into an array of shorter lines so text does not overflow far to the right; passing an empty or whitespace-only line `""` throws `SpecificationError`; omit `subtitle` or pass `[]` when unused). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title: ""` (with no `subtitle`) omits both banner and buffer gutter so column headers start at `start_row`.
+  - Non-empty `title` emits a band/lane-aware title banner row (`start_col..=title_end_col`): titled tables in the last lane of any band (including single-lane bands) extend to `sheet_max_end_col`, while titled tables in any non-last lane extend to that lane's `lane_max_end_col` (preserving `band.laneGap` cleanly; subtitles, column headers, section headers, body borders, and `col_widths` stay bounded to `start_col..=end_col`). `subtitle` accepts a single string or an array of strings (`subtitle: ["($ in Millions)", "Audited FY22–FY24"]`, normalized to `table.subtitles: readonly string[]`), emitting one subtitle row per line beneath `title` (on narrow 1–2 column tables, split long subtitles into an array of shorter lines so text does not overflow far to the right; passing an empty or whitespace-only line `""` throws `SpecificationError`; omit `subtitle` or pass `[]` when unused). If either `title` or `subtitle` is present, a 1-row buffer gutter is inserted before column headers; passing `title: ""` (with no `subtitle`) omits both banner and buffer gutter so column headers start at `start_row`.
   - `collapsible: true`: Groups physical rows `start_row + 1..=end_row` in Excel outline with summary symbols above (`group_symbols_above(true)`).
 - Column width arbitration & text wrapping (`layout: "auto"`, default): Each physical worksheet column takes the maximum width across all tables spanning that column, computed as `round(clamp(max_chars * char_width_multiplier + col_padding, min_col_width, max_col_width), 2)` (default `col_padding=0.0`, `min_col_width=12.0`, `max_col_width=75.0`, where `max_chars` spans per-column header lines—excluding spanning `group`—and `\n`-delimited data cell segments with `indent * 2` plus `+1` alignment-space character on non-empty `measure` headers, `date`/numeric/unformatted `measure` numbers not ending in `)`, and non-empty text cells under trailing-`_)` formats while leaving `descriptor` headers and unformatted `descriptor` cells unpadded; gutter-only columns use `gutter_col_width=2.0`). Cells whose effective width exceeds `max_col_width` or that contain `\n` newlines enable OpenXML `wrapText="1"` (`FormatAlign::VerticalCenter` on all data cells) while leaving `.xlsx` row heights automatic for Excel font auto-fitting.
-- Uniform grid layout & descriptor overflow (`layout: "grid"`): Designed for multi-table dashboards and financial statements where `rightOf` panels sit above wide timelines without stretching measure columns. Every physical column covered by any data column span shares uniform width `W = round(max(base_w, max_measure_cell_width, max_non_text_descriptor_cell_width), 2)` (floored at `base_w = round(colWidth ?? theme.metrics.min_col_width, 2)` in `1..=255`, ignoring `max_col_width` and capped at `255`; column `0` and gutter/gap-only columns retain `gutter_col_width=2.0`). `descriptor` columns automatically span `span >= 1` contiguous physical columns (`ceil(req_w / W)` from non-empty descriptor headers/text with `+1` breathing space and `indent * 2`) with zero merged cells—anchor cells stay at `phys_start` (preserving vertical `XLOOKUP`/`XMATCH`/`INDEX` slices and contiguous `measure` ranges) while styled blank runway cells carry continuous shading/borders and move vertical right borders to `phys_end`. Within each `(depth, start_col)` `rightOf` nesting lane, tables with a leading `descriptor` before their first `measure` align their leading descriptor block (through the last leading `descriptor`, excluding trailing `addColumnGutter()` spacers after it so forecast-only schedules skipping earlier periods align vertically with stacked timelines) by extending their last leading `descriptor` (descriptor-only tables skip alignment). Strict `grid` rules (violations throw `SpecificationError`): `wrap_text` is always `false`, `\n`/`\r` is forbidden in data cells, column `headers`, and `group` banners, and every non-empty `measure` column header line must fit within static `base_w` (split long headers into multi-tier `headers: [...]`, abbreviate, or raise `colWidth`).
+- Uniform grid layout & descriptor overflow (`layout: "grid"`): Designed for multi-table dashboards and financial statements where multi-lane card bands sit above wide timelines without stretching measure columns. Every physical column covered by any data column span shares uniform width `W = round(max(base_w, max_measure_cell_width, max_non_text_descriptor_cell_width), 2)` (floored at `base_w = round(colWidth ?? theme.metrics.min_col_width, 2)` in `1..=255`, ignoring `max_col_width` and capped at `255`; column `0` and gutter/gap-only columns retain `gutter_col_width=2.0`). `descriptor` columns automatically span `span >= 1` contiguous physical columns (`ceil(req_w / W)` from non-empty descriptor headers/text with `+1` breathing space and `indent * 2`) with zero merged cells—anchor cells stay at `phys_start` (preserving vertical `XLOOKUP`/`XMATCH`/`INDEX` slices and contiguous `measure` ranges) while styled blank runway cells carry continuous shading/borders and move vertical right borders to `phys_end`. Finalizing lanes in ascending `lane_idx` (`0..=max_lane_idx`), tables with a leading `descriptor` before their first `measure` align their leading descriptor block (through the last leading `descriptor`, excluding trailing `addColumnGutter()` spacers after it so forecast-only schedules skipping earlier periods align vertically with stacked timelines) within each `(lane_idx, start_col)` group by extending their last leading `descriptor` (descriptor-only tables skip alignment; span growth in Lane `k` automatically shifts Lane `k+1`). Strict `grid` rules (violations throw `SpecificationError`): `wrap_text` is always `false`, `\n`/`\r` is forbidden in data cells, column `headers`, and `group` banners, and every non-empty `measure` column header line must fit within static `base_w` (split long headers into multi-tier `headers: [...]`, abbreviate, or raise `colWidth`).
 
 ---
 
