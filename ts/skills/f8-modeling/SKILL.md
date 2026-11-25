@@ -1,66 +1,48 @@
 ---
 name: f8-modeling
-description: Author, audit, and compile financial models using the f8 TypeScript SDK with 2D coordinates, vector expressions, TableAuditor, and live OpenXML Excel emission.
+description: Author, audit, and compile financial models using the f8 TypeScript SDK with 2D coordinates, vector expressions, band/lane layouts, TableAuditor, and OpenXML Excel emission. Use when building, inspecting, or debugging models with f8 in TypeScript or JavaScript.
 ---
 
 # f8 Financial Modeling Guide
 
-Financial modeling compiler, evaluator, and TypeScript DSL bridging programmatic models and spreadsheets. Compiles 2D tabular specifications into a validated DAG, evaluates in memory via WebAssembly, and emits OpenXML (`.xlsx`) workbooks with live formulas.
+Deterministic financial modeling compiler, in-memory WebAssembly evaluator, and TypeScript DSL. Compiles 2D tabular specifications into a validated DAG, evaluates formulas in memory, and optionally emits OpenXML (`.xlsx`) workbooks with live Excel formulas.
 
 ## Mental Model
 
-- Hierarchy: `Model` -> `Sheet` -> `Table` -> `Column` / `Row` -> `Cell`.
+- Hierarchy: `Model` -> `Sheet` -> `Table` -> `Column` / `Row` -> `Cell`, with optional `BandInput` / `LaneInput` 2D sheet arrangement.
 - Vector expansion: Horizontal `row.expr` broadcasts across `measure` columns; vertical `col.expr` on a `measure` column broadcasts down data rows.
-- 3-tier specificity lattice:
-  1. 0D cell override (`cells: { ... }`, `setCell`, `setCells`) takes highest precedence.
-  2. 1D vector rules (`row` XOR `col`): Intersecting row and column `expr` (or differing row and column `format`, `decimals`, `currency`, or non-`"none"` `shade`) without a 0D cell override throw `SpecificationError`.
-  3. Descriptor isolation & unassigned check: Vector formulas and row-level numeric formats never broadcast into `role: "descriptor"` columns. Every data cell (`descriptor` or `measure`) must resolve to a value or formula, else `SpecificationError` (`unassigned cell`).
-- In-memory evaluation: Instant DAG cycle detection, topological calculation, and tabular inspection prior to disk serialization.
-- Live Excel emission: Lowers 2D coordinates to native A1/range formulas and emits styled OpenXML (`.xlsx`).
+- 3-tier specificity lattice: 0D cell override (`cells`, `setCell`, `setCells`) > 1D vector rule (`row` XOR `col`) > defaults. Intersecting `row` and `col` `expr` (or differing `format`, `decimals`, `currency`, or non-`"none"` `shade`) without a 0D override throws `SpecificationError`. `role: "descriptor"` columns isolate vector formulas and row-level numeric formats; every data cell must resolve to a value or formula, else `SpecificationError` (see `references/syntax-and-grid.md`).
+- In-memory evaluation & optional emission: Compiles, validates types/shapes/DAG acyclicity, and evaluates cells in memory before optional lowering to native Excel A1/range formulas and `.xlsx` emission.
 
 ## Workflow & CLI
 
 1. Initialize (browsers only): Server runtimes (Node.js, Bun, Deno) auto-initialize WASM synchronously on module import; browser main threads call `await init()` once before compilation.
-2. Define: Construct `new Model({ name, theme })` -> `model.addSheet(...)` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)` (optionally arrange multi-lane dashboards or custom spacing with `sheet.setBands(...)`).
-3. Compile: Call `const compiled = model.compile()` (or `compile(manifest, tables)`) to validate schema, expand grid, check cycles, evaluate cells, plan layout, and lower formulas.
-4. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook coordinates, values, and 2D Excel presentation via `compiled.toMarkdown("index")` / `compiled.toMarkdown(...)` / `compiled.toMarkdown("layout")` (checking side-by-side balance, right/bottom slack, title overhangs, subtitle overflows `sub:N(Xch>w)`, widened gutters, `grid` column-width inflation, multi-column `grid` descriptor `req:W` cliff spills / lane stretching, and wrapped cells), and query tables, cells, and dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)`.
-5. Diagnose: Catch typed `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect structured properties.
-6. Emit: Write `.xlsx` to disk via `compiled.save(path, options)` or in-memory bytes (`Uint8Array`) via `compiled.emitWorkbook(options)`.
+2. Define: Build `new Model({ name, theme })` -> `model.addSheet(...)` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)`, and optionally arrange multi-lane bands or custom gaps via `sheet.setBands(...)`.
+3. Compile: Call `const compiled = model.compile()` (or `compile(manifest, tables)`).
+4. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook views via `compiled.toMarkdown("values" | "index" | "layout")`, and query tables, cells, or dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)` (see `references/auditing-and-repair.md`).
+5. Diagnose: Catch `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect their typed properties.
+6. Emit (optional): Write `.xlsx` to disk via `compiled.save(path, options)` or in-memory bytes (`Uint8Array`) via `compiled.emitWorkbook(options)`.
 
 CLI commands (`f8` or `npx f8`):
 
-- `f8 guide [syntax|functions|audit|all|--list]`: Stream reference documentation to stdout.
+- `f8 guide [syntax|functions|audit|all|--all|--list]`: Stream reference documentation to stdout.
 - `f8 agent init [--dest DIR] [-f|--force]`: Scaffold `.agents/skills/f8-modeling` into workspace.
-- `f8 theme init [-f|--force]`: Write default `corporate_navy` theme specification to `theme.json`.
+- `f8 theme init [-f|--force]`: Write default `corporate_navy` theme JSON to `theme.json`.
 
-## Core Invariants
+## Core Contracts & Excel Divergences
 
-- Explicit 2D coordinates: All references require bare table identifier or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`), positive integer `prev(k)`/`next(k)` offsets (`k >= 1`), and contiguous `start..end` slices (ranges cannot cross `Gutter`s, `SectionHeader`s, or horizontal `descriptor` columns). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) throw `FormulaParseError`.
-- Uppercase identifiers: Built-in functions (`SUM`, `IF`, `XLOOKUP`, `ISERROR`) and booleans (`TRUE`, `FALSE`) must be uppercase; dotted function names (`ERROR.TYPE`) throw `FormulaParseError`.
-- Argument omission: Use `_` only for intermediate optional function parameters followed by a later explicit argument (`PMT(rate, nper, pv, _, type)`); omit trailing optional parameters directly (`PMT(rate, nper, pv)`, not `PMT(rate, nper, pv, _)`).
-- Cell-level indentation: `indent` applies only to `role: "descriptor"` cells (`new Cell({ value: "Label", indent: 1 })`) and section headers; setting `indent > 0` on a `measure` cell throws `SpecificationError`.
+`f8` enforces an explicit formula grammar and strict static/runtime typing at compile time (`F8Error`), then lowers valid formulas into native Excel syntax:
 
-## Strict Formula Rules (Excel Divergences)
-
-`f8` rejects permissive Excel coercions and structural footguns at compile time (`F8Error`), then lowers valid ASTs into native Excel syntax during workbook emission:
-
-- Operators & comparisons: Use `=` and `<>` (no `==`, `!=`, `&` concatenation, or prefix `+`). Relational operators (`=`, `<>`, `<`, `<=`, `>`, `>=`) are non-associative (parenthesize `(a = b) = c`) and require matching non-`Empty` operand types (`Number`, `Text`, or `Boolean`).
-- Scalars, blanks & cash flows: Arithmetic, scalar parameters, `1x1` single-cell references, evaluated branch arms (`IF`, `CHOOSE`, `IFERROR`, `XLOOKUP` `if_not_found`), selected lookup/index elements (`XLOOKUP` `return_array`, `INDEX` `array`), and root formula results reject `Text`, `Boolean` (where `Number` is expected), and `Empty` (`null`). Only syntactic `start..end` range slices in math/logical aggregations (`SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `COUNT`, `SUMPRODUCT`, `AND`, `OR`) and unselected elements in `XLOOKUP`/`XMATCH`/`INDEX` range slices tolerate `Empty`; `ISBLANK` and `COUNTA` are omitted (`UnknownFunction`). Numeric aggregations (`SUM`, `AVERAGE`, `MIN`, `MAX`, `MEDIAN`, `COUNT`, `SUMPRODUCT`) reject `descriptor` columns; `NPV`, `IRR`, `XNPV`, and `XIRR` reject `Empty` across cash-flow and date slices (use `0.0`).
-- Monomorphic branches & error traps: `IF(cond, t, f)` requires 3 arguments and `Boolean` conditions (`IF(rev <> 0, ...)`, not `IF(rev, ...)`). Result arms across `IF`, `CHOOSE`, `IFERROR`, and `XLOOKUP` must unify to one scalar type and evaluate to non-`Empty` values—use `NA()` for suppressed ratios (`IF(ebitda > 0, ev / ebitda, NA())`), not `"NM"` text; `IFS`, `SWITCH`, `IFNA`, and `ISNA` are omitted (`IF`, `CHOOSE`, `IFERROR`, `ISERROR`).
-- Conditional aggregation & debt amortization: `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`, `IPMT`, and `PPMT` are omitted (`UnknownFunction`). Express conditional aggregations explicitly via `IF` helper rows/columns (`IF(cond, val, 0)` + `SUM`, `IF(cond, 1, 0)` flag + `SUM`/`SUMPRODUCT`, `SUMPRODUCT(vals, flags) / SUM(flags)` for conditional averages, or 0D `null` overrides in helper slices for `MIN`/`MAX` exclusions), and express period-by-period debt interest and principal via `PMT` and a 2D corkscrew schedule (`interest = opening_balance * rate`, `principal = scheduled_pmt - interest`).
-- Lookups & calendar dates: Range slots require matching-shape `Table[...]` references and homogeneous element types; `XLOOKUP`/`XMATCH` reject `Empty` lookup keys and `1x1` single-cell `Empty` arrays (`F8Error`), while invalid mode codes (including wildcard mode `2`), `Empty` or unsorted binary-search (`2`/`-2`) keys (`#VALUE!`), `Error` cells in binary-search arrays (bubbled `ExcelError`), and out-of-bounds `CHOOSE`/`INDEX` indices return runtime Excel errors (`#VALUE!`, `#REF!`, `#NUM!`). `DATE(yyyy, m, d)` requires 4-digit years (`1900..=9999`) and valid calendar days without month/day rollover (use `EDATE` or `EOMONTH` for month stepping), input date serials require `1..=2958465` (violations return `#NUM!`), and `DAYS` is omitted (subtract date serials `end_date - start_date`).
-
-## Formula Clarity & Decomposition
-
-`f8` compiles source expressions into live Excel formulas audited by humans in spreadsheets. Keep each cell to one clear logical step:
-
-- Decompose in the grid, not in code strings: Local variables or helper functions that assemble and interpolate `expr` subexpressions (`yHalf = ...`, `pvTv = ...`) only tidy TypeScript—they inline and duplicate every piece into one unreadable Excel cell. Promote intermediate steps and repeated subexpressions into explicit helper rows, columns, or supporting tables instead.
-- Prefer range primitives over unrolled loops: Avoid generating `a + b + c + ...` chains across periods or items via string joins (e.g. `.join(" + ")`). Use range functions (`SUM`, `SUMPRODUCT`, `NPV`, `XNPV`) and `@row`/`@col` vector rules; when elements need per-period transforms (such as custom discount factors or conditional weights), compute them in a helper row, column, or matrix and aggregate with `SUM` or `SUMPRODUCT`.
-- Factor sensitivities without Data Tables: In 1D/2D sensitivity grids, move terms that vary along only one axis (or neither axis) into 1D helper rows/columns or a helper table so output cells remain concise. For multi-step, path-dependent sensitivities, build explicit scenario schedules rather than inlining a model into one cell.
-- Inspect lowered formulas during audit: Numeric checks pass even when formulas are bloated—spot-check complex and sensitivity tables with `toMarkdown("formulas", { compact: true })`.
+- Explicit 2D coordinates: References require a bare table ID or `@table` and double-quoted keys (`Table["row", @col]`, `@table["row", @col]`, `Table["row", col.prev]`, `Table["r1".."r2", @col]`), positive integer `prev(k)`/`next(k)` offsets (`k >= 1`), and contiguous `start..end` slices (ranges cannot cross gutters, section headers, or horizontal `descriptor` columns). Unquoted keys, quoted table names, bare `@`, or dot access (`Table.row`) throw `FormulaParseError`.
+- Identifiers, operators & argument omission: Built-in functions (`SUM`, `IF`, `XLOOKUP`, `ISERROR`) and booleans (`TRUE`, `FALSE`) must be uppercase; dotted function names, unary `+`, `&`, `==`, `!=`, and unparenthesized chained comparisons (`a = b = c`; parenthesize `(a = b) = c`) throw `FormulaParseError`. Use `_` only for intermediate optional arguments followed by a later explicit argument (`PMT(r, n, pv, _, 1)`); omit trailing optionals directly.
+- Strict typing & empty cells: No implicit coercions between `Number`, `Text`, `Boolean`, and empty (`null`). Relational comparisons require matching non-empty operand types. Arithmetic, scalar arguments, `1x1` single-cell references, evaluated branch arms, selected lookup/index elements, and root formula results reject empty (`F8Error`). Only syntactic `start..end` slices in math/logical aggregations and unselected elements in `XLOOKUP`/`XMATCH`/`INDEX` tolerate sparse empty cells; `NPV`/`IRR`/`XNPV`/`XIRR` reject empty cells in cash-flow/date slices (zero cash flows require explicit `0.0`), and numeric/financial aggregations reject `descriptor` columns.
+- Monomorphic branches & omitted functions: `IF(cond, t, f)` requires 3 arguments and a `Boolean` condition. Result arms across `IF`, `CHOOSE`, `IFERROR`, and `XLOOKUP` must unify to one scalar type (mixing types such as `Number` and `Text` fails compilation; `NA()` unifies with any scalar type). Omitted Excel functions (`ISBLANK`, `COUNTA`, `IFS`, `SWITCH`, `IFNA`, `ISNA`, `DAYS`, `SUMIFS`, `COUNTIFS`, `AVERAGEIFS`, `MINIFS`, `MAXIFS`, `IPMT`, `PPMT`, volatile/spill functions) fail compilation; see `references/functions.md` for composition patterns.
+- Dates & lookups: `DATE(yyyy, m, d)` requires 4-digit years (`1900..=9999`) and valid calendar days without rollover (`EDATE`/`EOMONTH` for month stepping); input date serials require `1..=2958465` (else `#NUM!`). Wildcard `match_mode = 2` is unsupported (`#VALUE!`).
+- Expression lowering behavior: Formula strings lower verbatim into Excel cells without algebraic factoring or loop re-rolling; host-assembled expressions (template interpolation or `.join(" + ")`) lower as inlined single-cell formulas, while range functions over grid slices (`SUM`, `SUMPRODUCT`, `NPV`, `XNPV`) lower to Excel range formulas (e.g. `SUM(C5:G5)`).
+- Cell indentation: `indent` applies only to `role: "descriptor"` cells (`new Cell({ value: "Label", indent: 1 })`) and section headers; `indent > 0` on a `measure` cell throws `SpecificationError`.
 
 ## Reference Index
 
-- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`getSheet`, `getTable`, `setBands`, `setCell`, `setCells`), 2D coordinate grammar, 3-tier resolution rules, band/lane layout, formatting presets, and themes.
-- `references/functions.md`: 37 built-in Excel functions, compile-time type/shape validation, signatures, parameter defaults, conditional aggregation and debt amortization composition patterns, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
-- `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, `toMarkdown` and `toDict` exports, TypeScript inspection interfaces, and `F8Error` exception properties.
+- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`getSheet`, `getTable`, `setBands`, `setCell`, `setCells`), 2D coordinate grammar, 3-tier resolution lattice, band/lane and `auto`/`grid` layouts, formatting presets, styles, shades, and themes.
+- `references/functions.md`: 37 built-in Excel functions, compile-time type/shape rules, argument omission (`_`), composition patterns for omitted functions, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
+- `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, whole-workbook and table Markdown/object exports, `f8-engine` TypeScript inspection interfaces, and `F8Error` exception properties.
