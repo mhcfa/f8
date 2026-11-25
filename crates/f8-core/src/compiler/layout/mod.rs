@@ -8,7 +8,7 @@ pub mod error;
 pub use a1::{MAX_EXCEL_COLUMNS, MAX_EXCEL_ROWS, col_to_excel_col, coordinate_to_a1};
 pub use error::LayoutError;
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
 use crate::compiler::eval::EvaluatedModel;
@@ -17,11 +17,11 @@ use crate::compiler::ir::id::CellId;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{
-    FreezePanes, MAX_GRID_COL_WIDTH, MIN_GRID_COL_WIDTH, ProjectManifest, SheetLayoutSpec,
+    DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP, FreezePanes, MAX_GRID_COL_WIDTH,
+    MIN_GRID_COL_WIDTH, ProjectManifest, SheetLayoutSpec, SheetSpec,
 };
 use crate::model::table::{
-    AxisRole, ColumnSpec, DataColumnSpec, DataRowSpec, PlacementSpec, RowSpec, TableSpec,
-    ValueLiteral,
+    AxisRole, ColumnSpec, DataColumnSpec, DataRowSpec, RowSpec, TableSpec, ValueLiteral,
 };
 use crate::model::theme::{MetricsConfig, Theme};
 use crate::value::{CellValue, format_accounting_number};
@@ -208,8 +208,9 @@ pub struct TablePlacement {
     pub end_row: u32,
     /// Physical row index of the table title banner if present.
     pub title_row: Option<u32>,
-    /// 0-indexed physical ending column of the table title banner (inclusive),
-    /// aligned across stacked tables when unobstructed; `None` when `title_row` is `None`.
+    /// 0-indexed physical ending column of the table title banner (inclusive):
+    /// `sheet_max_end_col` for the last lane of any band, `lane_max_end_col` for non-last lanes,
+    /// and `None` when `title_row` is `None`.
     pub title_end_col: Option<u32>,
     /// Inclusive physical row range of table subtitle banners, or None if the table has zero subtitles.
     pub subtitle_row_range: Option<(u32, u32)>,
@@ -279,7 +280,7 @@ impl LayoutPlanner {
     ///
     /// # Errors
     /// Returns [`LayoutError`] if unassigned tables exist, referenced tables cannot be resolved,
-    /// tables overlap, or coordinates exceed Excel grid limits.
+    /// uniform grid constraints are violated, or coordinates exceed Excel grid limits.
     pub fn plan(
         manifest: &ProjectManifest,
         tables: &[TableSpec],
@@ -288,12 +289,13 @@ impl LayoutPlanner {
         evaluated: Option<&EvaluatedModel>,
     ) -> Result<LayoutMap, LayoutError> {
         // 1. Verify every table belongs to at least one sheet
+        let assigned_tables: IndexSet<&TableId> = manifest
+            .sheets
+            .iter()
+            .flat_map(SheetSpec::table_ids)
+            .collect();
         for table in tables {
-            let assigned = manifest
-                .sheets
-                .iter()
-                .any(|sheet| sheet.tables.contains(&table.id));
-            if !assigned {
+            if !assigned_tables.contains(&table.id) {
                 return Err(LayoutError::UnassignedTable {
                     table: table.id.clone(),
                 });
@@ -308,16 +310,42 @@ impl LayoutPlanner {
         for sheet_spec in &manifest.sheets {
             let sheet_id = SheetId::from(sheet_spec.name.as_str());
 
-            // Resolve tables belonging to this sheet in declared order
-            let mut sheet_tables = Vec::new();
-            for table_id in &sheet_spec.tables {
-                let matched = tables.iter().find(|t| t.id == *table_id).ok_or_else(|| {
-                    LayoutError::UnknownTable {
-                        table: table_id.clone(),
-                        sheet: sheet_id.clone(),
+            // Resolve bands, lanes, and tables belonging to this sheet in canonical order,
+            // defensively ignoring empty bands/lanes or zero-column tables if called directly.
+            let mut resolved_bands: Vec<ResolvedBand<'_>> = Vec::new();
+            let mut placed_tables: Vec<&TableSpec> = Vec::new();
+
+            for band_spec in &sheet_spec.bands {
+                let mut resolved_lanes: Vec<ResolvedLane<'_>> = Vec::new();
+                for lane_spec in &band_spec.lanes {
+                    let mut lane_tables: Vec<&TableSpec> = Vec::new();
+                    for table_id in &lane_spec.tables {
+                        let matched =
+                            tables.iter().find(|t| t.id == *table_id).ok_or_else(|| {
+                                LayoutError::UnknownTable {
+                                    table: table_id.clone(),
+                                    sheet: sheet_id.clone(),
+                                }
+                            })?;
+                        if !matched.columns.is_empty() {
+                            lane_tables.push(matched);
+                            placed_tables.push(matched);
+                        }
                     }
-                })?;
-                sheet_tables.push(matched);
+                    if !lane_tables.is_empty() {
+                        resolved_lanes.push(ResolvedLane {
+                            table_gap: lane_spec.table_gap.unwrap_or(DEFAULT_VERTICAL_TABLE_GAP),
+                            tables: lane_tables,
+                        });
+                    }
+                }
+                if !resolved_lanes.is_empty() {
+                    resolved_bands.push(ResolvedBand {
+                        gap: band_spec.gap.unwrap_or(DEFAULT_VERTICAL_TABLE_GAP),
+                        lane_gap: band_spec.lane_gap.unwrap_or(DEFAULT_HORIZONTAL_TABLE_GAP),
+                        lanes: resolved_lanes,
+                    });
+                }
             }
 
             let mut col_widths: IndexMap<u32, f64> = IndexMap::new();
@@ -328,9 +356,8 @@ impl LayoutPlanner {
             let mut sheet_placements: IndexMap<TableId, TablePlacement> = IndexMap::new();
             let mut ctx = SheetPlanContext {
                 sheet_id: &sheet_id,
-                sheet_table_ids: &sheet_spec.tables,
-                sheet_tables: &sheet_tables,
-                all_tables: tables,
+                resolved_bands: &resolved_bands,
+                sheet_tables: &placed_tables,
                 grid,
                 theme,
                 evaluated,
@@ -570,37 +597,22 @@ fn populate_table_layout_cells(
     Ok(())
 }
 
-fn check_table_overlap(
-    sheet_id: &SheetId,
-    table_id: &TableId,
-    start_col: u32,
-    end_col: u32,
-    start_row: u32,
-    end_row: u32,
-    placed: &IndexMap<TableId, TablePlacement>,
-) -> Result<(), LayoutError> {
-    for (first_id, first_placement) in placed {
-        if first_placement.start_col <= end_col
-            && start_col <= first_placement.end_col
-            && first_placement.start_row <= end_row
-            && start_row <= first_placement.end_row
-        {
-            return Err(LayoutError::TableOverlap {
-                sheet: sheet_id.clone(),
-                first_table: first_id.clone(),
-                second_table: table_id.clone(),
-            });
-        }
-    }
-    Ok(())
+struct ResolvedLane<'a> {
+    table_gap: u32,
+    tables: Vec<&'a TableSpec>,
+}
+
+struct ResolvedBand<'a> {
+    gap: u32,
+    lane_gap: u32,
+    lanes: Vec<ResolvedLane<'a>>,
 }
 
 /// Per-worksheet planning context shared across `auto` and `grid` layout strategies.
 struct SheetPlanContext<'a> {
     sheet_id: &'a SheetId,
-    sheet_table_ids: &'a [TableId],
+    resolved_bands: &'a [ResolvedBand<'a>],
     sheet_tables: &'a [&'a TableSpec],
-    all_tables: &'a [TableSpec],
     grid: &'a CellGrid,
     theme: &'a Theme,
     evaluated: Option<&'a EvaluatedModel>,
@@ -611,40 +623,13 @@ struct SheetPlanContext<'a> {
 
 impl<'a> SheetPlanContext<'a> {
     fn plan_auto(&mut self) -> Result<(), LayoutError> {
-        let mut sheet_max_end_row: Option<u32> = None;
+        let mut prev_band_max_end_row: Option<u32> = None;
         let mut sheet_max_end_col: u32 = 0;
 
-        for (table_idx, table) in self.sheet_tables.iter().enumerate() {
-            let (start_col, table_start_row) = match &table.placement {
-                PlacementSpec::Stack { gap } => {
-                    if let Some(max_end_row) = sheet_max_end_row {
-                        let start_row = max_end_row.saturating_add(1).saturating_add(*gap);
-                        if start_row >= MAX_EXCEL_ROWS {
-                            return Err(LayoutError::GridLimitExceeded {
-                                dimension: "rows",
-                                max: MAX_EXCEL_ROWS,
-                                actual: start_row,
-                            });
-                        }
-                        (1, start_row)
-                    } else {
-                        (1, 1)
-                    }
-                }
-                PlacementSpec::Below { target, gap } => {
-                    let (_, target_placement) = resolve_placement_target(
-                        &table.id,
-                        target,
-                        self.sheet_id,
-                        table_idx,
-                        self.sheet_table_ids,
-                        self.sheet_placements,
-                        self.all_tables,
-                    )?;
-                    let start_row = target_placement
-                        .end_row
-                        .saturating_add(1)
-                        .saturating_add(*gap);
+        for band in self.resolved_bands {
+            let band_start_row = match prev_band_max_end_row {
+                Some(max_end_row) => {
+                    let start_row = max_end_row.saturating_add(1).saturating_add(band.gap);
                     if start_row >= MAX_EXCEL_ROWS {
                         return Err(LayoutError::GridLimitExceeded {
                             dimension: "rows",
@@ -652,91 +637,115 @@ impl<'a> SheetPlanContext<'a> {
                             actual: start_row,
                         });
                     }
-                    (target_placement.start_col, start_row)
+                    start_row
                 }
-                PlacementSpec::RightOf { target, gap } => {
-                    let (_, target_placement) = resolve_placement_target(
-                        &table.id,
-                        target,
+                None => 1,
+            };
+
+            let mut band_max_end_row: Option<u32> = None;
+            let mut prev_lane_max_end_col: Option<u32> = None;
+
+            for lane in &band.lanes {
+                let lane_start_col = match prev_lane_max_end_col {
+                    Some(max_end_col) => {
+                        let start_col = max_end_col.saturating_add(1).saturating_add(band.lane_gap);
+                        if start_col >= MAX_EXCEL_COLUMNS {
+                            return Err(LayoutError::GridLimitExceeded {
+                                dimension: "columns",
+                                max: MAX_EXCEL_COLUMNS,
+                                actual: start_col,
+                            });
+                        }
+                        start_col
+                    }
+                    None => 1,
+                };
+
+                let mut lane_max_end_col: Option<u32> = None;
+                let mut prev_table_end_row: Option<u32> = None;
+
+                for &table in &lane.tables {
+                    let num_cols = table.columns.len() as u32;
+                    let table_start_row = match prev_table_end_row {
+                        Some(prev_end_row) => {
+                            let start_row = prev_end_row
+                                .saturating_add(1)
+                                .saturating_add(lane.table_gap);
+                            if start_row >= MAX_EXCEL_ROWS {
+                                return Err(LayoutError::GridLimitExceeded {
+                                    dimension: "rows",
+                                    max: MAX_EXCEL_ROWS,
+                                    actual: start_row,
+                                });
+                            }
+                            start_row
+                        }
+                        None => band_start_row,
+                    };
+
+                    let end_col = lane_start_col.saturating_add(num_cols - 1);
+                    if end_col >= MAX_EXCEL_COLUMNS {
+                        return Err(LayoutError::GridLimitExceeded {
+                            dimension: "columns",
+                            max: MAX_EXCEL_COLUMNS,
+                            actual: end_col,
+                        });
+                    }
+
+                    let col_spans: Vec<(u32, u32)> = (0..num_cols)
+                        .map(|i| {
+                            let c = lane_start_col + i;
+                            (c, c)
+                        })
+                        .collect();
+
+                    let vertical = plan_table_vertical_rows(table, table_start_row)?;
+
+                    populate_table_layout_cells(
                         self.sheet_id,
-                        table_idx,
-                        self.sheet_table_ids,
-                        self.sheet_placements,
-                        self.all_tables,
+                        table,
+                        vertical.body_row_range.0,
+                        &col_spans,
+                        self.grid,
+                        self.layout_cells,
                     )?;
-                    let start_col = target_placement
-                        .end_col
-                        .saturating_add(1)
-                        .saturating_add(*gap);
-                    (start_col, target_placement.start_row)
+
+                    let placement = TablePlacement {
+                        sheet: self.sheet_id.clone(),
+                        start_col: lane_start_col,
+                        start_row: vertical.start_row,
+                        end_col,
+                        end_row: vertical.end_row,
+                        title_row: vertical.title_row,
+                        title_end_col: None,
+                        subtitle_row_range: vertical.subtitle_row_range,
+                        title_gutter_row: vertical.title_gutter_row,
+                        header_row_range: vertical.header_row_range,
+                        body_row_range: vertical.body_row_range,
+                        col_spans,
+                    };
+
+                    prev_table_end_row = Some(vertical.end_row);
+                    lane_max_end_col = Some(lane_max_end_col.map_or(end_col, |m| m.max(end_col)));
+                    band_max_end_row = Some(
+                        band_max_end_row.map_or(vertical.end_row, |m| m.max(vertical.end_row)),
+                    );
+                    sheet_max_end_col = sheet_max_end_col.max(end_col);
+                    self.sheet_placements.insert(table.id.clone(), placement);
                 }
-            };
 
-            let num_cols = table.columns.len() as u32;
-            if num_cols == 0 {
-                continue;
-            }
-            let end_col = start_col.saturating_add(num_cols - 1);
-
-            if end_col >= MAX_EXCEL_COLUMNS {
-                return Err(LayoutError::GridLimitExceeded {
-                    dimension: "columns",
-                    max: MAX_EXCEL_COLUMNS,
-                    actual: end_col,
-                });
+                if let Some(lane_max) = lane_max_end_col {
+                    prev_lane_max_end_col = Some(lane_max);
+                }
             }
 
-            let col_spans: Vec<(u32, u32)> = (0..num_cols)
-                .map(|i| {
-                    let c = start_col + i;
-                    (c, c)
-                })
-                .collect();
-
-            let vertical = plan_table_vertical_rows(table, table_start_row)?;
-
-            populate_table_layout_cells(
-                self.sheet_id,
-                table,
-                vertical.body_row_range.0,
-                &col_spans,
-                self.grid,
-                self.layout_cells,
-            )?;
-
-            check_table_overlap(
-                self.sheet_id,
-                &table.id,
-                start_col,
-                end_col,
-                vertical.start_row,
-                vertical.end_row,
-                self.sheet_placements,
-            )?;
-
-            let placement = TablePlacement {
-                sheet: self.sheet_id.clone(),
-                start_col,
-                start_row: vertical.start_row,
-                end_col,
-                end_row: vertical.end_row,
-                title_row: vertical.title_row,
-                title_end_col: None,
-                subtitle_row_range: vertical.subtitle_row_range,
-                title_gutter_row: vertical.title_gutter_row,
-                header_row_range: vertical.header_row_range,
-                body_row_range: vertical.body_row_range,
-                col_spans,
-            };
-
-            sheet_max_end_row =
-                Some(sheet_max_end_row.map_or(vertical.end_row, |m| m.max(vertical.end_row)));
-            sheet_max_end_col = sheet_max_end_col.max(end_col);
-            self.sheet_placements.insert(table.id.clone(), placement);
+            if let Some(band_max) = band_max_end_row {
+                prev_band_max_end_row = Some(band_max);
+            }
         }
 
-        // Resolve aligned title banner right bounds per worksheet
-        resolve_title_end_cols(self.sheet_placements);
+        // Resolve aligned title banner right bounds per band/lane
+        resolve_title_end_cols(self.resolved_bands, self.sheet_placements);
 
         // Sheet-wide column width arbitration across 2D placed tables
         ColumnArbitrationContext {
@@ -753,7 +762,7 @@ impl<'a> SheetPlanContext<'a> {
     }
 
     fn plan_grid(&mut self, col_width: Option<f64>) -> Result<(), LayoutError> {
-        if self.sheet_tables.is_empty() {
+        if self.resolved_bands.is_empty() {
             return Ok(());
         }
 
@@ -773,25 +782,15 @@ impl<'a> SheetPlanContext<'a> {
         // 2. Compute raw column spans against finalized sheet-wide uniform width W
         let raw_spans_per_table = self.compute_grid_raw_spans(uniform_w, &desc_max_chars_per_table);
 
-        // 3. Declaration-order target validation, vertical layout, and RightOf nesting depth
-        let (mut plans, max_depth) = self.plan_grid_vertical_and_depth(raw_spans_per_table)?;
+        // 3. Band/lane vertical layout and lane-index assignment
+        let (mut plans, max_lane_idx) = self.plan_grid_vertical_and_lanes(raw_spans_per_table)?;
 
-        // 4. Depth-ordered horizontal placement & (depth, start_col) lane alignment
-        align_grid_lanes(&mut plans, max_depth)?;
+        // 4. Lane-ordered horizontal placement & (lane_idx, start_col) descriptor prefix alignment
+        align_grid_lanes(&mut plans, max_lane_idx)?;
 
-        // 5. Declaration-order pairwise TableOverlap check and PhysicalCoordinate emission
+        // 5. PhysicalCoordinate emission (non-overlap guaranteed structurally by band/lane layout)
         let mut sheet_max_end_col: u32 = 0;
         for (table_id, plan) in plans {
-            check_table_overlap(
-                self.sheet_id,
-                &table_id,
-                plan.start_col,
-                plan.end_col,
-                plan.vertical.start_row,
-                plan.vertical.end_row,
-                self.sheet_placements,
-            )?;
-
             populate_table_layout_cells(
                 self.sheet_id,
                 plan.table,
@@ -821,8 +820,8 @@ impl<'a> SheetPlanContext<'a> {
             );
         }
 
-        // 6. Resolve aligned title banner right bounds per worksheet
-        resolve_title_end_cols(self.sheet_placements);
+        // 6. Resolve aligned title banner right bounds per band/lane
+        resolve_title_end_cols(self.resolved_bands, self.sheet_placements);
 
         // 7. Assign uniform width W to every column covered by any data span, gutter width otherwise
         self.assign_grid_col_widths(sheet_max_end_col, uniform_w);
@@ -1039,51 +1038,19 @@ impl<'a> SheetPlanContext<'a> {
             .collect()
     }
 
-    fn plan_grid_vertical_and_depth(
+    fn plan_grid_vertical_and_lanes(
         &self,
         raw_spans_per_table: Vec<Vec<u32>>,
     ) -> Result<(IndexMap<TableId, GridTablePlan<'a>>, usize), LayoutError> {
         let mut plans: IndexMap<TableId, GridTablePlan<'a>> = IndexMap::new();
-        let mut sheet_max_end_row: Option<u32> = None;
-        let mut max_depth: usize = 0;
+        let mut prev_band_max_end_row: Option<u32> = None;
+        let mut max_lane_idx: usize = 0;
+        let mut raw_spans_iter = raw_spans_per_table.into_iter();
 
-        for (table_idx, (&table, raw_spans)) in self
-            .sheet_tables
-            .iter()
-            .zip(raw_spans_per_table)
-            .enumerate()
-        {
-            let (table_start_row, depth, anchor) = match &table.placement {
-                PlacementSpec::Stack { gap } => {
-                    if let Some(max_end_row) = sheet_max_end_row {
-                        let start_row = max_end_row.saturating_add(1).saturating_add(*gap);
-                        if start_row >= MAX_EXCEL_ROWS {
-                            return Err(LayoutError::GridLimitExceeded {
-                                dimension: "rows",
-                                max: MAX_EXCEL_ROWS,
-                                actual: start_row,
-                            });
-                        }
-                        (start_row, 0, HorizontalAnchor::Stack)
-                    } else {
-                        (1, 0, HorizontalAnchor::Stack)
-                    }
-                }
-                PlacementSpec::Below { target, gap } => {
-                    let (target_idx, target_plan) = resolve_placement_target(
-                        &table.id,
-                        target,
-                        self.sheet_id,
-                        table_idx,
-                        self.sheet_table_ids,
-                        &plans,
-                        self.all_tables,
-                    )?;
-                    let start_row = target_plan
-                        .vertical
-                        .end_row
-                        .saturating_add(1)
-                        .saturating_add(*gap);
+        for (band_idx, band) in self.resolved_bands.iter().enumerate() {
+            let band_start_row = match prev_band_max_end_row {
+                Some(max_end_row) => {
+                    let start_row = max_end_row.saturating_add(1).saturating_add(band.gap);
                     if start_row >= MAX_EXCEL_ROWS {
                         return Err(LayoutError::GridLimitExceeded {
                             dimension: "rows",
@@ -1091,60 +1058,67 @@ impl<'a> SheetPlanContext<'a> {
                             actual: start_row,
                         });
                     }
-                    (
-                        start_row,
-                        target_plan.depth,
-                        HorizontalAnchor::Below { target_idx },
-                    )
+                    start_row
                 }
-                PlacementSpec::RightOf { target, gap } => {
-                    let (target_idx, target_plan) = resolve_placement_target(
-                        &table.id,
-                        target,
-                        self.sheet_id,
-                        table_idx,
-                        self.sheet_table_ids,
-                        &plans,
-                        self.all_tables,
-                    )?;
-                    (
-                        target_plan.vertical.start_row,
-                        target_plan.depth + 1,
-                        HorizontalAnchor::RightOf {
-                            target_idx,
-                            gap: *gap,
-                        },
-                    )
-                }
+                None => 1,
             };
 
-            if table.columns.is_empty() {
-                continue;
+            let mut band_max_end_row: Option<u32> = None;
+
+            for (lane_idx, lane) in band.lanes.iter().enumerate() {
+                max_lane_idx = max_lane_idx.max(lane_idx);
+                let mut prev_table_end_row: Option<u32> = None;
+
+                for &table in &lane.tables {
+                    let raw_spans = raw_spans_iter.next().unwrap_or_default();
+                    let table_start_row = match prev_table_end_row {
+                        Some(prev_end_row) => {
+                            let start_row = prev_end_row
+                                .saturating_add(1)
+                                .saturating_add(lane.table_gap);
+                            if start_row >= MAX_EXCEL_ROWS {
+                                return Err(LayoutError::GridLimitExceeded {
+                                    dimension: "rows",
+                                    max: MAX_EXCEL_ROWS,
+                                    actual: start_row,
+                                });
+                            }
+                            start_row
+                        }
+                        None => band_start_row,
+                    };
+
+                    let vertical = plan_table_vertical_rows(table, table_start_row)?;
+                    prev_table_end_row = Some(vertical.end_row);
+                    band_max_end_row = Some(
+                        band_max_end_row.map_or(vertical.end_row, |m| m.max(vertical.end_row)),
+                    );
+                    let leading_prefix = leading_descriptor_prefix(&table.columns, &raw_spans);
+
+                    plans.insert(
+                        table.id.clone(),
+                        GridTablePlan {
+                            table,
+                            band_idx,
+                            lane_idx,
+                            band_lane_gap: band.lane_gap,
+                            leading_prefix,
+                            raw_spans,
+                            vertical,
+                            start_col: 1,
+                            end_col: 1,
+                            col_spans: Vec::new(),
+                        },
+                    );
+                }
             }
 
-            let vertical = plan_table_vertical_rows(table, table_start_row)?;
-            sheet_max_end_row =
-                Some(sheet_max_end_row.map_or(vertical.end_row, |m| m.max(vertical.end_row)));
-            max_depth = max_depth.max(depth);
-            let leading_prefix = leading_descriptor_prefix(&table.columns, &raw_spans);
-
-            plans.insert(
-                table.id.clone(),
-                GridTablePlan {
-                    table,
-                    depth,
-                    anchor,
-                    leading_prefix,
-                    raw_spans,
-                    vertical,
-                    start_col: 1,
-                    end_col: 1,
-                    col_spans: Vec::new(),
-                },
-            );
+            if let Some(band_max) = band_max_end_row {
+                prev_band_max_end_row = Some(band_max);
+            }
         }
 
-        Ok((plans, max_depth))
+        Ok((plans, max_lane_idx))
     }
 
     fn assign_grid_col_widths(&mut self, sheet_max_end_col: u32, uniform_w: f64) {
@@ -1236,19 +1210,12 @@ enum GridCellSource<'a> {
     Empty,
 }
 
-/// Resolved horizontal anchor for a table in `plan_grid` after Step 3 target validation.
-#[derive(Debug, Clone, Copy)]
-enum HorizontalAnchor {
-    Stack,
-    Below { target_idx: usize },
-    RightOf { target_idx: usize, gap: u32 },
-}
-
 /// Intermediate per-table planning state for uniform grid worksheets.
 struct GridTablePlan<'a> {
     table: &'a TableSpec,
-    depth: usize,
-    anchor: HorizontalAnchor,
+    band_idx: usize,
+    lane_idx: usize,
+    band_lane_gap: u32,
     leading_prefix: Option<(usize, u32)>,
     raw_spans: Vec<u32>,
     vertical: VerticalRows,
@@ -1259,43 +1226,49 @@ struct GridTablePlan<'a> {
 
 fn align_grid_lanes(
     plans: &mut IndexMap<TableId, GridTablePlan<'_>>,
-    max_depth: usize,
+    max_lane_idx: usize,
 ) -> Result<(), LayoutError> {
-    for depth in 0..=max_depth {
-        let depth_indices: Vec<usize> = plans
+    let mut prev_lane_max_end_col_by_band: IndexMap<usize, u32> = IndexMap::new();
+
+    for lane_idx in 0..=max_lane_idx {
+        let lane_indices: Vec<usize> = plans
             .values()
             .enumerate()
-            .filter_map(|(idx, p)| (p.depth == depth).then_some(idx))
+            .filter_map(|(idx, p)| (p.lane_idx == lane_idx).then_some(idx))
             .collect();
 
-        // 4a. Resolve start_col in declaration order so Below chains inherit target start_col
-        for &idx in &depth_indices {
+        // 4a. Resolve start_col for every table in this lane
+        for &idx in &lane_indices {
             let Some((_, plan)) = plans.get_index(idx) else {
                 continue;
             };
-            let start_col = match plan.anchor {
-                HorizontalAnchor::Stack => 1,
-                HorizontalAnchor::Below { target_idx } => {
-                    let Some((_, target)) = plans.get_index(target_idx) else {
-                        continue;
-                    };
-                    target.start_col
+            let start_col = if lane_idx == 0 {
+                1
+            } else {
+                let Some(&prev_max_end_col) = prev_lane_max_end_col_by_band.get(&plan.band_idx)
+                else {
+                    continue;
+                };
+                let col = prev_max_end_col
+                    .saturating_add(1)
+                    .saturating_add(plan.band_lane_gap);
+                if col >= MAX_EXCEL_COLUMNS {
+                    return Err(LayoutError::GridLimitExceeded {
+                        dimension: "columns",
+                        max: MAX_EXCEL_COLUMNS,
+                        actual: col,
+                    });
                 }
-                HorizontalAnchor::RightOf { target_idx, gap } => {
-                    let Some((_, target)) = plans.get_index(target_idx) else {
-                        continue;
-                    };
-                    target.end_col.saturating_add(1).saturating_add(gap)
-                }
+                col
             };
             if let Some((_, plan)) = plans.get_index_mut(idx) {
                 plan.start_col = start_col;
             }
         }
 
-        // 4b. Compute max leading prefix span per (depth, start_col) group
+        // 4b. Compute max leading prefix span per (lane_idx, start_col) group
         let mut group_max_prefix: IndexMap<u32, u32> = IndexMap::new();
-        for &idx in &depth_indices {
+        for &idx in &lane_indices {
             if let Some((_, plan)) = plans.get_index(idx)
                 && let Some((_, prefix_span)) = plan.leading_prefix
             {
@@ -1305,7 +1278,8 @@ fn align_grid_lanes(
         }
 
         // 4c. Extend last leading descriptor to group max prefix and build physical col_spans
-        for &idx in &depth_indices {
+        let mut cur_lane_max_end_col_by_band: IndexMap<usize, u32> = IndexMap::new();
+        for &idx in &lane_indices {
             let Some((_, plan)) = plans.get_index_mut(idx) else {
                 continue;
             };
@@ -1336,7 +1310,14 @@ fn align_grid_lanes(
 
             plan.end_col = col_spans.last().map_or(plan.start_col, |&(_, end)| end);
             plan.col_spans = col_spans;
+
+            let band_entry = cur_lane_max_end_col_by_band
+                .entry(plan.band_idx)
+                .or_insert(0);
+            *band_entry = (*band_entry).max(plan.end_col);
         }
+
+        prev_lane_max_end_col_by_band = cur_lane_max_end_col_by_band;
     }
 
     Ok(())
@@ -1364,103 +1345,45 @@ fn leading_descriptor_prefix(columns: &[ColumnSpec], raw_spans: &[u32]) -> Optio
     Some((last_leading_desc_idx, prefix_span))
 }
 
-fn resolve_placement_target<'a, V>(
-    table_id: &TableId,
-    target_id: &TableId,
-    sheet_id: &SheetId,
-    table_idx: usize,
-    sheet_table_ids: &[TableId],
-    sheet_placements: &'a IndexMap<TableId, V>,
-    all_tables: &[TableSpec],
-) -> Result<(usize, &'a V), LayoutError> {
-    if target_id == table_id {
-        return Err(LayoutError::InvalidPlacementTarget {
-            table: table_id.clone(),
-            target: target_id.clone(),
-            sheet: sheet_id.clone(),
-            reason: "table cannot reference itself",
-        });
-    }
-
-    if let Some((idx, _, placement)) = sheet_placements.get_full(target_id) {
-        return Ok((idx, placement));
-    }
-
-    let reason = if sheet_table_ids
-        .get((table_idx + 1)..)
-        .is_some_and(|later| later.contains(target_id))
-    {
-        "target table is declared after this table on the same sheet"
-    } else if all_tables.iter().any(|t| t.id == *target_id) {
-        "target table is on a different sheet"
-    } else {
-        "target table does not exist"
-    };
-
-    Err(LayoutError::InvalidPlacementTarget {
-        table: table_id.clone(),
-        target: target_id.clone(),
-        sheet: sheet_id.clone(),
-        reason,
-    })
-}
-
 /// Computes aligned title banner right bounds (`title_end_col`) for all tables on a worksheet.
 ///
-/// Unobstructed titled tables align their title banner to the sheet's rightmost table column;
-/// obstructed titled tables (those with a vertically overlapping neighbor to their right) align
-/// within their column lane while preserving at least a 1-column gutter before the nearest right
-/// neighbor when one exists. Untitled tables always resolve `title_end_col = None`.
-fn resolve_title_end_cols(sheet_placements: &mut IndexMap<TableId, TablePlacement>) {
+/// Titled tables in the last lane of any band (including single-lane bands) extend `title_end_col`
+/// to `sheet_max_end_col`; titled tables in any non-last lane extend to that lane's
+/// `lane_max_end_col`. Untitled tables always resolve `title_end_col = None`.
+fn resolve_title_end_cols(
+    resolved_bands: &[ResolvedBand<'_>],
+    sheet_placements: &mut IndexMap<TableId, TablePlacement>,
+) {
     let Some(sheet_max_end_col) = sheet_placements.values().map(|p| p.end_col).max() else {
         return;
     };
 
-    // Step 1: Compute nearest vertically overlapping right neighbor's start_col per table.
-    let blocking_cols: Vec<Option<u32>> = sheet_placements
-        .iter()
-        .map(|(id, p)| {
-            sheet_placements
-                .iter()
-                .filter(|(other_id, other)| {
-                    *other_id != id
-                        && other.start_col > p.end_col
-                        && other.start_row <= p.end_row
-                        && p.start_row <= other.end_row
-                })
-                .map(|(_, other)| other.start_col)
-                .min()
-        })
-        .collect();
+    for band in resolved_bands {
+        let Some(last_lane_idx) = band.lanes.len().checked_sub(1) else {
+            continue;
+        };
 
-    // Step 2 & 3: Resolve title_end_col for each table from sheet max or obstructed lane peers.
-    let resolved: Vec<Option<u32>> = sheet_placements
-        .values()
-        .zip(&blocking_cols)
-        .map(|(t, &blocker)| {
-            t.title_row?;
-            match blocker {
-                None => Some(sheet_max_end_col),
-                Some(right_col) => {
-                    let lane_max = sheet_placements
-                        .values()
-                        .zip(&blocking_cols)
-                        .filter(|(other, other_blocker)| {
-                            other.start_col == t.start_col
-                                && other_blocker.is_some()
-                                && other.end_col.saturating_add(1) < right_col
-                        })
-                        .map(|(other, _)| other.end_col)
-                        .max()
-                        .unwrap_or(t.end_col);
-                    Some(lane_max.max(t.end_col))
+        for (lane_idx, lane) in band.lanes.iter().enumerate() {
+            let target_end_col = if lane_idx == last_lane_idx {
+                sheet_max_end_col
+            } else {
+                let Some(lane_max_end_col) = lane
+                    .tables
+                    .iter()
+                    .filter_map(|t| sheet_placements.get(&t.id).map(|p| p.end_col))
+                    .max()
+                else {
+                    continue;
+                };
+                lane_max_end_col
+            };
+
+            for table in &lane.tables {
+                if let Some(placement) = sheet_placements.get_mut(&table.id) {
+                    placement.title_end_col = placement.title_row.map(|_| target_end_col);
                 }
             }
-        })
-        .collect();
-
-    for (placement, title_end_col) in sheet_placements.values_mut().zip(resolved) {
-        placement.title_end_col = title_end_col;
+        }
     }
 }
 

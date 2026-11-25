@@ -249,7 +249,6 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: comps_cols,
         rows: comps_rows,
     };
@@ -348,7 +347,6 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: target_val_cols,
         rows: target_val_rows,
     };
@@ -362,7 +360,10 @@ pub fn build_trading_comps_model() -> (ProjectManifest, Vec<TableSpec>) {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Comps"), TableId::from("TargetValuation")],
+            bands: SheetSpec::stacked_bands([
+                TableId::from("Comps"),
+                TableId::from("TargetValuation"),
+            ]),
         }],
     };
 

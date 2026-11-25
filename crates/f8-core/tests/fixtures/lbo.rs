@@ -2,7 +2,7 @@
 
 use f8_core::model::format::{FormatPreset, SemanticStyle};
 use f8_core::model::id::TableId;
-use f8_core::model::manifest::{ProjectManifest, SheetSpec};
+use f8_core::model::manifest::{BandSpec, LaneSpec, ProjectManifest, SheetSpec};
 use f8_core::model::table::{ColumnSpec, RowSpec, TableSpec};
 
 use super::{
@@ -46,7 +46,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["Management Case Sensitivity Matrix".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             build_descriptor_col("scenario_name", "Scenario Case"),
             build_measure_col_label("case_id", "Case ID"),
@@ -91,7 +90,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["Capital Structure, Debt Terms & Purchase Price".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             build_descriptor_col("line_item", "Transaction Parameter"),
             build_measure_col_label("val", "Value"),
@@ -265,7 +263,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: sources_and_uses_cols,
         rows: vec![
             RowBuilder::new("senior_debt")
@@ -339,7 +336,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["5-Year Exit Multiples, IRR & Waterfall Proceeds".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             build_descriptor_col("line_item", "Investment Return Metric"),
             build_measure_col_label("val", "Metric Value"),
@@ -431,7 +427,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["Annual Financial Calendar & Year Fractions".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowBuilder::line_item("date", "Period End Date")
@@ -467,7 +462,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: vec!["($ in Millions)".to_string()],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowSpec::section_header("Operating Forecast"),
@@ -549,7 +543,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols.clone(),
         rows: vec![
             RowSpec::section_header("Senior Tranche (8.0% Rate)"),
@@ -647,7 +640,6 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: timeline_cols,
         rows: vec![
             RowBuilder::line_item("sponsor_cf", "Sponsor Net Equity Cash Flow")
@@ -678,11 +670,13 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![
-                    TableId::from("Scenarios"),
-                    TableId::from("DealAssumptions"),
-                    TableId::from("SourcesAndUses"),
-                    TableId::from("ReturnsSummary"),
+                bands: vec![
+                    BandSpec::new([
+                        LaneSpec::new(["DealAssumptions"]),
+                        LaneSpec::new(["Scenarios", "ReturnsSummary"]),
+                    ])
+                    .with_lane_gap(2),
+                    BandSpec::single("SourcesAndUses"),
                 ],
             },
             SheetSpec {
@@ -691,12 +685,12 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![
+                bands: SheetSpec::stacked_bands([
                     TableId::from("Timeline"),
                     TableId::from("Operations"),
                     TableId::from("DebtSchedule"),
                     TableId::from("CashFlows"),
-                ],
+                ]),
             },
         ],
     };

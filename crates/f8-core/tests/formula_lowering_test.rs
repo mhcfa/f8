@@ -56,7 +56,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: is_cols,
         rows: is_rows,
     };
@@ -90,7 +89,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: cap_cols,
         rows: cap_rows,
     };
@@ -123,7 +121,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: bs_cols,
         rows: bs_rows,
     };
@@ -148,7 +145,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: cf_cols,
         rows: cf_rows,
     };
@@ -178,7 +174,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: ds_cols,
         rows: ds_rows,
     };
@@ -200,7 +195,6 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: assump_cols,
         rows: assump_rows,
     };
@@ -215,13 +209,13 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![
+                bands: SheetSpec::stacked_bands([
                     TableId::from("IncomeStatement"),
                     TableId::from("CapTable"),
                     TableId::from("BalanceSheet"),
                     TableId::from("CashFlow"),
                     TableId::from("DebtSchedule"),
-                ],
+                ]),
             },
             SheetSpec {
                 name: "Assumptions".to_string(),
@@ -229,7 +223,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("Assumptions")],
+                bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
         ],
     };
@@ -968,7 +962,6 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::new("2024E"),
@@ -1016,7 +1009,7 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("T")],
+            bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
 
@@ -1093,7 +1086,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2022A"),
             ColumnSpec::new("2023A"),
@@ -1113,7 +1105,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2022A"),
             ColumnSpec::descriptor("notes", "Notes"),
@@ -1136,7 +1127,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("r0").with_cell("2024E", 10.0),
@@ -1154,7 +1144,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E"), ColumnSpec::new("2025E")],
         rows: vec![
             RowSpec::new("rev")
@@ -1172,7 +1161,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2024E")],
         rows: vec![
             RowSpec::new("r1").with_cell("2024E", 0.0),
@@ -1186,7 +1174,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("val")],
         rows: vec![RowSpec::new("tax").with_cell("val", 0.21)],
     };
@@ -1197,7 +1184,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("label", "Label"),
             ColumnSpec::new("2024E"),
@@ -1217,7 +1203,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::descriptor("label", "Label"),
@@ -1244,7 +1229,6 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2023A"),
             ColumnSpec::new("label"),
@@ -1284,7 +1268,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("History")],
+                bands: SheetSpec::stacked_bands([TableId::from("History")]),
             },
             SheetSpec {
                 name: "Main".to_string(),
@@ -1292,7 +1276,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![
+                bands: SheetSpec::stacked_bands([
                     TableId::from("Detail"),
                     TableId::from("Schedule"),
                     TableId::from("Forecast"),
@@ -1301,7 +1285,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                     TableId::from("Target"),
                     TableId::from("Origin"),
                     TableId::from("HistoryA"),
-                ],
+                ]),
             },
         ],
     };
@@ -1860,7 +1844,7 @@ fn test_grid_layout_scenario_8_formula_lowering_and_vertical_descriptor_lookup_p
                 freeze_panes: None,
                 show_gridlines: false,
                 layout,
-                tables: vec![TableId::from("T")],
+                bands: SheetSpec::stacked_bands([TableId::from("T")]),
             }],
         };
 

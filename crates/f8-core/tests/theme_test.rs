@@ -23,7 +23,7 @@ fn test_scenario_1_builtin_theme_catalog_resolution() {
     assert_eq!(theme.palette.gridline_color, "#E5E5E5");
 
     // Verify metrics
-    assert!(theme.metrics.gutter_col_width > 0.0);
+    assert_eq!(theme.metrics.gutter_col_width, 2.0);
     assert_eq!(theme.metrics.col_padding, 0.0);
     assert!(theme.metrics.min_col_width > 0.0);
     assert_eq!(theme.metrics.max_col_width, 75.0);

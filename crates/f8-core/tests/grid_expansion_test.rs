@@ -19,7 +19,6 @@ fn create_simple_table(table_id: &str, cols: &[&str], rows: Vec<RowSpec>) -> Tab
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: cols.iter().map(|&c| ColumnSpec::new(c)).collect(),
         rows,
     }
@@ -231,7 +230,7 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("Assumptions")],
+                bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
             SheetSpec {
                 name: "Model".to_string(),
@@ -239,7 +238,7 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("IncomeStatement")],
+                bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
             },
         ],
     };
@@ -320,7 +319,6 @@ fn test_expand_multi_tier_column_with_vector_rules() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("2021A").with_headers(["Historical", "2021A"]),
             ColumnSpec::new("2022A").with_headers(["Historical", "2022A"]),
@@ -376,7 +374,7 @@ fn test_expand_workbook_unassigned_table_rejected() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
-            tables: vec![TableId::from("Assumptions")],
+            bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
         }],
     };
 
@@ -477,7 +475,6 @@ fn test_expand_column_vector_formula_broadcasts_downward() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![actual_col, forecast_col],
         rows: vec![
             RowSpec::new("revenue").with_cells(rev_cells),
@@ -551,7 +548,6 @@ fn test_descriptor_column_isolates_formulas_and_enforces_assignment() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![desc_col.clone(), col1.clone()],
         rows: vec![RowSpec::new("r1").with_expr("100")],
     };
@@ -578,7 +574,6 @@ fn test_descriptor_column_isolates_formulas_and_enforces_assignment() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![desc_col, col1],
         rows: vec![RowSpec::new("r1").with_expr("100").with_cells(r1_cells)],
     };
@@ -611,7 +606,6 @@ fn test_column_formula_parse_error_diagnostic() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![bad_col],
         rows: vec![RowSpec::new("r1")],
     };
@@ -654,7 +648,6 @@ fn test_descriptor_column_format_isolation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![desc_col],
         rows: vec![row],
     };
@@ -684,7 +677,6 @@ fn test_scenario_1_symmetrical_2d_border_composition_at_matrix_intersection() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -732,7 +724,6 @@ fn test_scenario_2_cell_reset_suppresses_inherited_summary_borders() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -781,7 +772,6 @@ fn test_scenario_3_cell_precision_override_wins_over_vector_decimals() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -807,7 +797,6 @@ fn test_scenario_4_measure_vector_precision_conflict_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -865,7 +854,6 @@ fn test_scenario_6_point_highlight_override_suppresses_vector_highlight() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -896,7 +884,6 @@ fn test_scenario_7_highlight_inheritance_from_row_or_column() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col_highlight, col_normal],
         rows: vec![row_hi, row_norm],
     };
@@ -946,7 +933,6 @@ fn test_scenario_1_point_currency_override_wins_over_vectors_and_table() {
         subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -977,7 +963,6 @@ fn test_scenario_2_vector_currency_wins_over_table_default() {
         subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -1009,7 +994,6 @@ fn test_scenario_3_measure_vector_currency_conflict_rejected() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -1047,7 +1031,6 @@ fn test_scenario_4_harmonious_measure_vector_currencies_accepted() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -1076,7 +1059,6 @@ fn test_scenario_5_table_default_applies_when_vectors_omit_currency() {
         subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -1105,7 +1087,6 @@ fn test_scenario_6_fallback_to_usd_when_omitted_across_all_tiers() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col],
         rows: vec![row],
     };
@@ -1135,7 +1116,6 @@ fn test_scenario_7_non_currency_format_presets_resolve_none() {
         subtitles: Vec::new(),
         currency: Some(CurrencyCode::Eur),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![col_num, col_pct, col_date, col_txt],
         rows: vec![row],
     };
@@ -1160,7 +1140,6 @@ fn test_scenario_10_descriptor_axis_isolation_suppresses_currency_and_conflicts(
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::descriptor("desc", "Description")],
         rows: vec![
             RowSpec::new("r1")
@@ -1192,7 +1171,6 @@ fn test_scenario_11_cell_level_indentation_expansion_and_defaults() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("line_item", "Line Item"),
             ColumnSpec::new("val"),
@@ -1273,7 +1251,6 @@ fn test_scenario_12_independent_indentation_across_multiple_descriptor_columns()
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("category", "Category"),
             ColumnSpec::descriptor("item", "Item"),
@@ -1337,7 +1314,6 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("label", "Line Item"),
             ColumnSpec::new("2023a").with_shade(Some(Shade::Muted)),
@@ -1412,7 +1388,6 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1").with_shade(Some(Shade::Alt))],
         rows: vec![
             RowSpec::new("r1")
@@ -1443,7 +1418,6 @@ fn test_scenario_13_semantic_shade_inheritance_conflict_and_escape_hatch() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1").with_shade(Some(Shade::Muted))],
         rows: vec![
             RowSpec::new("r1")
@@ -1511,7 +1485,6 @@ fn test_bold_style_composition_and_cell_overrides() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::descriptor("label", "Item"),
             ColumnSpec::new("normal"),

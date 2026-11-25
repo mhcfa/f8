@@ -225,13 +225,19 @@ impl CompilerError {
                     | ModelError::InvalidTableId { table }
                     | ModelError::NonFiniteCellNumber { table, .. }
                     | ModelError::EmptyColumns { table }
-                    | ModelError::EmptyRows { table } => Some(table.to_string()),
+                    | ModelError::EmptyRows { table }
+                    | ModelError::DuplicateSheetTable { table, .. } => Some(table.to_string()),
                     ModelError::EmptySheets
                     | ModelError::DuplicateSheetName { .. }
                     | ModelError::InvalidSheetName { .. }
                     | ModelError::InvalidSheetTabColor { .. }
                     | ModelError::InvalidFreezePanes { .. }
                     | ModelError::InvalidSheetColWidth { .. }
+                    | ModelError::EmptyBand { .. }
+                    | ModelError::EmptyLane { .. }
+                    | ModelError::InvalidFirstBandGap { .. }
+                    | ModelError::InvalidSingleLaneGap { .. }
+                    | ModelError::InvalidSingleTableGap { .. }
                     | ModelError::ThemeNotFound { .. }
                     | ModelError::InvalidThemeColor { .. }
                     | ModelError::InvalidThemeMetric { .. }
@@ -312,13 +318,9 @@ impl CompilerError {
                 let table = match layout_err {
                     LayoutError::UnassignedTable { table }
                     | LayoutError::UnknownTable { table, .. }
-                    | LayoutError::InvalidPlacementTarget { table, .. }
                     | LayoutError::GridMeasureHeaderTooWide { table, .. }
                     | LayoutError::GridMultilineCell { table, .. }
                     | LayoutError::GridMultilineHeader { table, .. } => Some(table.to_string()),
-                    LayoutError::TableOverlap { second_table, .. } => {
-                        Some(second_table.to_string())
-                    }
                     LayoutError::GridLimitExceeded { .. }
                     | LayoutError::GridColWidthOutOfBounds { .. } => None,
                 };

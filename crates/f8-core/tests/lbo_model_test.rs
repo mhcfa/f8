@@ -196,6 +196,54 @@ fn test_institutional_lbo_base_case() {
         npv > 0.0,
         "Base case NPV at 10% hurdle should be positive, got {npv}"
     );
+
+    // 7. Summary Tab Multi-Lane Band Layout Verification
+    let compiled = Compiler::compile(&manifest, &tables)
+        .expect("LBO Base Case model must compile cleanly through Pass 6a");
+    let p_deal = compiled
+        .layout_map
+        .get_table(&TableId::from("DealAssumptions"))
+        .unwrap();
+    let p_scen = compiled
+        .layout_map
+        .get_table(&TableId::from("Scenarios"))
+        .unwrap();
+    let p_ret = compiled
+        .layout_map
+        .get_table(&TableId::from("ReturnsSummary"))
+        .unwrap();
+    let p_su = compiled
+        .layout_map
+        .get_table(&TableId::from("SourcesAndUses"))
+        .unwrap();
+
+    // Band 1: DealAssumptions in Lane 0 (B..C), Scenarios + ReturnsSummary in Lane 1 (F..J, lane_gap=2)
+    assert_eq!(
+        (p_deal.start_col, p_deal.end_col, p_deal.start_row),
+        (1, 2, 1)
+    );
+    assert_eq!(p_deal.title_end_col, Some(2));
+    assert_eq!(
+        (p_scen.start_col, p_scen.end_col, p_scen.start_row),
+        (5, 9, 1)
+    );
+    assert_eq!(p_scen.title_end_col, Some(9));
+    assert_eq!(p_ret.start_col, 5);
+    assert_eq!(p_ret.start_row, p_scen.end_row + 3);
+    assert_eq!(p_ret.title_end_col, Some(9));
+
+    // Band 2: SourcesAndUses spans B..H below Band 1, keeping Col E (col 4) as a pure gutter column
+    assert_eq!((p_su.start_col, p_su.end_col), (1, 7));
+    assert_eq!(p_su.start_row, p_deal.end_row.max(p_ret.end_row) + 3);
+    assert_eq!(p_su.title_end_col, Some(9));
+    let summary_layout = compiled
+        .layout_map
+        .get_sheet(&f8_core::model::id::SheetId::from("Summary"))
+        .unwrap();
+    assert_eq!(
+        summary_layout.col_widths.get(&4),
+        Some(&compiled.theme.metrics.gutter_col_width)
+    );
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
 use super::error::ModelError;
@@ -16,6 +16,12 @@ pub const MIN_GRID_COL_WIDTH: f64 = 1.0;
 
 /// Maximum allowed uniform column width on a `grid` worksheet (Excel 255-char limit).
 pub const MAX_GRID_COL_WIDTH: f64 = 255.0;
+
+/// Default vertical blank row count between stacked bands and stacked tables within a lane.
+pub const DEFAULT_VERTICAL_TABLE_GAP: u32 = 2;
+
+/// Default horizontal blank column count between adjacent lanes within a band.
+pub const DEFAULT_HORIZONTAL_TABLE_GAP: u32 = 1;
 
 fn validate_sheet_name(name: &str) -> Result<(), ModelError> {
     if name.is_empty() {
@@ -70,6 +76,7 @@ impl ProjectManifest {
             return Err(ModelError::EmptySheets);
         }
         let mut seen_sheets = IndexSet::new();
+        let mut seen_tables: IndexMap<&TableId, &str> = IndexMap::new();
         for sheet in &self.sheets {
             validate_sheet_name(&sheet.name)?;
             if !seen_sheets.insert(sheet.name.to_lowercase()) {
@@ -104,6 +111,63 @@ impl ProjectManifest {
                             sheet: sheet.name.clone(),
                             col_width: w,
                         });
+                    }
+                }
+            }
+
+            for (band_index, band) in sheet.bands.iter().enumerate() {
+                if band.lanes.is_empty() {
+                    return Err(ModelError::EmptyBand {
+                        sheet: sheet.name.clone(),
+                        band_index,
+                    });
+                }
+                if band_index == 0
+                    && let Some(gap) = band.gap
+                {
+                    return Err(ModelError::InvalidFirstBandGap {
+                        sheet: sheet.name.clone(),
+                        gap,
+                    });
+                }
+                if band.lanes.len() == 1
+                    && let Some(lane_gap) = band.lane_gap
+                {
+                    return Err(ModelError::InvalidSingleLaneGap {
+                        sheet: sheet.name.clone(),
+                        band_index,
+                        lane_gap,
+                    });
+                }
+
+                for (lane_index, lane) in band.lanes.iter().enumerate() {
+                    if lane.tables.is_empty() {
+                        return Err(ModelError::EmptyLane {
+                            sheet: sheet.name.clone(),
+                            band_index,
+                            lane_index,
+                        });
+                    }
+                    if lane.tables.len() == 1
+                        && let Some(table_gap) = lane.table_gap
+                    {
+                        return Err(ModelError::InvalidSingleTableGap {
+                            sheet: sheet.name.clone(),
+                            band_index,
+                            lane_index,
+                            table_gap,
+                        });
+                    }
+
+                    for table_id in &lane.tables {
+                        if let Some(&first_sheet) = seen_tables.get(table_id) {
+                            return Err(ModelError::DuplicateSheetTable {
+                                table: table_id.clone(),
+                                first_sheet: first_sheet.to_string(),
+                                second_sheet: sheet.name.clone(),
+                            });
+                        }
+                        seen_tables.insert(table_id, sheet.name.as_str());
                     }
                 }
             }
@@ -207,8 +271,80 @@ impl SheetLayoutSpec {
     }
 }
 
-/// Worksheet container metadata and contained table identifiers.
+/// Vertical stack of tables sharing one column lane inside a worksheet band.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaneSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_gap: Option<u32>,
+    pub tables: Vec<TableId>,
+}
+
+impl LaneSpec {
+    /// Creates a lane specification with default vertical table spacing.
+    pub fn new(tables: impl IntoIterator<Item = impl Into<TableId>>) -> Self {
+        Self {
+            table_gap: None,
+            tables: tables.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Builder method setting an explicit vertical row gap between tables in this lane.
+    #[must_use]
+    pub const fn with_table_gap(mut self, table_gap: u32) -> Self {
+        self.table_gap = Some(table_gap);
+        self
+    }
+}
+
+/// Horizontal band of side-by-side column lanes on a worksheet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BandSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane_gap: Option<u32>,
+    pub lanes: Vec<LaneSpec>,
+}
+
+impl BandSpec {
+    /// Creates a single-lane, single-table band with default spacing.
+    pub fn single(table: impl Into<TableId>) -> Self {
+        Self {
+            gap: None,
+            lane_gap: None,
+            lanes: vec![LaneSpec::new([table])],
+        }
+    }
+
+    /// Creates a band from an ordered sequence of column lanes.
+    pub fn new(lanes: impl IntoIterator<Item = LaneSpec>) -> Self {
+        Self {
+            gap: None,
+            lane_gap: None,
+            lanes: lanes.into_iter().collect(),
+        }
+    }
+
+    /// Builder method setting an explicit vertical row gap above this band.
+    #[must_use]
+    pub const fn with_gap(mut self, gap: u32) -> Self {
+        self.gap = Some(gap);
+        self
+    }
+
+    /// Builder method setting an explicit horizontal column gap between lanes in this band.
+    #[must_use]
+    pub const fn with_lane_gap(mut self, lane_gap: u32) -> Self {
+        self.lane_gap = Some(lane_gap);
+        self
+    }
+}
+
+/// Worksheet container metadata and hierarchical band/lane table layout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SheetSpec {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -219,5 +355,20 @@ pub struct SheetSpec {
     pub show_gridlines: bool,
     #[serde(default, skip_serializing_if = "SheetLayoutSpec::is_default")]
     pub layout: SheetLayoutSpec,
-    pub tables: Vec<TableId>,
+    pub bands: Vec<BandSpec>,
+}
+
+impl SheetSpec {
+    /// Iterates over all table identifiers on this worksheet in canonical band -> lane -> table order.
+    pub fn table_ids(&self) -> impl Iterator<Item = &TableId> {
+        self.bands
+            .iter()
+            .flat_map(|band| band.lanes.iter())
+            .flat_map(|lane| lane.tables.iter())
+    }
+
+    /// Wraps a sequence of table identifiers into default stacked 1-table bands.
+    pub fn stacked_bands(tables: impl IntoIterator<Item = impl Into<TableId>>) -> Vec<BandSpec> {
+        tables.into_iter().map(BandSpec::single).collect()
+    }
 }

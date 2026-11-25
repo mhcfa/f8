@@ -1016,7 +1016,6 @@ fn test_cluster_b_aggregate_overflow_and_dormant_empty_guard() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("val")],
         rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
     };
@@ -1047,7 +1046,6 @@ fn make_eval_fixture() -> (SymbolTable, CellId, IndexMap<CellId, CellValue>) {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("val")],
         rows: vec![
             RowSpec::new("r1"),

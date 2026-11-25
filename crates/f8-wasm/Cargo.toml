@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 f8-core = { workspace = true }
+js-sys = { workspace = true }
 rust_xlsxwriter = { workspace = true, features = ["wasm"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import pytest
 from f8 import (
+    Band,
     Cell,
     CellError,
+    CellInputValue,
     CompiledModel,
     InspectionError,
+    Lane,
     MarkdownTable,
     Model,
+    Sheet,
     SplitDict,
+    Table,
     TableAuditor,
     unbox_cell_value,
 )
@@ -745,23 +750,23 @@ EXPECTED_PARITY_LAYOUT_MD = (
     '- `Comps["msft_row", "ev"]` (`\'Valuation\'!D6`): `#NUM!` (`=LN(-1)`)\n'
     "\n"
     "## Sheet: Financials\n"
-    "Layout: auto | Bounds: B2:E22 (21r x 4c, w:41)\n"
-    "Columns: A:3, B:14, C:12, D:3, E:12\n"
+    "Layout: auto | Bounds: B2:E22 (21r x 4c, w:40)\n"
+    "Columns: A:2, B:14, C:12, D:2, E:12\n"
     "\n"
-    "- Band 1 (R2:R15, 14r x cols B..E, w:41):\n"
-    "  - `IncomeStatement` [B2:E15] 14r x 4c (w:41) | stack"
+    "- Band 1 (R2:R15, 14r x cols B..E, w:40):\n"
+    "  - `IncomeStatement` [B2:E15] 14r x 4c (w:40)"
     " | sub:2 hdr:R6:R7(grouped) body:R8:R15"
     " | cols: desc B(1c), measure C(1c), gutter D(1c), measure E(1c) | wrap:1\n"
-    "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:15)):\n"
-    "  - `PureMeasures` [B18:C22] 5r x 2c (w:26) | stack"
+    "- Band 2 (R18:R22, 5r x cols B..C, w:26, gap:2r, right_empty:D..E (2c, w:14)):\n"
+    "  - `PureMeasures` [B18:C22] 5r x 2c (w:26)"
     " | title->E (+2 empty) hdr:R20 body:R21:R22 | cols: measure B..C(2c)\n"
     "\n"
     "## Sheet: Valuation\n"
     "Layout: auto | Bounds: B2:D6 (5r x 3c, w:36)\n"
-    "Columns: A:3, B..D:12\n"
+    "Columns: A:2, B..D:12\n"
     "\n"
     "- Band 1 (R2:R6, 5r x cols B..D, w:36):\n"
-    "  - `Comps` [B2:D6] 5r x 3c (w:36) | stack"
+    "  - `Comps` [B2:D6] 5r x 3c (w:36)"
     " | hdr:R4 body:R5:R6 | cols: desc B..C(2c), measure D(1c)\n"
     "\n"
     "## Sheet: Notes\n"
@@ -910,16 +915,18 @@ def test_compiled_model_layout_markdown_scenarios() -> None:
     t1.add_column("v1", header="V1", format="currency", decimals=1)
     t1.add_row("r1", cells={"item": "Revenue", "v1": 123_456_789.0})
 
-    t2 = dash.add_table("T2", "Bottom Left", below=t1)
+    t2 = dash.add_table("T2", "Bottom Left")
     t2.add_column("item", role="descriptor", header="Item")
     t2.add_column("v1", header="V1", format="currency", decimals=1)
     t2.add_row("r1", cells={"item": "Cost", "v1": 50.0})
 
-    t3 = dash.add_table("T3", "Right Tall", right_of=t1)
+    t3 = dash.add_table("T3", "Right Tall")
     t3.add_column("item", role="descriptor", header="Item")
     t3.add_column("v1", header="V1")
     for idx in range(1, 12):
         t3.add_row(f"r{idx}", cells={"item": f"Row {idx}", "v1": float(idx)})
+
+    dash.set_bands([Band([Lane([t1, t2]), Lane([t3])])])
 
     auto_sheet = model.add_sheet(
         "Detail",
@@ -1084,3 +1091,146 @@ def test_bold_style_values_index_and_table_auditor_markdown() -> None:
     # Workbook emission succeeds cleanly
     xlsx = compiled.emit_workbook()
     assert xlsx[:2] == b"PK"
+
+
+EXPECTED_BAND_LANE_PARITY_FULL_MD = (
+    "# BandLaneParity\n"
+    "Sheets: 3 | Tables: 9 | Cells: 25 (25 drivers, 0 formulas) | Errors: 0\n"
+    "\n"
+    "## Sheet: DashAuto\n"
+    "Layout: auto | Bounds: B2:F26 (25r x 5c, w:60)\n"
+    "Columns: A:2, B..F:12\n"
+    "\n"
+    "- Band 1 (R2:R11, 10r x cols B..F, w:60):\n"
+    "  - Lane B..D (3c, w:36, R2:R11 = 10r, table_gap:1r):\n"
+    "    - `TL` [B2:C5] 4r x 2c (w:24) | title->D (+1 empty) hdr:R4 body:R5"
+    " | cols: desc B(1c), measure C(1c)\n"
+    "    - `BL` [B7:D11] 5r x 3c (w:36) | hdr:R9 body:R10:R11"
+    " | cols: desc B(1c), measure C..D(2c)\n"
+    "  - Lane E..F (2c, w:24, gap:0c, R2:R5 = 4r, empty_below:R6:R11 (6r)):\n"
+    "    - `TR` [E2:F5] 4r x 2c (w:24) | hdr:R4 body:R5"
+    " | cols: desc E(1c), measure F(1c)\n"
+    "- Band 2 (R12:R20, 9r x cols B..C, w:24, gap:0r, right_empty:D..F (3c, w:36),"
+    " table_gap:1r):\n"
+    "  - `S1` [B12:C15] 4r x 2c (w:24) | title->F (+3 empty) hdr:R14 body:R15"
+    " | cols: desc B(1c), measure C(1c)\n"
+    "  - `S2` [B17:C20] 4r x 2c (w:24) | title->F (+3 empty) hdr:R19 body:R20"
+    " | cols: desc B(1c), measure C(1c)\n"
+    "- Band 3 (R23:R26, 4r x cols B..E, w:48, gap:2r, right_empty:F (1c, w:12)):\n"
+    "  - `Footer` [B23:E26] 4r x 4c (w:48) | title->F (+1 empty) hdr:R25 body:R26"
+    " | cols: desc B(1c), measure C..E(3c)\n"
+    "\n"
+    "## Sheet: DashGrid\n"
+    "Layout: grid (W=12) | Bounds: B2:G11 (10r x 6c, w:72)\n"
+    "Columns: A:2, B..G:12\n"
+    "\n"
+    "- Band 1 (R2:R5, 4r x cols B..G, w:72):\n"
+    "  - Lane B..D (3c, w:36, R2:R5 = 4r):\n"
+    "    - `GL` [B2:D5] 4r x 3c (w:36) | hdr:R4 body:R5"
+    " | cols: desc B..C(2c, req:19), measure D(1c)\n"
+    "  - Lane F..G (2c, w:24, gap:1c (E, w:12), R2:R5 = 4r):\n"
+    "    - `GR` [F2:G5] 4r x 2c (w:24) | hdr:R4 body:R5"
+    " | cols: desc F(1c), measure G(1c)\n"
+    "- Band 2 (R8:R11, 4r x cols B..E, w:48, gap:2r, right_empty:F..G (2c, w:24)):\n"
+    "  - `GB` [B8:E11] 4r x 4c (w:48) | title->G (+2 empty) hdr:R10 body:R11"
+    " | cols: desc B..C(2c, req:6), measure D..E(2c)\n"
+    "\n"
+    "## Sheet: EmptyNotes\n"
+    "\n"
+    "_(no tables)_\n"
+)
+
+EXPECTED_BAND_LANE_PARITY_PARTIAL_MD = (
+    "# BandLaneParity\n"
+    "Sheets: 3 | Tables: 9 | Cells: 25 (25 drivers, 0 formulas) | Errors: 0\n"
+    "\n"
+    "## Sheet: DashAuto\n"
+    "Layout: auto | Bounds: B2:F26 (25r x 5c, w:60)\n"
+    "Columns: A:2, B..F:12\n"
+    "\n"
+    "- Band 1 (R2:R11, 10r x cols B..F, w:60):\n"
+    "  - Lane B..D (3c, w:36, R2:R11 = 10r, table_gap:1r):\n"
+    "    - `TL` (context) [B2:C5] 4r x 2c (w:24) | title->D (+1 empty) hdr:R4 body:R5"
+    " | cols: desc B(1c), measure C(1c)\n"
+    "    - `BL` [B7:D11] 5r x 3c (w:36) | hdr:R9 body:R10:R11"
+    " | cols: desc B(1c), measure C..D(2c)\n"
+    "  - Lane E..F (2c, w:24, gap:0c, R2:R5 = 4r, empty_below:R6:R11 (6r)):\n"
+    "    - `TR` (context) [E2:F5] 4r x 2c (w:24) | hdr:R4 body:R5"
+    " | cols: desc E(1c), measure F(1c)\n"
+    "- Band 2 (R12:R20, 9r x cols B..C, w:24, gap:0r, right_empty:D..F (3c, w:36),"
+    " table_gap:1r):\n"
+    "  - `S1` (context) [B12:C15] 4r x 2c (w:24) | title->F (+3 empty) hdr:R14 body:R15"
+    " | cols: desc B(1c), measure C(1c)\n"
+    "  - `S2` (context) [B17:C20] 4r x 2c (w:24) | title->F (+3 empty) hdr:R19 body:R20"
+    " | cols: desc B(1c), measure C(1c)\n"
+    "- Band 3 (R23:R26, 4r x cols B..E, w:48, gap:2r, right_empty:F (1c, w:12)):\n"
+    "  - `Footer` (context) [B23:E26] 4r x 4c (w:48) | title->F (+1 empty) hdr:R25 body:R26"
+    " | cols: desc B(1c), measure C..E(3c)\n"
+    "\n"
+    "## Sheet: DashGrid\n"
+    "Layout: grid (W=12) | Bounds: B2:G11 (10r x 6c, w:72)\n"
+    "Columns: A:2, B..G:12\n"
+    "\n"
+    "- Band 1 (R2:R5, 4r x cols B..G, w:72):\n"
+    "  - Lane B..D (3c, w:36, R2:R5 = 4r):\n"
+    "    - `GL` (context) [B2:D5] 4r x 3c (w:36) | hdr:R4 body:R5"
+    " | cols: desc B..C(2c, req:19), measure D(1c)\n"
+    "  - Lane F..G (2c, w:24, gap:1c (E, w:12), R2:R5 = 4r):\n"
+    "    - `GR` [F2:G5] 4r x 2c (w:24) | hdr:R4 body:R5"
+    " | cols: desc F(1c), measure G(1c)\n"
+    "- Band 2 (R8:R11, 4r x cols B..E, w:48, gap:2r, right_empty:F..G (2c, w:24)):\n"
+    "  - `GB` (context) [B8:E11] 4r x 4c (w:48) | title->G (+2 empty) hdr:R10 body:R11"
+    " | cols: desc B..C(2c, req:6), measure D..E(2c)\n"
+)
+
+
+def test_band_lane_layout_markdown_spec_scenario_9_golden_parity() -> None:
+    model = Model("BandLaneParity")
+
+    def add_sample(
+        sheet: Sheet,
+        tid: str,
+        title: str,
+        desc_val: str,
+        measure_cols: int,
+        rows: int,
+    ) -> Table:
+        t = sheet.add_table(tid, title)
+        t.add_column("item", role="descriptor", header="Item")
+        for c in range(1, measure_cols + 1):
+            t.add_column(f"m{c}", header=f"M{c}")
+        for r in range(1, rows + 1):
+            cells: dict[str, CellInputValue] = {"item": desc_val}
+            for c in range(1, measure_cols + 1):
+                cells[f"m{c}"] = float(r * 10 + c)
+            t.add_row(f"r{r}", cells=cells)
+        return t
+
+    dash_auto = model.add_sheet("DashAuto")
+    tl = add_sample(dash_auto, "TL", "Top Left", "Short", 1, 1)
+    bl = add_sample(dash_auto, "BL", "Bottom Left", "Short", 2, 2)
+    tr = add_sample(dash_auto, "TR", "Top Right", "Short", 1, 1)
+    s1 = add_sample(dash_auto, "S1", "Stack One", "Short", 1, 1)
+    s2 = add_sample(dash_auto, "S2", "Stack Two", "Short", 1, 1)
+    footer = add_sample(dash_auto, "Footer", "Footer", "Short", 3, 1)
+    dash_auto.set_bands(
+        [
+            Band([Lane([tl, bl], table_gap=1), Lane([tr])], lane_gap=0),
+            Band([Lane([s1, s2], table_gap=1)], gap=0),
+            footer,
+        ]
+    )
+
+    dash_grid = model.add_sheet("DashGrid", layout="grid", col_width=12.0)
+    gl = add_sample(dash_grid, "GL", "Grid Left", "Eighteen Char Desc", 1, 1)
+    gr = add_sample(dash_grid, "GR", "Grid Right", "Short", 1, 1)
+    gb = add_sample(dash_grid, "GB", "Grid Bottom", "Short", 2, 1)
+    dash_grid.set_bands([Band([Lane([gl]), Lane([gr])]), gb])
+
+    model.add_sheet("EmptyNotes")
+
+    compiled = model.compile()
+    assert compiled.to_markdown("layout") == EXPECTED_BAND_LANE_PARITY_FULL_MD
+    assert (
+        compiled.to_markdown("layout", tables=["BL", "GR"]) == EXPECTED_BAND_LANE_PARITY_PARTIAL_MD
+    )

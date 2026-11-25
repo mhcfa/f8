@@ -1195,7 +1195,6 @@ fn test_end_to_end_formula_evaluation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("c1"),
             ColumnSpec::new("c2"),
@@ -1566,7 +1565,6 @@ fn test_xlookup_dormant_if_not_found_static_validation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("k"), ColumnSpec::new("v")],
         rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
     };
@@ -1634,7 +1632,6 @@ fn test_lookup_positional_omission_contract() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![
             ColumnSpec::new("k"),
             ColumnSpec::new("v"),

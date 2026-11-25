@@ -335,6 +335,21 @@ class GridSheetLayoutSpecDict(TypedDict):
 type SheetLayoutSpecDict = AutoSheetLayoutSpecDict | GridSheetLayoutSpecDict
 
 
+class LaneSpecDict(TypedDict):
+    """Specification dictionary for a vertical lane of tables within a band."""
+
+    tables: list[str]
+    table_gap: NotRequired[int]
+
+
+class BandSpecDict(TypedDict):
+    """Specification dictionary for a horizontal band of lanes on a worksheet."""
+
+    lanes: list[LaneSpecDict]
+    gap: NotRequired[int]
+    lane_gap: NotRequired[int]
+
+
 class SheetSpecDict(TypedDict, total=False):
     """Worksheet manifest specification dictionary."""
 
@@ -343,7 +358,7 @@ class SheetSpecDict(TypedDict, total=False):
     freeze_panes: FreezePanesDict
     show_gridlines: bool
     layout: SheetLayoutSpecDict
-    tables: list[str]
+    bands: list[BandSpecDict]
 
 
 class ProjectManifestDict(TypedDict):
@@ -413,32 +428,6 @@ class GutterRowSpecDict(TypedDict):
 type RowSpecDict = DataRowSpecDict | SectionHeaderRowSpecDict | GutterRowSpecDict
 
 
-class StackPlacementSpecDict(TypedDict, total=False):
-    """Specification dictionary for vertical sheet-stack table placement."""
-
-    kind: Literal["stack"]
-    gap: int
-
-
-class BelowPlacementSpecDict(TypedDict, total=False):
-    """Specification dictionary for relative vertical table placement below a target table."""
-
-    kind: Literal["below"]
-    target: str
-    gap: int
-
-
-class RightOfPlacementSpecDict(TypedDict, total=False):
-    """Specification dictionary for relative horizontal table placement right of a target table."""
-
-    kind: Literal["right_of"]
-    target: str
-    gap: int
-
-
-type PlacementSpecDict = StackPlacementSpecDict | BelowPlacementSpecDict | RightOfPlacementSpecDict
-
-
 class TableSpecDict(TypedDict, total=False):
     """Specification dictionary for a complete financial table."""
 
@@ -447,7 +436,6 @@ class TableSpecDict(TypedDict, total=False):
     subtitles: list[str]
     currency: CurrencyCode
     collapsible: bool
-    placement: PlacementSpecDict
     columns: list[ColumnSpecDict]
     rows: list[RowSpecDict]
 

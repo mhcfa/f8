@@ -1,3 +1,4 @@
+mod de;
 pub mod error;
 pub mod model;
 
@@ -30,11 +31,9 @@ pub fn default_theme() -> Result<JsValue, JsValue> {
 /// Compiles a project manifest and table specifications into an evaluated `WasmCompiledModel`.
 #[wasm_bindgen]
 pub fn compile(manifest: JsValue, tables: JsValue) -> Result<WasmCompiledModel, JsValue> {
-    let project_manifest: ProjectManifest =
-        serde_wasm_bindgen::from_value(manifest).map_err(map_serde_error)?;
+    let project_manifest: ProjectManifest = de::from_value(manifest).map_err(map_serde_error)?;
 
-    let table_specs: Vec<TableSpec> =
-        serde_wasm_bindgen::from_value(tables).map_err(map_serde_error)?;
+    let table_specs: Vec<TableSpec> = de::from_value(tables).map_err(map_serde_error)?;
 
     let compiled =
         Compiler::compile(&project_manifest, &table_specs).map_err(|e| map_compiler_error(&e))?;

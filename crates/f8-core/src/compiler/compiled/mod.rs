@@ -152,14 +152,14 @@ impl CompiledModel {
     }
 
     /// Returns all runtime Excel domain errors discovered across the workbook in deterministic
-    /// manifest sheet -> sheet table -> table row -> table column declaration order.
+    /// canonical sheet -> band -> lane -> table -> row -> column order.
     #[must_use]
     pub fn errors(&self) -> Vec<CellError> {
         let mut results = Vec::new();
 
         for sheet_spec in &self.manifest.sheets {
             let sheet_id = SheetId::from(sheet_spec.name.as_str());
-            for table_id in &sheet_spec.tables {
+            for table_id in sheet_spec.table_ids() {
                 let Some(table_spec) = self.tables.get(table_id) else {
                     continue;
                 };
@@ -520,7 +520,7 @@ impl CompiledModel {
             .ok_or_else(|| InspectionError::SheetNotFound(sheet.clone()))?;
 
         let mut sheet_tables = Vec::new();
-        for table_id in &sheet_spec.tables {
+        for table_id in sheet_spec.table_ids() {
             if let Some(table_spec) = self.tables.get(table_id) {
                 sheet_tables.push(table_spec);
             }
@@ -1456,7 +1456,7 @@ mod tests {
 
         let manifest: ProjectManifest = serde_json::from_value(serde_json::json!({
             "model_name": "Test",
-            "sheets": [{ "name": "S1", "tables": ["T1"] }]
+            "sheets": [{ "name": "S1", "bands": [{ "lanes": [{ "tables": ["T1"] }] }] }]
         }))
         .unwrap();
         let table: TableSpec = serde_json::from_value(serde_json::json!({

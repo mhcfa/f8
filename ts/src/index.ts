@@ -130,44 +130,112 @@ export function defaultTheme(): Record<string, unknown> {
   }
 }
 
-function normalizeManifest(
-  manifest: ProjectManifestInput
-): Record<string, unknown> {
-  const sheets = manifest.sheets.map((sheet: SheetSpecInput) => {
-    const normSheet: Record<string, unknown> = {
-      name: sheet.name,
-      tables: sheet.tables,
+function renameKey(
+  obj: Record<string, unknown>,
+  from: string,
+  to: string
+): void {
+  if (from in obj && !(to in obj)) {
+    const val = obj[from]
+    delete obj[from]
+    if (val !== undefined) {
+      obj[to] = val
     }
-    if (sheet.tabColor !== undefined) {
-      normSheet.tab_color = sheet.tabColor
-    }
-    if (sheet.freezePanes !== undefined) {
-      normSheet.freeze_panes = sheet.freezePanes
-    }
-    if (sheet.showGridlines !== undefined) {
-      normSheet.show_gridlines = sheet.showGridlines
-    }
-    if (sheet.layout !== undefined) {
-      if (
-        typeof sheet.layout === "object" &&
-        sheet.layout !== null &&
-        !Array.isArray(sheet.layout)
-      ) {
-        const layoutObj = { ...sheet.layout } as Record<string, unknown>
-        if ("colWidth" in layoutObj && !("col_width" in layoutObj)) {
-          const colWidth = layoutObj.colWidth
-          delete layoutObj.colWidth
-          if (colWidth !== undefined) {
-            layoutObj.col_width = colWidth
-          }
+  }
+}
+
+function normalizeManifest(manifest: ProjectManifestInput): unknown {
+  const rawManifest: unknown = manifest
+  if (
+    typeof rawManifest !== "object" ||
+    rawManifest === null ||
+    Array.isArray(rawManifest)
+  ) {
+    return rawManifest
+  }
+  const rawSheets: unknown = manifest.sheets
+  const sheets = Array.isArray(rawSheets)
+    ? manifest.sheets.map((sheet: SheetSpecInput) => {
+        if (
+          typeof sheet !== "object" ||
+          sheet === null ||
+          Array.isArray(sheet)
+        ) {
+          return sheet
         }
-        normSheet.layout = layoutObj
-      } else {
-        normSheet.layout = sheet.layout
-      }
-    }
-    return normSheet
-  })
+        const normSheet: Record<string, unknown> = { ...sheet }
+        renameKey(normSheet, "tabColor", "tab_color")
+        renameKey(normSheet, "freezePanes", "freeze_panes")
+        renameKey(normSheet, "showGridlines", "show_gridlines")
+        if (normSheet.tab_color === undefined) {
+          delete normSheet.tab_color
+        }
+        if (normSheet.freeze_panes === undefined) {
+          delete normSheet.freeze_panes
+        }
+        if (normSheet.show_gridlines === undefined) {
+          delete normSheet.show_gridlines
+        }
+        if (normSheet.layout === undefined) {
+          delete normSheet.layout
+        } else if (
+          typeof normSheet.layout === "object" &&
+          normSheet.layout !== null &&
+          !Array.isArray(normSheet.layout)
+        ) {
+          const layoutObj: Record<string, unknown> = {
+            ...(normSheet.layout as Record<string, unknown>),
+          }
+          renameKey(layoutObj, "colWidth", "col_width")
+          if (layoutObj.col_width === undefined) {
+            delete layoutObj.col_width
+          }
+          normSheet.layout = layoutObj
+        }
+        if (Array.isArray(normSheet.bands)) {
+          normSheet.bands = normSheet.bands.map((band: unknown) => {
+            if (
+              typeof band !== "object" ||
+              band === null ||
+              Array.isArray(band)
+            ) {
+              return band
+            }
+            const normBand: Record<string, unknown> = {
+              ...(band as Record<string, unknown>),
+            }
+            renameKey(normBand, "laneGap", "lane_gap")
+            if (normBand.gap === undefined) {
+              delete normBand.gap
+            }
+            if (normBand.lane_gap === undefined) {
+              delete normBand.lane_gap
+            }
+            if (Array.isArray(normBand.lanes)) {
+              normBand.lanes = normBand.lanes.map((lane: unknown) => {
+                if (
+                  typeof lane !== "object" ||
+                  lane === null ||
+                  Array.isArray(lane)
+                ) {
+                  return lane
+                }
+                const normLane: Record<string, unknown> = {
+                  ...(lane as Record<string, unknown>),
+                }
+                renameKey(normLane, "tableGap", "table_gap")
+                if (normLane.table_gap === undefined) {
+                  delete normLane.table_gap
+                }
+                return normLane
+              })
+            }
+            return normBand
+          })
+        }
+        return normSheet
+      })
+    : rawSheets
 
   const res: Record<string, unknown> = {
     model_name: manifest.modelName,
@@ -179,85 +247,108 @@ function normalizeManifest(
   return res
 }
 
-function normalizeTables(
-  tables: readonly TableSpecInput[]
-): readonly Record<string, unknown>[] {
+function normalizeTables(tables: readonly TableSpecInput[]): unknown {
+  const rawTables: unknown = tables
+  if (!Array.isArray(rawTables)) {
+    return rawTables
+  }
   return tables.map((t) => {
-    const normTable: Record<string, unknown> = {
-      id: t.id,
-      title: t.title,
+    if (typeof t !== "object" || t === null || Array.isArray(t)) {
+      return t
     }
-    if (t.subtitles !== undefined && t.subtitles.length > 0) {
-      normTable.subtitles = [...t.subtitles]
+    const normTable: Record<string, unknown> = { ...t }
+    const rawSubtitles: unknown = t.subtitles
+    if (Array.isArray(rawSubtitles)) {
+      if (t.subtitles !== undefined && t.subtitles.length > 0) {
+        normTable.subtitles = [...t.subtitles]
+      } else {
+        delete normTable.subtitles
+      }
+    } else if (rawSubtitles === undefined) {
+      delete normTable.subtitles
     }
-    if (t.currency !== undefined) {
+    if (typeof t.currency === "string") {
       normTable.currency = t.currency.toLowerCase()
+    } else if (t.currency === undefined) {
+      delete normTable.currency
     }
-    if (t.collapsible !== undefined) {
-      normTable.collapsible = t.collapsible
+    if (t.collapsible === undefined) {
+      delete normTable.collapsible
     }
-    if (t.placement !== undefined) {
-      const p = { ...t.placement } as Record<string, unknown>
-      if (p.kind === "rightOf") {
-        p.kind = "right_of"
-      }
-      normTable.placement = p
-    }
-    normTable.columns = t.columns.map((c) => {
-      if (c.kind === "data" && c.currency !== undefined) {
-        return {
-          ...c,
-          currency: c.currency.toLowerCase(),
+    const rawColumns: unknown = t.columns
+    if (Array.isArray(rawColumns)) {
+      normTable.columns = t.columns.map((c) => {
+        if (
+          typeof c === "object" &&
+          c !== null &&
+          !Array.isArray(c) &&
+          c.kind === "data" &&
+          typeof c.currency === "string"
+        ) {
+          return {
+            ...c,
+            currency: c.currency.toLowerCase(),
+          }
         }
-      }
-      return c
-    })
-    normTable.rows = t.rows.map((r) => {
-      if (r.kind === "sectionHeader") {
-        return {
-          ...r,
-          kind: "section_header",
+        return c
+      })
+    }
+    const rawRows: unknown = t.rows
+    if (Array.isArray(rawRows)) {
+      normTable.rows = t.rows.map((r) => {
+        if (typeof r !== "object" || r === null || Array.isArray(r)) {
+          return r
         }
-      }
-      if (r.kind === "data") {
-        let normRow: Record<string, unknown> | null = null
-        if (r.currency !== undefined) {
-          normRow = {
+        if (r.kind === "sectionHeader") {
+          return {
             ...r,
-            currency: r.currency.toLowerCase(),
+            kind: "section_header",
           }
         }
-        if (r.cells !== undefined) {
-          const normCells: Record<string, unknown> = {}
-          let cellsModified = false
-          for (const [colId, cell] of Object.entries(r.cells)) {
-            if (
-              typeof cell === "object" &&
-              cell !== null &&
-              !Array.isArray(cell)
-            ) {
-              const normalized = normalizeDetailedCellObject(cell)
-              normCells[colId] = normalized.cell
-              if (normalized.modified) {
-                cellsModified = true
-              }
-            } else {
-              normCells[colId] = cell
-            }
-          }
-          if (cellsModified) {
+        if (r.kind === "data") {
+          let normRow: Record<string, unknown> | null = null
+          if (typeof r.currency === "string") {
             normRow = {
-              ...(normRow ?? r),
-              cells: normCells,
+              ...r,
+              currency: r.currency.toLowerCase(),
             }
           }
+          if (
+            typeof r.cells === "object" &&
+            r.cells !== null &&
+            !Array.isArray(r.cells)
+          ) {
+            const normCells: Record<string, unknown> = {}
+            let cellsModified = false
+            for (const [colId, cell] of Object.entries(r.cells)) {
+              if (
+                typeof cell === "object" &&
+                cell !== null &&
+                !Array.isArray(cell)
+              ) {
+                const normalized = normalizeDetailedCellObject(cell)
+                normCells[colId] = normalized.cell
+                if (normalized.modified) {
+                  cellsModified = true
+                }
+              } else {
+                normCells[colId] = cell
+              }
+            }
+            if (cellsModified) {
+              normRow = {
+                ...(normRow ?? r),
+                cells: normCells,
+              }
+            }
+          }
+          if (normRow !== null) {
+            return normRow
+          }
         }
-        if (normRow !== null) {
-          return normRow
-        }
-      }
-      return r
-    })
+        return r
+      })
+    }
     return normTable
   })
 }

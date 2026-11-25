@@ -71,7 +71,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       sheets: [
         {
           name: "BalanceSheet",
-          tables: ["PPE"],
+          bands: [{ lanes: [{ tables: ["PPE"] }] }],
         },
       ],
     }
@@ -283,7 +283,9 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const currencyManifest: ProjectManifestInput = {
         modelName: "CurrencyNormalizationModel",
         theme: "corporate_navy",
-        sheets: [{ name: "Currencies", tables: ["FX"] }],
+        sheets: [
+          { name: "Currencies", bands: [{ lanes: [{ tables: ["FX"] }] }] },
+        ],
       }
 
       const fxTable: TableSpecInput = {
@@ -336,7 +338,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
     const manifest: ProjectManifestInput = {
       modelName: "EmissionModel",
       theme: "corporate_navy",
-      sheets: [{ name: "Sheet1", tables: ["T1"] }],
+      sheets: [{ name: "Sheet1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
     }
 
     const table: TableSpecInput = {
@@ -417,7 +419,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const manifest: ProjectManifestInput = {
         modelName: "CycleModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T"] }],
+        sheets: [{ name: "S", bands: [{ lanes: [{ tables: ["T"] }] }] }],
       }
       const table: TableSpecInput = {
         id: "T",
@@ -457,7 +459,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const manifest: ProjectManifestInput = {
         modelName: "RefModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T"] }],
+        sheets: [{ name: "S", bands: [{ lanes: [{ tables: ["T"] }] }] }],
       }
       const table: TableSpecInput = {
         id: "T",
@@ -495,7 +497,9 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const unassignedManifest: ProjectManifestInput = {
         modelName: "UnassignedCellModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T_Unassigned"] }],
+        sheets: [
+          { name: "S", bands: [{ lanes: [{ tables: ["T_Unassigned"] }] }] },
+        ],
       }
       const unassignedTable: TableSpecInput = {
         id: "T_Unassigned",
@@ -521,7 +525,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const dupManifest: ProjectManifestInput = {
         modelName: "DupTableModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T_Dup"] }],
+        sheets: [{ name: "S", bands: [{ lanes: [{ tables: ["T_Dup"] }] }] }],
       }
       const dupTable1: TableSpecInput = {
         id: "T_Dup",
@@ -550,11 +554,334 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       }
     })
 
+    it("(c2) enforces Pass 1 band/lane validation and unknown-key preservation (Scenario 7)", () => {
+      const makeTbl = (id: string): TableSpecInput => ({
+        id,
+        title: id,
+        columns: [{ kind: "data", id: "c1", headers: ["C1"] }],
+        rows: [{ kind: "data", id: "r1", cells: { c1: 1.0 } }],
+      })
+      const t1 = makeTbl("T1")
+      const t2 = makeTbl("T2")
+
+      const expectSpecError = (
+        manifest: unknown,
+        tables: unknown,
+        expectedTable: string | null,
+        messageFragment: string
+      ): void => {
+        try {
+          compile(
+            manifest as ProjectManifestInput,
+            tables as readonly TableSpecInput[]
+          )
+          expect.unreachable(
+            `Expected SpecificationError containing '${messageFragment}'`
+          )
+        } catch (err) {
+          expect(err).toBeInstanceOf(SpecificationError)
+          const specErr = err as SpecificationError
+          expect(specErr.table).toBe(expectedTable)
+          expect(specErr.message.toLowerCase()).toContain(
+            messageFragment.toLowerCase()
+          )
+        }
+      }
+
+      // (a) Empty band
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [] }] }],
+        },
+        [t1],
+        null,
+        "at least one lane"
+      )
+
+      // (b) Empty lane
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: [] }] }] }],
+        },
+        [t1],
+        null,
+        "at least one table"
+      )
+
+      // (c) Band 0 with gap (0 and 2)
+      for (const badGap of [0, 2]) {
+        expectSpecError(
+          {
+            modelName: "M",
+            sheets: [
+              {
+                name: "S1",
+                bands: [{ gap: badGap, lanes: [{ tables: ["T1"] }] }],
+              },
+            ],
+          },
+          [t1],
+          null,
+          "band 0 cannot specify 'gap'"
+        )
+      }
+
+      // (d) 1-lane band with laneGap
+      for (const badLaneGap of [0, 1]) {
+        expectSpecError(
+          {
+            modelName: "M",
+            sheets: [
+              {
+                name: "S1",
+                bands: [{ laneGap: badLaneGap, lanes: [{ tables: ["T1"] }] }],
+              },
+            ],
+          },
+          [t1],
+          null,
+          "lane_gap"
+        )
+      }
+
+      // (e) 1-table lane with tableGap
+      for (const badTableGap of [0, 2]) {
+        expectSpecError(
+          {
+            modelName: "M",
+            sheets: [
+              {
+                name: "S1",
+                bands: [{ lanes: [{ tables: ["T1"], tableGap: badTableGap }] }],
+              },
+            ],
+          },
+          [t1],
+          null,
+          "table_gap"
+        )
+      }
+
+      // (f) Duplicate TableId within a sheet and across two sheets
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [
+            {
+              name: "S1",
+              bands: [
+                { lanes: [{ tables: ["T1"] }] },
+                { lanes: [{ tables: ["T1"] }] },
+              ],
+            },
+          ],
+        },
+        [t1],
+        "T1",
+        "s1"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [
+            { name: "SheetA", bands: [{ lanes: [{ tables: ["T1"] }] }] },
+            { name: "SheetB", bands: [{ lanes: [{ tables: ["T1"] }] }] },
+          ],
+        },
+        [t1, t2],
+        "T1",
+        "sheetb"
+      )
+
+      // (g) Legacy SheetSpec.tables and TableSpec.placement rejected via unknown-key preservation
+      expectSpecError(
+        { modelName: "M", sheets: [{ name: "S1", tables: ["T1"] }] },
+        [t1],
+        null,
+        "tables"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [
+            {
+              name: "S1",
+              bands: [{ lanes: [{ tables: ["T1"] }] }],
+              tables: ["T1"],
+            },
+          ],
+        },
+        [t1],
+        null,
+        "tables"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [{ ...t1, placement: { kind: "stack", gap: 2 } }],
+        null,
+        "placement"
+      )
+
+      // (h) Unknown fields on sheet, band, lane, table rejected
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [], bogusSheet: true }],
+        },
+        [],
+        null,
+        "bogussheet"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [
+            {
+              name: "S1",
+              bands: [{ lanes: [{ tables: ["T1"] }], bogusBand: 1 }],
+            },
+          ],
+        },
+        [t1],
+        null,
+        "bogusband"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [
+            {
+              name: "S1",
+              bands: [{ lanes: [{ tables: ["T1"], bogusLane: 1 }] }],
+            },
+          ],
+        },
+        [t1],
+        null,
+        "boguslane"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [{ ...t1, bogusTable: true }],
+        null,
+        "bogustable"
+      )
+
+      // (i) Non-finite numeric cell values still fail Pass 1 validation (not silently coerced to null)
+      for (const nonFinite of [Number.NaN, Number.POSITIVE_INFINITY]) {
+        expectSpecError(
+          {
+            modelName: "M",
+            sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+          },
+          [
+            {
+              ...t1,
+              rows: [{ kind: "data", id: "r1", cells: { c1: nonFinite } }],
+            },
+          ],
+          "T1",
+          "finite"
+        )
+      }
+
+      // (j) Malformed containers/fields raise SpecificationError with Serde diagnostics (not raw JS TypeError)
+      expectSpecError(null, [], null, "invalid type")
+      expectSpecError({ modelName: "M", sheets: null }, [], null, "sequence")
+      expectSpecError({ modelName: "M", sheets: [null] }, [], null, "")
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        null,
+        null,
+        "sequence"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [null],
+        null,
+        ""
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [{ ...t1, subtitles: null }],
+        null,
+        "sequence"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [{ ...t1, currency: 123 }],
+        null,
+        "invalid type"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [{ ...t1, rows: [{ kind: "data", id: "r1", cells: null }] }],
+        null,
+        "map"
+      )
+      // Non-object sequence/map values hit Serde invalid_type rather than Reflect.get TypeError
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: "T1" }] }] }],
+        },
+        [t1],
+        null,
+        "invalid type"
+      )
+      expectSpecError(
+        {
+          modelName: "M",
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: 123 }] }] }],
+        },
+        [t1],
+        null,
+        "invalid type"
+      )
+      // Nested struct deny_unknown_fields (e.g., Theme.palette) enforced through StrictDeserializer
+      const badTheme = defaultTheme()
+      ;(badTheme.palette as Record<string, unknown>).shade_accent_fill =
+        "#112233"
+      expectSpecError(
+        {
+          modelName: "M",
+          theme: badTheme,
+          sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
+        },
+        [t1],
+        null,
+        "shade_accent_fill"
+      )
+    })
+
     it("(d) throws FormulaParseError on cell-level token syntax error", () => {
       const manifest: ProjectManifestInput = {
         modelName: "ParseErrorModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T"] }],
+        sheets: [{ name: "S", bands: [{ lanes: [{ tables: ["T"] }] }] }],
       }
       const table: TableSpecInput = {
         id: "T",
@@ -594,7 +921,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const manifest: ProjectManifestInput = {
         modelName: "InspectErrorModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T"] }],
+        sheets: [{ name: "S", bands: [{ lanes: [{ tables: ["T"] }] }] }],
       }
       const table: TableSpecInput = {
         id: "T",
@@ -638,7 +965,7 @@ describe("WebAssembly Core Bindings and TypeScript SDK", () => {
       const manifest: ProjectManifestInput = {
         modelName: "TypeErrorModel",
         theme: "corporate_navy",
-        sheets: [{ name: "S", tables: ["T"] }],
+        sheets: [{ name: "S", bands: [{ lanes: [{ tables: ["T"] }] }] }],
       }
       const table: TableSpecInput = {
         id: "T",

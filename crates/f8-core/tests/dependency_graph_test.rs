@@ -37,7 +37,6 @@ fn create_table(
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns,
         rows: row_specs,
     }
@@ -259,7 +258,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("Assumptions")],
+                bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
             SheetSpec {
                 name: "Model".to_string(),
@@ -267,7 +266,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("Forecast")],
+                bands: SheetSpec::stacked_bands([TableId::from("Forecast")]),
             },
         ],
     };
@@ -290,7 +289,6 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("value")],
         rows: vec![assumptions_row_tax, assumptions_row_base],
     };
@@ -319,7 +317,6 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("2023A"), ColumnSpec::new("2024E")],
         rows: vec![forecast_row_rev, forecast_row_tax],
     };

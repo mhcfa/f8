@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/f8-core", "crates/f8-python", "crates/f8-wasm"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 description = "Financial modeling engine with compiler verification and live Excel formulas"
 authors = ["Michael (Chencheng) Hu, CFA"]
@@ -22,6 +22,7 @@ zip = { version = "9.6", default-features = false }
 pyo3 = { version = "0.24", default-features = false, features = ["macros"] }
 pythonize = "0.24"
 wasm-bindgen = "0.2"
+js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 
 [workspace.lints.clippy]

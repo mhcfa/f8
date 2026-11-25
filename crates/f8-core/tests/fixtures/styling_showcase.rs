@@ -211,7 +211,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: t1_cols,
         rows: t1_rows,
     };
@@ -479,7 +478,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: t2_cols,
         rows: t2_rows,
     };
@@ -663,7 +661,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: t3_cols,
         rows: t3_rows,
     };
@@ -813,7 +810,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: t4_cols,
         rows: t4_rows,
     };
@@ -925,7 +921,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: t5_cols,
         rows: t5_rows,
     };
@@ -1027,7 +1022,6 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
         ],
         currency: Some(CurrencyCode::Usd),
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: t6_cols,
         rows: t6_rows,
     };
@@ -1045,13 +1039,13 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![
+                bands: SheetSpec::stacked_bands([
                     TableId::from("Styles_And_Borders"),
                     TableId::from("Hierarchical_Outlines"),
                     TableId::from("Format_Presets_And_Decimals"),
                     TableId::from("Currency_Denominations"),
                     TableId::from("Cell_Features_And_Notes"),
-                ],
+                ]),
             },
             SheetSpec {
                 name: "Freeze_Panes_Demo".to_string(),
@@ -1059,7 +1053,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: Some(FreezePanes { row: 4, col: 2 }),
                 show_gridlines: true,
                 layout: Default::default(),
-                tables: vec![TableId::from("Freeze_Panes_Sample")],
+                bands: SheetSpec::stacked_bands([TableId::from("Freeze_Panes_Sample")]),
             },
         ],
     };

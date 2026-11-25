@@ -10,5 +10,5 @@ pub use compiler::{
     ModelSummary, SheetCellInspection, SheetCellKind, SheetInspection, SheetRowInspection,
     TableCellInfo, TableInspection, col_to_excel_col,
 };
-pub use model::{PlacementSpec, SheetLayoutSpec};
+pub use model::{BandSpec, LaneSpec, SheetLayoutSpec};
 pub use value::{format_accounting_number, format_cell_value};

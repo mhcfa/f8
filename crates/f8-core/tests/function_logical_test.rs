@@ -370,7 +370,6 @@ fn test_scenario_7_retired_functions_unknown_function() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1")],
         rows: vec![RowSpec::new("r1")],
     };
@@ -419,7 +418,6 @@ fn test_scenario_8_end_to_end_formula_evaluation() {
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1"), ColumnSpec::new("c2")],
         rows: vec![RowSpec::new("r1"), RowSpec::new("r2")],
     };
@@ -546,7 +544,6 @@ fn test_scenario_9_iferror_propagates_function_error_and_traps_domain_errors_onl
         subtitles: Vec::new(),
         currency: None,
         collapsible: false,
-        placement: f8_core::model::PlacementSpec::default(),
         columns: vec![ColumnSpec::new("c1")],
         rows: vec![RowSpec::new("r1")],
     };

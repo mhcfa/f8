@@ -407,7 +407,7 @@ pub fn expand_grid(symbol_table: &SymbolTable, tables: &[TableSpec]) -> Result<C
 
 fn expand_validated_grid(
     symbol_table: &SymbolTable,
-    tables: &[TableSpec],
+    tables: &[&TableSpec],
 ) -> Result<CellGrid, IrError> {
     let mut grid = CellGrid::new();
 
@@ -436,11 +436,12 @@ pub(crate) fn expand_validated_workbook(
     tables: &[TableSpec],
 ) -> Result<(SymbolTable, CellGrid), IrError> {
     let mut symbol_table = SymbolTable::new();
+    let mut ordered_tables: Vec<&TableSpec> = Vec::with_capacity(tables.len());
 
     for sheet in &manifest.sheets {
         let sheet_id = SheetId::from(sheet.name.as_str());
 
-        for table_id in &sheet.tables {
+        for table_id in sheet.table_ids() {
             let matched_table =
                 tables
                     .iter()
@@ -451,6 +452,7 @@ pub(crate) fn expand_validated_workbook(
                     })?;
 
             symbol_table.register_table(sheet_id.clone(), matched_table)?;
+            ordered_tables.push(matched_table);
         }
     }
 
@@ -464,7 +466,7 @@ pub(crate) fn expand_validated_workbook(
         }
     }
 
-    let grid = expand_validated_grid(&symbol_table, tables)?;
+    let grid = expand_validated_grid(&symbol_table, &ordered_tables)?;
     Ok((symbol_table, grid))
 }
 
@@ -490,7 +492,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![
                 ColumnSpec::descriptor("param", "Parameter"),
                 ColumnSpec::new("val"),
@@ -561,7 +562,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1").with_expr("1")],
         };
@@ -581,7 +581,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1").with_expr("1 + * 2")],
         };
@@ -599,7 +598,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1").with_expr("10")],
         };
@@ -621,7 +619,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![RowSpec::new("r1").with_expr("200")],
         };
@@ -648,7 +645,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![RowSpec::new("r1").with_expr("200").with_cells(cells)],
         };
@@ -670,7 +666,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![ColumnSpec::new("c1")],
             rows: vec![RowSpec::new("r1")],
         };
@@ -694,7 +689,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![
                 RowSpec::new("r1")
@@ -735,7 +729,6 @@ mod tests {
             subtitles: Vec::new(),
             currency: None,
             collapsible: false,
-            placement: crate::model::table::PlacementSpec::default(),
             columns: vec![col],
             rows: vec![
                 RowSpec::new("r1")

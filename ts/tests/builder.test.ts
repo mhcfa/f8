@@ -13,16 +13,23 @@ import { describe, expect, it } from "vitest"
 import {
   type AxisSelector,
   type AxisSlice,
+  type BandInput,
+  type BandInputItem,
+  type BandSpecInput,
   Cell,
   type CellInputValue,
   compile,
   CompiledModel,
+  type LaneInput,
+  type LaneInputItem,
+  type LaneSpecInput,
   Model,
   type Shade,
   Sheet,
   type SheetLayoutMode,
   SpecificationError,
   Table,
+  type TableRef,
 } from "../src/index.js"
 
 function readZipEntryUtf8(bytes: Uint8Array, entryName: string): string {
@@ -461,7 +468,7 @@ describe("TypeScript Fluent Builder DSL", () => {
           showGridlines: false,
           tabColor: "#1B365D",
           freezePanes: { row: 4, col: 2 },
-          tables: ["T1"],
+          bands: [{ lanes: [{ tables: ["T1"] }] }],
         },
       ],
     })
@@ -750,143 +757,415 @@ describe("TypeScript Fluent Builder DSL", () => {
     }
   })
 
-  it("Scenario 2: table placement DSL and dashboard layout", () => {
-    const model = new Model({ name: "DashboardLayoutModel" })
-    const sheet = model.addSheet("Dashboard")
+  it("Scenario 2: Band/Lane DSL, validation, and layout scenarios (Scenarios 1-6 & 8)", () => {
+    const makeCard = (
+      sheet: Sheet,
+      tid: string,
+      title: string,
+      cols: number,
+      rows: number
+    ): Table => {
+      const t = sheet.addTable(tid, title)
+      for (let c = 1; c <= cols; c++) {
+        t.addColumn(`c${c}`, { header: `C${c}` })
+      }
+      for (let r = 1; r <= rows; r++) {
+        const cells: Record<string, number> = {}
+        for (let c = 1; c <= cols; c++) {
+          cells[`c${c}`] = r * 10 + c
+        }
+        t.addRow(`r${r}`, { cells })
+      }
+      return t
+    }
 
-    // Authoring validation: mutually exclusive rightOf and below, or negative gap
-    expect(() =>
-      sheet.addTable("Bad1", "Bad", { rightOf: "T1", below: "T1" })
-    ).toThrow("Cannot specify both 'rightOf' and 'below'")
+    // Scenario 1: Default vertical stacking without setBands
+    const mDefault = new Model({ name: "DefaultStack" })
+    const sDefault = mDefault.addSheet("Main")
+    makeCard(sDefault, "T1", "First", 2, 2)
+    makeCard(sDefault, "T2", "Second", 2, 1)
+    const defaultBands: readonly BandSpecInput[] = sDefault.bands
+    expect(defaultBands).toEqual([
+      { lanes: [{ tables: ["T1"] }] },
+      { lanes: [{ tables: ["T2"] }] },
+    ])
+    const { manifest: defManifest, tables: defTables } = mDefault.toSpec()
+    expect(defManifest.sheets[0]?.bands).toEqual(defaultBands)
+    expect("placement" in (defTables[0] ?? {})).toBe(false)
+    const cDefault = mDefault.compile()
+    expect(cDefault.table("T1").address("r1", "c1")).toBe("B5")
+    expect(cDefault.table("T2").address("r1", "c1")).toBe("B12")
+    cDefault.dispose()
+
+    // Scenario 2: Wider lower-left card in multi-lane band (auto mode)
+    const mWide = new Model({ name: "WiderLowerLeft" })
+    const sWide = mWide.addSheet("Dashboard")
+    const tl = makeCard(sWide, "TL", "Top Left", 3, 2)
+    const bl = makeCard(sWide, "BL", "Bottom Left", 5, 3)
+    const tr = makeCard(sWide, "TR", "Top Right", 2, 1)
+    const br = makeCard(sWide, "BR", "Bottom Right", 2, 4)
+    const bot = makeCard(sWide, "Bottom", "Band 2", 4, 1)
+    const leftLane: LaneInput = { tables: [tl, bl] }
+    const rightLane: LaneInput = { tables: [tr, br] }
+    const topBand: BandInput = { lanes: [leftLane, rightLane] }
+    const botItem: BandInputItem = bot
+    expect(sWide.setBands([topBand, botItem])).toBe(sWide)
+    const cWide = mWide.compile()
+    expect(cWide.table("TL").address("r1", "c1")).toBe("B5")
+    expect(cWide.table("BL").address("r1", "c5")).toBe("F12")
+    expect(cWide.table("TR").address("r1", "c1")).toBe("H5")
+    expect(cWide.table("BR").address("r1", "c1")).toBe("H11")
+    expect(cWide.table("Bottom").address("r1", "c1")).toBe("B20")
+    cWide.dispose()
+
+    // Scenario 3: Custom container gaps (including 0), single-lane multi-table bands, bare TableRef shorthand
+    const mGaps = new Model({ name: "CustomGaps" })
+    const sGaps = mGaps.addSheet("Gaps")
+    const gA = makeCard(sGaps, "A", "A", 2, 1)
+    const gB = makeCard(sGaps, "B", "B", 1, 1)
+    const gC = makeCard(sGaps, "C", "C", 1, 1)
+    const gD = makeCard(sGaps, "D", "D", 1, 1)
+    const gE = makeCard(sGaps, "E", "E", 1, 1)
+    const gF = makeCard(sGaps, "F", "F", 1, 1)
+    const gG = makeCard(sGaps, "G", "G", 2, 1)
+    const gRef: TableRef = gG.id
+    sGaps.setBands([
+      {
+        laneGap: 0,
+        lanes: [
+          { tables: [gA, gB], tableGap: 1 },
+          { tables: [gC, gD], tableGap: 4 },
+        ],
+      },
+      { gap: 0, lanes: [{ tables: [gE, gF], tableGap: 1 }] },
+      gRef,
+    ])
+    const { manifest: gapManifest } = mGaps.toSpec()
+    expect(gapManifest.sheets[0]?.bands).toEqual([
+      {
+        laneGap: 0,
+        lanes: [
+          { tables: ["A", "B"], tableGap: 1 },
+          { tables: ["C", "D"], tableGap: 4 },
+        ],
+      },
+      { gap: 0, lanes: [{ tables: ["E", "F"], tableGap: 1 }] },
+      { lanes: [{ tables: ["G"] }] },
+    ])
+    const cGaps = mGaps.compile()
+    expect(cGaps.table("C").address("r1", "c1")).toBe("D5")
+    expect(cGaps.table("B").address("r1", "c1")).toBe("B10")
+    expect(cGaps.table("D").address("r1", "c1")).toBe("D13")
+    expect(cGaps.table("E").address("r1", "c1")).toBe("B17")
+    expect(cGaps.table("F").address("r1", "c1")).toBe("B22")
+    expect(cGaps.table("G").address("r1", "c1")).toBe("B28")
+    cGaps.dispose()
+
+    // Scenario 4: layout="grid" descriptor-span growth and per-lane descriptor alignment
+    const mGrid = new Model({ name: "GridScenario4" })
+    const sGrid = mGrid.addSheet("Summary", { layout: "grid", colWidth: 12 })
+    const gtl = sGrid.addTable("TL", "Top Left")
+    gtl.addColumn("item", { role: "descriptor", header: "Item" })
+    gtl.addColumn("v1", { header: "V1" })
+    gtl.addRow("r1", { cells: { item: "Short", v1: 10.0 } })
+
+    const gbl = sGrid.addTable("BL", "Bottom Left")
+    gbl.addColumn("item", { role: "descriptor", header: "Item" })
+    gbl.addColumn("v1", { header: "V1" })
+    gbl.addColumn("v2", { header: "V2" })
+    gbl.addRow("r1", {
+      cells: {
+        item: "Consolidated Adjusted EBITDA ($)",
+        v1: 100.0,
+        v2: 120.0,
+      },
+    })
+
+    const gtr = sGrid.addTable("TR", "Top Right")
+    gtr.addColumn("k", { role: "descriptor", header: "Key" })
+    gtr.addColumn("v", { header: "Val" })
+    gtr.addRow("r1", { cells: { k: "IRR", v: 0.25 } })
+
+    const gbr = sGrid.addTable("BR", "Bottom Right")
+    gbr.addColumn("k", { role: "descriptor", header: "Key" })
+    gbr.addColumn("v", { header: "Val" })
+    gbr.addRow("r1", { cells: { k: "Sponsor Gross Multiple", v: 2.8 } })
+
+    const gtime = sGrid.addTable("Timeline", "Timeline")
+    gtime.addColumn("item", { role: "descriptor", header: "Item" })
+    gtime.addColumn("y1", { header: "Y1" })
+    gtime.addRow("r1", { cells: { item: "Revenue", y1: 50.0 } })
+
+    sGrid.setBands([
+      { lanes: [{ tables: [gtl, gbl] }, { tables: [gtr, gbr] }], laneGap: 2 },
+      gtime,
+    ])
+    const cGrid = mGrid.compile()
+    expect(cGrid.table("TL").address("r1", "v1")).toBe("E5")
+    expect(cGrid.table("BL").address("r1", "v1")).toBe("E11")
+    expect(cGrid.table("Timeline").address("r1", "y1")).toBe("E17")
+    expect(cGrid.table("TR").address("r1", "k")).toBe("I5")
+    expect(cGrid.table("TR").address("r1", "v")).toBe("K5")
+    expect(cGrid.table("BR").address("r1", "k")).toBe("I11")
+    expect(cGrid.table("BR").address("r1", "v")).toBe("K11")
+    cGrid.dispose()
+
+    // Scenario 5: Band/Lane reordering decoupled from declaration order
+    const mOrder = new Model({ name: "ReorderModel" })
+    const sOrder = mOrder.addSheet("Dash")
+    const ot1 = sOrder.addTable("T1", "T1")
+    const ot2 = sOrder.addTable("T2", "T2")
+    const ot3 = sOrder.addTable("T3", "T3")
+    for (const ot of [ot1, ot2, ot3]) {
+      ot.addColumn("c1", { header: "C1" })
+      ot.addRow("r1", { expr: "1 / 0" })
+    }
+    sOrder.setBands([{ lanes: [{ tables: [ot3, ot1] }, { tables: [ot2] }] }])
+    expect(sOrder.tables.map((t) => t.id)).toEqual(["T1", "T2", "T3"])
+    const cOrder = mOrder.compile()
+    expect(cOrder.summary().sheets[0]?.tables.map((t) => t.id)).toEqual([
+      "T3",
+      "T1",
+      "T2",
+    ])
+    expect(cOrder.errors().map((e) => e.coordinate.table)).toEqual([
+      "T3",
+      "T1",
+      "T2",
+    ])
+    expect(cOrder.inspectSheet("Dash").tables).toEqual(["T3", "T1", "T2"])
+    expect(cOrder.table("T3").address("r1", "c1")).toBe("B5")
+    expect(cOrder.table("T1").address("r1", "c1")).toBe("B11")
+    expect(cOrder.table("T2").address("r1", "c1")).toBe("D5")
+    const mdOrder = cOrder.toMarkdown("layout")
+    expect(mdOrder.indexOf("`T3`")).toBeLessThan(mdOrder.indexOf("`T1`"))
+    expect(mdOrder.indexOf("`T1`")).toBeLessThan(mdOrder.indexOf("`T2`"))
+    cOrder.dispose()
+
+    // Scenario 6: Band/lane-aware title banner alignment
+    const mBanner = new Model({ name: "BannerScenario6" })
+    const sB1 = mBanner.addSheet("Dash")
+    const btl = makeCard(sB1, "TL", "Top Left", 3, 4)
+    const bbl = makeCard(sB1, "BL", "Bottom Left", 4, 7)
+    const btr = makeCard(sB1, "TR", "Top Right", 3, 3)
+    const bwb = makeCard(sB1, "WideBottom", "Wide Bottom", 10, 2)
+    sB1.setBands([{ lanes: [{ tables: [btl, bbl] }, { tables: [btr] }] }, bwb])
+    const cBanner = mBanner.compile()
+    const inspB1 = cBanner.inspectSheet("Dash")
+    const row2 = inspB1.rows.find((r) => r.excelRow === 2)
+    expect(row2?.cells.map((c) => [c.physicalA1, c.kind, c.tableId])).toEqual([
+      ["B2", "table_title", "TL"],
+      ["C2", "table_title", "TL"],
+      ["D2", "table_title", "TL"],
+      ["E2", "table_title", "TL"],
+      ["F2", "empty", null],
+      ["G2", "table_title", "TR"],
+      ["H2", "table_title", "TR"],
+      ["I2", "table_title", "TR"],
+      ["J2", "table_title", "TR"],
+      ["K2", "table_title", "TR"],
+    ])
+    const row11 = inspB1.rows.find((r) => r.excelRow === 11)
     expect(
-      () => new Table("Bad2", "Bad", { rightOf: "T1", below: "T1" })
-    ).toThrow("Cannot specify both 'rightOf' and 'below'")
-    expect(() => sheet.addTable("Bad3", "Bad", { gap: -1 })).toThrow(
-      "Table 'gap' must be non-negative"
+      row11?.cells
+        .filter((c) => c.kind === "table_title")
+        .map((c) => [c.physicalA1, c.kind, c.tableId])
+    ).toEqual([
+      ["B11", "table_title", "BL"],
+      ["C11", "table_title", "BL"],
+      ["D11", "table_title", "BL"],
+      ["E11", "table_title", "BL"],
+    ])
+    cBanner.dispose()
+
+    // Scenario 8: Outer SDK strict validation, empty sheets, idempotency, and sheet.bands parity
+    const sVal = new Sheet("Val")
+    const vt1 = sVal.addTable("T1", "T1")
+    const vt2 = sVal.addTable("T2", "T2")
+
+    // Bare non-array arguments
+    expect(() =>
+      sVal.setBands(vt1 as unknown as readonly BandInputItem[])
+    ).toThrow("array")
+    expect(() =>
+      sVal.setBands("T1" as unknown as readonly BandInputItem[])
+    ).toThrow("array")
+
+    // Invalid Band / Lane shapes and gaps
+    expect(() => sVal.setBands([{ lanes: [] }])).toThrow("cannot be empty")
+    expect(() =>
+      sVal.setBands([{ lanes: [[vt1, vt2] as unknown as LaneInputItem] }])
+    ).toThrow("LaneInput")
+    expect(() =>
+      sVal.setBands([{ lanes: [123 as unknown as LaneInputItem] }])
+    ).toThrow("LaneInput")
+    expect(() =>
+      sVal.setBands([{ lanes: [{} as unknown as LaneInputItem] }])
+    ).toThrow("LaneInput")
+    expect(() => sVal.setBands([{ lanes: [{ tables: [] }] }])).toThrow(
+      "cannot be empty"
     )
-    expect(() => new Table("Bad4", "Bad", { rightOf: "T1", gap: -2 })).toThrow(
-      "Table 'gap' must be non-negative"
+    expect(() =>
+      sVal.setBands([
+        { lanes: [{ tables: "T1" as unknown as readonly TableRef[] }] },
+      ])
+    ).toThrow("tables")
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1], tableGap: 1 }] }, vt2])
+    ).toThrow("single table cannot specify 'tableGap'")
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1], tableGap: 0 }] }, vt2])
+    ).toThrow("single table cannot specify 'tableGap'")
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1] }], laneGap: 1 }, vt2])
+    ).toThrow("single lane and cannot specify 'laneGap'")
+    expect(() => sVal.setBands([{ lanes: [vt1], laneGap: 1 }, vt2])).toThrow(
+      "single lane and cannot specify 'laneGap'"
     )
-    expect(() => new Table("Bad5", "Bad", { gap: 1.5 })).toThrow(
-      "Table 'gap' must be non-negative integer"
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1] }], laneGap: 0 }, vt2])
+    ).toThrow("single lane and cannot specify 'laneGap'")
+    expect(() => sVal.setBands([{ lanes: [vt1], laneGap: 0 }, vt2])).toThrow(
+      "single lane and cannot specify 'laneGap'"
+    )
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1, vt2], tableGap: -1 }] }])
+    ).toThrow("non-negative integer")
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1, vt2], tableGap: 1.5 }] }])
+    ).toThrow("non-negative integer")
+    expect(() =>
+      sVal.setBands([
+        {
+          lanes: [{ tables: [vt1, vt2], tableGap: true as unknown as number }],
+        },
+      ])
+    ).toThrow("non-negative integer")
+    expect(() =>
+      sVal.setBands([
+        { lanes: [{ tables: [vt1] }, { tables: [vt2] }], laneGap: -1 },
+      ])
+    ).toThrow("non-negative integer")
+    expect(() =>
+      sVal.setBands([vt1, { lanes: [{ tables: [vt2] }], gap: -1 }])
+    ).toThrow("non-negative integer")
+    expect(() =>
+      sVal.setBands([
+        vt1,
+        { lanes: [{ tables: [vt2] }], gap: false as unknown as number },
+      ])
+    ).toThrow("non-negative integer")
+
+    // Band 0 with gap
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1] }], gap: 0 }, vt2])
+    ).toThrow("band 0 cannot specify 'gap'")
+    expect(() => sVal.setBands([{ lanes: [vt1], gap: 0 }, vt2])).toThrow(
+      "band 0 cannot specify 'gap'"
+    )
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1] }], gap: 2 }, vt2])
+    ).toThrow("band 0 cannot specify 'gap'")
+
+    // Partition errors: missing, empty on non-empty, duplicates, unknown, foreign-sheet
+    expect(() => sVal.setBands([vt1])).toThrow("missing table")
+    expect(() => sVal.setBands([])).toThrow("missing table")
+    expect(() =>
+      sVal.setBands([{ lanes: [{ tables: [vt1, vt1] }, { tables: [vt2] }] }])
+    ).toThrow("Duplicate table")
+    expect(() => sVal.setBands([{ lanes: [vt1, vt1] }])).toThrow(
+      "Duplicate table"
+    )
+    expect(() => sVal.setBands([vt1, vt2, vt1])).toThrow("Duplicate table")
+    expect(() => sVal.setBands([vt1, vt2, "Ghost"])).toThrow(
+      "does not belong to sheet"
+    )
+    expect(() => sVal.setBands([{ lanes: [vt1, "Ghost"] }])).toThrow(
+      "does not belong to sheet"
     )
 
-    // Dashboard authoring with Table object and string targets + custom gaps
-    const t1 = sheet.addTable("T1", "Tall Left Table")
-    t1.addColumn("item", { role: "descriptor", header: "Item" })
-    t1.addColumn("c1", { header: "2023A" })
-    t1.addColumn("c2", { header: "2024E" })
-    for (let i = 1; i <= 9; i++) {
-      t1.addRow(`r${i}`, {
-        cells: { item: `Row ${i}`, c1: 10.0 * i, c2: 20.0 * i },
-      })
-    }
+    const foreignSheet = new Sheet("Other")
+    const foreignDiff = foreignSheet.addTable("Foreign", "Foreign")
+    const foreignSameId = foreignSheet.addTable("T1", "Foreign T1")
+    expect(() => sVal.setBands([vt1, foreignDiff])).toThrow(
+      "does not belong to sheet"
+    )
+    expect(() => sVal.setBands([foreignSameId, vt2])).toThrow(
+      "does not belong to sheet"
+    )
+    expect(() => sVal.setBands([{ lanes: [foreignSameId, vt2] }])).toThrow(
+      "does not belong to sheet"
+    )
 
-    // T2 placed rightOf T1 (passing Table object)
-    const t2 = sheet.addTable("T2", "Top Right", { rightOf: t1 })
-    t2.addColumn("metric", { role: "descriptor", header: "Metric" })
-    t2.addColumn("val", { header: "Value" })
-    t2.addRow("m1", { cells: { metric: "R1 2024E" }, expr: 'T1["r1", "c2"]' })
+    // Normalized sheet.bands parity (Table vs string vs band/lane shorthand vs omitted) and idempotency
+    const expectedStacked: readonly BandSpecInput[] = [
+      { lanes: [{ tables: ["T1"] }] },
+      { lanes: [{ tables: ["T2"] }] },
+    ]
+    const expectedLane: LaneSpecInput = { tables: ["T2", "T1"] }
+    expect(sVal.bands).toEqual(expectedStacked)
+    sVal.setBands([vt1, vt2])
+    expect(sVal.bands).toEqual(expectedStacked)
+    sVal.setBands([{ lanes: [{ tables: ["T1"] }, { tables: ["T2"] }] }])
+    expect(sVal.bands).toEqual([
+      { lanes: [{ tables: ["T1"] }, { tables: ["T2"] }] },
+    ])
+    const lanePairItem: LaneInputItem = vt1
+    sVal.setBands([{ lanes: [lanePairItem, "T2"] }])
+    expect(sVal.bands).toEqual([
+      { lanes: [{ tables: ["T1"] }, { tables: ["T2"] }] },
+    ])
+    // Idempotent replacement
+    sVal.setBands([{ lanes: [{ tables: [vt2, vt1] }] }])
+    expect(sVal.bands).toEqual([{ lanes: [expectedLane] }])
 
-    // T3 placed below T2 (passing string ID and custom gap)
-    const t3 = sheet.addTable("T3", "Bottom Right", { below: "T2", gap: 2 })
-    t3.addColumn("metric", { role: "descriptor", header: "Metric" })
-    t3.addColumn("val", { header: "Value" })
-    t3.addRow("m2", {
-      cells: { metric: "Double M1" },
-      expr: 'T2["m1", "val"] * 2',
-    })
+    // Bare TableRef lane shorthand end-to-end compilation (side-by-side pair, mixed lane, custom gap)
+    const mShort = new Model({ name: "LaneShorthand" })
+    const sShort = mShort.addSheet("Sensitivities")
+    const sL1 = makeCard(sShort, "L1", "Left 1", 2, 1)
+    const sL2 = makeCard(sShort, "L2", "Left 2", 2, 1)
+    const sR1 = makeCard(sShort, "R1", "Right 1", 2, 1)
+    const sP1 = makeCard(sShort, "P1", "Pair Left", 2, 1)
+    makeCard(sShort, "P2", "Pair Right", 2, 1)
+    const sFoot = makeCard(sShort, "Foot", "Footer", 3, 1)
+    sShort.setBands([
+      { lanes: [{ tables: [sL1, sL2] }, sR1], laneGap: 1 },
+      { lanes: [sP1, "P2"], gap: 1, laneGap: 2 },
+      { lanes: [sFoot], gap: 0 },
+    ])
+    expect(sShort.bands).toEqual([
+      { lanes: [{ tables: ["L1", "L2"] }, { tables: ["R1"] }], laneGap: 1 },
+      {
+        lanes: [{ tables: ["P1"] }, { tables: ["P2"] }],
+        gap: 1,
+        laneGap: 2,
+      },
+      { lanes: [{ tables: ["Foot"] }], gap: 0 },
+    ])
+    const cShort = mShort.compile()
+    expect(cShort.table("L1").address("r1", "c1")).toBe("B5")
+    expect(cShort.table("L2").address("r1", "c1")).toBe("B11")
+    expect(cShort.table("R1").address("r1", "c1")).toBe("E5")
+    expect(cShort.table("P1").address("r1", "c1")).toBe("B16")
+    expect(cShort.table("P2").address("r1", "c1")).toBe("F16")
+    expect(cShort.table("Foot").address("r1", "c1")).toBe("B20")
+    cShort.dispose()
 
-    // T4 stacked at sheet bottom with custom gap=3
-    const t4 = sheet.addTable("T4", "Full Width Bottom", { gap: 3 })
-    t4.addColumn("item", { role: "descriptor", header: "Summary" })
-    t4.addColumn("total", { header: "Total" })
-    t4.addRow("sum_row", {
-      cells: { item: "Combined" },
-      expr: 'T2["m1", "val"] + T3["m2", "val"]',
-    })
+    // Adding a table after setBands invalidates partition on toSpec() / compile()
+    const mLate = new Model({ name: "LateTable" })
+    const sLate = mLate.addSheet("S1")
+    const lt1 = makeCard(sLate, "T1", "T1", 1, 1)
+    sLate.setBands([lt1])
+    makeCard(sLate, "T2", "T2", 1, 1)
+    expect(() => sLate.toSpec()).toThrow(/missing from bands.*T2/)
+    expect(() => mLate.compile()).toThrow(/missing from bands.*T2/)
 
-    const { tables: tablesSpec } = model.toSpec()
-    expect(tablesSpec[0]?.placement).toBeUndefined()
-    expect(tablesSpec[1]?.placement).toEqual({ kind: "right_of", target: "T1" })
-    expect(tablesSpec[2]?.placement).toEqual({
-      kind: "below",
-      target: "T2",
-      gap: 2,
-    })
-    expect(tablesSpec[3]?.placement).toEqual({ kind: "stack", gap: 3 })
-
-    const compiled = model.compile()
-    expect(compiled.num("T2", "m1", "val")).toBeCloseTo(20.0)
-    expect(compiled.num("T3", "m2", "val")).toBeCloseTo(40.0)
-    expect(compiled.num("T4", "sum_row", "total")).toBeCloseTo(60.0)
-
-    // Verify physical coordinates and lowered formulas
-    const t2Cell = compiled.inspectCell("T2", "m1", "val")
-    expect(t2Cell.physicalAddress).toBe("'Dashboard'!G5")
-    expect(t2Cell.excelFormula).toBe("=$D$5")
-
-    const t3Cell = compiled.inspectCell("T3", "m2", "val")
-    expect(t3Cell.physicalAddress).toBe("'Dashboard'!G11")
-    expect(t3Cell.excelFormula).toBe("=$G$5*2")
-
-    const t4Cell = compiled.inspectCell("T4", "sum_row", "total")
-    expect(t4Cell.physicalAddress).toBe("'Dashboard'!C20")
-    expect(t4Cell.excelFormula).toBe("=$G$5+$G$11")
-
-    const sheetInsp = compiled.inspectSheet("Dashboard")
-    expect(sheetInsp.minCol).toBe(1)
-    expect(sheetInsp.maxCol).toBe(6)
-    expect(sheetInsp.minRow).toBe(1)
-    expect(sheetInsp.maxRow).toBe(19)
-    expect(sheetInsp.colWidths[4]).toBeCloseTo(3.0)
-
-    const xlsxBytes = compiled.emitWorkbook()
-    expect(xlsxBytes[0]).toBe(0x50)
-    expect(xlsxBytes[1]).toBe(0x4b)
-
-    // Invalid placement target raises SpecificationError with err.table
-    const badTargetModel = new Model()
-    const bs = badTargetModel.addSheet("S1")
-    const bt = bs.addTable("OrphanTable", "Orphan", {
-      rightOf: "MissingTarget",
-    })
-    bt.addColumn("c1", { header: "C1" })
-    bt.addRow("r1", { cells: { c1: 1.0 } })
-    try {
-      badTargetModel.compile()
-      expect.unreachable(
-        "Should have thrown SpecificationError on invalid placement target"
-      )
-    } catch (err) {
-      expect(err).toBeInstanceOf(SpecificationError)
-      expect((err as SpecificationError).table).toBe("OrphanTable")
-    }
-
-    // Overlapping tables raise SpecificationError with err.table === secondTable.id
-    const overlapModel = new Model()
-    const osSheet = overlapModel.addSheet("S1")
-    const ot1 = osSheet.addTable("Base", "Base")
-    ot1.addColumn("c1", { header: "C1" })
-    ot1.addRow("r1", { cells: { c1: 1.0 } })
-
-    const ot2 = osSheet.addTable("FirstRight", "First", { rightOf: ot1 })
-    ot2.addColumn("c1", { header: "C1" })
-    ot2.addRow("r1", { cells: { c1: 2.0 } })
-
-    const ot3 = osSheet.addTable("CollidingRight", "Second", { rightOf: ot1 })
-    ot3.addColumn("c1", { header: "C1" })
-    ot3.addRow("r1", { cells: { c1: 3.0 } })
-
-    try {
-      overlapModel.compile()
-      expect.unreachable(
-        "Should have thrown SpecificationError on table overlap"
-      )
-    } catch (err) {
-      expect(err).toBeInstanceOf(SpecificationError)
-      expect((err as SpecificationError).table).toBe("CollidingRight")
-    }
+    // Empty sheet setBands([]) succeeds
+    const sEmpty = new Sheet("Empty")
+    expect(sEmpty.bands).toEqual([])
+    expect(sEmpty.setBands([])).toBe(sEmpty)
+    expect(sEmpty.bands).toEqual([])
+    expect(sEmpty.toSpec().bands).toEqual([])
   })
 
   it("Scenario 3a: setCells multi-regime timeline row authoring", () => {
@@ -1331,7 +1610,7 @@ describe("TypeScript Fluent Builder DSL", () => {
     const directCompiled = compile(
       {
         modelName: "DirectCompileNullUndef",
-        sheets: [{ name: "S1", tables: ["T1"] }],
+        sheets: [{ name: "S1", bands: [{ lanes: [{ tables: ["T1"] }] }] }],
       },
       [
         {
@@ -1532,7 +1811,9 @@ describe("TypeScript Fluent Builder DSL", () => {
       {
         modelName: "RawDefaults",
         theme: "corporate_navy",
-        sheets: [{ name: "RawSheet", tables: ["T1"] }],
+        sheets: [
+          { name: "RawSheet", bands: [{ lanes: [{ tables: ["T1"] }] }] },
+        ],
       },
       [
         {
@@ -1614,7 +1895,7 @@ describe("TypeScript Fluent Builder DSL", () => {
             sheets: [
               {
                 name: "S1",
-                tables: ["T1"],
+                bands: [{ lanes: [{ tables: ["T1"] }] }],
                 layout: badLayout as unknown as { readonly kind: "grid" },
               },
             ],
@@ -1723,7 +2004,7 @@ describe("TypeScript Fluent Builder DSL", () => {
       expr: 'Summary["rev", @col] * 0.25',
     })
 
-    const kpis = dash.addTable("KPIs", "Key Metrics", { rightOf: summary })
+    const kpis = dash.addTable("KPIs", "Key Metrics")
     kpis.addColumn("metric", { role: "descriptor", header: "Metric" })
     kpis.addColumn("val", {
       header: "Value",
@@ -1734,6 +2015,7 @@ describe("TypeScript Fluent Builder DSL", () => {
       cells: { metric: "2025E Consolidated Margin" },
       expr: 'Summary["ebitda", "y2"] / Summary["rev", "y2"]',
     })
+    dash.setBands([{ lanes: [{ tables: [summary] }, { tables: [kpis] }] }])
 
     const notesSheet = model.addSheet("Notes")
     const notes = notesSheet.addTable("Commentary", "Notes")
@@ -1758,13 +2040,13 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(insp.minCol).toBe(1)
     expect(insp.maxCol).toBe(9)
     expect(insp.colWidths).toEqual({
-      0: 3.0,
+      0: 2.0,
       1: 14.0,
       2: 14.0,
       3: 14.0,
       4: 14.0,
       5: 14.0,
-      6: 3.0,
+      6: 2.0,
       7: 14.0,
       8: 14.0,
       9: 14.0,
