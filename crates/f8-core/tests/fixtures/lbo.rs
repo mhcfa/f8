@@ -670,6 +670,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::new([
                         LaneSpec::new(["DealAssumptions"]),
@@ -685,6 +686,7 @@ pub fn build_lbo_model(active_case: &str) -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("Timeline"),
                     TableId::from("Operations"),

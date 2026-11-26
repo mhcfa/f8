@@ -17,9 +17,13 @@ import type {
   DetailedCellInput,
   FormatPreset,
   FreezePanesInput,
+  HeaderFooterInput,
   LaneSpecInput,
   ModelOptions,
   ModelSpec,
+  PageOrientation,
+  PaperSize,
+  PrintFitMode,
   ProjectManifestInput,
   RowOptions,
   RowSpecInput,
@@ -30,6 +34,7 @@ import type {
   SheetLayoutMode,
   SheetLayoutSpecInput,
   SheetOptions,
+  SheetPrintSpecInput,
   SheetSpecInput,
   TableOptions,
   TableSpecInput,
@@ -697,6 +702,233 @@ function validateNonNegativeInt(
   return value
 }
 
+const ALLOWED_PRINT_KEYS = new Set([
+  "paperSize",
+  "orientation",
+  "fit",
+  "centerHorizontally",
+  "header",
+  "footer",
+])
+
+const ALLOWED_HEADER_FOOTER_KEYS = new Set(["left", "center", "right"])
+
+type PrintScope = "model" | "sheet"
+
+function validateOptionalPaperSize(value: unknown): PaperSize | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== "string") {
+    throw new Error(
+      `'paperSize' must be a string, got ${formatInvalidValue(value)}`
+    )
+  }
+  if (value === "a4" || value === "letter") {
+    return value
+  }
+  throw new Error(`Invalid paperSize '${value}'; expected 'a4' or 'letter'`)
+}
+
+function validateOptionalOrientation(
+  value: unknown
+): PageOrientation | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== "string") {
+    throw new Error(
+      `'orientation' must be a string, got ${formatInvalidValue(value)}`
+    )
+  }
+  if (value === "landscape" || value === "portrait") {
+    return value
+  }
+  throw new Error(
+    `Invalid orientation '${value}'; expected 'landscape' or 'portrait'`
+  )
+}
+
+function validateOptionalFit(value: unknown): PrintFitMode | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (typeof value !== "string") {
+    throw new Error(`'fit' must be a string, got ${formatInvalidValue(value)}`)
+  }
+  if (value === "fit_width" || value === "fit_page") {
+    return value
+  }
+  throw new Error(`Invalid fit '${value}'; expected 'fit_width' or 'fit_page'`)
+}
+
+function cloneHeaderFooter(hf: HeaderFooterInput): HeaderFooterInput {
+  return {
+    ...(hf.left !== undefined ? { left: hf.left } : {}),
+    ...(hf.center !== undefined ? { center: hf.center } : {}),
+    ...(hf.right !== undefined ? { right: hf.right } : {}),
+  }
+}
+
+function clonePrintSpec(
+  printSpec: SheetPrintSpecInput | null
+): SheetPrintSpecInput | null {
+  if (printSpec === null) {
+    return null
+  }
+  return {
+    paperSize: printSpec.paperSize,
+    ...(printSpec.orientation !== undefined
+      ? { orientation: printSpec.orientation }
+      : {}),
+    ...(printSpec.fit !== undefined ? { fit: printSpec.fit } : {}),
+    ...(printSpec.centerHorizontally !== undefined
+      ? { centerHorizontally: printSpec.centerHorizontally }
+      : {}),
+    ...(printSpec.header !== undefined
+      ? { header: cloneHeaderFooter(printSpec.header) }
+      : {}),
+    ...(printSpec.footer !== undefined
+      ? { footer: cloneHeaderFooter(printSpec.footer) }
+      : {}),
+  }
+}
+
+function normalizeHeaderFooterInput(
+  value: unknown,
+  section: "header" | "footer",
+  scope: PrintScope
+): HeaderFooterInput | "none" | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (value === "none") {
+    if (scope === "sheet") {
+      return "none"
+    }
+    throw new Error(`Model-level print '${section}' cannot be 'none'`)
+  }
+  if (!isPlainObject(value)) {
+    throw new Error(
+      `Print ${section} must be an object${scope === "sheet" ? " or 'none'" : ""}, got ${formatInvalidValue(value)}`
+    )
+  }
+  const out: { left?: string; center?: string; right?: string } = {}
+  for (const [key, zoneVal] of Object.entries(value)) {
+    if (!ALLOWED_HEADER_FOOTER_KEYS.has(key)) {
+      throw new Error(`Unknown print ${section} key '${key}'`)
+    }
+    if (zoneVal !== undefined) {
+      if (typeof zoneVal !== "string") {
+        throw new Error(
+          `Print ${section} '${key}' must be a string, got ${formatInvalidValue(zoneVal)}`
+        )
+      }
+      if (key === "left") {
+        out.left = zoneVal
+      } else if (key === "center") {
+        out.center = zoneVal
+      } else {
+        out.right = zoneVal
+      }
+    }
+  }
+  return out
+}
+
+interface ParsedPrintOverride {
+  readonly paperSize: PaperSize | undefined
+  readonly orientation: PageOrientation | undefined
+  readonly fit: PrintFitMode | undefined
+  readonly centerHorizontally: boolean | undefined
+  readonly header: HeaderFooterInput | "none" | undefined
+  readonly footer: HeaderFooterInput | "none" | undefined
+}
+
+function parsePrintOverride(
+  value: unknown,
+  scope: PrintScope
+): ParsedPrintOverride {
+  if (!isPlainObject(value)) {
+    throw new Error(
+      `Print configuration must be an object${scope === "sheet" ? " or 'none'" : ""}, got ${formatInvalidValue(value)}`
+    )
+  }
+  for (const key of Object.keys(value)) {
+    if (!ALLOWED_PRINT_KEYS.has(key)) {
+      throw new Error(`Unknown print configuration key '${key}'`)
+    }
+  }
+  const paperSize = validateOptionalPaperSize(value.paperSize)
+  const orientation = validateOptionalOrientation(value.orientation)
+  const fit = validateOptionalFit(value.fit)
+  if (
+    value.centerHorizontally !== undefined &&
+    typeof value.centerHorizontally !== "boolean"
+  ) {
+    throw new Error(
+      `'centerHorizontally' must be a boolean, got ${formatInvalidValue(value.centerHorizontally)}`
+    )
+  }
+  const header = normalizeHeaderFooterInput(value.header, "header", scope)
+  const footer = normalizeHeaderFooterInput(value.footer, "footer", scope)
+  return {
+    paperSize,
+    orientation,
+    fit,
+    centerHorizontally: value.centerHorizontally,
+    header,
+    footer,
+  }
+}
+
+function resolveHeaderFooterSection(
+  baseSection: HeaderFooterInput | undefined,
+  overrideSection: HeaderFooterInput | "none" | undefined
+): HeaderFooterInput | undefined {
+  if (overrideSection === "none") {
+    return undefined
+  }
+  if (overrideSection !== undefined) {
+    return overrideSection
+  }
+  return baseSection !== undefined ? cloneHeaderFooter(baseSection) : undefined
+}
+
+function resolvePrint(
+  base: SheetPrintSpecInput | null,
+  override: unknown,
+  scope: PrintScope
+): SheetPrintSpecInput | null {
+  if (override === undefined) {
+    return clonePrintSpec(base)
+  }
+  if (scope === "sheet" && override === "none") {
+    return null
+  }
+  const parsed = parsePrintOverride(override, scope)
+  const paperSize = parsed.paperSize ?? base?.paperSize
+  if (paperSize === undefined) {
+    const label = scope === "model" ? "Model" : "Sheet"
+    throw new Error(`${label} print configuration requires 'paperSize'`)
+  }
+  const orientation = parsed.orientation ?? base?.orientation
+  const fit = parsed.fit ?? base?.fit
+  const centerHorizontally =
+    parsed.centerHorizontally ?? base?.centerHorizontally
+  const header = resolveHeaderFooterSection(base?.header, parsed.header)
+  const footer = resolveHeaderFooterSection(base?.footer, parsed.footer)
+
+  return {
+    paperSize,
+    ...(orientation !== undefined ? { orientation } : {}),
+    ...(fit !== undefined ? { fit } : {}),
+    ...(centerHorizontally !== undefined ? { centerHorizontally } : {}),
+    ...(header !== undefined ? { header } : {}),
+    ...(footer !== undefined ? { footer } : {}),
+  }
+}
+
 export class Sheet {
   readonly name: string
   readonly tabColor: string | null
@@ -704,6 +936,7 @@ export class Sheet {
   readonly freezePanes: FreezePanesInput | null
   readonly layout: SheetLayoutMode
   readonly colWidth: number | null
+  readonly print: SheetPrintSpecInput | null
 
   readonly #model: Model | null
   readonly #tables: Table[] = []
@@ -749,6 +982,9 @@ export class Sheet {
       }
     }
 
+    const basePrint = options?.model?.print ?? null
+    const resolvedPrint = resolvePrint(basePrint, options?.print, "sheet")
+
     this.name = name
     this.tabColor = options?.tabColor ?? null
     this.showGridlines = options?.showGridlines ?? false
@@ -758,6 +994,7 @@ export class Sheet {
         : null
     this.layout = layout
     this.colWidth = options?.colWidth ?? null
+    this.print = resolvedPrint
     this.#model = options?.model ?? null
   }
 
@@ -774,6 +1011,7 @@ export class Sheet {
         })),
         ...(band.gap !== undefined ? { gap: band.gap } : {}),
         ...(band.laneGap !== undefined ? { laneGap: band.laneGap } : {}),
+        ...(band.pageBreakBefore === true ? { pageBreakBefore: true } : {}),
       }))
     }
     return this.#tables.map((t): BandSpecInput => ({
@@ -857,9 +1095,23 @@ export class Sheet {
         }
         const gap = validateNonNegativeInt(item.gap, "gap")
         const laneGap = validateNonNegativeInt(item.laneGap, "laneGap")
+        if (
+          item.pageBreakBefore !== undefined &&
+          typeof item.pageBreakBefore !== "boolean"
+        ) {
+          throw new Error(
+            `'pageBreakBefore' must be a boolean, got ${formatInvalidValue(item.pageBreakBefore)}`
+          )
+        }
+        const pageBreakBefore = item.pageBreakBefore === true
         if (bandIdx === 0 && gap !== undefined) {
           throw new Error(
             `Sheet '${this.name}': band 0 cannot specify 'gap' (${gap}) because no preceding band exists`
+          )
+        }
+        if (bandIdx === 0 && pageBreakBefore) {
+          throw new Error(
+            `Sheet '${this.name}': band 0 cannot specify 'pageBreakBefore: true' because no preceding band exists`
           )
         }
         if (item.lanes.length === 1 && laneGap !== undefined) {
@@ -918,6 +1170,7 @@ export class Sheet {
           lanes: normLanes,
           ...(gap !== undefined ? { gap } : {}),
           ...(laneGap !== undefined ? { laneGap } : {}),
+          ...(pageBreakBefore ? { pageBreakBefore: true } : {}),
         })
       } else {
         throw new Error(
@@ -975,6 +1228,7 @@ export class Sheet {
             ...(this.colWidth !== null ? { colWidth: this.colWidth } : {}),
           }
         : undefined
+    const printSpec = clonePrintSpec(this.print)
     return {
       name: this.name,
       showGridlines: this.showGridlines,
@@ -989,6 +1243,7 @@ export class Sheet {
           }
         : {}),
       ...(layoutSpec !== undefined ? { layout: layoutSpec } : {}),
+      ...(printSpec !== null ? { print: printSpec } : {}),
     }
   }
 }
@@ -1026,6 +1281,7 @@ function resolveThemeInput(
 export class Model {
   readonly name: string
   readonly theme: string | Readonly<Record<string, unknown>>
+  readonly print: SheetPrintSpecInput | null
 
   readonly #sheets: Sheet[] = []
   readonly #sheetNames: Set<string> = new Set()
@@ -1033,6 +1289,7 @@ export class Model {
   constructor(options?: ModelOptions) {
     this.name = options?.name ?? "Model"
     this.theme = resolveThemeInput(options?.theme ?? "corporate_navy")
+    this.print = resolvePrint(null, options?.print, "model")
   }
 
   get sheets(): readonly Sheet[] {

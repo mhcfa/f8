@@ -501,6 +501,7 @@ fn manifest_for_table(table_id: &str) -> ProjectManifest {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from(table_id)]),
         }],
     }
@@ -2511,6 +2512,7 @@ fn test_scenario_17_cluster_b_aggregation_descriptor_and_date_domain_strictness(
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
@@ -2817,6 +2819,7 @@ fn test_power_zero_zero_domain_and_precedence_parity() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };

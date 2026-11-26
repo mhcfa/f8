@@ -100,6 +100,7 @@ fn test_orthogonal_column_based_cap_table_and_waterfall() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([
                 TableId::from("CapTable"),
                 TableId::from("Valuation"),

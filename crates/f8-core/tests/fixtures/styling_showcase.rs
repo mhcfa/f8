@@ -1039,6 +1039,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("Styles_And_Borders"),
                     TableId::from("Hierarchical_Outlines"),
@@ -1053,6 +1054,7 @@ pub fn build_styling_showcase_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: Some(FreezePanes { row: 4, col: 2 }),
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Freeze_Panes_Sample")]),
             },
         ],

@@ -20,6 +20,7 @@ use crate::model::manifest::{
     DEFAULT_HORIZONTAL_TABLE_GAP, DEFAULT_VERTICAL_TABLE_GAP, FreezePanes, MAX_GRID_COL_WIDTH,
     MIN_GRID_COL_WIDTH, ProjectManifest, SheetLayoutSpec, SheetSpec,
 };
+use crate::model::print::SheetPrintSpec;
 use crate::model::table::{
     AxisRole, ColumnSpec, DataColumnSpec, DataRowSpec, RowSpec, TableSpec, ValueLiteral,
 };
@@ -224,6 +225,25 @@ pub struct TablePlacement {
     pub col_spans: Vec<(u32, u32)>,
 }
 
+/// Inclusive 0-indexed physical cell rectangle defining a worksheet's printed area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PrintArea {
+    pub first_row: u32,
+    pub first_col: u32,
+    pub last_row: u32,
+    pub last_col: u32,
+}
+
+/// Resolved physical print configuration for a worksheet produced by Pass 5.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SheetPrintLayout {
+    pub spec: SheetPrintSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub print_area: Option<PrintArea>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub row_breaks: Vec<u32>,
+}
+
 /// Sheet-level physical layout metrics and column widths.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SheetLayout {
@@ -237,6 +257,9 @@ pub struct SheetLayout {
     pub show_gridlines: bool,
     /// Tab accent color hex string if present.
     pub tab_color: Option<String>,
+    /// Resolved opt-in worksheet print layout if configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub print: Option<SheetPrintLayout>,
 }
 
 /// Complete deterministic spatial layout contract produced by Pass 5.
@@ -343,6 +366,7 @@ impl LayoutPlanner {
                     resolved_bands.push(ResolvedBand {
                         gap: band_spec.gap.unwrap_or(DEFAULT_VERTICAL_TABLE_GAP),
                         lane_gap: band_spec.lane_gap.unwrap_or(DEFAULT_HORIZONTAL_TABLE_GAP),
+                        page_break_before: band_spec.page_break_before,
                         lanes: resolved_lanes,
                     });
                 }
@@ -371,6 +395,11 @@ impl LayoutPlanner {
                 SheetLayoutSpec::Grid { col_width } => ctx.plan_grid(col_width)?,
             }
 
+            let print_layout = sheet_spec
+                .print
+                .as_ref()
+                .map(|spec| resolve_sheet_print_layout(spec, &resolved_bands, &sheet_placements));
+
             layout_tables.extend(sheet_placements);
 
             layout_sheets.insert(
@@ -381,6 +410,7 @@ impl LayoutPlanner {
                     freeze_panes: sheet_spec.freeze_panes,
                     show_gridlines: sheet_spec.show_gridlines,
                     tab_color: sheet_spec.tab_color.clone(),
+                    print: print_layout,
                 },
             );
         }
@@ -605,7 +635,57 @@ struct ResolvedLane<'a> {
 struct ResolvedBand<'a> {
     gap: u32,
     lane_gap: u32,
+    page_break_before: bool,
     lanes: Vec<ResolvedLane<'a>>,
+}
+
+fn resolve_sheet_print_layout(
+    spec: &SheetPrintSpec,
+    resolved_bands: &[ResolvedBand<'_>],
+    sheet_placements: &IndexMap<TableId, TablePlacement>,
+) -> SheetPrintLayout {
+    let print_area = if sheet_placements.is_empty() {
+        None
+    } else {
+        let mut first_row = u32::MAX;
+        let mut first_col = u32::MAX;
+        let mut last_row = 0u32;
+        let mut last_col = 0u32;
+        for p in sheet_placements.values() {
+            first_row = first_row.min(p.start_row);
+            first_col = first_col.min(p.start_col);
+            last_row = last_row.max(p.end_row);
+            last_col = last_col.max(p.end_col);
+        }
+        Some(PrintArea {
+            first_row,
+            first_col,
+            last_row,
+            last_col,
+        })
+    };
+
+    let mut row_breaks = Vec::new();
+    for band in resolved_bands {
+        if !band.page_break_before {
+            continue;
+        }
+        let band_start_row = band
+            .lanes
+            .iter()
+            .flat_map(|lane| lane.tables.iter())
+            .filter_map(|t| sheet_placements.get(&t.id).map(|p| p.start_row))
+            .min();
+        if let Some(row) = band_start_row {
+            row_breaks.push(row);
+        }
+    }
+
+    SheetPrintLayout {
+        spec: spec.clone(),
+        print_area,
+        row_breaks,
+    }
 }
 
 /// Per-worksheet planning context shared across `auto` and `grid` layout strategies.

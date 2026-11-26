@@ -79,6 +79,36 @@ export type SheetCellKind =
 
 export type SheetLayoutMode = "auto" | "grid"
 
+export type PaperSize = "a4" | "letter"
+
+export type PageOrientation = "landscape" | "portrait"
+
+export type PrintFitMode = "fit_width" | "fit_page"
+
+export interface HeaderFooterInput {
+  readonly left?: string
+  readonly center?: string
+  readonly right?: string
+}
+
+export interface SheetPrintSpecInput {
+  readonly paperSize: PaperSize
+  readonly orientation?: PageOrientation
+  readonly fit?: PrintFitMode
+  readonly centerHorizontally?: boolean
+  readonly header?: HeaderFooterInput
+  readonly footer?: HeaderFooterInput
+}
+
+export interface SheetPrintOverrideInput {
+  readonly paperSize?: PaperSize
+  readonly orientation?: PageOrientation
+  readonly fit?: PrintFitMode
+  readonly centerHorizontally?: boolean
+  readonly header?: HeaderFooterInput | "none"
+  readonly footer?: HeaderFooterInput | "none"
+}
+
 export interface AutoSheetLayoutSpecInput {
   readonly kind: "auto"
 }
@@ -330,6 +360,7 @@ export interface BandInput {
   readonly lanes: readonly LaneInputItem[]
   readonly gap?: number
   readonly laneGap?: number
+  readonly pageBreakBefore?: boolean
 }
 
 export type BandInputItem = BandInput | TableRef
@@ -343,6 +374,7 @@ export interface BandSpecInput {
   readonly lanes: readonly LaneSpecInput[]
   readonly gap?: number
   readonly laneGap?: number
+  readonly pageBreakBefore?: boolean
 }
 
 export interface SheetSpecInput {
@@ -352,6 +384,7 @@ export interface SheetSpecInput {
   readonly freezePanes?: FreezePanesInput
   readonly showGridlines?: boolean
   readonly layout?: SheetLayoutSpecInput
+  readonly print?: SheetPrintSpecInput
 }
 
 export interface ProjectManifestInput {
@@ -434,6 +467,7 @@ export type AxisSelector = string | Iterable<string> | AxisSlice
 export interface ModelOptions {
   readonly name?: string
   readonly theme?: ThemeInput
+  readonly print?: SheetPrintSpecInput
 }
 
 export interface ModelSpec {
@@ -447,6 +481,7 @@ export interface SheetOptions {
   readonly freezePanes?: FreezePanesInput
   readonly layout?: SheetLayoutMode
   readonly colWidth?: number
+  readonly print?: SheetPrintOverrideInput | "none"
   readonly model?: Model
 }
 

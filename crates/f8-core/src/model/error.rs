@@ -2,6 +2,7 @@ use thiserror::Error;
 
 use super::format::{CurrencyCode, FormatPreset};
 use super::id::{ColId, RowId, TableId};
+use super::print::{HeaderFooterSection, HeaderFooterZone};
 
 /// Structured diagnostic errors for f8 specifications and model validation.
 #[derive(Debug, Error)]
@@ -216,5 +217,62 @@ pub enum ModelError {
         preset: FormatPreset,
         decimals: u32,
         max: u32,
+    },
+
+    #[error(
+        "Sheet '{sheet}': band 0 cannot specify 'page_break_before' because no preceding band exists"
+    )]
+    InvalidFirstBandPageBreak { sheet: String },
+
+    #[error(
+        "Sheet '{sheet}': band {band_index} specifies 'page_break_before', which requires worksheet 'print' settings"
+    )]
+    PageBreakWithoutPrint { sheet: String, band_index: usize },
+
+    #[error(
+        "Sheet '{sheet}': band {band_index} cannot specify 'page_break_before' when print fit mode is 'fit_page'"
+    )]
+    PageBreakWithFitPage { sheet: String, band_index: usize },
+
+    #[error("Sheet '{sheet}': {count} manual page breaks exceed Excel's maximum ({max})")]
+    TooManyPageBreaks {
+        sheet: String,
+        count: usize,
+        max: usize,
+    },
+
+    #[error(
+        "Sheet '{sheet}': print {section} must specify at least one of 'left', 'center', or 'right'"
+    )]
+    EmptyPrintHeaderFooter {
+        sheet: String,
+        section: HeaderFooterSection,
+    },
+
+    #[error("Sheet '{sheet}': invalid print {section} '{zone}' zone: {reason}")]
+    InvalidPrintHeaderFooterZone {
+        sheet: String,
+        section: HeaderFooterSection,
+        zone: HeaderFooterZone,
+        reason: String,
+    },
+
+    #[error(
+        "Sheet '{sheet}': invalid theme font_family '{font_family}' for print header/footer: {reason}"
+    )]
+    InvalidPrintThemeFont {
+        sheet: String,
+        font_family: String,
+        reason: &'static str,
+    },
+
+    #[error(
+        "Sheet '{sheet}': compiled print {section} length ({utf16_len} UTF-16 code units) exceeds Excel's maximum ({max})"
+    )]
+    PrintHeaderFooterTooLong {
+        sheet: String,
+        section: HeaderFooterSection,
+        utf16_len: usize,
+        max: usize,
     },
 }

@@ -1629,6 +1629,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands(sheet_tables),
             },
             SheetSpec {
@@ -1637,6 +1638,7 @@ pub fn build_parity_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("RuntimeDivergences")]),
             },
         ],

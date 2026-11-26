@@ -16,7 +16,7 @@ Deterministic financial modeling compiler, in-memory evaluator, and Python DSL. 
 
 ## Workflow & CLI
 
-1. Define: Build `Model(name=..., theme=...)` -> `model.add_sheet(...)` -> `sheet.add_table(...)` -> `table.add_column(...)` / `table.add_row(...)`, and optionally arrange multi-lane bands or custom gaps via `sheet.set_bands(...)`.
+1. Define: Build `Model(name=..., theme=..., print=...)` -> `model.add_sheet(..., print=...)` -> `sheet.add_table(...)` -> `table.add_column(...)` / `table.add_row(...)`, and optionally arrange multi-lane bands, custom gaps, or manual page breaks via `sheet.set_bands(...)`.
 2. Compile: Call `compiled = model.compile()` (or `f8.compile(manifest, tables)`).
 3. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook views via `compiled.to_markdown("values" | "index" | "layout")`, and query tables, cells, or dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspect_cell(...)`, `compiled.precedents_of(...)`, and `compiled.dependents_of(...)` (see `references/auditing-and-repair.md`).
 4. Diagnose: Catch `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect their typed attributes.
@@ -42,6 +42,6 @@ CLI commands (`f8` or `python -m f8`):
 
 ## Reference Index
 
-- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Band`, `Lane`, `Table`, `Cell`), lookup/mutation APIs (`get_sheet`, `get_table`, `set_bands`, `set_cell`, `set_cells`), 2D coordinate grammar, 3-tier resolution lattice, band/lane and `auto`/`grid` layouts, formatting presets, styles, shades, and themes.
+- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Band`, `Lane`, `Table`, `Cell`, `PrintSetup`, `HeaderFooter`), lookup/mutation APIs (`get_sheet`, `get_table`, `set_bands`, `set_cell`, `set_cells`), 2D coordinate grammar, 3-tier resolution lattice, band/lane, `auto`/`grid`, and print layouts, formatting presets, styles, shades, and themes.
 - `references/functions.md`: 37 built-in Excel functions, compile-time type/shape rules, argument omission (`_`), composition patterns for omitted functions, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, whole-workbook and table Markdown/dict exports, `f8.types` inspection schemas, and `F8Error` exception attributes.

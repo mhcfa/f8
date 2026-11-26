@@ -51,12 +51,14 @@ All formula cell references require explicit 2D bracket syntax:
 
 ---
 
-## 2. Container Constructors (`Model`, `Sheet`, `Band`, `Lane`, `Table`)
+## 2. Container Constructors (`Model`, `Sheet`, `Band`, `Lane`, `Table`, `PrintSetup`, `HeaderFooter`)
 
 ```python
 model = f8.Model(
     name: str = "Model",
     theme: ThemeInput = "corporate_navy",
+    *,
+    print: PrintSetup | SheetPrintDict | None = None,
 )
 
 sheet = model.add_sheet(
@@ -67,6 +69,7 @@ sheet = model.add_sheet(
     *,
     layout: SheetLayoutMode = "auto",
     col_width: float | None = None,
+    print: PrintSetup | SheetPrintOverrideDict | Literal["none"] | None = None,
 ) -> Sheet
 
 table = sheet.add_table(
@@ -82,8 +85,24 @@ type LaneItem = Lane | TableRef
 type BandItem = Band | TableRef
 
 lane = f8.Lane(tables: Sequence[TableRef], *, table_gap: int | None = None)
-band = f8.Band(lanes: Sequence[LaneItem], *, gap: int | None = None, lane_gap: int | None = None)
+band = f8.Band(
+    lanes: Sequence[LaneItem],
+    *,
+    gap: int | None = None,
+    lane_gap: int | None = None,
+    page_break_before: bool = False,
+)
 sheet.set_bands(bands: Sequence[BandItem]) -> Sheet
+
+hf = f8.HeaderFooter(left: str | None = None, center: str | None = None, right: str | None = None)
+ps = f8.PrintSetup(
+    paper_size: PaperSize | None = None,
+    orientation: PageOrientation | None = None,
+    fit: PrintFitMode | None = None,
+    center_horizontally: bool | None = None,
+    header: HeaderFooter | HeaderFooterDict | Literal["none"] | None = None,
+    footer: HeaderFooter | HeaderFooterDict | Literal["none"] | None = None,
+)
 ```
 
 ### Container Methods and Properties
@@ -288,7 +307,7 @@ table.add_column_gutter() -> Table
 - Worksheet margins: Physical Row 0 (Row 1) and Column 0 (Column A) are reserved as blank margins. Band `0` starts at `B2` (`col=1, row=1`).
 - Default vertical stacking: Without `sheet.set_bands(...)`, each table is placed in its own 1-lane, 1-table band at Column `B` separated by `2` blank rows in `add_table` order.
 - Explicit 2D band/lane layout via `sheet.set_bands(bands: Sequence[Band | TableRef]) -> Sheet`:
-  - `Band(lanes: Sequence[Lane | TableRef], *, gap: int | None = None, lane_gap: int | None = None)`: Horizontal row of 1 or more vertical `Lane`s (or bare `TableRef` 1-table lane shorthands, normalized to `tuple[Lane, ...]`). Band `b > 0` starts `gap` (default `2`) blank rows below the previous band's lowest row; Lane `l > 0` starts `lane_gap` (default `1`) blank columns right of the previous lane's rightmost column.
+  - `Band(lanes: Sequence[Lane | TableRef], *, gap: int | None = None, lane_gap: int | None = None, page_break_before: bool = False)`: Horizontal row of 1 or more vertical `Lane`s (or bare `TableRef` 1-table lane shorthands, normalized to `tuple[Lane, ...]`). Band `b > 0` starts `gap` (default `2`) blank rows below the previous band's lowest row; Lane `l > 0` starts `lane_gap` (default `1`) blank columns right of the previous lane's rightmost column. `page_break_before=True` inserts a manual horizontal print page break immediately before the band's first row (valid only on Band `b > 0` when sheet `print` is enabled with `fit="fit_width"`, max `1,023` breaks per sheet; rejects non-`bool` with `TypeError` and Band `0` with `ValueError`).
   - `Lane(tables: Sequence[TableRef], *, table_gap: int | None = None)`: Vertical stack of 1 or more tables (`Table` or `str` ID, normalized to `tuple[str, ...]`). Table `0` starts at the band's top row; Table `t > 0` starts `table_gap` (default `2`) blank rows below the previous table in the lane.
   - Bare `TableRef` shorthand: Pass a `Table` or `str` directly inside `set_bands([...])` for a 1-lane, 1-table band, or directly inside `Band([...])` for a 1-table lane (`Band([left, right])`, `Band([Lane([tl, bl]), tr])`, or `Band([card], gap=1)`). Multi-table vertical lanes require explicit `Lane([...])` objects (nested sequences are rejected).
   - Non-overlap & ordering: Tables cannot overlap by construction (each lane's width is the maximum end column across its tables, shifting subsequent lanes right automatically). Compiled outputs (`summary()`, `errors()`, `inspect_sheet()`, `to_markdown()`) follow canonical `bands -> lanes -> tables` order.
@@ -321,6 +340,28 @@ sheet.set_bands(
 - Descriptor overflow spans: `descriptor` columns automatically span `ceil(req_w / W)` (`>= 1`) contiguous physical columns (from non-empty descriptor headers/text with `+1` breathing space and `indent * 2`) with zero merged cells. Anchor cells stay at the span's first column (preserving vertical `XLOOKUP`/`XMATCH`/`INDEX` slices and contiguous `measure` ranges), while styled blank runway cells carry continuous fills/borders and place vertical right borders on the span's final column.
 - Leading descriptor alignment: Lanes finalize left-to-right. Within each `(lane_index, start_col)` group, tables with at least one `descriptor` before their first `measure` column align their leading descriptor block (through the last leading `descriptor`, excluding trailing `add_column_gutter()` spacers after it) by extending their last leading `descriptor` span. Descriptor-only tables skip alignment; span growth in an earlier lane shifts later lanes right automatically.
 - `grid` constraints (violations raise `SpecificationError`): Text wrapping is disabled, `\n`/`\r` line breaks are forbidden in data cells, column `headers`, and `group` banners, and every non-empty `measure` column header line must fit within static `base_w`.
+
+### Worksheet Print Settings (`PrintSetup`, `HeaderFooter`, `print`)
+
+- Opt-in page setup: Omit `print` for unchanged default Excel output. When configured, sets `normal` worksheet view, fixed institutional margins (`0.4"` left/right, `0.6"` top/bottom, `0.25"` header/footer), print gridlines off, and an auto-trimmed `Print_Area` excluding the blank Col `A` / Row `1` gutter (`B2:<last_col><last_row>`; omitted on empty sheets). Preserved identically under `values_only=True`.
+- Fields (`PrintSetup` / `SheetPrintDict` / `SheetPrintOverrideDict`):
+  - `paper_size`: `"a4" | "letter"` (required on resolved sheet config; no regional default).
+  - `orientation`: `"landscape"` (default) | `"portrait"`.
+  - `fit`: `"fit_width"` (default, `1 x auto`) | `"fit_page"` (`1 x 1` dashboard).
+  - `center_horizontally`: `bool` (`True` default).
+  - `header` / `footer`: `HeaderFooter(left=..., center=..., right=...)` or `HeaderFooterDict` (requires at least one zone). Styled with `8pt`, `theme.typography.font_family`, `theme.palette.table_subtitle_text`, and `scaleWithDoc="0"`. Supported placeholders: `{page}`, `{pages}`, `{sheet}`, `{model}`, `{date}` (emits Excel `&D`; Desktop Excel evaluates it, while Excel Online PDF export omits `&D` — inline a static date string if targeting Excel Online), plus `{{`/`}}` for literal braces; literal `&` is auto-escaped. Rejects unknown/unmatched `{...}`, control chars (including inside `{model}`), post-expansion empty/whitespace zones, raw `&[Page]`/`&[Tab]`/`&[Date]`/`&[File]`/`&[Path]`/`&[Time]`/`&[Pages]`/`&[Picture]` macros, invalid `font_family` (`"`, `,`, `&`, control chars), and compiled strings `> 255` UTF-16 code units (`SpecificationError`).
+- Workbook-to-sheet cascade: Set default `Model(..., print=...)` (requires `paper_size`; rejects `"none"` on `header`/`footer`). On `model.add_sheet(..., print=...)` / `Sheet(..., print=...)`, `None` inherits `model.print`, `"none"` disables printing for that sheet, and a `PrintSetup` / override dict performs a shallow field merge (overriding `header`/`footer` replaces that section wholesale; `header="none"` / `footer="none"` clears an inherited section). Unknown dict keys raise `ValueError`.
+- Page breaks on vertical sheets: Implicit vertical stacking omits `set_bands`; once a vertically stacked sheet needs manual page breaks, call `sheet.set_bands(...)` using bare `TableRef` shorthand for bands without options and `Band([tbl], page_break_before=True)` where each new page starts:
+
+```python
+sheet.set_bands(
+    [
+        income_stmt,  # Band 0 (bare TableRef shorthand)
+        f8.Band([balance_sheet], page_break_before=True),
+        f8.Band([cash_flow], page_break_before=True),
+    ]
+)
+```
 
 ---
 

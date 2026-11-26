@@ -258,6 +258,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
             SheetSpec {
@@ -266,6 +267,7 @@ fn test_scenario_7_full_pipeline_spec_ast_to_dependency_graph() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Forecast")]),
             },
         ],

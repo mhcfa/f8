@@ -230,6 +230,7 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
             SheetSpec {
@@ -238,6 +239,7 @@ fn test_scenario_6_end_to_end_workbook_orchestration() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
             },
         ],
@@ -374,6 +376,7 @@ fn test_expand_workbook_unassigned_table_rejected() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
         }],
     };

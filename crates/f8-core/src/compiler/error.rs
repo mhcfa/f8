@@ -244,7 +244,15 @@ impl CompilerError {
                     | ModelError::InvalidColWidthBounds { .. }
                     | ModelError::MissingDecimalPlaceholder { .. }
                     | ModelError::MissingCurrencySymbolPlaceholder
-                    | ModelError::ThemePrecisionOutOfBounds { .. } => None,
+                    | ModelError::ThemePrecisionOutOfBounds { .. }
+                    | ModelError::InvalidFirstBandPageBreak { .. }
+                    | ModelError::PageBreakWithoutPrint { .. }
+                    | ModelError::PageBreakWithFitPage { .. }
+                    | ModelError::TooManyPageBreaks { .. }
+                    | ModelError::EmptyPrintHeaderFooter { .. }
+                    | ModelError::InvalidPrintHeaderFooterZone { .. }
+                    | ModelError::InvalidPrintThemeFont { .. }
+                    | ModelError::PrintHeaderFooterTooLong { .. } => None,
                 };
                 ErrorDiagnostic::SpecificationError {
                     message: message.clone(),
