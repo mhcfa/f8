@@ -18,12 +18,20 @@ from f8 import (
     Cell,
     CellInputValue,
     CompiledModel,
+    HeaderFooter,
+    HeaderFooterDict,
     Lane,
     LaneItem,
     Model,
+    PageOrientation,
+    PaperSize,
+    PrintFitMode,
+    PrintSetup,
     Shade,
     Sheet,
     SheetLayoutMode,
+    SheetPrintDict,
+    SheetPrintOverrideDict,
     SpecificationError,
     Table,
     TableRef,
@@ -1905,3 +1913,387 @@ def test_sheet_grid_layout_scenario_10_and_12_e2e_parity() -> None:
     with zipfile.ZipFile(io.BytesIO(xlsx), "r") as zf:
         dash_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert "<mergeCells" not in dash_xml
+
+
+def test_sheet_print_settings_sdk_cascade_validation_and_e2e_parity() -> None:
+    # Public export checks
+    for sym in (
+        "HeaderFooter",
+        "PrintSetup",
+        "PaperSize",
+        "PageOrientation",
+        "PrintFitMode",
+        "HeaderFooterDict",
+        "SheetPrintDict",
+        "SheetPrintOverrideDict",
+    ):
+        assert sym in f8.__all__
+
+    # Type alias sanity
+    paper: PaperSize = "a4"
+    orient: PageOrientation = "landscape"
+    fit: PrintFitMode = "fit_width"
+    hf_dict: HeaderFooterDict = {"left": "{model}"}
+    sp_dict: SheetPrintDict = {"paper_size": paper, "orientation": orient, "fit": fit}
+    spo_dict: SheetPrintOverrideDict = {"footer": "none"}
+    assert hf_dict["left"] == "{model}"
+    assert sp_dict["paper_size"] == "a4"
+    assert spo_dict["footer"] == "none"
+
+    # HeaderFooter eager validation
+    with pytest.raises(ValueError, match="at least one"):
+        HeaderFooter()
+    with pytest.raises(TypeError, match="must be a str or None"):
+        HeaderFooter(left=cast(str, 123))
+
+    # PrintSetup eager validation & dict mutation isolation
+    with pytest.raises(TypeError, match="center_horizontally"):
+        PrintSetup(paper_size="a4", center_horizontally=cast(bool, 1))
+    with pytest.raises(ValueError, match="Unknown print header key"):
+        PrintSetup(paper_size="a4", header=cast(HeaderFooterDict, {"bogus": "x"}))
+    with pytest.raises(ValueError, match="Invalid paper_size"):
+        PrintSetup(paper_size=cast(PaperSize, "a3"))
+    with pytest.raises(ValueError, match="Invalid orientation"):
+        PrintSetup(paper_size="a4", orientation=cast(PageOrientation, "diagonal"))
+    with pytest.raises(ValueError, match="Invalid fit"):
+        PrintSetup(paper_size="a4", fit=cast(PrintFitMode, "fit_height"))
+
+    mutable_hf: HeaderFooterDict = {"left": "Orig"}
+    ps_cloned = PrintSetup(paper_size="a4", header=mutable_hf, footer=HeaderFooter(right="R"))
+    mutable_hf["left"] = "Mutated"
+    assert ps_cloned.header == HeaderFooter(left="Orig")
+    assert isinstance(ps_cloned.header, HeaderFooter)
+    assert isinstance(ps_cloned.footer, HeaderFooter)
+    assert ps_cloned == PrintSetup(
+        paper_size="a4",
+        header=HeaderFooter(left="Orig"),
+        footer={"right": "R"},
+    )
+    assert hash(ps_cloned) == hash(
+        PrintSetup(
+            paper_size="a4",
+            header=HeaderFooter(left="Orig"),
+            footer=HeaderFooter(right="R"),
+        )
+    )
+    with pytest.raises(ValueError, match="at least one"):
+        PrintSetup(paper_size="a4", header={})
+    with pytest.raises(ValueError, match="at least one"):
+        PrintSetup(paper_size="a4", header=cast(HeaderFooterDict, {"left": None}))
+
+    # Model-level eager validation
+    with pytest.raises(ValueError, match="paper_size"):
+        Model(print=PrintSetup(orientation="portrait"))
+    with pytest.raises(ValueError, match="cannot be 'none'"):
+        Model(print=PrintSetup(paper_size="a4", header="none"))
+    with pytest.raises(ValueError, match="cannot be 'none'"):
+        Model(print=cast(SheetPrintDict, {"paper_size": "a4", "footer": "none"}))
+    with pytest.raises(ValueError, match="Unknown print configuration key"):
+        Model(print=cast(SheetPrintDict, {"paper_size": "a4", "scale": 80}))
+    with pytest.raises(ValueError, match="Unknown print footer key"):
+        Model(print=cast(SheetPrintDict, {"paper_size": "a4", "footer": {"bad": "x"}}))
+    with pytest.raises(ValueError, match="Invalid paper_size"):
+        Model(print=cast(SheetPrintDict, {"paper_size": "a3"}))
+    with pytest.raises(ValueError, match="expected PrintSetup or mapping"):
+        Model(print=cast(SheetPrintDict, "none"))
+
+    # Sheet-level eager validation & no-op "none" opt-outs
+    no_print_sheet = Sheet("NoPrint", print="none")
+    assert no_print_sheet.print is None
+    assert "print" not in no_print_sheet.__f8_spec__()
+
+    noop_clear_hf = Sheet("NoopHF", print={"paper_size": "a4", "header": "none", "footer": "none"})
+    assert noop_clear_hf.print == {"paper_size": "a4"}
+
+    with pytest.raises(ValueError, match="paper_size"):
+        Sheet("MissingPaper", print={"orientation": "portrait"})
+    with pytest.raises(ValueError, match="Unknown print configuration key"):
+        Sheet("UnknownKey", print=cast(SheetPrintOverrideDict, {"paper_size": "a4", "extra": 1}))
+    with pytest.raises(ValueError, match="Invalid orientation"):
+        Sheet(
+            "BadOrient",
+            print=cast(SheetPrintOverrideDict, {"paper_size": "a4", "orientation": "diagonal"}),
+        )
+    with pytest.raises(ValueError, match="Invalid fit"):
+        Sheet(
+            "BadFit",
+            print=cast(SheetPrintOverrideDict, {"paper_size": "a4", "fit": "fit_height"}),
+        )
+    with pytest.raises(ValueError, match="PrintSetup, mapping, or 'none'"):
+        Sheet("BadStr", print=cast(SheetPrintOverrideDict, "bogus"))
+    with pytest.raises(TypeError, match="center_horizontally"):
+        Sheet(
+            "BadCenter",
+            print=cast(SheetPrintOverrideDict, {"paper_size": "a4", "center_horizontally": "yes"}),
+        )
+
+    # Band.page_break_before eager validation
+    with pytest.raises(TypeError, match="page_break_before"):
+        Band(["T1"], page_break_before=cast(bool, 1))
+
+    band0_sheet = Sheet("Band0Check", print={"paper_size": "a4"})
+    band0_t = band0_sheet.add_table("T0", title="T0")
+    band0_t.add_column("c1", header="C1")
+    band0_t.add_row("r1", cells={"c1": 1.0})
+    with pytest.raises(ValueError, match="band 0 cannot specify 'page_break_before=True'"):
+        band0_sheet.set_bands([Band([band0_t], page_break_before=True)])
+
+    # Scenario 8: Model print cascade + shallow overrides + wholesale header/footer replacement +
+    # "none" opt-out + Band.page_break_before + XML + Layout Markdown + determinism + values_only
+    model = Model(
+        name="Acme & Co",
+        print=PrintSetup(
+            paper_size="a4",
+            header=HeaderFooter(left="{model}", center="2026 Forecast {{Rev}}", right="{sheet}"),
+            footer=HeaderFooter(left="M&A Confidential", right="Page {page} of {pages} ({date})"),
+        ),
+    )
+
+    # Sheet 1: Inherits model.print (a4 landscape fit_width, header & footer),
+    # 2 bands with page_break_before
+    s_inherit = model.add_sheet("Summary")
+    t1 = s_inherit.add_table("SummaryTop", title="Executive Summary")
+    t1.add_column("item", role="descriptor", header="Item")
+    t1.add_column("y1", header="2024E", format="currency", decimals=0)
+    t1.add_column("y2", header="2025E", format="currency", decimals=0)
+    t1.add_row("rev", cells={"item": "Revenue", "y1": 100.0}, expr='SummaryTop["rev", "y1"] * 1.1')
+    t2 = s_inherit.add_table("SummaryBot", title="Supporting Detail")
+    t2.add_column("item", role="descriptor", header="Item")
+    t2.add_column("y1", header="2024E")
+    t2.add_row("note", cells={"item": "Line 1\nLine 2", "y1": 50.0})
+    s_inherit.set_bands([Band([t1]), Band([t2], page_break_before=True)])
+    assert s_inherit.bands[1].page_break_before is True
+
+    # Sheet 2: Overrides fit="fit_page", orientation="portrait", paper_size="letter",
+    # center_horizontally=False, header="none", footer="none"
+    s_fitpage = model.add_sheet(
+        "Dashboard",
+        print=PrintSetup(
+            paper_size="letter",
+            orientation="portrait",
+            fit="fit_page",
+            center_horizontally=False,
+            header="none",
+            footer="none",
+        ),
+    )
+    t3 = s_fitpage.add_table("Dash", title="Dashboard")
+    t3.add_column("k", role="descriptor", header="KPI")
+    t3.add_column("v", header="Value")
+    t3.add_row("m", cells={"k": "IRR", "v": 0.25})
+
+    # Sheet 3: Wholesale footer replacement (replaces model footer's left+right with center-only)
+    s_replace = model.add_sheet(
+        "Appendix",
+        print={"footer": {"center": "Appendix Only"}},
+    )
+    t4 = s_replace.add_table("App", title="Appendix")
+    t4.add_column("k", role="descriptor", header="Key")
+    t4.add_column("v", header="Value")
+    t4.add_row("r1", cells={"k": "Note", "v": 1.0})
+
+    # Sheet 4: Opts out of model.print via print="none"
+    s_optout = model.add_sheet("Scratch", print="none")
+    t5 = s_optout.add_table("Work", title="Scratch")
+    t5.add_column("v", header="Val")
+    t5.add_row("r1", cells={"v": 42.0})
+
+    # Sheet 5: Empty sheet inheriting print (Scenario 5)
+    model.add_sheet("EmptyPrint")
+
+    manifest, _tables = model.__f8_spec__()
+    assert manifest["sheets"][0].get("print") == {
+        "paper_size": "a4",
+        "header": {"left": "{model}", "center": "2026 Forecast {{Rev}}", "right": "{sheet}"},
+        "footer": {"left": "M&A Confidential", "right": "Page {page} of {pages} ({date})"},
+    }
+    sheet0_bands = manifest["sheets"][0].get("bands")
+    assert sheet0_bands is not None
+    assert sheet0_bands[1].get("page_break_before") is True
+    assert manifest["sheets"][1].get("print") == {
+        "paper_size": "letter",
+        "orientation": "portrait",
+        "fit": "fit_page",
+        "center_horizontally": False,
+    }
+    assert manifest["sheets"][2].get("print") == {
+        "paper_size": "a4",
+        "header": {"left": "{model}", "center": "2026 Forecast {{Rev}}", "right": "{sheet}"},
+        "footer": {"center": "Appendix Only"},
+    }
+    assert "print" not in manifest["sheets"][3]
+    sheet4_print = manifest["sheets"][4].get("print")
+    assert sheet4_print is not None
+    assert sheet4_print["paper_size"] == "a4"
+
+    compiled = model.compile()
+
+    # Verify Layout Markdown (Scenarios 1, 5, 6)
+    layout_md = compiled.to_markdown(detail="layout")
+    assert "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:D11" in layout_md
+    assert ", page_break):" in layout_md
+    assert "Print: letter portrait | Fit: fit_page (1 x 1) | Area: B2:C5" in layout_md
+    scratch_section = layout_md.split("## Sheet: Scratch\n")[1].split("## Sheet: ")[0]
+    assert "Print:" not in scratch_section
+    empty_section = layout_md.split("## Sheet: EmptyPrint\n")[1]
+    assert "_(no tables)_" in empty_section
+    assert "Print:" not in empty_section
+
+    # Verify OpenXML emission, byte determinism, and values_only parity
+    buf1 = compiled.emit_workbook()
+    buf2 = compiled.emit_workbook()
+    assert buf1 == buf2
+    buf_frozen = compiled.emit_workbook({"values_only": True})
+
+    for label, buf in (("live", buf1), ("values_only", buf_frozen)):
+        with zipfile.ZipFile(io.BytesIO(buf), "r") as zf:
+            wb_xml = zf.read("xl/workbook.xml").decode("utf-8")
+            sh1_xml = zf.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            sh2_xml = zf.read("xl/worksheets/sheet2.xml").decode("utf-8")
+            sh3_xml = zf.read("xl/worksheets/sheet3.xml").decode("utf-8")
+            sh4_xml = zf.read("xl/worksheets/sheet4.xml").decode("utf-8")
+            sh5_xml = zf.read("xl/worksheets/sheet5.xml").decode("utf-8")
+
+        assert 'name="_xlnm.Print_Area" localSheetId="0">Summary!$B$2:$D$11<' in wb_xml, label
+        assert 'name="_xlnm.Print_Area" localSheetId="3"' not in wb_xml, label
+        assert 'name="_xlnm.Print_Area" localSheetId="4"' not in wb_xml, label
+
+        # Sheet 1 (inherited a4 landscape fit_width + header/footer + row break)
+        assert '<pageSetUpPr fitToPage="1"/>' in sh1_xml
+        assert '<printOptions horizontalCentered="1"/>' in sh1_xml
+        assert '<pageSetup paperSize="9" fitToHeight="0" orientation="landscape"' in sh1_xml
+        assert '<rowBreaks count="1" manualBreakCount="1">' in sh1_xml
+        assert '<headerFooter scaleWithDoc="0">' in sh1_xml
+        assert "Acme &amp;&amp; Co" in sh1_xml
+        assert "2026 Forecast {Rev}" in sh1_xml
+        assert "Page &amp;P of &amp;N (&amp;D)" in sh1_xml
+
+        # Sheet 2 (letter portrait fit_page, center_horizontally=False, no header/footer)
+        assert '<pageSetUpPr fitToPage="1"/>' in sh2_xml
+        assert '<pageSetup paperSize="1" orientation="portrait"' in sh2_xml
+        assert "fitToWidth=" not in sh2_xml
+        assert "fitToHeight=" not in sh2_xml
+        assert "<printOptions" not in sh2_xml
+        assert "<headerFooter" not in sh2_xml
+
+        # Sheet 3 (wholesale footer replacement: no M&A Confidential or Page &P)
+        assert "Appendix Only" in sh3_xml
+        assert "Confidential" not in sh3_xml
+        assert "Page &amp;P" not in sh3_xml
+
+        # Sheet 4 (opted out via print="none": zero print elements)
+        assert "<pageSetUpPr" not in sh4_xml
+        assert "<pageSetup" not in sh4_xml
+        assert "<printOptions" not in sh4_xml
+        assert "<headerFooter" not in sh4_xml
+        assert "<rowBreaks" not in sh4_xml
+
+        # Sheet 5 (empty sheet with print: pageSetup present, no rowBreaks or Print_Area)
+        assert '<pageSetup paperSize="9" fitToHeight="0" orientation="landscape"' in sh5_xml
+        assert "<rowBreaks" not in sh5_xml
+
+    # Scenario 7: Raw f8.compile Pass 1 rejections
+    # (empty header {}, smuggling, page_break rules, unknown fields)
+    min_tbl: dict[str, object] = {
+        "id": "T1",
+        "title": "T1",
+        "columns": [{"kind": "data", "id": "c1", "headers": ["C1"]}],
+        "rows": [{"kind": "data", "id": "r1", "cells": {"c1": 1.0}}],
+    }
+    min_tbl2: dict[str, object] = {**min_tbl, "id": "T2"}
+
+    raw_invalid_cases: list[tuple[dict[str, object], list[dict[str, object]]]] = [
+        # Empty header {}
+        (
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "print": {"paper_size": "a4", "header": {}},
+                        "bands": [{"lanes": [{"tables": ["T1"]}]}],
+                    }
+                ],
+            },
+            [min_tbl],
+        ),
+        # page_break_before without print
+        (
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "bands": [
+                            {"lanes": [{"tables": ["T1"]}]},
+                            {"page_break_before": True, "lanes": [{"tables": ["T2"]}]},
+                        ],
+                    }
+                ],
+            },
+            [min_tbl, min_tbl2],
+        ),
+        # page_break_before with fit_page
+        (
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "print": {"paper_size": "a4", "fit": "fit_page"},
+                        "bands": [
+                            {"lanes": [{"tables": ["T1"]}]},
+                            {"page_break_before": True, "lanes": [{"tables": ["T2"]}]},
+                        ],
+                    }
+                ],
+            },
+            [min_tbl, min_tbl2],
+        ),
+        # {model} newline smuggling
+        (
+            {
+                "model_name": "Bad\nName",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "print": {"paper_size": "a4", "header": {"left": "{model}"}},
+                        "bands": [{"lanes": [{"tables": ["T1"]}]}],
+                    }
+                ],
+            },
+            [min_tbl],
+        ),
+        # Cross-boundary A&{model} macro smuggling
+        (
+            {
+                "model_name": "[Page] Trick",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "print": {"paper_size": "a4", "header": {"left": "A&{model}"}},
+                        "bands": [{"lanes": [{"tables": ["T1"]}]}],
+                    }
+                ],
+            },
+            [min_tbl],
+        ),
+        # Unknown key on print
+        (
+            {
+                "model_name": "M",
+                "sheets": [
+                    {
+                        "name": "S1",
+                        "print": {"paper_size": "a4", "bogus": True},
+                        "bands": [{"lanes": [{"tables": ["T1"]}]}],
+                    }
+                ],
+            },
+            [min_tbl],
+        ),
+    ]
+    for bad_manifest, bad_tables in raw_invalid_cases:
+        with pytest.raises(SpecificationError) as exc_info:
+            f8.compile(bad_manifest, bad_tables)
+        assert exc_info.value.table is None

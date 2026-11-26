@@ -76,6 +76,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
             },
             SheetSpec {
@@ -84,6 +85,7 @@ fn test_scenario_1_end_to_end_workbook_binary_generation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("SummaryTable")]),
             },
         ],
@@ -136,6 +138,7 @@ fn test_scenario_2_sheet_layout_metrics_and_column_widths_application() {
             freeze_panes: Some(FreezePanes { row: 3, col: 2 }),
             show_gridlines: false,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("LayoutTable")]),
         }],
     };
@@ -201,6 +204,7 @@ fn test_scenario_3_structural_headers_and_super_headers_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("HeaderTable")]),
         }],
     };
@@ -261,6 +265,7 @@ fn test_scenario_3b_multi_row_subtitles_emission_and_inspection() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
         }],
     };
@@ -355,6 +360,7 @@ fn test_scenario_4_single_cell_super_header_safety() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("SingleGroupTable")]),
         }],
     };
@@ -404,6 +410,7 @@ fn test_scenario_5_live_formulas_with_evaluated_result_caching() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("FormulaTable")]),
         }],
     };
@@ -455,6 +462,7 @@ fn test_scenario_6_values_only_freezing_mode() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("FreezeTable")]),
         }],
     };
@@ -581,6 +589,7 @@ fn test_scenario_8_collapsible_row_group_outlining() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("OutlineTable")]),
         }],
     };
@@ -636,6 +645,7 @@ fn test_scenario_9_save_workbook_directly_to_disk_file() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("DiskTable")]),
         }],
     };
@@ -685,6 +695,7 @@ fn test_scenario_10_missing_coordinate_or_entity_diagnostics() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("DiagTable")]),
         }],
     };
@@ -946,6 +957,7 @@ fn test_scenario_11_audit_note_attachment() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("NoteTable")]),
         }],
     };
@@ -994,6 +1006,7 @@ fn test_scenario_12_audit_note_isolation_and_section_header() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("NoteTable")]),
         }],
     };
@@ -1034,6 +1047,7 @@ fn test_scenario_13_section_header_underline_workbook_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("SectionTable")]),
         }],
     };
@@ -1131,6 +1145,7 @@ fn test_scenario_14_lbo_timeline_group_banners_and_stacked_headers_no_center_acr
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("LboSchedule")]),
         }],
     };
@@ -1277,6 +1292,7 @@ fn test_scenario_15_column_gutter_row_formatting_and_header_border_continuity() 
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("GutterFormatting")]),
         }],
     };
@@ -1482,6 +1498,7 @@ fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("RowGutterBlank")]),
         }],
     };
@@ -1502,6 +1519,7 @@ fn test_scenario_15b_row_gutter_remains_blank_across_styled_columns() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("RowGutterBlank")]),
         }],
     };
@@ -1549,6 +1567,7 @@ fn test_scenario_16_wrapped_text_and_vertical_center_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("WrapEmission")]),
         }],
     };
@@ -1593,6 +1612,7 @@ fn test_scenario_17_empty_formula_rejected_and_sparse_slice_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("BlankCoercion")]),
         }],
     };
@@ -1725,6 +1745,7 @@ fn test_scenario_18_negative_zero_literal_and_evaluated_normalization() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("NegZeroTable")]),
         }],
     };
@@ -1804,6 +1825,7 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("TextCacheTable")]),
         }],
     };
@@ -1842,6 +1864,7 @@ fn test_scenario_19_formula_cache_text_collisions_and_non_finite_guard() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("NanTable")]),
         }],
     };
@@ -1964,6 +1987,7 @@ fn test_detailed_null_cell_with_note_and_metadata_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("PeerComps")]),
         }],
     };
@@ -2205,6 +2229,7 @@ fn test_scenario_20_uniform_trailing_alignment_space_openxml_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("AlignTable")]),
         }],
     };
@@ -2400,6 +2425,7 @@ fn test_bold_style_emits_bold_without_borders_and_skips_gutter_blanks() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("BoldEmit")]),
         }],
     };
@@ -2556,6 +2582,7 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![
                 BandSpec::single("T1"),
                 BandSpec::new([LaneSpec::new(["T2", "T3"])]),
@@ -2671,6 +2698,7 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![BandSpec::new([
                 LaneSpec::new(["L"]),
                 LaneSpec::new(["R1", "R2", "R3"]),
@@ -2735,6 +2763,7 @@ fn test_aligned_title_banners_openxml_stacked_and_side_by_side_emission() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["T1"]), LaneSpec::new(["T2"])]).with_lane_gap(0),
             ],
@@ -2926,6 +2955,7 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
             freeze_panes: None,
             show_gridlines: false,
             layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("BorderedGrid")]),
         }],
     };
@@ -3054,6 +3084,7 @@ fn test_grid_layout_scenario_9_runway_styling_borders_headers_superheaders_gutte
             freeze_panes: None,
             show_gridlines: false,
             layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("BoldSkip")]),
         }],
     };
@@ -3179,6 +3210,7 @@ fn test_literal_string_quote_prefix_emission() {
             freeze_panes: None,
             show_gridlines: false,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("IntegrityChecks")]),
         }],
     };
@@ -3373,4 +3405,367 @@ fn test_literal_string_quote_prefix_emission() {
             "values_only cell {addr} must omit quotePrefix: {xf}"
         );
     }
+}
+
+#[test]
+fn test_sheet_print_settings_openxml_scenarios_1_to_5_and_8() {
+    use f8_core::model::{
+        HeaderFooterSpec, PageOrientation, PaperSize, PrintFitMode, SheetLayoutSpec, SheetPrintSpec,
+    };
+
+    let make_tbl = |id: &str, title: &str| -> TableSpec {
+        let mut t = TableSpec::new(id, title);
+        t.columns.push(ColumnSpec::descriptor("item", "Line Item"));
+        t.columns.push(ColumnSpec::new("y1").with_header("2024E"));
+        t.columns.push(ColumnSpec::new("y2").with_header("2025E"));
+        t.rows.push(
+            RowSpec::new("rev")
+                .with_cell("item", "Revenue")
+                .with_cell("y1", 100.0)
+                .with_cell(
+                    "y2",
+                    CellInput::formula(format!(r#"{id}["rev", "y1"] * 1.1"#)),
+                ),
+        );
+        t.rows.push(
+            RowSpec::new("ebitda")
+                .with_cell("item", "EBITDA")
+                .with_cell(
+                    "y1",
+                    CellInput::formula(format!(r#"{id}["rev", @col] * 0.3"#)),
+                )
+                .with_cell(
+                    "y2",
+                    CellInput::formula(format!(r#"{id}["rev", @col] * 0.3"#)),
+                ),
+        );
+        t
+    };
+
+    // Scenario 1: Default opt-in backward compatibility (no print configured)
+    let t_default = make_tbl("TDefault", "Default Sheet");
+    let manifest_s1 = ProjectManifest {
+        model_name: "DefaultNoPrint".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "NoPrint".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::Auto,
+            print: None,
+            bands: SheetSpec::stacked_bands([TableId::from("TDefault")]),
+        }],
+    };
+    let buf_s1 =
+        Compiler::emit_workbook(&manifest_s1, &[t_default], &EmissionOptions::default()).unwrap();
+    let wb_s1 = read_zip_entry(&buf_s1, "xl/workbook.xml");
+    let sh_s1 = read_zip_entry(&buf_s1, "xl/worksheets/sheet1.xml");
+    assert!(!wb_s1.contains("_xlnm.Print_Area"));
+    assert!(!sh_s1.contains("<pageSetUpPr"));
+    assert!(!sh_s1.contains("<pageSetup"));
+    assert!(!sh_s1.contains("<printOptions"));
+    assert!(!sh_s1.contains("<headerFooter"));
+    assert!(!sh_s1.contains("<rowBreaks"));
+    // Default Excel margins preserved unchanged
+    assert!(sh_s1.contains(r#"<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>"#));
+
+    // Scenario 2: Landscape A4 fit_width with 3 bands, page_break_before on Band 1 & Band 2,
+    // trimmed Print_Area, tested across both Auto and Grid layout modes
+    for layout_spec in [
+        SheetLayoutSpec::Auto,
+        SheetLayoutSpec::grid_with_col_width(12.0),
+    ] {
+        let t1 = make_tbl("S2B1", "Band 1");
+        let t2 = make_tbl("S2B2", "Band 2");
+        let t3 = make_tbl("S2B3", "Band 3");
+        let manifest_s2 = ProjectManifest {
+            model_name: "Scenario2".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Model".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: layout_spec,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: vec![
+                    BandSpec::single("S2B1"),
+                    BandSpec::single("S2B2").with_page_break_before(true),
+                    BandSpec::single("S2B3").with_page_break_before(true),
+                ],
+            }],
+        };
+        let compiled_s2 = Compiler::compile(&manifest_s2, &[t1, t2, t3]).unwrap();
+        let sl_s2 = compiled_s2
+            .layout_map
+            .get_sheet(&SheetId::from("Model"))
+            .unwrap();
+        let print_s2 = sl_s2.print.as_ref().unwrap();
+        let area_s2 = print_s2.print_area.unwrap();
+        let r1 = print_s2.row_breaks[0];
+        let r2 = print_s2.row_breaks[1];
+        let last_col = f8_core::col_to_excel_col(area_s2.last_col);
+        let last_row = area_s2.last_row + 1;
+
+        let buf_s2 = compiled_s2
+            .emit_workbook(&EmissionOptions::default())
+            .unwrap();
+        let wb_s2 = read_zip_entry(&buf_s2, "xl/workbook.xml");
+        let sh_s2 = read_zip_entry(&buf_s2, "xl/worksheets/sheet1.xml");
+
+        assert!(
+            wb_s2.contains(&format!(
+                r#"<definedName name="_xlnm.Print_Area" localSheetId="0">Model!$B$2:${last_col}${last_row}</definedName>"#
+            )),
+            "Unexpected workbook.xml Print_Area: {wb_s2}"
+        );
+        assert!(sh_s2.contains(r#"<pageSetUpPr fitToPage="1"/>"#));
+        assert!(sh_s2.contains(r#"<printOptions horizontalCentered="1"/>"#));
+        assert!(sh_s2.contains(
+            r#"<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.25" footer="0.25"/>"#
+        ));
+        assert!(
+            sh_s2.contains(r#"<pageSetup paperSize="9" fitToHeight="0" orientation="landscape""#),
+            "Unexpected pageSetup: {sh_s2}"
+        );
+        assert!(!sh_s2.contains("fitToWidth="));
+        assert!(
+            sh_s2.contains(&format!(
+                r#"<rowBreaks count="2" manualBreakCount="2"><brk id="{r1}" max="16383" man="1"/><brk id="{r2}" max="16383" man="1"/></rowBreaks>"#
+            )),
+            "Unexpected rowBreaks: {sh_s2}"
+        );
+        assert!(!sh_s2.contains("view="));
+        assert!(!sh_s2.contains("<headerFooter"));
+    }
+
+    // Scenario 3: Portrait Letter fit_page with center_horizontally: false
+    let t_s3 = make_tbl("S3T1", "One Page Dashboard");
+    let manifest_s3 = ProjectManifest {
+        model_name: "Scenario3".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Dashboard".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::Auto,
+            print: Some(SheetPrintSpec {
+                paper_size: PaperSize::Letter,
+                orientation: PageOrientation::Portrait,
+                fit: PrintFitMode::FitPage,
+                center_horizontally: false,
+                header: None,
+                footer: None,
+            }),
+            bands: SheetSpec::stacked_bands([TableId::from("S3T1")]),
+        }],
+    };
+    let buf_s3 =
+        Compiler::emit_workbook(&manifest_s3, &[t_s3], &EmissionOptions::default()).unwrap();
+    let sh_s3 = read_zip_entry(&buf_s3, "xl/worksheets/sheet1.xml");
+    assert!(sh_s3.contains(r#"<pageSetUpPr fitToPage="1"/>"#));
+    assert!(
+        sh_s3.contains(r#"<pageSetup paperSize="1" orientation="portrait""#),
+        "Unexpected pageSetup in Scenario 3: {sh_s3}"
+    );
+    assert!(!sh_s3.contains("fitToWidth="));
+    assert!(!sh_s3.contains("fitToHeight="));
+    assert!(sh_s3.contains(
+        r#"<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.25" footer="0.25"/>"#
+    ));
+    assert!(!sh_s3.contains("<printOptions"));
+    assert!(!sh_s3.contains("<headerFooter"));
+
+    // Scenario 4 & Scenario 8 (Determinism + values_only parity):
+    // Structured headers & footers with token expansion, escaping, and theme typography
+    let t_s4 = make_tbl("S4T1", "Financial Summary");
+    let t_s4_b2 = make_tbl("S4T2", "Supporting Schedule");
+    let manifest_s4 = ProjectManifest {
+        model_name: "Acme & Co".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::Auto,
+            print: Some(SheetPrintSpec {
+                paper_size: PaperSize::A4,
+                orientation: PageOrientation::Landscape,
+                fit: PrintFitMode::FitWidth,
+                center_horizontally: true,
+                header: Some(HeaderFooterSpec {
+                    left: Some("{model}".to_string()),
+                    center: Some("2026 Forecast {{Rev}}".to_string()),
+                    right: Some("{sheet}".to_string()),
+                }),
+                footer: Some(HeaderFooterSpec {
+                    left: Some("M&A Confidential".to_string()),
+                    center: None,
+                    right: Some("Page {page} of {pages} ({date})".to_string()),
+                }),
+            }),
+            bands: vec![
+                BandSpec::single("S4T1"),
+                BandSpec::single("S4T2").with_page_break_before(true),
+            ],
+        }],
+    };
+    let compiled_s4 = Compiler::compile(&manifest_s4, &[t_s4, t_s4_b2]).unwrap();
+    let buf_s4_a = compiled_s4
+        .emit_workbook(&EmissionOptions::default())
+        .unwrap();
+    let buf_s4_b = compiled_s4
+        .emit_workbook(&EmissionOptions::default())
+        .unwrap();
+    assert_eq!(
+        buf_s4_a, buf_s4_b,
+        "Repeated emission must be byte-for-byte deterministic"
+    );
+
+    let buf_s4_frozen = compiled_s4
+        .emit_workbook(&EmissionOptions::default().with_values_only(true))
+        .unwrap();
+
+    for (label, buf) in [("live", &buf_s4_a), ("values_only", &buf_s4_frozen)] {
+        let sh = read_zip_entry(buf, "xl/worksheets/sheet1.xml");
+        let wb = read_zip_entry(buf, "xl/workbook.xml");
+        assert!(
+            wb.contains("_xlnm.Print_Area"),
+            "{label}: missing Print_Area"
+        );
+        assert!(
+            sh.contains(r#"<pageSetUpPr fitToPage="1"/>"#),
+            "{label}: missing pageSetUpPr"
+        );
+        assert!(
+            sh.contains(r#"<printOptions horizontalCentered="1"/>"#),
+            "{label}: missing printOptions"
+        );
+        assert!(
+            sh.contains(r#"<pageSetup paperSize="9" fitToHeight="0" orientation="landscape""#),
+            "{label}: missing pageSetup"
+        );
+        assert!(
+            sh.contains(r#"<rowBreaks count="1" manualBreakCount="1">"#),
+            "{label}: missing rowBreaks"
+        );
+        assert!(
+            sh.contains(
+                r#"<headerFooter scaleWithDoc="0"><oddHeader>&amp;L&amp;8&amp;K525252&amp;"Aptos,Regular"Acme &amp;&amp; Co&amp;C&amp;8&amp;K525252&amp;"Aptos,Regular"2026 Forecast {Rev}&amp;R&amp;8&amp;K525252&amp;"Aptos,Regular"&amp;A</oddHeader><oddFooter>&amp;L&amp;8&amp;K525252&amp;"Aptos,Regular"M&amp;&amp;A Confidential&amp;R&amp;8&amp;K525252&amp;"Aptos,Regular"Page &amp;P of &amp;N (&amp;D)</oddFooter></headerFooter>"#
+            ),
+            "{label}: unexpected headerFooter XML in {sh}"
+        );
+    }
+    let sh_live = read_zip_entry(&buf_s4_a, "xl/worksheets/sheet1.xml");
+    let sh_frozen = read_zip_entry(&buf_s4_frozen, "xl/worksheets/sheet1.xml");
+    assert!(sh_live.contains("<f>"));
+    assert!(!sh_frozen.contains("<f>"));
+
+    // Scenario 5: Empty sheet with print configured
+    let manifest_s5 = ProjectManifest {
+        model_name: "EmptyPrintSheet".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Empty".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::Auto,
+            print: Some(SheetPrintSpec::new(PaperSize::A4)),
+            bands: Vec::new(),
+        }],
+    };
+    let buf_s5 = Compiler::emit_workbook(&manifest_s5, &[], &EmissionOptions::default()).unwrap();
+    let wb_s5 = read_zip_entry(&buf_s5, "xl/workbook.xml");
+    let sh_s5 = read_zip_entry(&buf_s5, "xl/worksheets/sheet1.xml");
+    assert!(!wb_s5.contains("_xlnm.Print_Area"));
+    assert!(!sh_s5.contains("<rowBreaks"));
+    assert!(!sh_s5.contains("<headerFooter"));
+    assert!(sh_s5.contains(r#"<pageSetUpPr fitToPage="1"/>"#));
+    assert!(sh_s5.contains(r#"<printOptions horizontalCentered="1"/>"#));
+    assert!(sh_s5.contains(r#"<pageSetup paperSize="9" fitToHeight="0" orientation="landscape""#));
+    assert!(sh_s5.contains(
+        r#"<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.25" footer="0.25"/>"#
+    ));
+}
+
+#[test]
+fn test_excel_2023_office_theme_defaults_emitted() {
+    let manifest = ProjectManifest {
+        model_name: "Theme2023Check".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: Default::default(),
+            print: None,
+            bands: SheetSpec::stacked_bands([TableId::from("T1")]),
+        }],
+    };
+    let mut table = TableSpec::new("T1", "Summary Table");
+    table.columns = vec![
+        ColumnSpec::descriptor("item", "Line Item"),
+        ColumnSpec::new("y1").with_header("2026E"),
+    ];
+    table.rows = vec![
+        RowSpec::new("rev")
+            .with_cell("item", "Revenue")
+            .with_cell("y1", 100.0),
+    ];
+
+    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    let buf_a = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let buf_b = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    assert_eq!(buf_a, buf_b, "Emission must remain byte-deterministic");
+
+    let wb_xml = read_zip_entry(&buf_a, "xl/workbook.xml");
+    assert!(
+        wb_xml.contains(r#"defaultThemeVersion="202300""#),
+        "Expected Excel 2023 defaultThemeVersion in workbook.xml: {wb_xml}"
+    );
+
+    let theme_xml = read_zip_entry(&buf_a, "xl/theme/theme1.xml");
+    assert!(
+        theme_xml.contains(r#"<a:latin typeface="Aptos Display""#),
+        "Expected Aptos Display majorFont in theme1.xml"
+    );
+    assert!(
+        theme_xml.contains(r#"<a:latin typeface="Aptos Narrow""#),
+        "Expected Aptos Narrow minorFont in theme1.xml"
+    );
+    assert!(
+        !theme_xml.contains(r#"typeface="Calibri""#),
+        "Legacy Calibri theme font must not remain in theme1.xml"
+    );
+
+    let styles_xml = read_zip_entry(&buf_a, "xl/styles.xml");
+    let first_font_start = styles_xml
+        .find("<font>")
+        .expect("styles.xml must contain Normal fontId=0");
+    let first_font_end = styles_xml[first_font_start..]
+        .find("</font>")
+        .expect("styles.xml fontId=0 must close")
+        + first_font_start;
+    let normal_font = &styles_xml[first_font_start..first_font_end];
+    assert!(
+        normal_font.contains(r#"<name val="Aptos Narrow"/>"#)
+            && normal_font.contains(r#"<sz val="11"/>"#)
+            && normal_font.contains(r#"<scheme val="minor"/>"#),
+        "Expected Normal style fontId=0 to be Aptos Narrow 11pt minor scheme, got: {normal_font}"
+    );
+    assert!(
+        !styles_xml.contains(r#"<name val="Calibri"/>"#),
+        "Legacy Calibri must not appear in default theme styles.xml: {styles_xml}"
+    );
+
+    let sheet_xml = read_zip_entry(&buf_a, "xl/worksheets/sheet1.xml");
+    assert!(
+        sheet_xml.contains(r#"<sheetFormatPr defaultRowHeight="15"/>"#),
+        "Excel 2023 theme must preserve 15pt defaultRowHeight: {sheet_xml}"
+    );
 }

@@ -192,6 +192,50 @@ function normalizeManifest(manifest: ProjectManifestInput): unknown {
           }
           normSheet.layout = layoutObj
         }
+        if (normSheet.print === undefined) {
+          delete normSheet.print
+        } else if (
+          typeof normSheet.print === "object" &&
+          normSheet.print !== null &&
+          !Array.isArray(normSheet.print)
+        ) {
+          const printObj: Record<string, unknown> = {
+            ...(normSheet.print as Record<string, unknown>),
+          }
+          renameKey(printObj, "paperSize", "paper_size")
+          renameKey(printObj, "centerHorizontally", "center_horizontally")
+          for (const key of [
+            "paper_size",
+            "orientation",
+            "fit",
+            "center_horizontally",
+            "header",
+            "footer",
+          ]) {
+            if (printObj[key] === undefined) {
+              delete printObj[key]
+            }
+          }
+          for (const section of ["header", "footer"]) {
+            const secVal = printObj[section]
+            if (
+              typeof secVal === "object" &&
+              secVal !== null &&
+              !Array.isArray(secVal)
+            ) {
+              const secObj: Record<string, unknown> = {
+                ...(secVal as Record<string, unknown>),
+              }
+              for (const zone of ["left", "center", "right"]) {
+                if (secObj[zone] === undefined) {
+                  delete secObj[zone]
+                }
+              }
+              printObj[section] = secObj
+            }
+          }
+          normSheet.print = printObj
+        }
         if (Array.isArray(normSheet.bands)) {
           normSheet.bands = normSheet.bands.map((band: unknown) => {
             if (
@@ -205,11 +249,15 @@ function normalizeManifest(manifest: ProjectManifestInput): unknown {
               ...(band as Record<string, unknown>),
             }
             renameKey(normBand, "laneGap", "lane_gap")
+            renameKey(normBand, "pageBreakBefore", "page_break_before")
             if (normBand.gap === undefined) {
               delete normBand.gap
             }
             if (normBand.lane_gap === undefined) {
               delete normBand.lane_gap
+            }
+            if (normBand.page_break_before === undefined) {
+              delete normBand.page_break_before
             }
             if (Array.isArray(normBand.lanes)) {
               normBand.lanes = normBand.lanes.map((lane: unknown) => {

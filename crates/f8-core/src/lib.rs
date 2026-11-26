@@ -10,5 +10,8 @@ pub use compiler::{
     ModelSummary, SheetCellInspection, SheetCellKind, SheetInspection, SheetRowInspection,
     TableCellInfo, TableInspection, col_to_excel_col,
 };
-pub use model::{BandSpec, LaneSpec, SheetLayoutSpec};
+pub use model::{
+    BandSpec, HeaderFooterSpec, LaneSpec, PageOrientation, PaperSize, PrintFitMode,
+    SheetLayoutSpec, SheetPrintSpec,
+};
 pub use value::{format_accounting_number, format_cell_value};

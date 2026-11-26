@@ -7,7 +7,7 @@ import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from f8._core import CompiledModel
 from f8._core import compile as core_compile
@@ -24,13 +24,19 @@ from f8.types import (
     GridSheetLayoutSpecDict,
     GutterColumnSpecDict,
     GutterRowSpecDict,
+    HeaderFooterDict,
     LaneSpecDict,
+    PageOrientation,
+    PaperSize,
+    PrintFitMode,
     ProjectManifestDict,
     RowSpecDict,
     SectionHeaderRowSpecDict,
     SemanticStyle,
     Shade,
     SheetLayoutMode,
+    SheetPrintDict,
+    SheetPrintOverrideDict,
     SheetSpecDict,
     TableSpecDict,
     ThemeInput,
@@ -797,6 +803,302 @@ class Lane:
         return self._table_refs
 
 
+_ALLOWED_PRINT_KEYS = frozenset(
+    {"paper_size", "orientation", "fit", "center_horizontally", "header", "footer"}
+)
+_ALLOWED_HEADER_FOOTER_KEYS = frozenset({"left", "center", "right"})
+
+type _PrintScope = Literal["model", "sheet"]
+
+
+def _validate_optional_str(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        msg = f"'{field_name}' must be a str or None, got {type(value).__name__}"
+        raise TypeError(msg)
+    return value
+
+
+def _validate_optional_paper_size(value: object) -> PaperSize | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        msg = f"'paper_size' must be a str or None, got {type(value).__name__}"
+        raise TypeError(msg)
+    if value == "a4":
+        return "a4"
+    if value == "letter":
+        return "letter"
+    msg = f"Invalid paper_size {value!r}; expected 'a4' or 'letter'"
+    raise ValueError(msg)
+
+
+def _validate_optional_orientation(value: object) -> PageOrientation | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        msg = f"'orientation' must be a str or None, got {type(value).__name__}"
+        raise TypeError(msg)
+    if value == "landscape":
+        return "landscape"
+    if value == "portrait":
+        return "portrait"
+    msg = f"Invalid orientation {value!r}; expected 'landscape' or 'portrait'"
+    raise ValueError(msg)
+
+
+def _validate_optional_fit(value: object) -> PrintFitMode | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        msg = f"'fit' must be a str or None, got {type(value).__name__}"
+        raise TypeError(msg)
+    if value == "fit_width":
+        return "fit_width"
+    if value == "fit_page":
+        return "fit_page"
+    msg = f"Invalid fit {value!r}; expected 'fit_width' or 'fit_page'"
+    raise ValueError(msg)
+
+
+def _validate_optional_bool(value: object, field_name: str) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        msg = f"'{field_name}' must be a bool or None, got {type(value).__name__}"
+        raise TypeError(msg)
+    return value
+
+
+def _validate_bool(value: object, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        msg = f"'{field_name}' must be a bool, got {type(value).__name__}"
+        raise TypeError(msg)
+    return value
+
+
+def _header_footer_to_dict(hf: HeaderFooter) -> HeaderFooterDict:
+    out: HeaderFooterDict = {}
+    if hf.left is not None:
+        out["left"] = hf.left
+    if hf.center is not None:
+        out["center"] = hf.center
+    if hf.right is not None:
+        out["right"] = hf.right
+    return out
+
+
+def _coerce_header_footer(
+    value: object,
+    section: str,
+    *,
+    scope: _PrintScope,
+) -> HeaderFooter | Literal["none"] | None:
+    if value is None:
+        return None
+    if value == "none":
+        if scope == "sheet":
+            return "none"
+        msg = f"Model-level print '{section}' cannot be 'none'"
+        raise ValueError(msg)
+    if isinstance(value, HeaderFooter):
+        return value
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        unknown = sorted(str(k) for k in mapping if k not in _ALLOWED_HEADER_FOOTER_KEYS)
+        if unknown:
+            msg = f"Unknown print {section} key(s): {', '.join(unknown)}"
+            raise ValueError(msg)
+        return HeaderFooter(
+            left=_validate_optional_str(mapping.get("left"), f"print {section} 'left'"),
+            center=_validate_optional_str(mapping.get("center"), f"print {section} 'center'"),
+            right=_validate_optional_str(mapping.get("right"), f"print {section} 'right'"),
+        )
+    if isinstance(value, str):
+        expected = (
+            "HeaderFooter, mapping, or 'none'" if scope == "sheet" else "HeaderFooter or mapping"
+        )
+        msg = f"Invalid print {section} value {value!r}; expected {expected}"
+        raise ValueError(msg)
+    msg = f"Print {section} must be a HeaderFooter or mapping, got {type(value).__name__}"
+    raise TypeError(msg)
+
+
+@dataclass(frozen=True)
+class HeaderFooter:
+    """Structured 3-zone worksheet print header or footer."""
+
+    left: str | None = None
+    center: str | None = None
+    right: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_optional_str(self.left, "HeaderFooter.left")
+        _validate_optional_str(self.center, "HeaderFooter.center")
+        _validate_optional_str(self.right, "HeaderFooter.right")
+        if self.left is None and self.center is None and self.right is None:
+            raise ValueError(
+                "HeaderFooter must specify at least one of 'left', 'center', or 'right'"
+            )
+
+
+@dataclass(frozen=True, init=False)
+class PrintSetup:
+    """Worksheet print settings (also used for per-sheet cascade overrides)."""
+
+    paper_size: PaperSize | None = None
+    orientation: PageOrientation | None = None
+    fit: PrintFitMode | None = None
+    center_horizontally: bool | None = None
+    header: HeaderFooter | Literal["none"] | None = None
+    footer: HeaderFooter | Literal["none"] | None = None
+
+    def __init__(
+        self,
+        paper_size: PaperSize | None = None,
+        orientation: PageOrientation | None = None,
+        fit: PrintFitMode | None = None,
+        center_horizontally: bool | None = None,
+        header: HeaderFooter | HeaderFooterDict | Literal["none"] | None = None,
+        footer: HeaderFooter | HeaderFooterDict | Literal["none"] | None = None,
+    ) -> None:
+        object.__setattr__(self, "paper_size", _validate_optional_paper_size(paper_size))
+        object.__setattr__(self, "orientation", _validate_optional_orientation(orientation))
+        object.__setattr__(self, "fit", _validate_optional_fit(fit))
+        object.__setattr__(
+            self,
+            "center_horizontally",
+            _validate_optional_bool(center_horizontally, "center_horizontally"),
+        )
+        object.__setattr__(self, "header", _coerce_header_footer(header, "header", scope="sheet"))
+        object.__setattr__(self, "footer", _coerce_header_footer(footer, "footer", scope="sheet"))
+
+
+def _clone_header_footer_dict(hf: HeaderFooterDict) -> HeaderFooterDict:
+    cloned: HeaderFooterDict = {}
+    if "left" in hf:
+        cloned["left"] = hf["left"]
+    if "center" in hf:
+        cloned["center"] = hf["center"]
+    if "right" in hf:
+        cloned["right"] = hf["right"]
+    return cloned
+
+
+def _clone_print_dict(print_spec: SheetPrintDict | None) -> SheetPrintDict | None:
+    if print_spec is None:
+        return None
+    cloned: SheetPrintDict = {"paper_size": print_spec["paper_size"]}
+    if "orientation" in print_spec:
+        cloned["orientation"] = print_spec["orientation"]
+    if "fit" in print_spec:
+        cloned["fit"] = print_spec["fit"]
+    if "center_horizontally" in print_spec:
+        cloned["center_horizontally"] = print_spec["center_horizontally"]
+    if "header" in print_spec:
+        cloned["header"] = _clone_header_footer_dict(print_spec["header"])
+    if "footer" in print_spec:
+        cloned["footer"] = _clone_header_footer_dict(print_spec["footer"])
+    return cloned
+
+
+def _parse_print_setup(value: object, *, scope: _PrintScope) -> PrintSetup:
+    if isinstance(value, PrintSetup):
+        _coerce_header_footer(value.header, "header", scope=scope)
+        _coerce_header_footer(value.footer, "footer", scope=scope)
+        return value
+    if isinstance(value, Mapping):
+        mapping = cast(Mapping[object, object], value)
+        unknown = sorted(str(k) for k in mapping if k not in _ALLOWED_PRINT_KEYS)
+        if unknown:
+            msg = f"Unknown print configuration key(s): {', '.join(unknown)}"
+            raise ValueError(msg)
+        return PrintSetup(
+            paper_size=cast(PaperSize | None, mapping.get("paper_size")),
+            orientation=cast(PageOrientation | None, mapping.get("orientation")),
+            fit=cast(PrintFitMode | None, mapping.get("fit")),
+            center_horizontally=cast(bool | None, mapping.get("center_horizontally")),
+            header=_coerce_header_footer(mapping.get("header"), "header", scope=scope),
+            footer=_coerce_header_footer(mapping.get("footer"), "footer", scope=scope),
+        )
+    expected = "PrintSetup, mapping, or 'none'" if scope == "sheet" else "PrintSetup or mapping"
+    if isinstance(value, str):
+        msg = f"Invalid print configuration {value!r}; expected {expected}"
+        raise ValueError(msg)
+    msg = f"Print configuration must be a {expected}, got {type(value).__name__}"
+    raise TypeError(msg)
+
+
+def _resolve_header_footer_section(
+    base_section: HeaderFooterDict | None,
+    override: HeaderFooter | Literal["none"] | None,
+) -> HeaderFooterDict | None:
+    if override == "none":
+        return None
+    if override is not None:
+        return _header_footer_to_dict(override)
+    return _clone_header_footer_dict(base_section) if base_section is not None else None
+
+
+def _resolve_print(
+    base: SheetPrintDict | None,
+    override: object,
+    *,
+    scope: _PrintScope,
+) -> SheetPrintDict | None:
+    if override is None:
+        return _clone_print_dict(base)
+    if scope == "sheet" and override == "none":
+        return None
+    parsed = _parse_print_setup(override, scope=scope)
+
+    paper_size = (
+        parsed.paper_size
+        if parsed.paper_size is not None
+        else (base["paper_size"] if base is not None else None)
+    )
+    if paper_size is None:
+        label = "Model" if scope == "model" else "Sheet"
+        raise ValueError(f"{label} print configuration requires 'paper_size'")
+
+    resolved: SheetPrintDict = {"paper_size": paper_size}
+
+    orientation = (
+        parsed.orientation
+        if parsed.orientation is not None
+        else (base.get("orientation") if base is not None else None)
+    )
+    if orientation is not None:
+        resolved["orientation"] = orientation
+
+    fit = parsed.fit if parsed.fit is not None else (base.get("fit") if base is not None else None)
+    if fit is not None:
+        resolved["fit"] = fit
+
+    center = (
+        parsed.center_horizontally
+        if parsed.center_horizontally is not None
+        else (base.get("center_horizontally") if base is not None else None)
+    )
+    if center is not None:
+        resolved["center_horizontally"] = center
+
+    header = _resolve_header_footer_section(
+        base.get("header") if base is not None else None, parsed.header
+    )
+    if header is not None:
+        resolved["header"] = header
+
+    footer = _resolve_header_footer_section(
+        base.get("footer") if base is not None else None, parsed.footer
+    )
+    if footer is not None:
+        resolved["footer"] = footer
+
+    return resolved
+
+
 @dataclass(frozen=True, init=False)
 class Band:
     """Horizontal band of side-by-side column lanes on a worksheet."""
@@ -804,6 +1106,7 @@ class Band:
     lanes: tuple[Lane, ...]
     gap: int | None = None
     lane_gap: int | None = None
+    page_break_before: bool = False
 
     def __init__(
         self,
@@ -811,6 +1114,7 @@ class Band:
         *,
         gap: int | None = None,
         lane_gap: int | None = None,
+        page_break_before: bool = False,
     ) -> None:
         raw_items = _as_object_tuple(
             lanes,
@@ -834,9 +1138,11 @@ class Band:
         if len(lane_tuple) == 1 and validated_lane_gap is not None:
             msg = f"Band with a single lane cannot specify 'lane_gap' ({validated_lane_gap})"
             raise ValueError(msg)
+        validated_page_break = _validate_bool(page_break_before, "page_break_before")
         object.__setattr__(self, "lanes", lane_tuple)
         object.__setattr__(self, "gap", validated_gap)
         object.__setattr__(self, "lane_gap", validated_lane_gap)
+        object.__setattr__(self, "page_break_before", validated_page_break)
 
 
 def _validate_sheet_layout(
@@ -883,6 +1189,7 @@ class Sheet:
         *,
         layout: SheetLayoutMode = "auto",
         col_width: float | None = None,
+        print: PrintSetup | SheetPrintOverrideDict | Literal["none"] | None = None,
     ) -> None:
         if freeze_panes is not None:
             r, c = freeze_panes
@@ -894,6 +1201,8 @@ class Sheet:
                 raise ValueError(msg)
 
         validated_layout, validated_col_width = _validate_sheet_layout(layout, col_width)
+        base_print = model.print if model is not None else None
+        resolved_print = _resolve_print(base_print, print, scope="sheet")
 
         self.name = name
         self.tab_color = tab_color
@@ -901,6 +1210,7 @@ class Sheet:
         self.freeze_panes = freeze_panes
         self.layout: SheetLayoutMode = validated_layout
         self.col_width: float | None = validated_col_width
+        self.print: SheetPrintDict | None = resolved_print
         self._model = model
         self._tables: list[Table] = []
         self._table_ids: set[str] = set()
@@ -969,6 +1279,12 @@ class Sheet:
                         "because no preceding band exists"
                     )
                     raise ValueError(msg)
+                if band_idx == 0 and item.page_break_before:
+                    msg = (
+                        f"Sheet '{self.name}': band 0 cannot specify 'page_break_before=True' "
+                        "because no preceding band exists"
+                    )
+                    raise ValueError(msg)
                 norm_lanes: list[Lane] = []
                 for lane in item.lanes:
                     lane_refs = lane.__f8_table_refs__()
@@ -981,7 +1297,14 @@ class Sheet:
                         seen_ids.add(tid)
                         lane_ids.append(tid)
                     norm_lanes.append(Lane(lane_ids, table_gap=lane.table_gap))
-                normalized_bands.append(Band(norm_lanes, gap=item.gap, lane_gap=item.lane_gap))
+                normalized_bands.append(
+                    Band(
+                        norm_lanes,
+                        gap=item.gap,
+                        lane_gap=item.lane_gap,
+                        page_break_before=item.page_break_before,
+                    )
+                )
             elif isinstance(item, (Table, str)):
                 tid = self._resolve_table_ref(item)
                 if tid in seen_ids:
@@ -1050,6 +1373,8 @@ class Sheet:
                 band_dict["gap"] = band.gap
             if band.lane_gap is not None:
                 band_dict["lane_gap"] = band.lane_gap
+            if band.page_break_before:
+                band_dict["page_break_before"] = True
             bands_spec.append(band_dict)
 
         spec: SheetSpecDict = {
@@ -1069,6 +1394,10 @@ class Sheet:
             if self.col_width is not None:
                 layout_spec["col_width"] = self.col_width
             spec["layout"] = layout_spec
+        if self.print is not None:
+            cloned_print = _clone_print_dict(self.print)
+            if cloned_print is not None:
+                spec["print"] = cloned_print
         return spec
 
 
@@ -1086,9 +1415,16 @@ def _resolve_theme_input(theme: ThemeInput) -> Mapping[str, object] | str:
 class Model:
     """Fluent root container for financial models and specification synthesis."""
 
-    def __init__(self, name: str = "Model", theme: ThemeInput = "corporate_navy") -> None:
+    def __init__(
+        self,
+        name: str = "Model",
+        theme: ThemeInput = "corporate_navy",
+        *,
+        print: PrintSetup | SheetPrintDict | None = None,
+    ) -> None:
         self.name = name
         self.theme: Mapping[str, object] | str = _resolve_theme_input(theme)
+        self.print: SheetPrintDict | None = _resolve_print(None, print, scope="model")
         self._sheets: list[Sheet] = []
         self._sheet_names: set[str] = set()
 
@@ -1101,6 +1437,7 @@ class Model:
         *,
         layout: SheetLayoutMode = "auto",
         col_width: float | None = None,
+        print: PrintSetup | SheetPrintOverrideDict | Literal["none"] | None = None,
     ) -> Sheet:
         """Creates and appends a new `Sheet` to the model."""
         if name in self._sheet_names:
@@ -1114,6 +1451,7 @@ class Model:
             model=self,
             layout=layout,
             col_width=col_width,
+            print=print,
         )
         self._sheets.append(sheet)
         self._sheet_names.add(name)
@@ -1166,9 +1504,11 @@ __all__ = [
     "BandItem",
     "Cell",
     "CellInputValue",
+    "HeaderFooter",
     "Lane",
     "LaneItem",
     "Model",
+    "PrintSetup",
     "Sheet",
     "Table",
     "TableRef",

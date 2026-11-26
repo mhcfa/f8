@@ -17,7 +17,7 @@ Deterministic financial modeling compiler, in-memory WebAssembly evaluator, and 
 ## Workflow & CLI
 
 1. Initialize (browsers only): Server runtimes (Node.js, Bun, Deno) auto-initialize WASM synchronously on module import; browser main threads call `await init()` once before compilation.
-2. Define: Build `new Model({ name, theme })` -> `model.addSheet(...)` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)`, and optionally arrange multi-lane bands or custom gaps via `sheet.setBands(...)`.
+2. Define: Build `new Model({ name, theme, print })` -> `model.addSheet(..., { print })` -> `sheet.addTable(...)` -> `table.addColumn(...)` / `table.addRow(...)`, and optionally arrange multi-lane bands, custom gaps, or manual page breaks via `sheet.setBands(...)`.
 3. Compile: Call `const compiled = model.compile()` (or `compile(manifest, tables)`).
 4. Inspect: Audit runtime errors via `compiled.errors()`, inspect workbook views via `compiled.toMarkdown("values" | "index" | "layout")`, and query tables, cells, or dependency trees via `compiled.table(id)` (`TableAuditor`), `compiled.value(...)`, `compiled.num(...)`, `compiled.formatted(...)`, `compiled.inspectCell(...)`, `compiled.precedentsOf(...)`, and `compiled.dependentsOf(...)` (see `references/auditing-and-repair.md`).
 5. Diagnose: Catch `F8Error` subclasses (`CycleDetectedError`, `ReferenceResolutionError`, `FormulaParseError`, `SpecificationError`, `InspectionError`, `EmissionError`) and inspect their typed properties.
@@ -43,6 +43,6 @@ CLI commands (`f8` or `npx f8`):
 
 ## Reference Index
 
-- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`getSheet`, `getTable`, `setBands`, `setCell`, `setCells`), 2D coordinate grammar, 3-tier resolution lattice, band/lane and `auto`/`grid` layouts, formatting presets, styles, shades, and themes.
+- `references/syntax-and-grid.md`: Container constructors (`Model`, `Sheet`, `Table`, `Cell`), lookup/mutation APIs (`getSheet`, `getTable`, `setBands`, `setCell`, `setCells`), 2D coordinate grammar, 3-tier resolution lattice, band/lane, `auto`/`grid`, and print layouts, formatting presets, styles, shades, and themes.
 - `references/functions.md`: 37 built-in Excel functions, compile-time type/shape rules, argument omission (`_`), composition patterns for omitted functions, lookup modes, `YEARFRAC` day-count conventions, and domain error rules.
 - `references/auditing-and-repair.md`: `CompiledModel` and `TableAuditor` APIs, whole-workbook and table Markdown/object exports, `f8-engine` TypeScript inspection interfaces, and `F8Error` exception properties.

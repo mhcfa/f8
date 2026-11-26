@@ -706,6 +706,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("SimpleTbl")]),
             },
             SheetSpec {
@@ -714,6 +715,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("CashTbl")]),
             },
             SheetSpec {
@@ -722,6 +724,7 @@ fn test_sheet_address_quoting_in_inspection_and_dependency_tree() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("QuoteTbl")]),
             },
         ],
@@ -797,6 +800,7 @@ fn test_scenario_15_coordinate_parsing_strictness_and_special_key_roundtrip() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T1")]),
         }],
     };
@@ -896,6 +900,7 @@ fn build_parity_workbook() -> CompiledModel {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("IncomeStatement"),
                     TableId::from("PureMeasures"),
@@ -907,6 +912,7 @@ fn build_parity_workbook() -> CompiledModel {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Comps")]),
             },
             SheetSpec {
@@ -915,6 +921,7 @@ fn build_parity_workbook() -> CompiledModel {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![],
             },
         ],
@@ -1440,6 +1447,7 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Summary")]),
         }],
     };
@@ -1467,6 +1475,7 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("GutterCols")]),
         }],
     };
@@ -1502,6 +1511,7 @@ fn test_to_markdown_filtering_errors_clean_and_blank_model_name() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("WhitespaceDesc")]),
         }],
     };
@@ -1564,6 +1574,7 @@ fn test_bold_style_inspection_and_markdown_rendering() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Summary")]),
         }],
     };
@@ -1638,6 +1649,7 @@ fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![
                 BandSpec::single("T1"),
                 BandSpec::new([LaneSpec::new(["T2", "T3"])]),
@@ -1708,6 +1720,7 @@ fn test_inspect_sheet_aligned_title_banners_stacked_and_side_by_side() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![BandSpec::new([
                 LaneSpec::new(["Left1", "Left2"]),
                 LaneSpec::new(["Right"]),
@@ -1805,6 +1818,7 @@ fn test_grid_layout_scenario_10_inspect_sheet_overflow_and_physical_spans() {
             freeze_panes: None,
             show_gridlines: false,
             layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: vec![BandSpec::new([
                 LaneSpec::new(["Left"]),
                 LaneSpec::new(["Right"]),
@@ -1973,6 +1987,7 @@ fn test_to_markdown_layout_scenario_1_grid_dashboard() {
             freeze_panes: None,
             show_gridlines: false,
             layout: SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["TopLeft"]), LaneSpec::new(["TopRight"])]),
                 BandSpec::single("Middle"),
@@ -2099,6 +2114,7 @@ fn test_to_markdown_layout_scenario_2_multi_table_lane_width_inflation_and_table
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: vec![BandSpec::new([
                     LaneSpec::new(["T1", "T2"]),
                     LaneSpec::new(["T3"]),
@@ -2110,6 +2126,7 @@ fn test_to_markdown_layout_scenario_2_multi_table_lane_width_inflation_and_table
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::Auto,
+                print: None,
                 bands: vec![
                     BandSpec::new([
                         LaneSpec::new(["A1", "A2"]).with_table_gap(1),
@@ -2220,6 +2237,7 @@ fn test_to_markdown_layout_scenario_3_auto_metadata_chrome_wrap_and_collapsible(
                 freeze_panes: Some(FreezePanes { row: 6, col: 2 }),
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::single("SummaryTbl"),
                     BandSpec::single("OneRow").with_gap(4),
@@ -2231,6 +2249,7 @@ fn test_to_markdown_layout_scenario_3_auto_metadata_chrome_wrap_and_collapsible(
                 freeze_panes: Some(FreezePanes { row: 4, col: 0 }),
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("FrRow")]),
             },
             SheetSpec {
@@ -2239,6 +2258,7 @@ fn test_to_markdown_layout_scenario_3_auto_metadata_chrome_wrap_and_collapsible(
                 freeze_panes: Some(FreezePanes { row: 0, col: 3 }),
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::new([LaneSpec::new(["FrCol"]), LaneSpec::new(["FrColR"])])
                         .with_lane_gap(2),
@@ -2250,6 +2270,7 @@ fn test_to_markdown_layout_scenario_3_auto_metadata_chrome_wrap_and_collapsible(
                 freeze_panes: Some(FreezePanes { row: 0, col: 0 }),
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("FrZero")]),
             },
         ],
@@ -2469,6 +2490,7 @@ fn test_to_markdown_layout_edge_cases() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![BandSpec::new([
                     LaneSpec::new(["T3", "T1"]),
                     LaneSpec::new(["T2"]),
@@ -2480,6 +2502,7 @@ fn test_to_markdown_layout_edge_cases() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::new([LaneSpec::new(["GLeft"]), LaneSpec::new(["GRight"])])
                         .with_lane_gap(0),
@@ -2492,6 +2515,7 @@ fn test_to_markdown_layout_edge_cases() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(14.5),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("GutterOnly")]),
             },
         ],
@@ -2634,6 +2658,7 @@ fn test_to_markdown_layout_spec_scenario_9_golden_parity() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::Auto,
+                print: None,
                 bands: vec![
                     BandSpec::new([
                         LaneSpec::new(["TL", "BL"]).with_table_gap(1),
@@ -2650,6 +2675,7 @@ fn test_to_markdown_layout_spec_scenario_9_golden_parity() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: vec![
                     BandSpec::new([LaneSpec::new(["GL"]), LaneSpec::new(["GR"])]),
                     BandSpec::single("GB"),
@@ -2661,6 +2687,7 @@ fn test_to_markdown_layout_spec_scenario_9_golden_parity() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::Auto,
+                print: None,
                 bands: vec![],
             },
         ],
@@ -2889,6 +2916,7 @@ fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::Auto,
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("AutoExact"),
                     TableId::from("AutoOver"),
@@ -2902,6 +2930,7 @@ fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::Auto,
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("AutoWideDesc")]),
             },
             SheetSpec {
@@ -2910,6 +2939,7 @@ fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: vec![
                     BandSpec::single("Culprit"),
                     BandSpec::new([LaneSpec::new(["Victim"]), LaneSpec::new(["AdjSingle"])]),
@@ -3027,6 +3057,7 @@ fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("SubFit"),
                     TableId::from("SubOver"),
@@ -3038,6 +3069,7 @@ fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("FormulaDesc")]),
             },
         ],
@@ -3068,5 +3100,494 @@ fn test_to_markdown_layout_subtitle_overflow_and_descriptor_req() {
     assert!(
         custom_line("FormulaDesc")
             .contains("| cols: desc B..D(3c, req:25.7), desc E..F(2c, req:20.9), measure G(1c)")
+    );
+}
+
+#[test]
+fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
+    use f8_core::model::{
+        PageOrientation, PaperSize, PrintFitMode, SheetLayoutSpec, SheetPrintSpec,
+    };
+
+    let make_rows_table = |id: &str,
+                           title: &str,
+                           num_measure_cols: usize,
+                           num_data_rows: usize,
+                           wrapped_rows: usize| {
+        let mut t = TableSpec::new(id, title).with_subtitle("($ in millions)");
+        t.columns.push(ColumnSpec::descriptor("item", "Line Item"));
+        for c in 0..num_measure_cols {
+            t.columns.push(
+                ColumnSpec::new(format!("c{c}"))
+                    .with_group("Forecast")
+                    .with_header(format!("Y{c}")),
+            );
+        }
+        t.rows.push(RowSpec::section_header("Section A"));
+        for r in 0..num_data_rows {
+            let mut row = RowSpec::new(format!("r{r}"));
+            let label = if r < wrapped_rows {
+                "Line 1\nLine 2".to_string()
+            } else {
+                format!("Item {r}")
+            };
+            row = row.with_cell("item", label);
+            for c in 0..num_measure_cols {
+                row = row.with_cell(format!("c{c}"), (r + c + 1) as f64);
+            }
+            t.rows.push(row);
+        }
+        t
+    };
+
+    // Sheet 1 (NoPrint): Scenario 1 — no Print: line
+    let t_noprint = make_rows_table("NoPrintT", "No Print", 3, 2, 0);
+
+    // Sheet 2 (EmptyPrint): Scenario 5 — empty sheet with print outputs _(no tables)_ and no Print: line
+    // Sheet 3 (FitWidthMulti): Scenario 6 — multi-band fit_width with page_break_before,
+    //   Band 1 = compact (4 data rows), Band 2 (page_break) = oversized (> 0.95pg, 35 data rows + 2 wrapped cells)
+    let t_fw1 = make_rows_table("FW1", "Band 1 Table", 5, 4, 0);
+    let t_fw2 = make_rows_table("FW2", "Band 2 Oversized", 5, 35, 2);
+
+    // Sheet 4 (WideLowScale): Scenario 6 — wide sheet (< 60% scale) triggering [low scale <60%]
+    let t_wide = make_rows_table("WideT", "Very Wide Table", 22, 3, 0);
+
+    // Sheet 5 (FitPageDash): Scenario 6 — portrait letter fit_page with wrapped cells
+    let t_fp = make_rows_table("DashT", "One Page Dashboard", 10, 12, 3);
+
+    let manifest = ProjectManifest {
+        model_name: "PrintMarkdown".to_string(),
+        theme: ThemeSpec::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "NoPrint".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: None,
+                bands: SheetSpec::stacked_bands([TableId::from("NoPrintT")]),
+            },
+            SheetSpec {
+                name: "EmptyPrint".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: Vec::new(),
+            },
+            SheetSpec {
+                name: "FitWidthMulti".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: vec![
+                    BandSpec::single("FW1"),
+                    BandSpec::single("FW2")
+                        .with_gap(4)
+                        .with_page_break_before(true),
+                ],
+            },
+            SheetSpec {
+                name: "WideLowScale".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: SheetSpec::stacked_bands([TableId::from("WideT")]),
+            },
+            SheetSpec {
+                name: "FitPageDash".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec {
+                    paper_size: PaperSize::Letter,
+                    orientation: PageOrientation::Portrait,
+                    fit: PrintFitMode::FitPage,
+                    center_horizontally: true,
+                    header: None,
+                    footer: None,
+                }),
+                bands: SheetSpec::stacked_bands([TableId::from("DashT")]),
+            },
+        ],
+    };
+
+    let tables = vec![t_noprint, t_fw1, t_fw2, t_wide, t_fp];
+    let compiled = Compiler::compile(&manifest, &tables).unwrap();
+    let md = compiled
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+
+    let sheet_section = |name: &str| -> String {
+        let heading = format!("## Sheet: {name}\n");
+        let start = md
+            .find(&heading)
+            .unwrap_or_else(|| panic!("Missing section {name} in:\n{md}"));
+        let rest = &md[start + heading.len()..];
+        let end = rest.find("\n## Sheet: ").unwrap_or(rest.len());
+        rest[..end].to_string()
+    };
+
+    // Scenario 1: NoPrint sheet has no Print: line
+    let s1 = sheet_section("NoPrint");
+    assert!(
+        !s1.contains("Print:"),
+        "NoPrint should not emit Print: line:\n{s1}"
+    );
+
+    // Scenario 5: EmptyPrint outputs _(no tables)_ and no Print: line
+    let s2 = sheet_section("EmptyPrint");
+    assert!(s2.contains("_(no tables)_"));
+    assert!(!s2.contains("Print:"));
+
+    // Scenario 6: FitWidthMulti — verify Print: immediately follows Columns:, exact group rows
+    // (inter-group 4-row gap excluded), ! marker on P2 > 0.95pg, wrap:2 on P2, and page_break tag on Band 2
+    let s3 = sheet_section("FitWidthMulti");
+    let s3_lines: Vec<&str> = s3.lines().collect();
+    let cols_idx = s3_lines
+        .iter()
+        .position(|l| l.starts_with("Columns: "))
+        .unwrap();
+    let print_line = s3_lines[cols_idx + 1];
+    assert!(
+        print_line.starts_with("Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:G"),
+        "Unexpected FitWidthMulti Print line: {print_line}"
+    );
+    assert_eq!(s3_lines[cols_idx + 2], "");
+    // FW1 has title(1)+sub(1)+gutter(1)+group_hdr(2)+section(1)+4 data = 10 rows
+    // FW2 has title(1)+sub(1)+gutter(1)+group_hdr(2)+section(1)+35 data = 41 rows
+    // Gap 4 between Band 1 and Band 2 is excluded from both P1 (10r) and P2 (41r)
+    // Width: 6 cols each width 12.0 -> 6 * (12*5.25 + 3.75) = 6 * 66.75 = 400.5pt <= 784.3pt -> 100% scale
+    // P1 height: title 16.2 + sub 15 + gutter 15 + super 15 + col 15 + sec 15 + 4*15 = 151.2pt -> 151.2 / 508.8756 = 0.30pg
+    // P2 height: 16.2 + 15 + 15 + 15 + 15 + 15 + 33*15 + 2*(2*13.5 + 2) = 644.2pt -> 644.2 / 508.8756 = 1.27pg!
+    assert_eq!(
+        print_line,
+        "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:G56 | Est. scale: ~100% | Pages: P1 10r (~0.30pg), P2 41r (~1.27pg!, wrap:2)"
+    );
+    let band2_line = s3_lines
+        .iter()
+        .find(|l| l.starts_with("- Band 2 ("))
+        .unwrap();
+    assert!(
+        band2_line.ends_with(", gap:4r, page_break):"),
+        "Expected ', page_break):' on Band 2: {band2_line}"
+    );
+
+    // Scenario 6: WideLowScale triggers [low scale <60%]
+    let s4 = sheet_section("WideLowScale");
+    let s4_print = s4.lines().find(|l| l.starts_with("Print: ")).unwrap();
+    assert!(
+        s4_print.ends_with(" [low scale <60%]"),
+        "Expected low scale marker on WideLowScale: {s4_print}"
+    );
+
+    // Scenario 6: FitPageDash emits FitPage format with (h:~..%, v:~..%) and | wrap:3
+    let s5 = sheet_section("FitPageDash");
+    let s5_print = s5.lines().find(|l| l.starts_with("Print: ")).unwrap();
+    assert!(
+        s5_print.starts_with("Print: letter portrait | Fit: fit_page (1 x 1) | Area: B2:L"),
+        "Unexpected FitPageDash Print line: {s5_print}"
+    );
+    assert!(
+        s5_print.contains("Est. scale: ~76% (h:~76%, v:~100%) | wrap:3"),
+        "Unexpected FitPageDash scale/wrap breakdown: {s5_print}"
+    );
+
+    // Scenario 6: Custom theme with data_size != 10.0 keeps column width points invariant
+    // (Normal style Aptos Narrow 11pt MDW=7px), while row height reflects updated data_size!
+    let mut big_data_theme = Theme::corporate_navy();
+    big_data_theme.typography.data_size = 16.0;
+    let mut big_manifest = manifest.clone();
+    big_manifest.theme = ThemeSpec::Custom(Box::new(big_data_theme));
+    let compiled_big = Compiler::compile(&big_manifest, &tables).unwrap();
+    let md_big = compiled_big
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            sheets: Some(vec![
+                SheetId::from("FitPageDash"),
+                SheetId::from("WideLowScale"),
+                SheetId::from("FitWidthMulti"),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+    let big_fp_print = md_big
+        .lines()
+        .find(|l| l.starts_with("Print: letter portrait"))
+        .unwrap();
+    let big_wide_print = md_big.lines().find(|l| l.contains("Area: B2:X")).unwrap();
+    let big_fw_print = md_big.lines().find(|l| l.contains("Area: B2:G56")).unwrap();
+    // Horizontal scale h:~76% on FitPageDash and Est. scale on WideLowScale are IDENTICAL
+    assert!(
+        big_fp_print.contains("(h:~76%,"),
+        "Horizontal scale must be invariant to theme.typography.data_size: {big_fp_print}"
+    );
+    let s4_scale_token = s4_print
+        .split("Est. scale: ")
+        .nth(1)
+        .unwrap()
+        .split(" |")
+        .next()
+        .unwrap();
+    assert!(
+        big_wide_print.contains(&format!("Est. scale: {s4_scale_token}")),
+        "WideLowScale horizontal scale must be invariant to data_size: orig={s4_print} vs big={big_wide_print}"
+    );
+    // Vertical page fill reflects larger data_size=16.0 (P1: 16.2 + 5*15 + 4*21.6 = 177.6pt -> ~0.35pg)
+    assert!(
+        big_fw_print.contains("P1 10r (~0.35pg)"),
+        "Expected P1 vertical fill to reflect data_size=16.0: {big_fw_print}"
+    );
+
+    // Rounding-boundary consistency: displayed ~60% must not emit [low scale <60%],
+    // and displayed ~0.95pg must not emit the >0.95pg '!' overflow marker.
+    let mut scale_edge_t = TableSpec::new("ScaleEdge", "Scale Edge");
+    let mut scale_row = RowSpec::new("r1");
+    for c in 0..10 {
+        let id = format!("c{c}");
+        scale_edge_t
+            .columns
+            .push(ColumnSpec::new(id.as_str()).with_header(format!("C{c}")));
+        scale_row = scale_row.with_cell(id, f64::from(c));
+    }
+    scale_edge_t.rows.push(scale_row);
+
+    // 10 cols * (24.31 * 5.25 + 3.75) = 1313.775pt -> 784.299 / 1313.775 = 0.5970 -> rounds to ~60%
+    let mut fill_edge_t = TableSpec::new("FillEdge", "Fill Edge");
+    fill_edge_t
+        .columns
+        .push(ColumnSpec::new("v").with_header("Val"));
+    // On A4 Portrait (755.49pt): Title(16.2) + gutter(15) + col_hdr(15) + 45 data rows(675) = 721.2pt
+    // -> 721.2 / 755.49 = 0.9546 -> rounds to ~0.95pg (strictly > 0.95 unrounded)
+    for r in 0..45 {
+        fill_edge_t
+            .rows
+            .push(RowSpec::new(format!("r{r}")).with_cell("v", r as f64));
+    }
+
+    let edge_manifest = ProjectManifest {
+        model_name: "RoundingEdges".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "Scale60".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(24.31),
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: SheetSpec::stacked_bands([TableId::from("ScaleEdge")]),
+            },
+            SheetSpec {
+                name: "Fill095".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::grid_with_col_width(12.0),
+                print: Some(SheetPrintSpec {
+                    paper_size: PaperSize::A4,
+                    orientation: PageOrientation::Portrait,
+                    fit: PrintFitMode::FitWidth,
+                    center_horizontally: true,
+                    header: None,
+                    footer: None,
+                }),
+                bands: SheetSpec::stacked_bands([TableId::from("FillEdge")]),
+            },
+        ],
+    };
+    let compiled_edges = Compiler::compile(&edge_manifest, &[scale_edge_t, fill_edge_t]).unwrap();
+    let md_edges = compiled_edges
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+    let scale60_line = md_edges
+        .lines()
+        .find(|l| l.contains("Area: B2:K5"))
+        .unwrap();
+    assert!(
+        scale60_line.contains("Est. scale: ~60%") && !scale60_line.contains("[low scale <60%]"),
+        "Displayed ~60% must not contradict [low scale <60%]: {scale60_line}"
+    );
+    let fill095_line = md_edges
+        .lines()
+        .find(|l| l.contains("Area: B2:B49"))
+        .unwrap();
+    assert!(
+        fill095_line.contains("(~0.95pg)") && !fill095_line.contains("~0.95pg!"),
+        "Displayed ~0.95pg must not emit '>'0.95 overflow marker: {fill095_line}"
+    );
+
+    // Long wrapped prose in an auto 75-char column must reflect multi-line row height in both
+    // FitWidth page fill (flagging >0.95pg overflow) and FitPage vertical scale (v:~..% < 100%).
+    let make_notes_table = |id: &str| {
+        let mut t = TableSpec::new(id, "Accounting & Governance Notes");
+        t.columns.push(ColumnSpec::descriptor("topic", "Topic"));
+        t.columns
+            .push(ColumnSpec::descriptor("note", "Analytical Basis"));
+        let prose = "A".repeat(600);
+        for r in 0..9 {
+            t.rows.push(
+                RowSpec::new(format!("n{r}"))
+                    .with_cell("topic", format!("Topic {r}"))
+                    .with_cell("note", prose.as_str()),
+            );
+        }
+        t
+    };
+    let notes_fw = make_notes_table("NotesFW");
+    let notes_fp = make_notes_table("NotesFP");
+    let notes_manifest = ProjectManifest {
+        model_name: "WrappedNotes".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "NotesFitWidth".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec {
+                    paper_size: PaperSize::Letter,
+                    orientation: PageOrientation::Portrait,
+                    fit: PrintFitMode::FitWidth,
+                    center_horizontally: true,
+                    header: None,
+                    footer: None,
+                }),
+                bands: SheetSpec::stacked_bands([TableId::from("NotesFW")]),
+            },
+            SheetSpec {
+                name: "NotesFitPage".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec {
+                    paper_size: PaperSize::Letter,
+                    orientation: PageOrientation::Portrait,
+                    fit: PrintFitMode::FitPage,
+                    center_horizontally: true,
+                    header: None,
+                    footer: None,
+                }),
+                bands: SheetSpec::stacked_bands([TableId::from("NotesFP")]),
+            },
+        ],
+    };
+    let compiled_notes = Compiler::compile(&notes_manifest, &[notes_fw, notes_fp]).unwrap();
+    let md_notes = compiled_notes
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+    // 9 rows * 600 chars in 75-char col -> ceil(600 / (75*5.25/5.0)) = 8 lines/row -> 110pt/row
+    // Total height: title(16.2) + gutter(15) + hdr(15) + 9*110 = 1036.2pt on Letter Portrait (705.6pt)
+    // Width: 12 + 75 = 87 -> (12*5.25+3.75) + (75*5.25+3.75) = 66.75 + 397.5 = 464.25pt <= 554.4pt -> h=100%
+    // FitWidth: 1036.2 / 705.6 = 1.47pg! ; FitPage: v = 705.6 / 1036.2 = 68%
+    let notes_fw_line = md_notes
+        .lines()
+        .find(|l| l.starts_with("Print: letter portrait | Fit: fit_width"))
+        .unwrap();
+    assert_eq!(
+        notes_fw_line,
+        "Print: letter portrait | Fit: fit_width (1 x auto) | Area: B2:C13 | Est. scale: ~100% | Pages: P1 12r (~1.47pg!, wrap:9)"
+    );
+    let notes_fp_line = md_notes
+        .lines()
+        .find(|l| l.starts_with("Print: letter portrait | Fit: fit_page"))
+        .unwrap();
+    assert_eq!(
+        notes_fp_line,
+        "Print: letter portrait | Fit: fit_page (1 x 1) | Area: B2:C13 | Est. scale: ~68% (h:~100%, v:~68%) | wrap:9"
+    );
+
+    // Unified single-line row height model: (font_size * 1.35).max(15.0), with empty/gutter rows at 15.0pt.
+    // 1) MultiTitle: 4 titled tables (no subtitles, table_gap=1) -> 4*16.2 + 15*15 = 289.8pt -> 0.57pg on A4 Landscape
+    //    (would be 0.59pg under the old 19.2pt title overestimate).
+    // 2) MultiSubtitle: 1 titled table with 8 subtitles -> 16.2 + 8*15 + 3*15 = 181.2pt -> 0.36pg on A4 Landscape
+    //    (would be 0.33pg if subtitles shrank to 13.5pt below Excel's defaultRowHeight=15pt floor).
+    let mut multi_title_tables = Vec::new();
+    let mut multi_title_ids = Vec::new();
+    for i in 0..4 {
+        let id = format!("MT{i}");
+        let mut t = TableSpec::new(id.as_str(), format!("Title {i}"));
+        t.columns.push(ColumnSpec::new("v").with_header("Val"));
+        t.rows.push(RowSpec::new("r0").with_cell("v", i as f64));
+        multi_title_ids.push(TableId::from(id));
+        multi_title_tables.push(t);
+    }
+    let mut multi_sub_table = TableSpec::new("MultiSub", "Subtitle Floor")
+        .with_subtitles((0..8).map(|i| format!("Note {i}")));
+    multi_sub_table
+        .columns
+        .push(ColumnSpec::new("v").with_header("Val"));
+    multi_sub_table
+        .rows
+        .push(RowSpec::new("r0").with_cell("v", 1.0));
+
+    let mut row_h_tables = multi_title_tables;
+    row_h_tables.push(multi_sub_table);
+    let row_h_manifest = ProjectManifest {
+        model_name: "RowHeightModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "MultiTitle".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: vec![BandSpec::new(vec![
+                    LaneSpec::new(multi_title_ids).with_table_gap(1),
+                ])],
+            },
+            SheetSpec {
+                name: "MultiSubtitle".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: SheetSpec::stacked_bands([TableId::from("MultiSub")]),
+            },
+        ],
+    };
+    let compiled_row_h = Compiler::compile(&row_h_manifest, &row_h_tables).unwrap();
+    let md_row_h = compiled_row_h
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+    let mt_print = md_row_h
+        .lines()
+        .find(|l| l.contains("Area: B2:B20"))
+        .unwrap();
+    assert_eq!(
+        mt_print,
+        "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:B20 | Est. scale: ~100% | Pages: P1 19r (~0.57pg)"
+    );
+    let ms_print = md_row_h
+        .lines()
+        .find(|l| l.contains("Area: B2:B13"))
+        .unwrap();
+    assert_eq!(
+        ms_print,
+        "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:B13 | Est. scale: ~100% | Pages: P1 12r (~0.36pg)"
     );
 }

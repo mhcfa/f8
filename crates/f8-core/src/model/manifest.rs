@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use super::error::ModelError;
 use super::id::TableId;
+use super::print::{
+    HeaderFooterSection, MAX_EXCEL_PAGE_BREAKS, PrintFitMode, SheetPrintSpec,
+    compile_header_footer, validate_header_footer_spec,
+};
 use super::theme::{Theme, ThemeSpec, is_valid_hex_color};
 
 /// Maximum column count supported by OpenXML / Excel (columns 0..=16,383, i.e. A..XFD).
@@ -115,6 +119,27 @@ impl ProjectManifest {
                 }
             }
 
+            if let Some(print) = &sheet.print {
+                if let Some(header) = &print.header {
+                    validate_header_footer_spec(
+                        &sheet.name,
+                        HeaderFooterSection::Header,
+                        header,
+                        &self.model_name,
+                    )?;
+                }
+                if let Some(footer) = &print.footer {
+                    validate_header_footer_spec(
+                        &sheet.name,
+                        HeaderFooterSection::Footer,
+                        footer,
+                        &self.model_name,
+                    )?;
+                }
+            }
+
+            let mut page_break_count: usize = 0;
+
             for (band_index, band) in sheet.bands.iter().enumerate() {
                 if band.lanes.is_empty() {
                     return Err(ModelError::EmptyBand {
@@ -138,6 +163,32 @@ impl ProjectManifest {
                         band_index,
                         lane_gap,
                     });
+                }
+                if band.page_break_before {
+                    if band_index == 0 {
+                        return Err(ModelError::InvalidFirstBandPageBreak {
+                            sheet: sheet.name.clone(),
+                        });
+                    }
+                    match &sheet.print {
+                        None => {
+                            return Err(ModelError::PageBreakWithoutPrint {
+                                sheet: sheet.name.clone(),
+                                band_index,
+                            });
+                        }
+                        Some(print) => match print.fit {
+                            PrintFitMode::FitPage => {
+                                return Err(ModelError::PageBreakWithFitPage {
+                                    sheet: sheet.name.clone(),
+                                    band_index,
+                                });
+                            }
+                            PrintFitMode::FitWidth => {
+                                page_break_count += 1;
+                            }
+                        },
+                    }
                 }
 
                 for (lane_index, lane) in band.lanes.iter().enumerate() {
@@ -170,6 +221,46 @@ impl ProjectManifest {
                         seen_tables.insert(table_id, sheet.name.as_str());
                     }
                 }
+            }
+
+            if page_break_count > MAX_EXCEL_PAGE_BREAKS {
+                return Err(ModelError::TooManyPageBreaks {
+                    sheet: sheet.name.clone(),
+                    count: page_break_count,
+                    max: MAX_EXCEL_PAGE_BREAKS,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Validates worksheet print headers and footers against resolved theme typography and palette.
+    ///
+    /// # Errors
+    /// Returns [`ModelError`] if any header/footer references an invalid theme font or color,
+    /// fails zone expansion, or exceeds Excel's 255 UTF-16 code unit limit.
+    pub fn validate_print_with_theme(&self, theme: &Theme) -> Result<(), ModelError> {
+        for sheet in &self.sheets {
+            let Some(print) = &sheet.print else {
+                continue;
+            };
+            if let Some(header) = &print.header {
+                compile_header_footer(
+                    &sheet.name,
+                    HeaderFooterSection::Header,
+                    header,
+                    &self.model_name,
+                    theme,
+                )?;
+            }
+            if let Some(footer) = &print.footer {
+                compile_header_footer(
+                    &sheet.name,
+                    HeaderFooterSection::Footer,
+                    footer,
+                    &self.model_name,
+                    theme,
+                )?;
             }
         }
         Ok(())
@@ -305,6 +396,8 @@ pub struct BandSpec {
     pub gap: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lane_gap: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub page_break_before: bool,
     pub lanes: Vec<LaneSpec>,
 }
 
@@ -314,6 +407,7 @@ impl BandSpec {
         Self {
             gap: None,
             lane_gap: None,
+            page_break_before: false,
             lanes: vec![LaneSpec::new([table])],
         }
     }
@@ -323,6 +417,7 @@ impl BandSpec {
         Self {
             gap: None,
             lane_gap: None,
+            page_break_before: false,
             lanes: lanes.into_iter().collect(),
         }
     }
@@ -340,6 +435,13 @@ impl BandSpec {
         self.lane_gap = Some(lane_gap);
         self
     }
+
+    /// Builder method enabling or disabling a manual horizontal page break immediately before this band.
+    #[must_use]
+    pub const fn with_page_break_before(mut self, page_break_before: bool) -> Self {
+        self.page_break_before = page_break_before;
+        self
+    }
 }
 
 /// Worksheet container metadata and hierarchical band/lane table layout.
@@ -355,6 +457,8 @@ pub struct SheetSpec {
     pub show_gridlines: bool,
     #[serde(default, skip_serializing_if = "SheetLayoutSpec::is_default")]
     pub layout: SheetLayoutSpec,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub print: Option<SheetPrintSpec>,
     pub bands: Vec<BandSpec>,
 }
 
