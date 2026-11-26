@@ -20,11 +20,16 @@ use crate::value::CellValue;
 const WIDTH_EPS: f64 = 1e-9;
 const POINTS_PER_INCH: f64 = 72.0;
 const NORMAL_COL_CHAR_PT: f64 = 5.25;
+const DEFAULT_ROW_HEIGHT_PT: f64 = 15.0;
+const LINE_HEIGHT_RATIO: f64 = 1.35;
 const WRAP_CHAR_WIDTH_RATIO: f64 = 0.50;
-const WRAP_LINE_HEIGHT_RATIO: f64 = 1.35;
 const WRAP_ROW_PADDING_PT: f64 = 2.0;
 const LOW_SCALE_THRESHOLD_PCT: u32 = 60;
 const PAGE_OVERFLOW_THRESHOLD: f64 = 0.95;
+
+fn estimate_single_line_row_height_pt(font_size: f64) -> f64 {
+    (font_size * LINE_HEIGHT_RATIO).max(DEFAULT_ROW_HEIGHT_PT)
+}
 
 fn col_width_to_points(w: f64) -> f64 {
     if w <= 0.0 {
@@ -1268,28 +1273,30 @@ impl CompiledModel {
         let typo = &self.theme.typography;
         let p = pt.placement;
         if p.title_row == Some(row) {
-            (typo.title_size * 1.6).max(18.0)
+            estimate_single_line_row_height_pt(typo.title_size)
         } else if p
             .subtitle_row_range
             .is_some_and(|(s, e)| row >= s && row <= e)
         {
-            (typo.subtitle_size * 1.5).max(13.5)
+            estimate_single_line_row_height_pt(typo.subtitle_size)
         } else if let Some((h_start, h_end)) = p.header_row_range
             && row >= h_start
             && row <= h_end
         {
             let has_group = pt.table.columns.iter().any(|c| c.group().is_some());
             if row == h_start && has_group {
-                (typo.super_header_size * 1.5).max(15.0)
+                estimate_single_line_row_height_pt(typo.super_header_size)
             } else {
-                (typo.col_header_size * 1.5).max(15.0)
+                estimate_single_line_row_height_pt(typo.col_header_size)
             }
         } else if row >= p.body_row_range.0 && row <= p.body_row_range.1 {
             let local_idx = (row - p.body_row_range.0) as usize;
             match pt.table.rows.get(local_idx) {
-                Some(RowSpec::SectionHeader(_)) => (typo.section_header_size * 1.5).max(15.0),
+                Some(RowSpec::SectionHeader(_)) => {
+                    estimate_single_line_row_height_pt(typo.section_header_size)
+                }
                 Some(RowSpec::Data(data_row)) => {
-                    let single_line_h = (typo.data_size * 1.5).max(15.0);
+                    let single_line_h = estimate_single_line_row_height_pt(typo.data_size);
                     if !table_has_wraps {
                         return single_line_h;
                     }
@@ -1321,17 +1328,17 @@ impl CompiledModel {
                         }
                     }
                     if max_lines > 1 {
-                        ((max_lines as f64) * (typo.data_size * WRAP_LINE_HEIGHT_RATIO)
+                        ((max_lines as f64) * (typo.data_size * LINE_HEIGHT_RATIO)
                             + WRAP_ROW_PADDING_PT)
                             .max(single_line_h)
                     } else {
                         single_line_h
                     }
                 }
-                Some(RowSpec::Gutter) | None => (typo.data_size * 1.5).max(15.0),
+                Some(RowSpec::Gutter) | None => DEFAULT_ROW_HEIGHT_PT,
             }
         } else {
-            (typo.data_size * 1.5).max(15.0)
+            DEFAULT_ROW_HEIGHT_PT
         }
     }
 
@@ -1343,7 +1350,6 @@ impl CompiledModel {
         tables: &[PlacedTable<'_>],
         wrap_counts: &IndexMap<&TableId, usize>,
     ) -> f64 {
-        let default_h = (self.theme.typography.data_size * 1.5).max(15.0);
         let mut total = 0.0;
         for row in min_row..=max_row {
             let mut row_h: Option<f64> = None;
@@ -1354,7 +1360,7 @@ impl CompiledModel {
                     row_h = Some(row_h.map_or(h, |cur| cur.max(h)));
                 }
             }
-            total += row_h.unwrap_or(default_h);
+            total += row_h.unwrap_or(DEFAULT_ROW_HEIGHT_PT);
         }
         total
     }

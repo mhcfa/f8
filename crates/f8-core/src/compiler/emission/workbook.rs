@@ -124,6 +124,7 @@ impl WorkbookEmitter {
         options: &EmissionOptions,
     ) -> Result<Workbook, EmissionError> {
         let mut workbook = Workbook::new();
+        workbook.use_excel_2023_theme()?;
 
         // 1. Configure deterministic package properties
         let mut properties = DocProperties::new();

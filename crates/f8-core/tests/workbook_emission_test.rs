@@ -3691,3 +3691,81 @@ fn test_sheet_print_settings_openxml_scenarios_1_to_5_and_8() {
         r#"<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.25" footer="0.25"/>"#
     ));
 }
+
+#[test]
+fn test_excel_2023_office_theme_defaults_emitted() {
+    let manifest = ProjectManifest {
+        model_name: "Theme2023Check".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Summary".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: Default::default(),
+            print: None,
+            bands: SheetSpec::stacked_bands([TableId::from("T1")]),
+        }],
+    };
+    let mut table = TableSpec::new("T1", "Summary Table");
+    table.columns = vec![
+        ColumnSpec::descriptor("item", "Line Item"),
+        ColumnSpec::new("y1").with_header("2026E"),
+    ];
+    table.rows = vec![
+        RowSpec::new("rev")
+            .with_cell("item", "Revenue")
+            .with_cell("y1", 100.0),
+    ];
+
+    let compiled = Compiler::compile(&manifest, &[table]).unwrap();
+    let buf_a = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    let buf_b = compiled.emit_workbook(&EmissionOptions::default()).unwrap();
+    assert_eq!(buf_a, buf_b, "Emission must remain byte-deterministic");
+
+    let wb_xml = read_zip_entry(&buf_a, "xl/workbook.xml");
+    assert!(
+        wb_xml.contains(r#"defaultThemeVersion="202300""#),
+        "Expected Excel 2023 defaultThemeVersion in workbook.xml: {wb_xml}"
+    );
+
+    let theme_xml = read_zip_entry(&buf_a, "xl/theme/theme1.xml");
+    assert!(
+        theme_xml.contains(r#"<a:latin typeface="Aptos Display""#),
+        "Expected Aptos Display majorFont in theme1.xml"
+    );
+    assert!(
+        theme_xml.contains(r#"<a:latin typeface="Aptos Narrow""#),
+        "Expected Aptos Narrow minorFont in theme1.xml"
+    );
+    assert!(
+        !theme_xml.contains(r#"typeface="Calibri""#),
+        "Legacy Calibri theme font must not remain in theme1.xml"
+    );
+
+    let styles_xml = read_zip_entry(&buf_a, "xl/styles.xml");
+    let first_font_start = styles_xml
+        .find("<font>")
+        .expect("styles.xml must contain Normal fontId=0");
+    let first_font_end = styles_xml[first_font_start..]
+        .find("</font>")
+        .expect("styles.xml fontId=0 must close")
+        + first_font_start;
+    let normal_font = &styles_xml[first_font_start..first_font_end];
+    assert!(
+        normal_font.contains(r#"<name val="Aptos Narrow"/>"#)
+            && normal_font.contains(r#"<sz val="11"/>"#)
+            && normal_font.contains(r#"<scheme val="minor"/>"#),
+        "Expected Normal style fontId=0 to be Aptos Narrow 11pt minor scheme, got: {normal_font}"
+    );
+    assert!(
+        !styles_xml.contains(r#"<name val="Calibri"/>"#),
+        "Legacy Calibri must not appear in default theme styles.xml: {styles_xml}"
+    );
+
+    let sheet_xml = read_zip_entry(&buf_a, "xl/worksheets/sheet1.xml");
+    assert!(
+        sheet_xml.contains(r#"<sheetFormatPr defaultRowHeight="15"/>"#),
+        "Excel 2023 theme must preserve 15pt defaultRowHeight: {sheet_xml}"
+    );
+}

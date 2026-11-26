@@ -3268,8 +3268,8 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
     // FW2 has title(1)+sub(1)+gutter(1)+group_hdr(2)+section(1)+35 data = 41 rows
     // Gap 4 between Band 1 and Band 2 is excluded from both P1 (10r) and P2 (41r)
     // Width: 6 cols each width 12.0 -> 6 * (12*5.25 + 3.75) = 6 * 66.75 = 400.5pt <= 784.3pt -> 100% scale
-    // P1 height: title 19.2 + sub 13.5 + gutter 15 + super 15 + col 15 + sec 15 + 4*15 = 152.7pt -> 152.7 / 508.8756 = 0.30pg
-    // P2 height: 19.2 + 13.5 + 15 + 15 + 15 + 15 + 33*15 + 2*(2*13.5 + 2) = 645.7pt -> 645.7 / 508.8756 = 1.27pg!
+    // P1 height: title 16.2 + sub 15 + gutter 15 + super 15 + col 15 + sec 15 + 4*15 = 151.2pt -> 151.2 / 508.8756 = 0.30pg
+    // P2 height: 16.2 + 15 + 15 + 15 + 15 + 15 + 33*15 + 2*(2*13.5 + 2) = 644.2pt -> 644.2 / 508.8756 = 1.27pg!
     assert_eq!(
         print_line,
         "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:G56 | Est. scale: ~100% | Pages: P1 10r (~0.30pg), P2 41r (~1.27pg!, wrap:2)"
@@ -3304,7 +3304,7 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
     );
 
     // Scenario 6: Custom theme with data_size != 10.0 keeps column width points invariant
-    // (Normal style Calibri 11pt MDW=7px), while row height reflects updated data_size!
+    // (Normal style Aptos Narrow 11pt MDW=7px), while row height reflects updated data_size!
     let mut big_data_theme = Theme::corporate_navy();
     big_data_theme.typography.data_size = 16.0;
     let mut big_manifest = manifest.clone();
@@ -3343,9 +3343,9 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
         big_wide_print.contains(&format!("Est. scale: {s4_scale_token}")),
         "WideLowScale horizontal scale must be invariant to data_size: orig={s4_print} vs big={big_wide_print}"
     );
-    // Vertical page fill reflects larger data_size=16.0 (P1 grows from ~0.30pg to ~0.39pg)
+    // Vertical page fill reflects larger data_size=16.0 (P1: 16.2 + 5*15 + 4*21.6 = 177.6pt -> ~0.35pg)
     assert!(
-        big_fw_print.contains("P1 10r (~0.39pg)"),
+        big_fw_print.contains("P1 10r (~0.35pg)"),
         "Expected P1 vertical fill to reflect data_size=16.0: {big_fw_print}"
     );
 
@@ -3367,8 +3367,9 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
     fill_edge_t
         .columns
         .push(ColumnSpec::new("v").with_header("Val"));
-    // Title(19.2) + gutter(15) + col_hdr(15) + 29 data rows(435) = 484.2pt -> 484.2 / 508.876 = 0.9515 -> rounds to ~0.95pg
-    for r in 0..29 {
+    // On A4 Portrait (755.49pt): Title(16.2) + gutter(15) + col_hdr(15) + 45 data rows(675) = 721.2pt
+    // -> 721.2 / 755.49 = 0.9546 -> rounds to ~0.95pg (strictly > 0.95 unrounded)
+    for r in 0..45 {
         fill_edge_t
             .rows
             .push(RowSpec::new(format!("r{r}")).with_cell("v", r as f64));
@@ -3393,7 +3394,14 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(12.0),
-                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                print: Some(SheetPrintSpec {
+                    paper_size: PaperSize::A4,
+                    orientation: PageOrientation::Portrait,
+                    fit: PrintFitMode::FitWidth,
+                    center_horizontally: true,
+                    header: None,
+                    footer: None,
+                }),
                 bands: SheetSpec::stacked_bands([TableId::from("FillEdge")]),
             },
         ],
@@ -3415,7 +3423,7 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
     );
     let fill095_line = md_edges
         .lines()
-        .find(|l| l.contains("Area: B2:B33"))
+        .find(|l| l.contains("Area: B2:B49"))
         .unwrap();
     assert!(
         fill095_line.contains("(~0.95pg)") && !fill095_line.contains("~0.95pg!"),
@@ -3487,9 +3495,9 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
         })
         .unwrap();
     // 9 rows * 600 chars in 75-char col -> ceil(600 / (75*5.25/5.0)) = 8 lines/row -> 110pt/row
-    // Total height: title(19.2) + gutter(15) + hdr(15) + 9*110 = 1039.2pt on Letter Portrait (705.6pt)
+    // Total height: title(16.2) + gutter(15) + hdr(15) + 9*110 = 1036.2pt on Letter Portrait (705.6pt)
     // Width: 12 + 75 = 87 -> (12*5.25+3.75) + (75*5.25+3.75) = 66.75 + 397.5 = 464.25pt <= 554.4pt -> h=100%
-    // FitWidth: 1039.2 / 705.6 = 1.47pg! ; FitPage: v = 705.6 / 1039.2 = 68%
+    // FitWidth: 1036.2 / 705.6 = 1.47pg! ; FitPage: v = 705.6 / 1036.2 = 68%
     let notes_fw_line = md_notes
         .lines()
         .find(|l| l.starts_with("Print: letter portrait | Fit: fit_width"))
@@ -3505,5 +3513,81 @@ fn test_layout_markdown_print_boundary_feedback_scenarios_1_5_and_6() {
     assert_eq!(
         notes_fp_line,
         "Print: letter portrait | Fit: fit_page (1 x 1) | Area: B2:C13 | Est. scale: ~68% (h:~100%, v:~68%) | wrap:9"
+    );
+
+    // Unified single-line row height model: (font_size * 1.35).max(15.0), with empty/gutter rows at 15.0pt.
+    // 1) MultiTitle: 4 titled tables (no subtitles, table_gap=1) -> 4*16.2 + 15*15 = 289.8pt -> 0.57pg on A4 Landscape
+    //    (would be 0.59pg under the old 19.2pt title overestimate).
+    // 2) MultiSubtitle: 1 titled table with 8 subtitles -> 16.2 + 8*15 + 3*15 = 181.2pt -> 0.36pg on A4 Landscape
+    //    (would be 0.33pg if subtitles shrank to 13.5pt below Excel's defaultRowHeight=15pt floor).
+    let mut multi_title_tables = Vec::new();
+    let mut multi_title_ids = Vec::new();
+    for i in 0..4 {
+        let id = format!("MT{i}");
+        let mut t = TableSpec::new(id.as_str(), format!("Title {i}"));
+        t.columns.push(ColumnSpec::new("v").with_header("Val"));
+        t.rows.push(RowSpec::new("r0").with_cell("v", i as f64));
+        multi_title_ids.push(TableId::from(id));
+        multi_title_tables.push(t);
+    }
+    let mut multi_sub_table = TableSpec::new("MultiSub", "Subtitle Floor")
+        .with_subtitles((0..8).map(|i| format!("Note {i}")));
+    multi_sub_table
+        .columns
+        .push(ColumnSpec::new("v").with_header("Val"));
+    multi_sub_table
+        .rows
+        .push(RowSpec::new("r0").with_cell("v", 1.0));
+
+    let mut row_h_tables = multi_title_tables;
+    row_h_tables.push(multi_sub_table);
+    let row_h_manifest = ProjectManifest {
+        model_name: "RowHeightModel".to_string(),
+        theme: Default::default(),
+        sheets: vec![
+            SheetSpec {
+                name: "MultiTitle".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: vec![BandSpec::new(vec![
+                    LaneSpec::new(multi_title_ids).with_table_gap(1),
+                ])],
+            },
+            SheetSpec {
+                name: "MultiSubtitle".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: SheetLayoutSpec::Auto,
+                print: Some(SheetPrintSpec::new(PaperSize::A4)),
+                bands: SheetSpec::stacked_bands([TableId::from("MultiSub")]),
+            },
+        ],
+    };
+    let compiled_row_h = Compiler::compile(&row_h_manifest, &row_h_tables).unwrap();
+    let md_row_h = compiled_row_h
+        .to_markdown(&ModelMarkdownOptions {
+            detail: ModelMarkdownDetail::Layout,
+            ..Default::default()
+        })
+        .unwrap();
+    let mt_print = md_row_h
+        .lines()
+        .find(|l| l.contains("Area: B2:B20"))
+        .unwrap();
+    assert_eq!(
+        mt_print,
+        "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:B20 | Est. scale: ~100% | Pages: P1 19r (~0.57pg)"
+    );
+    let ms_print = md_row_h
+        .lines()
+        .find(|l| l.contains("Area: B2:B13"))
+        .unwrap();
+    assert_eq!(
+        ms_print,
+        "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:B13 | Est. scale: ~100% | Pages: P1 12r (~0.36pg)"
     );
 }
