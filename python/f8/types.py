@@ -29,6 +29,10 @@ type SheetCellKind = Literal[
 
 type SheetLayoutMode = Literal["auto", "grid"]
 
+type PaperSize = Literal["a4", "letter"]
+type PageOrientation = Literal["landscape", "portrait"]
+type PrintFitMode = Literal["fit_width", "fit_page"]
+
 
 class CellCoordinate(TypedDict):
     """Discrete cell coordinate identifier."""
@@ -335,6 +339,36 @@ class GridSheetLayoutSpecDict(TypedDict):
 type SheetLayoutSpecDict = AutoSheetLayoutSpecDict | GridSheetLayoutSpecDict
 
 
+class HeaderFooterDict(TypedDict, total=False):
+    """Structured 3-zone worksheet print header or footer dictionary."""
+
+    left: str
+    center: str
+    right: str
+
+
+class SheetPrintDict(TypedDict):
+    """Canonical worksheet print specification dictionary."""
+
+    paper_size: PaperSize
+    orientation: NotRequired[PageOrientation]
+    fit: NotRequired[PrintFitMode]
+    center_horizontally: NotRequired[bool]
+    header: NotRequired[HeaderFooterDict]
+    footer: NotRequired[HeaderFooterDict]
+
+
+class SheetPrintOverrideDict(TypedDict, total=False):
+    """Per-sheet print override dictionary cascading over `Model.print`."""
+
+    paper_size: PaperSize
+    orientation: PageOrientation
+    fit: PrintFitMode
+    center_horizontally: bool
+    header: HeaderFooterDict | Literal["none"]
+    footer: HeaderFooterDict | Literal["none"]
+
+
 class LaneSpecDict(TypedDict):
     """Specification dictionary for a vertical lane of tables within a band."""
 
@@ -348,6 +382,7 @@ class BandSpecDict(TypedDict):
     lanes: list[LaneSpecDict]
     gap: NotRequired[int]
     lane_gap: NotRequired[int]
+    page_break_before: NotRequired[bool]
 
 
 class SheetSpecDict(TypedDict, total=False):
@@ -358,6 +393,7 @@ class SheetSpecDict(TypedDict, total=False):
     freeze_panes: FreezePanesDict
     show_gridlines: bool
     layout: SheetLayoutSpecDict
+    print: SheetPrintDict
     bands: list[BandSpecDict]
 
 

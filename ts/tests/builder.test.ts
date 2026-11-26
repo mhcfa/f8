@@ -20,13 +20,19 @@ import {
   type CellInputValue,
   compile,
   CompiledModel,
+  type HeaderFooterInput,
   type LaneInput,
   type LaneInputItem,
   type LaneSpecInput,
   Model,
+  type PageOrientation,
+  type PaperSize,
+  type PrintFitMode,
   type Shade,
   Sheet,
   type SheetLayoutMode,
+  type SheetPrintOverrideInput,
+  type SheetPrintSpecInput,
   SpecificationError,
   Table,
   type TableRef,
@@ -2078,5 +2084,426 @@ describe("TypeScript Fluent Builder DSL", () => {
     expect(xlsx[1]).toBe(0x4b)
     const dashXml = readZipEntryUtf8(xlsx, "xl/worksheets/sheet1.xml")
     expect(dashXml).not.toContain("<mergeCells")
+  })
+
+  it("sheet print settings cascade, validation, layout markdown, and .xlsx XML parity (Scenarios 1-8)", () => {
+    const paper: PaperSize = "a4"
+    const orient: PageOrientation = "landscape"
+    const fit: PrintFitMode = "fit_width"
+    const hf: HeaderFooterInput = { left: "{model}" }
+    const sp: SheetPrintSpecInput = {
+      paperSize: paper,
+      orientation: orient,
+      fit,
+    }
+    const spo: SheetPrintOverrideInput = { footer: "none" }
+    expect(hf.left).toBe("{model}")
+    expect(sp.paperSize).toBe("a4")
+    expect(spo.footer).toBe("none")
+
+    // Eager SDK validation on Model, Sheet, and BandInput
+    expect(
+      () =>
+        new Model({
+          print: { orientation: "portrait" } as unknown as SheetPrintSpecInput,
+        })
+    ).toThrow("paperSize")
+    expect(
+      () =>
+        new Model({
+          print: {
+            paperSize: "a4",
+            header: "none",
+          } as unknown as SheetPrintSpecInput,
+        })
+    ).toThrow("cannot be 'none'")
+    expect(
+      () =>
+        new Model({
+          print: {
+            paperSize: "a4",
+            footer: "none",
+          } as unknown as SheetPrintSpecInput,
+        })
+    ).toThrow("cannot be 'none'")
+    expect(
+      () =>
+        new Model({
+          print: {
+            paperSize: "a4",
+            scale: 80,
+          } as unknown as SheetPrintSpecInput,
+        })
+    ).toThrow("Unknown print configuration key")
+    expect(
+      () =>
+        new Model({
+          print: {
+            paperSize: "a4",
+            header: { bogus: "x" },
+          } as unknown as SheetPrintSpecInput,
+        })
+    ).toThrow("Unknown print header key")
+    expect(
+      () =>
+        new Model({
+          print: {
+            paperSize: "a3" as unknown as PaperSize,
+          },
+        })
+    ).toThrow("Invalid paperSize")
+    expect(
+      () =>
+        new Model({
+          print: "none" as unknown as SheetPrintSpecInput,
+        })
+    ).toThrow("Print configuration must be an object, got none")
+    expect(
+      () =>
+        new Sheet("MissingPaper", {
+          print: { orientation: "portrait" },
+        })
+    ).toThrow("paperSize")
+    expect(
+      () =>
+        new Sheet("BadOrient", {
+          print: {
+            paperSize: "a4",
+            orientation: "diagonal" as unknown as PageOrientation,
+          },
+        })
+    ).toThrow("Invalid orientation")
+    expect(
+      () =>
+        new Sheet("BadFit", {
+          print: {
+            paperSize: "a4",
+            fit: "fit_height" as unknown as PrintFitMode,
+          },
+        })
+    ).toThrow("Invalid fit")
+    expect(
+      () =>
+        new Sheet("BadStr", {
+          print: "bogus" as unknown as SheetPrintOverrideInput,
+        })
+    ).toThrow("Print configuration must be an object or 'none'")
+    expect(
+      () =>
+        new Sheet("BadCenter", {
+          print: {
+            paperSize: "a4",
+            centerHorizontally: "yes" as unknown as boolean,
+          },
+        })
+    ).toThrow("centerHorizontally")
+    expect(
+      () =>
+        new Sheet("UnknownKey", {
+          print: {
+            paperSize: "a4",
+            extra: 1,
+          } as unknown as SheetPrintOverrideInput,
+        })
+    ).toThrow("Unknown print configuration key")
+
+    // No-op "none" opt-outs when unset
+    const noPrintSheet = new Sheet("NoPrint", { print: "none" })
+    expect(noPrintSheet.print).toBeNull()
+    expect("print" in noPrintSheet.toSpec()).toBe(false)
+
+    const noopHfSheet = new Sheet("NoopHF", {
+      print: { paperSize: "a4", header: "none", footer: "none" },
+    })
+    expect(noopHfSheet.print).toEqual({ paperSize: "a4" })
+
+    // Band 0 pageBreakBefore & non-boolean pageBreakBefore validation
+    const b0Sheet = new Sheet("Band0Check", { print: { paperSize: "a4" } })
+    const b0Tbl = b0Sheet.addTable("T0", "T0")
+    b0Tbl.addColumn("c1", { header: "C1" })
+    b0Tbl.addRow("r1", { cells: { c1: 1.0 } })
+    expect(() =>
+      b0Sheet.setBands([{ lanes: [b0Tbl], pageBreakBefore: true }])
+    ).toThrow("band 0 cannot specify 'pageBreakBefore: true'")
+    expect(() =>
+      b0Sheet.setBands([
+        {
+          lanes: [b0Tbl],
+          pageBreakBefore: "yes" as unknown as boolean,
+        },
+      ])
+    ).toThrow("pageBreakBefore")
+
+    // Scenario 8: Model print cascade + shallow overrides + wholesale footer replacement +
+    // "none" opt-out + pageBreakBefore + XML + Layout Markdown + determinism + valuesOnly
+    const model = new Model({
+      name: "Acme & Co",
+      print: {
+        paperSize: "a4",
+        header: {
+          left: "{model}",
+          center: "2026 Forecast {{Rev}}",
+          right: "{sheet}",
+        },
+        footer: {
+          left: "M&A Confidential",
+          right: "Page {page} of {pages} ({date})",
+        },
+      },
+    })
+
+    const sInherit = model.addSheet("Summary")
+    const t1 = sInherit.addTable("SummaryTop", "Executive Summary")
+    t1.addColumn("item", { role: "descriptor", header: "Item" })
+    t1.addColumn("y1", { header: "2024E", format: "currency", decimals: 0 })
+    t1.addColumn("y2", { header: "2025E", format: "currency", decimals: 0 })
+    t1.addRow("rev", {
+      cells: { item: "Revenue", y1: 100.0 },
+      expr: 'SummaryTop["rev", "y1"] * 1.1',
+    })
+    const t2 = sInherit.addTable("SummaryBot", "Supporting Detail")
+    t2.addColumn("item", { role: "descriptor", header: "Item" })
+    t2.addColumn("y1", { header: "2024E" })
+    t2.addRow("note", { cells: { item: "Line 1\nLine 2", y1: 50.0 } })
+    sInherit.setBands([{ lanes: [t1] }, { lanes: [t2], pageBreakBefore: true }])
+    expect(sInherit.bands[1]?.pageBreakBefore).toBe(true)
+
+    const sFitPage = model.addSheet("Dashboard", {
+      print: {
+        paperSize: "letter",
+        orientation: "portrait",
+        fit: "fit_page",
+        centerHorizontally: false,
+        header: "none",
+        footer: "none",
+      },
+    })
+    const t3 = sFitPage.addTable("Dash", "Dashboard")
+    t3.addColumn("k", { role: "descriptor", header: "KPI" })
+    t3.addColumn("v", { header: "Value" })
+    t3.addRow("m", { cells: { k: "IRR", v: 0.25 } })
+
+    const sReplace = model.addSheet("Appendix", {
+      print: { footer: { center: "Appendix Only" } },
+    })
+    const t4 = sReplace.addTable("App", "Appendix")
+    t4.addColumn("k", { role: "descriptor", header: "Key" })
+    t4.addColumn("v", { header: "Value" })
+    t4.addRow("r1", { cells: { k: "Note", v: 1.0 } })
+
+    const sOptOut = model.addSheet("Scratch", { print: "none" })
+    const t5 = sOptOut.addTable("Work", "Scratch")
+    t5.addColumn("v", { header: "Val" })
+    t5.addRow("r1", { cells: { v: 42.0 } })
+
+    model.addSheet("EmptyPrint")
+
+    const { manifest } = model.toSpec()
+    expect(manifest.sheets[0]?.print).toEqual({
+      paperSize: "a4",
+      header: {
+        left: "{model}",
+        center: "2026 Forecast {{Rev}}",
+        right: "{sheet}",
+      },
+      footer: {
+        left: "M&A Confidential",
+        right: "Page {page} of {pages} ({date})",
+      },
+    })
+    expect(manifest.sheets[0]?.bands[1]?.pageBreakBefore).toBe(true)
+    expect(manifest.sheets[1]?.print).toEqual({
+      paperSize: "letter",
+      orientation: "portrait",
+      fit: "fit_page",
+      centerHorizontally: false,
+    })
+    expect(manifest.sheets[2]?.print).toEqual({
+      paperSize: "a4",
+      header: {
+        left: "{model}",
+        center: "2026 Forecast {{Rev}}",
+        right: "{sheet}",
+      },
+      footer: { center: "Appendix Only" },
+    })
+    expect(manifest.sheets[3]?.print).toBeUndefined()
+    expect(manifest.sheets[4]?.print?.paperSize).toBe("a4")
+
+    const compiled = model.compile()
+
+    // Layout Markdown checks (Scenarios 1, 5, 6)
+    const layoutMd = compiled.toMarkdown({ detail: "layout" })
+    expect(layoutMd).toContain(
+      "Print: a4 landscape | Fit: fit_width (1 x auto) | Area: B2:D11"
+    )
+    expect(layoutMd).toContain(", page_break):")
+    expect(layoutMd).toContain(
+      "Print: letter portrait | Fit: fit_page (1 x 1) | Area: B2:C5"
+    )
+    const scratchSection =
+      layoutMd.split("## Sheet: Scratch\n")[1]?.split("## Sheet: ")[0] ?? ""
+    expect(scratchSection).not.toContain("Print:")
+    const emptySection = layoutMd.split("## Sheet: EmptyPrint\n")[1] ?? ""
+    expect(emptySection).toContain("_(no tables)_")
+    expect(emptySection).not.toContain("Print:")
+
+    // OpenXML checks, determinism, and valuesOnly parity
+    const buf1 = compiled.emitWorkbook()
+    const buf2 = compiled.emitWorkbook()
+    expect(Buffer.from(buf1)).toEqual(Buffer.from(buf2))
+    const bufFrozen = compiled.emitWorkbook({ valuesOnly: true })
+
+    for (const buf of [buf1, bufFrozen]) {
+      const wbXml = readZipEntryUtf8(buf, "xl/workbook.xml")
+      const sh1Xml = readZipEntryUtf8(buf, "xl/worksheets/sheet1.xml")
+      const sh2Xml = readZipEntryUtf8(buf, "xl/worksheets/sheet2.xml")
+      const sh3Xml = readZipEntryUtf8(buf, "xl/worksheets/sheet3.xml")
+      const sh4Xml = readZipEntryUtf8(buf, "xl/worksheets/sheet4.xml")
+      const sh5Xml = readZipEntryUtf8(buf, "xl/worksheets/sheet5.xml")
+
+      expect(wbXml).toContain(
+        'name="_xlnm.Print_Area" localSheetId="0">Summary!$B$2:$D$11<'
+      )
+      expect(wbXml).not.toContain('name="_xlnm.Print_Area" localSheetId="3"')
+      expect(wbXml).not.toContain('name="_xlnm.Print_Area" localSheetId="4"')
+
+      expect(sh1Xml).toContain('<pageSetUpPr fitToPage="1"/>')
+      expect(sh1Xml).toContain('<printOptions horizontalCentered="1"/>')
+      expect(sh1Xml).toContain(
+        '<pageSetup paperSize="9" fitToHeight="0" orientation="landscape"'
+      )
+      expect(sh1Xml).toContain('<rowBreaks count="1" manualBreakCount="1">')
+      expect(sh1Xml).toContain('<headerFooter scaleWithDoc="0">')
+      expect(sh1Xml).toContain("Acme &amp;&amp; Co")
+      expect(sh1Xml).toContain("2026 Forecast {Rev}")
+      expect(sh1Xml).toContain("Page &amp;P of &amp;N (&amp;D)")
+
+      expect(sh2Xml).toContain('<pageSetUpPr fitToPage="1"/>')
+      expect(sh2Xml).toContain(
+        '<pageSetup paperSize="1" orientation="portrait"'
+      )
+      expect(sh2Xml).not.toContain("fitToWidth=")
+      expect(sh2Xml).not.toContain("fitToHeight=")
+      expect(sh2Xml).not.toContain("<printOptions")
+      expect(sh2Xml).not.toContain("<headerFooter")
+
+      expect(sh3Xml).toContain("Appendix Only")
+      expect(sh3Xml).not.toContain("Confidential")
+      expect(sh3Xml).not.toContain("Page &amp;P")
+
+      expect(sh4Xml).not.toContain("<pageSetUpPr")
+      expect(sh4Xml).not.toContain("<pageSetup")
+      expect(sh4Xml).not.toContain("<printOptions")
+      expect(sh4Xml).not.toContain("<headerFooter")
+      expect(sh4Xml).not.toContain("<rowBreaks")
+
+      expect(sh5Xml).toContain(
+        '<pageSetup paperSize="9" fitToHeight="0" orientation="landscape"'
+      )
+      expect(sh5Xml).not.toContain("<rowBreaks")
+    }
+
+    // Direct compile(): undefined stripping on print/header/footer/band AND unknown-key forwarding to WASM
+    const minTbl = {
+      id: "T1",
+      title: "T1",
+      columns: [{ kind: "data" as const, id: "c1", headers: ["C1"] }],
+      rows: [{ kind: "data" as const, id: "r1", cells: { c1: 1.0 } }],
+    }
+    const minTbl2 = { ...minTbl, id: "T2" }
+
+    const directCompiled = compile(
+      {
+        modelName: "DirectUndefStrip",
+        sheets: [
+          {
+            name: "S1",
+            print: {
+              paperSize: "a4",
+              orientation: undefined,
+              fit: undefined,
+              centerHorizontally: undefined,
+              header: { left: undefined, center: "{sheet}", right: undefined },
+              footer: undefined,
+            },
+            bands: [
+              { lanes: [{ tables: ["T1"] }], pageBreakBefore: undefined },
+              { lanes: [{ tables: ["T2"] }], pageBreakBefore: true },
+            ],
+          },
+        ],
+      },
+      [minTbl, minTbl2]
+    )
+    const directXml = readZipEntryUtf8(
+      directCompiled.emitWorkbook(),
+      "xl/worksheets/sheet1.xml"
+    )
+    expect(directXml).toContain('<rowBreaks count="1" manualBreakCount="1">')
+    expect(directXml).toContain("<oddHeader>")
+    expect(directXml).not.toContain("<oddFooter>")
+
+    // Scenario 7: Raw compile() rejects unknown keys and Pass 1 print violations via WASM
+    const invalidRawManifests: unknown[] = [
+      {
+        modelName: "M",
+        sheets: [
+          {
+            name: "S1",
+            print: { paperSize: "a4", bogusPrint: 1 },
+            bands: [{ lanes: [{ tables: ["T1"] }] }],
+          },
+        ],
+      },
+      {
+        modelName: "M",
+        sheets: [
+          {
+            name: "S1",
+            print: { paperSize: "a4", header: { left: "A", extraZone: "B" } },
+            bands: [{ lanes: [{ tables: ["T1"] }] }],
+          },
+        ],
+      },
+      {
+        modelName: "M",
+        sheets: [
+          {
+            name: "S1",
+            print: { paperSize: "a4", header: {} },
+            bands: [{ lanes: [{ tables: ["T1"] }] }],
+          },
+        ],
+      },
+      {
+        modelName: "[Page] Trick",
+        sheets: [
+          {
+            name: "S1",
+            print: { paperSize: "a4", header: { left: "A&{model}" } },
+            bands: [{ lanes: [{ tables: ["T1"] }] }],
+          },
+        ],
+      },
+      {
+        modelName: "M",
+        sheets: [
+          {
+            name: "S1",
+            print: { paperSize: "a4", fit: "fit_page" },
+            bands: [
+              { lanes: [{ tables: ["T1"] }] },
+              { lanes: [{ tables: ["T2"] }], pageBreakBefore: true },
+            ],
+          },
+        ],
+      },
+    ]
+    for (const badManifest of invalidRawManifests) {
+      expect(() =>
+        compile(badManifest as Parameters<typeof compile>[0], [minTbl, minTbl2])
+      ).toThrow(SpecificationError)
+    }
   })
 })

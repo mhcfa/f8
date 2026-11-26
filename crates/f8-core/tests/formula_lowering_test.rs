@@ -209,6 +209,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("IncomeStatement"),
                     TableId::from("CapTable"),
@@ -223,6 +224,7 @@ fn create_comprehensive_model() -> (ProjectManifest, Vec<TableSpec>) {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
         ],
@@ -1009,6 +1011,7 @@ fn test_scenario_20_range_contiguity_validation_during_lowering() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T")]),
         }],
     };
@@ -1268,6 +1271,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("History")]),
             },
             SheetSpec {
@@ -1276,6 +1280,7 @@ fn test_scenario_21_cross_table_relative_offsets_lowering_and_diagnostics() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("Detail"),
                     TableId::from("Schedule"),
@@ -1844,6 +1849,7 @@ fn test_grid_layout_scenario_8_formula_lowering_and_vertical_descriptor_lookup_p
                 freeze_panes: None,
                 show_gridlines: false,
                 layout,
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("T")]),
             }],
         };

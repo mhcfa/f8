@@ -6,44 +6,14 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, FormatUnderline}
 use super::error::EmissionError;
 use crate::compiler::layout::StyleRole;
 use crate::model::format::{CurrencyCode, FormatPreset, SemanticStyle, Shade};
-use crate::model::theme::{BorderStyle, PaletteConfig, Theme};
+use crate::model::theme::{BorderStyle, PaletteConfig, Theme, parse_hex_rgb};
 
 /// Parses a hexadecimal color string (`#RGB`, `#RRGGBB`, or `#RRGGBBAA`) into a `rust_xlsxwriter::Color`.
 pub fn parse_hex_color(field: &str, s: &str) -> Result<Color, EmissionError> {
-    let invalid = || EmissionError::InvalidColor {
+    let rgb_u32 = parse_hex_rgb(s).ok_or_else(|| EmissionError::InvalidColor {
         field: field.to_string(),
         color: s.to_string(),
-    };
-
-    let hex_part = s.strip_prefix('#').ok_or_else(invalid)?;
-    if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(invalid());
-    }
-
-    let rgb_u32 = match hex_part.len() {
-        3 => {
-            let mut chars = hex_part.chars();
-            let r = chars
-                .next()
-                .and_then(|c| c.to_digit(16))
-                .ok_or_else(invalid)?;
-            let g = chars
-                .next()
-                .and_then(|c| c.to_digit(16))
-                .ok_or_else(invalid)?;
-            let b = chars
-                .next()
-                .and_then(|c| c.to_digit(16))
-                .ok_or_else(invalid)?;
-            let r = (r << 4) | r;
-            let g = (g << 4) | g;
-            let b = (b << 4) | b;
-            (r << 16) | (g << 8) | b
-        }
-        6 => u32::from_str_radix(hex_part, 16).map_err(|_| invalid())?,
-        8 => u32::from_str_radix(&hex_part[..6], 16).map_err(|_| invalid())?,
-        _ => return Err(invalid()),
-    };
+    })?;
 
     Ok(Color::RGB(rgb_u32))
 }

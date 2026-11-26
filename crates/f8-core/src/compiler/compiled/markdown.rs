@@ -7,16 +7,53 @@ use crate::compiler::compiled::error::InspectionError;
 use crate::compiler::compiled::model::{CellError, ModelMarkdownDetail, ModelMarkdownOptions};
 use crate::compiler::ir::id::CellId;
 use crate::compiler::layout::{
-    SheetLayout, TablePlacement, col_to_excel_col, coordinate_to_a1,
+    PrintArea, SheetLayout, SheetPrintLayout, TablePlacement, col_to_excel_col, coordinate_to_a1,
     grid_table_descriptor_req_widths,
 };
 use crate::model::format::SemanticStyle;
 use crate::model::id::{SheetId, TableId};
 use crate::model::manifest::{DEFAULT_VERTICAL_TABLE_GAP, FreezePanes, SheetLayoutSpec, SheetSpec};
+use crate::model::print::PrintFitMode;
 use crate::model::table::{AxisRole, ColumnSpec, DataColumnSpec, RowSpec, TableSpec};
 use crate::value::CellValue;
 
 const WIDTH_EPS: f64 = 1e-9;
+const POINTS_PER_INCH: f64 = 72.0;
+const NORMAL_COL_CHAR_PT: f64 = 5.25;
+const WRAP_CHAR_WIDTH_RATIO: f64 = 0.50;
+const WRAP_LINE_HEIGHT_RATIO: f64 = 1.35;
+const WRAP_ROW_PADDING_PT: f64 = 2.0;
+const LOW_SCALE_THRESHOLD_PCT: u32 = 60;
+const PAGE_OVERFLOW_THRESHOLD: f64 = 0.95;
+
+fn col_width_to_points(w: f64) -> f64 {
+    if w <= 0.0 {
+        0.0
+    } else if w < 1.0 {
+        w * 9.0
+    } else {
+        w * NORMAL_COL_CHAR_PT + 3.75
+    }
+}
+
+fn estimate_wrapped_cell_lines(text: &str, col_width: f64, indent: u8, data_size: f64) -> usize {
+    let inner_pt = col_width.max(0.0) * NORMAL_COL_CHAR_PT;
+    let char_pt = (data_size * WRAP_CHAR_WIDTH_RATIO).max(1.0);
+    let chars_per_line = (inner_pt / char_pt - f64::from(indent) * 2.0).max(1.0);
+
+    let mut total_lines = 0usize;
+    for raw_segment in text.split('\n') {
+        let segment = raw_segment.strip_suffix('\r').unwrap_or(raw_segment);
+        let seg_chars = segment.chars().count();
+        let seg_lines = if seg_chars == 0 {
+            1
+        } else {
+            ((seg_chars as f64) / chars_per_line).ceil() as usize
+        };
+        total_lines += seg_lines.max(1);
+    }
+    total_lines.max(1)
+}
 
 fn round2(v: f64) -> f64 {
     let r = (v * 100.0).round() / 100.0;
@@ -95,6 +132,7 @@ struct RenderedBand<'a> {
     max_row: u32,
     min_col: u32,
     max_col: u32,
+    page_break_before: bool,
     lanes: Vec<RenderedLane<'a>>,
 }
 
@@ -1024,6 +1062,7 @@ impl CompiledModel {
                 max_row,
                 min_col,
                 max_col,
+                page_break_before: band_spec.page_break_before,
                 lanes: rendered_lanes,
             });
         }
@@ -1087,6 +1126,18 @@ impl CompiledModel {
             "Columns: {}",
             self.format_rle_columns(sheet_layout, sheet_max_col)
         ));
+        if let Some(print_layout) = sheet_layout.and_then(|sl| sl.print.as_ref())
+            && let Some(area) = print_layout.print_area
+        {
+            lines.push(self.format_print_line(
+                sheet_layout,
+                print_layout,
+                area,
+                &rendered_bands,
+                &placed_tables,
+                wrap_counts,
+            ));
+        }
         lines.push(String::new());
 
         let mut prev_band_max_row: Option<u32> = None;
@@ -1121,6 +1172,9 @@ impl CompiledModel {
                 if effective_gap != DEFAULT_VERTICAL_TABLE_GAP {
                     band_line.push_str(&format!(", table_gap:{effective_gap}r"));
                 }
+            }
+            if band.page_break_before {
+                band_line.push_str(", page_break");
             }
             band_line.push_str("):");
             lines.push(band_line);
@@ -1200,6 +1254,249 @@ impl CompiledModel {
                         ));
                     }
                 }
+            }
+        }
+    }
+
+    fn estimate_table_row_height_pt(
+        &self,
+        sheet_layout: Option<&SheetLayout>,
+        pt: PlacedTable<'_>,
+        row: u32,
+        table_has_wraps: bool,
+    ) -> f64 {
+        let typo = &self.theme.typography;
+        let p = pt.placement;
+        if p.title_row == Some(row) {
+            (typo.title_size * 1.6).max(18.0)
+        } else if p
+            .subtitle_row_range
+            .is_some_and(|(s, e)| row >= s && row <= e)
+        {
+            (typo.subtitle_size * 1.5).max(13.5)
+        } else if let Some((h_start, h_end)) = p.header_row_range
+            && row >= h_start
+            && row <= h_end
+        {
+            let has_group = pt.table.columns.iter().any(|c| c.group().is_some());
+            if row == h_start && has_group {
+                (typo.super_header_size * 1.5).max(15.0)
+            } else {
+                (typo.col_header_size * 1.5).max(15.0)
+            }
+        } else if row >= p.body_row_range.0 && row <= p.body_row_range.1 {
+            let local_idx = (row - p.body_row_range.0) as usize;
+            match pt.table.rows.get(local_idx) {
+                Some(RowSpec::SectionHeader(_)) => (typo.section_header_size * 1.5).max(15.0),
+                Some(RowSpec::Data(data_row)) => {
+                    let single_line_h = (typo.data_size * 1.5).max(15.0);
+                    if !table_has_wraps {
+                        return single_line_h;
+                    }
+                    let mut max_lines = 1usize;
+                    for col_spec in &pt.table.columns {
+                        let ColumnSpec::Data(data_col) = col_spec else {
+                            continue;
+                        };
+                        let cell_id = CellId::new(
+                            pt.table.id.clone(),
+                            data_row.id.clone(),
+                            data_col.id.clone(),
+                        );
+                        let Some(coord) = self.layout_map.cells.get(&cell_id) else {
+                            continue;
+                        };
+                        if !coord.wrap_text {
+                            continue;
+                        }
+                        if let Some(CellValue::Text(text)) = self.evaluated.get_cell(&cell_id) {
+                            let col_w = self.col_width_at(sheet_layout, coord.col);
+                            let lines = estimate_wrapped_cell_lines(
+                                text,
+                                col_w,
+                                coord.indent,
+                                typo.data_size,
+                            );
+                            max_lines = max_lines.max(lines);
+                        }
+                    }
+                    if max_lines > 1 {
+                        ((max_lines as f64) * (typo.data_size * WRAP_LINE_HEIGHT_RATIO)
+                            + WRAP_ROW_PADDING_PT)
+                            .max(single_line_h)
+                    } else {
+                        single_line_h
+                    }
+                }
+                Some(RowSpec::Gutter) | None => (typo.data_size * 1.5).max(15.0),
+            }
+        } else {
+            (typo.data_size * 1.5).max(15.0)
+        }
+    }
+
+    fn estimate_rows_height_pt(
+        &self,
+        sheet_layout: Option<&SheetLayout>,
+        min_row: u32,
+        max_row: u32,
+        tables: &[PlacedTable<'_>],
+        wrap_counts: &IndexMap<&TableId, usize>,
+    ) -> f64 {
+        let default_h = (self.theme.typography.data_size * 1.5).max(15.0);
+        let mut total = 0.0;
+        for row in min_row..=max_row {
+            let mut row_h: Option<f64> = None;
+            for &pt in tables {
+                if row >= pt.placement.start_row && row <= pt.placement.end_row {
+                    let has_wraps = wrap_counts.get(&pt.table.id).copied().unwrap_or(0) > 0;
+                    let h = self.estimate_table_row_height_pt(sheet_layout, pt, row, has_wraps);
+                    row_h = Some(row_h.map_or(h, |cur| cur.max(h)));
+                }
+            }
+            total += row_h.unwrap_or(default_h);
+        }
+        total
+    }
+
+    fn format_print_line(
+        &self,
+        sheet_layout: Option<&SheetLayout>,
+        print_layout: &SheetPrintLayout,
+        area: PrintArea,
+        rendered_bands: &[RenderedBand<'_>],
+        placed_tables: &[PlacedTable<'_>],
+        wrap_counts: &IndexMap<&TableId, usize>,
+    ) -> String {
+        let spec = &print_layout.spec;
+        let (printable_w_in, printable_h_in) =
+            spec.paper_size.printable_size_inches(spec.orientation);
+        let printable_w_pt = printable_w_in * POINTS_PER_INCH;
+        let printable_h_pt = printable_h_in * POINTS_PER_INCH;
+
+        let content_w_pt: f64 = (area.first_col..=area.last_col)
+            .map(|col| col_width_to_points(self.col_width_at(sheet_layout, col)))
+            .sum();
+        let h_scale = if content_w_pt > 0.0 {
+            (printable_w_pt / content_w_pt).min(1.0)
+        } else {
+            1.0
+        };
+        let area_str = format!(
+            "{}:{}",
+            format_a1(area.first_col, area.first_row),
+            format_a1(area.last_col, area.last_row)
+        );
+
+        match spec.fit {
+            PrintFitMode::FitWidth => {
+                let est_scale = h_scale;
+                let est_pct = (est_scale * 100.0).round() as u32;
+
+                let mut groups: Vec<Vec<&RenderedBand<'_>>> = Vec::new();
+                for (band_idx, band) in rendered_bands.iter().enumerate() {
+                    if band_idx == 0 || band.page_break_before {
+                        groups.push(vec![band]);
+                    } else if let Some(last_group) = groups.last_mut() {
+                        last_group.push(band);
+                    }
+                }
+
+                let mut page_parts: Vec<String> = Vec::with_capacity(groups.len());
+                for (group_idx, group) in groups.iter().enumerate() {
+                    let group_num = group_idx + 1;
+                    let group_min_row = group
+                        .iter()
+                        .map(|b| b.min_row)
+                        .min()
+                        .unwrap_or(area.first_row);
+                    let group_max_row = group
+                        .iter()
+                        .map(|b| b.max_row)
+                        .max()
+                        .unwrap_or(area.last_row);
+                    let group_rows = group_max_row
+                        .saturating_sub(group_min_row)
+                        .saturating_add(1);
+                    let group_tables: Vec<PlacedTable<'_>> = group
+                        .iter()
+                        .flat_map(|b| b.lanes.iter())
+                        .flat_map(|l| l.tables.iter().copied())
+                        .collect();
+                    let group_h_pt = self.estimate_rows_height_pt(
+                        sheet_layout,
+                        group_min_row,
+                        group_max_row,
+                        &group_tables,
+                        wrap_counts,
+                    );
+                    let est_pages = round2((group_h_pt * est_scale) / printable_h_pt);
+                    let overflow_marker = if est_pages > PAGE_OVERFLOW_THRESHOLD {
+                        "!"
+                    } else {
+                        ""
+                    };
+                    let group_wraps: usize = group_tables
+                        .iter()
+                        .map(|pt| wrap_counts.get(&pt.table.id).copied().unwrap_or(0))
+                        .sum();
+                    let wrap_suffix = if group_wraps > 0 {
+                        format!(", wrap:{group_wraps}")
+                    } else {
+                        String::new()
+                    };
+                    page_parts.push(format!(
+                        "P{group_num} {group_rows}r (~{est_pages:.2}pg{overflow_marker}{wrap_suffix})"
+                    ));
+                }
+
+                let low_scale_suffix = if est_pct < LOW_SCALE_THRESHOLD_PCT {
+                    " [low scale <60%]"
+                } else {
+                    ""
+                };
+                format!(
+                    "Print: {} {} | Fit: fit_width (1 x auto) | Area: {area_str} | Est. scale: ~{est_pct}% | Pages: {}{low_scale_suffix}",
+                    spec.paper_size,
+                    spec.orientation,
+                    page_parts.join(", "),
+                )
+            }
+            PrintFitMode::FitPage => {
+                let total_h_pt = self.estimate_rows_height_pt(
+                    sheet_layout,
+                    area.first_row,
+                    area.last_row,
+                    placed_tables,
+                    wrap_counts,
+                );
+                let v_scale = if total_h_pt > 0.0 {
+                    (printable_h_pt / total_h_pt).min(1.0)
+                } else {
+                    1.0
+                };
+                let est_scale = h_scale.min(v_scale);
+                let est_pct = (est_scale * 100.0).round() as u32;
+                let h_pct = (h_scale * 100.0).round() as u32;
+                let v_pct = (v_scale * 100.0).round() as u32;
+                let total_wraps: usize = placed_tables
+                    .iter()
+                    .map(|pt| wrap_counts.get(&pt.table.id).copied().unwrap_or(0))
+                    .sum();
+                let wrap_segment = if total_wraps > 0 {
+                    format!(" | wrap:{total_wraps}")
+                } else {
+                    String::new()
+                };
+                let low_scale_suffix = if est_pct < LOW_SCALE_THRESHOLD_PCT {
+                    " [low scale <60%]"
+                } else {
+                    ""
+                };
+                format!(
+                    "Print: {} {} | Fit: fit_page (1 x 1) | Area: {area_str} | Est. scale: ~{est_pct}% (h:~{h_pct}%, v:~{v_pct}%){wrap_segment}{low_scale_suffix}",
+                    spec.paper_size, spec.orientation,
+                )
             }
         }
     }

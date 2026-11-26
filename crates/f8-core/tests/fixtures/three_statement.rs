@@ -311,6 +311,7 @@ pub fn build_three_statement_model() -> (ProjectManifest, Vec<TableSpec>) {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([
                 TableId::from("Assumptions"),
                 TableId::from("IncomeStatement"),

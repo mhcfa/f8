@@ -55,6 +55,7 @@ fn test_scenario_1_default_sheet_margins_and_primary_table_origin_at_b2() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("SimpleTable")]),
         }],
     };
@@ -106,6 +107,7 @@ fn test_scenario_2_table_header_stack_with_title_subtitle_buffer_and_column_head
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("IncomeStatement")]),
         }],
     };
@@ -183,6 +185,7 @@ fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Assumptions")]),
             },
             SheetSpec {
@@ -191,6 +194,7 @@ fn test_scenario_2b_multi_row_subtitles_and_subtitle_only_table_banner() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("SubOnly")]),
             },
         ],
@@ -260,6 +264,7 @@ fn test_scenario_3_super_headers_spanning_grouped_column_ranges() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("TimelineTable")]),
         }],
     };
@@ -311,6 +316,7 @@ fn test_scenario_4_interleaved_section_headers_and_outline_levels() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("HierarchyTable")]),
         }],
     };
@@ -387,6 +393,7 @@ fn test_scenario_5_multi_table_vertical_stacking_and_inter_table_gutters() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Table1"), TableId::from("Table2")]),
         }],
     };
@@ -456,6 +463,7 @@ fn test_scenario_6_sheet_wide_column_width_arbitration_across_stacked_tables() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Table1"), TableId::from("Table2")]),
         }],
     };
@@ -504,6 +512,7 @@ fn test_scenario_7_full_style_role_propagation_to_physical_coordinates() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("SummaryTable")]),
         }],
     };
@@ -584,6 +593,7 @@ fn test_scenario_9_multi_tier_column_header_row_range_allocation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("MultiTierTable")]),
         }],
     };
@@ -618,6 +628,7 @@ fn test_scenario_10_rejection_of_unassigned_tables() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("AssignedTable")]),
         }],
     };
@@ -659,6 +670,7 @@ fn test_scenario_11_end_to_end_compiler_facade_integration() {
             freeze_panes: Some(FreezePanes { row: 2, col: 2 }),
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("FacadeTable")]),
         }],
     };
@@ -710,6 +722,7 @@ fn test_scenario_12_descriptor_indentation_tiers() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("NestedHierarchyTable")]),
         }],
     };
@@ -814,6 +827,7 @@ fn test_scenario_13_explicit_gutters_and_section_headers() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("GutterTable")]),
         }],
     };
@@ -944,6 +958,7 @@ fn test_scenario_14_group_header_depth_and_multi_line_header_width_arbitration()
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("LboTimeline")]),
         }],
     };
@@ -1002,6 +1017,7 @@ fn test_scenario_15_horizontal_side_by_side_placement_and_formula_lowering() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![BandSpec::new([
                 LaneSpec::new(["T1"]),
                 LaneSpec::new(["T2"]),
@@ -1094,6 +1110,7 @@ fn test_scenario_16_asymmetric_dashboard_placement_and_sheet_inspection() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["T1"]), LaneSpec::new(["T2", "T3"])]),
                 BandSpec::single("T4"),
@@ -1180,6 +1197,7 @@ fn test_scenario_17_custom_gap_overrides() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![
                 BandSpec::new([
                     LaneSpec::new(["T1", "T4"]).with_table_gap(4),
@@ -1268,6 +1286,7 @@ fn test_scenario_18_2d_column_width_arbitration() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: vec![BandSpec::new([
                 LaneSpec::new(["T1"]),
                 LaneSpec::new(["T2", "T3"]),
@@ -1328,6 +1347,7 @@ fn test_scenario_19_wider_lower_left_card_auto_and_structural_non_overlap() {
             freeze_panes: None,
             show_gridlines: false,
             layout: Default::default(),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR", "BR"])]),
                 BandSpec::single("Bottom"),
@@ -1399,6 +1419,7 @@ fn test_scenario_20_direct_layout_planner_unknown_table_and_defensive_empty_cont
             freeze_panes: None,
             show_gridlines: false,
             layout: Default::default(),
+            print: None,
             bands: vec![BandSpec::single("Ghost")],
         }],
     };
@@ -1429,6 +1450,7 @@ fn test_scenario_20_direct_layout_planner_unknown_table_and_defensive_empty_cont
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: layout_spec,
+                print: None,
                 bands: SheetSpec::stacked_bands(["T1"]),
             }],
         };
@@ -1441,6 +1463,7 @@ fn test_scenario_20_direct_layout_planner_unknown_table_and_defensive_empty_cont
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: layout_spec,
+                print: None,
                 bands: vec![
                     BandSpec::new(Vec::<LaneSpec>::new()),
                     BandSpec::new([LaneSpec::new(Vec::<&str>::new()), LaneSpec::new(["T1"])]),
@@ -1510,6 +1533,7 @@ fn test_scenario_21_column_width_clamping_and_multiline_wrap_text() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("WrapTable")]),
         }],
     };
@@ -1606,6 +1630,7 @@ fn test_scenario_22_explicit_newline_text_wrapping_and_segment_measurement() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("NewlineTable")]),
         }],
     };
@@ -1727,6 +1752,7 @@ fn test_scenario_23_trailing_alignment_space_width_arbitration() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("AlignWidthTable")]),
         }],
     };
@@ -1831,6 +1857,7 @@ fn single_sheet_manifest(model_name: &str, bands: Vec<BandSpec>) -> ProjectManif
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands,
         }],
     }
@@ -1858,6 +1885,7 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::single("NarrowTop"),
                     BandSpec::new([LaneSpec::new(["WideMid", "MedBot"])]),
@@ -1869,6 +1897,7 @@ fn test_aligned_title_banners_scenario_1_stacked_varying_widths_and_sheet_isolat
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("OtherWide")]),
             },
         ],
@@ -2073,6 +2102,7 @@ fn test_aligned_title_banners_band_lane_spec_scenario_6() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR"])]),
                     BandSpec::single("WideBottom"),
@@ -2084,6 +2114,7 @@ fn test_aligned_title_banners_band_lane_spec_scenario_6() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::new([LaneSpec::new(["A"]), LaneSpec::new(["B"])]).with_lane_gap(3),
                     BandSpec::single("WideBelow"),
@@ -2095,6 +2126,7 @@ fn test_aligned_title_banners_band_lane_spec_scenario_6() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![
                     BandSpec::new([LaneSpec::new(["L1", "L2U"]), LaneSpec::new(["R1", "R2U"])])
                         .with_lane_gap(0),
@@ -2245,6 +2277,7 @@ fn test_grid_layout_scenario_1_auto_preserves_one_to_one_col_spans_and_wrap_text
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::Auto,
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("AutoTable")]),
         }],
     };
@@ -2320,6 +2353,7 @@ fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() 
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Summary")]),
             },
             SheetSpec {
@@ -2328,6 +2362,7 @@ fn test_grid_layout_scenario_2_uniform_width_and_descriptor_overflow_spanning() 
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
+                print: None,
                 bands: vec![],
             },
         ],
@@ -2440,6 +2475,7 @@ fn test_grid_layout_scenario_3_dashboard_right_of_alignment_without_measure_blow
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["SourcesUses"]), LaneSpec::new(["Returns"])]),
                 BandSpec::single("Financials"),
@@ -2520,6 +2556,7 @@ fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cle
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("MeasureFloor")]),
         }],
     };
@@ -2568,6 +2605,7 @@ fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cle
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("DescNumFloor")]),
         }],
     };
@@ -2604,6 +2642,7 @@ fn test_grid_layout_scenario_4_measure_and_nontext_descriptor_floor_widens_w_cle
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("EmptyDemand")]),
         }],
     };
@@ -2651,6 +2690,7 @@ fn test_grid_layout_scenario_5_static_base_w_measure_header_rejection() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Valuation")]),
         }],
     };
@@ -2704,6 +2744,7 @@ fn test_grid_layout_scenario_5_static_base_w_measure_header_rejection() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(17.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("Valuation")]),
         }],
     };
@@ -2733,6 +2774,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("LitNewline")]),
             }],
         };
@@ -2779,6 +2821,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::Auto,
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("SrcAuto")]),
             },
             SheetSpec {
@@ -2787,6 +2830,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("DstGrid")]),
             },
         ],
@@ -2819,6 +2863,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("HdrNL")]),
             }],
         };
@@ -2851,6 +2896,7 @@ fn test_grid_layout_scenario_6_strict_newline_rejection() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("GrpNL")]),
             }],
         };
@@ -2889,6 +2935,7 @@ fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T1")]),
         }],
     };
@@ -2921,6 +2968,7 @@ fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T2")]),
         }],
     };
@@ -2949,6 +2997,7 @@ fn test_grid_layout_scenario_7_pass5_width_out_of_bounds_and_grid_limit() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(1.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T3")]),
         }],
     };
@@ -3033,6 +3082,7 @@ fn test_grid_layout_scenario_11_multi_descriptor_leading_gutter_descriptor_only_
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR", "BR"])]),
                 BandSpec::single("Notes"),
@@ -3131,6 +3181,7 @@ fn test_grid_layout_spec_scenario_4_descriptor_growth_shifts_lane1() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: vec![
                 BandSpec::new([LaneSpec::new(["TL", "BL"]), LaneSpec::new(["TR", "BR"])])
                     .with_lane_gap(2),
@@ -3278,6 +3329,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("IS"), TableId::from("CapexFcast")]),
             },
             SheetSpec {
@@ -3286,6 +3338,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: SheetSpec::stacked_bands([
                     TableId::from("IS_B"),
                     TableId::from("CapexWide"),
@@ -3297,6 +3350,7 @@ fn test_grid_layout_leading_gutter_period_spacer_alignment() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("Div1"), TableId::from("Div2")]),
             },
         ],
@@ -3425,6 +3479,7 @@ fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
             freeze_panes: None,
             show_gridlines: false,
             layout: f8_core::SheetLayoutSpec::grid_with_col_width(12.0),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("UnevalGrid")]),
         }],
     };
@@ -3463,6 +3518,7 @@ fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: f8_core::SheetLayoutSpec::grid(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("UnevalNL")]),
             }],
         };
@@ -3483,4 +3539,172 @@ fn test_grid_layout_unevaluated_planner_literal_and_formula_fallback() {
             "Expected GridMultilineCell on unevaluated '{col_target}', got {err:?}"
         );
     }
+}
+
+#[test]
+fn test_pass5_sheet_print_layout_auto_grid_and_empty_sheet() {
+    use f8_core::compiler::layout::{PrintArea, SheetPrintLayout};
+    use f8_core::model::{PaperSize, SheetLayoutSpec, SheetPrintSpec};
+
+    let make_tbl = |id: &str, title: &str, desc_text: &str| -> TableSpec {
+        let mut t = TableSpec::new(id, title);
+        t.columns.push(ColumnSpec::descriptor("item", "Line Item"));
+        t.columns.push(ColumnSpec::new("y1").with_header("2024E"));
+        t.columns.push(ColumnSpec::new("y2").with_header("2025E"));
+        t.rows.push(
+            RowSpec::new("r1")
+                .with_cell("item", desc_text)
+                .with_cell("y1", 100.0)
+                .with_cell("y2", 110.0),
+        );
+        t.rows.push(
+            RowSpec::new("r2")
+                .with_cell("item", "Row 2")
+                .with_cell("y1", 50.0)
+                .with_cell("y2", 55.0),
+        );
+        t
+    };
+
+    // Test both Auto and Grid layout modes with 3 bands and page_break_before on Band 1 & Band 2
+    for (sheet_name, layout_spec) in [
+        ("AutoPrint", SheetLayoutSpec::Auto),
+        ("GridPrint", SheetLayoutSpec::grid_with_col_width(12.0)),
+    ] {
+        let t1 = make_tbl("B1", "Band 1", "Long Descriptive Account Label For Grid");
+        let t2 = make_tbl("B2", "Band 2", "Short");
+        let t3 = make_tbl("B3", "Band 3", "Medium Label");
+
+        let bands_with_breaks = vec![
+            BandSpec::single("B1"),
+            BandSpec::single("B2")
+                .with_gap(4)
+                .with_page_break_before(true),
+            BandSpec::single("B3")
+                .with_gap(2)
+                .with_page_break_before(true),
+        ];
+        let bands_without_breaks = vec![
+            BandSpec::single("B1"),
+            BandSpec::single("B2").with_gap(4),
+            BandSpec::single("B3").with_gap(2),
+        ];
+
+        let print_spec = SheetPrintSpec::new(PaperSize::A4);
+        let manifest_print = ProjectManifest {
+            model_name: "PrintLayout".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: sheet_name.to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: layout_spec,
+                print: Some(print_spec.clone()),
+                bands: bands_with_breaks,
+            }],
+        };
+        let manifest_plain = ProjectManifest {
+            model_name: "PrintLayout".to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: sheet_name.to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: layout_spec,
+                print: None,
+                bands: bands_without_breaks,
+            }],
+        };
+
+        let tables = vec![t1, t2, t3];
+        let compiled_print = Compiler::compile(&manifest_print, &tables).unwrap();
+        let compiled_plain = Compiler::compile(&manifest_plain, &tables).unwrap();
+
+        // Pure Tier 2 invariant: placements, col_widths, and cell coords are unaffected by print
+        assert_eq!(
+            compiled_print.layout_map.tables,
+            compiled_plain.layout_map.tables
+        );
+        assert_eq!(
+            compiled_print.layout_map.cells,
+            compiled_plain.layout_map.cells
+        );
+
+        let sl_plain = compiled_plain
+            .layout_map
+            .get_sheet(&SheetId::from(sheet_name))
+            .unwrap();
+        assert_eq!(sl_plain.print, None);
+
+        let sl_print = compiled_print
+            .layout_map
+            .get_sheet(&SheetId::from(sheet_name))
+            .unwrap();
+        assert_eq!(sl_print.col_widths, sl_plain.col_widths);
+
+        let p1 = compiled_print
+            .layout_map
+            .get_table(&TableId::from("B1"))
+            .unwrap();
+        let p2 = compiled_print
+            .layout_map
+            .get_table(&TableId::from("B2"))
+            .unwrap();
+        let p3 = compiled_print
+            .layout_map
+            .get_table(&TableId::from("B3"))
+            .unwrap();
+
+        // B1 starts at row 1 (B2), ends at row 5. Gap 4 -> B2 starts at row 10.
+        // B2 ends at row 14. Gap 2 -> B3 starts at row 17, ends at row 21.
+        assert_eq!(p1.start_row, 1);
+        assert_eq!(p2.start_row, 10);
+        assert_eq!(p3.start_row, 17);
+
+        let expected_last_col = p1.end_col.max(p2.end_col).max(p3.end_col);
+        assert_eq!(
+            sl_print.print,
+            Some(SheetPrintLayout {
+                spec: print_spec,
+                print_area: Some(PrintArea {
+                    first_row: 1,
+                    first_col: 1,
+                    last_row: p3.end_row,
+                    last_col: expected_last_col,
+                }),
+                row_breaks: vec![p2.start_row, p3.start_row],
+            })
+        );
+    }
+
+    // Scenario 5: Empty sheet with print configured resolves print_area = None and row_breaks = []
+    let empty_print_spec = SheetPrintSpec::new(PaperSize::A4);
+    let empty_manifest = ProjectManifest {
+        model_name: "EmptyPrint".to_string(),
+        theme: Default::default(),
+        sheets: vec![SheetSpec {
+            name: "Empty".to_string(),
+            tab_color: None,
+            freeze_panes: None,
+            show_gridlines: false,
+            layout: SheetLayoutSpec::Auto,
+            print: Some(empty_print_spec.clone()),
+            bands: Vec::new(),
+        }],
+    };
+    let compiled_empty = Compiler::compile(&empty_manifest, &[]).unwrap();
+    let empty_sl = compiled_empty
+        .layout_map
+        .get_sheet(&SheetId::from("Empty"))
+        .unwrap();
+    assert_eq!(
+        empty_sl.print,
+        Some(SheetPrintLayout {
+            spec: empty_print_spec,
+            print_area: None,
+            row_breaks: Vec::new(),
+        })
+    );
 }

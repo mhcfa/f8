@@ -59,6 +59,7 @@ import { Cell, Model, Sheet, Table, compile, defaultTheme, init } from "f8-engin
 const model = new Model({
   name?: string, // default "Model"
   theme?: ThemeInput, // default "corporate_navy"
+  print?: SheetPrintSpecInput, // optional workbook default print settings
 });
 
 const sheet: Sheet = model.addSheet(
@@ -69,6 +70,7 @@ const sheet: Sheet = model.addSheet(
     freezePanes?: FreezePanesInput; // { row: number, col: number }
     layout?: SheetLayoutMode; // "auto" (default) | "grid"
     colWidth?: number; // finite 1..=255, only valid with layout: "grid"
+    print?: SheetPrintOverrideInput | "none"; // shallow override or "none" opt-out
   },
 );
 
@@ -92,8 +94,31 @@ export interface BandInput {
   readonly lanes: readonly LaneInputItem[];
   readonly gap?: number;
   readonly laneGap?: number;
+  readonly pageBreakBefore?: boolean;
 }
 export type BandInputItem = BandInput | TableRef;
+
+export interface HeaderFooterInput {
+  readonly left?: string;
+  readonly center?: string;
+  readonly right?: string;
+}
+export interface SheetPrintSpecInput {
+  readonly paperSize: PaperSize; // "a4" | "letter"
+  readonly orientation?: PageOrientation; // "landscape" (default) | "portrait"
+  readonly fit?: PrintFitMode; // "fit_width" (default) | "fit_page"
+  readonly centerHorizontally?: boolean; // default true
+  readonly header?: HeaderFooterInput;
+  readonly footer?: HeaderFooterInput;
+}
+export interface SheetPrintOverrideInput {
+  readonly paperSize?: PaperSize;
+  readonly orientation?: PageOrientation;
+  readonly fit?: PrintFitMode;
+  readonly centerHorizontally?: boolean;
+  readonly header?: HeaderFooterInput | "none";
+  readonly footer?: HeaderFooterInput | "none";
+}
 
 sheet.setBands(bands: readonly BandInputItem[]): this;
 ```
@@ -286,7 +311,7 @@ table.addColumnGutter(): this;
 - Worksheet margins: Physical Row 0 (Row 1) and Column 0 (Column A) are reserved as blank margins. Band `0` starts at `B2` (`col=1, row=1`).
 - Default vertical stacking: Without `sheet.setBands(...)`, each table is placed in its own 1-lane, 1-table band at Column `B` separated by `2` blank rows in `addTable` order.
 - Explicit 2D band/lane layout via `sheet.setBands(bands: readonly BandInputItem[]): this`:
-  - `BandInput` (`{ lanes: readonly LaneInputItem[], gap?: number, laneGap?: number }`): Horizontal row of 1 or more vertical lanes (`LaneInput` or bare `TableRef` 1-table lane shorthand). Band `b > 0` starts `gap` (default `2`) blank rows below the previous band's lowest row; Lane `l > 0` starts `laneGap` (default `1`) blank columns right of the previous lane's rightmost column.
+  - `BandInput` (`{ lanes: readonly LaneInputItem[], gap?: number, laneGap?: number, pageBreakBefore?: boolean }`): Horizontal row of 1 or more vertical lanes (`LaneInput` or bare `TableRef` 1-table lane shorthand). Band `b > 0` starts `gap` (default `2`) blank rows below the previous band's lowest row; Lane `l > 0` starts `laneGap` (default `1`) blank columns right of the previous lane's rightmost column. `pageBreakBefore: true` inserts a manual horizontal print page break immediately before the band's first row (valid only on Band `b > 0` when sheet `print` is enabled with `fit: "fit_width"`, max `1,023` breaks per sheet; rejects non-boolean values and Band `0` eagerly).
   - `LaneInput` (`{ tables: readonly TableRef[], tableGap?: number }`): Vertical stack of 1 or more tables (`Table` or `string` ID, normalized to `readonly string[]`). Table `0` starts at the band's top row; Table `t > 0` starts `tableGap` (default `2`) blank rows below the previous table in the lane.
   - Bare `TableRef` shorthand: Pass a `Table` or `string` directly inside `setBands([...])` for a 1-lane, 1-table band, or directly inside `lanes: [...]` for a 1-table lane (`{ lanes: [left, right] }`, `{ lanes: [{ tables: [tl, bl] }, tr] }`, or `{ lanes: [card], gap: 1 }`). Multi-table vertical lanes require explicit `{ tables: [...] }` objects (nested `TableRef[]` arrays are rejected).
   - Non-overlap & ordering: Tables cannot overlap by construction (each lane's width is the maximum end column across its tables, shifting subsequent lanes right automatically). Compiled outputs (`summary()`, `errors()`, `inspectSheet()`, `toMarkdown()`) follow canonical `bands -> lanes -> tables` order.
@@ -317,6 +342,26 @@ sheet.setBands([
 - Descriptor overflow spans: `descriptor` columns automatically span `ceil(req_w / W)` (`>= 1`) contiguous physical columns (from non-empty descriptor headers/text with `+1` breathing space and `indent * 2`) with zero merged cells. Anchor cells stay at the span's first column (preserving vertical `XLOOKUP`/`XMATCH`/`INDEX` slices and contiguous `measure` ranges), while styled blank runway cells carry continuous fills/borders and place vertical right borders on the span's final column.
 - Leading descriptor alignment: Lanes finalize left-to-right. Within each `(laneIndex, startCol)` group, tables with at least one `descriptor` before their first `measure` column align their leading descriptor block (through the last leading `descriptor`, excluding trailing `addColumnGutter()` spacers after it) by extending their last leading `descriptor` span. Descriptor-only tables skip alignment; span growth in an earlier lane shifts later lanes right automatically.
 - `grid` constraints (violations throw `SpecificationError`): Text wrapping is disabled, `\n`/`\r` line breaks are forbidden in data cells, column `headers`, and `group` banners, and every non-empty `measure` column header line must fit within static `base_w`.
+
+### Worksheet Print Settings (`SheetPrintSpecInput`, `HeaderFooterInput`, `print`)
+
+- Opt-in page setup: Omit `print` for unchanged default Excel output. When configured, sets `normal` worksheet view, fixed institutional margins (`0.4"` left/right, `0.6"` top/bottom, `0.25"` header/footer), print gridlines off, and an auto-trimmed `Print_Area` excluding the blank Col `A` / Row `1` gutter (`B2:<last_col><last_row>`; omitted on empty sheets). Preserved identically under `valuesOnly: true`.
+- Fields (`SheetPrintSpecInput` / `SheetPrintOverrideInput`):
+  - `paperSize`: `"a4" | "letter"` (required on resolved sheet config; no regional default).
+  - `orientation`: `"landscape"` (default) | `"portrait"`.
+  - `fit`: `"fit_width"` (default, `1 x auto`) | `"fit_page"` (`1 x 1` dashboard).
+  - `centerHorizontally`: `boolean` (`true` default).
+  - `header` / `footer`: `HeaderFooterInput` (`{ left?, center?, right? }`; requires at least one zone). Styled with `8pt`, `theme.typography.font_family`, `theme.palette.table_subtitle_text`, and `scaleWithDoc="0"`. Supported placeholders: `{page}`, `{pages}`, `{sheet}`, `{model}`, `{date}` (emits Excel `&D`; Desktop Excel evaluates it, while Excel Online PDF export omits `&D` — inline a static date string if targeting Excel Online), plus `{{`/`}}` for literal braces; literal `&` is auto-escaped. Rejects unknown/unmatched `{...}`, control chars (including inside `{model}`), post-expansion empty/whitespace zones, raw `&[Page]`/`&[Tab]`/`&[Date]`/`&[File]`/`&[Path]`/`&[Time]`/`&[Pages]`/`&[Picture]` macros, invalid `font_family` (`"`, `,`, `&`, control chars), and compiled strings `> 255` UTF-16 code units (`SpecificationError`).
+- Workbook-to-sheet cascade: Set default `new Model({ print })` (requires `paperSize`; rejects `"none"` on `header`/`footer`). On `model.addSheet(name, { print })` / `new Sheet(name, { print })`, omitted/`undefined` inherits `model.print`, `"none"` disables printing for that sheet, and a `SheetPrintOverrideInput` object performs a shallow field merge (overriding `header`/`footer` replaces that section wholesale; `header: "none"` / `footer: "none"` clears an inherited section). Unknown keys throw `Error` in builders and `SpecificationError` in direct `compile()`.
+- Page breaks on vertical sheets: Implicit vertical stacking omits `setBands`; once a vertically stacked sheet needs manual page breaks, call `sheet.setBands(...)` using bare `TableRef` shorthand for bands without options and `{ lanes: [tbl], pageBreakBefore: true }` where each new page starts:
+
+```ts
+sheet.setBands([
+  incomeStmt, // Band 0 (bare TableRef shorthand)
+  { lanes: [balanceSheet], pageBreakBefore: true },
+  { lanes: [cashFlow], pageBreakBefore: true },
+])
+```
 
 ---
 

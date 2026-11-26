@@ -102,6 +102,7 @@ fn test_compiler_facade_error_propagation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: vec![],
             },
             SheetSpec {
@@ -110,6 +111,7 @@ fn test_compiler_facade_error_propagation() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: vec![],
             },
         ],
@@ -132,6 +134,7 @@ fn test_compiler_facade_error_propagation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("non_existent")]),
         }],
     };
@@ -166,6 +169,7 @@ fn test_compiler_facade_error_propagation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("CyclicTable")]),
         }],
     };
@@ -204,6 +208,7 @@ fn test_compiler_facade_error_propagation() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("SumTable")]),
         }],
     };

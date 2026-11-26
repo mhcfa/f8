@@ -17,6 +17,11 @@ use crate::compiler::lowering::LoweredFormulaMap;
 use crate::model::format::SemanticStyle;
 use crate::model::id::SheetId;
 use crate::model::manifest::ProjectManifest;
+use crate::model::print::{
+    HeaderFooterSection, PRINT_MARGIN_BOTTOM, PRINT_MARGIN_FOOTER, PRINT_MARGIN_HEADER,
+    PRINT_MARGIN_LEFT, PRINT_MARGIN_RIGHT, PRINT_MARGIN_TOP, PageOrientation, PrintFitMode,
+    compile_header_footer,
+};
 use crate::model::table::{ColumnSpec, RowSpec, TableSpec, ValueLiteral};
 use crate::model::theme::Theme;
 use crate::value::{CellValue, normalize_zero};
@@ -164,6 +169,79 @@ impl WorkbookEmitter {
             // Apply sheet-wide column widths
             for (&col, &width) in &sheet_layout.col_widths {
                 worksheet.set_column_width(excel_col_u16(col)?, width)?;
+            }
+
+            // Apply opt-in worksheet print settings
+            if let Some(print_layout) = &sheet_layout.print {
+                let print_spec = &print_layout.spec;
+
+                worksheet.set_view_normal();
+                worksheet.set_paper_size(print_spec.paper_size.excel_code());
+                match print_spec.orientation {
+                    PageOrientation::Landscape => {
+                        worksheet.set_landscape();
+                    }
+                    PageOrientation::Portrait => {
+                        worksheet.set_portrait();
+                    }
+                }
+                match print_spec.fit {
+                    PrintFitMode::FitWidth => {
+                        worksheet.set_print_fit_to_pages(1, 0);
+                    }
+                    PrintFitMode::FitPage => {
+                        worksheet.set_print_fit_to_pages(1, 1);
+                    }
+                }
+                worksheet.set_margins(
+                    PRINT_MARGIN_LEFT,
+                    PRINT_MARGIN_RIGHT,
+                    PRINT_MARGIN_TOP,
+                    PRINT_MARGIN_BOTTOM,
+                    PRINT_MARGIN_HEADER,
+                    PRINT_MARGIN_FOOTER,
+                );
+                worksheet.set_print_gridlines(false);
+                if print_spec.center_horizontally {
+                    worksheet.set_print_center_horizontally(true);
+                }
+
+                if let Some(area) = print_layout.print_area {
+                    worksheet.set_print_area(
+                        area.first_row,
+                        excel_col_u16(area.first_col)?,
+                        area.last_row,
+                        excel_col_u16(area.last_col)?,
+                    )?;
+                }
+
+                if !print_layout.row_breaks.is_empty() {
+                    worksheet.set_page_breaks(&print_layout.row_breaks)?;
+                }
+
+                if print_spec.header.is_some() || print_spec.footer.is_some() {
+                    worksheet.set_header_footer_scale_with_doc(false);
+                    if let Some(header) = &print_spec.header {
+                        let compiled_header = compile_header_footer(
+                            &sheet_spec.name,
+                            HeaderFooterSection::Header,
+                            header,
+                            &manifest.model_name,
+                            theme,
+                        )?;
+                        worksheet.set_header(&compiled_header);
+                    }
+                    if let Some(footer) = &print_spec.footer {
+                        let compiled_footer = compile_header_footer(
+                            &sheet_spec.name,
+                            HeaderFooterSection::Footer,
+                            footer,
+                            &manifest.model_name,
+                            theme,
+                        )?;
+                        worksheet.set_footer(&compiled_footer);
+                    }
+                }
             }
 
             // Note: Row heights are left automatic so Excel dynamically sizes rows based on

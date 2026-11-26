@@ -25,8 +25,8 @@ pub use emission::{
 pub use error::{CompilerError, ErrorDiagnostic};
 pub use eval::{EvalError, EvaluatedModel, Evaluator, eval_expr};
 pub use layout::{
-    LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, SheetLayout, StyleRole,
-    TablePlacement, col_to_excel_col,
+    LayoutError, LayoutMap, LayoutPlanner, PhysicalCoordinate, PrintArea, SheetLayout,
+    SheetPrintLayout, StyleRole, TablePlacement, col_to_excel_col,
 };
 pub use lowering::{FormulaLowerer, LoweredFormulaMap, LoweringError};
 
@@ -41,6 +41,7 @@ fn validate_workbook_specs(
 ) -> Result<Theme, CompilerError> {
     manifest.validate()?;
     let theme = manifest.resolve_theme()?;
+    manifest.validate_print_with_theme(&theme)?;
     validate_tables(tables)?;
     Ok(theme)
 }

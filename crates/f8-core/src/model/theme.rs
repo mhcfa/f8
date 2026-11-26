@@ -278,13 +278,31 @@ impl Default for FormatDefaults {
     }
 }
 
-pub(crate) fn is_valid_hex_color(s: &str) -> bool {
-    if !s.starts_with('#') {
-        return false;
+pub(crate) fn parse_hex_rgb(s: &str) -> Option<u32> {
+    let hex_part = s.strip_prefix('#')?;
+    if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
     }
-    let hex = &s[1..];
-    (hex.len() == 3 || hex.len() == 6 || hex.len() == 8)
-        && hex.chars().all(|c| c.is_ascii_hexdigit())
+
+    match hex_part.len() {
+        3 => {
+            let mut chars = hex_part.chars();
+            let r = chars.next()?.to_digit(16)?;
+            let g = chars.next()?.to_digit(16)?;
+            let b = chars.next()?.to_digit(16)?;
+            let r = (r << 4) | r;
+            let g = (g << 4) | g;
+            let b = (b << 4) | b;
+            Some((r << 16) | (g << 8) | b)
+        }
+        6 => u32::from_str_radix(hex_part, 16).ok(),
+        8 => u32::from_str_radix(&hex_part[..6], 16).ok(),
+        _ => None,
+    }
+}
+
+pub(crate) fn is_valid_hex_color(s: &str) -> bool {
+    parse_hex_rgb(s).is_some()
 }
 
 fn is_valid_fill_color(s: &str) -> bool {

@@ -68,6 +68,7 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("a")]),
             },
             SheetSpec {
@@ -76,6 +77,7 @@ fn test_manifest_duplicate_sheet_name_rejected() {
                 freeze_panes: None,
                 show_gridlines: true,
                 layout: Default::default(),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("b")]),
             },
         ],
@@ -875,6 +877,7 @@ fn test_scenario_14_band_lane_serde_and_pass1_validation() {
         freeze_panes: None,
         show_gridlines: false,
         layout: Default::default(),
+        print: None,
         bands: vec![
             BandSpec::new([
                 LaneSpec::new(["TL", "BL"]).with_table_gap(0),
@@ -896,6 +899,7 @@ fn test_scenario_14_band_lane_serde_and_pass1_validation() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: Default::default(),
+                print: None,
                 bands: vec![],
             },
         ],
@@ -921,6 +925,7 @@ fn test_scenario_14_band_lane_serde_and_pass1_validation() {
         freeze_panes: None,
         show_gridlines: false,
         layout: Default::default(),
+        print: None,
         bands,
     };
 
@@ -1152,6 +1157,7 @@ fn test_manifest_sheet_name_and_option_invariants_rejected() {
         freeze_panes: None,
         show_gridlines: true,
         layout: Default::default(),
+        print: None,
         bands: SheetSpec::stacked_bands([TableId::from("T1")]),
     };
 
@@ -1358,6 +1364,7 @@ fn test_table_id_and_finite_cell_number_invariants_rejected() {
             freeze_panes: None,
             show_gridlines: true,
             layout: Default::default(),
+            print: None,
             bands: SheetSpec::stacked_bands([TableId::from("T1")]),
         }],
     };
@@ -1567,6 +1574,7 @@ fn test_sheet_layout_spec_serde_roundtrip_and_pass1_validation() {
                 freeze_panes: None,
                 show_gridlines: false,
                 layout: SheetLayoutSpec::grid_with_col_width(bad_width),
+                print: None,
                 bands: SheetSpec::stacked_bands([TableId::from("T1")]),
             }],
         };
@@ -1584,4 +1592,445 @@ fn test_sheet_layout_spec_serde_roundtrip_and_pass1_validation() {
             "Expected SpecificationError diagnostic with table: None, got {diag:?}"
         );
     }
+}
+
+#[test]
+fn test_sheet_print_spec_serde_and_pass1_validation_scenario_7() {
+    use f8_core::compiler::{Compiler, CompilerError, ErrorDiagnostic};
+    use f8_core::model::{
+        HeaderFooterSection, HeaderFooterSpec, HeaderFooterZone, MAX_EXCEL_HEADER_FOOTER_UTF16,
+        MAX_EXCEL_PAGE_BREAKS, PageOrientation, PaperSize, PrintFitMode, SheetPrintSpec, Theme,
+        compile_header_footer,
+    };
+
+    // 1. PaperSize codes, strings, and printable size inches * 72 pt match spec constants
+    assert_eq!(PaperSize::A4.excel_code(), 9);
+    assert_eq!(PaperSize::Letter.excel_code(), 1);
+    assert_eq!(PaperSize::A4.to_string(), "a4");
+    assert_eq!(PaperSize::Letter.to_string(), "letter");
+    assert_eq!(PageOrientation::Landscape.to_string(), "landscape");
+    assert_eq!(PageOrientation::Portrait.to_string(), "portrait");
+    assert_eq!(PrintFitMode::FitWidth.to_string(), "fit_width");
+    assert_eq!(PrintFitMode::FitPage.to_string(), "fit_page");
+    assert_eq!(HeaderFooterSection::Header.to_string(), "header");
+    assert_eq!(HeaderFooterSection::Footer.to_string(), "footer");
+    assert_eq!(HeaderFooterZone::Left.to_string(), "left");
+    assert_eq!(HeaderFooterZone::Center.to_string(), "center");
+    assert_eq!(HeaderFooterZone::Right.to_string(), "right");
+
+    let check_pt = |paper: PaperSize, orient: PageOrientation, exp_w: f64, exp_h: f64| {
+        let (w_in, h_in) = paper.printable_size_inches(orient);
+        let (w_pt, h_pt) = (w_in * 72.0, h_in * 72.0);
+        assert!(
+            (w_pt - exp_w).abs() < 0.05 && (h_pt - exp_h).abs() < 0.05,
+            "{paper} {orient}: expected ~{exp_w}x{exp_h}pt, got {w_pt:.2}x{h_pt:.2}pt"
+        );
+    };
+    check_pt(PaperSize::A4, PageOrientation::Landscape, 784.3, 508.9);
+    check_pt(PaperSize::Letter, PageOrientation::Landscape, 734.4, 525.6);
+    check_pt(PaperSize::A4, PageOrientation::Portrait, 537.7, 755.5);
+    check_pt(PaperSize::Letter, PageOrientation::Portrait, 554.4, 705.6);
+
+    // 2. Serde defaults and round-trip (print omitted when None, page_break_before omitted when false)
+    let min_json = r#"{
+        "model_name": "PrintSerde",
+        "sheets": [
+            {
+                "name": "NoPrint",
+                "bands": [{ "lanes": [{ "tables": ["T1"] }] }]
+            },
+            {
+                "name": "WithPrint",
+                "print": { "paper_size": "a4" },
+                "bands": [
+                    { "lanes": [{ "tables": ["T2"] }] },
+                    { "page_break_before": true, "lanes": [{ "tables": ["T3"] }] }
+                ]
+            }
+        ]
+    }"#;
+    let parsed: ProjectManifest = serde_json::from_str(min_json).unwrap();
+    assert!(parsed.validate().is_ok());
+    assert_eq!(parsed.sheets[0].print, None);
+    assert!(!parsed.sheets[0].bands[0].page_break_before);
+    let expected_default_print = SheetPrintSpec {
+        paper_size: PaperSize::A4,
+        orientation: PageOrientation::Landscape,
+        fit: PrintFitMode::FitWidth,
+        center_horizontally: true,
+        header: None,
+        footer: None,
+    };
+    assert_eq!(parsed.sheets[1].print, Some(expected_default_print.clone()));
+    assert!(!parsed.sheets[1].bands[0].page_break_before);
+    assert!(parsed.sheets[1].bands[1].page_break_before);
+
+    let no_print_json = serde_json::to_string(&parsed.sheets[0]).unwrap();
+    assert!(!no_print_json.contains("print"));
+    assert!(!no_print_json.contains("page_break_before"));
+
+    let with_print_json = serde_json::to_string(&parsed.sheets[1]).unwrap();
+    assert!(with_print_json.contains(r#""page_break_before":true"#));
+    let roundtripped: SheetSpec = serde_json::from_str(&with_print_json).unwrap();
+    assert_eq!(roundtripped, parsed.sheets[1]);
+
+    // 3. Unknown fields & missing required paper_size fail serde strictly
+    assert!(serde_json::from_str::<SheetPrintSpec>(r#"{}"#).is_err());
+    assert!(serde_json::from_str::<SheetPrintSpec>(r#"{"paper_size":"a3"}"#).is_err());
+    assert!(serde_json::from_str::<SheetPrintSpec>(r#"{"paper_size":"a4","scale":80}"#).is_err());
+    assert!(serde_json::from_str::<HeaderFooterSpec>(r#"{"left":"A","extra":"B"}"#).is_err());
+    assert!(
+        serde_json::from_str::<BandSpec>(
+            r#"{"lanes":[{"tables":["T1"]}],"page_break_after":true}"#
+        )
+        .is_err()
+    );
+
+    let make_manifest = |model_name: &str,
+                         print: Option<SheetPrintSpec>,
+                         bands: Vec<BandSpec>|
+     -> ProjectManifest {
+        ProjectManifest {
+            model_name: model_name.to_string(),
+            theme: Default::default(),
+            sheets: vec![SheetSpec {
+                name: "Summary".to_string(),
+                tab_color: None,
+                freeze_panes: None,
+                show_gridlines: false,
+                layout: Default::default(),
+                print,
+                bands,
+            }],
+        }
+    };
+
+    let assert_spec_diag = |err: ModelError| {
+        let diag = CompilerError::Model(err).diagnostic();
+        assert!(
+            matches!(
+                diag,
+                ErrorDiagnostic::SpecificationError { table: None, .. }
+            ),
+            "Expected SpecificationError with table: None, got {diag:?}"
+        );
+    };
+
+    // 4. Band 0 with page_break_before = true -> InvalidFirstBandPageBreak
+    let err = make_manifest(
+        "M",
+        Some(SheetPrintSpec::new(PaperSize::A4)),
+        vec![BandSpec::single("T1").with_page_break_before(true)],
+    )
+    .validate()
+    .unwrap_err();
+    assert!(
+        matches!(err, ModelError::InvalidFirstBandPageBreak { ref sheet } if sheet == "Summary")
+    );
+    assert_spec_diag(err);
+
+    // 5. page_break_before without sheet.print -> PageBreakWithoutPrint
+    let err = make_manifest(
+        "M",
+        None,
+        vec![
+            BandSpec::single("T1"),
+            BandSpec::single("T2").with_page_break_before(true),
+        ],
+    )
+    .validate()
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::PageBreakWithoutPrint { ref sheet, band_index: 1 } if sheet == "Summary"
+    ));
+    assert_spec_diag(err);
+
+    // 6. page_break_before with fit_page -> PageBreakWithFitPage
+    let mut fit_page_print = SheetPrintSpec::new(PaperSize::Letter);
+    fit_page_print.fit = PrintFitMode::FitPage;
+    let err = make_manifest(
+        "M",
+        Some(fit_page_print),
+        vec![
+            BandSpec::single("T1"),
+            BandSpec::single("T2").with_page_break_before(true),
+        ],
+    )
+    .validate()
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::PageBreakWithFitPage { ref sheet, band_index: 1 } if sheet == "Summary"
+    ));
+    assert_spec_diag(err);
+
+    // 7. Page break ceiling: 1023 succeeds, 1024 fails with TooManyPageBreaks
+    let make_many_bands = |break_count: usize| -> Vec<BandSpec> {
+        let mut bands = Vec::with_capacity(break_count + 1);
+        bands.push(BandSpec::single("T0"));
+        for i in 1..=break_count {
+            bands.push(BandSpec::single(format!("T{i}")).with_page_break_before(true));
+        }
+        bands
+    };
+    assert!(
+        make_manifest(
+            "M",
+            Some(SheetPrintSpec::new(PaperSize::A4)),
+            make_many_bands(MAX_EXCEL_PAGE_BREAKS),
+        )
+        .validate()
+        .is_ok()
+    );
+    let err = make_manifest(
+        "M",
+        Some(SheetPrintSpec::new(PaperSize::A4)),
+        make_many_bands(MAX_EXCEL_PAGE_BREAKS + 1),
+    )
+    .validate()
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::TooManyPageBreaks {
+            ref sheet,
+            count,
+            max
+        } if sheet == "Summary" && count == MAX_EXCEL_PAGE_BREAKS + 1 && max == MAX_EXCEL_PAGE_BREAKS
+    ));
+    assert_spec_diag(err);
+
+    // 8. Empty HeaderFooterSpec -> EmptyPrintHeaderFooter
+    let mut empty_hdr = SheetPrintSpec::new(PaperSize::A4);
+    empty_hdr.header = Some(HeaderFooterSpec::default());
+    let err = make_manifest("M", Some(empty_hdr), vec![BandSpec::single("T1")])
+        .validate()
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::EmptyPrintHeaderFooter {
+            ref sheet,
+            section: HeaderFooterSection::Header
+        } if sheet == "Summary"
+    ));
+    assert_spec_diag(err);
+
+    // 9. Invalid header/footer zones (empty, whitespace, unknown/unmatched braces, controls,
+    //    {model} smuggling of empty/whitespace/control/macro, and cross-boundary A&{model})
+    let invalid_zone_cases: &[(&str, &str)] = &[
+        ("Acme", ""),
+        ("Acme", "   "),
+        ("   ", "{model}"),
+        ("", "{model}"),
+        ("Acme", "Line 1\nLine 2"),
+        ("Acme", "Tab\there"),
+        ("Acme", "CR\rhere"),
+        ("Acme", "Nul\0here"),
+        ("Acme\nCorp", "{model}"),
+        ("Acme\rCorp", "{model}"),
+        ("Acme\tCorp", "{model}"),
+        ("Acme", "Bad {foo}"),
+        ("Acme", "Empty {}"),
+        ("Acme", "Unclosed {page"),
+        ("Acme", "Unmatched page}"),
+        ("Acme", "Nested {a{b}"),
+        ("Acme", "Macro &[Page]"),
+        ("Acme", "Macro &[Tab]"),
+        ("Acme", "Macro &[Date]"),
+        ("Acme", "Macro &[File]"),
+        ("Acme", "Macro &[Path]"),
+        ("Acme", "Macro &[Time]"),
+        ("Acme", "Macro &[Pages]"),
+        ("Acme", "Macro &[Picture]"),
+        ("Acme &[Pages] Co", "{model}"),
+        ("[Page] Report", "A&{model}"),
+        ("[Tab] Sheet", "X&{model}"),
+    ];
+    for &(model_name, zone_text) in invalid_zone_cases {
+        let mut p = SheetPrintSpec::new(PaperSize::A4);
+        p.footer = Some(HeaderFooterSpec {
+            left: None,
+            center: Some(zone_text.to_string()),
+            right: None,
+        });
+        let err = make_manifest(model_name, Some(p), vec![BandSpec::single("T1")])
+            .validate()
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ModelError::InvalidPrintHeaderFooterZone {
+                    ref sheet,
+                    section: HeaderFooterSection::Footer,
+                    zone: HeaderFooterZone::Center,
+                    ..
+                } if sheet == "Summary"
+            ),
+            "Expected InvalidPrintHeaderFooterZone for model={model_name:?}, zone={zone_text:?}, got {err:?}"
+        );
+        assert_spec_diag(err);
+    }
+
+    // 10. Invalid theme font_family with header/footer -> InvalidPrintThemeFont
+    //     (while a sheet without header/footer does not fail print theme font validation)
+    for bad_font in ["", "   ", "Aptos\"Bad", "Aptos,Bold", "A&B", "Aptos\n"] {
+        let mut bad_theme = Theme::corporate_navy();
+        bad_theme.typography.font_family = bad_font.to_string();
+
+        let no_hf = make_manifest(
+            "Acme",
+            Some(SheetPrintSpec::new(PaperSize::A4)),
+            vec![BandSpec::single("T1")],
+        );
+        assert!(no_hf.validate_print_with_theme(&bad_theme).is_ok());
+
+        let mut with_hf = SheetPrintSpec::new(PaperSize::A4);
+        with_hf.header = Some(HeaderFooterSpec {
+            left: Some("{model}".to_string()),
+            center: None,
+            right: None,
+        });
+        let err = make_manifest("Acme", Some(with_hf), vec![BandSpec::single("T1")])
+            .validate_print_with_theme(&bad_theme)
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ModelError::InvalidPrintThemeFont { ref sheet, .. } if sheet == "Summary"
+            ),
+            "Expected InvalidPrintThemeFont for font={bad_font:?}, got {err:?}"
+        );
+        assert_spec_diag(err);
+    }
+
+    // 11. Invalid subtitle color passed to compile_header_footer -> InvalidThemeColor
+    let mut bad_color_theme = Theme::corporate_navy();
+    bad_color_theme.palette.table_subtitle_text = "not_hex".to_string();
+    let err = compile_header_footer(
+        "Summary",
+        HeaderFooterSection::Header,
+        &HeaderFooterSpec {
+            left: Some("Title".to_string()),
+            center: None,
+            right: None,
+        },
+        "Acme",
+        &bad_color_theme,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::InvalidThemeColor { ref field, .. } if field == "table_subtitle_text"
+    ));
+
+    // 12. Compiled header/footer UTF-16 length boundary (255 ok, 256 fails, surrogate pairs = 2 units)
+    let theme = Theme::corporate_navy();
+    // Prefix: &L&8&K525252&"Aptos,Regular" -> 28 UTF-16 code units
+    let prefix = r#"&L&8&K525252&"Aptos,Regular""#;
+    let prefix_u16 = prefix.encode_utf16().count();
+    let exact_payload = "A".repeat(MAX_EXCEL_HEADER_FOOTER_UTF16 - prefix_u16);
+    let ok_compiled = compile_header_footer(
+        "Summary",
+        HeaderFooterSection::Header,
+        &HeaderFooterSpec {
+            left: Some(exact_payload),
+            center: None,
+            right: None,
+        },
+        "Acme",
+        &theme,
+    )
+    .unwrap();
+    assert_eq!(
+        ok_compiled.encode_utf16().count(),
+        MAX_EXCEL_HEADER_FOOTER_UTF16
+    );
+
+    // Adding 1 ASCII char or using a 2-unit emoji at 254+2=256 fails
+    let over_payload = "A".repeat(MAX_EXCEL_HEADER_FOOTER_UTF16 - prefix_u16 + 1);
+    let err = compile_header_footer(
+        "Summary",
+        HeaderFooterSection::Header,
+        &HeaderFooterSpec {
+            left: Some(over_payload),
+            center: None,
+            right: None,
+        },
+        "Acme",
+        &theme,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        ModelError::PrintHeaderFooterTooLong {
+            ref sheet,
+            section: HeaderFooterSection::Header,
+            utf16_len: 256,
+            max: 255
+        } if sheet == "Summary"
+    ));
+    assert_spec_diag(err);
+
+    // Surrogate pair U+1F4C8 (📈) occupies 2 UTF-16 code units: 254 + 2 = 256 > 255
+    let emoji_payload = format!(
+        "{}📈",
+        "A".repeat(MAX_EXCEL_HEADER_FOOTER_UTF16 - prefix_u16 - 1)
+    );
+    let mut emoji_print = SheetPrintSpec::new(PaperSize::A4);
+    emoji_print.footer = Some(HeaderFooterSpec {
+        left: Some(emoji_payload),
+        center: None,
+        right: None,
+    });
+    let mut dummy_tbl = TableSpec::new("T1", "T1");
+    dummy_tbl.columns.push(ColumnSpec::new("c1"));
+    dummy_tbl.rows.push(RowSpec::new("r1").with_cell("c1", 1.0));
+    let emoji_manifest = make_manifest("Acme", Some(emoji_print), vec![BandSpec::single("T1")]);
+    let compile_err = Compiler::compile(&emoji_manifest, &[dummy_tbl]).unwrap_err();
+    assert!(matches!(
+        compile_err,
+        CompilerError::Model(ModelError::PrintHeaderFooterTooLong {
+            section: HeaderFooterSection::Footer,
+            utf16_len: 256,
+            max: 255,
+            ..
+        })
+    ));
+
+    // 13. Exact header/footer compilation output with 3-digit, 6-digit, and 8-digit theme hex colors
+    let compiled_hdr = compile_header_footer(
+        "Summary",
+        HeaderFooterSection::Header,
+        &HeaderFooterSpec {
+            left: Some("{model}".to_string()),
+            center: Some("2026 Forecast {{Rev}}".to_string()),
+            right: Some("{sheet}".to_string()),
+        },
+        "Acme & Co",
+        &theme,
+    )
+    .unwrap();
+    assert_eq!(
+        compiled_hdr,
+        r#"&L&8&K525252&"Aptos,Regular"Acme && Co&C&8&K525252&"Aptos,Regular"2026 Forecast {Rev}&R&8&K525252&"Aptos,Regular"&A"#
+    );
+
+    let mut short_hex_theme = Theme::corporate_navy();
+    short_hex_theme.palette.table_subtitle_text = "#abc".to_string();
+    let short_compiled = compile_header_footer(
+        "Summary",
+        HeaderFooterSection::Footer,
+        &HeaderFooterSpec {
+            left: Some("M&A Confidential".to_string()),
+            center: None,
+            right: Some("Page {page} of {pages} ({date})".to_string()),
+        },
+        "Acme",
+        &short_hex_theme,
+    )
+    .unwrap();
+    assert_eq!(
+        short_compiled,
+        r#"&L&8&KAABBCC&"Aptos,Regular"M&&A Confidential&R&8&KAABBCC&"Aptos,Regular"Page &P of &N (&D)"#
+    );
 }
