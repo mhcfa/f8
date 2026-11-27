@@ -2,8 +2,9 @@
 name: spec-driven-development
 description: >-
   Tri-agent spec-driven development (SDD) workflow.
-  Author ephemeral draft specs, orchestrate Implementer and Reviewer subagents,
-  enforce verification gates, fold durable knowledge into reference docs, and clean up specs.
+  Use when a change alters or introduces a contract (schemas, AST/IR/DSL, module boundaries, public CLI/SDK/API),
+  carries open architectural trade-offs, or spans multiple increments;
+  do not use for single-increment fixes or doc/skill updates within existing contracts.
 ---
 
 # Spec-Driven Development Workflow
@@ -15,20 +16,21 @@ description: >-
   2. Reference docs: `docs/architecture.md` and packaged skills/docs listed in `docs/architecture.md` or `AGENTS.md`.
   3. Draft specs (`docs/specs/drafts/`): Intended delta for active work. Conflicts with current code are expected; conflicts with reference architecture invariants require user escalation.
 - Autonomous increments: One draft spec per independently verifiable increment. Decompose multi-phase work into sequential specs.
-- Spec & commit custody: Only the Lead Orchestrator authors, amends, or deletes draft specs (keeping them in `docs/specs/drafts/` through review and deleting on commit per `AGENTS.md`), and leaves all changes uncommitted until the user requests a commit. Subagents never edit, move, or delete specs, and never commit.
+- Spec & commit custody: Only the Lead Orchestrator authors, amends, or deletes draft specs (per `AGENTS.md` custody rules) and leaves changes uncommitted until the user requests a commit. Subagents never edit, move, or delete specs, and never commit.
 
-## Tri-Agent Workflow
+## Tri-agent workflow
 
 ### 1. Explore & align (Lead Orchestrator)
 
 - Ground designs in existing modules, schemas, AST/IR types, and reference docs listed in `AGENTS.md`; inspect git history when changing established ownership or layering so prior rationale is a known constraint, not a guess.
 - Default to the simplest unified extension of existing types and passes. When existing boundaries resist a clean fit (per `AGENTS.md` `Architectural tension`), include a preparatory reshape alongside scoped options; when genuine design tensions exist, surface structurally distinct shapes (not minor tweaks inside one shape) with explicit trade-offs.
+- Done when open ambiguities, invariants, and design shape are resolved with the user.
 
 ### 2. Specify (Lead Orchestrator)
 
 - Create `docs/specs/drafts/YYYY-MM-DD-<feature-name>.md` using the template below.
 - Define data structures, signatures, invariants, and 1:1 testable `Given / When / Then` acceptance criteria without repeating file lists across sections; structure tasks as vertical slices rather than deferring tests to a trailing task.
-- Get user approval of the spec before step 3.
+- Done when the user approves the spec before step 3.
 
 ### 3. Implement (Implementer Subagent)
 
@@ -50,8 +52,9 @@ description: >-
 ### 5. Fold durable docs (Lead Orchestrator)
 
 - Reconcile lasting architectural, schema, DSL, or API changes into `docs/architecture.md` and packaged skills/templates, starting from Reviewer docs-impact flags.
+- Done when every Reviewer docs-impact flag is folded or explicitly waived; report uncommitted changes as ready for user review and commit.
 
-## Draft Spec Template
+## Draft spec template
 
 ```markdown
 ---
