@@ -19,15 +19,19 @@ from f8._core import __version__, default_theme
 GUIDE_TOPICS: dict[str, tuple[str, str]] = {
     "syntax": (
         "references/syntax-and-grid.md",
-        "2D coordinates, vector expressions, column roles, gutters, indentation",
+        "2D coordinates, builders, vector expansion, 3-tier specificity lattice",
+    ),
+    "layout": (
+        "references/layout-and-styling.md",
+        "Bands/lanes, auto/grid modes, print setup, formats, styles, themes",
     ),
     "functions": (
         "references/functions.md",
-        "37 built-in Excel functions, signatures, omission syntax, errors",
+        "37 built-in Excel functions, type/empty rules, omission syntax, errors",
     ),
     "audit": (
         "references/auditing-and-repair.md",
-        "TableAuditor, inspection, unboxing, structured exception recovery",
+        "CompiledModel, TableAuditor, Markdown/dict export, F8Error hierarchy",
     ),
     "all": (
         "",

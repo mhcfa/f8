@@ -230,6 +230,7 @@ def test_scenario_1_e2e_cli_agent_scaffolding_and_guide(
     captured = capsys.readouterr()
     assert "Available topics:" in captured.out
     assert "syntax" in captured.out
+    assert "layout" in captured.out
     assert "functions" in captured.out
     assert "audit" in captured.out
     assert "all" in captured.out
@@ -242,6 +243,7 @@ def test_scenario_1_e2e_cli_agent_scaffolding_and_guide(
     skill_root = dest_workspace / ".agents" / "skills" / "f8-modeling"
     assert (skill_root / "SKILL.md").is_file()
     assert (skill_root / "references" / "syntax-and-grid.md").is_file()
+    assert (skill_root / "references" / "layout-and-styling.md").is_file()
     assert (skill_root / "references" / "functions.md").is_file()
     assert (skill_root / "references" / "auditing-and-repair.md").is_file()
 
