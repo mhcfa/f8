@@ -2,88 +2,55 @@
 name: review-implementation
 description: >-
   Report-only implementation review for code changes and draft specs.
-  Verification gate, spec conformance, review checklist, targeted probing, and decisive verdicts.
-  Use after implementation, before folding durable docs, or on demand for direct-execution changes.
+  Use after implementation, before folding durable docs, or on demand for direct-execution changes;
+  do not use to edit code or author skills.
 ---
 
 # Implementation Review Workflow
 
-## Core Rules
+## Core rules
 
 - Report-only: Read, run, probe. Never edit tracked files, `docs/specs/drafts/`, or git state.
 - Review target: The draft spec in `docs/specs/drafts/` when one exists; otherwise the user request that prompted the change.
 - Evidence-bound: Every finding cites `<file:line>`, concrete proof, and a concrete fix. Rank behavioral claims by proof strength: asserted (insufficient) < `file:line` trace < executed probe/test against real code < live artifact reproduction. Drop speculative "could break if..." findings not backed by code proof or a run.
 - One finding per defect: Report each defect under the single most specific checklist item.
-- Severity & Verdicts:
+- Severity & verdicts:
   - `Blocker` (blocks approval): Soundness defect, hard-rule breach (`AGENTS.md`), contract/phase invariant breach, unmet or untested acceptance criterion, scope creep, or verification gate failure.
   - `Minor` (non-blocking): Hygiene, memory, or style issue with no correctness impact.
   - `Flag` (non-blocking): Architectural trade-off, ambiguity, or docs impact requiring Lead Orchestrator or user decision.
   - Verdicts: `Changes required` (any `Blocker`), `Approve with flags` (no `Blocker`, 1+ `Flag`), or `Approve` (no `Blocker`, no `Flag`).
 
-## Review Steps
+## Review steps
 
-1. Verification Gate:
+1. Verification gate:
    - Run the `AGENTS.md` verification suite. Any failure is a `Blocker`; test output feeds step 2.
-2. Diff & Spec Conformance:
-   - Inspect `git status --porcelain -uall` and `git diff` (uncommitted changes) against the review target and `AGENTS.md`.
+2. Diff & spec conformance:
+   - Inspect `git status --porcelain -uall` and `git diff HEAD` (staged and unstaged changes) against the review target and `AGENTS.md`.
    - Map every acceptance criterion to its implementing code and covering test (or `met (inspection)` for documentation, template prose, and skill criteria). Missing tests for executable code, weak assertions (tests that pass even if logic breaks), or unspecified scope are `Blocker`.
-3. Checklist Audit:
-   - Audit all changed files against the applicable sections of the checklist below, plus `references/repo-checks.md` when present in this skill directory.
-4. Blast Radius & Targeted Probes (when warranted):
+3. Checklist audit:
+   - Audit every changed file against the checklist below, `AGENTS.md`, and `references/repo-checks.md` when present in this skill directory.
+4. Blast radius & targeted probes (when warranted):
    - Look past direct symbol callers for non-grep breakage: serialized JSON/wire/schema shapes, cross-language boundaries (Rust/PyO3/Python stubs, TypeScript/Zod contracts), ordering or lifecycle assumptions, and implicit downstream consumers.
    - When the diff introduces complex edge cases or unverified safety claims ("X already handles Y"), run a temporary probe script outside the worktree (e.g., agent's scratch directory) importing the real code rather than trusting a prose trace. Never leave scratch files in the repository. If a check passes unexpectedly easily, confirm the test or probe actually exercised the changed path.
 
-## Review Checklist
+## Review checklist
 
-### 1. Architecture & Invariants
+Audit every changed file against `AGENTS.md` (single source of truth for rules) and classify findings as follows:
 
-- [ ] Single source of truth (`Blocker`): Domain models, identifiers, schemas, coordinate mappings, and errors have one authoritative definition; no duplicated domain logic across modules/passes. Incidental code similarity is not a finding.
-- [ ] Clean boundaries (`Blocker`): Passes and modules consume only upstream outputs; higher-level presets stay out of low-level primitives; no unexpected I/O in pure core modules.
-- [ ] Canonical contracts & IR (`Blocker`): One representation per concept; no implicit fallbacks, untyped dicts, or syntactic sugar in core; ergonomics confined to outer adapters.
-- [ ] Behavioral symmetry & uniformity (`Blocker`): Analogous inputs, invalid states, and edge cases follow consistent validation and error policies across sibling modules, passes, and entrypoints (never by copying a rule violation); variants and boundary sizes handled through general logic without unjustified special-case branches, flags, or carve-outs.
-- [ ] Typed semantics (`Blocker`): Explicit enums, `Literal` types, interned IDs, newtypes, and typed structs/models; no string inspection to infer semantics outside parsing/ingest.
-- [ ] Pure data flow (`Blocker`): Explicit inputs and outputs; no hidden or shared mutable state.
-- [ ] Root-cause correctness (`Blocker`): Defects fixed at origin (parser, ingest, IR, schema, solver); no downstream workarounds, symptom patches (special-casing specific inputs or tests), masking fallbacks (`.get()`, `or default`, lossy `.ok()`), bypass flags (`skip_validation`, `force`), or single-use callsite patches.
-- [ ] Deterministic output (`Blocker`): No wall-clock time, randomness, or hash-order dependence in evaluation, layout, emitted artifacts, or bytes; `IndexMap` / `IndexSet` (or deterministic ordering) wherever order matters.
-- [ ] Repository-specific invariants (`Blocker`): Satisfies all domain invariants in `AGENTS.md` and `references/repo-checks.md` (when present).
+- [ ] `AGENTS.md` `Hard rules` (`Blocker`): Suppressions, shims, origin-only fixes, error/panic hygiene, placeholders/debug macros/glob imports, exhaustive enum matching, draft-spec custody.
+- [ ] `AGENTS.md` `Core principles` (`Blocker` unless split below): Single source of truth, clean boundaries, canonical contracts & IR, behavioral symmetry, pure data flow, deterministic output, typed semantics.
+  - Bool toggles (`Blocker` in public or IR signatures, `Minor` in private helpers).
+  - Consistent conventions (`Blocker` in public API/CLI signatures, `Minor` internally).
+  - Minimal surface (`Minor`).
+- [ ] `AGENTS.md` `Code standards` for touched languages:
+  - Rust: Panic-free paths & `thiserror` propagation (`Blocker`); concrete internal signatures, borrowed slices/`Cow`, import order (`Minor`).
+  - Python / PyO3: Strict typing, exception hygiene, `_core.pyi`/`py.typed` parity, GIL release & buffer protocols (`Blocker`); immutability & no mutable defaults (`Minor`).
+  - TypeScript & React: Type & lint hygiene, `zod` boundary validation, regenerated artifacts (`Blocker`); React 19 `ref`, `cva`/`cn`, semantic tokens (`Minor`).
+- [ ] Repository invariants (`Blocker`): Domain invariants in `docs/architecture.md` and `references/repo-checks.md` (when present).
 - [ ] Structural fit (`Flag`): Change conforms to the request or spec but relies on awkward adapters, parallel state, or cross-layer seams; name the deeper structural mismatch for Lead Orchestrator or user consideration.
+- [ ] Reference docs impact (`Flag`): Change alters architecture, schemas, DSL, or public behavior; name the section of `docs/architecture.md` or packaged skills/templates to update in the fold step.
 
-### 2. Hard Rules & Hygiene
-
-- [ ] No unapproved suppressions (`Blocker`): New `#[allow(...)]`, `# type: ignore`, `# pyright: ignore`, `# noqa`, `eslint-disable`, `oxlint-disable`, `@ts-ignore`, or `@ts-expect-error` lacks user approval or an inline reason.
-- [ ] Exhaustive matching (`Blocker`): No wildcard arms (`_ =>`) on AST, IR, or domain enums in compiler passes, emitters, or PyO3 bridges.
-- [ ] No shims (`Blocker`): No `#[deprecated]`, `@deprecated`, transition wrappers, old-name re-exports, or placeholder stubs. Public `__all__` deprecations only when the user or spec requires them.
-- [ ] Bool toggles (`Blocker` in public or IR signatures, `Minor` in private helpers): 2-variant enums/unions instead of `bool` behavior flags.
-- [ ] Consistent conventions (`Blocker` in public API/CLI signatures, `Minor` internally): Naming, parameter order, error shapes, and code/test idioms match sibling modules and entrypoints without copying rule violations.
-- [ ] Minimal surface (`Minor`): No commented-out tombstones, unused functions/imports, single-use helper shims, or single-use trait/generic abstractions.
-
-### 3. Rust Standards (2024 Edition, when the diff touches Rust crates)
-
-- [ ] Panic-free production paths (`Blocker`): No `.unwrap()` / `.expect()` outside tests; no unchecked indexing where bounds are not guaranteed.
-- [ ] Structured errors (`Blocker`): `thiserror` diagnostics propagated via `?`; no stringly-typed errors or context swallowed via `.ok()`.
-- [ ] Concrete internals (`Minor`): No `impl Into` / `impl AsRef` in internal pass signatures; generic conversions only at public facades.
-- [ ] Memory & style (`Minor`): Borrowed slices (`&str`, `&[T]`) or `Cow` over unneeded `.clone()` / `.to_string()`; guard clauses over deep nesting; import order std, external, crate-local.
-
-### 4. Python Standards (3.12+, when the diff touches Python or PyO3 bindings)
-
-- [ ] Strict typing (`Blocker`): `pyright` strict clean, explicit `-> None`, `TypedDict` / frozen dataclasses / Pydantic models over `dict[str, Any]`, no bare `Any`.
-- [ ] Native stub parity (`Blocker`, PyO3 repos): PyO3 crate exports and exceptions match `_core.pyi`; `py.typed` marker present.
-- [ ] Exception hygiene (`Blocker`): No bare `except:` or swallowed `Exception`; structured error attributes; causes preserved via `raise ... from err`.
-- [ ] GIL release (`Blocker`, PyO3 repos): CPU-bound PyO3 calls release the GIL (`py.allow_threads` / `py.detach`); bulk data uses buffer protocols (`memoryview` / `bytes`).
-- [ ] Immutability (`Minor`): No mutable default arguments; frozen dataclasses or immutable models for value objects.
-
-### 5. TypeScript & React Standards (when the diff touches TypeScript or React packages)
-
-- [ ] Strict module & promise hygiene (`Blocker`): `import type` for type-only imports (`verbatimModuleSyntax`), zero unused locals/parameters, and zero floating or misused promises (`oxlint` type-aware).
-- [ ] Boundary validation (`Blocker`): External inputs, search params, and network payloads parsed via `zod` schemas rather than unverified type assertions (`as`) or `any`.
-- [ ] Generated artifacts (`Blocker`): Generated files (e.g., `routeTree.gen.ts`) regenerated via workspace scripts, never manually edited.
-- [ ] React 19 & styling idioms (`Minor`): `ref` passed directly as a prop (`React.RefAttributes<T>`) without `React.forwardRef`; variants composed with `cva`, classes merged with `cn`, and semantic theme tokens used over hardcoded values.
-
-### 6. Docs Impact
-
-- [ ] Reference docs (`Flag`): Change alters architecture, schemas, DSL, or public behavior; name the section of `docs/architecture.md` or packaged skills/templates to update in the fold step.
-
-## Report Template
+## Report template
 
 ```markdown
 # Implementation Review: <Spec Title | Change Summary>

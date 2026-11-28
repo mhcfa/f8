@@ -44,7 +44,7 @@ Using an AI coding agent? `f8` ships with a bundled modeling skill and CLI refer
 ```bash
 f8 agent init    # scaffolds .agents/skills/f8-modeling/
 f8 theme init    # generates a customizable theme.json in your workspace root
-f8 guide --all   # streams the full DSL, function, and auditing guide to stdout
+f8 guide --all   # streams the full DSL, layout, function, and auditing guide to stdout
 ```
 
 ## Quick look

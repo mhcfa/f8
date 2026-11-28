@@ -329,6 +329,7 @@ describe("TypeScript End-to-End Integration Suite", () => {
     expect(exitCode1).toBe(0)
     expect(outBuf).toContain("Available topics:")
     expect(outBuf).toContain("syntax")
+    expect(outBuf).toContain("layout")
     expect(outBuf).toContain("functions")
     expect(outBuf).toContain("audit")
     expect(outBuf).toContain("all")
@@ -344,6 +345,9 @@ describe("TypeScript End-to-End Integration Suite", () => {
     expect(statSync(join(skillRoot, "SKILL.md")).isFile()).toBe(true)
     expect(
       statSync(join(skillRoot, "references", "syntax-and-grid.md")).isFile()
+    ).toBe(true)
+    expect(
+      statSync(join(skillRoot, "references", "layout-and-styling.md")).isFile()
     ).toBe(true)
     expect(
       statSync(join(skillRoot, "references", "functions.md")).isFile()

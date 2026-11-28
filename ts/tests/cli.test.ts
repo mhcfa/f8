@@ -117,7 +117,7 @@ describe("TypeScript CLI and module runner entrypoints", () => {
     expect(cap.err()).toBe("")
   })
 
-  it.each(["syntax", "functions", "audit"])(
+  it.each(["syntax", "layout", "functions", "audit"])(
     "Scenario 2: outputs specific topic guide '%s' to stdout",
     (topic) => {
       const cap = createCaptureIo()
@@ -138,9 +138,10 @@ describe("TypeScript CLI and module runner entrypoints", () => {
     expect(exitCode).toBe(0)
     const expectedLines = [
       "Available topics:",
-      "  syntax     2D coordinates, vector expressions, column roles, gutters, indentation",
-      "  functions  37 built-in Excel functions, signatures, omission syntax, errors",
-      "  audit      TableAuditor, inspection, unboxing, structured exception recovery",
+      "  syntax     2D coordinates, builders, vector expansion, 3-tier specificity lattice",
+      "  layout     Bands/lanes, auto/grid modes, print setup, formats, styles, themes",
+      "  functions  37 built-in Excel functions, type/empty rules, omission syntax, errors",
+      "  audit      CompiledModel, TableAuditor, Markdown/dict export, F8Error hierarchy",
       "  all        Complete concatenated guide",
     ]
     expect(cap.out().trim()).toBe(expectedLines.join("\n"))
@@ -161,6 +162,10 @@ describe("TypeScript CLI and module runner entrypoints", () => {
           join(root, "references", "syntax-and-grid.md"),
           "utf-8"
         ).trim(),
+        readFileSync(
+          join(root, "references", "layout-and-styling.md"),
+          "utf-8"
+        ).trim(),
         readFileSync(join(root, "references", "functions.md"), "utf-8").trim(),
         readFileSync(
           join(root, "references", "auditing-and-repair.md"),
@@ -172,6 +177,17 @@ describe("TypeScript CLI and module runner entrypoints", () => {
       expect(cap.err()).toBe("")
     }
   )
+
+  it("outputs guide help listing all topics in canonical order and exits with 0", () => {
+    const cap = createCaptureIo()
+    const exitCode = main(["guide", "--help"], cap.io)
+    expect(exitCode).toBe(0)
+    expect(cap.out()).toContain(
+      "usage: f8 guide [-h] [--all] [--list] [{syntax,layout,functions,audit,all}]"
+    )
+    expect(cap.out()).toContain("{syntax,layout,functions,audit,all}")
+    expect(cap.err()).toBe("")
+  })
 
   it("Scenario 5: rejects invalid guide topic and exits with code 2", () => {
     const cap = createCaptureIo()
@@ -193,6 +209,9 @@ describe("TypeScript CLI and module runner entrypoints", () => {
     expect(statSync(join(skillDir, "SKILL.md")).isFile()).toBe(true)
     expect(
       statSync(join(skillDir, "references", "syntax-and-grid.md")).isFile()
+    ).toBe(true)
+    expect(
+      statSync(join(skillDir, "references", "layout-and-styling.md")).isFile()
     ).toBe(true)
     expect(
       statSync(join(skillDir, "references", "functions.md")).isFile()
@@ -293,7 +312,19 @@ describe("TypeScript CLI and module runner entrypoints", () => {
       "f8-modeling",
       "SKILL.md"
     )
-    if (!existsSync(distCli) || !existsSync(distSkill)) {
+    const distLayout = join(
+      repoRoot,
+      "dist",
+      "skills",
+      "f8-modeling",
+      "references",
+      "layout-and-styling.md"
+    )
+    if (
+      !existsSync(distCli) ||
+      !existsSync(distSkill) ||
+      !existsSync(distLayout)
+    ) {
       execFileSync("pnpm", ["build:ts"], { cwd: repoRoot, stdio: "pipe" })
     }
 
@@ -304,9 +335,22 @@ describe("TypeScript CLI and module runner entrypoints", () => {
     expect(result.status).toBe(0)
     expect(result.stdout).toContain("Available topics:")
     expect(result.stdout).toContain("syntax")
+    expect(result.stdout).toContain("layout")
     expect(result.stdout).toContain("functions")
     expect(result.stdout).toContain("audit")
     expect(result.stdout).toContain("all")
+
+    const layoutResult = spawnSync(
+      process.execPath,
+      [distCli, "guide", "layout"],
+      {
+        cwd: repoRoot,
+        encoding: "utf-8",
+      }
+    )
+    expect(layoutResult.status).toBe(0)
+    expect(layoutResult.stderr).toBe("")
+    expect(layoutResult.stdout).toBe(readFileSync(distLayout, "utf-8"))
   })
 
   it.each(["--version", "-V"])(
