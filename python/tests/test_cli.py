@@ -55,7 +55,7 @@ def test_guide_default_prints_skill_overview(capsys: pytest.CaptureFixture[str])
     assert captured.err == ""
 
 
-@pytest.mark.parametrize("topic", ["syntax", "functions", "audit"])
+@pytest.mark.parametrize("topic", ["syntax", "layout", "functions", "audit"])
 def test_guide_specific_topic(topic: str, capsys: pytest.CaptureFixture[str]) -> None:
     """Scenario 2: Output specific topic guide to stdout."""
     exit_code = main(["guide", topic])
@@ -75,9 +75,10 @@ def test_guide_list_topics(capsys: pytest.CaptureFixture[str]) -> None:
     captured = capsys.readouterr()
     expected_lines = [
         "Available topics:",
-        "  syntax     2D coordinates, vector expressions, column roles, gutters, indentation",
-        "  functions  37 built-in Excel functions, signatures, omission syntax, errors",
-        "  audit      TableAuditor, inspection, unboxing, structured exception recovery",
+        "  syntax     2D coordinates, builders, vector expansion, 3-tier specificity lattice",
+        "  layout     Bands/lanes, auto/grid modes, print setup, formats, styles, themes",
+        "  functions  37 built-in Excel functions, type/empty rules, omission syntax, errors",
+        "  audit      CompiledModel, TableAuditor, Markdown/dict export, F8Error hierarchy",
         "  all        Complete concatenated guide",
     ]
     assert captured.out.strip() == "\n".join(expected_lines)
@@ -95,11 +96,22 @@ def test_guide_all_concatenated(args: list[str], capsys: pytest.CaptureFixture[s
     sections = [
         root.joinpath("SKILL.md").read_text(encoding="utf-8").strip(),
         root.joinpath("references", "syntax-and-grid.md").read_text(encoding="utf-8").strip(),
+        root.joinpath("references", "layout-and-styling.md").read_text(encoding="utf-8").strip(),
         root.joinpath("references", "functions.md").read_text(encoding="utf-8").strip(),
         root.joinpath("references", "auditing-and-repair.md").read_text(encoding="utf-8").strip(),
     ]
     expected = "\n\n---\n\n".join(sections) + "\n"
     assert captured.out == expected
+    assert captured.err == ""
+
+
+def test_guide_help_lists_topics(capsys: pytest.CaptureFixture[str]) -> None:
+    """Verify f8 guide --help lists all guide topics in canonical order and exits with 0."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["guide", "--help"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "{syntax,layout,functions,audit,all}" in captured.out
     assert captured.err == ""
 
 
@@ -124,12 +136,15 @@ def test_agent_init_empty_workspace(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert skill_dir.is_dir()
     assert (skill_dir / "SKILL.md").is_file()
     assert (skill_dir / "references" / "syntax-and-grid.md").is_file()
+    assert (skill_dir / "references" / "layout-and-styling.md").is_file()
     assert (skill_dir / "references" / "functions.md").is_file()
     assert (skill_dir / "references" / "auditing-and-repair.md").is_file()
 
-    # Invariant: zero .py files in skill scaffolding
-    py_files = list(skill_dir.rglob("*.py"))
-    assert len(py_files) == 0
+    # Invariant: zero code files in skill scaffolding
+    code_files = [
+        p for p in skill_dir.rglob("*") if p.is_file() and p.suffix in {".py", ".ts", ".js"}
+    ]
+    assert len(code_files) == 0
 
 
 def test_agent_init_collision_without_force(
@@ -206,6 +221,7 @@ def test_module_runner_subprocess_execution() -> None:
     assert result.returncode == 0
     assert "Available topics:" in result.stdout
     assert "syntax" in result.stdout
+    assert "layout" in result.stdout
     assert "functions" in result.stdout
     assert "audit" in result.stdout
     assert "all" in result.stdout
